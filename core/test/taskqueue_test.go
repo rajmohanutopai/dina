@@ -307,6 +307,8 @@ func TestTaskQueue_8_3_2_RetryIncrementsCounter(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// After retry, task should be pending again with incremented retry count.
+	// OT2: Respect retry backoff — first retry is 1s delay.
+	time.Sleep(1100 * time.Millisecond)
 	retried, err := impl.Dequeue(ctx)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, retried)
@@ -413,10 +415,10 @@ func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 	err = q.Fail(ctx, taskID, "timeout")
 	testutil.RequireNoError(t, err)
 
-	// Retry 3 times and verify backoff increases strictly.
-	// Production: backoff = 1<<(retries-1) seconds → 1s, 2s, 4s.
+	// Retry twice and verify backoff increases strictly.
+	// Production: backoff = 1<<(retries-1) seconds → 1s, 2s.
 	var lastNextRetry int64
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		err = q.Retry(ctx, taskID)
 		testutil.RequireNoError(t, err)
 
@@ -434,7 +436,9 @@ func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 		}
 		lastNextRetry = found.NextRetry
 
-		// Re-dequeue and fail again for next iteration.
+		// OT2: Wait past the backoff, then re-dequeue and fail for next iteration.
+		backoff := time.Duration(1<<uint(i)) * time.Second
+		time.Sleep(backoff + 200*time.Millisecond)
 		d, err := q.Dequeue(ctx)
 		testutil.RequireNoError(t, err)
 		testutil.RequireNotNil(t, d)
@@ -449,16 +453,21 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	ctx := context.Background()
 
-	// Set max retries to 3 for faster testing.
-	q.SetMaxRetries(3)
+	// Set max retries to 2 for faster testing (reduces cumulative backoff sleep).
+	q.SetMaxRetries(2)
 
 	task := testutil.TestTask()
 	taskID, err := q.Enqueue(ctx, task)
 	testutil.RequireNoError(t, err)
 
 	// Cycle through fail/retry until dead letter.
-	// MaxRetries=3 → dead_letter when Retries > 3 (4th Retry call).
-	for i := 0; i < 4; i++ {
+	// MaxRetries=2 → dead_letter when Retries > 2 (3rd Retry call).
+	for i := 0; i < 3; i++ {
+		// OT2: Wait past backoff before dequeuing (1s, 2s, 4s exponential).
+		if i > 0 {
+			backoff := time.Duration(1<<uint(i-1)) * time.Second
+			time.Sleep(backoff + 200*time.Millisecond)
+		}
 		dequeued, err := q.Dequeue(ctx)
 		testutil.RequireNoError(t, err)
 		testutil.RequireNotNil(t, dequeued)
@@ -475,7 +484,7 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 		found, err := q.GetByID(ctx, taskID)
 		testutil.RequireNoError(t, err)
 		testutil.RequireNotNil(t, found)
-		if i < 3 {
+		if i < 2 {
 			testutil.RequireEqual(t, found.Retries, i+1)
 			testutil.RequireEqual(t, found.Status, domain.TaskPending)
 		}
@@ -486,7 +495,7 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, found)
 	testutil.RequireEqual(t, found.Status, domain.TaskStatus("dead_letter"))
-	testutil.RequireEqual(t, found.Retries, 4)
+	testutil.RequireEqual(t, found.Retries, 3) // MaxRetries=2 → dead_letter at 3rd retry
 
 	// Negative: dead-letter queue is empty — Dequeue returns nil.
 	next, err := q.Dequeue(ctx)

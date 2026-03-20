@@ -234,44 +234,38 @@ class EntityVaultService:
     def rehydrate(self, text: str, vault: dict) -> str:
         """Replace anonymisation tokens with their original values.
 
-        Handles both delimited tokens (``<<PII:Robert Smith>>``) and
-        bare fake values (``Robert Smith``) that LLMs sometimes produce
-        when they strip the ``<<PII:…>>`` delimiters.  Delimited tokens
-        are matched first (longest match wins) to avoid partial
-        replacement collisions.
+        Only replaces tokens that were actually produced by the scrubber
+        (present as keys in the vault). Does NOT match bare inner values —
+        F08: an LLM that hallucinates a string matching a bare PII token
+        would otherwise get rehydrated with real PII from an unrelated entity.
+
+        The token format includes a random hex suffix (e.g.
+        ``<<PII_PERSON_1_a3f2e1b0>>``) making collisions with LLM output
+        virtually impossible for the full token form.
 
         Parameters
         ----------
         text:
-            The LLM response containing tokens like ``<<PII:Robert Smith>>``
-            or their bare inner values.
+            The LLM response containing tokens like ``<<PII_PERSON_1_a3f2e1b0>>``.
         vault:
             The ephemeral mapping produced by ``create_vault``.
 
         Returns
         -------
         str
-            Text with all placeholders replaced by the original PII values.
+            Text with all valid placeholders replaced by the original PII values.
         """
         if not vault:
             return text
         import re
 
-        # Build a lookup that maps both the full token and the bare
-        # inner value (for <<PII:xxx>> format) to the original PII.
-        expanded: dict[str, str] = {}
-        for token, original in vault.items():
-            expanded[token] = original
-            # Extract bare value from <<PII:xxx>> tokens.
-            if token.startswith("<<PII:") and token.endswith(">>"):
-                bare = token[6:-2]
-                if bare and bare not in expanded:
-                    expanded[bare] = original
-
+        # F08: Only replace exact vault keys — no bare-value expansion.
+        # The vault keys are scrubber-generated tokens with random suffixes,
+        # making hallucination collisions negligible.
         pattern = re.compile(
-            "|".join(re.escape(t) for t in sorted(expanded, key=len, reverse=True))
+            "|".join(re.escape(t) for t in sorted(vault, key=len, reverse=True))
         )
-        return pattern.sub(lambda m: expanded[m.group()], text)
+        return pattern.sub(lambda m: vault[m.group()], text)
 
     # ------------------------------------------------------------------
     # Internal helpers

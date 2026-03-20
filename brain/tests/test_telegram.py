@@ -860,11 +860,13 @@ async def test_handle_approval_response_deny(service, mock_core):
 
 @pytest.mark.asyncio
 async def test_handle_approval_response_approve_failure(service, mock_core):
-    """Approve failure returns error message (does not raise)."""
+    """Approve failure returns generic error (BS4: no internal details leaked)."""
     mock_core.approve_request = AsyncMock(side_effect=Exception("not found"))
     result = await service.handle_approval_response("approve bad-id")
     assert "❌" in result
-    assert "not found" in result
+    # BS4: Must NOT leak exception details to Telegram chat.
+    assert "not found" not in result
+    assert "dashboard" in result
 
 
 @pytest.mark.asyncio
@@ -903,11 +905,13 @@ async def test_handle_approval_response_approve_single(service, mock_core):
 
 @pytest.mark.asyncio
 async def test_handle_approval_response_approve_single_failure(service, mock_core):
-    """approve-single failure returns error message."""
+    """approve-single failure returns generic error (BS4: no details leaked)."""
     mock_core.approve_request = AsyncMock(side_effect=Exception("expired"))
     result = await service.handle_approval_response("approve-single bad-id")
     assert "❌" in result
-    assert "expired" in result
+    # BS4: Must NOT leak exception details to Telegram chat.
+    assert "expired" not in result
+    assert "dashboard" in result
 
 
 @pytest.mark.asyncio

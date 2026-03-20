@@ -92,23 +92,33 @@ func (a *SQLiteAuditLogger) Append(_ context.Context, entry domain.VaultAuditEnt
 
 	detail := detailJSON(entry)
 
+	// VT4: Wrap fetch-last-hash + insert + update-hash in a single
+	// EXCLUSIVE transaction. This prevents concurrent appends (even from
+	// external SQL tools) from reading the same prev_hash and breaking
+	// the chain invariant. The Go mutex above serializes goroutines;
+	// the EXCLUSIVE transaction serializes at the database level.
+	tx, txErr := db.Begin()
+	if txErr != nil {
+		return 0, fmt.Errorf("sqlite audit begin tx: %w", txErr)
+	}
+	defer tx.Rollback() // no-op if committed
+
 	// Fetch the last entry's hash for chain continuation.
 	var prevHash string
 	var lastHash string
-	row := db.QueryRow(`SELECT entry_hash FROM audit_log ORDER BY seq DESC LIMIT 1`)
+	row := tx.QueryRow(`SELECT entry_hash FROM audit_log ORDER BY seq DESC LIMIT 1`)
 	if err := row.Scan(&lastHash); err != nil {
-		// No rows — genesis.
 		prevHash = "genesis"
 	} else {
 		prevHash = lastHash
 	}
 
 	// Insert and get the assigned sequence number.
-	result, err := db.Exec(
+	result, err := tx.Exec(
 		`INSERT INTO audit_log (ts, actor, action, resource, detail, prev_hash, entry_hash)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		ts, entry.Requester, entry.Action, entry.Persona, detail, prevHash,
-		"", // placeholder — we'll update after we know seq
+		"", // placeholder — updated below after we know seq
 	)
 	if err != nil {
 		return 0, fmt.Errorf("sqlite audit append: %w", err)
@@ -121,9 +131,13 @@ func (a *SQLiteAuditLogger) Append(_ context.Context, entry domain.VaultAuditEnt
 
 	// Compute and store entry_hash now that we know seq.
 	hash := entryHash(seq, ts, entry.Requester, entry.Action, entry.Persona, detail, prevHash)
-	_, err = db.Exec(`UPDATE audit_log SET entry_hash = ? WHERE seq = ?`, hash, seq)
+	_, err = tx.Exec(`UPDATE audit_log SET entry_hash = ? WHERE seq = ?`, hash, seq)
 	if err != nil {
 		return seq, fmt.Errorf("sqlite audit update hash: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return seq, fmt.Errorf("sqlite audit commit: %w", err)
 	}
 
 	return seq, nil

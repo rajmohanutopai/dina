@@ -510,3 +510,96 @@ def test_api_10_5_1_language_agnostic_contract() -> None:
     resp_json = json.loads(reason_resp.model_dump_json())
     assert isinstance(resp_json["content"], str)
     assert isinstance(resp_json["tokens_in"], int)
+
+
+# ---------------------------------------------------------------------------
+# BR1 — PII scrub route must NOT return original values
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-814
+def test_br1_pii_scrub_strips_original_values() -> None:
+    """BR1: POST /v1/pii/scrub must NOT return 'value' (original PII) in entities.
+
+    The scrubber returns {type, value, token} internally, but the HTTP
+    response must only contain {type, token} to prevent PII leaking
+    over the wire.
+    """
+    from dina_brain.app import create_brain_app
+
+    # Mock scrubber that returns entities WITH original values.
+    class _MockScrubber:
+        def scrub(self, text: str) -> tuple[str, list[dict]]:
+            return (
+                "[PERSON_1] sent a message to [EMAIL_1]",
+                [
+                    {"type": "PERSON", "value": "Dr. Sharma", "token": "[PERSON_1]"},
+                    {"type": "EMAIL", "value": "sharma@clinic.com", "token": "[EMAIL_1]"},
+                ],
+            )
+
+    app = create_brain_app(
+        AsyncMock(),  # guardian
+        AsyncMock(),  # sync_engine
+        _MockScrubber(),
+        core_public_key=TEST_CORE_PUBLIC_KEY,
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+
+    body = json.dumps({"text": "Dr. Sharma sent a message to sharma@clinic.com"}).encode()
+    headers = sign_test_request("POST", "/v1/pii/scrub", body)
+    headers["Content-Type"] = "application/json"
+    resp = client.post("/v1/pii/scrub", content=body, headers=headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["scrubbed"] == "[PERSON_1] sent a message to [EMAIL_1]"
+    assert len(data["entities"]) == 2
+
+    # Critical assertion: NO entity should contain the "value" key.
+    for entity in data["entities"]:
+        assert "value" not in entity, (
+            f"BR1: original PII value leaked in HTTP response: {entity}"
+        )
+        assert "type" in entity
+        assert "token" in entity
+
+    # Verify specific tokens are present.
+    tokens = {e["token"] for e in data["entities"]}
+    assert "[PERSON_1]" in tokens
+    assert "[EMAIL_1]" in tokens
+
+
+# ---------------------------------------------------------------------------
+# BR5 — /v1/process rate-limited
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-819
+def test_br5_process_rate_limited() -> None:
+    """BR5: POST /v1/process must be rate-limited (burst=5, then 429).
+
+    Sends 7 requests rapidly — first 5 should succeed (burst allowance),
+    the rest should get 429.
+    """
+    from dina_brain.app import create_brain_app
+
+    guardian = AsyncMock()
+    guardian.process_event.return_value = {"status": "ok", "action": "classified"}
+
+    app = create_brain_app(
+        guardian, AsyncMock(), core_public_key=TEST_CORE_PUBLIC_KEY,
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+
+    got_429 = False
+    for i in range(7):
+        body = json.dumps({"type": "test_event", "body": f"event {i}"}).encode()
+        headers = sign_test_request("POST", "/v1/process", body)
+        headers["Content-Type"] = "application/json"
+        resp = client.post("/v1/process", content=body, headers=headers)
+        if resp.status_code == 429:
+            got_429 = True
+            break
+
+    assert got_429, "BR5: /v1/process must return 429 after burst is exhausted"

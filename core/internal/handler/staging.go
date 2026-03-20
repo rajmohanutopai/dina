@@ -286,18 +286,14 @@ func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine the resulting status.
-	status := "stored"
-	pending, _ := h.Staging.ListByStatus(r.Context(), domain.StagingPendingUnlock, 1000)
-	for _, item := range pending {
-		if item.ID == req.ID {
-			status = domain.StagingPendingUnlock
-			break
-		}
-	}
-
+	// GH10: Removed O(n) scan of 1000 pending items per resolve call.
+	// The previous code listed all pending_unlock items just to check if
+	// this item ended up pending. The resolve operation itself is
+	// authoritative — if it succeeded without error, the item was resolved.
+	// Brain (the caller) knows the persona state and handles pending_unlock
+	// via the drain mechanism.
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": status})
+	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": "resolved"})
 }
 
 // failRequest is the JSON body for POST /v1/staging/fail.

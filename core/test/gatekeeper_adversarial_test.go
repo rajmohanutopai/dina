@@ -1789,20 +1789,19 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
-	t.Run("limit_zero_preserved_for_service_default", func(t *testing.T) {
-		// Zero means "use default" — the handler should NOT override this.
-		// The service layer (HybridSearch) defaults to 10 for limit <= 0.
+	t.Run("limit_zero_clamped_to_default", func(t *testing.T) {
+		// DM3: Zero is clamped to domain.DefaultSearchLimit (50) at handler level.
 		got := sendQuery(t, 0)
-		if got != 0 {
-			t.Fatalf("limit 0 (use default) should pass through as 0, reader received %d", got)
+		if got != 50 {
+			t.Fatalf("limit 0 should be clamped to default 50, got %d", got)
 		}
 	})
 
-	t.Run("negative_limit_preserved_for_service_default", func(t *testing.T) {
-		// Negative also means "use default" — handler does not touch it.
+	t.Run("negative_limit_clamped_to_default", func(t *testing.T) {
+		// DM3: Negative is clamped to domain.DefaultSearchLimit (50) at handler level.
 		got := sendQuery(t, -5)
-		if got != -5 {
-			t.Fatalf("limit -5 (use default) should pass through as -5, reader received %d", got)
+		if got != 50 {
+			t.Fatalf("limit -5 should be clamped to default 50, got %d", got)
 		}
 	})
 

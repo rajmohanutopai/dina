@@ -388,7 +388,7 @@ func TestHybridSearch_TrustWeighting_CaveatedDemoted(t *testing.T) {
 		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
 		Limit: 10, IncludeAll: true,
 	}
-	results, err := svc.HybridSearch(context.Background(), persona, q)
+	results, err := svc.HybridSearch(context.Background(), "", persona, q)
 	if err != nil {
 		t.Fatalf("HybridSearch: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestHybridSearch_TrustWeighting_SelfBoosted(t *testing.T) {
 		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
 		Limit: 10,
 	}
-	results, err := svc.HybridSearch(context.Background(), persona, q)
+	results, err := svc.HybridSearch(context.Background(), "", persona, q)
 	if err != nil {
 		t.Fatalf("HybridSearch: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestHybridSearch_TrustWeighting_SelfBoosted(t *testing.T) {
 		vectorResults: []domain.VaultItem{unknown}, // unknown at rank 0 in vector
 	}
 	svc2 := NewVaultService(mgr, reader2, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
-	results2, err := svc2.HybridSearch(context.Background(), persona, q)
+	results2, err := svc2.HybridSearch(context.Background(), "", persona, q)
 	if err != nil {
 		t.Fatalf("HybridSearch: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestHybridSearch_TrustWeighting_SelfBoosted(t *testing.T) {
 		vectorResults: []domain.VaultItem{self, unknown},
 	}
 	svc3 := NewVaultService(mgr, reader3, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
-	results3, err := svc3.HybridSearch(context.Background(), persona, q)
+	results3, err := svc3.HybridSearch(context.Background(), "", persona, q)
 	if err != nil {
 		t.Fatalf("HybridSearch: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestHybridSearch_TrustWeighting_LowConfidencePenalty(t *testing.T) {
 		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
 		Limit: 10,
 	}
-	results, err := svc.HybridSearch(context.Background(), persona, q)
+	results, err := svc.HybridSearch(context.Background(), "", persona, q)
 	if err != nil {
 		t.Fatalf("HybridSearch: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestHybridSearch_TrustWeighting_CompoundModifiers(t *testing.T) {
 		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
 		Limit: 10, IncludeAll: true,
 	}
-	results, err := svc.HybridSearch(context.Background(), persona, q)
+	results, err := svc.HybridSearch(context.Background(), "", persona, q)
 	if err != nil {
 		t.Fatalf("HybridSearch: %v", err)
 	}
@@ -547,7 +547,7 @@ func TestHybridSearch_TrustWeighting_NormalUnchanged(t *testing.T) {
 		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
 		Limit: 10,
 	}
-	results, err := svc.HybridSearch(context.Background(), persona, q)
+	results, err := svc.HybridSearch(context.Background(), "", persona, q)
 	if err != nil {
 		t.Fatalf("HybridSearch: %v", err)
 	}

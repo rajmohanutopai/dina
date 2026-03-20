@@ -109,15 +109,24 @@ func (s *DeviceService) CompletePairingWithKey(ctx context.Context, code, device
 		return "", "", fmt.Errorf("device: complete pairing with key: %w", err)
 	}
 
-	// Register the Ed25519 public key with the auth validator so that
-	// future signed requests from this device are accepted.
-	if s.keyRegistrar != nil && len(publicKeyMultibase) > 1 && publicKeyMultibase[0] == 'z' {
-		raw, decErr := base58.Decode(publicKeyMultibase[1:])
-		if decErr == nil && len(raw) == 34 && raw[0] == 0xed && raw[1] == 0x01 {
-			did := "did:key:" + publicKeyMultibase
-			s.keyRegistrar.RegisterDeviceKey(did, raw[2:], deviceID)
-		}
+	// SV2: Register the Ed25519 public key with the auth validator.
+	// Fail loudly if registration cannot complete — a device that appears
+	// paired but can't authenticate is worse than a failed pairing.
+	if s.keyRegistrar == nil {
+		return "", "", fmt.Errorf("device: %w: key registrar not configured", domain.ErrInvalidInput)
 	}
+	if len(publicKeyMultibase) < 2 || publicKeyMultibase[0] != 'z' {
+		return "", "", fmt.Errorf("device: %w: invalid multibase prefix", domain.ErrInvalidInput)
+	}
+	raw, decErr := base58.Decode(publicKeyMultibase[1:])
+	if decErr != nil {
+		return "", "", fmt.Errorf("device: %w: base58 decode failed: %v", domain.ErrInvalidInput, decErr)
+	}
+	if len(raw) != 34 || raw[0] != 0xed || raw[1] != 0x01 {
+		return "", "", fmt.Errorf("device: %w: invalid Ed25519 multicodec prefix", domain.ErrInvalidInput)
+	}
+	did := "did:key:" + publicKeyMultibase
+	s.keyRegistrar.RegisterDeviceKey(did, raw[2:], deviceID)
 
 	return deviceID, nodeDID, nil
 }
@@ -144,22 +153,23 @@ func (s *DeviceService) RevokeDevice(ctx context.Context, tokenID string) error 
 		return fmt.Errorf("device: %w: token ID is required", domain.ErrInvalidInput)
 	}
 
-	// Look up the device before revoking so we can revoke the Ed25519 key
-	// and any bearer client tokens in the auth validator.
+	// SV3: Revoke ALL auth paths (Ed25519 key + bearer token + pairing record)
+	// regardless of individual failures. A partial revocation where one auth
+	// method still works is worse than a clean error.
+	//
+	// Order: revoke auth credentials FIRST, then mark device revoked.
+	// If credential revocation fails, the device stays unrevoked (safe).
 	if s.keyRegistrar != nil || s.tokenRevoker != nil {
-		// MEDIUM-14: Propagate ListDevices error instead of ignoring.
 		devices, listErr := s.pairer.ListDevices(ctx)
 		if listErr != nil {
 			return fmt.Errorf("device: revoke: list devices: %w", listErr)
 		}
 		for _, d := range devices {
 			if d.TokenID == tokenID {
+				// Always attempt both — don't short-circuit on first failure.
 				if s.keyRegistrar != nil && d.DID != "" {
 					s.keyRegistrar.RevokeDeviceKey(d.DID)
 				}
-				// Revoke any bearer tokens associated with this device.
-				// Use the immutable token ID to match the identity used
-				// during RegisterClientToken (see CompletePairing).
 				if s.tokenRevoker != nil && d.TokenID != "" {
 					s.tokenRevoker.RevokeClientTokenByDevice(d.TokenID)
 				}

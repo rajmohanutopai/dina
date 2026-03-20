@@ -455,7 +455,9 @@ def create_app() -> FastAPI:
     from .service.enrichment import EnrichmentService
     from .service.staging_processor import StagingProcessor
     trust_scorer = TrustScorer()
-    enrichment_svc = EnrichmentService(core=brain_core_client, llm=llm_router)
+    enrichment_svc = EnrichmentService(
+        core=brain_core_client, llm=llm_router, entity_vault=entity_vault,
+    )
     from .service.domain_classifier import DomainClassifier
     domain_clf = DomainClassifier(llm=llm_router)
     from .service.event_extractor import EventExtractor

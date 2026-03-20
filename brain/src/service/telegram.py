@@ -287,7 +287,9 @@ class TelegramService:
                     await self._core.approve_request(approval_id, scope="single", granted_by="telegram")
                     return f"✅ Approved (single use): `{approval_id}`"
                 except Exception as exc:
-                    return f"❌ Failed to approve: {exc}"
+                    # BS4: Generic message to Telegram; details server-side only.
+                    log.warning("telegram.approve_failed", extra={"id": approval_id, "error": str(exc)})
+                    return "❌ Approval failed. Check the admin dashboard for details."
         elif text.startswith("approve "):
             approval_id = text[8:].strip()
             if self._core:
@@ -295,7 +297,8 @@ class TelegramService:
                     await self._core.approve_request(approval_id, scope="session", granted_by="telegram")
                     return f"✅ Approved: `{approval_id}`"
                 except Exception as exc:
-                    return f"❌ Failed to approve: {exc}"
+                    log.warning("telegram.approve_failed", extra={"id": approval_id, "error": str(exc)})
+                    return "❌ Approval failed. Check the admin dashboard for details."
         elif text.startswith("deny "):
             approval_id = text[5:].strip()
             if self._core:
@@ -303,7 +306,8 @@ class TelegramService:
                     await self._core.deny_request(approval_id)
                     return f"🚫 Denied: `{approval_id}`"
                 except Exception as exc:
-                    return f"❌ Failed to deny: {exc}"
+                    log.warning("telegram.deny_failed", extra={"id": approval_id, "error": str(exc)})
+                    return "❌ Denial failed. Check the admin dashboard for details."
         return None
 
     # ------------------------------------------------------------------

@@ -50,6 +50,15 @@ type Sweeper struct {
 	maxAge     time.Duration // max blob age before mtime-based GC (default 24h)
 }
 
+// ackBlob acknowledges a dead-drop blob. Logs a warning on failure instead
+// of silently swallowing the error (IG6 fix).
+func (s *Sweeper) ackBlob(name string) {
+	if err := s.deadDrop.Ack(name); err != nil {
+		slog.Warn("sweeper: ack failed — blob may persist on disk",
+			"name", name, "error", err)
+	}
+}
+
 // NewSweeper creates a Sweeper with the given dependencies.
 // The TTL defines how long a dead drop blob is considered valid after creation.
 func NewSweeper(
@@ -109,7 +118,7 @@ func (s *Sweeper) recordFailure(name string) bool {
 
 	if f.count >= s.maxRetries {
 		slog.Warn("evicting poison-pill blob after max retries", "name", name, "retries", f.count)
-		_ = s.deadDrop.Ack(name)
+		s.ackBlob(name)
 		delete(s.failures, name)
 		return true
 	}
@@ -144,7 +153,7 @@ func (s *Sweeper) GCStaleBlobs() int {
 		}
 		if now.Sub(info.ModTime()) > s.maxAge {
 			slog.Warn("evicting stale blob by mtime", "name", e.Name(), "age", now.Sub(info.ModTime()))
-			_ = s.deadDrop.Ack(e.Name())
+			s.ackBlob(e.Name())
 			evicted++
 		}
 	}
@@ -198,7 +207,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 			if s.ttl > 0 && msg.CreatedTime > 0 {
 				age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 				if age > s.ttl {
-					_ = s.deadDrop.Ack(name)
+					s.ackBlob(name)
 					continue
 				}
 			}
@@ -206,7 +215,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 				s.onMessage(msg)
 			}
 			s.clearFailure(name)
-			_ = s.deadDrop.Ack(name)
+			s.ackBlob(name)
 			delivered++
 			continue
 		}
@@ -248,7 +257,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if s.ttl > 0 && msg.CreatedTime > 0 {
 			age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 			if age > s.ttl {
-				_ = s.deadDrop.Ack(name)
+				s.ackBlob(name)
 				continue
 			}
 		}
@@ -258,7 +267,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 			s.onMessage(&msg)
 		}
 		s.clearFailure(name)
-		_ = s.deadDrop.Ack(name)
+		s.ackBlob(name)
 		delivered++
 	}
 
@@ -308,7 +317,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 			if s.ttl > 0 && msg.CreatedTime > 0 {
 				age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 				if age > s.ttl {
-					_ = s.deadDrop.Ack(name)
+					s.ackBlob(name)
 					result.Expired++
 					continue
 				}
@@ -317,7 +326,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 				s.onMessage(msg)
 			}
 			s.clearFailure(name)
-			_ = s.deadDrop.Ack(name)
+			s.ackBlob(name)
 			result.Delivered++
 			continue
 		}
@@ -363,7 +372,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		if s.ttl > 0 && msg.CreatedTime > 0 {
 			age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 			if age > s.ttl {
-				_ = s.deadDrop.Ack(name)
+				s.ackBlob(name)
 				result.Expired++
 				continue
 			}
@@ -374,7 +383,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 			s.onMessage(&msg)
 		}
 		s.clearFailure(name)
-		_ = s.deadDrop.Ack(name)
+		s.ackBlob(name)
 		result.Delivered++
 	}
 

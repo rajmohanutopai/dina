@@ -41,14 +41,16 @@ func (h *AdminHandler) HandleAdmin(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-// syncStatusResponse is the JSON body for GET /admin/sync-status.
+// syncStatusResponse is the JSON body for GET /v1/admin/sync-status.
+// CXH6: Does NOT expose ProxyTarget (internal Brain URL) — only connectivity state.
 type syncStatusResponse struct {
 	BrainConnected bool   `json:"brain_connected"`
-	ProxyTarget    string `json:"proxy_target"`
 	Status         string `json:"status"`
 }
 
 // HandleSyncStatus returns the sync status between core and brain.
+// CXH6: Moved from /admin/sync-status (unauthenticated) to /v1/admin/sync-status
+// (behind auth middleware). Only admin-scoped callers can reach this.
 func (h *AdminHandler) HandleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -57,7 +59,6 @@ func (h *AdminHandler) HandleSyncStatus(w http.ResponseWriter, r *http.Request) 
 
 	resp := syncStatusResponse{
 		BrainConnected: h.ProxyURL != "",
-		ProxyTarget:    h.ProxyURL,
 		Status:         "ok",
 	}
 

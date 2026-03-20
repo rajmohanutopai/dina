@@ -70,7 +70,10 @@ func (h *ReasonHandler) HandleReason(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		http.Error(w, `{"error":"reasoning failed: `+err.Error()+`"}`, http.StatusBadGateway)
+		// GH1: Log full error server-side; return generic message to caller.
+		// err.Error() may contain vault context, model output, or PII.
+		slog.Warn("reason.failed", "error", err)
+		http.Error(w, `{"error":"reasoning failed"}`, http.StatusBadGateway)
 		return
 	}
 

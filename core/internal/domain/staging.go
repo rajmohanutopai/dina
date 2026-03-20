@@ -91,5 +91,11 @@ type ResolveTarget struct {
 // DefaultStagingTTL is 7 days in seconds.
 const DefaultStagingTTL = 7 * 24 * 60 * 60
 
-// DefaultLeaseDuration is 5 minutes in seconds.
-const DefaultLeaseDuration = 5 * 60
+// DefaultLeaseDuration is 15 minutes in seconds.
+// VT6: Increased from 5 min to 15 min. Under slow LLM calls or network
+// issues, a 5-min lease expires mid-classification, causing Sweep to
+// revert the item to 'received' and enabling double-processing.
+// 15 min gives Brain sufficient headroom for enrichment + LLM + resolve.
+// If classification genuinely takes >15 min, the item is retried — which
+// is the correct behavior for a stuck/failed processing attempt.
+const DefaultLeaseDuration = 15 * 60

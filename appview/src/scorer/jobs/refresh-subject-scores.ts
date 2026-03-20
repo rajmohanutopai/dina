@@ -37,12 +37,14 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
   for (const subjectId of subjectIds) {
     try {
       // Fetch all non-revoked attestations for this subject
+      // TS1 fix: include isVerified in SELECT (was missing, hardcoded false).
       const rawAtts = await db
         .select({
           sentiment: attestations.sentiment,
           recordCreatedAt: attestations.recordCreatedAt,
           evidenceJson: attestations.evidenceJson,
           hasCosignature: attestations.hasCosignature,
+          isVerified: attestations.isVerified,
           authorDid: attestations.authorDid,
           dimensionsJson: attestations.dimensionsJson,
           domain: attestations.domain,
@@ -83,7 +85,7 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
         recordCreatedAt: a.recordCreatedAt,
         evidenceJson: a.evidenceJson as unknown[] | null,
         hasCosignature: a.hasCosignature ?? false,
-        isVerified: false,
+        isVerified: a.isVerified ?? false,
         authorTrustScore: authorScoreMap.get(a.authorDid) ?? null,
         authorHasInboundVouch: vouchedAuthors.has(a.authorDid),
         dimensionsJson: a.dimensionsJson as unknown[] | undefined,

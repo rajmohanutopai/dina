@@ -1115,11 +1115,14 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			"/v1/pii/scrub",
 			"/v1/task/ack",
 			"/v1/contacts",
-			"/v1/notify",
+			// NOTE: /v1/notify removed from device allowlist (CXH3).
+			// Only Brain should push notifications to connected devices.
 			"/v1/agent/validate",    // action gating
 			"/v1/intent/proposals",  // intent proposal status polling (ownership-checked in handler)
-			"/v1/audit",             // activity log (read-only)
-			"/v1/approvals",         // approval list/status
+			"/v1/audit/query",       // FH1: read-only audit query — /v1/audit/append is admin-only
+			// NOTE: /v1/approvals is NOT in the prefix list — devices get
+			// exact-match only (GET list). Approve/deny are admin-only.
+			// See deviceAllowedExact below. (CXH1 fix)
 			"/v1/session/start",
 			"/v1/session/end",
 			"/v1/sessions",
@@ -1134,7 +1137,10 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		}
 		// SEC-HIGH-01/10: Exact-only matches — /v1/did must NOT prefix-match
 		// /v1/did/sign or /v1/did/rotate (admin-only signing endpoints).
-		deviceAllowedExact := []string{"/v1/did"}
+		deviceAllowedExact := []string{
+			"/v1/did",
+			"/v1/approvals", // CXH1: exact-match only — blocks /v1/approvals/{id}/approve and /deny
+		}
 		for _, exact := range deviceAllowedExact {
 			if path == exact {
 				return true
@@ -1234,6 +1240,7 @@ func (c *adminEndpointChecker) allowedForAdmin(path string) bool {
 		"/v1/audit",
 		"/v1/session",
 		"/v1/sessions",
+		"/v1/admin",        // CXH6: sync-status moved here from unauthenticated /admin/
 		"/admin",
 		"/healthz",
 		"/readyz",

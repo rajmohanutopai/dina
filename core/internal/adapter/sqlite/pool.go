@@ -338,7 +338,9 @@ func migrateIdentity(db *sql.DB) error {
 		}
 		for _, stmt := range stmts {
 			if _, err := db.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("identity v2: %w", err)
+				if !isAlterColumnExists(err) {
+					return fmt.Errorf("identity v2: %w", err)
+				}
 			}
 		}
 		// Dedup index for reminders: same source item + kind + time + persona = one reminder.
@@ -430,8 +432,24 @@ func hasTable(db *sql.DB, table string) bool {
 	return err == nil && name == table
 }
 
+// validMigrationTables is the whitelist of tables that hasColumn may inspect.
+// VT1: PRAGMA table_info() cannot be parameterised, so the table name is
+// interpolated into SQL. Restricting to known tables prevents injection.
+var validMigrationTables = map[string]bool{
+	"vault_items":   true,
+	"contacts":      true,
+	"staging_inbox": true,
+	"reminders":     true,
+	"audit_log":     true,
+	"pending_reason": true,
+}
+
 // hasColumn checks whether a table has a specific column.
 func hasColumn(db *sql.DB, table, column string) bool {
+	// VT1: Reject unknown table names to prevent SQL injection via PRAGMA.
+	if !validMigrationTables[table] {
+		return false
+	}
 	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return false

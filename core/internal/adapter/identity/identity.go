@@ -590,8 +590,14 @@ func (dm *DIDManager) persistDID(did string, doc *didDocument) error {
 	// Use a safe filename from the DID.
 	hash := sha256.Sum256([]byte(did))
 	filename := fmt.Sprintf("did_%x.json", hash[:8])
-	if err := os.WriteFile(filepath.Join(dir, filename), data, 0600); err != nil {
+	// ID2 fix: atomic write via .tmp → os.Rename.
+	target := filepath.Join(dir, filename)
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return fmt.Errorf("identity: write DID doc: %w", err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		return fmt.Errorf("identity: rename DID doc: %w", err)
 	}
 	return nil
 }
@@ -661,8 +667,14 @@ func (dm *DIDManager) persistDIDMetadata(meta *DIDMetadata) error {
 		return fmt.Errorf("identity: marshal metadata: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "did_metadata.json"), data, 0600); err != nil {
+	// ID2 fix: atomic write via .tmp → os.Rename.
+	metaTarget := filepath.Join(dir, "did_metadata.json")
+	metaTmp := metaTarget + ".tmp"
+	if err := os.WriteFile(metaTmp, data, 0600); err != nil {
 		return fmt.Errorf("identity: write metadata: %w", err)
+	}
+	if err := os.Rename(metaTmp, metaTarget); err != nil {
+		return fmt.Errorf("identity: rename metadata: %w", err)
 	}
 	return nil
 }
@@ -888,6 +900,7 @@ func (pm *PersonaManager) SetPersistPath(path string) error {
 }
 
 // persistState writes the current persona state to disk (caller must hold lock).
+// ID1 fix: uses atomic .tmp → os.Rename pattern to prevent corruption on crash.
 func (pm *PersonaManager) persistState() {
 	if pm.persistPath == "" {
 		return
@@ -903,7 +916,11 @@ func (pm *PersonaManager) persistState() {
 		return // best-effort
 	}
 	os.MkdirAll(filepath.Dir(pm.persistPath), 0700)
-	_ = os.WriteFile(pm.persistPath, data, 0600)
+	tmp := pm.persistPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, pm.persistPath)
 }
 
 // canonicalPersonaID normalizes a persona identifier to the stored form "persona-<name>".

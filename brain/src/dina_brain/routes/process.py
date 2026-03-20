@@ -302,11 +302,13 @@ async def process_event(
     try:
         result = await _guardian.process_event(event_dict)
     except ValueError as exc:
+        # BR2: Log full error server-side; return generic message to caller.
+        # str(exc) may contain internal rejection reasons or data structure names.
         log.warning(
             "process_event.bad_request",
             extra={"event_type": event.type, "error": str(exc)},
         )
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail="Invalid request") from exc
     except Exception as exc:
         log.error(
             "process_event.internal_error",

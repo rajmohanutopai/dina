@@ -314,7 +314,12 @@ ON CONFLICT(id) DO UPDATE SET
 
 		var embeddingBlob []byte
 		if len(item.Embedding) > 0 {
-			embeddingBlob, _ = EncodeEmbedding(item.Embedding)
+			var encErr error
+			embeddingBlob, encErr = EncodeEmbedding(item.Embedding)
+			if encErr != nil {
+				slog.Warn("sqlite: batch embedding encode failed, storing without embedding",
+					"id", item.ID, "error", encErr)
+			}
 		}
 
 		_, err := stmt.ExecContext(ctx,

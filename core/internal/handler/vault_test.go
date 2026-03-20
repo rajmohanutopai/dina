@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"testing"
 
@@ -85,5 +86,129 @@ func TestInjectUserOrigin_AmbiguousAgentDID(t *testing.T) {
 	got, _ := r.Context().Value(middleware.UserOriginatedKey).(bool)
 	if got {
 		t.Error("should NOT set UserOriginatedKey when X-Agent-DID is present")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// FC1 — KV key blocklist for device-scoped callers
+// ---------------------------------------------------------------------------
+
+func TestFC1_DeviceBlockedFromUserSettings(t *testing.T) {
+	// Device caller requesting user_settings → blocked
+	r := httptest.NewRequest("GET", "/v1/vault/kv/user_settings", nil)
+	ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "agent")
+	r = r.WithContext(ctx)
+
+	if !kvBlockedForDevice(r, "user_settings") {
+		t.Error("FC1: device must be blocked from user_settings KV key")
+	}
+}
+
+func TestFC1_DeviceBlockedFromAdminPrefixKeys(t *testing.T) {
+	for _, key := range []string{"admin:config", "admin:secrets"} {
+		r := httptest.NewRequest("GET", "/v1/vault/kv/"+key, nil)
+		ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "agent")
+		r = r.WithContext(ctx)
+
+		if !kvBlockedForDevice(r, key) {
+			t.Errorf("FC1: device must be blocked from %q KV key", key)
+		}
+	}
+}
+
+func TestFC1_DeviceAllowedOnSafeKeys(t *testing.T) {
+	for _, key := range []string{"approval:apr-001", "scratchpad:task-1", "session:state"} {
+		r := httptest.NewRequest("GET", "/v1/vault/kv/"+key, nil)
+		ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "agent")
+		r = r.WithContext(ctx)
+
+		if kvBlockedForDevice(r, key) {
+			t.Errorf("FC1: device should NOT be blocked from %q KV key", key)
+		}
+	}
+}
+
+func TestFC1_AdminNotBlockedFromUserSettings(t *testing.T) {
+	// Admin/brain caller → NOT blocked
+	for _, caller := range []string{"", "brain"} {
+		r := httptest.NewRequest("GET", "/v1/vault/kv/user_settings", nil)
+		if caller != "" {
+			ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, caller)
+			r = r.WithContext(ctx)
+		}
+
+		if kvBlockedForDevice(r, "user_settings") {
+			t.Errorf("FC1: caller=%q should NOT be blocked from user_settings", caller)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GH6 — clientError JSON injection prevention
+// ---------------------------------------------------------------------------
+
+func TestGH6_ClientErrorEscapesQuotes(t *testing.T) {
+	rec := httptest.NewRecorder()
+	clientError(rec, `msg with "quotes" and \backslash`, 400, nil)
+
+	body := rec.Body.String()
+	// Must be valid JSON — json.Unmarshal should succeed.
+	var parsed map[string]string
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatalf("GH6: clientError produced invalid JSON: %v\nbody: %s", err, body)
+	}
+	if parsed["error"] != `msg with "quotes" and \backslash` {
+		t.Errorf("GH6: error message not preserved: got %q", parsed["error"])
+	}
+}
+
+func TestGH6_ClientErrorEscapesControlChars(t *testing.T) {
+	rec := httptest.NewRecorder()
+	clientError(rec, "line1\nline2\ttab", 500, nil)
+
+	var parsed map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("GH6: clientError produced invalid JSON with control chars: %v", err)
+	}
+	if parsed["error"] != "line1\nline2\ttab" {
+		t.Errorf("GH6: control chars not preserved: got %q", parsed["error"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GH11 — Import path traversal validation
+// ---------------------------------------------------------------------------
+
+func TestGH11_ImportPathTraversalBlocked(t *testing.T) {
+	h := &ExportHandler{ExportBaseDir: "/tmp/dina-exports"}
+
+	// Path traversal via ".." rejected.
+	_, err := h.validateImportPath("../../etc/passwd")
+	if err == nil {
+		t.Fatal("GH11: path traversal with .. must be rejected")
+	}
+
+	// Absolute path outside base dir rejected.
+	_, err = h.validateImportPath("/etc/passwd")
+	if err == nil {
+		t.Fatal("GH11: absolute path outside base must be rejected")
+	}
+
+	// Absolute path inside base dir accepted.
+	safe, err := h.validateImportPath("/tmp/dina-exports/backup.tar.gz")
+	if err != nil {
+		t.Fatalf("GH11: valid absolute path rejected: %v", err)
+	}
+	if safe != "/tmp/dina-exports/backup.tar.gz" {
+		t.Errorf("GH11: got %q, want /tmp/dina-exports/backup.tar.gz", safe)
+	}
+
+	// Relative path resolved within base.
+	safe, err = h.validateImportPath("backup.tar.gz")
+	if err != nil {
+		t.Fatalf("GH11: valid relative path rejected: %v", err)
+	}
+	if safe != "/tmp/dina-exports/backup.tar.gz" {
+		t.Errorf("GH11: got %q, want /tmp/dina-exports/backup.tar.gz", safe)
 	}
 }

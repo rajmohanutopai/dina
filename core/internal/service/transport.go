@@ -20,6 +20,28 @@ import (
 // ed25519MulticodecPrefix is the multicodec prefix for Ed25519 public keys (0xed, 0x01).
 var ed25519MulticodecPrefix = []byte{0xed, 0x01}
 
+// verifyWithAnyKey attempts Ed25519 signature verification against ALL
+// verification methods in a DID document. Returns true if any key validates.
+// F02: Previously only VerificationMethod[0] was checked, breaking after key rotation.
+func (s *TransportService) verifyWithAnyKey(
+	doc *domain.DIDDocument, plaintext, sigBytes []byte,
+) (bool, error) {
+	if s.verifier == nil {
+		return false, fmt.Errorf("signature verifier not configured")
+	}
+	for _, vm := range doc.VerificationMethod {
+		pubKey, err := decodeMultibase(vm.PublicKeyMultibase)
+		if err != nil {
+			continue // skip invalid keys, try next
+		}
+		valid, verErr := s.verifier.Verify(pubKey, plaintext, sigBytes)
+		if verErr == nil && valid {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // decodeMultibase decodes a multibase-encoded Ed25519 public key.
 // Strict format: z + base58btc(0xed01 + 32-byte-pubkey).
 func decodeMultibase(multibaseKey string) ([]byte, error) {
@@ -71,6 +93,8 @@ type TransportService struct {
 	inboundMsgs   []domain.DinaMessage
 
 	// SEC-HIGH-08: replay cache for inbound message dedup.
+	// F03: Bounded to maxReplayCacheSize entries. When exceeded, oldest
+	// entries are evicted to prevent unbounded memory growth under DDoS.
 	replayMu    sync.Mutex
 	replayCache map[string]int64 // key: "senderDID|msgID" -> Unix timestamp
 
@@ -266,6 +290,10 @@ func (s *TransportService) ReceiveMessage(ctx context.Context, envelope domain.D
 	if err := json.Unmarshal(plaintext, &msg); err != nil {
 		return nil, fmt.Errorf("transport: unmarshal message: %w", err)
 	}
+	// DM2: Reject oversized message bodies at domain level.
+	if err := msg.ValidateBody(); err != nil {
+		return nil, fmt.Errorf("transport: %w", err)
+	}
 
 	// Resolve the sender's DID to verify their signature.
 	senderDID, err := domain.NewDID(msg.From)
@@ -282,24 +310,16 @@ func (s *TransportService) ReceiveMessage(ctx context.Context, envelope domain.D
 		return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
 	}
 
-	if s.verifier == nil {
-		return nil, fmt.Errorf("transport: signature verifier not configured")
-	}
 	if envelope.Sig == "" {
 		return nil, fmt.Errorf("transport: %w: missing signature", domain.ErrInvalidSignature)
 	}
 
-	// Verify the sender's Ed25519 signature over the plaintext.
-	senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
-	senderPubKey, decErr := decodeMultibase(senderMultibase)
-	if decErr != nil {
-		return nil, fmt.Errorf("transport: decode sender public key: %w", decErr)
-	}
+	// F02: Verify against ALL keys in the DID document (supports key rotation).
 	sigBytes, sigErr := hex.DecodeString(envelope.Sig)
 	if sigErr != nil {
 		return nil, fmt.Errorf("transport: decode signature hex: %w", sigErr)
 	}
-	valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
+	valid, verErr := s.verifyWithAnyKey(senderDoc, plaintext, sigBytes)
 	if verErr != nil || !valid {
 		return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
 	}
@@ -442,6 +462,10 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 	if err := json.Unmarshal(plaintext, &msg); err != nil {
 		return nil, fmt.Errorf("transport: unmarshal inbound: %w", err)
 	}
+	// DM2: Reject oversized message bodies at domain level.
+	if err := msg.ValidateBody(); err != nil {
+		return nil, fmt.Errorf("transport: %w", err)
+	}
 
 	// Verify the sender's signature.
 	sigBytes, sigErr := hex.DecodeString(sigHex)
@@ -464,14 +488,8 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 		return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
 	}
 
-	// Decode the sender's public key from the DID document.
-	senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
-	senderPubKey, decErr := decodeMultibase(senderMultibase)
-	if decErr != nil {
-		return nil, fmt.Errorf("transport: decode sender public key: %w", decErr)
-	}
-
-	valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
+	// F02: Verify against ALL keys in the DID document (supports key rotation).
+	valid, verErr := s.verifyWithAnyKey(senderDoc, plaintext, sigBytes)
 	if verErr != nil || !valid {
 		return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
 	}
@@ -485,6 +503,10 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 			return nil, fmt.Errorf("transport: %w: duplicate (sender=%s, id=%s)", domain.ErrReplayDetected, msg.From, msg.ID)
 		}
 		now := s.clock.Now().Unix()
+		// F03: Evict oldest entries when cache exceeds max size.
+		if len(s.replayCache) >= maxReplayCacheSize {
+			s.evictOldestReplayEntries(now)
+		}
 		s.replayCache[replayKey] = now
 		s.replayMu.Unlock()
 	}
@@ -543,8 +565,56 @@ func (s *TransportService) PurgeReplayCache(maxAge time.Duration) int {
 	return purged
 }
 
+// evictOldestReplayEntries removes the oldest quarter of replay cache entries.
+// Called when the cache hits maxReplayCacheSize. Caller must hold replayMu.
+func (s *TransportService) evictOldestReplayEntries(now int64) {
+	// Find the oldest 25% of entries by timestamp and remove them.
+	// Under sustained DDoS this runs once per ~25K messages — O(n) is acceptable.
+	if len(s.replayCache) == 0 {
+		return
+	}
+	// Collect timestamps to find the 25th percentile cutoff.
+	target := len(s.replayCache) / 4
+	if target < 1 {
+		target = 1
+	}
+	// Simple approach: find the oldest entries by scanning once.
+	oldest := now
+	for _, ts := range s.replayCache {
+		if ts < oldest {
+			oldest = ts
+		}
+	}
+	// Evict everything in the oldest quarter of the time range.
+	cutoff := oldest + (now-oldest)/4
+	evicted := 0
+	for key, ts := range s.replayCache {
+		if ts <= cutoff {
+			delete(s.replayCache, key)
+			evicted++
+		}
+		if evicted >= target {
+			break
+		}
+	}
+	slog.Info("transport: replay cache eviction", "evicted", evicted, "remaining", len(s.replayCache))
+}
+
+// ReplayCacheSize returns the current number of entries in the replay cache.
+// Exposed for testing and observability.
+func (s *TransportService) ReplayCacheSize() int {
+	s.replayMu.Lock()
+	defer s.replayMu.Unlock()
+	return len(s.replayCache)
+}
+
 // maxInboundMessages is the hard cap on in-memory inbound messages (SEC-MED-09).
 const maxInboundMessages = 10000
+
+// maxReplayCacheSize is the hard cap on replay cache entries (F03).
+// Under DDoS with unique sender+msgID pairs, memory is bounded to
+// ~100K entries × ~80 bytes/entry ≈ 8 MB.
+const maxReplayCacheSize = 100_000
 
 // StoreInbound adds a decrypted message to the in-memory inbox.
 // SEC-MED-09: Enforces a hard cap to prevent unbounded memory growth.

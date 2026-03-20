@@ -184,7 +184,8 @@ class StagingProcessor:
 
                 # Only extract reminders when content was actually stored.
                 # pending_unlock means the persona is locked — no vault item exists yet.
-                if resolve_status == "stored" and self._event_extractor is not None:
+                # "resolved" is the GH10 status (O(n) scan removed); treat as stored.
+                if resolve_status in ("stored", "resolved") and self._event_extractor is not None:
                     try:
                         await self._event_extractor.extract_and_create(
                             item_dict, personas[0], vault_item_id=f"stg-{item_id}",

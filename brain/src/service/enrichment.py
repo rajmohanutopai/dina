@@ -63,10 +63,16 @@ class EnrichmentService:
         Name of the embedding model (for enrichment_version tracking).
     """
 
-    def __init__(self, core: Any, llm: Any, embed_model: str = "default") -> None:
+    def __init__(
+        self, core: Any, llm: Any,
+        embed_model: str = "default",
+        entity_vault: Any = None,
+    ) -> None:
         self._core = core
         self._llm = llm
         self._embed_model = embed_model
+        # FC2: PII scrubber for cloud-bound enrichment prompts.
+        self._entity_vault = entity_vault
 
     async def enrich_raw(self, item_dict: dict) -> dict:
         """Enrich a classified item dict before vault publication.
@@ -103,10 +109,27 @@ class EnrichmentService:
         # Use body for LLM input; fall back to summary for summary-only
         # items (calendar events, dead references, short notes).
         llm_input = body or summary
+        llm_summary = summary
+
+        # FC2: Scrub PII before sending to cloud LLM. The L0/L1 output
+        # is a summary — it doesn't contain raw PII, so no rehydration
+        # is needed. If scrubbing fails, enrichment fails (fail-closed).
+        if llm_input and self._entity_vault is not None:
+            try:
+                scrubbed_input, _ = await self._entity_vault.scrub(llm_input)
+                llm_input = scrubbed_input
+                if summary:
+                    scrubbed_summary, _ = await self._entity_vault.scrub(summary)
+                    llm_summary = scrubbed_summary
+            except Exception as exc:
+                raise RuntimeError(
+                    f"enrichment: PII scrub failed — refusing to send raw content to cloud LLM: {exc}"
+                ) from exc
+
         l1 = ""
         if llm_input:
             l0_llm, l1 = await self._generate_l0_l1_llm(
-                item_type, source, sender, summary, llm_input,
+                item_type, source, sender, llm_summary, llm_input,
                 sender_trust, confidence,
             )
             if not l0 or len(l0) < 10:

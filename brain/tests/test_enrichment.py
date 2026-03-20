@@ -456,3 +456,96 @@ async def test_enrich_pending_empty_results():
     svc = EnrichmentService(core=core, llm=AsyncMock())
     count = await svc.enrich_pending("general")
     assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# FC2 — PII scrubbing before cloud LLM calls
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-815
+@pytest.mark.asyncio
+async def test_fc2_enrichment_scrubs_pii_before_cloud_llm():
+    """FC2: EnrichmentService must scrub PII before sending to cloud LLM.
+
+    The entity_vault.scrub() is called on body+summary before LLM call.
+    """
+    entity_vault = AsyncMock()
+    entity_vault.scrub.return_value = ("[PERSON_1] has high blood pressure", {})
+
+    llm = AsyncMock()
+    llm.route.return_value = {
+        "content": json.dumps({
+            "l0": "Health context from [PERSON_1]",
+            "l1": "Patient note about blood pressure management.",
+        }),
+        "model": "test",
+    }
+
+    svc = EnrichmentService(
+        core=AsyncMock(), llm=llm, entity_vault=entity_vault,
+    )
+
+    item = {
+        "type": "health_context",
+        "source": "gmail",
+        "sender": "dr.sharma@clinic.com",
+        "summary": "Dr. Sharma: blood pressure results",
+        "body_text": "Dr. Sharma reports that Mr. Rajesh has high blood pressure",
+        "sender_trust": "contact_ring1",
+        "confidence": "high",
+    }
+
+    result = await svc.enrich_raw(item)
+    assert result["enrichment_status"] == "ready"
+
+    # Entity vault must have been called to scrub body + summary.
+    assert entity_vault.scrub.await_count == 2
+
+
+# TST-BRAIN-816
+@pytest.mark.asyncio
+async def test_fc2_enrichment_fails_if_scrub_fails():
+    """FC2: If PII scrubbing fails, enrichment must fail (fail-closed)."""
+    entity_vault = AsyncMock()
+    entity_vault.scrub.side_effect = RuntimeError("spaCy model not loaded")
+
+    llm = AsyncMock()
+    svc = EnrichmentService(
+        core=AsyncMock(), llm=llm, entity_vault=entity_vault,
+    )
+
+    item = {
+        "type": "note",
+        "summary": "Personal note",
+        "body_text": "My SSN is 123-45-6789",
+    }
+
+    with pytest.raises(RuntimeError, match="PII scrub failed"):
+        await svc.enrich_raw(item)
+
+    # LLM must NOT have been called.
+    llm.route.assert_not_awaited()
+
+
+# TST-BRAIN-817
+@pytest.mark.asyncio
+async def test_fc2_enrichment_no_scrub_when_no_entity_vault():
+    """Without entity_vault, enrichment proceeds (backward-compatible for local LLM)."""
+    llm = AsyncMock()
+    llm.route.return_value = {
+        "content": json.dumps({"l0": "Note", "l1": "Summary of note."}),
+        "model": "local",
+    }
+
+    svc = EnrichmentService(core=AsyncMock(), llm=llm)  # no entity_vault
+
+    item = {
+        "type": "note",
+        "summary": "A note",
+        "body_text": "Some content",
+    }
+
+    result = await svc.enrich_raw(item)
+    assert result["enrichment_status"] == "ready"
+    llm.route.assert_awaited_once()

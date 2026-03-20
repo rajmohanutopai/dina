@@ -187,11 +187,12 @@ async def test_fix_19_2_3_open_persona_scrubbed_when_cloud_exists():
 
 # TST-BRAIN-681
 def test_rehydrate_bare_faker_name():
-    """Rehydrate matches bare Faker values when LLM strips <<PII:…>> delimiters.
+    """F08: Rehydrate only matches exact vault keys — not bare inner values.
 
-    Regression test for Story 02 (Sancho Moment): the scrubber replaces
-    "Sancho" with <<PII:Owensstad>>, the LLM strips the delimiters and
-    outputs "Owensstad" bare.  Rehydration must still restore "Sancho".
+    Updated from the original test that validated bare-value matching.
+    F08 fix: bare matching is a PII cross-contamination risk when the LLM
+    hallucinates a string that matches a bare token value. Only exact
+    vault keys (full token format) should be replaced.
     """
     from src.service.entity_vault import EntityVaultService
 
@@ -202,17 +203,21 @@ def test_rehydrate_bare_faker_name():
         "<<PII:Garrett>>": "Alonso",
     }
 
-    # Best case: LLM preserves delimiters.
+    # Full token: LLM preserves delimiters → replaced correctly.
     text_delimited = "<<PII:Owensstad>> is on his way to <<PII:Garrett>>'s place."
     assert ev.rehydrate(text_delimited, vault) == "Sancho is on his way to Alonso's place."
 
-    # Regression case: LLM strips delimiters, outputs bare Faker names.
+    # F08: Bare values must NOT be replaced (hallucination risk).
     text_bare = "Owensstad is on his way to Garrett's place."
-    assert ev.rehydrate(text_bare, vault) == "Sancho is on his way to Alonso's place."
+    rehydrated = ev.rehydrate(text_bare, vault)
+    assert rehydrated == text_bare  # unchanged — bare values are not vault keys
+    assert "Sancho" not in rehydrated
 
-    # Mixed: one delimited, one bare.
+    # Mixed: only the delimited token is replaced.
     text_mixed = "<<PII:Owensstad>> is visiting Garrett."
-    assert ev.rehydrate(text_mixed, vault) == "Sancho is visiting Alonso."
+    rehydrated_mixed = ev.rehydrate(text_mixed, vault)
+    assert "Sancho" in rehydrated_mixed    # full token replaced
+    assert "Garrett" in rehydrated_mixed   # bare value NOT replaced
 
 
 # TST-BRAIN-682

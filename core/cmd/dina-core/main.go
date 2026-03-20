@@ -1225,7 +1225,8 @@ func main() {
 	mux.HandleFunc("/v1/reason/", reasonH.HandleReasonResult)     // POST /v1/reason/{id}/result (Brain callback)
 
 	// Admin proxy
-	mux.HandleFunc("/admin/sync-status", adminH.HandleSyncStatus)
+	// CXH6: sync-status moved to /v1/ prefix so it goes through auth middleware.
+	mux.HandleFunc("/v1/admin/sync-status", adminH.HandleSyncStatus)
 	mux.HandleFunc("/admin/", adminH.HandleAdmin)
 
 	// Export/Import API

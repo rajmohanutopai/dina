@@ -103,8 +103,13 @@ func (q *TaskQueue) Dequeue(_ context.Context) (*Task, error) {
 
 	bestIdx := -1
 	bestPriority := -1
+	now := time.Now().Unix()
 	for i := range q.tasks {
 		if q.tasks[i].Status == "pending" {
+			// OT2: Respect retry backoff — skip tasks whose NextRetry is in the future.
+			if q.tasks[i].NextRetry > 0 && q.tasks[i].NextRetry > now {
+				continue
+			}
 			if q.tasks[i].Priority > bestPriority {
 				bestPriority = q.tasks[i].Priority
 				bestIdx = i
@@ -118,8 +123,6 @@ func (q *TaskQueue) Dequeue(_ context.Context) (*Task, error) {
 	if bestIdx < 0 {
 		return nil, nil
 	}
-
-	now := time.Now().Unix()
 
 	// Move only the best task to in-flight.
 	q.tasks[bestIdx].Status = "running"

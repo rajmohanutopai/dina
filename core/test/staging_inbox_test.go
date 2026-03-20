@@ -3,13 +3,20 @@ package test
 import (
 	"context"
 	"fmt"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/sqlite"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/handler"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -683,4 +690,254 @@ func TestStagingInbox_Phase4_AdminVaultStoreAllowed(t *testing.T) {
 	testutil.RequireTrue(t,
 		checker.AllowedForTokenKind(kind, "/v1/vault/store", scope),
 		"admin should be allowed on /v1/vault/store")
+}
+
+// --------------------------------------------------------------------------
+// 18. TestCXH1_DeviceCannotSelfApprove — CXH1: device-scoped tokens
+//     can list approvals (GET /v1/approvals) but CANNOT approve or deny
+//     (POST /v1/approvals/{id}/approve or /deny).
+// --------------------------------------------------------------------------
+
+func TestCXH1_DeviceCannotSelfApprove(t *testing.T) {
+	checker := auth.NewAdminEndpointChecker()
+
+	kind := "client"
+	scope := "device"
+
+	// Device CAN list approvals (exact match on /v1/approvals).
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/v1/approvals", scope),
+		"device should be allowed to LIST approvals at /v1/approvals")
+
+	// Device MUST NOT access /v1/approvals/{id}/approve.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/approvals/apr-001/approve", scope),
+		"CXH1: device must NOT be able to approve requests")
+
+	// Device MUST NOT access /v1/approvals/{id}/deny.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/approvals/apr-001/deny", scope),
+		"CXH1: device must NOT be able to deny requests")
+
+	// Device MUST NOT access any sub-path under /v1/approvals/.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/approvals/anything", scope),
+		"CXH1: device must NOT match /v1/approvals/ prefix")
+
+	// Admin CAN approve.
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/v1/approvals/apr-001/approve", "admin"),
+		"admin should be able to approve requests")
+}
+
+// --------------------------------------------------------------------------
+// 19. TestCXH1_ApprovalHandlerRejectsMalformedJSON — empty or malformed
+//     body to approve endpoint returns 400, not silent default approval.
+// --------------------------------------------------------------------------
+
+func TestCXH1_ApprovalHandlerRejectsMalformedJSON(t *testing.T) {
+	h := &handler.ApprovalHandler{Persona: &handler.PersonaHandler{}}
+
+	// Empty body → 400 (not silent default)
+	r := httptest.NewRequest(http.MethodPost, "/v1/approvals/apr-001/approve",
+		strings.NewReader(""))
+	rec := httptest.NewRecorder()
+	h.HandleApprove(rec, r)
+	testutil.RequireEqual(t, rec.Code, http.StatusBadRequest)
+
+	// Malformed JSON → 400
+	r = httptest.NewRequest(http.MethodPost, "/v1/approvals/apr-001/approve",
+		strings.NewReader("{invalid json"))
+	rec = httptest.NewRecorder()
+	h.HandleApprove(rec, r)
+	testutil.RequireEqual(t, rec.Code, http.StatusBadRequest)
+}
+
+// --------------------------------------------------------------------------
+// 20. TestCXH1_ApprovalHandlerBlocksDeviceCaller — handler-level defense
+//     in depth: even if auth middleware is bypassed, the handler blocks
+//     device-scoped callers from approve/deny.
+// --------------------------------------------------------------------------
+
+func TestCXH1_ApprovalHandlerBlocksDeviceCaller(t *testing.T) {
+	h := &handler.ApprovalHandler{Persona: &handler.PersonaHandler{}}
+
+	// Device caller → 403 on approve
+	r := httptest.NewRequest(http.MethodPost, "/v1/approvals/apr-001/approve",
+		strings.NewReader(`{"scope":"session"}`))
+	ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "agent")
+	r = r.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	h.HandleApprove(rec, r)
+	testutil.RequireEqual(t, rec.Code, http.StatusForbidden)
+
+	// Device caller → 403 on deny
+	r = httptest.NewRequest(http.MethodPost, "/v1/approvals/apr-001/deny",
+		strings.NewReader("{}"))
+	ctx = context.WithValue(r.Context(), middleware.CallerTypeKey, "agent")
+	r = r.WithContext(ctx)
+	rec = httptest.NewRecorder()
+	h.HandleDeny(rec, r)
+	testutil.RequireEqual(t, rec.Code, http.StatusForbidden)
+}
+
+// --------------------------------------------------------------------------
+// 21. TestFH1_DeviceCannotAppendAudit — FH1: device-scoped clients can
+//     read audit (GET /v1/audit/query) but CANNOT write (POST /v1/audit/append).
+// --------------------------------------------------------------------------
+
+func TestFH1_DeviceCannotAppendAudit(t *testing.T) {
+	checker := auth.NewAdminEndpointChecker()
+	kind := "client"
+	scope := "device"
+
+	// Device CAN read audit via /v1/audit/query.
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/v1/audit/query", scope),
+		"device should be allowed to query audit log")
+
+	// Device MUST NOT write audit via /v1/audit/append.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/audit/append", scope),
+		"FH1: device must NOT be able to append to audit log")
+
+	// Device MUST NOT match /v1/audit prefix broadly.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/audit/anything", scope),
+		"FH1: device must NOT match arbitrary /v1/audit sub-paths")
+}
+
+// --------------------------------------------------------------------------
+// 22. TestCXH3_DeviceCannotPushNotifications — CXH3: device-scoped clients
+//     cannot access /v1/notify. Only Brain should push notifications.
+// --------------------------------------------------------------------------
+
+func TestCXH3_DeviceCannotPushNotifications(t *testing.T) {
+	checker := auth.NewAdminEndpointChecker()
+	kind := "client"
+	scope := "device"
+
+	// Device MUST NOT access /v1/notify.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/notify", scope),
+		"CXH3: device must NOT be able to push notifications")
+
+	// Brain SHOULD still access /v1/notify.
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind("service", "/v1/notify", "brain"),
+		"brain should be allowed to push notifications")
+}
+
+// --------------------------------------------------------------------------
+// 23. TestFH3_BrainCannotCreatePersonas — FH3: Brain service key can list
+//     personas (GET /v1/personas) but the handler blocks POST (create).
+// --------------------------------------------------------------------------
+
+func TestFH3_BrainCannotCreatePersonas(t *testing.T) {
+	// Auth layer: Brain IS allowed on /v1/personas (prefix match — needed for list).
+	checker := auth.NewAdminEndpointChecker()
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind("service", "/v1/personas", "brain"),
+		"brain should reach /v1/personas (GET list is allowed)")
+
+	// Handler layer: POST with Brain service identity → 403.
+	h := &handler.PersonaHandler{}
+	r := httptest.NewRequest(http.MethodPost, "/v1/personas",
+		strings.NewReader(`{"name":"evil","tier":"default","passphrase":"test1234"}`))
+	ctx := context.WithValue(r.Context(), middleware.TokenKindKey, "service")
+	ctx = context.WithValue(ctx, middleware.ServiceIDKey, "brain")
+	r = r.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.HandleCreatePersona(rec, r)
+	testutil.RequireEqual(t, rec.Code, http.StatusForbidden)
+
+	// Verify the auth allowlist lets Brain reach the route (so it can GET list).
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind("service", "/v1/personas", "brain"),
+		"Brain must be able to reach /v1/personas for GET list")
+}
+
+// --------------------------------------------------------------------------
+// 24. TestCXH6_SyncStatusRequiresAuth — CXH6: /v1/admin/sync-status
+//     requires auth (admin-only), device-scoped tokens are blocked.
+// --------------------------------------------------------------------------
+
+func TestCXH6_SyncStatusRequiresAuth(t *testing.T) {
+	checker := auth.NewAdminEndpointChecker()
+
+	// Admin CAN access /v1/admin/sync-status.
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind("client", "/v1/admin/sync-status", "admin"),
+		"CXH6: admin should be allowed on /v1/admin/sync-status")
+
+	// Device MUST NOT access /v1/admin/sync-status.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind("client", "/v1/admin/sync-status", "device"),
+		"CXH6: device must NOT access /v1/admin/sync-status")
+
+	// Brain MUST NOT access /v1/admin/sync-status (it's in Brain denied list).
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind("service", "/v1/admin/sync-status", "brain"),
+		"CXH6: brain must NOT access /v1/admin/sync-status")
+}
+
+// --------------------------------------------------------------------------
+// 25. TestCXH6_SyncStatusNoProxyURL — response must NOT expose internal URL.
+// --------------------------------------------------------------------------
+
+func TestCXH6_SyncStatusNoProxyURL(t *testing.T) {
+	h := &handler.AdminHandler{ProxyURL: "http://brain:8200"}
+	r := httptest.NewRequest(http.MethodGet, "/v1/admin/sync-status", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleSyncStatus(rec, r)
+
+	testutil.RequireEqual(t, rec.Code, http.StatusOK)
+	body := rec.Body.String()
+	// Must NOT contain the internal URL.
+	if strings.Contains(body, "brain:8200") {
+		t.Fatalf("CXH6: response must NOT expose internal proxy URL: %s", body)
+	}
+	if strings.Contains(body, "proxy_target") {
+		t.Fatalf("CXH6: response must NOT contain proxy_target field: %s", body)
+	}
+	// Must contain brain_connected.
+	testutil.RequireContains(t, body, "brain_connected")
+}
+
+// --------------------------------------------------------------------------
+// 26. TestVT3_EmbeddingRejectsNaNInf — VT3: EncodeEmbedding rejects
+//     NaN and Inf values that would corrupt HNSW distance calculations.
+// --------------------------------------------------------------------------
+
+func TestVT3_EmbeddingRejectsNaNInf(t *testing.T) {
+	// Valid embedding should work.
+	valid := make([]float32, 768)
+	for i := range valid {
+		valid[i] = 0.1
+	}
+	_, err := sqlite.EncodeEmbedding(valid)
+	testutil.RequireNoError(t, err)
+
+	// NaN should fail.
+	nanVec := make([]float32, 768)
+	nanVec[42] = float32(math.NaN())
+	_, err = sqlite.EncodeEmbedding(nanVec)
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "NaN")
+
+	// Inf should fail.
+	infVec := make([]float32, 768)
+	infVec[0] = float32(math.Inf(1))
+	_, err = sqlite.EncodeEmbedding(infVec)
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "Inf")
+
+	// Negative Inf should fail.
+	negInfVec := make([]float32, 768)
+	negInfVec[767] = float32(math.Inf(-1))
+	_, err = sqlite.EncodeEmbedding(negInfVec)
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "Inf")
 }

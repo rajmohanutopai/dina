@@ -15,6 +15,13 @@ const (
 	SearchHybrid   SearchMode = "hybrid"
 )
 
+// Search limit bounds (DM3). Handlers should use ClampSearchLimit().
+const (
+	MinSearchLimit     = 1
+	MaxSearchLimit     = 100
+	DefaultSearchLimit = 50
+)
+
 // SearchQuery holds search parameters for vault queries.
 type SearchQuery struct {
 	Mode           SearchMode
@@ -30,6 +37,18 @@ type SearchQuery struct {
 	// Set IncludeAll=true to return everything regardless of retrieval_policy.
 	IncludeAll      bool   // override: return all policies
 	RetrievalPolicy string // filter to a specific policy (e.g. "quarantine")
+}
+
+// ClampSearchLimit enforces [MinSearchLimit, MaxSearchLimit] bounds on a limit value.
+// DM3: Prevents unbounded queries at the domain level.
+func ClampSearchLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultSearchLimit
+	}
+	if limit > MaxSearchLimit {
+		return MaxSearchLimit
+	}
+	return limit
 }
 
 // VaultAuditEntry represents a single entry in the append-only audit log.

@@ -567,11 +567,15 @@ class ReasoningAgent:
         persona_tier:
             Privacy tier for LLM routing.
         entity_vault:
-            Optional ``EntityVaultService`` for PII scrubbing of tool
-            results before they are sent to a cloud LLM.  When provided,
-            every tool result is scrubbed and the accumulated vault
-            mapping is returned in ``result["_tool_vault"]`` so the
-            caller can rehydrate the final response.
+            ``EntityVaultService`` for PII scrubbing of tool results
+            before they are sent to a cloud LLM.  When provided, every
+            tool result is scrubbed and the accumulated vault mapping is
+            returned in ``result["_tool_vault"]`` so the caller can
+            rehydrate the final response.
+
+            **Safety contract (BS3):** Pass ``None`` ONLY when the LLM
+            provider is local (on-device). For cloud providers, entity_vault
+            MUST be provided — otherwise raw vault data flows unscrubbed.
         provider:
             Optional explicit provider name to use for LLM routing
             (e.g. ``"gemini"``, ``"openai"``).  When ``None``, the
@@ -669,9 +673,17 @@ class ReasoningAgent:
 
                 # Scrub PII from tool results before they enter the
                 # message array (which gets sent to the cloud LLM).
+                # BS3: If entity_vault is None, tool results flow unscrubbed.
+                # This is safe ONLY for local LLMs. Log a warning as
+                # defense-in-depth signal for future callers.
                 if entity_vault is not None:
                     tool_result, accumulated_vault = await _scrub_tool_result(
                         entity_vault, tool_result, accumulated_vault,
+                    )
+                elif tool_result and len(str(tool_result)) > 50:
+                    log.debug(
+                        "vault_context.reason.no_entity_vault",
+                        extra={"tool": tc["name"], "result_len": len(str(tool_result))},
                     )
 
                 tool_responses.append({

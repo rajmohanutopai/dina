@@ -105,7 +105,7 @@ func (s *VaultService) Query(ctx context.Context, agentDID string, persona domai
 	// Route hybrid/semantic queries with embeddings through HybridSearch
 	// which merges FTS5 keyword results with HNSW vector similarity.
 	if (q.Mode == domain.SearchHybrid || q.Mode == domain.SearchSemantic) && len(q.Embedding) > 0 {
-		return s.HybridSearch(ctx, persona, q)
+		return s.HybridSearch(ctx, agentDID, persona, q)
 	}
 
 	items, err := s.reader.Query(ctx, persona, q)
@@ -264,9 +264,28 @@ func (s *VaultService) Delete(ctx context.Context, agentDID string, persona doma
 // HybridSearch combines FTS5 full-text search and vector similarity search
 // with a weighted merge (0.4 FTS5 + 0.6 vector) to produce the most relevant results.
 // The query must include both a text query and an embedding vector.
-func (s *VaultService) HybridSearch(ctx context.Context, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error) {
+// F01: agentDID added for gatekeeper authorization (was missing — auth bypass risk).
+func (s *VaultService) HybridSearch(ctx context.Context, agentDID string, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error) {
 	if err := s.ensureOpen(ctx, persona); err != nil {
 		return nil, fmt.Errorf("hybrid search: %w", err)
+	}
+
+	// F01: Gatekeeper authorization check — same as Query().
+	// Without this, a direct call to HybridSearch would bypass access control.
+	if s.gatekeeper != nil {
+		intent := domain.Intent{
+			AgentDID:  agentDID,
+			Action:    domain.ActionVaultRead,
+			Target:    string(persona),
+			PersonaID: string(persona),
+		}
+		decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
+		if err != nil {
+			return nil, fmt.Errorf("hybrid search: gatekeeper evaluation failed: %w", err)
+		}
+		if !decision.Allowed {
+			return nil, fmt.Errorf("hybrid search: %w: %s", domain.ErrForbidden, decision.Reason)
+		}
 	}
 
 	const (

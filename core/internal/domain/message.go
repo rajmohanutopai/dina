@@ -1,5 +1,7 @@
 package domain
 
+import "fmt"
+
 // MessageType classifies a Dina-to-Dina message.
 type MessageType string
 
@@ -29,6 +31,10 @@ var D2DMemoryTypes = map[MessageType]string{
 	"dina/trust/outcome":     "trust_attestation",
 }
 
+// MaxMessageBodySize is the maximum size for a D2D message body (256 KB).
+// DM2: Enforced at domain level — handlers and transport check this limit.
+const MaxMessageBodySize = 256 * 1024
+
 // DinaMessage represents a DIDComm-compatible plaintext message.
 type DinaMessage struct {
 	ID          string      `json:"id"`
@@ -38,6 +44,15 @@ type DinaMessage struct {
 	CreatedTime int64       `json:"created_time"`  // Unix timestamp
 	Body        []byte      `json:"body"`          // JSON payload
 	Quarantined bool        `json:"quarantined"`   // true if sender not in trust cache — flagged for user review
+}
+
+// ValidateBody checks that the message body is within the size limit.
+// DM2: Returns error if body exceeds MaxMessageBodySize.
+func (m *DinaMessage) ValidateBody() error {
+	if len(m.Body) > MaxMessageBodySize {
+		return fmt.Errorf("message body exceeds %d bytes (got %d)", MaxMessageBodySize, len(m.Body))
+	}
+	return nil
 }
 
 // DinaEnvelope represents the encrypted envelope for transport.

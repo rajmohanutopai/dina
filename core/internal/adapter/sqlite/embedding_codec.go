@@ -22,6 +22,10 @@ func EncodeEmbedding(vec []float32) ([]byte, error) {
 	}
 	buf := make([]byte, EmbeddingBlobSize)
 	for i, v := range vec {
+		// VT3: Reject NaN/Inf — these corrupt HNSW distance calculations.
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			return nil, fmt.Errorf("embedding: NaN or Inf at index %d", i)
+		}
 		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(v))
 	}
 	return buf, nil

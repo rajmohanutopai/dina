@@ -124,13 +124,8 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		mode = domain.SearchFTS5
 	}
 
-	// Cap query limit to prevent data exfiltration (§34.2 TST-CORE-1126).
-	// Any limit above maxQueryLimit is silently capped. Zero/negative means "use default".
-	const maxQueryLimit = 100
-	limit := req.Limit
-	if limit > maxQueryLimit {
-		limit = maxQueryLimit
-	}
+	// DM3: Clamp query limit at domain level to prevent data exfiltration.
+	limit := domain.ClampSearchLimit(req.Limit)
 
 	q := domain.SearchQuery{
 		Mode:            mode,
@@ -510,6 +505,21 @@ func HandleClearVault(clearer VaultClearer) http.HandlerFunc {
 	}
 }
 
+// kvBlockedForDevice returns true if the KV key is sensitive and the caller
+// is a device-scoped client. FC1: prevents devices from reading/writing
+// admin secrets (API keys, provider config) stored in KV.
+func kvBlockedForDevice(r *http.Request, key string) bool {
+	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
+	if callerType != "agent" {
+		return false // admin, brain, etc. — allowed
+	}
+	// Blocklist: keys that contain secrets or admin-only config.
+	if key == "user_settings" || strings.HasPrefix(key, "admin:") {
+		return true
+	}
+	return false
+}
+
 // HandlePutKV handles PUT /v1/vault/kv/{key}. It accepts a JSON body with a
 // "value" field and stores the value under the given key. Returns 204 No Content.
 func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
@@ -526,9 +536,17 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// FC1: Block device-scoped callers from writing sensitive KV keys.
+	if kvBlockedForDevice(r, key) {
+		http.Error(w, `{"error":"forbidden","message":"this key is admin-only"}`, http.StatusForbidden)
+		return
+	}
+
+	// GH3: Enforce body size limit (1 MiB) to prevent OOM DoS.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, `{"error":"failed to read body"}`, http.StatusBadRequest)
+		http.Error(w, `{"error":"request body too large or unreadable"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -586,6 +604,12 @@ func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
 	key := path[strings.LastIndex(path, "/")+1:]
 	if key == "" {
 		http.Error(w, `{"error":"missing key"}`, http.StatusBadRequest)
+		return
+	}
+
+	// FC1: Block device-scoped callers from reading sensitive KV keys.
+	if kvBlockedForDevice(r, key) {
+		http.Error(w, `{"error":"forbidden","message":"this key is admin-only"}`, http.StatusForbidden)
 		return
 	}
 

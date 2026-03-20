@@ -323,7 +323,8 @@ _model_set() {
             while true; do
                 printf "  Enter API key: "
                 local api_key
-                read -r api_key
+                read -rs api_key
+                echo  # newline after silent input
                 api_key=$(echo "$api_key" | tr -d '[:space:]')
                 if [ -z "$api_key" ]; then
                     echo -e "  ${RED}Skipped.${RESET} ${prov} models will not work without a key."
@@ -334,8 +335,9 @@ _model_set() {
                 printf "  Validating... "
                 if python3 "$COMPOSE_DIR/scripts/validate_key.py" "$key_env" "$api_key" >/dev/null 2>&1; then
                     echo -e "${GREEN}✓${RESET}"
-                    # Write to .env
+                    # Write to .env and enforce permissions (AC4).
                     echo "${key_env}=${api_key}" >> "$env_file"
+                    chmod 600 "$env_file"
                     echo -e "  ${GREEN}✓${RESET} Saved ${key_env} to .env"
                     changed=true
                     break

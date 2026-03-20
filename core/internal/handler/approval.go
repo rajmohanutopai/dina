@@ -2,8 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 )
 
 // ApprovalHandler provides unified approval endpoints at /v1/approvals/.
@@ -20,9 +23,17 @@ func (h *ApprovalHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleApprove handles POST /v1/approvals/{id}/approve.
 // Extracts the approval ID from the URL path and delegates to PersonaHandler.
+// CXH1: Only admin-scoped callers can approve — devices are blocked.
 func (h *ApprovalHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// CXH1: Block device-scoped callers from approving their own requests.
+	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
+	if callerType == "agent" {
+		http.Error(w, `{"error":"forbidden","message":"approval mutations require admin access"}`, http.StatusForbidden)
 		return
 	}
 
@@ -32,12 +43,16 @@ func (h *ApprovalHandler) HandleApprove(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Read optional scope from body (default: session).
+	// Read scope from body. CXH1: reject malformed JSON — never silently
+	// default to permissive values on parse failure.
 	var body struct {
 		Scope     string `json:"scope"`
 		GrantedBy string `json:"granted_by"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
 	if body.Scope == "" {
 		body.Scope = "session"
 	}
@@ -50,9 +65,17 @@ func (h *ApprovalHandler) HandleApprove(w http.ResponseWriter, r *http.Request) 
 }
 
 // HandleDeny handles POST /v1/approvals/{id}/deny.
+// CXH1: Only admin-scoped callers can deny — devices are blocked.
 func (h *ApprovalHandler) HandleDeny(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// CXH1: Block device-scoped callers from denying requests.
+	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
+	if callerType == "agent" {
+		http.Error(w, `{"error":"forbidden","message":"approval mutations require admin access"}`, http.StatusForbidden)
 		return
 	}
 
@@ -99,7 +122,9 @@ func (h *ApprovalHandler) approveByID(w http.ResponseWriter, r *http.Request, id
 	}
 
 	if err := p.Approvals.ApproveRequest(r.Context(), id, scope, grantedBy); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		// GH4: generic error to caller; details logged server-side.
+		slog.Warn("approval.approve_failed", "id", id, "error", err)
+		http.Error(w, `{"error":"approval not found or already resolved"}`, http.StatusNotFound)
 		return
 	}
 
@@ -119,7 +144,9 @@ func (h *ApprovalHandler) denyByID(w http.ResponseWriter, r *http.Request, id st
 	p := h.Persona
 
 	if err := p.Approvals.DenyRequest(r.Context(), id); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		// GH4: generic error to caller; details logged server-side.
+		slog.Warn("approval.deny_failed", "id", id, "error", err)
+		http.Error(w, `{"error":"approval not found or already resolved"}`, http.StatusNotFound)
 		return
 	}
 

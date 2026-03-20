@@ -93,16 +93,24 @@ CREATE INDEX IF NOT EXISTS idx_dina_tasks_status ON dina_tasks(status, scheduled
 
 -- Reminders: scheduled notifications
 CREATE TABLE IF NOT EXISTS reminders (
-    id            TEXT PRIMARY KEY,
-    message       TEXT NOT NULL,
-    due_at        INTEGER NOT NULL,
-    recurring     TEXT NOT NULL DEFAULT ''
+    id              TEXT PRIMARY KEY,
+    message         TEXT NOT NULL,
+    due_at          INTEGER NOT NULL,
+    recurring       TEXT NOT NULL DEFAULT ''
         CHECK (recurring IN ('','daily','weekly','monthly')),
-    completed     INTEGER NOT NULL DEFAULT 0,
-    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
+    completed       INTEGER NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    source_item_id  TEXT NOT NULL DEFAULT '',
+    source          TEXT NOT NULL DEFAULT '',
+    persona         TEXT NOT NULL DEFAULT '',
+    timezone        TEXT NOT NULL DEFAULT '',
+    kind            TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'pending'
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at) WHERE completed = 0;
+-- VT5: Dedup index — ON CONFLICT DO NOTHING in StoreReminder requires this.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reminders_dedup ON reminders(source_item_id, kind, due_at, persona);
 
 -- Staging inbox: global connector ingestion pipeline
 CREATE TABLE IF NOT EXISTS staging_inbox (

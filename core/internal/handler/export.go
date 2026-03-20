@@ -73,6 +73,39 @@ func (h *ExportHandler) validateExportPath(destPath string) (string, error) {
 	return absPath, nil
 }
 
+// validateImportPath validates an archive path for defense-in-depth against
+// path traversal. GH11: Import path was not validated (export path was).
+// Accepts both absolute paths within the export base dir and relative paths.
+func (h *ExportHandler) validateImportPath(archivePath string) (string, error) {
+	baseDir := h.ExportBaseDir
+	if baseDir == "" {
+		baseDir = "/tmp/dina-exports"
+	}
+
+	// Reject path traversal components.
+	cleaned := filepath.Clean(archivePath)
+	if strings.Contains(cleaned, "..") {
+		return "", fmt.Errorf("path traversal is not allowed")
+	}
+
+	// If absolute, verify it's within the base directory.
+	if filepath.IsAbs(cleaned) {
+		rel, err := filepath.Rel(baseDir, cleaned)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return "", fmt.Errorf("archive path must be within %s", baseDir)
+		}
+		return cleaned, nil
+	}
+
+	// Relative: resolve within base directory.
+	absPath := filepath.Join(baseDir, cleaned)
+	rel, err := filepath.Rel(baseDir, absPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path escapes export base directory")
+	}
+	return absPath, nil
+}
+
 // HandleExport handles POST /v1/export.
 func (h *ExportHandler) HandleExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -162,8 +195,16 @@ func (h *ExportHandler) HandleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// GH11: Validate import archive path — same defense-in-depth as export.
+	safePath, pathErr := h.validateImportPath(req.ArchivePath)
+	if pathErr != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": pathErr.Error()})
+		return
+	}
+
 	result, err := h.Migration.Import(r.Context(), domain.ImportOptions{
-		ArchivePath: req.ArchivePath,
+		ArchivePath: safePath,
 		Passphrase:  req.Passphrase,
 		Force:       req.Force,
 	})

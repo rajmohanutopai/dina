@@ -6,29 +6,51 @@ Reviewer: Claude (Opus 4.6) + OpenAI Codex (gpt-5.4, independent review)
 
 ---
 
+## Codex Triage (2026-03-20, current branch)
+
+This file currently mixes confirmed defects, partial findings, stale findings,
+duplicates, and general refactor notes.
+
+Status labels used below:
+- `[VALID]` = still true in the current code
+- `[PARTIAL]` = underlying issue is real, but the stated exploitability or severity is overstated
+- `[STALE]` = no longer true as written
+- `[DUPLICATE]` = same issue is already captured elsewhere in this file
+
+Unlabelled maintainability/documentation notes were not deeply re-triaged in
+this pass.
+
 ## HIGH Severity (Fix Before Developer Alpha)
 
-### F01. HybridSearch bypasses gatekeeper authorization
+### F01. [PARTIAL] HybridSearch bypasses gatekeeper authorization
+**Status:** Fixed
 **File:** `core/internal/service/vault.go` — `HybridSearch()` method
 **Problem:** Every vault operation (Query, GetItem, Store, StoreBatch, Delete) passes through the gatekeeper's `EvaluateIntent()` check. HybridSearch does NOT. It calls `ensureOpen()` (checks if vault file is unlocked) but skips the authorization check (is this caller allowed to read this persona?). An agent calling hybrid search bypasses all access control.
+**Current analysis:** `HybridSearch()` still skips the gatekeeper check, but the public `Query()` path reaches `HybridSearch()` only after `Query()` has already executed `EvaluateIntent()`. This is a real inconsistency and should be fixed, but the review overstates it as a direct public auth bypass.
 **Fix:** Add the same gatekeeper check from `Query()` (lines 91-103) to `HybridSearch()` before line 268. ~5 lines.
 **Test:** Add integration test: agent with restricted access calls HybridSearch → expects 403.
 
-### F02. D2D signature verification uses only first DID key
+### F02. [VALID] D2D signature verification uses only first DID key
+**Status:** Fixed
 **File:** `core/internal/service/transport.go` — `ProcessInbound()` line 468
 **Problem:** Signature verification checks only `senderDoc.VerificationMethod[0]`. After key rotation, the DID document contains multiple keys. Messages signed with a rotated (non-first) key fail verification. Conversely, an attacker with any historical key material could forge messages.
+**Current analysis:** Confirmed in multiple transport paths. The code resolves only `VerificationMethod[0]` instead of attempting verification against all active methods.
 **Fix:** Iterate all `VerificationMethod` entries, attempt verification with each. Accept if any matches. ~10 lines.
 **Test:** Add test with DID document containing 2 keys; verify message signed with second key is accepted.
 
-### F03. Replay cache unbounded memory growth
+### F03. [VALID] Replay cache unbounded memory growth
+**Status:** Fixed
 **File:** `core/internal/service/transport.go` — replay cache map
 **Problem:** The replay cache (`senderDID|msgID`) grows without limit. Under DDoS (millions of messages from different senders), memory exhaustion is possible. `PurgeReplayCache()` exists but only removes old entries, not caps size.
+**Current analysis:** Confirmed. The replay cache is a plain map with age-based purge only; there is no max-size bound or eviction policy.
 **Fix:** Add max-size cap (e.g., 100,000 entries). When exceeded, evict oldest entries. ~15 lines.
 **Test:** Add test that inserts 100,001 entries and verifies the oldest is evicted.
 
-### F04. Malformed LLM JSON handling (from CEO review T01)
+### F04. [STALE] Malformed LLM JSON handling (from CEO review T01)
+**Status:** Open
 **Files:** `brain/src/adapter/llm_gemini.py`, `llm_claude.py`, `llm_openai.py`, `llm_openrouter.py`, `llm_llama.py`
 **Problem:** Cloud LLMs occasionally return HTTP 200 with garbled body. Unhandled JSONDecodeError/KeyError in the complete() path could crash PII rehydration.
+**Current analysis:** As written, this is stale. The adapter `complete()` paths already wrap parse/runtime failures in broad exception handling and convert them into `LLMError` / `ConfigError`, so the claimed unhandled crash path is no longer accurate.
 **Fix:** Wrap JSON parsing in try/except per adapter, convert to `LLMError("malformed_response")`. ~10 lines per adapter.
 **Test:** Unit test per adapter with garbled response fixture.
 
@@ -36,9 +58,11 @@ Reviewer: Claude (Opus 4.6) + OpenAI Codex (gpt-5.4, independent review)
 
 ## CRITICAL Severity (Fix Immediately)
 
-### CXH1. CRITICAL — Devices can self-approve access requests (Codex handler review)
+### CXH1. [VALID] CRITICAL — Devices can self-approve access requests (Codex handler review)
+**Status:** Fixed
 **Files:** `core/internal/adapter/auth/auth.go:1120,1128`, `core/internal/handler/approval.go:23,40,53`, `core/internal/adapter/identity/identity.go:1370`
 **Problem:** The device allowlist includes `/v1/approvals` as a prefix. This matches not just `GET /v1/approvals` (list) but also `POST /v1/approvals/{id}/approve` and `POST /v1/approvals/{id}/deny`. The approval handler does no caller-type check. Additionally, `approval.go:40` silently ignores JSON decode errors — meaning an empty or malformed body still triggers approval with default scope="session", granted_by="dina-admin". **A paired agent can approve its own persona access request by sending an empty POST to the approve endpoint.** This completely collapses the human approval boundary — the agent never needs human permission.
+**Current analysis:** Confirmed. Device scope still has `/v1/approvals` by prefix, the approve/deny handlers remain exposed under that route family, and the approve path still ignores JSON decode errors and falls back to permissive defaults.
 **Fix:** (1) Remove `/v1/approvals` from device allowlist, or add it as GET-only read path. (2) Make approve/deny admin-only. (3) Return 400 on JSON decode error in approval.go:40 instead of ignoring. (4) Add caller-type check in approval handler.
 **Test:** Negative test: device token POSTs to `/v1/approvals/{id}/approve` → expects 403. Test: empty body POST to approve → expects 400.
 
@@ -46,15 +70,19 @@ Reviewer: Claude (Opus 4.6) + OpenAI Codex (gpt-5.4, independent review)
 
 ## CRITICAL Severity (Found by Codex full-codebase review — Fix Immediately)
 
-### FC1. API keys in KV store readable by any paired device
+### FC1. [VALID] API keys in KV store readable by any paired device
+**Status:** Fixed
 **Files:** `brain/src/dina_admin/routes/settings.py:33-39,92-120`, `core/internal/handler/vault.go:513-620`, `core/internal/adapter/auth/auth.go:1105-1129`
 **Problem:** The admin settings page stores LLM provider API keys (OpenAI, Gemini, Claude, OpenRouter) in the `user_settings` KV entry. Device-scoped clients are explicitly allowed `/v1/vault/kv` in the auth allowlist. This means any paired device (including agents) can read `GET /v1/vault/kv/user_settings` and extract all API keys.
+**Current analysis:** Confirmed. The admin UI strips secrets only on its own response surface, but the underlying `user_settings` KV entry remains readable through Core KV, and device scope is still allowed on `/v1/vault/kv` with no key-level blocklist.
 **Fix:** Either (a) move provider secrets out of general KV into an admin-only secret store, or (b) deny device scope on the `user_settings` KV key specifically, or (c) add a KV key blocklist for device-scoped access. Add authz tests proving device tokens cannot read/write `user_settings`.
 **Test:** Integration test: pair a device, attempt `GET /v1/vault/kv/user_settings` with device token → expects 403.
 
-### FC2. Background enrichment sends raw vault content to cloud LLMs unscrubbed
+### FC2. [VALID] Background enrichment sends raw vault content to cloud LLMs unscrubbed
+**Status:** Fixed
 **Files:** `brain/src/service/enrichment.py:245-259`, `brain/src/service/llm_router.py:104-218`, `brain/src/main.py:568-574`
 **Problem:** The background enrichment loop sends raw `summary` and `body[:4000]` to `LLMRouter.route()`. The router enforces cloud consent for sensitive personas but does NOT enforce PII scrubbing. During the enrichment sweep, raw vault content (including from health personas) can go to cloud LLM providers without passing through the Entity Vault PII pipeline.
+**Current analysis:** Confirmed. The enrichment prompt is built from raw vault content, the sweep runs across sensitive personas, and the router does not enforce scrubbing. The current enrichment call also uses `persona_tier="default"`, which weakens the intended sensitivity gate further.
 **Fix:** Make scrubbing a router-enforced precondition for any non-local provider call. Reject cloud calls unless scrubbed messages are supplied. Add tests for the enrichment/background path with a sensitive persona.
 **Test:** Unit test: enrichment calls route() with health persona content → verify PII scrubbing ran before cloud call.
 
@@ -62,41 +90,55 @@ Reviewer: Claude (Opus 4.6) + OpenAI Codex (gpt-5.4, independent review)
 
 ## HIGH Severity — Codex Additions
 
-### FH1. Device-scoped clients can forge audit entries
+### FH1. [VALID] Device-scoped clients can forge audit entries
+**Status:** Fixed
 **Files:** `core/internal/adapter/auth/auth.go:1119-1130`, `core/internal/handler/audit.go:27-63`
 **Problem:** Device-scoped clients are allowed `/v1/audit` by prefix match, which includes `POST /v1/audit/append`. Paired devices can inject fake audit entries, undermining the tamper-evident audit log.
+**Current analysis:** Confirmed. Device scope is prefix-allowed on `/v1/audit`, and `POST /v1/audit/append` performs a direct append with no extra caller-type guard.
 **Fix:** Split audit read and write authorization. Deny device scope on `/v1/audit/append`. Only admin/brain scope should write audit entries.
 **Test:** Negative test: device token POSTs to `/v1/audit/append` → expects 403.
 
-### FH2. Device-scoped clients can approve/deny approval requests
+### FH2. [DUPLICATE of CXH1] Device-scoped clients can approve/deny approval requests
+**Status:** Fixed
 **Files:** `core/internal/adapter/auth/auth.go:1120-1130`, `core/internal/handler/approval.go:21-130`
 **Problem:** Device-scoped clients can hit `/v1/approvals/*` including approve and deny endpoints. This collapses the human approval boundary — an agent could auto-approve its own access requests.
+**Current analysis:** Same underlying defect as CXH1. Keep one canonical finding and remove the duplicate.
 **Fix:** Make approval mutation (approve/deny) admin-only. Expose read-only approval status to devices separately.
 **Test:** Negative test: device token POSTs to `/v1/approvals/approve` → expects 403.
 
-### FH3. Brain can create personas via allowlisted POST /v1/personas
+### FH3. [VALID] Brain can create personas via allowlisted POST /v1/personas
+**Status:** Fixed
 **Files:** `core/internal/adapter/auth/auth.go:1176-1219`
 **Problem:** Brain's service allowlist includes `/v1/personas`, and that route supports POST (create persona). The architecture docs explicitly state Brain must not own persona management.
+**Current analysis:** Confirmed. Brain service scope is allowlisted on `/v1/personas`, and the route is method-multiplexed for both list and create. There is no method-level restriction here.
 **Fix:** Remove `/v1/personas` POST from Brain's write scope. Add a read-only endpoint if Brain needs to list personas.
 
-### CXH3. Devices can broadcast arbitrary notifications (Codex handler review)
+### CXH3. [VALID] Devices can broadcast arbitrary notifications (Codex handler review)
+**Status:** Fixed
 **Files:** `core/internal/adapter/auth/auth.go:1117,1128`, `core/internal/handler/notify.go:61,128`
 **Problem:** `/v1/notify` is on the device allowlist. The notify handler is Brain-facing push infrastructure (delivers notifications via WebSocket to all connected devices). A compromised paired device can spam or spoof cross-device notifications, including fake fiduciary alerts.
+**Current analysis:** Confirmed. Device scope still includes `/v1/notify`, and the handler broadcasts once a payload with a valid priority is supplied.
 **Fix:** Remove `/v1/notify` from device allowlist. Only Brain should push notifications.
 
-### CXH6. /admin/sync-status is unauthenticated (Codex handler review)
+### CXH6. [VALID] /admin/sync-status is unauthenticated (Codex handler review)
+**Status:** Fixed
 **Files:** `core/internal/middleware/auth.go:90-92`, `core/internal/handler/admin.go:51,58`
 **Problem:** Auth middleware skips all `/admin/*` paths (they're proxied to Brain). But `HandleSyncStatus` is a Core-local handler under `/admin/sync-status`. It runs without auth and exposes Brain connectivity state + internal proxy target URL.
+**Current analysis:** Confirmed. Core bypasses auth for `/admin/*`, and `/admin/sync-status` is served locally by Core with no independent auth check.
 **Fix:** Either move sync-status to a non-admin path (e.g., `/v1/admin/sync-status` with auth) or add explicit auth check in the handler.
 
-### FH4. Core binds all interfaces over plain HTTP by default
+### FH4. [VALID - HARDENING] Core binds all interfaces over plain HTTP by default
+**Status:** Open
 **Files:** `docker-compose.yml:28-29`, `brain/src/dina_admin/routes/login.py:169-187`
 **Problem:** Core is published on `0.0.0.0:8100` over plain HTTP. Admin cookies drop the `Secure` flag when accessed over HTTP. Not safe for anything beyond localhost.
+**Current analysis:** Confirmed as a deployment hardening concern. Compose exposes the port publicly and the admin login route explicitly drops `Secure` when the effective transport is HTTP.
 **Fix:** Bind Core to `127.0.0.1` by default. Require a TLS reverse proxy for non-local access.
 
-### FH5. Admin sessions in process-local dict — breaks on restart
+### FH5. [VALID - LIMITATION] Admin sessions in process-local dict — breaks on restart
+**Status:** Open
 **Files:** `brain/src/dina_admin/routes/login.py:75-87,95-109`
 **Problem:** Admin sessions and CSRF tokens live in a Python dict. Process restart or multi-worker deployment invalidates all sessions.
+**Current analysis:** Confirmed. This is an operational limitation rather than an exploit by itself, but the review comment is materially true.
 **Fix:** For Phase 1 single-worker, enforce `--workers 1`. Document as known limitation. Phase 2: move to signed cookies or shared store.
 
 ---
@@ -104,32 +146,38 @@ Reviewer: Claude (Opus 4.6) + OpenAI Codex (gpt-5.4, independent review)
 ## MEDIUM Severity (Fix Soon After Alpha)
 
 ### F05. Vault authorization gauntlet duplicated 5 times
+**Status:** Open
 **File:** `core/internal/service/vault.go`
 **Problem:** The pattern (AccessPersona → ensureOpen → EvaluateIntent) is copy-pasted across Query, GetItem, Store, StoreBatch, Delete. Any change to the authorization flow must be applied 5 times.
 **Fix:** Extract `ensureAuthorized(ctx, agentDID, persona, action) error` helper. 5 call sites reduced to one-liners.
 
 ### F06. Ed25519→X25519 key conversion duplicated 4 times
+**Status:** Open
 **File:** `core/internal/service/transport.go`
 **Problem:** Key conversion code (decode multibase → strip multicodec → convert Ed25519→X25519) appears in SendMessage, ReceiveMessage, ProcessInbound, and processLegacyInbound.
 **Fix:** Extract `resolveRecipientX25519(did) ([]byte, error)` helper.
 
 ### F07. LLM provider initialization duplicated in main.py
+**Status:** Open
 **File:** `brain/src/main.py`
 **Problem:** Provider initialization pattern (get API key → parse models → instantiate → handle errors → try lite variant) is copy-pasted 4 times (~80 lines each) in both `create_app()` and `reload_llm_providers()`.
 **Fix:** Extract `_init_provider(name, env_keys, default_model_key)` helper. ~160 lines eliminated.
 
 ### F08. Entity Vault token rehydration doesn't validate origin
+**Status:** Fixed
 **File:** `brain/src/service/entity_vault.py`
 **Problem:** `rehydrate()` uses regex replacement. If the LLM hallucinates a token matching the pattern (e.g., `<<PII:John Smith>>`), it gets rehydrated with real PII even though the LLM generated the token, not the scrubber. Cross-contamination risk if fake names collide.
 **Fix:** Maintain a set of valid tokens from the scrub step. In rehydrate(), only replace tokens that exist in the valid set. ~5 lines.
 
 ### F09. PII regex patterns in gatekeeper are incomplete
+**Status:** Open
 **File:** `core/internal/adapter/gatekeeper/gatekeeper.go` lines 79-85
 **Problem:** Email pattern doesn't handle all formats. Phone pattern assumes US format. IP pattern matches invalid ranges (999.999.999.999). No Luhn check for credit cards.
 **Mitigation:** This is Tier 1 (fast heuristic). Tier 2 (spaCy NER) and Tier 3 (LLM) provide defense-in-depth.
 **Fix:** Document as "Tier 1 fast heuristic — not a complete PII detector" in code comments. Optionally improve patterns.
 
 ### F10. Magic strings for trust levels and token kinds
+**Status:** Open
 **Files:** `core/internal/middleware/auth.go`, `core/internal/adapter/gatekeeper/gatekeeper.go`
 **Problem:** Strings like `"brain"`, `"untrusted"`, `"verified"`, `"locked"` are hardcoded throughout. Typo in one location = silent security bypass.
 **Fix:** Create `domain/constants.go` with named constants. Replace all string literals.
@@ -139,21 +187,27 @@ Reviewer: Claude (Opus 4.6) + OpenAI Codex (gpt-5.4, independent review)
 ## LOW Severity (Improve When Convenient)
 
 ### F11. scrubber_presidio.py scrub() and scrub_patterns_only() duplication
+**Status:** Open
 ~180 lines of near-identical logic. Extract common helpers.
 
 ### F12. guardian.py at 4,200 lines
+**Status:** Open
 Approaching threshold for splitting into submodules. Still readable but navigating is becoming harder.
 
 ### F13. Broad except Exception in main.py scrubber loading
+**Status:** Open
 4 instances lose diagnostic detail. Use specific exception types.
 
 ### F14. Middleware chain duplication in main.go
+**Status:** Open
 TCP and socket listeners construct similar middleware chains separately.
 
 ### F15. Config validation runs twice in main.go
+**Status:** Open
 `cfgLoader.Load()` and `cfgLoader.Validate(cfg)` appear to overlap.
 
 ### FL1. docker-compose-release.yml ships with DINA_TEST_MODE=true (Codex)
+**Status:** Open
 **File:** `docker-compose-release.yml:73-80,148-155`
 **Problem:** A release-looking compose file enables test mode and hardcodes deterministic seeds. Someone will cargo-cult this into a real deployment.
 **Fix:** Rename to `docker-compose-test.yml` or move under `tests/`. Remove fixed seeds.
@@ -163,10 +217,15 @@ TCP and socket listeners construct similar middleware chains separately.
 ## Documentation Findings (from CEO Review)
 
 ### D01. ROADMAP.md is stale — most items show "NOT STARTED" for working code
+**Status:** Open
 ### D02. TODO.md is stale — completed items still marked incomplete
+**Status:** Open
 ### D03. CLIENT_TOKEN exists but isn't documented as known Phase 1 limitation
+**Status:** Open
 ### D04. Prompt injection defense gaps not documented in README
+**Status:** Open
 ### D05. No "What Works Today" section in README
+**Status:** Open
 
 ---
 
@@ -188,16 +247,19 @@ TCP and socket listeners construct similar middleware chains separately.
 - Standard Go crypto libraries throughout — no rolling own crypto
 
 ### CR1. MEDIUM — Argon2id iterations=3 is marginal
+**Status:** Open
 **File:** `core/internal/adapter/crypto/argon2.go:12`
 **Problem:** Argon2id with 3 iterations meets OWASP minimum (2) but is at the lower bound for high-security use. GPU-based attacks on passphrase-protected seeds are feasible at this level.
 **Recommendation:** Consider increasing to 4-6 for locked-tier personas. Current value acceptable for Developer Alpha.
 
 ### CR2. LOW — NaCl nonce derivation is non-standard
+**Status:** Open
 **File:** `core/internal/adapter/crypto/nacl.go:73-83`
 **Problem:** Uses SHA-512(ephPub || recipientPub) truncated to 24 bytes instead of standard libsodium nonce derivation. Mathematically sound but not interoperable with standard libsodium implementations.
 **Note:** Documented in code. Acceptable for Dina-internal D2D messaging.
 
 ### CR3. LOW — No explicit key zeroing for long-lived identity keys
+**Status:** Open
 **File:** `core/internal/adapter/crypto/identity_signer.go`
 **Note:** Go runtime limitation — no guaranteed heap erasure on GC. Acceptable for statically-held identity keys.
 
@@ -217,33 +279,45 @@ TCP and socket listeners construct similar middleware chains separately.
 - Exception handler never logs request body — only path and error type
 - Module boundary: Brain routes don't import from dina_admin
 
-### BR1. CRITICAL — pii.py returns original PII values in entities list
+### BR1. [VALID] CRITICAL — pii.py returns original PII values in entities list
+**Status:** Fixed
 **File:** `brain/src/dina_brain/routes/pii.py:94`
 **Problem:** `POST /v1/pii/scrub` returns `ScrubResponse` containing `entities: list[dict]` where each dict includes `{"type": "PERSON", "value": "Dr. Sharma", "token": "[PERSON_1]"}`. The `"value"` key contains the **original PII**. This is returned in the HTTP response to Core. The entire purpose of Tier 2 scrubbing is to prevent PII from leaving the Home Node, but here the original values are sent alongside the scrubbed text.
 **Architectural note:** The entities list is intended for the Entity Vault pattern (in-memory rehydration after LLM call). It should NEVER leave the Brain process via HTTP.
+**Current analysis:** Confirmed. The route returns the scrubber's raw entity payload directly, and the underlying scrubbers do include `{type, value, token}` with original values.
 **Fix:** Either (a) remove `value` from entities in HTTP response (return only `{type, token}`), or (b) don't return entities at all (Brain keeps mapping in-process), or (c) add `include_entities: bool = False` flag defaulting to safe.
 
-### BR2. HIGH — process.py leaks ValueError details in 400 response
+### BR2. [VALID - LOWER SEVERITY] HIGH — process.py leaks ValueError details in 400 response
+**Status:** Fixed
 **File:** `brain/src/dina_brain/routes/process.py:299`
 **Problem:** `except ValueError as exc: raise HTTPException(400, detail=str(exc))` — if guardian raises ValueError("Blocked action: read_vault") or ValueError("Invalid persona: health not found"), the exact error text is returned to Core and potentially forwarded to the client CLI. Leaks internal rejection reasons and data structure names.
+**Current analysis:** Confirmed. The leak is real, though this is better classified as hygiene / information exposure than as a top-tier critical path issue.
 **Fix:** Return generic `"Invalid request"` message; log details server-side only.
 
-### BR3. MEDIUM — reason.py approval error uses dict in HTTPException.detail
+### BR3. [PARTIAL / LOW] MEDIUM — reason.py approval error uses dict in HTTPException.detail
+**Status:** Fixed
 **File:** `brain/src/dina_brain/routes/reason.py:136-141`
 **Problem:** Approval-required errors return `HTTPException(403, detail={dict with persona, approval_id})`. FastAPI serializes dicts in detail, which works but is not the intended pattern. Leaks persona name and approval ID.
+**Current analysis:** Weak as written. The fallback path still uses `HTTPException(detail=dict)`, but this is now a legacy fallback rather than the main approval flow, and returning `approval_id` is intentional product behavior. This is mostly a response-shape cleanliness issue.
 **Fix:** Use `JSONResponse(403, content={structured schema})` instead.
 
-### BR4. MEDIUM — provider field not validated against whitelist
+### BR4. [VALID - DEFENSE IN DEPTH] MEDIUM — provider field not validated against whitelist
+**Status:** Open
 **File:** `brain/src/dina_brain/routes/reason.py:45`
 **Problem:** `provider: str | None` (max_length=50) accepts any string. Could attempt to route to a non-existent or unintended LLM provider.
+**Current analysis:** Confirmed at the route layer. Guardian/router rejects unknown providers later, so this is not an open exploit, but the route does not validate the field against an enum.
 **Fix:** Validate against allowed provider enum or let guardian handle (defense-in-depth: validate in route too).
 
-### BR5. MEDIUM — /v1/process not rate-limited
+### BR5. [VALID] MEDIUM — /v1/process not rate-limited
+**Status:** Fixed
 Only `/v1/reason` and `/v1/pii/scrub` have rate limiting. `/v1/process` accepts unlimited events. Defended by Core's inbound rate limiter, but no Brain-side defense if Core is compromised.
+**Current analysis:** Confirmed. Brain-side middleware currently rate-limits only `/v1/reason` and `/v1/pii/scrub`.
 
-### BR6. LOW — Missing Core key reveals setup state
+### BR6. [VALID - LOW] LOW — Missing Core key reveals setup state
+**Status:** Fixed
 **File:** `brain/src/dina_brain/app.py:181`
 Returns "Service key not configured" instead of generic "Authentication required" — tells caller the key is expected but missing.
+**Current analysis:** Confirmed. Low severity, but true as written.
 
 ---
 
@@ -257,9 +331,11 @@ Returns "Service key not configured" instead of generic "Authentication required
 - **Config:** Secrets isolated in main.go (not config.go). Docker Secret file support. Strict validation. No secrets logged.
 - **Generated types:** oapi-codegen v2.6.0. All enums validated. Timestamps int64 (safe to year 2262+). No drift from spec.
 
-### F04 CONFIRMED — All 5 LLM providers lack explicit JSONDecodeError handling
+### F04 CONFIRMED. [PARTIAL] All 5 LLM providers lack explicit JSONDecodeError handling
+**Status:** Open
 **Files:** `llm_gemini.py:165`, `llm_claude.py:131`, `llm_openai.py:171`, `llm_openrouter.py:165,184`, `llm_llama.py:117,184`
 **Problem confirmed line-by-line:** All 5 call `.json()` or `json.loads()` without explicit `JSONDecodeError` handling. OpenAI (line 171) and OpenRouter (line 184) have **inline `json.loads(arguments)` on function call results** that crash on malformed JSON. All errors fall to generic `except Exception` which masks the root cause as "X API error" instead of "malformed JSON response."
+**Current analysis:** The lack of explicit malformed-JSON classification is real, but the “crash” wording is overstated for current code because these paths are already wrapped by broad exception handling and converted to `LLMError` / `ConfigError`. Keep as an observability / error-taxonomy issue, not as an unhandled-failure claim.
 **Fix:** Wrap `.json()` and `.loads()` calls in `try: ... except json.JSONDecodeError as exc: raise LLMError(f"... returned malformed JSON: {exc}")` in each adapter's complete() method. ~10 lines per adapter.
 
 ### Brain Domain + Ports + Infrastructure — ALL PASS:
@@ -295,23 +371,28 @@ Returns "Service key not configured" instead of generic "Authentication required
 - **Checkpoint pattern** in VaultManager — flushes WAL before export (critical correctness)
 
 ### DM1. MEDIUM — Intent.Action is open string (no enum validation)
+**Status:** Open
 **File:** `core/internal/domain/intent.go`
 **Problem:** `Action: string` accepts any value. Only 3 actions defined in actions.go (vault_read, vault_write, vault_delete). Handlers must validate against allowlist; domain doesn't enforce.
 **Note:** Gatekeeper adapter validates in practice, but no compile-time safety.
 
 ### DM2. LOW — DinaMessage.Body has no size check at domain level
+**Status:** Fixed
 **File:** `core/internal/domain/message.go`
 **Problem:** `Body: []byte` is unbounded. Relies on MaxVaultItemSize (10 MiB) being checked in handlers, not at type construction.
 
 ### DM3. LOW — SearchQuery.Limit is unchecked int
+**Status:** Fixed
 **File:** `core/internal/domain/vault.go`
 **Problem:** No bounds on Limit at domain level. Handler must clamp to [1, 100].
 
 ### PT1. MEDIUM — AgentSessionManager port defined but unimplemented
+**Status:** Open
 **File:** `core/internal/port/session.go`
 **Problem:** 6-method interface (StartSession, EndSession, AddGrant, CheckGrant, etc.) defined but no adapter implements it via `var _` check. Session logic is in PersonaManager, not extracted to a port. Reduces testability of session-scoped access grants.
 
 ### PT2. LOW — 11 port interfaces defined but unimplemented
+**Status:** Open
 Includes: ApprovalManager, BootSequencer, DNDChecker, HealthChecker, MessageSender/Receiver, MigrationSafety, Server, TaskWorker, Verifier. Most are callback types or handler-level logic not yet extracted. Not blocking for Developer Alpha.
 
 ---
@@ -330,15 +411,18 @@ Includes: ApprovalManager, BootSequencer, DNDChecker, HealthChecker, MessageSend
 - **PDS adapters:** Lexicon validation enforces structured objects, URI parsing, range checks. PLC delegation to well-audited indigo library.
 
 ### OT1. MEDIUM — pds.go signature placeholder
+**Status:** Open
 **File:** `core/internal/adapter/pds/pds.go:52`
 **Problem:** `record.Signature = []byte("ed25519-signature-placeholder")` — mock/placeholder code. If used in production, publishes unsigned AT Protocol records.
 **Note:** May be test-only code. PDS signs repo commits via its own hosting key (AT Protocol standard). Core submits content; PDS signs. Verify this file is not used in the production publish path.
 
 ### OT2. LOW — taskqueue retry backoff not enforced
+**Status:** Fixed
 **File:** `core/internal/adapter/taskqueue/taskqueue.go:256`
 **Problem:** `NextRetry` timestamp is set but `Dequeue()` never checks it. Tasks re-enter the queue immediately regardless of backoff delay.
 
 ### OT3. NOTE — Several infrastructure adapters are test stubs
+**Status:** Open
 **Files:** server.go, adminproxy.go, observability.go, onboarding.go, bot.go, sync.go
 **Note:** These files contain in-memory/mock implementations for the test harness (non-CGO builds). They are NOT the production code paths. The real implementations live in the handler/ and service/ layers which have already been reviewed. These stubs implement the port interfaces for testing and are appropriately simplified.
 
@@ -365,19 +449,22 @@ Includes: ApprovalManager, BootSequencer, DNDChecker, HealthChecker, MessageSend
 - **Pre-write ValidateImport** — all checks run before identity.sqlite close (safe rollback)
 - **WAL-aware restore** — removes stale -wal/-shm files before replacing .sqlite
 
-### ID1. CRITICAL — Persona state NOT atomically persisted
+### ID1. [VALID] CRITICAL — Persona state NOT atomically persisted
+**Status:** Fixed
 **File:** `core/internal/adapter/identity/identity.go:890-907`
 **Problem:** `persistState()` uses `os.WriteFile()` directly to the target path — no `.tmp` → `os.Rename()` pattern. If the process crashes during write, the persona state file is truncated/corrupted. This could lose: persona lock/unlock state, active approvals, session grants, and approval history.
 **Contrast:** Pairing adapter (`persist.go:122-129`) correctly uses atomic `.tmp` → `Rename` pattern.
 **Impact:** Power loss or OOM during persist → persona access control state becomes undefined. Personas could be stuck locked or unlocked incorrectly.
 **Fix:** Copy the atomic write pattern from persist.go. Write to `.tmp`, then `os.Rename()`.
 
-### ID2. MEDIUM — DID metadata persist not atomic
+### ID2. [VALID] MEDIUM — DID metadata persist not atomic
+**Status:** Fixed
 **File:** `core/internal/adapter/identity/identity.go:593,664`
 **Problem:** DID document and metadata writes use `os.WriteFile()` directly (same non-atomic pattern as persona state). Less critical than persona state since DID is recoverable from seed, but could still cause corruption on crash.
 **Fix:** Use `.tmp` → `Rename` pattern.
 
-### ID3. LOW — did:web resolver has no HTTPS enforcement
+### ID3. [STALE] LOW — did:web resolver has no HTTPS enforcement
+**Status:** Open
 **File:** `core/internal/adapter/identity/web.go`
 **Note:** Fallback resolver, not primary path. Response bounded to 1 MiB. No HTTPS requirement could allow downgrade attacks, but did:web is not used in production (did:plc is primary).
 
@@ -407,42 +494,50 @@ Includes: ApprovalManager, BootSequencer, DNDChecker, HealthChecker, MessageSend
 - **Caller binding in pending_reason** — CallerDID mismatch returns access denied
 - **Embedding codec endianness consistent** — little-endian encode/decode
 
-### VT1. MEDIUM — PRAGMA table_info() unsanitized table name
+### VT1. [PARTIAL] MEDIUM — PRAGMA table_info() unsanitized table name
+**Status:** Fixed
 **File:** `core/internal/adapter/sqlite/pool.go:435`
 **Problem:** `fmt.Sprintf("PRAGMA table_info(%s)", table)` — table name interpolated without parameterization. Called only from migration code with hardcoded table names ("vault_items", "contacts", etc.), so not exploitable today. But dangerous pattern.
 **Fix:** Whitelist valid table names before interpolation.
 
-### VT2. MEDIUM — HNSW Add() TOCTOU race
+### VT2. [PARTIAL / LOWER SEVERITY] MEDIUM — HNSW Add() TOCTOU race
+**Status:** Open
 **File:** `core/internal/adapter/sqlite/hnsw_index.go:114-122`
 **Problem:** `Add()` reads state under RLock, releases lock, then re-acquires Lock. Between release and re-acquire, Destroy() could free the graph. Practical impact is low (Destroy only called on explicit persona close).
 **Fix:** Acquire exclusive lock before state retrieval.
 
-### VT3. LOW — NaN/Inf not validated in embedding encoder
+### VT3. [VALID] LOW — NaN/Inf not validated in embedding encoder
+**Status:** Fixed
 **File:** `core/internal/adapter/sqlite/embedding_codec.go`
 **Problem:** `EncodeEmbedding()` accepts NaN/Inf float32 values, which could corrupt HNSW distance calculations.
 **Fix:** Pre-encode validation: reject NaN/Inf values.
 
-### VT4. CRITICAL — Audit hash-chain race on concurrent appends
+### VT4. [PARTIAL] CRITICAL — Audit hash-chain race on concurrent appends
+**Status:** Fixed
 **File:** `core/internal/adapter/sqlite/audit.go:95-112`
 **Problem:** `Append()` fetches the last hash, then inserts a new entry in a separate query. Under concurrent appends (mutex protects single goroutine but not external SQL), two entries can share the same `prev_hash`, breaking the chain. Verification (`VerifyChain()`) still detects tampering, but the chain invariant (each entry's prev_hash = previous entry's hash) can be violated.
 **Practical impact:** Low in single-process Core (mutex serializes), but violates the hash-chain contract.
 **Fix:** Use database-level locking (BEGIN EXCLUSIVE) or combine fetch+insert into a single transaction.
 
-### VT5. CRITICAL — Reminders missing unique dedup index
+### VT5. [STALE] CRITICAL — Reminders missing unique dedup index
+**Status:** Fixed
 **File:** `core/internal/adapter/sqlite/reminders.go:37`, schema: `identity_001.sql`
 **Problem:** Code uses `ON CONFLICT DO NOTHING` expecting a unique index on `(source_item_id, kind, due_at, persona)`. The schema only has a non-unique index on `due_at`. SQLite silently ignores `ON CONFLICT` when no matching unique constraint exists. Duplicate reminders can be stored.
 **Fix:** Add to schema: `CREATE UNIQUE INDEX idx_reminders_dedup ON reminders(source_item_id, kind, due_at, persona)`
 
-### VT6. CRITICAL — Staging lease expiry enables double-processing
+### VT6. [VALID] CRITICAL — Staging lease expiry enables double-processing
+**Status:** Fixed
 **File:** `core/internal/adapter/sqlite/staging_inbox.go:118-125,384-387`
 **Problem:** Claim lease defaults to 5 minutes. If Brain classification takes >5 min (slow LLM, network issues), Sweep() reverts the lease to 'received'. Another Brain instance or sweep cycle can re-claim the same item while the first Brain is still processing. No lease extension mechanism exists. Result: item processed twice, potentially stored to vault twice.
 **Fix:** Implement lease extension (Brain extends lease periodically during long-running classification) or increase default lease to 15 minutes.
 
-### VT7. MEDIUM — StoreBatch silently ignores embedding encode errors
+### VT7. [VALID] MEDIUM — StoreBatch silently ignores embedding encode errors
+**Status:** Fixed
 **File:** `core/internal/adapter/sqlite/vault.go:317`
 **Problem:** `embeddingBlob, _ = EncodeEmbedding(item.Embedding)` — error discarded. Compare with Store() which logs the error. Semantic search degrades silently.
 
-### VT8. LOW — DEK copy stored for unused re-key operations
+### VT8. [VALID - HARDENING] LOW — DEK copy stored for unused re-key operations
+**Status:** Open
 **File:** `core/internal/adapter/sqlite/pool.go:104-106`
 DEK copied to `p.deks` map for potential re-key, but no re-key implementation exists. Could be removed to reduce attack surface.
 
@@ -463,13 +558,15 @@ DEK copied to `p.deks` map for potential re-key, but no re-key implementation ex
 - **EU recognizers correct:** French NIR validates gender digit + month (01-12). SWIFT/BIC 8-char requires ≥1 digit to avoid English word false positives. Checksum validation deferred to Phase 2 (documented).
 - **Graceful degradation:** India/EU recognizer registration failure logs warning, Presidio continues with base recognizers.
 
-### BA1. MEDIUM — MCP HTTP client has no authentication
+### BA1. [VALID] MEDIUM — MCP HTTP client has no authentication
+**Status:** Open
 **File:** `brain/src/adapter/mcp_http.py:87-104`
 **Problem:** HTTP requests to MCP servers have no Bearer token, mTLS, or signature. On untrusted networks, MITM can intercept tool calls (read query arguments, modify responses).
 **Mitigation:** Assumes Docker/VPC network trust. Acceptable for Phase 1 single-node deployment.
 **Fix:** Add optional Bearer token support from config. Document that MCP-HTTP is internal-only.
 
-### BA2. LOW — MCP HTTP tool name not validated before URL path construction
+### BA2. [VALID] LOW — MCP HTTP tool name not validated before URL path construction
+**Status:** Open
 **File:** `brain/src/adapter/mcp_http.py:99`
 **Problem:** `f"{base_url}/tools/{tool}"` — tool name interpolated into URL path without validation. httpx encodes path segments, but explicit regex `^[a-zA-Z0-9_-]+$` would be defense-in-depth.
 
@@ -486,22 +583,26 @@ DEK copied to `p.deks` map for potential re-key, but no re-key implementation ex
 
 **Reviewed:** enrichment.py (318), vault_context.py (790), domain_classifier.py (249), staging_processor.py (276), sync_engine.py (400), nudge.py (333), scratchpad.py (104), event_extractor.py (185), telegram.py (393), tier_classifier.py (70), trust_scorer.py (297)
 
-### BS1. CRITICAL (confirms FC2) — enrichment.py sends raw vault content to cloud unscrubbed
+### BS1. [DUPLICATE of FC2] CRITICAL — enrichment.py sends raw vault content to cloud unscrubbed
+**Status:** Fixed
 **File:** `brain/src/service/enrichment.py:245-259`
 **Root cause confirmed and traced:** `EnrichmentService.__init__()` accepts only `(core, llm)` — **no entity_vault parameter**. `_generate_l0_l1_llm()` calls `self._llm.route()` directly with `body[:4000]` of raw vault content and `persona_tier="default"` which bypasses LLMRouter's sensitive-persona guards. Raw emails, health records, financial data flow directly to cloud LLMs.
 **Full code path:** `StagingProcessor.process_pending()` → `enrichment.enrich_raw(item_dict)` → `_generate_l0_l1_llm(body=raw_body[:4000])` → `llm.route(prompt=unscrubbed, persona_tier="default")` → cloud LLM.
 **Fix:** Add `entity_vault` parameter to EnrichmentService. Call `entity_vault.scrub()` on body before constructing prompt. Respect domain classification sensitivity instead of hardcoding "default".
 
-### BS2. HIGH — staging_processor.py vulnerable indirectly via enrichment
+### BS2. [VALID] HIGH — staging_processor.py vulnerable indirectly via enrichment
+**Status:** Fixed
 **File:** `brain/src/service/staging_processor.py:148-160`
 **Problem:** Calls `enrichment.enrich_raw(base_classified)` on raw ingested items. Domain classification happens (line 105) but enrichment ignores it — hardcodes `persona_tier="default"`. Even SENSITIVE-classified items go unscrubbed to cloud.
 
-### BS3. MEDIUM — vault_context.py entity_vault is optional (not enforced)
+### BS3. [PARTIAL] MEDIUM — vault_context.py entity_vault is optional (not enforced)
+**Status:** Fixed
 **File:** `brain/src/service/vault_context.py:553-556`
 **Problem:** Tool results are scrubbed via `_scrub_tool_result()` — but only if `entity_vault` is not None. Callers must explicitly opt-in. If caller passes None, raw vault data flows to cloud.
 **Note:** guardian.py correctly passes entity_vault. But the contract is not enforced at the type level.
 
-### BS4. MEDIUM — telegram.py leaks exception messages to users
+### BS4. [VALID - LOWER SEVERITY] MEDIUM — telegram.py leaks exception messages to users
+**Status:** Fixed
 **File:** `brain/src/service/telegram.py:290,298,306`
 **Problem:** Approval response errors return `f"Failed to approve: {exc}"` to Telegram chat. If Core exception contains sensitive context, it leaks to the user's Telegram.
 **Fix:** Use generic error message; log details server-side only.
@@ -532,16 +633,19 @@ DEK copied to `p.deks` map for potential re-key, but no re-key implementation ex
 - Input validation: Pydantic models with max_length, extra='forbid'
 - API keys masked in GET /settings/ via _strip_secrets()
 
-### ADM1. CRITICAL (confirms FC1) — API keys stored in KV, readable by devices
+### ADM1. [DUPLICATE of FC1] CRITICAL — API keys stored in KV, readable by devices
+**Status:** Fixed
 **Root cause confirmed:** settings.py stores LLM API keys in Core's KV at key `user_settings` → stored in identity.sqlite (Tier 0, no persona). Device allowlist includes `/v1/vault/kv` prefix → any paired device can `GET /v1/vault/kv/user_settings` and extract all API keys. The admin UI correctly masks keys in its own responses, but the underlying KV store is exposed via a different path.
 **Fix priority:** Move API keys to admin-only secret store, OR remove `/v1/vault/kv` from device allowlist, OR add key-level access control on KV.
 
-### ADM2. MEDIUM — In-memory session store (confirms FH5)
+### ADM2. [DUPLICATE of FH5] MEDIUM — In-memory session store
+**Status:** Open
 **File:** `brain/src/dina_admin/routes/login.py:76`
 **Problem:** Sessions in process-local dict. Process restart invalidates all sessions. Multi-worker deployment breaks auth. Hard cap of 100 concurrent sessions.
 **Note:** Acceptable for Phase 1 single-worker Home Node. Document as known limitation. Enforce `--workers 1`.
 
-### ADM3. LOW — History endpoint exposes vault summaries
+### ADM3. [VALID - LOW / BY DESIGN] LOW — History endpoint exposes vault summaries
+**Status:** Open
 **File:** `brain/src/dina_admin/routes/history.py:58`
 **Note:** `summary` field may contain private email subjects or note previews. Admin-only access, metadata-only (not raw content), limited to safe item types. Working as intended but should be documented.
 
@@ -559,42 +663,50 @@ DEK copied to `p.deks` map for potential re-key, but no re-key implementation ex
 - Trust hot path O(1): contact lookup + cache lookup
 - All services follow hexagonal architecture — no adapter imports
 
-### SV1. HIGH — identity.go uses seed[:16] as Argon2 salt
+### SV1. [PARTIAL] HIGH — identity.go uses seed[:16] as Argon2 salt
+**Status:** Open
 **File:** `core/internal/service/identity.go:73`
 **Problem:** `salt := seed[:16]` uses the first 16 bytes of the master seed as the Argon2id salt for KEK derivation. The salt is NOT cryptographically independent from the secret being protected. If an attacker brute-forces the salt (which they can observe in `master_seed.salt` on disk), they've learned half the seed.
 **Impact:** Reduces effective entropy of the KEK derivation from 32 bytes (256-bit) to 16 bytes (128-bit) for Argon2.
 **Fix:** Generate a random 16-byte salt (`crypto/rand.Read`) independent of the seed. Persist alongside `wrapped_seed.bin`.
 **Note:** Check if `install.sh` and `wrap_seed.py` already use independent salts — the Python install flow may not have this issue.
 
-### SV2. HIGH — Device key registration silently fails
+### SV2. [PARTIAL] HIGH — Device key registration silently fails
+**Status:** Fixed
 **File:** `core/internal/service/device.go:114-120`
 **Problem:** `CompletePairingWithKey()` has multiple guard conditions (registrar nil, base58 decode fails, multicodec prefix wrong) that silently skip key registration. Device is created in the pairing adapter but NOT registered with the auth validator. Subsequent Ed25519-signed requests from the device will fail auth — device appears paired but can't authenticate.
 **Fix:** Return error when key registration fails instead of silently skipping. Make `SetKeyRegistrar()` mandatory.
 
-### SV3. HIGH — Device revocation is non-atomic
+### SV3. [PARTIAL] HIGH — Device revocation is non-atomic
+**Status:** Fixed
 **File:** `core/internal/service/device.go:155-168`
 **Problem:** `RevokeDevice()` calls `keyRegistrar.RevokeDeviceKey()` then `tokenRevoker.RevokeClientTokenByDevice()` in sequence. If the first succeeds but the second fails, the device is partially revoked: Ed25519 auth fails but Bearer token auth still works.
 **Fix:** Either make revocation transactional, or always revoke both and log/retry failures.
 
-### SV4. MEDIUM — Watchdog is wired but never started
+### SV4. [VALID] MEDIUM — Watchdog is wired but never started
+**Status:** Open
 **File:** `core/internal/service/watchdog.go:87-102`, `core/cmd/dina-core/main.go:~595`
 **Problem:** `WatchdogService` is constructed with `NewWatchdogService()` but `Start()` is never called. The 30-second health check loop never runs. Consequence: audit logs never purged (90-day retention not enforced), crash logs accumulate, disk usage unchecked.
 **Fix:** Wire `go watchdogSvc.Start(ctx, callback)` in main.go.
 
-### SV5. MEDIUM — Sync ResolveConflict not transactional
+### SV5. [VALID] MEDIUM — Sync ResolveConflict not transactional
+**Status:** Open
 **File:** `core/internal/service/sync.go:114-137`
 **Problem:** `ResolveConflict()` reads server version, compares timestamps, then writes — without a lock. Two concurrent clients pushing conflicting items can both read the same server version and one write overwrites the other silently.
 **Fix:** Add mutex per persona or use Compare-And-Swap semantics.
 
-### SV6. MEDIUM — Gatekeeper doesn't enforce persona grants
+### SV6. [PARTIAL / DEFENSE IN DEPTH] MEDIUM — Gatekeeper doesn't enforce persona grants
+**Status:** Open
 **File:** `core/internal/service/gatekeeper.go:52-67`
 **Problem:** Checks if persona is open (`vault.IsOpen`) but doesn't check if the agent has a session grant for the target persona. If Brain submits an intent for `/health` without a grant, service allows it as long as the persona is open. Grants are enforced at the adapter layer, but the service has no fallback.
 **Note:** This is architecturally correct (adapter enforces), but no defense-in-depth at service level.
 
-### SV7. LOW — Export reads potentially stale data
+### SV7. [VALID - LOW] LOW — Export reads potentially stale data
+**Status:** Open
 Migration export checkpoints WAL then reads files, but no lock prevents writes between checkpoint and read.
 
-### SV8. LOW — Identity CreatePersona leaves inconsistent state on vault.Open failure
+### SV8. [VALID - LOW] LOW — Identity CreatePersona leaves inconsistent state on vault.Open failure
+**Status:** Open
 Persona created in DB but vault fails to open → persona exists but is closed. No rollback.
 
 ---
@@ -611,32 +723,38 @@ Persona created in DB but vault fails to open → persona exists but is closed. 
 - All concurrent structures properly mutex-guarded
 - Graceful fallback: fast-path decryption errors fall back to dead drop
 
-### IG1. HIGH — Vault lock TOCTOU race in Router.Ingest()
+### IG1. [PARTIAL] HIGH — Vault lock TOCTOU race in Router.Ingest()
+**Status:** Open
 **File:** `core/internal/ingress/router.go:58`
 **Problem:** `Ingest()` checks `vault.IsOpen(defaultPersona)` then forks to dead drop or fast path. Not atomic. If vault is locked between the check and the spool operation, messages go to inbox but can't be decrypted. Mitigated by error fallback to dead drop (line 71), but not a clean design.
 **Fix:** Use atomic flag or RCU pattern instead of checking IsOpen() separately.
 
-### IG2. HIGH — Inbox spool has no capacity limit when vault is unlocked
+### IG2. [STALE] HIGH — Inbox spool has no capacity limit when vault is unlocked
+**Status:** Open
 **File:** `core/internal/ingress/router.go:77`
 **Problem:** When vault is unlocked, messages go to `inbox.Spool()` with no size or count enforcement. Dead drop has maxBlobs/maxBytes limits; inbox spool does not. Attacker can exhaust memory.
 **Fix:** Add max capacity to inbox spool, matching dead drop limits.
 
-### IG3. MEDIUM — AllowGlobal() performs O(n) directory scan
+### IG3. [VALID] MEDIUM — AllowGlobal() performs O(n) directory scan
+**Status:** Open
 **File:** `core/internal/ingress/ratelimit.go:103-109`
 **Problem:** `AllowGlobal()` calls `deadDrop.Count()` which scans the entire spool directory on every `Ingest()` call. Under load (10K blobs), this creates O(n²) behavior.
 **Fix:** Cache spool count in DeadDrop, increment on Store(), decrement on Ack().
 
-### IG4. MEDIUM — Global spool check-then-act race
+### IG4. [VALID] MEDIUM — Global spool check-then-act race
+**Status:** Open
 **File:** `core/internal/ingress/ratelimit.go:103` + `core/internal/ingress/deaddrop.go:45`
 **Problem:** `AllowGlobal()` checks count, then `Store()` writes. Under concurrent load, maxBlobs can be exceeded by up to `concurrency - 1` blobs.
 **Fix:** Acceptable if limits are conservative (500MB default is generous). Document as known behavior.
 
-### IG5. LOW — Fixed-window rate limiter allows burst at boundary
+### IG5. [VALID - LOW] LOW — Fixed-window rate limiter allows burst at boundary
+**Status:** Open
 **File:** `core/internal/ingress/ratelimit.go:82-86`
 **Problem:** Per-IP bucket uses fixed-window reset. Attacker can send 2x rate limit at window boundary (5 at t=59.9s + 5 at t=60.1s).
 **Note:** Acceptable for D2D ingress; IP rate is low enough that double-burst is still manageable.
 
-### IG6. LOW — Sweeper silently swallows Ack() errors
+### IG6. [VALID - LOW] LOW — Sweeper silently swallows Ack() errors
+**Status:** Fixed
 **File:** `core/internal/ingress/sweeper.go:201,209,261`
 **Problem:** `_ = s.deadDrop.Ack(name)` — if deletion fails, blob stays on disk. Poison pill eviction also uses this pattern (line 112), so a blob that can't be deleted becomes a permanent fixture.
 **Note:** GCStaleBlobs() mitigates by removing by mtime after 24h.
@@ -649,27 +767,32 @@ Persona created in DB but vault fails to open → persona exists but is closed. 
 
 **Auth is strong:** Ed25519-only WebSocket upgrade. Unauthenticated clients cannot connect. Mutex discipline correct throughout — no race conditions. No PII in logs. Graceful error handling, no panics.
 
-### WS1. MEDIUM — No max incoming message size
+### WS1. [VALID] MEDIUM — No max incoming message size
+**Status:** Fixed
 **File:** `core/internal/adapter/ws/upgrader.go:158`
 **Problem:** coder/websocket has no default max message size. HTTP body limit middleware doesn't apply to WebSocket upgrades (HTTP 101). A malicious authenticated client can send a multi-frame message of unbounded size, exhausting server memory.
 **Fix:** Call `conn.SetReadLimit(1 << 20)` (1MB) after upgrade, or check payload size in `readPump()`.
 
-### WS2. MEDIUM — No connection limit enforcement
+### WS2. [VALID] MEDIUM — No connection limit enforcement
+**Status:** Open
 **File:** `core/internal/adapter/ws/ws.go:74` (`Register()`)
 **Problem:** No per-IP, per-DID, or global connection limit. A single compromised device key can open unlimited concurrent WebSocket connections. Rate limiter only throttles HTTP requests, not sustained WS connections.
 **Fix:** Add per-DID limit (e.g., 5 concurrent WS) and global hard limit (e.g., 10,000). Check in `Register()`.
 
-### WS3. LOW — Expired message buffers never purged
+### WS3. [VALID] LOW — Expired message buffers never purged
+**Status:** Open
 **File:** `core/internal/adapter/ws/ws.go:524-536`
 **Problem:** `PurgeExpired()` is implemented but never called from production code. Expired buffers (5-min TTL) accumulate indefinitely in memory.
 **Fix:** Wire a cleanup goroutine in main.go (every 10 minutes).
 
-### WS4. MEDIUM — Silent message drops on channel full
+### WS4. [VALID] MEDIUM — Silent message drops on channel full
+**Status:** Open
 **File:** `core/internal/adapter/ws/upgrader.go:83-89`
 **Problem:** `SendOutbound()` silently drops messages when the 256-entry outbound channel is full. Client sends a query and never receives a response — no error, no timeout notification.
 **Fix:** Log dropped messages for observability. Consider increasing buffer or adding backpressure with timeout.
 
-### WS5. LOW — Heartbeat pong timestamp not validated
+### WS5. [VALID - LOW] LOW — Heartbeat pong timestamp not validated
+**Status:** Open
 **File:** `core/internal/adapter/ws/ws.go:192`
 **Problem:** Client can send any pong timestamp, including timestamps of old pings. A malicious client could prevent heartbeat timeout by replaying old pong timestamps.
 **Fix:** Store sent ping timestamps, validate that received pong matches the expected ping.
@@ -678,57 +801,76 @@ Persona created in DB but vault fails to open → persona exists but is closed. 
 
 ## Go Handler Deep Review Findings (27 files, ~3,500 LOC)
 
-### GH1. HIGH — reason.go:73 leaks raw Brain error to CLI caller
+### GH1. [VALID] HIGH — reason.go leaks raw Brain error to CLI caller
+**Status:** Fixed
 Raw `err.Error()` from Brain reasoning (which may contain vault context, model output, or PII from intermediate reasoning) is concatenated into the HTTP response sent to the CLI user.
 **Fix:** Return generic "reasoning failed" message; log full error server-side only.
 
-### GH2. HIGH — approval.go:40 silently ignores malformed JSON
+### GH2. [VALID] HIGH — approval.go silently ignores malformed JSON
+**Status:** Fixed
 If the approve request body is malformed JSON, the handler silently proceeds with default values (scope="session", granted_by="dina-admin") instead of returning 400. An attacker could send garbage body and still get approval processed.
 **Fix:** Return 400 Bad Request on JSON decode error.
 
-### GH3. MEDIUM — vault.go:529 KV PUT has no body size limit
+### GH3. [VALID] MEDIUM — vault.go KV PUT has no body size limit
+**Status:** Fixed
 `PUT /v1/vault/kv/{key}` calls `io.ReadAll(r.Body)` without `http.MaxBytesReader`. Every other handler uses size limits. OOM DoS possible.
 **Fix:** Add `http.MaxBytesReader(w, r.Body, 10*1024*1024)` before ReadAll.
 
-### GH4. MEDIUM — approval.go:102,122 raw service errors in responses
+### GH4. [VALID] MEDIUM — approval.go raw service errors in responses
+**Status:** Fixed
 Approve/deny error paths return `err.Error()` which could leak persona structure, approval IDs, or database errors.
 
-### GH5. MEDIUM — admin.go:60 exposes Brain URL
+### GH5. [VALID] MEDIUM — admin.go exposes Brain URL
+**Status:** Fixed
 `/admin/sync-status` returns `proxy_target` (the Brain URL) in JSON, leaking internal network topology.
 
-### GH6. MEDIUM — errors.go:14 JSON injection in clientError()
+### GH6. [VALID] MEDIUM — errors.go JSON injection in clientError()
+**Status:** Fixed
 `clientError()` concatenates the message string directly into JSON without escaping. If msg contains quotes or control characters, the JSON breaks. Use `json.Marshal` instead.
 
-### GH7. MEDIUM — persona.go:318-325 silent ListPending failure
+### GH7. [PARTIAL] MEDIUM — persona.go silent ListPending failure
+**Status:** Open
 If `ListPending()` fails in HandleApprove, `approvedPersona` stays empty. Vault won't open but response says "approved."
 
-### GH8. MEDIUM — persona.go:345-377 silent DEK error + type assertion
+### GH8. [VALID] MEDIUM — persona.go silent DEK error + type assertion
+**Status:** Open
 `GetDEKVersion()` error logged but ignored; `MarkGrantOpened()` depends on type assertion that silently fails.
 
-### GH9. MEDIUM — persona.go:381-417 race on approval revocation
+### GH9. [PARTIAL] MEDIUM — persona.go race on approval revocation
+**Status:** Open
 Approval can be revoked while Brain is processing the pending reason in a goroutine.
 
-### GH10. MEDIUM — staging.go:291 O(n) scan on every resolve
+### GH10. [VALID] MEDIUM — staging.go O(n) scan on every resolve
+**Status:** Fixed
 Linear scan of 1000 pending items per resolve call.
 
-### GH11. MEDIUM — export.go:165 import path not validated
+### GH11. [PARTIAL] MEDIUM — export.go import path not validated
+**Status:** Fixed
 `archive_path` on import not validated for path traversal (export path IS validated).
 
-### GH12-GH13. LOW — multibase validation deferred, fragile error classification
+### GH12-GH13. [PARTIAL] LOW — multibase validation deferred, fragile error classification
+**Status:** Open
 
 ---
 
 ## Test Gaps
 
 ### G01. No test for HybridSearch authorization bypass (F01)
+**Status:** Open
 ### G02. No test for Entity Vault token collision/hallucination (F08)
+**Status:** Open
 ### G03. No test for replay cache memory bounds (F03)
+**Status:** Open
 ### G04. No test for multi-key DID signature verification (F02)
+**Status:** Open
 ### G05. Zero negative auth tests in handler test files
+**Status:** Open
 No test verifies "device calls admin endpoint → gets 403." All 5 handler test files test only happy paths and method guards.
 ### G06. vault_test.go has no endpoint tests
+**Status:** Open
 Only tests `injectUserOrigin` utility function. No tests for vault query/store/delete handlers.
 ### G07. device_test.go has 1 test (method guard only)
+**Status:** Open
 No revocation, auth scope, or invalid ID tests.
 
 ---
@@ -750,21 +892,25 @@ No revocation, auth scope, or invalid ID tests.
 - **All 27 schema upsert targets match unique constraints** — no silent ON CONFLICT failures
 - **Mention edges prevent duplicates** — UNIQUE (source_uri, target_did)
 
-### DB1. MEDIUM — N+1 in graph.ts trust score fetching
+### DB1. [VALID] MEDIUM — N+1 in graph.ts trust score fetching
+**Status:** Open
 **File:** `appview/src/db/queries/graph.ts:127-148`
 **Problem:** BFS fetches trust score for each newly discovered node separately (1 query per node). Bounded by query budget (100) but inefficient.
 **Fix:** Batch-fetch trust scores for all nodes in nextFrontier before next BFS level.
 
-### DB2. LOW — N+1 in dirty-flags.ts DID marking
+### DB2. [VALID] LOW — N+1 in dirty-flags.ts DID marking
+**Status:** Open
 **File:** `appview/src/db/queries/dirty-flags.ts:53-62`
 **Problem:** Loop inserts one upsert per affected DID. Typically small (author + subject + mentions = <10), but could batch.
 **Fix:** Use `db.insert().values([...all DIDs])` for single-statement batch upsert.
 
-### DB3. LOW — Missing indexes on 2 tables
+### DB3. [VALID] LOW — Missing indexes on 2 tables
+**Status:** Open
 **Files:** `appview/src/db/schema/media.ts`, `appview/src/db/schema/subject-claims.ts`
 **Problem:** Both missing `author_did` index. No functional impact today but could cause slow queries if code queries by author in the future.
 
-### DB4. LOW — Redundant unique constraint + uniqueIndex on trustPolicies
+### DB4. [VALID] LOW — Redundant unique constraint + uniqueIndex on trustPolicies
+**Status:** Open
 `trustPolicies.ts` declares both `.unique()` on column AND explicit `uniqueIndex`. Redundant but harmless.
 
 ### Verified PASS:
@@ -796,27 +942,27 @@ No revocation, auth scope, or invalid ID tests.
 - **TLS enforced:** wss: required in production + hostname allowlist for Jetstream relays.
 - **Rich observability:** Per-collection counters, queue depth gauges, backpressure events, rate limit drops.
 
-### IG-I1. HIGH — Rate limiter is in-memory only (multi-instance bypass)
+### IG-I1. [VALID] HIGH — Rate limiter is in-memory only (multi-instance bypass)
 **File:** `appview/src/ingester/rate-limiter.ts:18-20`
 **Problem:** Per-DID rate limit (50/hour) stored in LRU cache in process memory. With N ingester instances, a DID can write 50×N records/hour (each instance has independent state). Warning logged if `INSTANCE_COUNT > 1` but enforcement is per-process only. State also lost on restart.
 **Fix:** For multi-instance: use Redis INCR + EXPIRE for sliding window. For single-instance (current): document limitation.
 
-### IG-I2. MEDIUM — Reply and report handlers missing dirty flags
+### IG-I2. [VALID] MEDIUM — Reply and report handlers missing dirty flags
 **Files:** `appview/src/ingester/handlers/reply.ts`, `report-record.ts`
 **Problem:** Replies with `intent: 'dispute'` feed into tombstone creation (deletion-handler checks dispute reply count). Report records also influence tombstone decisions. But neither handler marks the target record's author as dirty when created. The scorer won't recalculate trust for authors affected by disputes/reports until some other event triggers dirty marking.
 **Fix:** Add `markDirty()` for reply authors and report target authors in both handlers.
 
-### IG-I3. MEDIUM — Unbounded nested objects in record validator
+### IG-I3. [VALID] MEDIUM — Unbounded nested objects in record validator
 **File:** `appview/src/ingester/record-validator.ts:72`
 **Problem:** Schema fields like `interactionContext`, `contentContext`, `bilateralReviewJson` use `z.record(z.unknown()).optional()` with no depth limit. An attacker could nest deeply (`{a:{b:{c:...}}}`) causing parser stack overflow or memory explosion on validation.
 **Fix:** Add `superRefine()` depth check, or set max payload size at Jetstream consumer level.
 
-### IG-I4. LOW — Trust edge weight not updated on conflict
+### IG-I4. [STALE] LOW — Trust edge weight not updated on conflict
 **File:** `appview/src/ingester/trust-edge-sync.ts:43-47`
 **Problem:** `onConflictDoUpdate` updates toDid, edgeType, domain but NOT weight. If a vouch's confidence changes from `high` (1.0) to `moderate` (0.6), the edge retains the old weight. Attestation handler works around this (deletes old edge before adding new), but vouch handler uses direct upsert.
 **Fix:** Include `weight` in the onConflictDoUpdate set.
 
-### IG-I5. LOW — Failed timestamp cleanup race in bounded-queue
+### IG-I5. [PARTIAL / LOW] LOW — Failed timestamp cleanup race in bounded-queue
 **File:** `appview/src/ingester/bounded-queue.ts:66-74`
 5-minute periodic cleanup of failedTimestamps runs concurrently with processItem. Timestamp could be deleted mid-retry attempt. Mitigated by 3-retry limit.
 
@@ -837,27 +983,32 @@ No revocation, auth scope, or invalid ID tests.
 - Generic 500 errors — no stack traces or table names leaked
 - Public endpoints by design (trust data is public per AT Protocol)
 
-### XR1. MEDIUM — graph.ts string interpolation in sql.raw statement_timeout
+### XR1. [VALID - HARDENING] MEDIUM — graph.ts string interpolation in sql.raw statement_timeout
+**Status:** Open
 **File:** `appview/src/db/queries/graph.ts:52`
 **Problem:** `sql.raw(\`SET LOCAL statement_timeout = '${CONSTANTS.GRAPH_QUERY_TIMEOUT_MS}ms'\`)` — numeric constant (100) interpolated into raw SQL. Safe today but dangerous pattern. If this value ever comes from env var or user input, it becomes SQL injection.
 **Fix:** Use parameterized interval or validate the constant is numeric before interpolation.
 
-### XR2. HIGH — getGraph endpoint not cached (most expensive query)
+### XR2. [VALID] HIGH — getGraph endpoint not cached (most expensive query)
+**Status:** Open
 **File:** `appview/src/api/xrpc/get-graph.ts:14-18`
 **Problem:** Graph BFS traversal (up to 500 nodes, 100 queries) runs on every request. resolve, search, and getProfile all use SWR caching; getGraph does not. At 60 RPM rate limit, an attacker can force 60 graph traversals/minute = 6,000 DB queries/minute just from this endpoint.
 **Fix:** Wrap getGraph in SWR cache with 30-60 second TTL.
 
-### XR3. MEDIUM — Unvalidated `domain` parameter across 3 endpoints
+### XR3. [PARTIAL] MEDIUM — Unvalidated `domain` parameter across 3 endpoints
+**Status:** Open
 **Files:** `resolve.ts:14`, `get-graph.ts:9`, `search.ts:12`
 **Problem:** `domain` parameter accepts any string (max 253 chars) with no format validation. Passed to WHERE clauses. Could cause timing attacks or inefficient index usage on invalid domain strings.
 **Fix:** Add regex validation: `z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional()`
 
-### XR4. MEDIUM — No FTS search complexity limits
+### XR4. [VALID] MEDIUM — No FTS search complexity limits
+**Status:** Open
 **File:** `appview/src/api/xrpc/search.ts:95-98`
 **Problem:** FTS query `q` allows up to 500 chars. `plainto_tsquery` is safe from injection but complex queries can be CPU-intensive. No per-endpoint rate limiting (only global 60 RPM per IP).
 **Fix:** Add per-query timeout or limit FTS query complexity.
 
-### XR5. LOW — No request body size limit or socket timeout on http.createServer
+### XR5. [VALID - LOW / FUTURE-PROOFING] LOW — No request body size limit or socket timeout on http.createServer
+**Status:** Open
 **File:** `appview/src/web/server.ts:43`
 **Note:** Current endpoints are GET-only. If POST endpoints are ever added, body size limit needed. Socket timeout should be set for Slowloris defense.
 
@@ -875,46 +1026,55 @@ No revocation, auth scope, or invalid ID tests.
 - Per-item error handling in all jobs — one failure doesn't crash the batch
 - Dirty flag pattern with BATCH_SIZE=5000 is bounded
 
-### TS1. MEDIUM — sentiment-aggregation.ts missing verified & bilateral multipliers (BUG)
+### TS1. [VALID] MEDIUM — sentiment-aggregation.ts missing verified & bilateral multipliers (BUG)
+**Status:** Fixed
 **File:** `appview/src/scorer/algorithms/sentiment-aggregation.ts:65`
 **Problem:** Weight calculation uses `recency * evidence * authorWeight` but omits VERIFIED_MULTIPLIER (1.5x) and BILATERAL_MULTIPLIER (1.4x). Compare with `trust-score.ts:94` which correctly applies all 4 multipliers. Verified and bilateral attestations are underweighted by 2.1x in subject sentiment scoring.
 **Also:** `refresh-subject-scores.ts:86` hardcodes `isVerified: false`, compounding the issue.
 **Fix:** Add `verified` and `bilateral` to the weight calculation in sentiment-aggregation.ts. Fix isVerified in refresh-subject-scores.ts.
 
-### TS2. MEDIUM — Slow-burn Sybil attack evades detection
+### TS2. [PARTIAL] MEDIUM — Slow-burn Sybil attack evades detection
+**Status:** Open
 **Files:** `appview/src/scorer/algorithms/anomaly-detection.ts`, `appview/src/scorer/jobs/detect-sybil.ts`
 **Problem:** Coordination detection requires ≥3 DIDs in a 48-hour window. An attacker spacing one fake attestation per week evades the window entirely. Sybil detection only analyzes already-quarantined DIDs (those flagged by coordination detection). So slow attackers are never flagged and never analyzed.
 **Impact:** 5 fake reviews injected over 5 weeks, undetectable.
 **Fix:** Add a longer-term velocity check (e.g., >1 attestation/week to same subject from new accounts). Or run Sybil detection on ALL low-trust DIDs, not just quarantined ones.
 
-### TS3. CRITICAL (Performance) — reviewer-stats N² corroboration loop
+### TS3. [VALID] CRITICAL (Performance) — reviewer-stats N² corroboration loop
+**Status:** Open
 **File:** `appview/src/scorer/jobs/refresh-reviewer-stats.ts:90-120`
 **Problem:** For each DID, fetches all authored attestations, then loops through each one running a corroboration query (`.limit(2)`). A DID with 1000 attestations = 1000 queries. At batch size 5000, this is potentially 5M+ queries.
 **Fix:** Replace per-attestation corroboration query with single batch query using GROUP BY.
 
-### TS4. HIGH — detect-coordination unbounded attestation load
+### TS4. [VALID] HIGH — detect-coordination unbounded attestation load
+**Status:** Open
 **File:** `appview/src/scorer/jobs/detect-coordination.ts:21`
 **Problem:** Fetches ALL attestations in 48-hour window with no LIMIT. If 100K attestations in window, all loaded to memory. Algorithm is O(N²) per subject (sliding window comparison).
 **Fix:** Add LIMIT clause + pagination. Or process per-subject with bounded batch.
 
-### TS5. HIGH — Tombstone penalty penalizes legitimate users
+### TS5. [PARTIAL / PRODUCT] HIGH — Tombstone penalty penalizes legitimate users
+**Status:** Open
 **File:** `appview/src/scorer/jobs/process-tombstones.ts:49-62`
 **Problem:** Any user who deletes 3+ content items that received disputes gets flagged as "coordinated." No distinction between malicious deletions and legitimate content removal (e.g., scientist deleting draft papers with critical comments). Penalties accumulate forever — no time window.
 **Fix:** Add time decay to tombstone penalties. Distinguish "deleted during active dispute" from "deleted after dispute resolved."
 
-### TS6. MEDIUM — Sybil detection only scans already-flagged DIDs
+### TS6. [VALID] MEDIUM — Sybil detection only scans already-flagged DIDs
+**Status:** Open
 **File:** `appview/src/scorer/jobs/detect-sybil.ts:20-43`
 **Problem:** Only analyzes DIDs with `coordinationFlagCount > 0` or active critical/serious flags. Slow attackers who evade coordination detection are never fed into Sybil analysis.
 **Fix:** Optionally scan all DIDs below a trust threshold (e.g., score < 0.3 with < 2 vouches).
 
-### TS7. MEDIUM — 50K+ queries per batch in refresh-profiles
+### TS7. [VALID] MEDIUM — 50K+ queries per batch in refresh-profiles
+**Status:** Open
 **File:** `appview/src/scorer/jobs/refresh-profiles.ts:42-70`
 **Problem:** Serial loop: 10 queries per DID × 5000 batch = 50K queries. No batching or join optimization.
 
-### TS8. LOW — Decay ignores context
+### TS8. [PARTIAL / PRODUCT] LOW — Decay ignores context
+**Status:** Open
 Legitimate inactive users (on vacation) decay at same rate as dormant attackers.
 
-### TS9. LOW — Cleanup doesn't revert flags from deleted anomaly events
+### TS9. [VALID] LOW — Cleanup doesn't revert flags from deleted anomaly events
+**Status:** Open
 Deleting old anomaly events leaves orphaned coordination flags on profiles.
 
 ---
@@ -950,22 +1110,26 @@ Deleting old anomaly events leaves orphaned coordination flags on profiles.
 - **Error translation:** httpx errors wrapped with context, no stack traces to user
 - **62 tests** covering transport layer (21) and commands (41)
 
-### AC1. HIGH — No socket permission validation
+### AC1. [VALID] HIGH — No socket permission validation
+**Status:** Fixed
 **File:** `admin-cli/src/dina_admin_cli/config.py:46`
 **Problem:** Socket existence checked but not permissions. If socket is world-readable (e.g., 0o777 after misconfiguration), any system user can reach the admin API. Socket access = full admin.
 **Fix:** Add `Path(socket_path).stat().st_mode & 0o077 == 0` check. Reject if group/other bits set.
 
-### AC2. HIGH — dina-admin wrapper echoes API keys to terminal
+### AC2. [VALID] HIGH — dina-admin wrapper echoes API keys to terminal
+**Status:** Fixed
 **File:** `dina-admin` wrapper script, line 326
 **Problem:** `read -r api_key` (without `-s` flag) echoes the API key to the terminal as user types. Visible to screen recording, shoulder surfing, terminal history.
 **Fix:** Change to `read -rs api_key` (add `-s` silent flag).
 
-### AC3. HIGH — Plaintext passphrase stored on disk
+### AC3. [VALID] HIGH — Plaintext passphrase stored on disk
+**Status:** Open
 **File:** `dina-admin` wrapper script, line 81
 **Problem:** `printf '%s' "${passphrase}" > "${SEED_PASSWORD_FILE}"` stores the seed passphrase as plaintext with chmod 600. This is the "Server Mode" (convenience) behavior per ARCHITECTURE.md. Root can read it.
 **Note:** This is intentional for unattended reboot (ARCHITECTURE.md §Unattended Reboot). The alternative (Maximum Security) requires passphrase on every restart. Document the tradeoff clearly to users.
 
-### AC4. MEDIUM — .env file permissions unchecked after API key append
+### AC4. [VALID] MEDIUM — .env file permissions unchecked after API key append
+**Status:** Fixed
 **File:** `dina-admin` wrapper script, line 338
 **Problem:** API keys appended to `.env` without verifying or setting file permissions. `.env` could be world-readable.
 **Fix:** Add `chmod 600 "${env_file}"` after appending.

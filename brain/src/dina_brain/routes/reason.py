@@ -14,6 +14,7 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 try:
@@ -130,16 +131,17 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
     try:
         result = await _guardian.process_event(reason_event)
     except _ApprovalRequiredError as exc:
-        # Legacy fallback: if _handle_reason still raises (shouldn't normally)
-        raise HTTPException(
+        # BR3: Use JSONResponse (not HTTPException with dict detail) for
+        # structured approval-required responses. This is the legacy fallback
+        # path — the main approval flow returns pending_approval via result dict.
+        return JSONResponse(
             status_code=403,
-            detail={
+            content={
                 "error": "approval_required",
                 "persona": exc.persona,
                 "approval_id": exc.approval_id,
-                "message": str(exc),
             },
-        ) from exc
+        )
     except Exception as exc:
         log.error(
             "reason_query.internal_error",

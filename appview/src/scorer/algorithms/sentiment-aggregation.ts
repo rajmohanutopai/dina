@@ -55,14 +55,18 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
 
     if (a.isVerified) verifiedCount++
 
-    // Weighted score
+    // Weighted score — TS1 fix: include verified + bilateral multipliers
+    // to match the formula in trust-score.ts (was missing 2.1x for
+    // verified bilateral attestations).
     const ageDays = Math.max(0, daysSince(a.recordCreatedAt))
     const recency = Math.exp(-ageDays / CONSTANTS.SENTIMENT_HALFLIFE_DAYS)
     const evidence = a.evidenceJson?.length ? CONSTANTS.EVIDENCE_MULTIPLIER : 1.0
+    const verified = a.isVerified ? CONSTANTS.VERIFIED_MULTIPLIER : 1.0
+    const bilateral = a.hasCosignature ? CONSTANTS.BILATERAL_MULTIPLIER : 1.0
     let authorWeight = a.authorTrustScore ?? 0.0
     if (!a.authorHasInboundVouch) authorWeight = 0.0
 
-    const weight = recency * evidence * authorWeight
+    const weight = recency * evidence * verified * bilateral * authorWeight
     if (a.sentiment === 'positive') weightedPositive += weight
     else if (a.sentiment === 'neutral') weightedPositive += weight * 0.5
     weightedTotal += weight

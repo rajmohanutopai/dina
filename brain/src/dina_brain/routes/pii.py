@@ -91,4 +91,11 @@ async def scrub_pii(request: ScrubRequest) -> ScrubResponse:
             detail="PII scrubbing failed",
         ) from exc
 
-    return ScrubResponse(scrubbed=scrubbed, entities=entities)
+    # BR1 fix: strip original PII values from entities before returning
+    # over HTTP. The Entity Vault pattern uses values in-process only —
+    # they must NEVER leave the Brain process via the API.
+    safe_entities = [
+        {"type": e.get("type", ""), "token": e.get("token", "")}
+        for e in entities
+    ]
+    return ScrubResponse(scrubbed=scrubbed, entities=safe_entities)

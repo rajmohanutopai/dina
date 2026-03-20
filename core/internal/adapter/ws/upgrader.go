@@ -162,6 +162,10 @@ func ServeWS(
 	}
 
 	conn := NewConn(raw, 256)
+	// WS1: Limit incoming message size to 1 MiB. Without this, a malicious
+	// authenticated client can exhaust server memory via multi-frame messages.
+	// HTTP body limits don't apply after WebSocket upgrade (HTTP 101).
+	raw.SetReadLimit(1 << 20)
 	ctx := r.Context()
 
 	// WebSocket auth is Ed25519-only. The HTTP upgrade request must be signed

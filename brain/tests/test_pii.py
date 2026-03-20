@@ -614,6 +614,37 @@ def test_pii_3_3_3_rehydrate_after_llm(entity_vault) -> None:
     assert "<ORG_1>" not in rehydrated
 
 
+# TST-BRAIN-818
+def test_f08_rehydrate_rejects_hallucinated_tokens(entity_vault) -> None:
+    """F08: rehydrate() must NOT replace bare inner values.
+
+    If the LLM hallucinates a string like "Robert Smith" that matches
+    the bare inner value of a <<PII:Robert Smith>> token, it must NOT
+    be replaced with real PII. Only exact vault keys should be matched.
+    """
+    entities = [
+        {"type": "PERSON", "value": "Dr. Sharma", "token": "<<PII_PERSON_1_a3f2>>"},
+    ]
+    vault = entity_vault.create_vault(entities)
+
+    # LLM response contains the full token → should be replaced.
+    response_with_token = "<<PII_PERSON_1_a3f2>> is your doctor."
+    rehydrated = entity_vault.rehydrate(response_with_token, vault)
+    assert rehydrated == "Dr. Sharma is your doctor."
+
+    # LLM response contains a hallucinated bare string that is NOT a vault key.
+    # This must NOT be rehydrated — it's the LLM's own output, not our token.
+    response_hallucinated = "PII_PERSON_1_a3f2 is your doctor."
+    rehydrated_hal = entity_vault.rehydrate(response_hallucinated, vault)
+    assert rehydrated_hal == "PII_PERSON_1_a3f2 is your doctor."
+    assert "Dr. Sharma" not in rehydrated_hal
+
+    # A completely unrelated name should also not be touched.
+    response_unrelated = "Robert Smith is your doctor."
+    rehydrated_unr = entity_vault.rehydrate(response_unrelated, vault)
+    assert rehydrated_unr == "Robert Smith is your doctor."
+
+
 # TST-BRAIN-113
 def test_pii_3_3_4_entity_vault_destroyed(entity_vault) -> None:
     """SS3.3.4: Entity vault dict is garbage-collected after rehydration.

@@ -43,11 +43,25 @@ def load_config() -> Config:
             "Admin socket disabled (DINA_ADMIN_SOCKET is empty)."
         )
 
-    if not Path(socket_path).exists():
+    sock = Path(socket_path)
+    if not sock.exists():
         raise click.UsageError(
             "Admin socket not found at {}.\n"
             "  Is Core running? Are you inside the container?\n"
             "  Run: docker compose exec core dina-admin ...".format(socket_path)
         )
+
+    # AC1: Reject if socket is readable by group or other users.
+    # Socket access = full admin, so permissions must be owner-only.
+    try:
+        mode = sock.stat().st_mode
+        if mode & 0o077:
+            raise click.UsageError(
+                "Admin socket at {} has unsafe permissions (mode {:o}).\n"
+                "  Socket must be owner-only (no group/other access).\n"
+                "  Fix: chmod 600 {}".format(socket_path, mode & 0o777, socket_path)
+            )
+    except OSError:
+        pass  # stat failed — socket may be abstract or containerised
 
     return Config(socket_path=socket_path, timeout=timeout)

@@ -12,6 +12,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 	"github.com/rajmohanutopai/dina/core/internal/service"
 )
@@ -62,9 +63,18 @@ func (h *PersonaHandler) HandleListPersonas(w http.ResponseWriter, r *http.Reque
 }
 
 // HandleCreatePersona handles POST /v1/personas.
+// FH3: Only admin-scoped callers can create personas — Brain is denied.
 func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// FH3: Brain must not create personas — persona management is admin-only.
+	tokenKind, _ := r.Context().Value(middleware.TokenKindKey).(string)
+	serviceID, _ := r.Context().Value(middleware.ServiceIDKey).(string)
+	if tokenKind == "service" && serviceID == "brain" {
+		http.Error(w, `{"error":"forbidden","message":"persona creation is admin-only"}`, http.StatusForbidden)
 		return
 	}
 

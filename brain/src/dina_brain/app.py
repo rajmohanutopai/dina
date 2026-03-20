@@ -147,7 +147,9 @@ def create_brain_app(
     @app.middleware("http")
     async def rate_limit_reasoning(request: Request, call_next):
         _path = request.scope.get("path", request.url.path)
-        if _path in ("/v1/reason", "/v1/pii/scrub"):
+        # BR5: /v1/process added — it drives the full guardian loop (LLM calls,
+        # vault queries, nudge assembly) and is at least as expensive as /v1/reason.
+        if _path in ("/v1/reason", "/v1/pii/scrub", "/v1/process"):
             key = request.headers.get("authorization", request.client.host if request.client else "unknown")
             if not _reason_limiter.allow(key):
                 from fastapi.responses import JSONResponse
@@ -178,8 +180,9 @@ def create_brain_app(
             # Resolve key — may be a lazy-loading callable or a static key.
             resolved_key = core_public_key() if callable(core_public_key) else core_public_key
             if resolved_key is None:
+                # BR6: Generic message — don't reveal that the key is missing vs invalid.
                 log.warning("brain_api.no_core_key: Core public key not loaded")
-                raise HTTPException(status_code=401, detail="Service key not configured")
+                raise HTTPException(status_code=401, detail="Authentication required")
 
             try:
                 from ..adapter.signing import ServiceIdentity
