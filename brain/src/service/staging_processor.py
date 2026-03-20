@@ -84,6 +84,9 @@ class StagingProcessor:
             try:
                 # Build a plain dict for classifier and trust scorer
                 # (they expect dict inputs).
+                ingress_channel = getattr(item, "ingress_channel", "") or ""
+                origin_did = getattr(item, "origin_did", "") or ""
+
                 item_dict = {
                     "id": item.id or "",
                     "type": item.type or "note",
@@ -95,11 +98,16 @@ class StagingProcessor:
                     "metadata": item.metadata or "{}",
                     "connector_id": item.connector_id or "",
                     # Ingress provenance — server-derived by Core
-                    "ingress_channel": getattr(item, "ingress_channel", "") or "",
-                    "origin_did": getattr(item, "origin_did", "") or "",
+                    "ingress_channel": ingress_channel,
+                    "origin_did": origin_did,
                     "origin_kind": getattr(item, "origin_kind", "") or "",
                     "producer_id": getattr(item, "producer_id", "") or "",
                 }
+
+                # D2D items: origin_did IS the sender's DID — set contact_did
+                # so the trust scorer can do contact ring lookup via _find_contact().
+                if ingress_channel == "d2d" and origin_did:
+                    item_dict["contact_did"] = origin_did
 
                 # Classify persona.
                 personas = self._classify_personas(item_dict)

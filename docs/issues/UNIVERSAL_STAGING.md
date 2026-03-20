@@ -1,8 +1,8 @@
 # Universal Staging Architecture — Implementation Plan
 
 **Created:** 2026-03-20
-**Status:** Phase 2 complete
-**Phase:** 2 of 4 (Telegram & admin content staged)
+**Status:** Phase 3 complete (Core-wired)
+**Phase:** 3 of 4 (D2D memory content staged via Core ingress)
 
 ## Ground Rules
 
@@ -396,6 +396,18 @@ D2D trust depends on the sender's position in the contact directory and trust ne
 | `test_d2d_dedup_by_remote_did` | `core/test/staging_test.go` | Same content from two different remote DIDs creates two staging records |
 | `test_appview_attestation_staged` | `tests/integration/test_staging_appview.py` | AT Protocol attestation goes through staging with signature verification |
 | USR-02 Sancho Moment update | `tests/system/user_stories/test_02_sancho_moment.py` | Sancho's arrival triggers vault recall via staging (not direct write) |
+
+### Implementation Notes
+
+**Core-side wiring:** D2D staging is wired in Core's ingress callbacks (main.go), not in Brain's process endpoint. After decryption + trust filtering, Core checks `D2DMemoryTypes` and calls `stagingInbox.Ingest()` directly. This avoids schema changes to Brain's `/api/v1/process` endpoint and provides correct metadata (timestamp, DIDComm type) from the transport layer.
+
+**Dual-path staging (belt-and-suspenders):** Brain's `_handle_didcomm` also stages memory-producing content if it receives a DIDComm event via the process endpoint. Dedup by `(producer_id, source, source_id)` prevents duplicates.
+
+### Known Gaps
+
+**Trust model mismatch (Core ingress vs Brain vault policy):** Core's trust cache accepts D2D senders with AppView reputation score >= 0.3, even if they're not in the contact directory. Brain's trust scorer only checks the contact directory — if the DID is not a contact, it gets `quarantine` retrieval policy. This means a DID accepted by Core's trust cache but not in the user's contacts will be accepted at transport but quarantined in vault. This is the safer default: transport acceptance (broad) does not imply vault trust (strict). The user must add the sender as a contact to promote from quarantine. Future improvement: Brain could query the trust cache to derive a `caveated` policy for non-contact DIDs with verified reputation.
+
+**Integration test coverage:** The Core-level integration test for `/msg` → decrypt → staging → resolve requires the full Docker stack (Core + Brain running) and belongs in `tests/integration/test_staging_d2d.py`. The current unit tests cover Brain-side staging logic and trust scoring. The Core staging hook is tested via build + compilation and will be exercised by the E2E Sancho Moment test (USR-02) when run against the Docker stack.
 
 ### Risks
 

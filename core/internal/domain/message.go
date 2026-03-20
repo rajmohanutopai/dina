@@ -13,6 +13,22 @@ const (
 	MessageTypeKeyDeliver MessageType = "dina/estate/key_deliver"
 )
 
+// D2DMemoryTypes maps DIDComm message types that produce memory content
+// to valid vault item types. Real-time signals (arrival, greeting, typing,
+// ping, departure) are NOT staged — only relationship/commerce/trust memory.
+var D2DMemoryTypes = map[MessageType]string{
+	// Social — relationship memory
+	"dina/social/note":          "relationship_note",
+	"dina/social/context_share": "relationship_note",
+	"dina/social/update":        "relationship_note",
+	"dina/social/message":       "message",
+	// Commerce — purchase/review memory
+	"dina/commerce/review": "trust_review",
+	// Trust — attestation records
+	"dina/trust/attestation": "trust_attestation",
+	"dina/trust/outcome":     "trust_attestation",
+}
+
 // DinaMessage represents a DIDComm-compatible plaintext message.
 type DinaMessage struct {
 	ID          string      `json:"id"`

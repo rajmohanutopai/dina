@@ -424,6 +424,7 @@ async def test_stored_triggers_event_extraction(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TST-BRAIN-808
 async def test_timestamp_preserved_from_metadata(core, enrichment):
     """Staging processor extracts timestamp from metadata and sets it on vault item.
 
@@ -450,6 +451,7 @@ async def test_timestamp_preserved_from_metadata(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TST-BRAIN-809
 async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
     """When metadata has no timestamp, classified item should not have one."""
     processor = StagingProcessor(core=core, enrichment=enrichment)
@@ -467,3 +469,102 @@ async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
     core.staging_resolve.assert_awaited_once()
     classified = core.staging_resolve.call_args.args[2]
     assert "timestamp" not in classified
+
+
+# ---------------------------------------------------------------------------
+# D2D staging — contact_did propagation + trust scoring end-to-end
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-810
+async def test_d2d_origin_did_sets_contact_did(core, enrichment):
+    """D2D items: origin_did is copied to contact_did for trust scorer lookup."""
+    from src.service.trust_scorer import TrustScorer
+    scorer = TrustScorer(contacts=[
+        Contact(did="did:plc:sancho", trust_level="trusted", name="Sancho"),
+    ])
+    processor = StagingProcessor(
+        core=core, enrichment=enrichment, trust_scorer=scorer,
+    )
+    core.staging_claim.return_value = [
+        _make_item(
+            id="stg-d2d-1",
+            type="relationship_note",
+            source="d2d",
+            sender="did:plc:sancho",
+            summary="Mother is feeling better",
+            ingress_channel="d2d",
+            origin_did="did:plc:sancho",
+            origin_kind="remote_dina",
+        ),
+    ]
+
+    await processor.process_pending()
+
+    core.staging_resolve.assert_awaited_once()
+    classified = core.staging_resolve.call_args.args[2]
+    # Trust scorer should find Sancho via contact_did (set from origin_did)
+    assert classified["sender_trust"] == "contact_ring1"
+    assert classified["contact_did"] == "did:plc:sancho"
+    assert classified["confidence"] == "medium"
+    assert classified["retrieval_policy"] == "caveated"
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-811
+async def test_d2d_unknown_sender_gets_unknown_trust(core, enrichment):
+    """D2D items from unknown sender get unknown/low/quarantine trust."""
+    from src.service.trust_scorer import TrustScorer
+    scorer = TrustScorer(contacts=[
+        Contact(did="did:plc:sancho", trust_level="trusted", name="Sancho"),
+    ])
+    processor = StagingProcessor(
+        core=core, enrichment=enrichment, trust_scorer=scorer,
+    )
+    core.staging_claim.return_value = [
+        _make_item(
+            id="stg-d2d-2",
+            type="trust_attestation",
+            source="d2d",
+            sender="did:plc:stranger",
+            summary="Attestation from stranger",
+            ingress_channel="d2d",
+            origin_did="did:plc:stranger",
+            origin_kind="remote_dina",
+        ),
+    ]
+
+    await processor.process_pending()
+
+    core.staging_resolve.assert_awaited_once()
+    classified = core.staging_resolve.call_args.args[2]
+    assert classified["sender_trust"] == "unknown"
+    assert classified["confidence"] == "low"
+    assert classified["retrieval_policy"] == "quarantine"
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-812
+async def test_d2d_valid_vault_type_resolves(core, enrichment):
+    """D2D staged item with valid vault type resolves successfully."""
+    processor = StagingProcessor(core=core, enrichment=enrichment)
+    core.staging_claim.return_value = [
+        _make_item(
+            id="stg-d2d-3",
+            type="relationship_note",  # valid vault type
+            source="d2d",
+            sender="did:plc:peer",
+            ingress_channel="d2d",
+            origin_did="did:plc:peer",
+            origin_kind="remote_dina",
+        ),
+    ]
+
+    count = await processor.process_pending()
+    assert count == 1
+
+    core.staging_resolve.assert_awaited_once()
+    classified = core.staging_resolve.call_args.args[2]
+    assert classified["type"] == "relationship_note"
+    assert classified["source"] == "d2d"

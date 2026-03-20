@@ -701,6 +701,12 @@ func main() {
 		[]byte(signingPrivKey),
 	)
 	ingressSweeper.SetConverter(converter)
+	// stageD2DMemory is set after stagingInbox is created (late binding).
+	// Stages memory-producing D2D content into the staging inbox for Brain
+	// classification + enrichment. Real-time signals (arrival, greeting,
+	// typing) are NOT staged.
+	var stageD2DMemory func(ctx context.Context, msg *domain.DinaMessage)
+
 	ingressSweeper.SetOnMessage(func(msg *domain.DinaMessage) {
 		// SEC-MED-12: Enforce per-DID rate limit on sweeper path (same as fast path).
 		if msg.From != "" && !inboxMgr.CheckDIDRate(msg.From) {
@@ -720,6 +726,10 @@ func main() {
 			}
 		}
 		transportSvc.StoreInbound(msg)
+		// Stage memory-producing D2D content for vault persistence.
+		if stageD2DMemory != nil {
+			stageD2DMemory(context.Background(), msg)
+		}
 	})
 	ingressSweeper.SetTransport(transportSvc)
 	ingressRouter := ingress.NewRouter(vaultMgr, inboxMgr, deadDrop, ingressSweeper, ingressLimiter)
@@ -747,6 +757,10 @@ func main() {
 			}
 		}
 		transportSvc.StoreInbound(msg)
+		// Stage memory-producing D2D content for vault persistence.
+		if stageD2DMemory != nil {
+			stageD2DMemory(ctx, msg)
+		}
 		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)
 		return nil
 	})
@@ -918,6 +932,43 @@ func main() {
 		},
 	)
 	stagingH := &handler.StagingHandler{Staging: stagingInbox, Devices: deviceSvc}
+
+	// Wire late-binding D2D staging function now that stagingInbox exists.
+	stageD2DMemory = func(ctx context.Context, msg *domain.DinaMessage) {
+		vaultType, isMemory := domain.D2DMemoryTypes[msg.Type]
+		if !isMemory {
+			return
+		}
+		body := string(msg.Body)
+		summary := body
+		if len(summary) > 200 {
+			summary = summary[:200]
+		}
+		// Preserve original DIDComm type and timestamp in metadata so
+		// Brain's staging processor can restore chronology and the raw
+		// message semantics survive type collapsing (e.g. context_share
+		// and note both become relationship_note in the vault type).
+		meta := fmt.Sprintf(`{"didcomm_type":%q,"timestamp":%d}`,
+			string(msg.Type), msg.CreatedTime)
+		item := domain.StagingItem{
+			Source:         "d2d",
+			SourceID:       msg.ID,
+			Type:           vaultType,
+			Summary:        summary,
+			Body:           body,
+			Sender:         msg.From,
+			Metadata:       meta,
+			IngressChannel: domain.IngressD2D,
+			OriginDID:      msg.From,
+			OriginKind:     domain.OriginRemoteDina,
+			ProducerID:     "d2d:" + msg.From,
+		}
+		if _, err := stagingInbox.Ingest(ctx, item); err != nil {
+			slog.Warn("ingress: D2D staging failed", "type", string(msg.Type), "error", err)
+		} else {
+			slog.Info("ingress: D2D memory content staged", "type", string(msg.Type), "from", msg.From)
+		}
+	}
 
 	// Post-publication hook: when pending_unlock items are drained to vault,
 	// push an event to Brain for event extraction (reminders, contacts).

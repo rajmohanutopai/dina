@@ -358,14 +358,14 @@ class TestIngressChannelScoring:
         assert result["retrieval_policy"] == "caveated"
 
     def test_d2d_unknown_sender(self, scorer):
-        """(d2d) with unknown sender → unknown / low / caveated."""
+        """(d2d) with unknown sender → unknown / low / quarantine."""
         item = {"ingress_channel": "d2d", "sender": "did:plc:stranger",
                 "type": "note"}
         result = scorer.score(item)
         assert result["sender_trust"] == "unknown"
         assert result["source_type"] == "unknown"
         assert result["confidence"] == "low"
-        assert result["retrieval_policy"] == "caveated"
+        assert result["retrieval_policy"] == "quarantine"
 
     def test_ingress_channel_takes_precedence_over_source(self, scorer):
         """ingress_channel=connector overrides source=user (would be self trust).

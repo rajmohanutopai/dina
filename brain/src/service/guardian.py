@@ -327,6 +327,22 @@ _DIDCOMM_HANDLERS: dict[str, str] = {
     "dina/trust/": "trust_handler",
 }
 
+# DIDComm message types whose content is memory-producing → staged to vault.
+# Maps DIDComm type → valid vault item type (from domain.ValidVaultItemTypes).
+# Real-time signals (arrival, greeting, typing, ping) are NOT staged.
+_D2D_VAULT_TYPE_MAP: dict[str, str] = {
+    # Social — relationship memory
+    "dina/social/note":          "relationship_note",
+    "dina/social/context_share": "relationship_note",
+    "dina/social/update":        "relationship_note",
+    "dina/social/message":       "message",
+    # Commerce — purchase/review memory
+    "dina/commerce/review":      "trust_review",
+    # Trust — attestation records
+    "dina/trust/attestation":    "trust_attestation",
+    "dina/trust/outcome":        "trust_attestation",
+}
+
 # Promise patterns for proactive briefing scanning (SS17.1).
 # Mirrors _PROMISE_PATTERNS in nudge.py but kept local to avoid coupling.
 _PROMISE_BRIEFING_PATTERNS = re.compile(
@@ -4092,8 +4108,46 @@ class GuardianLoop:
 
         Parses the message type (``dina/social/arrival``,
         ``dina/commerce/*``, etc.) and routes to the correct handler.
+
+        Memory-producing D2D content (notes, shared context, attestations)
+        is staged via staging_ingest with ``ingress_channel=d2d``. Real-time
+        signals (arrival, typing) are processed immediately, not staged.
         """
         msg_type = event.get("type", "")
+        from_did = event.get("from", "")
+
+        # Stage memory-producing D2D content before handling.
+        # Only types in _D2D_VAULT_TYPE_MAP are persisted; real-time
+        # signals (arrival, greeting, typing) are processed immediately.
+        staged = False
+        vault_type = _D2D_VAULT_TYPE_MAP.get(msg_type)
+        if vault_type is not None:
+            body = event.get("body", "")
+            if isinstance(body, dict):
+                body = json.dumps(body)
+            try:
+                await self._core.staging_ingest({
+                    "type": vault_type,
+                    "source": "d2d",
+                    "source_id": event.get("id", ""),
+                    "summary": (str(body)[:200] if body else msg_type),
+                    "body": str(body) if body else "",
+                    "sender": from_did,
+                    "metadata": json.dumps({
+                        "didcomm_type": msg_type,
+                        "timestamp": event.get("created_time", 0),
+                    }),
+                    "ingress_channel": "d2d",
+                    "origin_did": from_did,
+                    "origin_kind": "remote_dina",
+                })
+                staged = True
+            except Exception as exc:
+                log.warning(
+                    "guardian.didcomm.staging_failed",
+                    msg_type=msg_type,
+                    error=str(exc),
+                )
 
         for prefix, handler in _DIDCOMM_HANDLERS.items():
             if msg_type.startswith(prefix):
@@ -4104,14 +4158,14 @@ class GuardianLoop:
                 )
                 # For social messages, run through nudge assembly.
                 if handler == "nudge_assembly":
-                    from_did = event.get("from")
                     nudge = await self._nudge.assemble_nudge(event, from_did)
                     return {
                         "action": "nudge_assembled",
                         "handler": handler,
                         "nudge": nudge,
+                        "staged": staged,
                     }
-                return {"action": "routed", "handler": handler}
+                return {"action": "routed", "handler": handler, "staged": staged}
 
         log.warning("guardian.didcomm.unknown_type", msg_type=msg_type)
         return {"action": "unhandled_didcomm", "type": msg_type}

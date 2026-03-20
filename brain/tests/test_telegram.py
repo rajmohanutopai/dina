@@ -300,6 +300,7 @@ async def test_send_nudge(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TST-BRAIN-813
 async def test_message_stored_via_staging(service, mock_core, mock_guardian):
     """Processed messages should be staged (not direct vault write)."""
     service._paired_users.add(111)

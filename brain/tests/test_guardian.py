@@ -9697,6 +9697,7 @@ async def test_post_publish_no_contact_did_skips_update(guardian_with_extractor)
 
 
 @pytest.mark.asyncio
+# TST-BRAIN-807
 async def test_document_ingest_uses_direct_vault_write(guardian):
     """Document ingest stores to vault directly — NOT via staging.
 
@@ -9770,3 +9771,159 @@ async def test_document_ingest_uses_direct_vault_write(guardian):
         rem_meta = _json.loads(rem.get("metadata", "{}"))
         assert rem_meta.get("vault_item_id") == returned_doc_id
         assert rem_meta.get("persona") == "personal"
+
+
+# ---------------------------------------------------------------------------
+# D2D DIDComm staging — memory-producing content goes through staging
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-800
+async def test_d2d_memory_note_staged(guardian):
+    """D2D social note is staged with ingress_channel=d2d."""
+    import json as _json
+
+    core = guardian._test_core
+    core.staging_ingest.return_value = "stg-d2d-1"
+
+    event = {
+        "type": "dina/social/note",
+        "from": "did:plc:sancho",
+        "id": "msg-42",
+        "body": "My mother is feeling better today",
+        "created_time": 1711000000,
+    }
+    result = await guardian.process_event(event)
+
+    core.staging_ingest.assert_awaited_once()
+    item = core.staging_ingest.await_args[0][0]
+    assert item["type"] == "relationship_note"  # mapped from dina/social/note
+    assert item["source"] == "d2d"
+    assert item["sender"] == "did:plc:sancho"
+    assert item["ingress_channel"] == "d2d"
+    assert item["origin_kind"] == "remote_dina"
+    assert item["origin_did"] == "did:plc:sancho"
+    assert item["body"] == "My mother is feeling better today"
+    meta = _json.loads(item["metadata"])
+    assert meta["didcomm_type"] == "dina/social/note"
+    assert meta["timestamp"] == 1711000000
+    assert result.get("staged") is True
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-801
+async def test_d2d_trust_attestation_staged(guardian):
+    """D2D trust attestation is staged with ingress_channel=d2d."""
+    core = guardian._test_core
+    core.staging_ingest.return_value = "stg-d2d-2"
+
+    event = {
+        "type": "dina/trust/attestation",
+        "from": "did:plc:albert",
+        "id": "att-99",
+        "body": {"ring": 2, "evidence": "transaction_history"},
+    }
+    result = await guardian.process_event(event)
+
+    core.staging_ingest.assert_awaited_once()
+    item = core.staging_ingest.await_args[0][0]
+    assert item["type"] == "trust_attestation"  # mapped from dina/trust/attestation
+    assert item["ingress_channel"] == "d2d"
+    assert item["origin_did"] == "did:plc:albert"
+    assert result.get("staged") is True
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-802
+async def test_d2d_arrival_not_staged(guardian):
+    """D2D social arrival is a real-time signal — NOT staged."""
+    core = guardian._test_core
+
+    event = {
+        "type": "dina/social/arrival",
+        "from": "did:plc:sancho",
+        "body": "Sancho is nearby",
+    }
+    result = await guardian.process_event(event)
+
+    # Arrival is real-time (nudge), not memory-producing.
+    core.staging_ingest.assert_not_awaited()
+    assert result.get("action") == "nudge_assembled"
+    assert result.get("staged") is False
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-803
+async def test_d2d_commerce_review_staged(guardian):
+    """D2D commerce review is staged for vault persistence."""
+    core = guardian._test_core
+    core.staging_ingest.return_value = "stg-d2d-3"
+
+    event = {
+        "type": "dina/commerce/review",
+        "from": "did:plc:chairmaker",
+        "id": "rev-7",
+        "body": "This ergonomic chair has excellent lumbar support",
+    }
+    result = await guardian.process_event(event)
+
+    core.staging_ingest.assert_awaited_once()
+    item = core.staging_ingest.await_args[0][0]
+    assert item["type"] == "trust_review"  # mapped from dina/commerce/review
+    assert item["sender"] == "did:plc:chairmaker"
+    assert item["ingress_channel"] == "d2d"
+    assert result.get("staged") is True
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-804
+async def test_d2d_context_share_staged(guardian):
+    """D2D context_share (actual type used in D2D tests) is staged."""
+    core = guardian._test_core
+    core.staging_ingest.return_value = "stg-d2d-cs"
+
+    event = {
+        "type": "dina/social/context_share",
+        "from": "did:plc:sancho",
+        "id": "ctx-1",
+        "body": "Mother is ill, needs daily check-ins",
+    }
+    result = await guardian.process_event(event)
+
+    core.staging_ingest.assert_awaited_once()
+    item = core.staging_ingest.await_args[0][0]
+    assert item["type"] == "relationship_note"  # mapped from context_share
+    assert item["ingress_channel"] == "d2d"
+    assert result.get("staged") is True
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-805
+async def test_d2d_unknown_type_not_staged(guardian):
+    """Unknown DIDComm type is neither staged nor handled."""
+    core = guardian._test_core
+
+    event = {
+        "type": "dina/experimental/beta",
+        "from": "did:plc:unknown",
+        "body": "Some experimental data",
+    }
+    result = await guardian.process_event(event)
+
+    core.staging_ingest.assert_not_awaited()
+    assert result.get("action") == "unhandled_didcomm"
+
+
+@pytest.mark.asyncio
+# TST-BRAIN-806
+async def test_d2d_realtime_signals_not_staged(guardian):
+    """Real-time D2D signals (greeting, departure) are NOT staged."""
+    core = guardian._test_core
+
+    for msg_type in ["dina/social/greeting", "dina/social/departure",
+                     "dina/commerce/inquiry", "dina/commerce/offer"]:
+        core.staging_ingest.reset_mock()
+        event = {"type": msg_type, "from": "did:plc:peer", "body": "hi"}
+        await guardian.process_event(event)
+        core.staging_ingest.assert_not_awaited()

@@ -152,7 +152,7 @@ class TrustScorer:
                 "sender_trust": "unknown",
                 "source_type": "unknown",
                 "confidence": "low",
-                "retrieval_policy": "caveated",
+                "retrieval_policy": "quarantine",
             }
 
         if ingress_channel == "connector":
