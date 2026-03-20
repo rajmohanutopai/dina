@@ -656,7 +656,7 @@ class GuardianLoop:
         # Expire pending proposals past TTL (transition, don't delete).
         expired_count = 0
         for k, v in list(self._pending_proposals.items()):
-            if v.get("status") == "pending" and now - v.get("created_at", 0) > self._PROPOSAL_TTL:
+            if v.get("status", "pending") == "pending" and now - v.get("created_at", 0) > self._PROPOSAL_TTL:
                 v["status"] = "expired"
                 v["updated_at"] = now
                 expired_count += 1
@@ -2319,7 +2319,7 @@ class GuardianLoop:
         changed = False
         # Expire pending proposals past TTL.
         for v in self._pending_proposals.values():
-            if v.get("status") == "pending" and now - v.get("created_at", 0) > self._PROPOSAL_TTL:
+            if v.get("status", "pending") == "pending" and now - v.get("created_at", 0) > self._PROPOSAL_TTL:
                 v["status"] = "expired"
                 v["updated_at"] = now
                 changed = True
@@ -2382,7 +2382,7 @@ class GuardianLoop:
 
         # Look up without consuming — proposal is only removed on success.
         stored = self._pending_proposals.get(disclosure_id)
-        if stored is None:
+        if stored is None or stored.get("status") != "pending":
             log.warning(
                 "guardian.disclosure.unknown_id",
                 disclosure_id=disclosure_id,
@@ -2544,7 +2544,7 @@ class GuardianLoop:
             }
 
         stored = self._pending_proposals.get(proposal_id)
-        if stored is None:
+        if stored is None or stored.get("status") != "pending":
             return {
                 "status": "error",
                 "action": "intent_expired",
