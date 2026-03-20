@@ -317,6 +317,7 @@ _MODERATE_ACTIONS = frozenset({
     "install_extension",
     "form_fill",
     "calendar_create",
+    "research",  # Autonomous research delegation to external agent (OpenClaw)
 })
 
 # DIDComm message type prefixes and their handlers.
