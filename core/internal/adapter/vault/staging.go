@@ -52,20 +52,20 @@ func NewStagingInbox(isPersonaOpen func(string) bool, storeToVault StoreToVaultF
 	}
 }
 
-// dedupKey builds the deduplication key from connector_id, source, and source_id.
-func dedupKey(connectorID, source, sourceID string) string {
-	return connectorID + "|" + source + "|" + sourceID
+// dedupKey builds the deduplication key from producer_id, source, and source_id.
+func dedupKey(producerID, source, sourceID string) string {
+	return producerID + "|" + source + "|" + sourceID
 }
 
 // Ingest stores a raw item in the staging inbox.
-// Deduplicates on (connector_id, source, source_id) — if a duplicate
+// Deduplicates on (producer_id, source, source_id) — if a duplicate
 // exists, the existing staging ID is returned without modification.
 func (s *StagingInbox) Ingest(_ context.Context, item domain.StagingItem) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Dedup check.
-	dk := dedupKey(item.ConnectorID, item.Source, item.SourceID)
+	dk := dedupKey(item.ProducerID, item.Source, item.SourceID)
 	if dk != "||" { // only dedup when all three fields are non-empty
 		if existingID, ok := s.dedupIndex[dk]; ok {
 			return existingID, nil

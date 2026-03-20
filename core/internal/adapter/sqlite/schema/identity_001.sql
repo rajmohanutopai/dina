@@ -126,10 +126,15 @@ CREATE TABLE IF NOT EXISTS staging_inbox (
     lease_until       INTEGER NOT NULL DEFAULT 0,
     expires_at        INTEGER NOT NULL,
     created_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
-    updated_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
+    updated_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    -- Ingress provenance (server-derived, never caller-supplied for external callers)
+    ingress_channel   TEXT NOT NULL DEFAULT '',
+    origin_did        TEXT NOT NULL DEFAULT '',
+    origin_kind       TEXT NOT NULL DEFAULT '',
+    producer_id       TEXT NOT NULL DEFAULT ''
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_staging_inbox_dedup ON staging_inbox(connector_id, source, source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staging_inbox_dedup ON staging_inbox(producer_id, source, source_id);
 CREATE INDEX IF NOT EXISTS idx_staging_inbox_status ON staging_inbox(status);
 CREATE INDEX IF NOT EXISTS idx_staging_inbox_expires ON staging_inbox(expires_at);
 

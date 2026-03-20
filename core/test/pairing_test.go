@@ -3,12 +3,16 @@ package test
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mr-tron/base58"
+
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pairing"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -549,6 +553,181 @@ func TestPairing_10_1_PairCompletionResponseFields(t *testing.T) {
 	// Negative: invalid code must fail CompletePairingFull.
 	_, err = impl.CompletePairingFull(ctx, "invalid-code-xyz", "BadDevice")
 	testutil.RequireTrue(t, err != nil, "invalid code must fail")
+}
+
+// --------------------------------------------------------------------------
+// Device Role Tests (CompletePairingWithKey + GetDeviceByDID)
+// --------------------------------------------------------------------------
+
+// genMultibase generates a fresh Ed25519 keypair and returns the multibase
+// public key string and the corresponding DID.
+func genMultibase(t *testing.T) (multibase, did string) {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(nil)
+	testutil.RequireNoError(t, err)
+	multicodec := append([]byte{0xed, 0x01}, pub...)
+	multibase = "z" + base58.Encode(multicodec)
+	did = "did:key:" + multibase
+	return
+}
+
+// TestPairing_DeviceRole_DefaultIsUser — CompletePairingWithKey without
+// explicit role defaults to "user".
+func TestPairing_DeviceRole_DefaultIsUser(t *testing.T) {
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+	ctx := context.Background()
+
+	code, _, err := impl.GenerateCode(ctx)
+	testutil.RequireNoError(t, err)
+
+	multibase, did := genMultibase(t)
+	tokenID, _, err := impl.CompletePairingWithKey(ctx, code, "My Phone", multibase)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, tokenID != "", "must return tokenID")
+
+	devices, err := impl.ListDevices(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 1)
+	testutil.RequireEqual(t, devices[0].DID, did)
+	testutil.RequireEqual(t, devices[0].Role, domain.DeviceRoleUser)
+	testutil.RequireEqual(t, devices[0].AuthType, "ed25519")
+}
+
+// TestPairing_DeviceRole_ExplicitAgent — CompletePairingWithKey with
+// role="agent" records agent role.
+func TestPairing_DeviceRole_ExplicitAgent(t *testing.T) {
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+	ctx := context.Background()
+
+	code, _, err := impl.GenerateCode(ctx)
+	testutil.RequireNoError(t, err)
+
+	multibase, did := genMultibase(t)
+	tokenID, _, err := impl.CompletePairingWithKey(ctx, code, "OpenClaw Agent", multibase, domain.DeviceRoleAgent)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, tokenID != "", "must return tokenID")
+
+	devices, err := impl.ListDevices(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 1)
+	testutil.RequireEqual(t, devices[0].DID, did)
+	testutil.RequireEqual(t, devices[0].Role, domain.DeviceRoleAgent)
+}
+
+// TestPairing_DeviceRole_MixedRoles — pair two devices, one user and one
+// agent. Verify both appear with correct roles in ListDevices.
+func TestPairing_DeviceRole_MixedRoles(t *testing.T) {
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+	ctx := context.Background()
+
+	// Pair user device
+	code1, _, err := impl.GenerateCode(ctx)
+	testutil.RequireNoError(t, err)
+	mb1, did1 := genMultibase(t)
+	_, _, err = impl.CompletePairingWithKey(ctx, code1, "My Phone", mb1)
+	testutil.RequireNoError(t, err)
+
+	// Pair agent device
+	code2, _, err := impl.GenerateCode(ctx)
+	testutil.RequireNoError(t, err)
+	mb2, did2 := genMultibase(t)
+	_, _, err = impl.CompletePairingWithKey(ctx, code2, "Bot", mb2, domain.DeviceRoleAgent)
+	testutil.RequireNoError(t, err)
+
+	devices, err := impl.ListDevices(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 2)
+
+	roles := map[string]string{}
+	for _, d := range devices {
+		roles[d.DID] = d.Role
+	}
+	testutil.RequireEqual(t, roles[did1], domain.DeviceRoleUser)
+	testutil.RequireEqual(t, roles[did2], domain.DeviceRoleAgent)
+}
+
+// TestPairing_GetDeviceByDID_Found — GetDeviceByDID returns the correct
+// device with all fields populated.
+func TestPairing_GetDeviceByDID_Found(t *testing.T) {
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+	ctx := context.Background()
+
+	code, _, err := impl.GenerateCode(ctx)
+	testutil.RequireNoError(t, err)
+
+	multibase, did := genMultibase(t)
+	tokenID, _, err := impl.CompletePairingWithKey(ctx, code, "Paired Device", multibase, domain.DeviceRoleAgent)
+	testutil.RequireNoError(t, err)
+
+	device, err := impl.GetDeviceByDID(ctx, did)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, device != nil, "device must be found by DID")
+	testutil.RequireEqual(t, device.DID, did)
+	testutil.RequireEqual(t, device.TokenID, tokenID)
+	testutil.RequireEqual(t, device.Name, "Paired Device")
+	testutil.RequireEqual(t, device.Role, domain.DeviceRoleAgent)
+	testutil.RequireEqual(t, device.AuthType, "ed25519")
+	testutil.RequireTrue(t, device.CreatedAt > 0, "CreatedAt must be set")
+	testutil.RequireTrue(t, !device.Revoked, "device must not be revoked")
+}
+
+// TestPairing_GetDeviceByDID_NotFound — GetDeviceByDID returns nil for
+// unknown DID (no error).
+func TestPairing_GetDeviceByDID_NotFound(t *testing.T) {
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+	ctx := context.Background()
+
+	device, err := impl.GetDeviceByDID(ctx, "did:key:z6MkNonExistent")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, device == nil, "nonexistent DID must return nil, not error")
+}
+
+// TestPairing_GetDeviceByDID_Revoked — GetDeviceByDID returns revoked
+// devices (revoked flag=true, not nil).
+func TestPairing_GetDeviceByDID_Revoked(t *testing.T) {
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+	ctx := context.Background()
+
+	code, _, err := impl.GenerateCode(ctx)
+	testutil.RequireNoError(t, err)
+
+	multibase, did := genMultibase(t)
+	tokenID, _, err := impl.CompletePairingWithKey(ctx, code, "To Revoke", multibase)
+	testutil.RequireNoError(t, err)
+
+	err = impl.RevokeDevice(ctx, tokenID)
+	testutil.RequireNoError(t, err)
+
+	device, err := impl.GetDeviceByDID(ctx, did)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, device != nil, "revoked device must still be findable by DID")
+	testutil.RequireTrue(t, device.Revoked, "device must be marked as revoked")
+}
+
+// TestPairing_DeviceRole_TokenPairDefaultsUser — Token-based pairing
+// (CompletePairing) should default role to "user".
+func TestPairing_DeviceRole_TokenPairDefaultsUser(t *testing.T) {
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+	ctx := context.Background()
+
+	code, _, err := impl.GenerateCode(ctx)
+	testutil.RequireNoError(t, err)
+
+	_, _, err = impl.CompletePairing(ctx, code, "Token Device")
+	testutil.RequireNoError(t, err)
+
+	devices, err := impl.ListDevices(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 1)
+	// Token-paired devices default to "user" role.
+	testutil.RequireEqual(t, devices[0].Role, domain.DeviceRoleUser)
 }
 
 // TST-CORE-895

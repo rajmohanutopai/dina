@@ -379,7 +379,46 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v3 complete")
 	}
 
+	// --- Identity migration v4: staging provenance columns ---
+	if !hasColumn(db, "staging_inbox", "ingress_channel") {
+		slog.Info("sqlite: applying identity migration v4 (staging provenance)")
+
+		for _, col := range []string{
+			`ALTER TABLE staging_inbox ADD COLUMN ingress_channel TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE staging_inbox ADD COLUMN origin_did TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE staging_inbox ADD COLUMN origin_kind TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE staging_inbox ADD COLUMN producer_id TEXT NOT NULL DEFAULT ''`,
+		} {
+			if _, err := db.ExecContext(ctx, col); err != nil {
+				// Column may already exist — ignore "duplicate column" errors.
+				if !isAlterColumnExists(err) {
+					return fmt.Errorf("identity v4: %w", err)
+				}
+			}
+		}
+
+		// Backfill producer_id from connector_id for existing items.
+		db.ExecContext(ctx,
+			`UPDATE staging_inbox SET ingress_channel='connector', producer_id='connector:'||connector_id WHERE producer_id='' AND connector_id!=''`)
+
+		// Drop old dedup index and create new one.
+		db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_staging_inbox_dedup`)
+		db.ExecContext(ctx,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_staging_inbox_dedup ON staging_inbox(producer_id, source, source_id)`)
+
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (4, 'Staging provenance columns + dedup by producer_id')`)
+
+		slog.Info("sqlite: identity migration v4 complete")
+	}
+
 	return nil
+}
+
+// isAlterColumnExists checks if the error is a "duplicate column" error from ALTER TABLE.
+func isAlterColumnExists(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), "duplicate column") ||
+		strings.Contains(err.Error(), "already exists"))
 }
 
 // hasTable checks whether a table exists in the database.

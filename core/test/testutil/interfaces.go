@@ -382,9 +382,11 @@ type PairingManager interface {
 	CompletePairingFull(ctx context.Context, code string, deviceName string) (*PairResponse, error)
 	// CompletePairingWithKey verifies the code and registers a device using
 	// an Ed25519 public key (signature-based auth). No CLIENT_TOKEN generated.
-	CompletePairingWithKey(ctx context.Context, code, deviceName, publicKeyMultibase string) (deviceID string, nodeDID string, err error)
+	CompletePairingWithKey(ctx context.Context, code, deviceName, publicKeyMultibase string, role ...string) (deviceID string, nodeDID string, err error)
 	// ListDevices returns all paired devices.
 	ListDevices(ctx context.Context) ([]PairedDevice, error)
+	// GetDeviceByDID returns a device by its DID, or nil if not found.
+	GetDeviceByDID(ctx context.Context, did string) (*PairedDevice, error)
 	// RevokeDevice disables a device by token ID.
 	RevokeDevice(ctx context.Context, tokenID string) error
 }

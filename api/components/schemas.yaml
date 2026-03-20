@@ -240,6 +240,11 @@ PairedDevice:
     auth_type:
       type: string
       description: "'ed25519' (primary)."
+    role:
+      type: string
+      description: "'user' (personal CLI) or 'agent' (OpenClaw/bot)."
+      enum: [user, agent]
+      default: user
     last_seen:
       type: integer
       format: int64
@@ -298,6 +303,18 @@ StagingItem:
     updated_at:
       type: integer
       format: int64
+    ingress_channel:
+      type: string
+      description: Server-derived ingress channel (cli, connector, telegram, d2d, brain, admin)
+    origin_did:
+      type: string
+      description: Server-derived origin identity (device DID, remote DID, connector ID)
+    origin_kind:
+      type: string
+      description: Server-derived origin type (user, agent, remote_dina, service)
+    producer_id:
+      type: string
+      description: Server-derived dedup namespace (cli:<did>, connector:<id>, etc.)
 
 Reminder:
   type: object

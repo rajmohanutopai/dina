@@ -53,7 +53,7 @@ func (s *StagingInbox) db() *sql.DB {
 }
 
 // Ingest stores a raw item in the staging inbox.
-// Deduplicates on (connector_id, source, source_id).
+// Deduplicates on (producer_id, source, source_id).
 func (s *StagingInbox) Ingest(ctx context.Context, item domain.StagingItem) (string, error) {
 	db := s.db()
 	if db == nil {
@@ -82,11 +82,14 @@ func (s *StagingInbox) Ingest(ctx context.Context, item domain.StagingItem) (str
 
 	res, err := db.ExecContext(ctx,
 		`INSERT INTO staging_inbox (id, connector_id, source, source_id, source_hash,
-			type, summary, body, sender, metadata, status, expires_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', ?, ?, ?)
-		 ON CONFLICT(connector_id, source, source_id) DO NOTHING`,
+			type, summary, body, sender, metadata, status,
+			ingress_channel, origin_did, origin_kind, producer_id,
+			expires_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(producer_id, source, source_id) DO NOTHING`,
 		id, item.ConnectorID, item.Source, item.SourceID, sourceHash,
 		item.Type, item.Summary, item.Body, item.Sender, item.Metadata,
+		item.IngressChannel, item.OriginDID, item.OriginKind, item.ProducerID,
 		expiresAt, now, now,
 	)
 	if err != nil {
@@ -99,8 +102,8 @@ func (s *StagingInbox) Ingest(ctx context.Context, item domain.StagingItem) (str
 		// Dedup hit — return the existing staging ID.
 		var existingID string
 		err := db.QueryRowContext(ctx,
-			`SELECT id FROM staging_inbox WHERE connector_id=? AND source=? AND source_id=?`,
-			item.ConnectorID, item.Source, item.SourceID,
+			`SELECT id FROM staging_inbox WHERE producer_id=? AND source=? AND source_id=?`,
+			item.ProducerID, item.Source, item.SourceID,
 		).Scan(&existingID)
 		if err != nil {
 			return "", fmt.Errorf("staging: dedup lookup: %w", err)
@@ -131,7 +134,8 @@ func (s *StagingInbox) Claim(ctx context.Context, limit int, leaseDuration time.
 	rows, err := tx.QueryContext(ctx,
 		`SELECT id, connector_id, source, source_id, source_hash, type, summary, body,
 		        sender, metadata, status, target_persona, classified_item, error,
-		        retry_count, claimed_at, lease_until, expires_at, created_at, updated_at
+		        retry_count, claimed_at, lease_until, expires_at, created_at, updated_at,
+		        ingress_channel, origin_did, origin_kind, producer_id
 		 FROM staging_inbox WHERE status = 'received' LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("staging: query received: %w", err)
@@ -144,7 +148,8 @@ func (s *StagingInbox) Claim(ctx context.Context, limit int, leaseDuration time.
 			&it.SourceHash, &it.Type, &it.Summary, &it.Body, &it.Sender,
 			&it.Metadata, &it.Status, &it.TargetPersona, &it.ClassifiedItem,
 			&it.Error, &it.RetryCount, &it.ClaimedAt, &it.LeaseUntil,
-			&it.ExpiresAt, &it.CreatedAt, &it.UpdatedAt); err != nil {
+			&it.ExpiresAt, &it.CreatedAt, &it.UpdatedAt,
+			&it.IngressChannel, &it.OriginDID, &it.OriginKind, &it.ProducerID); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("staging: scan: %w", err)
 		}

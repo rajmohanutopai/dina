@@ -39,6 +39,7 @@ type completePairingRequest struct {
 	Code               string `json:"code"`
 	DeviceName         string `json:"device_name"`
 	PublicKeyMultibase string `json:"public_key_multibase,omitempty"`
+	Role               string `json:"role,omitempty"` // "user" (default) or "agent"
 }
 
 // HandleCompletePairing handles POST /v1/pair/complete. It validates the
@@ -62,7 +63,7 @@ func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Req
 	}
 
 	deviceID, nodeDID, err := h.Device.CompletePairingWithKey(
-		r.Context(), req.Code, req.DeviceName, req.PublicKeyMultibase,
+		r.Context(), req.Code, req.DeviceName, req.PublicKeyMultibase, req.Role,
 	)
 	if err != nil {
 		clientError(w, "pairing failed", http.StatusInternalServerError, err)

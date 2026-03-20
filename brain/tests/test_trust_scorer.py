@@ -248,3 +248,143 @@ def test_contact_did_takes_priority_over_sender():
     result = scorer.score(item)
     assert result["contact_did"] == "did:plc:alice"
     assert result["sender_trust"] == "contact_ring1"
+
+
+# ---------------------------------------------------------------------------
+# Ingress-channel based scoring (server-derived provenance)
+# ---------------------------------------------------------------------------
+
+
+class TestIngressChannelScoring:
+    """Tests for the primary provenance path — (ingress_channel, origin_kind).
+
+    When ingress_channel is set (by Core's auth middleware), it takes
+    precedence over source-string matching. This prevents trust spoofing
+    by connectors that could set source="telegram".
+    """
+
+    def test_cli_user_self_high_normal(self, scorer):
+        """(cli, user) → self / high / normal."""
+        item = {"ingress_channel": "cli", "origin_kind": "user",
+                "sender": "user", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "self"
+        assert result["source_type"] == "self"
+        assert result["confidence"] == "high"
+        assert result["retrieval_policy"] == "normal"
+        assert result["sender"] == "user"
+
+    def test_cli_agent_unknown_medium_caveated(self, scorer):
+        """(cli, agent) → unknown / medium / caveated."""
+        item = {"ingress_channel": "cli", "origin_kind": "agent",
+                "sender": "agent", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "unknown"
+        assert result["source_type"] == "service"
+        assert result["confidence"] == "medium"
+        assert result["retrieval_policy"] == "caveated"
+
+    def test_telegram_self_high_normal(self, scorer):
+        """(telegram) → self / high / normal — user's own Telegram messages."""
+        item = {"ingress_channel": "telegram", "sender": "", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "self"
+        assert result["source_type"] == "self"
+        assert result["confidence"] == "high"
+        assert result["retrieval_policy"] == "normal"
+
+    def test_admin_self_high_normal(self, scorer):
+        """(admin) → self / high / normal — admin-submitted content."""
+        item = {"ingress_channel": "admin", "sender": "admin", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "self"
+        assert result["source_type"] == "self"
+        assert result["confidence"] == "high"
+        assert result["retrieval_policy"] == "normal"
+
+    def test_connector_always_unknown_low_caveated(self, scorer):
+        """(connector) → always unknown / low / caveated.
+
+        Connectors NEVER fall through to source-string matching —
+        this prevents a connector from spoofing source="telegram"
+        to escalate trust.
+        """
+        item = {"ingress_channel": "connector", "sender": "alerts@google.com",
+                "source": "telegram", "type": "email"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "unknown"
+        assert result["source_type"] == "service"
+        assert result["confidence"] == "low"
+        assert result["retrieval_policy"] == "caveated"
+
+    def test_connector_with_verified_domain_still_caveated(self, scorer):
+        """Even verified service domains get caveated when via connector."""
+        item = {"ingress_channel": "connector",
+                "sender": "alerts@hdfcbank.com", "type": "email"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "unknown"
+        assert result["confidence"] == "low"
+        assert result["retrieval_policy"] == "caveated"
+
+    def test_connector_with_known_contact_still_caveated(self, scorer):
+        """Even known contacts get caveated when via connector channel."""
+        item = {"ingress_channel": "connector",
+                "sender": "sancho@example.com",
+                "contact_did": "did:plc:sancho", "type": "email"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "unknown"
+        assert result["confidence"] == "low"
+        assert result["retrieval_policy"] == "caveated"
+
+    def test_d2d_known_trusted_contact(self, scorer):
+        """(d2d) with known trusted contact → contact_ring1 / medium / caveated."""
+        item = {"ingress_channel": "d2d", "sender": "did:plc:sancho",
+                "contact_did": "did:plc:sancho", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "contact_ring1"
+        assert result["source_type"] == "contact"
+        assert result["confidence"] == "medium"
+        assert result["retrieval_policy"] == "caveated"
+        assert result["contact_did"] == "did:plc:sancho"
+
+    def test_d2d_known_unknown_trust_contact(self, scorer):
+        """(d2d) with unknown-trust contact → contact_ring2 / medium / caveated."""
+        item = {"ingress_channel": "d2d", "sender": "did:plc:albert",
+                "contact_did": "did:plc:albert", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "contact_ring2"
+        assert result["source_type"] == "contact"
+        assert result["confidence"] == "medium"
+        assert result["retrieval_policy"] == "caveated"
+
+    def test_d2d_unknown_sender(self, scorer):
+        """(d2d) with unknown sender → unknown / low / caveated."""
+        item = {"ingress_channel": "d2d", "sender": "did:plc:stranger",
+                "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "unknown"
+        assert result["source_type"] == "unknown"
+        assert result["confidence"] == "low"
+        assert result["retrieval_policy"] == "caveated"
+
+    def test_ingress_channel_takes_precedence_over_source(self, scorer):
+        """ingress_channel=connector overrides source=user (would be self trust).
+
+        This is the key anti-spoofing test: a connector item with
+        source="user" must NOT get self/high/normal trust.
+        """
+        item = {"ingress_channel": "connector", "source": "user",
+                "sender": "", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "unknown"
+        assert result["retrieval_policy"] == "caveated"
+        # Must NOT be "self"
+        assert result["source_type"] != "self"
+
+    def test_no_ingress_channel_falls_to_source_matching(self, scorer):
+        """Without ingress_channel, scoring falls back to source-string matching."""
+        item = {"source": "user", "sender": "", "type": "note"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "self"
+        assert result["source_type"] == "self"
+        assert result["confidence"] == "high"

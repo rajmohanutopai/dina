@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // validateEnrichment checks that a classified VaultItem has all required
@@ -28,26 +30,34 @@ func validateEnrichment(item domain.VaultItem) string {
 	return ""
 }
 
-// StagingHandler exposes staging inbox endpoints for the connector
-// ingestion pipeline.
+// StagingHandler exposes staging inbox endpoints for universal
+// content ingestion — CLI, connectors, Telegram, D2D, and admin.
 type StagingHandler struct {
 	Staging port.StagingInbox
+	Devices *service.DeviceService // for device role lookup
 }
 
 // ingestRequest is the JSON body for POST /v1/staging/ingest.
 type ingestRequest struct {
-	ConnectorID string `json:"connector_id"`
-	Source      string `json:"source"`
-	SourceID    string `json:"source_id"`
-	Type        string `json:"type"`
-	Summary     string `json:"summary"`
-	Body        string `json:"body"`
-	Sender      string `json:"sender"`
-	Metadata    string `json:"metadata"`
+	ConnectorID    string `json:"connector_id"`
+	Source         string `json:"source"`
+	SourceID       string `json:"source_id"`
+	Type           string `json:"type"`
+	Summary        string `json:"summary"`
+	Body           string `json:"body"`
+	Sender         string `json:"sender"`
+	Metadata       string `json:"metadata"`
+	// Provenance fields — accepted from trusted callers (Brain/admin),
+	// overridden for external callers (device/connector).
+	IngressChannel string `json:"ingress_channel"`
+	OriginDID      string `json:"origin_did"`
+	OriginKind     string `json:"origin_kind"`
 }
 
-// HandleIngest handles POST /v1/staging/ingest. It accepts a raw item from
-// a connector and stores it in the staging inbox for Brain classification.
+// HandleIngest handles POST /v1/staging/ingest. It accepts raw content
+// from any authorized source and stores it in the staging inbox for
+// Brain classification. Provenance fields are server-derived from
+// auth context — external callers cannot spoof them.
 func (h *StagingHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -60,15 +70,28 @@ func (h *StagingHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Derive provenance from auth context — override caller-supplied values
+	// for external callers (device/connector). Only trusted service-key
+	// callers (Brain) can set these explicitly.
+	ingressChannel, originDID, originKind, producerID, provenanceErr := h.deriveProvenance(r, req)
+	if provenanceErr != "" {
+		http.Error(w, `{"error":"`+provenanceErr+`"}`, http.StatusBadRequest)
+		return
+	}
+
 	item := domain.StagingItem{
-		ConnectorID: req.ConnectorID,
-		Source:      req.Source,
-		SourceID:    req.SourceID,
-		Type:        req.Type,
-		Summary:     req.Summary,
-		Body:        req.Body,
-		Sender:      req.Sender,
-		Metadata:    req.Metadata,
+		ConnectorID:    req.ConnectorID,
+		Source:         req.Source,
+		SourceID:       req.SourceID,
+		Type:           req.Type,
+		Summary:        req.Summary,
+		Body:           req.Body,
+		Sender:         req.Sender,
+		Metadata:       req.Metadata,
+		IngressChannel: ingressChannel,
+		OriginDID:      originDID,
+		OriginKind:     originKind,
+		ProducerID:     producerID,
 	}
 
 	id, err := h.Staging.Ingest(r.Context(), item)
@@ -79,7 +102,84 @@ func (h *StagingHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"id": id})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":     id,
+		"staged": true,
+	})
+}
+
+// deriveProvenance sets ingress provenance from auth context.
+// Device/connector callers get server-overridden values.
+// Brain (service key) can set them explicitly for relay (Telegram/D2D in Phase 2+).
+func (h *StagingHandler) deriveProvenance(r *http.Request, req ingestRequest) (channel, did, kind, producer, errMsg string) {
+	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
+	agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
+	tokenKind, _ := r.Context().Value(middleware.TokenKindKey).(string)
+
+	switch {
+	case callerType == "agent":
+		// Device-scoped caller (CLI / OpenClaw agent)
+		channel = domain.IngressCLI
+		did = agentDID
+		// Look up device role to determine origin_kind
+		kind = domain.OriginUser
+		if h.Devices != nil && agentDID != "" {
+			dev, err := h.Devices.GetDeviceByDID(r.Context(), agentDID)
+			if err == nil && dev != nil && dev.Role == domain.DeviceRoleAgent {
+				kind = domain.OriginAgent
+			}
+		}
+		producer = "cli:" + agentDID
+
+	case tokenKind == "service":
+		// Service key caller — check service identity
+		serviceID, _ := r.Context().Value(middleware.ServiceIDKey).(string)
+		isBrain := serviceID == "brain" || serviceID == "core"
+		if isBrain && req.IngressChannel != "" {
+			// Only Brain can relay provenance (Telegram/D2D in Phase 2+).
+			// Connectors cannot claim to be telegram.
+			channel = req.IngressChannel
+			did = req.OriginDID
+			kind = req.OriginKind
+			if req.ConnectorID != "" {
+				producer = "connector:" + req.ConnectorID
+			} else {
+				producer = channel + ":" + did
+			}
+		} else if req.ConnectorID != "" {
+			// Connector ingest (with explicit connector_id)
+			channel = domain.IngressConnector
+			did = serviceID
+			kind = domain.OriginService
+			producer = "connector:" + req.ConnectorID
+		} else if isBrain {
+			// Brain internal (no connector_id, no relay channel)
+			channel = domain.IngressBrain
+			did = "brain"
+			kind = domain.OriginService
+			producer = "brain:system"
+		} else {
+			// Non-Brain service caller without connector_id — reject.
+			// Connectors must always provide connector_id.
+			errMsg = "connector_id is required for connector ingestion"
+			return
+		}
+
+	default:
+		// Admin (CLIENT_TOKEN) or unknown
+		channel = domain.IngressAdmin
+		did = "admin"
+		kind = domain.OriginUser
+		producer = "admin:system"
+	}
+
+	slog.Info("staging.ingest.provenance",
+		"channel", channel,
+		"origin_did", did,
+		"origin_kind", kind,
+		"producer_id", producer,
+	)
+	return
 }
 
 // claimRequest is the JSON body for POST /v1/staging/claim.

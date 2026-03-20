@@ -917,7 +917,7 @@ func main() {
 			return vaultSvc.Store(ctx, "staging", p, item)
 		},
 	)
-	stagingH := &handler.StagingHandler{Staging: stagingInbox}
+	stagingH := &handler.StagingHandler{Staging: stagingInbox, Devices: deviceSvc}
 
 	// Post-publication hook: when pending_unlock items are drained to vault,
 	// push an event to Brain for event extraction (reminders, contacts).

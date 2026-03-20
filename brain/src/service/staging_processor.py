@@ -93,6 +93,11 @@ class StagingProcessor:
                     "sender": item.sender or "",
                     "metadata": item.metadata or "{}",
                     "connector_id": item.connector_id or "",
+                    # Ingress provenance — server-derived by Core
+                    "ingress_channel": getattr(item, "ingress_channel", "") or "",
+                    "origin_did": getattr(item, "origin_did", "") or "",
+                    "origin_kind": getattr(item, "origin_kind", "") or "",
+                    "producer_id": getattr(item, "producer_id", "") or "",
                 }
 
                 # Classify persona.

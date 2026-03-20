@@ -691,11 +691,14 @@ class CoreHTTPClient:
         return InitiatePairingResponse.model_validate(resp.json())
 
     async def complete_pairing(self, code: str, device_name: str,
-                               public_key_multibase: str | None = None) -> CompletePairingResponse:
+                               public_key_multibase: str | None = None,
+                               *, role: str | None = None) -> CompletePairingResponse:
         """POST /v1/pair/complete — register device."""
         body: dict = {"code": code, "device_name": device_name}
         if public_key_multibase:
             body["public_key_multibase"] = public_key_multibase
+        if role:
+            body["role"] = role
         resp = await self._request("POST", "/v1/pair/complete", json=body)
         return CompletePairingResponse.model_validate(resp.json())
 

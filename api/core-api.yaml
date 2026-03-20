@@ -187,14 +187,27 @@ components:
           type: string
         body:
           type: string
+        sender:
+          type: string
         metadata:
           type: string
+        ingress_channel:
+          type: string
+          description: Accepted from trusted callers (Brain). Overridden for device/connector.
+        origin_did:
+          type: string
+          description: Accepted from trusted callers (Brain). Overridden for device/connector.
+        origin_kind:
+          type: string
+          description: Accepted from trusted callers (Brain). Overridden for device/connector.
 
     StagingIngestResponse:
       type: object
       properties:
         id:
           type: string
+        staged:
+          type: boolean
 
     StagingClaimRequest:
       type: object
@@ -323,6 +336,11 @@ components:
           type: string
         public_key_multibase:
           type: string
+        role:
+          type: string
+          description: "'user' (default, personal CLI) or 'agent' (OpenClaw/bot)"
+          enum: [user, agent]
+          default: user
 
     CompletePairingResponse:
       type: object
@@ -757,7 +775,7 @@ paths:
 
   /v1/staging/ingest:
     post:
-      summary: Ingest a raw item from a connector
+      summary: Ingest content for staging (CLI, connectors, Telegram, D2D)
       requestBody:
         required: true
         content:

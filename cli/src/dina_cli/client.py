@@ -166,10 +166,26 @@ class DinaClient:
         )
         return resp.json()
 
+    # -- Staging (universal content ingestion) ------------------------------
+
+    def staging_ingest(self, item: dict) -> dict:
+        """Ingest content into the staging inbox for Brain classification.
+
+        All memory-producing CLI writes go through staging.
+        Provenance (ingress_channel, origin_kind) is set server-side.
+        """
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/staging/ingest",
+            json=item,
+        )
+        return resp.json()
+
     # -- Vault (admin/internal only — agents use reason()) ----------------
 
     def vault_store(self, persona: str, item: dict) -> dict:
-        """Store an item in the vault."""
+        """Store an item in the vault (legacy — prefer staging_ingest)."""
         resp = self._request(
             self._core,
             "POST",

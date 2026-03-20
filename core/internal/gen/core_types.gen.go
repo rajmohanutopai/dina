@@ -59,6 +59,24 @@ func (e ApprovalRequestScope) Valid() bool {
 	}
 }
 
+// Defines values for ApprovalRequestType.
+const (
+	ActionIntent  ApprovalRequestType = "action_intent"
+	PersonaAccess ApprovalRequestType = "persona_access"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalRequestType enum.
+func (e ApprovalRequestType) Valid() bool {
+	switch e {
+	case ActionIntent:
+		return true
+	case PersonaAccess:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApprovalStatus.
 const (
 	ApprovalStatusApproved ApprovalStatus = "approved"
@@ -77,6 +95,24 @@ func (e ApprovalStatus) Valid() bool {
 	case ApprovalStatusExpired:
 		return true
 	case ApprovalStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CompletePairingRequestRole.
+const (
+	CompletePairingRequestRoleAgent CompletePairingRequestRole = "agent"
+	CompletePairingRequestRoleUser  CompletePairingRequestRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the CompletePairingRequestRole enum.
+func (e CompletePairingRequestRole) Valid() bool {
+	switch e {
+	case CompletePairingRequestRoleAgent:
+		return true
+	case CompletePairingRequestRoleUser:
 		return true
 	default:
 		return false
@@ -158,6 +194,69 @@ func (e NotifyRequestPriority) Valid() bool {
 	case Fiduciary:
 		return true
 	case Solicited:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PairedDeviceRole.
+const (
+	PairedDeviceRoleAgent PairedDeviceRole = "agent"
+	PairedDeviceRoleUser  PairedDeviceRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the PairedDeviceRole enum.
+func (e PairedDeviceRole) Valid() bool {
+	switch e {
+	case PairedDeviceRoleAgent:
+		return true
+	case PairedDeviceRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReasonAcceptedStatus.
+const (
+	ReasonAcceptedStatusPendingApproval ReasonAcceptedStatus = "pending_approval"
+)
+
+// Valid indicates whether the value is a known member of the ReasonAcceptedStatus enum.
+func (e ReasonAcceptedStatus) Valid() bool {
+	switch e {
+	case ReasonAcceptedStatusPendingApproval:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReasonStatusResponseStatus.
+const (
+	ReasonStatusResponseStatusComplete        ReasonStatusResponseStatus = "complete"
+	ReasonStatusResponseStatusDenied          ReasonStatusResponseStatus = "denied"
+	ReasonStatusResponseStatusExpired         ReasonStatusResponseStatus = "expired"
+	ReasonStatusResponseStatusFailed          ReasonStatusResponseStatus = "failed"
+	ReasonStatusResponseStatusPendingApproval ReasonStatusResponseStatus = "pending_approval"
+	ReasonStatusResponseStatusResuming        ReasonStatusResponseStatus = "resuming"
+)
+
+// Valid indicates whether the value is a known member of the ReasonStatusResponseStatus enum.
+func (e ReasonStatusResponseStatus) Valid() bool {
+	switch e {
+	case ReasonStatusResponseStatusComplete:
+		return true
+	case ReasonStatusResponseStatusDenied:
+		return true
+	case ReasonStatusResponseStatusExpired:
+		return true
+	case ReasonStatusResponseStatusFailed:
+		return true
+	case ReasonStatusResponseStatusPendingApproval:
+		return true
+	case ReasonStatusResponseStatusResuming:
 		return true
 	default:
 		return false
@@ -313,22 +412,22 @@ func (e TrustLevel) Valid() bool {
 
 // Defines values for VaultEnrichRequestEnrichmentStatus.
 const (
-	Failed     VaultEnrichRequestEnrichmentStatus = "failed"
-	Pending    VaultEnrichRequestEnrichmentStatus = "pending"
-	Processing VaultEnrichRequestEnrichmentStatus = "processing"
-	Ready      VaultEnrichRequestEnrichmentStatus = "ready"
+	VaultEnrichRequestEnrichmentStatusFailed     VaultEnrichRequestEnrichmentStatus = "failed"
+	VaultEnrichRequestEnrichmentStatusPending    VaultEnrichRequestEnrichmentStatus = "pending"
+	VaultEnrichRequestEnrichmentStatusProcessing VaultEnrichRequestEnrichmentStatus = "processing"
+	VaultEnrichRequestEnrichmentStatusReady      VaultEnrichRequestEnrichmentStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the VaultEnrichRequestEnrichmentStatus enum.
 func (e VaultEnrichRequestEnrichmentStatus) Valid() bool {
 	switch e {
-	case Failed:
+	case VaultEnrichRequestEnrichmentStatusFailed:
 		return true
-	case Pending:
+	case VaultEnrichRequestEnrichmentStatusPending:
 		return true
-	case Processing:
+	case VaultEnrichRequestEnrichmentStatusProcessing:
 		return true
-	case Ready:
+	case VaultEnrichRequestEnrichmentStatusReady:
 		return true
 	default:
 		return false
@@ -449,18 +548,60 @@ func (e PostV1AgentValidateJSONBodyType) Valid() bool {
 	}
 }
 
+// Defines values for PostV1ApprovalsIdApproveJSONBodyScope.
+const (
+	PostV1ApprovalsIdApproveJSONBodyScopeSession PostV1ApprovalsIdApproveJSONBodyScope = "session"
+	PostV1ApprovalsIdApproveJSONBodyScopeSingle  PostV1ApprovalsIdApproveJSONBodyScope = "single"
+)
+
+// Valid indicates whether the value is a known member of the PostV1ApprovalsIdApproveJSONBodyScope enum.
+func (e PostV1ApprovalsIdApproveJSONBodyScope) Valid() bool {
+	switch e {
+	case PostV1ApprovalsIdApproveJSONBodyScopeSession:
+		return true
+	case PostV1ApprovalsIdApproveJSONBodyScopeSingle:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PostV1PersonaApproveJSONBodyScope.
 const (
-	PostV1PersonaApproveJSONBodyScopeSession PostV1PersonaApproveJSONBodyScope = "session"
-	PostV1PersonaApproveJSONBodyScopeSingle  PostV1PersonaApproveJSONBodyScope = "single"
+	Session PostV1PersonaApproveJSONBodyScope = "session"
+	Single  PostV1PersonaApproveJSONBodyScope = "single"
 )
 
 // Valid indicates whether the value is a known member of the PostV1PersonaApproveJSONBodyScope enum.
 func (e PostV1PersonaApproveJSONBodyScope) Valid() bool {
 	switch e {
-	case PostV1PersonaApproveJSONBodyScopeSession:
+	case Session:
 		return true
-	case PostV1PersonaApproveJSONBodyScopeSingle:
+	case Single:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PostV1ReasonRequestIdResultJSONBodyStatus.
+const (
+	PostV1ReasonRequestIdResultJSONBodyStatusComplete        PostV1ReasonRequestIdResultJSONBodyStatus = "complete"
+	PostV1ReasonRequestIdResultJSONBodyStatusDenied          PostV1ReasonRequestIdResultJSONBodyStatus = "denied"
+	PostV1ReasonRequestIdResultJSONBodyStatusFailed          PostV1ReasonRequestIdResultJSONBodyStatus = "failed"
+	PostV1ReasonRequestIdResultJSONBodyStatusPendingApproval PostV1ReasonRequestIdResultJSONBodyStatus = "pending_approval"
+)
+
+// Valid indicates whether the value is a known member of the PostV1ReasonRequestIdResultJSONBodyStatus enum.
+func (e PostV1ReasonRequestIdResultJSONBodyStatus) Valid() bool {
+	switch e {
+	case PostV1ReasonRequestIdResultJSONBodyStatusComplete:
+		return true
+	case PostV1ReasonRequestIdResultJSONBodyStatusDenied:
+		return true
+	case PostV1ReasonRequestIdResultJSONBodyStatusFailed:
+		return true
+	case PostV1ReasonRequestIdResultJSONBodyStatusPendingApproval:
 		return true
 	default:
 		return false
@@ -502,12 +643,18 @@ type ApprovalRequest struct {
 	SessionId string               `json:"session_id,omitempty"`
 
 	// Status Persona access approval request state.
-	Status    ApprovalStatus `json:"status,omitempty"`
-	UpdatedAt int64          `json:"updated_at,omitempty"`
+	Status ApprovalStatus `json:"status,omitempty"`
+
+	// Type Approval type — routes internally to persona manager or gatekeeper
+	Type      ApprovalRequestType `json:"type,omitempty"`
+	UpdatedAt int64               `json:"updated_at,omitempty"`
 }
 
 // ApprovalRequestScope defines model for ApprovalRequest.Scope.
 type ApprovalRequestScope string
+
+// ApprovalRequestType Approval type — routes internally to persona manager or gatekeeper
+type ApprovalRequestType string
 
 // ApprovalStatus Persona access approval request state.
 type ApprovalStatus string
@@ -532,7 +679,13 @@ type CompletePairingRequest struct {
 	Code               string `json:"code"`
 	DeviceName         string `json:"device_name"`
 	PublicKeyMultibase string `json:"public_key_multibase,omitempty"`
+
+	// Role 'user' (default, personal CLI) or 'agent' (OpenClaw/bot)
+	Role CompletePairingRequestRole `json:"role,omitempty"`
 }
+
+// CompletePairingRequestRole 'user' (default, personal CLI) or 'agent' (OpenClaw/bot)
+type CompletePairingRequestRole string
 
 // CompletePairingResponse defines model for CompletePairingResponse.
 type CompletePairingResponse struct {
@@ -674,13 +827,55 @@ type PairedDevice struct {
 	LastSeen  int64  `json:"last_seen,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Revoked   bool   `json:"revoked,omitempty"`
-	TokenId   string `json:"token_id,omitempty"`
+
+	// Role 'user' (personal CLI) or 'agent' (OpenClaw/bot).
+	Role    PairedDeviceRole `json:"role,omitempty"`
+	TokenId string           `json:"token_id,omitempty"`
 }
+
+// PairedDeviceRole 'user' (personal CLI) or 'agent' (OpenClaw/bot).
+type PairedDeviceRole string
 
 // PersonaListResponse defines model for PersonaListResponse.
 type PersonaListResponse struct {
 	Personas []string `json:"personas,omitempty"`
 }
+
+// ReasonAccepted 202 response when reasoning needs persona approval.
+type ReasonAccepted struct {
+	ApprovalId string               `json:"approval_id,omitempty"`
+	Message    string               `json:"message,omitempty"`
+	Persona    string               `json:"persona,omitempty"`
+	RequestId  string               `json:"request_id,omitempty"`
+	Status     ReasonAcceptedStatus `json:"status,omitempty"`
+}
+
+// ReasonAcceptedStatus defines model for ReasonAccepted.Status.
+type ReasonAcceptedStatus string
+
+// ReasonResult defines model for ReasonResult.
+type ReasonResult struct {
+	Content          string `json:"content,omitempty"`
+	Model            string `json:"model,omitempty"`
+	TokensIn         int    `json:"tokens_in,omitempty"`
+	TokensOut        int    `json:"tokens_out,omitempty"`
+	VaultContextUsed bool   `json:"vault_context_used,omitempty"`
+}
+
+// ReasonStatusResponse Polling response for a pending reason request.
+type ReasonStatusResponse struct {
+	Content          string                     `json:"content,omitempty"`
+	Error            string                     `json:"error,omitempty"`
+	Model            string                     `json:"model,omitempty"`
+	RequestId        string                     `json:"request_id,omitempty"`
+	Status           ReasonStatusResponseStatus `json:"status,omitempty"`
+	TokensIn         int                        `json:"tokens_in,omitempty"`
+	TokensOut        int                        `json:"tokens_out,omitempty"`
+	VaultContextUsed bool                       `json:"vault_context_used,omitempty"`
+}
+
+// ReasonStatusResponseStatus defines model for ReasonStatusResponse.Status.
+type ReasonStatusResponseStatus string
 
 // Reminder defines model for Reminder.
 type Reminder struct {
@@ -758,17 +953,28 @@ type StagingFailRequest struct {
 type StagingIngestRequest struct {
 	Body        string `json:"body,omitempty"`
 	ConnectorId string `json:"connector_id,omitempty"`
-	Metadata    string `json:"metadata,omitempty"`
-	Source      string `json:"source"`
-	SourceHash  string `json:"source_hash,omitempty"`
-	SourceId    string `json:"source_id,omitempty"`
-	Summary     string `json:"summary"`
-	Type        string `json:"type"`
+
+	// IngressChannel Accepted from trusted callers (Brain). Overridden for device/connector.
+	IngressChannel string `json:"ingress_channel,omitempty"`
+	Metadata       string `json:"metadata,omitempty"`
+
+	// OriginDid Accepted from trusted callers (Brain). Overridden for device/connector.
+	OriginDid string `json:"origin_did,omitempty"`
+
+	// OriginKind Accepted from trusted callers (Brain). Overridden for device/connector.
+	OriginKind string `json:"origin_kind,omitempty"`
+	Sender     string `json:"sender,omitempty"`
+	Source     string `json:"source"`
+	SourceHash string `json:"source_hash,omitempty"`
+	SourceId   string `json:"source_id,omitempty"`
+	Summary    string `json:"summary"`
+	Type       string `json:"type"`
 }
 
 // StagingIngestResponse defines model for StagingIngestResponse.
 type StagingIngestResponse struct {
-	Id string `json:"id,omitempty"`
+	Id     string `json:"id,omitempty"`
+	Staged bool   `json:"staged,omitempty"`
 }
 
 // StagingItem defines model for StagingItem.
@@ -783,13 +989,25 @@ type StagingItem struct {
 	Error          string `json:"error,omitempty"`
 	ExpiresAt      int64  `json:"expires_at,omitempty"`
 	Id             string `json:"id,omitempty"`
+
+	// IngressChannel Server-derived ingress channel (cli, connector, telegram, d2d, brain, admin)
+	IngressChannel string `json:"ingress_channel,omitempty"`
 	LeaseUntil     int64  `json:"lease_until,omitempty"`
 	Metadata       string `json:"metadata,omitempty"`
-	RetryCount     int    `json:"retry_count,omitempty"`
-	Sender         string `json:"sender,omitempty"`
-	Source         string `json:"source,omitempty"`
-	SourceHash     string `json:"source_hash,omitempty"`
-	SourceId       string `json:"source_id,omitempty"`
+
+	// OriginDid Server-derived origin identity (device DID, remote DID, connector ID)
+	OriginDid string `json:"origin_did,omitempty"`
+
+	// OriginKind Server-derived origin type (user, agent, remote_dina, service)
+	OriginKind string `json:"origin_kind,omitempty"`
+
+	// ProducerId Server-derived dedup namespace (cli:<did>, connector:<id>, etc.)
+	ProducerId string `json:"producer_id,omitempty"`
+	RetryCount int    `json:"retry_count,omitempty"`
+	Sender     string `json:"sender,omitempty"`
+	Source     string `json:"source,omitempty"`
+	SourceHash string `json:"source_hash,omitempty"`
+	SourceId   string `json:"source_id,omitempty"`
 
 	// Status Staging inbox item lifecycle state.
 	Status        StagingStatus `json:"status,omitempty"`
@@ -1012,6 +1230,15 @@ type PostV1AgentValidateJSONBody struct {
 // PostV1AgentValidateJSONBodyType defines parameters for PostV1AgentValidate.
 type PostV1AgentValidateJSONBodyType string
 
+// PostV1ApprovalsIdApproveJSONBody defines parameters for PostV1ApprovalsIdApprove.
+type PostV1ApprovalsIdApproveJSONBody struct {
+	GrantedBy string                                `json:"granted_by,omitempty"`
+	Scope     PostV1ApprovalsIdApproveJSONBodyScope `json:"scope,omitempty"`
+}
+
+// PostV1ApprovalsIdApproveJSONBodyScope defines parameters for PostV1ApprovalsIdApprove.
+type PostV1ApprovalsIdApproveJSONBodyScope string
+
 // GetV1AuditQueryParams defines parameters for GetV1AuditQuery.
 type GetV1AuditQueryParams struct {
 	Action    string `form:"action,omitempty" json:"action,omitempty"`
@@ -1052,6 +1279,19 @@ type PostV1PersonaUnlockJSONBody struct {
 	Passphrase string `json:"passphrase"`
 	Persona    string `json:"persona"`
 }
+
+// PostV1ReasonRequestIdResultJSONBody defines parameters for PostV1ReasonRequestIdResult.
+type PostV1ReasonRequestIdResultJSONBody struct {
+	// ApprovalId For second-approval cycle
+	ApprovalId string                                    `json:"approval_id,omitempty"`
+	Content    string                                    `json:"content,omitempty"`
+	Error      string                                    `json:"error,omitempty"`
+	Model      string                                    `json:"model,omitempty"`
+	Status     PostV1ReasonRequestIdResultJSONBodyStatus `json:"status,omitempty"`
+}
+
+// PostV1ReasonRequestIdResultJSONBodyStatus defines parameters for PostV1ReasonRequestIdResult.
+type PostV1ReasonRequestIdResultJSONBodyStatus string
 
 // PostV1SessionEndJSONBody defines parameters for PostV1SessionEnd.
 type PostV1SessionEndJSONBody struct {
@@ -1095,6 +1335,9 @@ type PostApiV1ReasonJSONRequestBody PostApiV1ReasonJSONBody
 // PostV1AgentValidateJSONRequestBody defines body for PostV1AgentValidate for application/json ContentType.
 type PostV1AgentValidateJSONRequestBody PostV1AgentValidateJSONBody
 
+// PostV1ApprovalsIdApproveJSONRequestBody defines body for PostV1ApprovalsIdApprove for application/json ContentType.
+type PostV1ApprovalsIdApproveJSONRequestBody PostV1ApprovalsIdApproveJSONBody
+
 // PostV1AuditAppendJSONRequestBody defines body for PostV1AuditAppend for application/json ContentType.
 type PostV1AuditAppendJSONRequestBody = AuditAppendRequest
 
@@ -1136,6 +1379,9 @@ type PostV1PersonasJSONRequestBody = CreatePersonaRequest
 
 // PostV1PiiScrubJSONRequestBody defines body for PostV1PiiScrub for application/json ContentType.
 type PostV1PiiScrubJSONRequestBody = PIIScrubRequest
+
+// PostV1ReasonRequestIdResultJSONRequestBody defines body for PostV1ReasonRequestIdResult for application/json ContentType.
+type PostV1ReasonRequestIdResultJSONRequestBody PostV1ReasonRequestIdResultJSONBody
 
 // PostV1ReminderJSONRequestBody defines body for PostV1Reminder for application/json ContentType.
 type PostV1ReminderJSONRequestBody = StoreReminderRequest

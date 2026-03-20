@@ -84,14 +84,93 @@ class TrustScorer:
     def score(self, item: dict[str, Any]) -> dict[str, str]:
         """Return provenance fields for a vault item.
 
+        Primary input: (ingress_channel, origin_kind) — set server-side.
+        Fallback: source string matching (for legacy connector items).
+
         Returns dict with: sender, sender_trust, source_type,
         confidence, retrieval_policy.
         """
         sender = item.get("sender", "")
         source = item.get("source", "")
+        ingress_channel = item.get("ingress_channel", "")
+        origin_kind = item.get("origin_kind", "")
 
-        # User-created content (CLI, admin, manual notes).
-        if source in ("user", "cli", "admin", "telegram"):
+        # ── Primary: structured provenance (ingress_channel + origin_kind) ──
+
+        if ingress_channel == "cli" and origin_kind == "user":
+            return {
+                "sender": sender or "user",
+                "sender_trust": "self",
+                "source_type": "self",
+                "confidence": "high",
+                "retrieval_policy": "normal",
+            }
+
+        if ingress_channel == "cli" and origin_kind == "agent":
+            return {
+                "sender": sender or "agent",
+                "sender_trust": "unknown",
+                "source_type": "service",
+                "confidence": "medium",
+                "retrieval_policy": "caveated",
+            }
+
+        if ingress_channel == "telegram":
+            return {
+                "sender": sender or "user",
+                "sender_trust": "self",
+                "source_type": "self",
+                "confidence": "high",
+                "retrieval_policy": "normal",
+            }
+
+        if ingress_channel == "admin":
+            return {
+                "sender": sender or "admin",
+                "sender_trust": "self",
+                "source_type": "self",
+                "confidence": "high",
+                "retrieval_policy": "normal",
+            }
+
+        if ingress_channel == "d2d":
+            # D2D trust depends on sender's contact status
+            contact = self._find_contact(item)
+            if contact:
+                trust_level = contact.trust_level or "unknown"
+                ring = "contact_ring1" if trust_level in ("trusted", "verified") else "contact_ring2"
+                return {
+                    "sender": sender or (contact.did or ""),
+                    "sender_trust": ring,
+                    "source_type": "contact",
+                    "confidence": "medium",
+                    "retrieval_policy": "caveated",
+                    "contact_did": contact.did or "",
+                }
+            return {
+                "sender": sender,
+                "sender_trust": "unknown",
+                "source_type": "unknown",
+                "confidence": "low",
+                "retrieval_policy": "caveated",
+            }
+
+        if ingress_channel == "connector":
+            # Connector items are always service/unknown trust.
+            # Never fall through to source-string matching — connectors
+            # could spoof source="telegram" to escalate trust.
+            return {
+                "sender": sender,
+                "sender_trust": "unknown",
+                "source_type": "service",
+                "confidence": "low",
+                "retrieval_policy": "caveated",
+            }
+
+        # ── Fallback: source-string matching (items without ingress_channel) ──
+
+        # User-created content (source-based — for items without ingress_channel)
+        if source in ("user", "cli", "admin", "telegram", "dina-cli"):
             return {
                 "sender": sender or "user",
                 "sender_trust": "self",

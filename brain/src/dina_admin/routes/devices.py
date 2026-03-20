@@ -38,6 +38,7 @@ class PairCompleteRequest(BaseModel):
     code: str = Field(..., max_length=64)
     device_name: str = Field(..., max_length=128)
     public_key_multibase: str | None = Field(None, max_length=256)
+    role: str | None = Field(None, pattern=r"^(user|agent)$")
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +122,7 @@ async def complete_pairing(req: PairCompleteRequest) -> dict:
     try:
         result = await _core_client.complete_pairing(
             req.code, req.device_name, req.public_key_multibase,
+            role=req.role,
         )
         log.info(
             "devices.pairing_completed",

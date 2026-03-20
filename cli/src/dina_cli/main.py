@@ -144,27 +144,31 @@ def status(ctx: click.Context) -> None:
 @click.option("--category", default="note", help="Category: fact, preference, decision, relationship, event, note")
 @click.pass_context
 def remember(ctx: click.Context, text: str, category: str) -> None:
-    """Store a fact in the encrypted vault.
+    """Store a fact via the staging pipeline.
 
-    Stores to the default persona (general) via Core's vault API.
-    Brain's reasoning pipeline handles persona routing for queries,
-    but storage goes directly to the general persona for simplicity.
+    Content goes through Core's staging inbox → Brain classifies it
+    into the right persona → enriches → stores to vault. Provenance
+    (ingress_channel, origin_kind) is set server-side from your
+    device's auth context.
     """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        result = client.vault_store(
-            "general",
-            {
-                "type": "note",
-                "summary": text,
-                "body_text": text,
-                "source": "dina-cli",
-                "metadata": json.dumps({"category": category}),
-            },
-        )
-        item_id = result.get("item_id", result.get("id", ""))
-        print_result({"id": f"mem_{item_id[:8]}" if item_id else "mem_ok", "stored": True}, json_mode)
+        source_id = f"cli-{uuid.uuid4().hex[:12]}"
+        result = client.staging_ingest({
+            "source": "dina-cli",
+            "source_id": source_id,
+            "type": "note",
+            "summary": text,
+            "body": text,
+            "sender": "user",
+            "metadata": json.dumps({"category": category}),
+        })
+        staging_id = result.get("id", "")
+        print_result({
+            "id": f"stg_{staging_id[:8]}" if staging_id else "stg_ok",
+            "staged": True,
+        }, json_mode)
     except DinaClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)
@@ -594,12 +598,18 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
 
 
 @cli.command()
+@click.option(
+    "--role", default="user", type=click.Choice(["user", "agent"]),
+    help="Device role: 'user' (personal CLI) or 'agent' (OpenClaw/bot)",
+)
 @click.pass_context
-def configure(ctx: click.Context) -> None:
+def configure(ctx: click.Context, role: str) -> None:
     """Set up connection to a Dina Home Node.
 
     Saves configuration to ~/.dina/cli/config.json.
     Environment variables override saved values.
+
+    Use --role agent when pairing an OpenClaw or bot device.
     """
     click.echo("Dina CLI Configuration")
     click.echo("=" * 40)
@@ -619,11 +629,12 @@ def configure(ctx: click.Context) -> None:
         default=existing.get("device_name") or _default_device_name(),
     )
     click.echo()
-    _configure_signature(core_url, device_name)
+    _configure_signature(core_url, device_name, role)
 
     values: dict[str, Any] = {
         "core_url": core_url,
         "device_name": device_name,
+        "role": role,
     }
 
     path = save_config(values)
@@ -763,7 +774,7 @@ def _try_unpair(core_url: str, identity: Any) -> None:
     save_config(saved)
 
 
-def _configure_signature(core_url: str, device_name: str) -> None:
+def _configure_signature(core_url: str, device_name: str, role: str = "user") -> None:
     """Generate keypair and pair with Core using Ed25519 public key."""
     from .signing import CLIIdentity
 
@@ -773,7 +784,7 @@ def _configure_signature(core_url: str, device_name: str) -> None:
         click.echo(f"  Keypair exists: {identity.did()}")
         if not click.confirm("  Generate a new keypair?", default=False):
             # Re-pair with existing key
-            _pair_with_key(core_url, identity, device_name)
+            _pair_with_key(core_url, identity, device_name, role)
             return
         # Unpair old device before generating new keypair
         _try_unpair(core_url, identity)
@@ -784,10 +795,10 @@ def _configure_signature(core_url: str, device_name: str) -> None:
     click.echo(f"  Keypair saved to {identity._dir}")
     click.echo()
 
-    _pair_with_key(core_url, identity, device_name)
+    _pair_with_key(core_url, identity, device_name, role)
 
 
-def _pair_with_key(core_url: str, identity: Any, device_name: str) -> None:
+def _pair_with_key(core_url: str, identity: Any, device_name: str, role: str = "user") -> None:
     """Register the public key with Core using a pairing code."""
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
@@ -803,6 +814,7 @@ def _pair_with_key(core_url: str, identity: Any, device_name: str) -> None:
                     "code": pairing_code,
                     "device_name": device_name,
                     "public_key_multibase": identity.public_key_multibase(),
+                    "role": role,
                 },
                 timeout=10.0,
             )

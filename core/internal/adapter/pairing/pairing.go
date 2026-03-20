@@ -76,6 +76,7 @@ type deviceRecord struct {
 	tokenHash []byte            // present for token-auth devices
 	publicKey ed25519.PublicKey // present for signature-auth devices
 	did       string            // did:key:z6Mk... for signature-auth devices
+	role      string            // "user" (default) or "agent"
 	createdAt int64
 	lastSeen  int64
 	revoked   bool
@@ -231,6 +232,7 @@ func (pm *PairingManager) CompletePairing(_ context.Context, code string, device
 		tokenID:   tokenID,
 		name:      deviceName,
 		tokenHash: tokenHash[:],
+		role:      domain.DeviceRoleUser,
 		createdAt: now,
 		lastSeen:  now,
 		revoked:   false,
@@ -264,9 +266,10 @@ func (pm *PairingManager) CompletePairingFull(ctx context.Context, code string, 
 
 // CompletePairingWithKey verifies the code and registers a device using an
 // Ed25519 public key (signature-based auth). No CLIENT_TOKEN is generated.
+// Optional role: "user" (default) or "agent".
 // Returns (deviceID, nodeDID, error).
 func (pm *PairingManager) CompletePairingWithKey(
-	_ context.Context, code, deviceName, publicKeyMultibase string,
+	_ context.Context, code, deviceName, publicKeyMultibase string, role ...string,
 ) (string, string, error) {
 	// Decode the multibase public key: strip "z" prefix, base58btc decode,
 	// strip 2-byte multicodec prefix (0xed01).
@@ -304,12 +307,18 @@ func (pm *PairingManager) CompletePairingWithKey(
 	tokenID := fmt.Sprintf("tok-%d", pm.nextID)
 	did := "did:key:" + publicKeyMultibase
 
+	deviceRole := domain.DeviceRoleUser
+	if len(role) > 0 && role[0] == domain.DeviceRoleAgent {
+		deviceRole = domain.DeviceRoleAgent
+	}
+
 	now := time.Now().Unix()
 	pm.devices = append(pm.devices, deviceRecord{
 		tokenID:   tokenID,
 		name:      deviceName,
 		publicKey: pubKey,
 		did:       did,
+		role:      deviceRole,
 		createdAt: now,
 		lastSeen:  now,
 		revoked:   false,
@@ -335,12 +344,39 @@ func (pm *PairingManager) ListDevices(_ context.Context) ([]PairedDevice, error)
 			Name:      d.name,
 			DID:       d.did,
 			AuthType:  authType,
+			Role:      d.role,
 			LastSeen:  d.lastSeen,
 			CreatedAt: d.createdAt,
 			Revoked:   d.revoked,
 		}
 	}
 	return result, nil
+}
+
+// GetDeviceByDID returns the device record for the given DID, or nil if not found.
+func (pm *PairingManager) GetDeviceByDID(_ context.Context, did string) (*PairedDevice, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for _, d := range pm.devices {
+		if d.did == did {
+			authType := "token"
+			if d.publicKey != nil {
+				authType = "ed25519"
+			}
+			return &PairedDevice{
+				TokenID:   d.tokenID,
+				Name:      d.name,
+				DID:       d.did,
+				AuthType:  authType,
+				Role:      d.role,
+				LastSeen:  d.lastSeen,
+				CreatedAt: d.createdAt,
+				Revoked:   d.revoked,
+			}, nil
+		}
+	}
+	return nil, nil
 }
 
 // RevokeDevice disables a device by token ID.

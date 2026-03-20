@@ -116,18 +116,18 @@ def test_status_unreachable(tmp_path):
 # TST-CLI-028
 def test_remember_json():
     mc = MagicMock()
-    mc.vault_store.return_value = {"item_id": "abc12345deadbeef"}
+    mc.staging_ingest.return_value = {"id": "abc12345deadbeef", "staged": True}
     result = _invoke(["--json", "remember", "Buy milk"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["stored"] is True
-    mc.vault_store.assert_called_once()
+    assert data["staged"] is True
+    mc.staging_ingest.assert_called_once()
 
 
 # TST-CLI-029
 def test_remember_human():
     mc = MagicMock()
-    mc.vault_store.return_value = {"item_id": "abc12345"}
+    mc.staging_ingest.return_value = {"id": "abc12345", "staged": True}
     result = _invoke(["remember", "Buy milk"], mock_client=mc)
     assert result.exit_code == 0
 
@@ -135,10 +135,10 @@ def test_remember_human():
 # TST-CLI-030
 def test_remember_with_category():
     mc = MagicMock()
-    mc.vault_store.return_value = {"item_id": "x"}
+    mc.staging_ingest.return_value = {"id": "x", "staged": True}
     result = _invoke(["--json", "remember", "Alice bday March 15", "--category", "relationship"], mock_client=mc)
     assert result.exit_code == 0
-    mc.vault_store.assert_called_once()
+    mc.staging_ingest.assert_called_once()
 
 
 # ── ask ────────────────────────────────────────────────────────────────
@@ -654,15 +654,15 @@ def test_ask_with_verbose():
 
 
 # TST-CLI-058
-def test_remember_stores_to_general():
-    """Remember stores to 'general' persona via vault_store."""
+def test_remember_uses_staging():
+    """Remember uses staging_ingest, not vault_store."""
     mc = MagicMock()
-    mc.vault_store.return_value = {"item_id": "x"}
+    mc.staging_ingest.return_value = {"id": "stg123", "staged": True}
     result = _invoke(["remember", "User prefers window seats"], mock_client=mc)
     assert result.exit_code == 0
-    mc.vault_store.assert_called_once()
-    # First arg should be "general" (default persona)
-    assert mc.vault_store.call_args[0][0] == "general"
+    mc.staging_ingest.assert_called_once()
+    # No persona specified — Brain classifies into the right one
+    mc.vault_store.assert_not_called()
 
 
 # TST-CLI-059

@@ -16,6 +16,7 @@ type persistedDevice struct {
 	TokenHashHex string `json:"token_hash,omitempty"` // hex-encoded SHA-256
 	PublicKeyHex string `json:"public_key,omitempty"` // hex-encoded Ed25519 public key
 	DID          string `json:"did,omitempty"`
+	Role         string `json:"role,omitempty"` // "user" or "agent"
 	CreatedAt    int64  `json:"created_at"`
 	LastSeen     int64  `json:"last_seen"`
 	Revoked      bool   `json:"revoked"`
@@ -47,10 +48,15 @@ func (pm *PairingManager) SetPersistPath(path string) error {
 	}
 
 	for _, r := range records {
+		role := r.Role
+		if role == "" {
+			role = "user" // default for devices persisted before role was added
+		}
 		d := deviceRecord{
 			tokenID:   r.TokenID,
 			name:      r.Name,
 			did:       r.DID,
+			role:      role,
 			createdAt: r.CreatedAt,
 			lastSeen:  r.LastSeen,
 			revoked:   r.Revoked,
@@ -87,6 +93,7 @@ func (pm *PairingManager) persistDevices() {
 			TokenID:   d.tokenID,
 			Name:      d.name,
 			DID:       d.did,
+			Role:      d.role,
 			CreatedAt: d.createdAt,
 			LastSeen:  d.lastSeen,
 			Revoked:   d.revoked,

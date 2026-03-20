@@ -23,10 +23,17 @@ type PairedDevice struct {
 	Name      string `json:"name"`
 	DID       string `json:"did,omitempty"`  // did:key:z6Mk... for Ed25519 devices
 	AuthType  string `json:"auth_type"`      // "ed25519" (primary). "token" may exist only in older records.
+	Role      string `json:"role"`           // "user" (personal CLI) or "agent" (OpenClaw/bot)
 	LastSeen  int64  `json:"last_seen"`
 	CreatedAt int64  `json:"created_at"`
 	Revoked   bool   `json:"revoked"`
 }
+
+// Device role constants.
+const (
+	DeviceRoleUser  = "user"
+	DeviceRoleAgent = "agent"
+)
 
 // PairResponse is the full response from a successful pairing.
 type PairResponse struct {

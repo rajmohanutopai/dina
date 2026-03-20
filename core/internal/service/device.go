@@ -93,7 +93,7 @@ func (s *DeviceService) CompletePairing(ctx context.Context, code, deviceName st
 // CompletePairingWithKey validates the pairing code and registers the device
 // using an Ed25519 public key for signature-based authentication.
 // No CLIENT_TOKEN is generated. Returns (deviceID, nodeDID, error).
-func (s *DeviceService) CompletePairingWithKey(ctx context.Context, code, deviceName, publicKeyMultibase string) (string, string, error) {
+func (s *DeviceService) CompletePairingWithKey(ctx context.Context, code, deviceName, publicKeyMultibase string, role ...string) (string, string, error) {
 	if code == "" {
 		return "", "", fmt.Errorf("device: %w: pairing code is required", domain.ErrInvalidInput)
 	}
@@ -104,7 +104,7 @@ func (s *DeviceService) CompletePairingWithKey(ctx context.Context, code, device
 		return "", "", fmt.Errorf("device: %w: public key is required", domain.ErrInvalidInput)
 	}
 
-	deviceID, nodeDID, err := s.pairer.CompletePairingWithKey(ctx, code, deviceName, publicKeyMultibase)
+	deviceID, nodeDID, err := s.pairer.CompletePairingWithKey(ctx, code, deviceName, publicKeyMultibase, role...)
 	if err != nil {
 		return "", "", fmt.Errorf("device: complete pairing with key: %w", err)
 	}
@@ -130,6 +130,11 @@ func (s *DeviceService) ListDevices(ctx context.Context) ([]domain.PairedDevice,
 	}
 
 	return devices, nil
+}
+
+// GetDeviceByDID returns the device record for the given DID, or nil if not found.
+func (s *DeviceService) GetDeviceByDID(ctx context.Context, did string) (*domain.PairedDevice, error) {
+	return s.pairer.GetDeviceByDID(ctx, did)
 }
 
 // RevokeDevice revokes a paired device's access token, preventing future
