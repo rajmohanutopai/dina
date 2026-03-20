@@ -63,6 +63,7 @@ class AgentIntentEvent(_EventBase):
     target: str | None = None
     risk_level: str | None = None
     trust_level: str | None = None
+    session: str | None = None
 
 
 class DelegationRequestEvent(_EventBase):
@@ -80,6 +81,13 @@ class IntentApprovedEvent(_EventBase):
     type: Literal["intent_approved"]
     proposal_id: str | None = None
     approved_text: str | None = None
+    payload: dict | None = None
+
+
+class IntentDeniedEvent(_EventBase):
+    type: Literal["intent_denied"]
+    proposal_id: str | None = None
+    reason: str | None = None
     payload: dict | None = None
 
 
@@ -181,6 +189,7 @@ _TYPE_TAG_MAP: dict[str, str] = {
     "delegation_request": "delegation_request",
     "cross_persona_request": "cross_persona_request",
     "intent_approved": "intent_approved",
+    "intent_denied": "intent_denied",
     "disclosure_approved": "disclosure_approved",
     "document_ingest": "document_ingest",
     "reminder_fired": "reminder_fired",
@@ -215,6 +224,7 @@ ProcessEventRequest = Annotated[
         Annotated[DelegationRequestEvent, Tag("delegation_request")],
         Annotated[CrossPersonaRequestEvent, Tag("cross_persona_request")],
         Annotated[IntentApprovedEvent, Tag("intent_approved")],
+        Annotated[IntentDeniedEvent, Tag("intent_denied")],
         Annotated[DisclosureApprovedEvent, Tag("disclosure_approved")],
         Annotated[DocumentIngestEvent, Tag("document_ingest")],
         Annotated[ReminderFiredEvent, Tag("reminder_fired")],
