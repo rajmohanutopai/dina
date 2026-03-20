@@ -66,7 +66,16 @@ func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Transport.SendMessage(r.Context(), to, msg); err != nil {
-		clientError(w, "send failed", http.StatusInternalServerError, err)
+		errStr := err.Error()
+		switch {
+		case strings.Contains(errStr, "no endpoint") ||
+			strings.Contains(errStr, "peer not found") ||
+			strings.Contains(errStr, "unknown peer") ||
+			strings.Contains(errStr, "no route"):
+			clientError(w, "peer not found", http.StatusNotFound, err)
+		default:
+			clientError(w, "send failed", http.StatusBadGateway, err)
+		}
 		return
 	}
 

@@ -159,10 +159,12 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if req.Persona == "" || req.Passphrase == "" {
-		http.Error(w, `{"error":"persona and passphrase are required"}`, http.StatusBadRequest)
+	if req.Persona == "" {
+		http.Error(w, `{"error":"persona is required"}`, http.StatusBadRequest)
 		return
 	}
+	// Empty passphrase is allowed — personas created without a passphrase
+	// (e.g. bootstrap) can be unlocked with empty string.
 
 	// Default TTL of 3600 seconds (1 hour).
 	const defaultTTL = 3600

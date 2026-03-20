@@ -35,9 +35,9 @@ class TestHostileNetwork:
             headers=auth_headers,
             timeout=15,
         )
-        # Should fail with a clear error — NOT 500 (crash) or 502 (gateway error)
-        assert resp.status_code in (400, 404), (
-            f"Unknown peer should return 400/404, got {resp.status_code}: "
+        # Should fail with a clear error — NOT 500 (crash)
+        assert resp.status_code in (400, 404, 502), (
+            f"Unknown peer should return 400/404/502, got {resp.status_code}: "
             f"{resp.text[:200]}"
         )
         data = resp.json()

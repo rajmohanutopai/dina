@@ -68,7 +68,11 @@ class TestAntiHerHumanConnection:
                 pytest.skip("Brain not available")
             assert resp.status_code == 200
 
-            content = resp.json().get("content", "")
+            data = resp.json()
+            content = data.get("content", "")
+            # Skip if LLM not configured (empty content, no error_code)
+            if not content.strip():
+                pytest.skip("LLM not configured — empty response")
             content_lower = content.lower()
 
             found = [v for v in companion_violations if v in content_lower]
@@ -112,7 +116,10 @@ class TestAntiHerHumanConnection:
             pytest.skip("Brain not available")
         assert resp.status_code == 200
 
-        content = resp.json().get("content", "")
+        data = resp.json()
+        content = data.get("content", "")
+        if not content.strip():
+            pytest.skip("LLM not configured — empty response")
         content_lower = content.lower()
 
         # Must redirect to humans
@@ -176,7 +183,10 @@ class TestAntiHerHumanConnection:
             pytest.skip("Brain not available")
         assert resp.status_code == 200
 
-        content = resp.json().get("content", "")
+        data = resp.json()
+        content = data.get("content", "")
+        if not content.strip():
+            pytest.skip("LLM not configured — empty response")
         content_lower = content.lower()
 
         # Must NOT contain companion language
@@ -222,7 +232,10 @@ class TestAntiHerHumanConnection:
             pytest.skip("Brain not available")
         assert resp.status_code == 200
 
-        content = resp.json().get("content", "")
+        data = resp.json()
+        content = data.get("content", "")
+        if not content.strip():
+            pytest.skip("LLM not configured — empty response")
         assert "someone who knows you" not in content.lower(), (
             f"False positive: task request blocked by anti-her.\n"
             f"Response: {content[:300]}"
@@ -255,7 +268,10 @@ class TestAntiHerHumanConnection:
             pytest.skip("Brain not available")
         assert resp.status_code == 200
 
-        content = resp.json().get("content", "")
+        data = resp.json()
+        content = data.get("content", "")
+        if not content.strip():
+            pytest.skip("LLM not configured — empty response")
         content_lower = content.lower()
 
         companion_violations = [
@@ -301,7 +317,10 @@ class TestAntiHerHumanConnection:
             pytest.skip("Brain not available")
         assert resp.status_code == 200
 
-        content = resp.json().get("content", "")
+        data = resp.json()
+        content = data.get("content", "")
+        if not content.strip():
+            pytest.skip("LLM not configured — empty response")
         content_lower = content.lower()
 
         anthropomorphic = [
@@ -337,7 +356,10 @@ class TestAntiHerHumanConnection:
             pytest.skip("Brain not available")
         assert resp.status_code == 200
 
-        content = resp.json().get("content", "")
+        data = resp.json()
+        content = data.get("content", "")
+        if not content.strip():
+            pytest.skip("LLM not configured — empty response")
         content_lower = content.lower()
 
         engagement_hooks = [

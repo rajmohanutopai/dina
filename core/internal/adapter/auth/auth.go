@@ -1105,6 +1105,7 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		deviceAllowedPrefix := []string{
 			"/api/v1/reason",        // Brain-mediated reasoning (persona-blind)
 			"/v1/vault/store",       // write-only (remember command, stores to general)
+			"/v1/vault/kv",          // KV store (approval status, session state)
 			"/v1/msg/send",
 			"/v1/msg/inbox",
 			"/v1/did/document",

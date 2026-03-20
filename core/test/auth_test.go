@@ -1542,11 +1542,10 @@ func TestAuth_1_4_9_DeviceScopedBlockedFromVault(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
 	// Device-scoped agents BLOCKED from vault read endpoints.
-	// Vault store is allowed (write-only, for remember command).
+	// Vault store and KV are allowed (remember + approval state).
 	vaultBlocked := []string{
 		"/v1/vault/query",
 		"/v1/vault/item/some-id",
-		"/v1/vault/kv/some-key",
 	}
 	for _, path := range vaultBlocked {
 		testutil.RequireFalse(t, checker.AllowedForTokenKind("client", path, "device"),
