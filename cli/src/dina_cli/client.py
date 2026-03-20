@@ -121,7 +121,12 @@ class DinaClient:
             status = exc.response.status_code
             # Parse server error message
             try:
-                server_msg = exc.response.json().get("error", exc.response.text)
+                err_body = exc.response.json()
+                server_msg = err_body.get("error", exc.response.text)
+                # Surface actionable guidance when present (e.g. migration hints).
+                detail = err_body.get("message", "")
+                if detail:
+                    server_msg = f"{server_msg} — {detail}"
             except Exception:
                 server_msg = exc.response.text.strip()
             if status == 401:

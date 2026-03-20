@@ -266,7 +266,12 @@ func NewAuthzMiddleware(checker AuthzChecker) func(http.Handler) http.Handler {
 			// Read token_scope from context (set by Auth.Handler for client tokens).
 			scope, _ := r.Context().Value(TokenScopeKey).(string)
 			if !checker.AllowedForTokenKind(kind, r.URL.Path, scope) {
-				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+				// Helpful error for device clients hitting vault/store directly.
+				if strings.HasPrefix(r.URL.Path, "/v1/vault/store") && scope == "device" {
+					http.Error(w, `{"error":"forbidden","message":"Use /v1/staging/ingest for content ingestion"}`, http.StatusForbidden)
+				} else {
+					http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+				}
 				return
 			}
 			next.ServeHTTP(w, r)

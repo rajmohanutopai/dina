@@ -503,23 +503,21 @@ def draft(ctx: click.Context, content: str, recipient: str, channel: str, subjec
             + (f" with subject '{subject}'" if subject else "")
             + f": {content}",
         )
-        # Also store the draft metadata via vault for tracking
-        client.vault_store(
-            "general",  # drafts go to default persona
-            {
-                "type": "email_draft",
-                "summary": f"Draft to {recipient}: {subject}" if subject else f"Draft to {recipient}",
-                "body_text": content,
-                "source": "dina-cli",
-                "source_id": draft_id,
-                "metadata": json.dumps({
-                    "to": recipient,
-                    "channel": channel,
-                    "subject": subject,
-                    "draft_id": draft_id,
-                }),
-            },
-        )
+        # Stage the draft metadata for Brain classification + vault persistence.
+        client.staging_ingest({
+            "type": "email_draft",
+            "summary": f"Draft to {recipient}: {subject}" if subject else f"Draft to {recipient}",
+            "body": content,
+            "source": "dina-cli",
+            "source_id": draft_id,
+            "sender": "user",
+            "metadata": json.dumps({
+                "to": recipient,
+                "channel": channel,
+                "subject": subject,
+                "draft_id": draft_id,
+            }),
+        })
         print_result({
             "draft_id": draft_id,
             "status": "pending_review",

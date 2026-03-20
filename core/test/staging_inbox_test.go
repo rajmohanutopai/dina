@@ -610,3 +610,77 @@ func TestStagingInbox_ConnectorAuthz(t *testing.T) {
 		checker.AllowedForTokenKind(kind, "/v1/persona/unlock", scope),
 		"connector should NOT be allowed on /v1/persona/unlock")
 }
+
+// --------------------------------------------------------------------------
+// 15. TestStagingInbox_Phase4_DeviceVaultStoreLockdown — Phase 4: device
+//     clients cannot access /v1/vault/store. They must use /v1/staging/ingest.
+// --------------------------------------------------------------------------
+
+func TestStagingInbox_Phase4_DeviceVaultStoreLockdown(t *testing.T) {
+	checker := auth.NewAdminEndpointChecker()
+
+	// Device scope: "device"
+	kind := "client"
+	scope := "device"
+
+	// Device MUST NOT access /v1/vault/store (Phase 4 lockdown).
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/vault/store", scope),
+		"device must NOT access /v1/vault/store — use /v1/staging/ingest")
+
+	// Device MUST NOT access /v1/vault/store/batch either.
+	testutil.RequireFalse(t,
+		checker.AllowedForTokenKind(kind, "/v1/vault/store/batch", scope),
+		"device must NOT access /v1/vault/store/batch")
+
+	// Device SHOULD still access /v1/staging/ingest.
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/v1/staging/ingest", scope),
+		"device should be allowed on /v1/staging/ingest")
+
+	// Device SHOULD still access /api/v1/reason (Brain-mediated).
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/api/v1/reason", scope),
+		"device should be allowed on /api/v1/reason")
+}
+
+// --------------------------------------------------------------------------
+// 16. TestStagingInbox_Phase4_BrainVaultStoreAllowed — Brain (service key)
+//     can still write directly to vault after Phase 4.
+// --------------------------------------------------------------------------
+
+func TestStagingInbox_Phase4_BrainVaultStoreAllowed(t *testing.T) {
+	checker := auth.NewAdminEndpointChecker()
+
+	// Brain service key scope: "brain"
+	kind := "service"
+	scope := "brain"
+
+	// Brain SHOULD access /v1/vault/store (trusted resolver).
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/v1/vault/store", scope),
+		"brain should be allowed on /v1/vault/store")
+
+	// Brain SHOULD access /v1/vault/store/batch.
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/v1/vault/store/batch", scope),
+		"brain should be allowed on /v1/vault/store/batch")
+}
+
+// --------------------------------------------------------------------------
+// 17. TestStagingInbox_Phase4_AdminVaultStoreAllowed — Admin CLIENT_TOKEN
+//     can still write directly to vault after Phase 4.
+// --------------------------------------------------------------------------
+
+func TestStagingInbox_Phase4_AdminVaultStoreAllowed(t *testing.T) {
+	checker := auth.NewAdminEndpointChecker()
+
+	// Admin scope: "admin"
+	kind := "client"
+	scope := "admin"
+
+	// Admin SHOULD access /v1/vault/store (emergency writes).
+	testutil.RequireTrue(t,
+		checker.AllowedForTokenKind(kind, "/v1/vault/store", scope),
+		"admin should be allowed on /v1/vault/store")
+}

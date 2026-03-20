@@ -14,7 +14,7 @@ CLI commands and the APIs they call:
 
   ``dina configure``  → POST /v1/pair/complete (keypair + 6-digit code)
   ``dina validate``   → POST /v1/agent/validate (Core proxies to Brain's Guardian)
-  ``dina remember``   → POST /v1/vault/store
+  ``dina remember``   → POST /v1/staging/ingest
   ``dina recall``     → POST /v1/vault/query
   ``dina scrub``      → POST /api/v1/pii/scrub
 

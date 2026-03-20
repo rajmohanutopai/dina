@@ -407,7 +407,7 @@ def test_rehydrate_json():
 # TST-CLI-041
 def test_draft_json():
     mc = MagicMock()
-    mc.vault_store.return_value = {"item_id": "draftitem123"}
+    mc.staging_ingest.return_value = {"id": "stg-draft-001", "staged": True}
     result = _invoke(
         ["--json", "draft", "Hello!", "--to", "alice@ex.com", "--channel", "email", "--subject", "Hi"],
         mock_client=mc,
@@ -416,6 +416,12 @@ def test_draft_json():
     data = json.loads(result.output)
     assert data["status"] == "pending_review"
     assert data["draft_id"].startswith("drf_")
+    # Phase 4: draft must use staging_ingest, NOT vault_store
+    mc.staging_ingest.assert_called_once()
+    item = mc.staging_ingest.call_args[0][0]
+    assert item["type"] == "email_draft"
+    assert item["body"] == "Hello!"
+    mc.vault_store.assert_not_called()
 
 
 # ── sign ──────────────────────────────────────────────────────────────────

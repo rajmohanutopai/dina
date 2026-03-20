@@ -371,19 +371,20 @@ class TestDeviceSignedAgentContext:
 
 
 class TestDeviceSignedApprovalLifecycle:
-    """Full deterministic approval lifecycle via device-signed /v1/vault/store.
+    """Phase 4: device clients use /v1/staging/ingest, NOT /v1/vault/store.
 
-    /v1/vault/store IS in the device allowlist (agents can 'dina remember').
-    Storing to a sensitive persona triggers AccessPersona → ErrApprovalRequired
-    → the store handler creates an approval request → 403 approval_required.
-    After admin approval, retry succeeds.
+    Device-scoped tokens are blocked from /v1/vault/store by the auth
+    middleware (Phase 4 lockdown). Content goes through staging_ingest
+    and Brain classifies + routes it to the correct persona vault.
 
-    This tests the complete chain over real HTTP:
-      Ed25519 device signature → auth middleware (CallerType=agent,
-      AgentDID=device_id) → X-Session header → VaultService.Store →
-      PersonaManager.AccessPersona → ErrApprovalRequired → approval
-      request created → 403 with approval_id → admin approves →
-      grant created → retry → 201.
+    Approval lifecycle for sensitive personas is now handled by Brain's
+    reasoning flow (async approval-wait-resume), not by direct vault
+    writes from device clients.
+
+    This test verifies:
+      1. Device can ingest via /v1/staging/ingest (201)
+      2. Device is blocked from /v1/vault/store (403 forbidden)
+      3. The 403 includes an actionable migration message
     """
 
     @pytest.fixture(autouse=True)
@@ -393,19 +394,10 @@ class TestDeviceSignedApprovalLifecycle:
         self._priv, self._did, self._device_id = _pair_device_fixture(
             self._core_url, self._admin_headers,
         )
-        # Create a sensitive persona.
-        self._persona = f"sens_store_{int(time.time())}"
-        cr = httpx.post(
-            f"{self._core_url}/v1/personas",
-            json={"name": self._persona, "tier": "sensitive", "passphrase": "test1234"},
-            headers=self._admin_headers, timeout=10,
-        )
-        assert cr.status_code in (201, 409), f"create persona: {cr.text}"
 
-    def test_store_approval_lifecycle(self):
-        """denied → approval_id → approve → 201 → session end → denied."""
-        sess_name = f"store_sess_{int(time.time())}"
-        item = {"Summary": "confidential note", "Type": "note"}
+    def test_device_uses_staging_not_vault_store(self):
+        """Device ingests via staging; vault/store returns 403 forbidden."""
+        sess_name = f"staging_sess_{int(time.time())}"
 
         # --- Step 1: Start session ---
         r = _device_post(
@@ -414,77 +406,40 @@ class TestDeviceSignedApprovalLifecycle:
         )
         assert r.status_code == 201, f"session start: {r.status_code} {r.text}"
 
-        # --- Step 2: Store to sensitive persona → 403 approval_required ---
+        # --- Step 2: Ingest via staging → 201 ---
+        r = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/staging/ingest",
+            {"source": "dina-cli", "source_id": "test-1", "type": "note",
+             "summary": "test note", "body": "test body", "sender": "user"},
+            session=sess_name,
+        )
+        assert r.status_code == 201, (
+            f"staging ingest must succeed: {r.status_code} {r.text}"
+        )
+        data = r.json()
+        assert data.get("staged") is True
+
+        # --- Step 3: Direct vault/store → 403 forbidden (Phase 4 lockdown) ---
         r = _device_post(
             self._core_url, self._priv, self._did,
             "/v1/vault/store",
-            {"persona": self._persona, "item": item},
+            {"persona": "general", "item": {"Summary": "note", "Type": "note"}},
             session=sess_name,
         )
         assert r.status_code == 403, (
-            f"expected 403, got {r.status_code}: {r.text}"
+            f"device must be blocked from vault/store: {r.status_code} {r.text}"
         )
-        data = r.json()
-        assert data.get("error") == "approval_required", (
-            f"must be approval_required: {data}"
-        )
-        approval_id = data.get("approval_id", "")
-        assert approval_id, f"must include approval_id: {data}"
-
-        # --- Step 3: Verify pending ---
-        pending = httpx.get(
-            f"{self._core_url}/v1/persona/approvals",
-            headers=self._admin_headers, timeout=10,
-        ).json().get("approvals", [])
-        assert any(a["id"] == approval_id for a in pending), (
-            f"{approval_id} not in pending: {[a['id'] for a in pending]}"
+        err = r.json()
+        assert err.get("error") == "forbidden", f"expected forbidden: {err}"
+        # Phase 4 actionable message
+        assert "staging/ingest" in err.get("message", ""), (
+            f"403 must include migration guidance: {err}"
         )
 
-        # --- Step 4: Admin approves ---
-        ar = httpx.post(
-            f"{self._core_url}/v1/persona/approve",
-            json={"id": approval_id, "scope": "session"},
-            headers=self._admin_headers, timeout=10,
-        )
-        assert ar.status_code == 200, f"approve: {ar.text}"
-
-        # --- Step 5: Retry store → 201 ---
-        retry = _device_post(
-            self._core_url, self._priv, self._did,
-            "/v1/vault/store",
-            {"persona": self._persona, "item": item},
-            session=sess_name,
-        )
-        assert retry.status_code == 201, (
-            f"after approval, store must succeed: {retry.status_code} {retry.text}"
-        )
-
-        # --- Step 6: End session → grant revoked ---
         _device_post(
             self._core_url, self._priv, self._did,
             "/v1/session/end", {"name": sess_name},
-        )
-
-        # --- Step 7: New session → denied again ---
-        new_sess = f"new_store_{int(time.time())}"
-        _device_post(
-            self._core_url, self._priv, self._did,
-            "/v1/session/start", {"name": new_sess},
-        )
-        denied = _device_post(
-            self._core_url, self._priv, self._did,
-            "/v1/vault/store",
-            {"persona": self._persona, "item": item},
-            session=new_sess,
-        )
-        assert denied.status_code == 403, (
-            f"new session must be denied: {denied.status_code} {denied.text}"
-        )
-        assert denied.json().get("error") == "approval_required"
-
-        _device_post(
-            self._core_url, self._priv, self._did,
-            "/v1/session/end", {"name": new_sess},
         )
 
 

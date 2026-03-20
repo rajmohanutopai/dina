@@ -1,8 +1,8 @@
 # Universal Staging Architecture — Implementation Plan
 
 **Created:** 2026-03-20
-**Status:** Phase 3 complete (Core-wired)
-**Phase:** 3 of 4 (D2D memory content staged via Core ingress)
+**Status:** Complete (all 4 phases implemented)
+**Phase:** 4 of 4 (vault writes locked down)
 
 ## Ground Rules
 
@@ -457,9 +457,13 @@ NOT allowed (removed):
 - No handler-level check needed — the middleware blocks before the request reaches the handler
 
 **`cli/src/dina_cli/main.py`**
-- Verify `remember` uses `staging_ingest` (done in Phase 1)
-- Remove any remaining `vault_store` calls for user-facing commands
-- Keep `vault_store` in client.py for potential admin/debug use
+- `remember` uses `staging_ingest` (done in Phase 1)
+- `draft` uses `staging_ingest` (was `vault_store` — broken by Phase 4 lockdown)
+- No remaining `vault_store` calls in any user-facing command
+- `vault_store` retained in client.py for admin/debug use only
+
+**`cli/src/dina_cli/client.py`**
+- Error messages now surface the `message` field from JSON error responses (e.g. migration hints from the middleware's actionable 403)
 
 **`docs/dina-openclaw-skill.md`**
 - Update: `dina remember` now stages content, not direct vault write
@@ -469,12 +473,12 @@ NOT allowed (removed):
 
 | Test | File | What it verifies |
 |------|------|-----------------|
-| `test_device_vault_store_blocked` | `core/test/auth_test.go` | Device-scoped token gets 403 on `/v1/vault/store` |
-| `test_brain_vault_store_allowed` | same | Brain service key can still write directly to vault |
-| `test_admin_vault_store_allowed` | same | Admin CLIENT_TOKEN can still write directly to vault |
-| `test_cli_remember_uses_staging` | `cli/tests/test_commands.py` | `remember` command calls `staging_ingest`, not `vault_store` |
-| `test_device_gets_helpful_error` | `tests/integration/test_vault_access.py` | Device calling `/v1/vault/store` gets 403 with "Use /v1/staging/ingest" message from middleware |
-| REL-023 update | `tests/release/test_rel_023_cli_agent.py` | `dina remember` returns `{"staged": True}` — `{"stored": True}` is a failure |
+| `TestStagingInbox_Phase4_DeviceVaultStoreLockdown` | `core/test/staging_inbox_test.go` | Device-scoped token gets 403 on `/v1/vault/store` |
+| `TestStagingInbox_Phase4_BrainVaultStoreAllowed` | same | Brain service key can still write directly to vault |
+| `TestStagingInbox_Phase4_AdminVaultStoreAllowed` | same | Admin CLIENT_TOKEN can still write directly to vault |
+| `test_remember_uses_staging` | `cli/tests/test_commands.py` | `remember` command calls `staging_ingest`, not `vault_store` |
+| `test_draft_json` | `cli/tests/test_commands.py` | `draft` command calls `staging_ingest`, not `vault_store` |
+| `test_device_uses_staging_not_vault_store` | `tests/integration/test_persona_tiers.py` | Device ingests via staging (201), blocked from vault/store (403 with migration message) |
 
 ### Risks
 
