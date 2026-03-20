@@ -433,6 +433,44 @@ func (c *BrainClient) ReasonAsUser(ctx context.Context, query, source string) (*
 	return &result, nil
 }
 
+// GetProposalStatus fetches the status of an intent proposal from Brain.
+func (c *BrainClient) GetProposalStatus(proposalID string) ([]byte, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/v1/proposals/"+proposalID+"/status", nil)
+	if err != nil {
+		return nil, err
+	}
+	c.signRequest(req, nil)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brain returned %d for proposal %s", resp.StatusCode, proposalID)
+	}
+	return body, nil
+}
+
+// ListProposals fetches all pending intent proposals from Brain.
+func (c *BrainClient) ListProposals() ([]byte, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/v1/proposals", nil)
+	if err != nil {
+		return nil, err
+	}
+	c.signRequest(req, nil)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brain returned %d for proposal list", resp.StatusCode)
+	}
+	return body, nil
+}
+
 // IsHealthy returns true if the brain is available and healthy.
 func (c *BrainClient) IsHealthy(_ context.Context) bool {
 	if !c.IsAvailable() {

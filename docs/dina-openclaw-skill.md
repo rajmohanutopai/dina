@@ -178,8 +178,15 @@ dina validate delete_emails "Delete 247 emails"
 ### dina remember
 ```bash
 dina remember "Daughter birthday March 15, loves dinosaurs" --category relationship
-# → {"id": "mem_7x2k", "stored": true}
+# → {"id": "stg_a1b2c3d4", "staged": true}
+
+# Session-scoped (for task callbacks):
+dina remember "Found 3 chairs under 20K" --session task-abc12345
+# → {"id": "stg_x9y8z7w6", "staged": true}
 ```
+
+Content goes through the staging pipeline. Provenance (sender, trust level)
+is derived server-side from your device's auth context and role.
 
 ### dina scrub / rehydrate
 ```bash
@@ -234,3 +241,44 @@ dina remember "Recommended ErgoMax Elite based on L4-L5 support needs" --categor
 dina session end --name "ergonomic-chair"
 # All health access revoked, vault closed
 ```
+
+## Device Pairing
+
+OpenClaw must pair with Dina as an **agent device**:
+
+```bash
+dina configure --role agent
+```
+
+This ensures all writes from OpenClaw's CLI identity are scored as
+`(cli, agent)` → `unknown / service / medium / caveated` by Brain's
+trust scorer. Agent-originated content surfaces with a "[from agent]"
+label and is never treated as user-authored memory.
+
+## Outbound Task Delegation
+
+Dina can delegate autonomous tasks to OpenClaw via the `dina task` command.
+The flow:
+
+```bash
+# Human (or Dina Brain) initiates a research task
+dina task "Research ergonomic chairs under 20K INR"
+
+# 1. CLI starts a scoped session
+# 2. CLI validates "research" intent → moderate → requires user approval
+# 3. User approves with: dina-admin intent approve <proposal_id>
+# 4. CLI invokes OpenClaw Gateway (WebSocket RPC)
+# 5. OpenClaw runs autonomously — searches, browses, compiles
+#    ├─ Calls back to Dina at its own discretion:
+#    │   dina ask "Does user have back pain?" --session task-abc123
+#    │   dina validate send_email "Draft to vendor" --session task-abc123
+#    │   dina remember "Found 3 chairs under 20K" --session task-abc123
+#    └─ All callbacks are session-scoped
+# 6. CLI stores final summary via staging (auto-caveated)
+# 7. Session ends — all grants revoked
+```
+
+The `research` action is classified as MODERATE risk by Guardian, so it
+always requires user approval before OpenClaw is invoked. OpenClaw's
+autonomous execution is not micromanaged — Dina validates the task once
+and trusts OpenClaw to call back when needed.

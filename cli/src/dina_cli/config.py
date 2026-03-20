@@ -21,6 +21,7 @@ class Config:
     core_url: str
     timeout: float
     device_name: str = ""
+    role: str = "user"         # "user" or "agent" — set during configure
     openclaw_url: str = ""     # ws://localhost:3000 — OpenClaw Gateway
     openclaw_token: str = ""   # Gateway auth token
 
@@ -69,6 +70,7 @@ def load_config() -> Config:
             "No Ed25519 keypair found. Run 'dina configure' to generate one."
         )
 
+    role = saved.get("role") or "user"
     openclaw_url = os.environ.get("DINA_OPENCLAW_URL") or saved.get("openclaw_url") or ""
     openclaw_token = os.environ.get("DINA_OPENCLAW_TOKEN") or saved.get("openclaw_token") or ""
 
@@ -76,6 +78,7 @@ def load_config() -> Config:
         core_url=core_url,
         timeout=timeout,
         device_name=device_name,
+        role=role,
         openclaw_url=openclaw_url,
         openclaw_token=openclaw_token,
     )

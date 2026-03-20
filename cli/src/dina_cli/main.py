@@ -349,8 +349,9 @@ def _extract_category(item: dict) -> str:
 @click.argument("description")
 @click.option("--count", default=1, type=int, help="Number of items affected")
 @click.option("--reversible", is_flag=True, help="Action is reversible")
+@click.option("--session", default="", help="Session name for scoped validation")
 @click.pass_context
-def validate(ctx: click.Context, action: str, description: str, count: int, reversible: bool) -> None:
+def validate(ctx: click.Context, action: str, description: str, count: int, reversible: bool, session: str) -> None:
     """Check if an action is approved by user policy."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
@@ -368,7 +369,7 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
                 "count": count,
                 "reversible": reversible,
             },
-        })
+        }, session=session)
         approved = result.get("approved", False)
         requires = result.get("requires_approval", False)
 
@@ -1260,6 +1261,11 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
             "OpenClaw not configured. Set DINA_OPENCLAW_URL or run 'dina configure'."
         )
 
+    if config.role != "agent":
+        raise click.UsageError(
+            "dina task requires agent role. Re-pair with: dina configure --role agent"
+        )
+
     from .openclaw import OpenClawClient, OpenClawError
 
     client = _make_client(ctx)
@@ -1285,15 +1291,29 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
             if json_mode:
                 print_result({"status": "denied", "reason": msg}, json_mode)
             else:
-                print_error(f"Task denied: {msg}")
+                print_error(f"Task denied: {msg}", json_mode)
+            return
+
+        if dry_run:
+            status = "requires_approval" if decision.get("requires_approval") else "approved"
+            proposal_id = decision.get("proposal_id", "")
+            if json_mode:
+                r = {"status": status, "dry_run": True}
+                if proposal_id:
+                    r["proposal_id"] = proposal_id
+                print_result(r, json_mode)
+            else:
+                click.echo(f"  [dry-run] Validation: {status}")
+                if proposal_id:
+                    click.echo(f"  [dry-run] Proposal: {proposal_id}")
+                click.echo("  [dry-run] Would invoke OpenClaw after approval.")
             return
 
         if decision.get("requires_approval"):
             proposal_id = decision.get("proposal_id", "")
             if not json_mode:
                 click.echo(f"  Task requires approval (proposal: {proposal_id})")
-                click.echo("  Approve via Telegram, admin UI, or:")
-                click.echo(f"    dina-admin intent approve {proposal_id}")
+                click.echo(f"  Approve with: dina-admin intent approve {proposal_id}")
 
             # Poll for approval (5s interval, 5 min timeout).
             import time
@@ -1313,24 +1333,36 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
                     if json_mode:
                         print_result({"status": s, "reason": reason}, json_mode)
                     else:
-                        print_error(f"Task {s}: {reason}")
+                        print_error(f"Task {s}: {reason}", json_mode)
                     return
             else:
-                print_error("Approval timeout (5 min). Retry later.")
+                print_error("Approval timeout (5 min). Retry later.", json_mode)
                 return
-
-        if dry_run:
-            if json_mode:
-                print_result({"status": "approved", "dry_run": True}, json_mode)
-            else:
-                click.echo("  [dry-run] Task approved. Would invoke OpenClaw.")
-            return
 
         # 3. Invoke OpenClaw.
         if not json_mode:
             click.echo(f"  Delegating to OpenClaw: {description}")
 
-        openclaw = OpenClawClient(config.openclaw_url, config.openclaw_token)
+        # Construct OpenClaw client with real paired device identity.
+        # Fail fast if identity is broken — unsigned Gateway calls will
+        # produce confusing auth errors downstream.
+        identity = client._identity
+        try:
+            device_did = identity.did()
+            _identity_ref = identity  # capture for lambda closure
+            sign_fn = lambda data: bytes.fromhex(_identity_ref.sign_data(data))
+        except Exception as exc:
+            raise click.UsageError(
+                f"Cannot load device identity for OpenClaw handshake: {exc}. "
+                f"Re-pair with: dina configure --role agent"
+            ) from exc
+        openclaw = OpenClawClient(
+            config.openclaw_url,
+            token=config.openclaw_token,
+            device_id=device_did,
+            device_name=config.device_name or "dina-cli",
+            sign_fn=sign_fn,
+        )
         try:
             result = openclaw.run_task(description, dina_session=session_name)
         except OpenClawError as exc:
