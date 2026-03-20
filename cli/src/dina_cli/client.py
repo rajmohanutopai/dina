@@ -173,17 +173,25 @@ class DinaClient:
 
     # -- Staging (universal content ingestion) ------------------------------
 
-    def staging_ingest(self, item: dict) -> dict:
+    def staging_ingest(self, item: dict, session: str = "") -> dict:
         """Ingest content into the staging inbox for Brain classification.
 
         All memory-producing CLI writes go through staging.
         Provenance (ingress_channel, origin_kind) is set server-side.
+
+        When ``session`` is provided, it is sent as ``X-Session`` header
+        for session-scoped access control and also stored in item metadata
+        for traceability.
         """
+        extra_headers = {}
+        if session:
+            extra_headers["X-Session"] = session
         resp = self._request(
             self._core,
             "POST",
             "/v1/staging/ingest",
             json=item,
+            headers=extra_headers if extra_headers else None,
         )
         return resp.json()
 
@@ -265,16 +273,43 @@ class DinaClient:
 
     # -- Brain -------------------------------------------------------------
 
-    def process_event(self, event: dict) -> dict:
+    def process_event(self, event: dict, session: str = "") -> dict:
         """Send an event to Core's agent validation proxy.
 
         Core authenticates via Ed25519 signature (device auth) and forwards
-        to brain's guardian internally.
+        to brain's guardian internally. When ``session`` is provided, it is
+        sent as ``X-Session`` header for session-scoped approval grants.
         """
+        extra_headers = {}
+        if session:
+            extra_headers["X-Session"] = session
         resp = self._request(
             self._core,
             "POST",
             "/v1/agent/validate",
             json=event,
+            headers=extra_headers if extra_headers else None,
+        )
+        return resp.json()
+
+    # -- Sessions --------------------------------------------------------------
+
+    def session_start(self, name: str) -> dict:
+        """Start a named session (POST /v1/session/start)."""
+        resp = self._request(
+            self._core, "POST", "/v1/session/start", json={"name": name},
+        )
+        return resp.json()
+
+    def session_end(self, name: str) -> None:
+        """End a session and revoke all grants (POST /v1/session/end)."""
+        self._request(
+            self._core, "POST", "/v1/session/end", json={"name": name},
+        )
+
+    def proposal_status(self, proposal_id: str) -> dict:
+        """Poll intent proposal status (GET /v1/intent/proposals/{id}/status)."""
+        resp = self._request(
+            self._core, "GET", f"/v1/intent/proposals/{proposal_id}/status",
         )
         return resp.json()

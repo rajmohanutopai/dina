@@ -88,6 +88,11 @@ func (h *AgentHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 	}
 	payload["trust_level"] = "verified"
 
+	// Forward session context if present (for scoped approval grants).
+	if sessionName, ok := r.Context().Value(mw.SessionNameKey).(string); ok && sessionName != "" {
+		payload["session"] = sessionName
+	}
+
 	// Re-marshal with the overridden fields.
 	patched, err := json.Marshal(payload)
 	if err != nil {

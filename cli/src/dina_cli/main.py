@@ -142,28 +142,31 @@ def status(ctx: click.Context) -> None:
 @cli.command()
 @click.argument("text")
 @click.option("--category", default="note", help="Category: fact, preference, decision, relationship, event, note")
+@click.option("--session", default="", help="Session name for scoped access")
 @click.pass_context
-def remember(ctx: click.Context, text: str, category: str) -> None:
+def remember(ctx: click.Context, text: str, category: str, session: str) -> None:
     """Store a fact via the staging pipeline.
 
     Content goes through Core's staging inbox → Brain classifies it
     into the right persona → enriches → stores to vault. Provenance
     (ingress_channel, origin_kind) is set server-side from your
-    device's auth context.
+    device's auth context. Sender is derived from device role.
     """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
         source_id = f"cli-{uuid.uuid4().hex[:12]}"
+        metadata = {"category": category}
+        if session:
+            metadata["session"] = session
         result = client.staging_ingest({
             "source": "dina-cli",
             "source_id": source_id,
             "type": "note",
             "summary": text,
             "body": text,
-            "sender": "user",
-            "metadata": json.dumps({"category": category}),
-        })
+            "metadata": json.dumps(metadata),
+        }, session=session)
         staging_id = result.get("id", "")
         print_result({
             "id": f"stg_{staging_id[:8]}" if staging_id else "stg_ok",
@@ -1230,3 +1233,131 @@ def session_list(ctx: click.Context) -> None:
         print_error(str(exc), json_mode)
         ctx.exit(1)
 
+
+
+# ── task (OpenClaw delegation) ──────────────────────────────────────────
+
+
+@cli.command()
+@click.argument("description")
+@click.option("--dry-run", is_flag=True, help="Validate intent without executing")
+@click.pass_context
+def task(ctx: click.Context, description: str, dry_run: bool) -> None:
+    """Delegate an autonomous task to OpenClaw.
+
+    Dina validates the task-level intent once (research -> moderate, requires
+    approval). After approval, OpenClaw runs autonomously and calls back
+    to Dina (ask, validate, remember) at its own discretion.
+
+    Requires OpenClaw Gateway: DINA_OPENCLAW_URL + DINA_OPENCLAW_TOKEN.
+    """
+    _load_cfg(ctx)
+    config = ctx.obj["config"]
+    json_mode = ctx.obj["json"]
+
+    if not config.openclaw_url:
+        raise click.UsageError(
+            "OpenClaw not configured. Set DINA_OPENCLAW_URL or run 'dina configure'."
+        )
+
+    from .openclaw import OpenClawClient, OpenClawError
+
+    client = _make_client(ctx)
+    session_name = f"task-{uuid.uuid4().hex[:8]}"
+
+    try:
+        # 1. Start scoped session.
+        client.session_start(session_name)
+        if not json_mode:
+            click.echo(f"  Session: {session_name}")
+
+        # 2. Validate the delegation intent.
+        decision = client.process_event({
+            "type": "agent_intent",
+            "action": "research",
+            "target": description[:200],
+        }, session=session_name)
+
+        action = decision.get("action", "")
+
+        if action == "deny":
+            msg = decision.get("reason", "blocked")
+            if json_mode:
+                print_result({"status": "denied", "reason": msg}, json_mode)
+            else:
+                print_error(f"Task denied: {msg}")
+            return
+
+        if decision.get("requires_approval"):
+            proposal_id = decision.get("proposal_id", "")
+            if not json_mode:
+                click.echo(f"  Task requires approval (proposal: {proposal_id})")
+                click.echo("  Approve via Telegram, admin UI, or:")
+                click.echo(f"    dina-admin intent approve {proposal_id}")
+
+            # Poll for approval (5s interval, 5 min timeout).
+            import time
+            for _ in range(60):
+                time.sleep(5)
+                try:
+                    status = client.proposal_status(proposal_id)
+                except DinaClientError:
+                    continue
+                s = status.get("status", "pending")
+                if s == "approved":
+                    if not json_mode:
+                        click.echo("  Approved!")
+                    break
+                if s in ("denied", "expired"):
+                    reason = status.get("decision_reason", s)
+                    if json_mode:
+                        print_result({"status": s, "reason": reason}, json_mode)
+                    else:
+                        print_error(f"Task {s}: {reason}")
+                    return
+            else:
+                print_error("Approval timeout (5 min). Retry later.")
+                return
+
+        if dry_run:
+            if json_mode:
+                print_result({"status": "approved", "dry_run": True}, json_mode)
+            else:
+                click.echo("  [dry-run] Task approved. Would invoke OpenClaw.")
+            return
+
+        # 3. Invoke OpenClaw.
+        if not json_mode:
+            click.echo(f"  Delegating to OpenClaw: {description}")
+
+        openclaw = OpenClawClient(config.openclaw_url, config.openclaw_token)
+        try:
+            result = openclaw.run_task(description, dina_session=session_name)
+        except OpenClawError as exc:
+            print_error(f"OpenClaw error: {exc}", json_mode)
+            return
+        finally:
+            openclaw.close()
+
+        # 4. Store final summary via staging (auto-caveated for agent-role CLI).
+        summary = result.get("summary", description[:200])
+        client.staging_ingest({
+            "source": "openclaw",
+            "source_id": f"task-{uuid.uuid4().hex[:12]}",
+            "type": "note",
+            "summary": f"Task result: {summary}",
+            "body": json.dumps(result.get("data", result), indent=2)[:50000],
+            "metadata": json.dumps({"task": description, "session": session_name}),
+        }, session=session_name)
+
+        # 5. Display.
+        print_result(result, json_mode)
+
+    except DinaClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+    finally:
+        try:
+            client.session_end(session_name)
+        except Exception:
+            pass
