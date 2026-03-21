@@ -275,6 +275,36 @@ func (s *StagingInbox) ResolveMulti(ctx context.Context, id string, targets []do
 	return nil
 }
 
+// ExtendLease extends the lease on a classifying item.
+// VT6: Prevents Sweep from reverting long-running classification.
+func (s *StagingInbox) ExtendLease(ctx context.Context, id string, extension time.Duration) error {
+	db := s.db()
+	if db == nil {
+		return fmt.Errorf("staging: identity database not open")
+	}
+	// Additive from max(current lease, now) — atomic in SQL, no TOCTOU.
+	extSec := int64(extension.Seconds())
+	now := time.Now().Unix()
+	res, err := db.ExecContext(ctx,
+		`UPDATE staging_inbox
+		 SET lease_until = CASE
+		     WHEN lease_until > ? THEN lease_until + ?
+		     ELSE ? + ?
+		 END,
+		 updated_at = ?
+		 WHERE id = ? AND status = 'classifying'`,
+		now, extSec, now, extSec, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("staging: extend lease: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("staging: item %s not found or not classifying", id)
+	}
+	return nil
+}
+
 // MarkFailed records a classification failure.
 func (s *StagingInbox) MarkFailed(ctx context.Context, id, errMsg string) error {
 	db := s.db()

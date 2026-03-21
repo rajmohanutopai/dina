@@ -10,6 +10,7 @@ No imports from adapter/ — only domain types, ports, and sibling services.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -149,6 +150,25 @@ class StagingProcessor:
                 if original_ts:
                     base_classified["timestamp"] = original_ts
 
+                # VT6: Heartbeat lease extension during enrichment (the slow
+                # LLM step). Extends every 5 minutes by 15 minutes — additive
+                # from the current lease, so the deadline keeps moving forward.
+                heartbeat_task: asyncio.Task | None = None
+
+                async def _lease_heartbeat(sid: str) -> None:
+                    """Extend lease every 5 min while enrichment runs."""
+                    try:
+                        while True:
+                            await asyncio.sleep(300)  # 5 minutes
+                            try:
+                                await self._core.staging_extend_lease(sid, 900)
+                            except Exception:
+                                pass  # best-effort
+                    except asyncio.CancelledError:
+                        pass
+
+                heartbeat_task = asyncio.create_task(_lease_heartbeat(item_id))
+
                 # Enrich before resolve: generate L0+L1+embedding so every
                 # vault item is fully enriched at publication time.
                 # If enrichment fails, item stays in staging for retry
@@ -156,6 +176,8 @@ class StagingProcessor:
                 try:
                     base_classified = await self._enrichment.enrich_raw(base_classified)
                 except Exception as enrich_exc:
+                    if heartbeat_task:
+                        heartbeat_task.cancel()
                     log.warning("staging.enrichment_failed", extra={
                         "id": item_id, "error": str(enrich_exc),
                     })
@@ -166,6 +188,9 @@ class StagingProcessor:
                     except Exception:
                         pass
                     continue  # skip to next item — do not resolve
+                finally:
+                    if heartbeat_task and not heartbeat_task.done():
+                        heartbeat_task.cancel()
 
                 resolve_status = "stored"
                 if len(personas) == 1:

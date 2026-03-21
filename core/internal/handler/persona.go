@@ -130,7 +130,12 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 		if perr == nil {
 			personaFullID := "persona-" + req.Name
 			dekVersion, dvErr := h.Personas.GetDEKVersion(r.Context(), personaFullID)
-			if dvErr != nil || dekVersion == 0 {
+			if dvErr != nil {
+				// GH8: Log DEK version error instead of silently defaulting.
+				slog.Warn("persona: GetDEKVersion failed, defaulting to v1",
+					"persona", personaFullID, "error", dvErr)
+				dekVersion = 1
+			} else if dekVersion == 0 {
 				dekVersion = 1
 			}
 			dek, derr := h.KeyDeriver.DerivePersonaDEKVersioned(h.Seed, persona, dekVersion)
@@ -139,7 +144,8 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			if oerr := h.VaultManager.Open(r.Context(), persona, dek); oerr != nil {
-				http.Error(w, `{"error":"persona created but vault failed to open: `+oerr.Error()+`"}`, http.StatusInternalServerError)
+				slog.Warn("persona: vault open failed after create", "persona", req.Name, "error", oerr)
+				http.Error(w, `{"error":"persona created but vault failed to open"}`, http.StatusInternalServerError)
 				return
 			}
 			vaultStatus = "open"
@@ -324,9 +330,15 @@ func (h *PersonaHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 		req.GrantedBy = "admin"
 	}
 
-	// Get persona from the approval request before approving (need it for vault open).
-	pending, _ := h.Approvals.ListPending(r.Context())
+	// GH7: Get persona from the approval request before approving (need it for vault open).
+	// Log ListPending errors instead of silently discarding — approvedPersona stays empty
+	// but the approval still proceeds (vault just won't auto-open).
 	var approvedPersona string
+	pending, listErr := h.Approvals.ListPending(r.Context())
+	if listErr != nil {
+		slog.Warn("approval: ListPending failed — vault auto-open will be skipped",
+			"approval_id", req.ID, "error", listErr)
+	}
 	for _, p := range pending {
 		if p.ID == req.ID {
 			approvedPersona = p.PersonaID
@@ -335,7 +347,8 @@ func (h *PersonaHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Approvals.ApproveRequest(r.Context(), req.ID, req.Scope, req.GrantedBy); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		slog.Warn("approval.failed", "id", req.ID, "error", err)
+		http.Error(w, `{"error":"approval not found or already resolved"}`, http.StatusNotFound)
 		return
 	}
 
@@ -381,8 +394,12 @@ func (h *PersonaHandler) openVaultForApproval(r *http.Request, approvedPersona s
 	// Mark this vault as opened via approval — only these get
 	// closed when the session ends or single-use grant is consumed.
 	// User/admin manually unlocked vaults are never auto-closed.
+	// GH8: Log warning if type assertion fails instead of silently skipping.
 	if mgr, ok := h.Personas.(*identity.PersonaManager); ok {
 		mgr.MarkGrantOpened(approvedPersona)
+	} else {
+		slog.Warn("approval: cannot mark grant-opened — Personas is not PersonaManager",
+			"persona", approvedPersona)
 	}
 }
 

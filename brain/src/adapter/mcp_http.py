@@ -9,12 +9,16 @@ Third-party imports:  httpx, structlog.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 import httpx
 import structlog
 
 from ..domain.errors import MCPError
+
+# BA2: Tool name whitelist pattern — defense-in-depth against path injection.
+_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 logger = structlog.get_logger(__name__)
 
@@ -86,6 +90,10 @@ class MCPHTTPClient:
         """
         client = self._ensure_client()
         base_url = self._get_base_url(server)
+
+        # BA2: Validate tool name before URL path interpolation.
+        if not _TOOL_NAME_RE.match(tool):
+            raise MCPError(f"invalid tool name: {tool!r}")
 
         logger.info(
             "mcp_http_call_tool",

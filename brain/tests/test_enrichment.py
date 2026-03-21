@@ -499,8 +499,15 @@ async def test_fc2_enrichment_scrubs_pii_before_cloud_llm():
     result = await svc.enrich_raw(item)
     assert result["enrichment_status"] == "ready"
 
-    # Entity vault must have been called to scrub body + summary.
-    assert entity_vault.scrub.await_count == 2
+    # Entity vault must have been called to scrub body + summary + sender.
+    assert entity_vault.scrub.await_count == 3
+
+    # Verify the LLM prompt does NOT contain raw sender email.
+    llm_call = llm.route.call_args
+    prompt = llm_call.kwargs.get("prompt", "")
+    assert "dr.sharma@clinic.com" not in prompt, (
+        f"FC2: raw sender email leaked into LLM prompt: {prompt[:200]}"
+    )
 
 
 # TST-BRAIN-816

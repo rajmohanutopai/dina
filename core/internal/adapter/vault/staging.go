@@ -218,6 +218,30 @@ func (s *StagingInbox) ResolveMulti(ctx context.Context, id string, targets []do
 	return nil
 }
 
+// ExtendLease extends the lease on a classifying item.
+// VT6: Prevents Sweep from reverting long-running classification.
+func (s *StagingInbox) ExtendLease(_ context.Context, id string, extension time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.items[id]
+	if !ok {
+		return fmt.Errorf("staging: item %s not found", id)
+	}
+	if item.Status != domain.StagingClassifying {
+		return fmt.Errorf("staging: item %s is not classifying (status=%s)", id, item.Status)
+	}
+	// Additive from whichever is later: current lease or now.
+	// This ensures extending always pushes the deadline forward.
+	base := item.LeaseUntil
+	now := time.Now().Unix()
+	if now > base {
+		base = now
+	}
+	item.LeaseUntil = base + int64(extension.Seconds())
+	return nil
+}
+
 // MarkFailed records a classification failure with an error message.
 func (s *StagingInbox) MarkFailed(_ context.Context, id, errMsg string) error {
 	s.mu.Lock()

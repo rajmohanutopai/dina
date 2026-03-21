@@ -43,7 +43,7 @@ class ReasonRequest(BaseModel):
     prompt: str = Field(..., max_length=32_000)
     persona_id: str | None = Field(None, max_length=100)
     persona_tier: Literal["default", "standard", "sensitive", "locked"] | None = Field(default="default")
-    provider: str | None = Field(None, max_length=50)
+    provider: str | None = Field(None, max_length=50, pattern=r"^[a-z0-9_-]+$")
     skip_vault_enrichment: bool = False
     # Agent context — forwarded from Core so vault access is attributed
     # to the originating agent, not to Brain.

@@ -941,3 +941,43 @@ func TestVT3_EmbeddingRejectsNaNInf(t *testing.T) {
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "Inf")
 }
+
+// --------------------------------------------------------------------------
+// 27. TestVT6_ExtendLeaseAdditive — VT6: ExtendLease adds to the current
+//     lease deadline, not from now. Proves the remaining lease actually grows.
+// --------------------------------------------------------------------------
+
+func TestVT6_ExtendLeaseAdditive(t *testing.T) {
+	inbox := newStagingInbox()
+	ctx := context.Background()
+
+	item := newStagingItem("conn-1", "gmail", "lease-ext-001", "Extend test")
+	id, err := inbox.Ingest(ctx, item)
+	testutil.RequireNoError(t, err)
+
+	// Claim with 15-minute lease.
+	claimed, err := inbox.Claim(ctx, 1, 15*time.Minute)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(claimed), 1)
+
+	originalLease := claimed[0].LeaseUntil
+
+	// Extend by 15 minutes — should be additive from the CURRENT lease,
+	// not from now. So new lease should be ~originalLease + 900.
+	err = inbox.ExtendLease(ctx, id, 15*time.Minute)
+	testutil.RequireNoError(t, err)
+
+	// Re-read the item via ListByStatus.
+	classifying, err := inbox.ListByStatus(ctx, domain.StagingClassifying, 10)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(classifying), 1)
+
+	newLease := classifying[0].LeaseUntil
+
+	// New lease must be at least originalLease + 899 (allow 1s slack).
+	delta := newLease - originalLease
+	testutil.RequireTrue(t, delta >= 899,
+		fmt.Sprintf("VT6: ExtendLease must be additive — delta=%ds, want >=899s", delta))
+	testutil.RequireTrue(t, delta <= 901,
+		fmt.Sprintf("VT6: ExtendLease should add ~900s — delta=%ds", delta))
+}

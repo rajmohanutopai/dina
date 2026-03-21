@@ -31,6 +31,11 @@ type StagingInbox interface {
 	// Each copy gets a deterministic ID: stg-{staging_id}-{persona}.
 	ResolveMulti(ctx context.Context, id string, targets []domain.ResolveTarget) error
 
+	// ExtendLease extends the lease on a classifying item. Brain calls this
+	// during long-running operations to prevent Sweep from reverting the item.
+	// VT6: Without this, items exceeding DefaultLeaseDuration are double-processed.
+	ExtendLease(ctx context.Context, id string, extension time.Duration) error
+
 	// MarkFailed records a classification failure with an error message.
 	MarkFailed(ctx context.Context, id, errMsg string) error
 

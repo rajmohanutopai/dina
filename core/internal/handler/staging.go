@@ -329,3 +329,43 @@ func (h *StagingHandler) HandleFail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": domain.StagingFailed})
 }
+
+// extendLeaseRequest is the JSON body for POST /v1/staging/extend-lease.
+type extendLeaseRequest struct {
+	ID              string `json:"id"`
+	ExtensionSeconds int   `json:"extension_seconds"`
+}
+
+// HandleExtendLease handles POST /v1/staging/extend-lease. Brain calls this
+// during long-running classification to prevent lease expiry.
+// VT6: Without this, Sweep reverts items exceeding DefaultLeaseDuration.
+func (h *StagingHandler) HandleExtendLease(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req extendLeaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		http.Error(w, `{"error":"missing id"}`, http.StatusBadRequest)
+		return
+	}
+
+	ext := req.ExtensionSeconds
+	if ext <= 0 {
+		ext = int(domain.DefaultLeaseDuration)
+	}
+
+	if err := h.Staging.ExtendLease(r.Context(), req.ID, time.Duration(ext)*time.Second); err != nil {
+		clientError(w, "extend lease failed", http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": "lease_extended"})
+}

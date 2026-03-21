@@ -889,9 +889,21 @@ func main() {
 		vaultMgr, vaultMgr, vaultMgr, wsHub, notifier, clk,
 	)
 
-	_ = service.NewWatchdogService(
+	// SV4: Start the watchdog background loop. Runs every 30 seconds:
+	// checks health, purges old audit/crash logs, monitors disk usage.
+	watchdogSvc := service.NewWatchdogService(
 		healthChecker, brain, crashLogger, auditLogger, clk,
 	)
+	go watchdogSvc.Start(context.Background(), func(report *domain.WatchdogReport, err error) {
+		if err != nil {
+			slog.Warn("watchdog tick error", "error", err)
+		} else if report != nil {
+			slog.Debug("watchdog tick",
+				"audit_purged", report.AuditEntriesPurged,
+				"crash_purged", report.CrashEntriesPurged,
+				"brain_healthy", report.BrainHealthy)
+		}
+	})
 
 	_ = service.NewOnboardingService(identitySvc, vaultMgr, clk)
 
@@ -1110,6 +1122,7 @@ func main() {
 	mux.HandleFunc("/v1/staging/claim", stagingH.HandleClaim)
 	mux.HandleFunc("/v1/staging/resolve", stagingH.HandleResolve)
 	mux.HandleFunc("/v1/staging/fail", stagingH.HandleFail)
+	mux.HandleFunc("/v1/staging/extend-lease", stagingH.HandleExtendLease)
 
 	// Identity API
 	mux.HandleFunc("/v1/did", identityH.HandleGetDID)

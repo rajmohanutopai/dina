@@ -53,6 +53,39 @@ func (s *VaultService) ensureOpen(ctx context.Context, persona domain.PersonaNam
 	return s.autoUnlock(ctx, persona)
 }
 
+// ensureAuthorized runs the full 3-step authorization gauntlet:
+//  1. AccessPersona — tier-based access (approval/session gating for sensitive personas)
+//  2. ensureOpen — vault file unlocked (auto-unlock for user-originated requests)
+//  3. EvaluateIntent — gatekeeper action-level authorization
+//
+// F05: Extracted from 6 duplicated call sites (Query, GetItem, Store, StoreBatch, Delete, HybridSearch).
+func (s *VaultService) ensureAuthorized(ctx context.Context, agentDID string, persona domain.PersonaName, action, target, opName string) error {
+	if s.personaMgr != nil {
+		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
+			return fmt.Errorf("%s: %w", opName, err)
+		}
+	}
+	if err := s.ensureOpen(ctx, persona); err != nil {
+		return fmt.Errorf("%s: %w", opName, err)
+	}
+	if s.gatekeeper != nil {
+		intent := domain.Intent{
+			AgentDID:  agentDID,
+			Action:    action,
+			Target:    target,
+			PersonaID: string(persona),
+		}
+		decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
+		if err != nil {
+			return fmt.Errorf("%s: gatekeeper evaluation failed: %w", opName, err)
+		}
+		if !decision.Allowed {
+			return fmt.Errorf("%s: %w: %s", opName, domain.ErrForbidden, decision.Reason)
+		}
+	}
+	return nil
+}
+
 // NewVaultService constructs a VaultService with the given port dependencies.
 func NewVaultService(
 	manager port.VaultManager,
@@ -74,32 +107,8 @@ func NewVaultService(
 // that the requesting agent has permission via the gatekeeper.
 // The agentDID identifies who is making the request for audit purposes.
 func (s *VaultService) Query(ctx context.Context, agentDID string, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error) {
-	// Check tier-based access FIRST — this returns ErrApprovalRequired for
-	// agents without session grants, which the handler converts to an approval
-	// request. Must run before IsOpen so closed sensitive personas trigger
-	// approval flow, not just "persona locked".
-	if s.personaMgr != nil {
-		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
-			return nil, fmt.Errorf("vault query: %w", err)
-		}
-	}
-
-	if err := s.ensureOpen(ctx, persona); err != nil {
-		return nil, fmt.Errorf("vault query: %w", err)
-	}
-
-	intent := domain.Intent{
-		AgentDID:  agentDID,
-		Action:    domain.ActionVaultRead,
-		Target:    string(persona),
-		PersonaID: string(persona),
-	}
-	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
-	if err != nil {
-		return nil, fmt.Errorf("vault query: gatekeeper evaluation failed: %w", err)
-	}
-	if !decision.Allowed {
-		return nil, fmt.Errorf("vault query: %w: %s", domain.ErrForbidden, decision.Reason)
+	if err := s.ensureAuthorized(ctx, agentDID, persona, domain.ActionVaultRead, string(persona), "vault query"); err != nil {
+		return nil, err
 	}
 
 	// Route hybrid/semantic queries with embeddings through HybridSearch
@@ -118,29 +127,9 @@ func (s *VaultService) Query(ctx context.Context, agentDID string, persona domai
 // GetItem retrieves a single vault item by its primary key.
 // It performs the same gatekeeper authorization checks as Query.
 func (s *VaultService) GetItem(ctx context.Context, agentDID string, persona domain.PersonaName, id string) (*domain.VaultItem, error) {
-	if s.personaMgr != nil {
-		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
-			return nil, fmt.Errorf("vault get item: %w", err)
-		}
+	if err := s.ensureAuthorized(ctx, agentDID, persona, domain.ActionVaultRead, id, "vault get item"); err != nil {
+		return nil, err
 	}
-	if err := s.ensureOpen(ctx, persona); err != nil {
-		return nil, fmt.Errorf("vault get item: %w", err)
-	}
-
-	intent := domain.Intent{
-		AgentDID:  agentDID,
-		Action:    domain.ActionVaultRead,
-		Target:    id,
-		PersonaID: string(persona),
-	}
-	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
-	if err != nil {
-		return nil, fmt.Errorf("vault get item: gatekeeper evaluation failed: %w", err)
-	}
-	if !decision.Allowed {
-		return nil, fmt.Errorf("vault get item: %w: %s", domain.ErrForbidden, decision.Reason)
-	}
-
 	return s.reader.GetItem(ctx, persona, id)
 }
 
@@ -154,27 +143,8 @@ func (s *VaultService) GetKV(ctx context.Context, agentDID string, persona domai
 // Returns the ID of the stored item.
 // MEDIUM-07: Added agentDID param and gatekeeper check to match Query/GetItem pattern.
 func (s *VaultService) Store(ctx context.Context, agentDID string, persona domain.PersonaName, item domain.VaultItem) (string, error) {
-	if s.personaMgr != nil {
-		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
-			return "", fmt.Errorf("vault store: %w", err)
-		}
-	}
-	if err := s.ensureOpen(ctx, persona); err != nil {
-		return "", fmt.Errorf("vault store: %w", err)
-	}
-
-	intent := domain.Intent{
-		AgentDID:  agentDID,
-		Action:    domain.ActionVaultWrite,
-		Target:    string(persona),
-		PersonaID: string(persona),
-	}
-	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
-	if err != nil {
-		return "", fmt.Errorf("vault store: gatekeeper evaluation failed: %w", err)
-	}
-	if !decision.Allowed {
-		return "", fmt.Errorf("vault store: %w: %s", domain.ErrForbidden, decision.Reason)
+	if err := s.ensureAuthorized(ctx, agentDID, persona, domain.ActionVaultWrite, string(persona), "vault store"); err != nil {
+		return "", err
 	}
 
 	now := s.clock.Now().Unix()
@@ -192,27 +162,8 @@ func (s *VaultService) Store(ctx context.Context, agentDID string, persona domai
 // StoreBatch persists multiple items into a persona's vault in a single operation.
 // Returns the IDs of all stored items.
 func (s *VaultService) StoreBatch(ctx context.Context, agentDID string, persona domain.PersonaName, items []domain.VaultItem) ([]string, error) {
-	if s.personaMgr != nil {
-		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
-			return nil, fmt.Errorf("vault store batch: %w", err)
-		}
-	}
-	if err := s.ensureOpen(ctx, persona); err != nil {
-		return nil, fmt.Errorf("vault store batch: %w", err)
-	}
-
-	intent := domain.Intent{
-		AgentDID:  agentDID,
-		Action:    domain.ActionVaultWrite,
-		Target:    string(persona),
-		PersonaID: string(persona),
-	}
-	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
-	if err != nil {
-		return nil, fmt.Errorf("vault store batch: gatekeeper evaluation failed: %w", err)
-	}
-	if !decision.Allowed {
-		return nil, fmt.Errorf("vault store batch: %w: %s", domain.ErrForbidden, decision.Reason)
+	if err := s.ensureAuthorized(ctx, agentDID, persona, domain.ActionVaultWrite, string(persona), "vault store batch"); err != nil {
+		return nil, err
 	}
 
 	now := s.clock.Now().Unix()
@@ -232,27 +183,8 @@ func (s *VaultService) StoreBatch(ctx context.Context, agentDID string, persona 
 // Delete removes an item from a persona's vault by ID.
 // MEDIUM-07: Added agentDID param and gatekeeper check.
 func (s *VaultService) Delete(ctx context.Context, agentDID string, persona domain.PersonaName, id string) error {
-	if s.personaMgr != nil {
-		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
-			return fmt.Errorf("vault delete: %w", err)
-		}
-	}
-	if err := s.ensureOpen(ctx, persona); err != nil {
-		return fmt.Errorf("vault delete: %w", err)
-	}
-
-	intent := domain.Intent{
-		AgentDID:  agentDID,
-		Action:    domain.ActionVaultDelete,
-		Target:    id,
-		PersonaID: string(persona),
-	}
-	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
-	if err != nil {
-		return fmt.Errorf("vault delete: gatekeeper evaluation failed: %w", err)
-	}
-	if !decision.Allowed {
-		return fmt.Errorf("vault delete: %w: %s", domain.ErrForbidden, decision.Reason)
+	if err := s.ensureAuthorized(ctx, agentDID, persona, domain.ActionVaultDelete, id, "vault delete"); err != nil {
+		return err
 	}
 
 	if err := s.writer.Delete(ctx, persona, id); err != nil {
@@ -266,26 +198,8 @@ func (s *VaultService) Delete(ctx context.Context, agentDID string, persona doma
 // The query must include both a text query and an embedding vector.
 // F01: agentDID added for gatekeeper authorization (was missing — auth bypass risk).
 func (s *VaultService) HybridSearch(ctx context.Context, agentDID string, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error) {
-	if err := s.ensureOpen(ctx, persona); err != nil {
-		return nil, fmt.Errorf("hybrid search: %w", err)
-	}
-
-	// F01: Gatekeeper authorization check — same as Query().
-	// Without this, a direct call to HybridSearch would bypass access control.
-	if s.gatekeeper != nil {
-		intent := domain.Intent{
-			AgentDID:  agentDID,
-			Action:    domain.ActionVaultRead,
-			Target:    string(persona),
-			PersonaID: string(persona),
-		}
-		decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
-		if err != nil {
-			return nil, fmt.Errorf("hybrid search: gatekeeper evaluation failed: %w", err)
-		}
-		if !decision.Allowed {
-			return nil, fmt.Errorf("hybrid search: %w: %s", domain.ErrForbidden, decision.Reason)
-		}
+	if err := s.ensureAuthorized(ctx, agentDID, persona, domain.ActionVaultRead, string(persona), "hybrid search"); err != nil {
+		return nil, err
 	}
 
 	const (

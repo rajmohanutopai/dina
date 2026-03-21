@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -50,6 +51,7 @@ func NewIdentityService(
 type SetupResult struct {
 	RootDID     domain.DID
 	WrappedSeed []byte
+	Salt        []byte // SV1: independent random salt for Argon2id KEK derivation
 	Personas    []string
 }
 
@@ -69,8 +71,12 @@ func (s *IdentityService) Setup(ctx context.Context, seed []byte, passphrase str
 		return nil, fmt.Errorf("identity setup: %w: seed must be 32 bytes", domain.ErrInvalidInput)
 	}
 
-	// Step 1: Derive KEK from passphrase and wrap the seed.
-	salt := seed[:16]
+	// SV1: Generate random salt independent of the seed. Previously seed[:16]
+	// was used, leaking half the seed if the salt file was compromised.
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("identity setup: salt generation failed: %w", err)
+	}
 	kekBytes, err := s.kek.DeriveKEK(passphrase, salt)
 	if err != nil {
 		return nil, fmt.Errorf("identity setup: KEK derivation failed: %w", err)
@@ -117,6 +123,7 @@ func (s *IdentityService) Setup(ctx context.Context, seed []byte, passphrase str
 	return &SetupResult{
 		RootDID:     rootDID,
 		WrappedSeed: wrappedSeed,
+		Salt:        salt,
 		Personas:    []string{defaultPersona},
 	}, nil
 }

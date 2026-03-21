@@ -42,6 +42,20 @@ func (s *TransportService) verifyWithAnyKey(
 	return false, nil
 }
 
+// deriveX25519Keypair converts an Ed25519 keypair to X25519 for NaCl encryption/decryption.
+// F06: Extracted from 3 duplicated call sites (ReceiveMessage, ProcessInbound, processLegacyInbound).
+func (s *TransportService) deriveX25519Keypair(ed25519Pub, ed25519Priv []byte) (x25519Pub, x25519Priv []byte, err error) {
+	x25519Priv, err = s.converter.Ed25519ToX25519Private(ed25519Priv)
+	if err != nil {
+		return nil, nil, fmt.Errorf("convert private key: %w", err)
+	}
+	x25519Pub, err = s.converter.Ed25519ToX25519Public(ed25519Pub)
+	if err != nil {
+		return nil, nil, fmt.Errorf("convert public key: %w", err)
+	}
+	return x25519Pub, x25519Priv, nil
+}
+
 // decodeMultibase decodes a multibase-encoded Ed25519 public key.
 // Strict format: z + base58btc(0xed01 + 32-byte-pubkey).
 func decodeMultibase(multibaseKey string) ([]byte, error) {
@@ -269,14 +283,10 @@ func marshalD2DPayload(ciphertext, sig []byte) ([]byte, error) {
 // ReceiveMessage decrypts an inbound envelope and verifies the sender's signature.
 // It resolves the sender's DID to obtain their public key for verification.
 func (s *TransportService) ReceiveMessage(ctx context.Context, envelope domain.DinaEnvelope, recipientPub, recipientPriv []byte) (*domain.DinaMessage, error) {
-	// Convert recipient Ed25519 keys to X25519 for decryption.
-	x25519Priv, err := s.converter.Ed25519ToX25519Private(recipientPriv)
+	// Convert recipient Ed25519 keys to X25519 for NaCl decryption.
+	x25519Pub, x25519Priv, err := s.deriveX25519Keypair(recipientPub, recipientPriv)
 	if err != nil {
-		return nil, fmt.Errorf("transport: convert recipient private key: %w", err)
-	}
-	x25519Pub, err := s.converter.Ed25519ToX25519Public(recipientPub)
-	if err != nil {
-		return nil, fmt.Errorf("transport: convert recipient public key: %w", err)
+		return nil, fmt.Errorf("transport: %w", err)
 	}
 
 	// Decrypt the ciphertext.
@@ -446,13 +456,9 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 	ciphertext = decoded
 	sigHex = payload.Sig
 
-	x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
-	if err != nil {
-		return nil, fmt.Errorf("transport: convert private key: %w", err)
-	}
-	x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
-	if err != nil {
-		return nil, fmt.Errorf("transport: convert public key: %w", err)
+	x25519Pub, x25519Priv, convErr := s.deriveX25519Keypair(s.recipientPub, s.recipientPriv)
+	if convErr != nil {
+		return nil, fmt.Errorf("transport: %w", convErr)
 	}
 	plaintext, err := s.encryptor.OpenAnonymous(ciphertext, x25519Pub, x25519Priv)
 	if err != nil {
@@ -521,13 +527,9 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 // to track migration progress. The message is accepted but flagged as
 // unsigned via the UnsignedLegacy field.
 func (s *TransportService) processLegacyInbound(_ context.Context, sealed []byte) (*domain.DinaMessage, error) {
-	x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
-	if err != nil {
-		return nil, fmt.Errorf("transport: legacy: convert private key: %w", err)
-	}
-	x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
-	if err != nil {
-		return nil, fmt.Errorf("transport: legacy: convert public key: %w", err)
+	x25519Pub, x25519Priv, convErr := s.deriveX25519Keypair(s.recipientPub, s.recipientPriv)
+	if convErr != nil {
+		return nil, fmt.Errorf("transport: legacy: %w", convErr)
 	}
 	plaintext, err := s.encryptor.OpenAnonymous(sealed, x25519Pub, x25519Priv)
 	if err != nil {

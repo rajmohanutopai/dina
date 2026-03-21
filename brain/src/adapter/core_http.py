@@ -393,6 +393,14 @@ class CoreHTTPClient:
         })
         return resp.json()
 
+    async def staging_extend_lease(self, staging_id: str, extension_seconds: int = 900) -> dict:
+        """POST /v1/staging/extend-lease — extend lease during long classification."""
+        resp = await self._request("POST", "/v1/staging/extend-lease", json={
+            "id": staging_id,
+            "extension_seconds": extension_seconds,
+        })
+        return resp.json()
+
     async def staging_fail(self, staging_id: str, error: str) -> dict:
         """POST /v1/staging/fail — report classification failure."""
         resp = await self._request("POST", "/v1/staging/fail", json={

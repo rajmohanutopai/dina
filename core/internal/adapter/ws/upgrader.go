@@ -80,11 +80,13 @@ func (c *Conn) Close(status websocket.StatusCode, reason string) error {
 
 // SendOutbound enqueues a message for the write pump. Non-blocking: if the
 // channel is full the message is dropped (back-pressure).
+// WS4: Logs a warning on drop so silent message loss is observable.
 func (c *Conn) SendOutbound(data []byte) bool {
 	select {
 	case c.out <- data:
 		return true
 	default:
+		log.Printf("ws: outbound channel full — message dropped (%d bytes)", len(data))
 		return false
 	}
 }
@@ -310,7 +312,9 @@ func readPump(
 			continue
 		}
 		if resp != nil {
-			conn.SendOutbound(resp)
+			if !conn.SendOutbound(resp) {
+				log.Printf("ws: response dropped for %s — outbound buffer full", clientID)
+			}
 		}
 	}
 }

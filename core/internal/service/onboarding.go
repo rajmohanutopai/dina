@@ -41,6 +41,10 @@ type OnboardingResult struct {
 	// WrappedSeed is the AES-256-GCM encrypted master seed for persistence.
 	WrappedSeed []byte
 
+	// Salt is the random 16-byte Argon2id salt for KEK derivation.
+	// Must be persisted alongside WrappedSeed (as master_seed.salt).
+	Salt []byte
+
 	// Personas lists the names of personas created during onboarding.
 	Personas []string
 
@@ -113,6 +117,7 @@ func (s *OnboardingService) RunOnboarding(ctx context.Context, email string, see
 	return &OnboardingResult{
 		RootDID:     setupResult.RootDID,
 		WrappedSeed: setupResult.WrappedSeed,
+		Salt:        setupResult.Salt,
 		Personas:    setupResult.Personas,
 		Steps:       steps,
 	}, nil
