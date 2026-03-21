@@ -345,6 +345,7 @@ services:
       - alonso-data:/data
       - alonso-keys-brain-priv:/run/secrets/service_keys/private:ro
       - alonso-keys-pub:/run/secrets/service_keys/public:ro
+      - ./models.json:/app/models.json:ro
     depends_on:
       keygen-alonso:
         condition: service_completed_successfully
@@ -386,6 +387,7 @@ services:
       - sancho-data:/data
       - sancho-keys-brain-priv:/run/secrets/service_keys/private:ro
       - sancho-keys-pub:/run/secrets/service_keys/public:ro
+      - ./models.json:/app/models.json:ro
     depends_on:
       keygen-sancho:
         condition: service_completed_successfully
@@ -427,6 +429,7 @@ services:
       - chairmaker-data:/data
       - chairmaker-keys-brain-priv:/run/secrets/service_keys/private:ro
       - chairmaker-keys-pub:/run/secrets/service_keys/public:ro
+      - ./models.json:/app/models.json:ro
     depends_on:
       keygen-chairmaker:
         condition: service_completed_successfully
@@ -468,6 +471,7 @@ services:
       - albert-data:/data
       - albert-keys-brain-priv:/run/secrets/service_keys/private:ro
       - albert-keys-pub:/run/secrets/service_keys/public:ro
+      - ./models.json:/app/models.json:ro
     depends_on:
       keygen-albert:
         condition: service_completed_successfully

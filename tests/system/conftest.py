@@ -1,7 +1,7 @@
 """System test fixtures — all services real, zero mocks.
 
-Brings up 2 Core+Brain pairs + PLC + PDS + Jetstream + AppView (full stack)
-via Docker Compose. Seeds AppView Postgres with test data for trust queries.
+Uses the pre-started union test stack (prepare_non_unit_env.sh).
+Seeds AppView Postgres with test data for trust queries.
 """
 
 from __future__ import annotations
@@ -9,283 +9,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import socket
-import subprocess
-import tempfile
-import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 import pytest
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-# ---------------------------------------------------------------------------
-# Paths & ports
-# ---------------------------------------------------------------------------
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-COMPOSE_FILE = PROJECT_ROOT / "docker-compose-system.yml"
-SECRETS_DIR = PROJECT_ROOT / "secrets"
-
-HEALTH_TIMEOUT = 240  # seconds
-HEALTH_INTERVAL = 0.5  # seconds
-
-# Default port base — overridable by shell via PORT_* env vars.
-_DEFAULT_PORT_BASE = 19300
-
-
-def _port_free(port: int) -> bool:
-    """Check if a TCP port is free on localhost."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.settimeout(0.5)
-        s.connect(("localhost", port))
-        s.close()
-        return False
-    except (ConnectionRefusedError, OSError):
-        return True
-
-
-def _allocate_ports(base: int | None = None) -> dict[str, int]:
-    """Find a free port base and compute all port assignments.
-
-    Scans from *base* (default 19300), stepping by 500 until the base port
-    is free.  Returns a dict matching the PORTS layout.
-    """
-    if base is None:
-        base = int(os.environ.get("PORT_CORE_ALONSO", str(_DEFAULT_PORT_BASE)))
-
-    for _ in range(40):
-        if _port_free(base):
-            break
-        base += 500
-
-    ports = {
-        "core_alonso": base,
-        "core_sancho": base + 1,
-        "brain_alonso": base + 100,
-        "brain_sancho": base + 101,
-        "postgres": base + 132,
-        "appview_web": base + 200,
-        "plc": base + 300,
-        "pds": base + 301,
-        "jetstream": base + 302,
-    }
-
-    # Push into env so Docker Compose picks them up.
-    _env_keys = {
-        "core_alonso": "PORT_CORE_ALONSO",
-        "core_sancho": "PORT_CORE_SANCHO",
-        "brain_alonso": "PORT_BRAIN_ALONSO",
-        "brain_sancho": "PORT_BRAIN_SANCHO",
-        "postgres": "PORT_POSTGRES",
-        "appview_web": "PORT_APPVIEW",
-        "plc": "PORT_PLC",
-        "pds": "PORT_PDS",
-        "jetstream": "PORT_JETSTREAM",
-    }
-    for key, env_var in _env_keys.items():
-        os.environ[env_var] = str(ports[key])
-
-    return ports
-
-
-# Initial allocation.
-PORTS = _allocate_ports()
-
-# Hardcoded test token — matches DINA_CLIENT_TOKEN in docker-compose-system.yml.
-# Used as bearer auth for Core admin/client endpoints.
-_SYSTEM_TEST_TOKEN = "test-system-admin-token"
-
-
-# ---------------------------------------------------------------------------
-# Docker lifecycle
-# ---------------------------------------------------------------------------
-
-class SystemServices:
-    """Manages the Docker Compose stack for system tests."""
-
-    def __init__(self) -> None:
-        self._started = False
-        self.admin_token = _SYSTEM_TEST_TOKEN
-
-    # -- URL accessors --
-
-    def core_url(self, actor: str) -> str:
-        return f"http://localhost:{PORTS[f'core_{actor}']}"
-
-    def brain_url(self, actor: str) -> str:
-        return f"http://localhost:{PORTS[f'brain_{actor}']}"
-
-    @property
-    def appview_url(self) -> str:
-        return f"http://localhost:{PORTS['appview_web']}"
-
-    @property
-    def pds_url(self) -> str:
-        return f"http://localhost:{PORTS['pds']}"
-
-    @property
-    def plc_url(self) -> str:
-        return f"http://localhost:{PORTS['plc']}"
-
-    @property
-    def jetstream_url(self) -> str:
-        return f"http://localhost:{PORTS['jetstream']}"
-
-    @property
-    def postgres_dsn(self) -> str:
-        return f"postgresql://dina:dina@localhost:{PORTS['postgres']}/dina_trust"
-
-    # -- Lifecycle --
-
-    def start(self, restart: bool = False) -> None:
-        global PORTS
-
-        if restart:
-            print("\n  [system] Tearing down existing stack (restart)...")
-            self._compose("down", "-v")
-
-        # Try up to 5 times — on port conflict, re-allocate and retry immediately.
-        for attempt in range(5):
-            base = PORTS["core_alonso"]
-            print(
-                f"  [system] Starting system stack "
-                f"(ports {base}+, attempt {attempt + 1})..."
-            )
-            up_args = ["up", "-d"] if os.environ.get("DINA_SKIP_DOCKER_BUILD") == "1" else ["up", "--build", "-d"]
-            # Bust Docker layer cache so tests run against current source.
-            if "--build" in up_args:
-                import time as _t
-                for src_dir in [PROJECT_ROOT / "brain" / "src", PROJECT_ROOT / "core" / "cmd"]:
-                    sentinel = src_dir / ".build-sentinel"
-                    sentinel.write_text(f"{_t.time()}\n")
-            result = self._compose(*up_args)
-            if result.returncode == 0:
-                break
-
-            stderr = (result.stderr or "").lower()
-            if "port is already allocated" in stderr or "address already in use" in stderr or "bind for" in stderr:
-                print(f"  [system] Port conflict on base {base} — re-allocating...")
-                self._compose("down", "-v")
-                PORTS = _allocate_ports(base + 500)
-                continue
-
-            raise RuntimeError(
-                f"docker compose up failed (exit {result.returncode}):\n"
-                f"{(result.stderr or '')[-1000:]}"
-            )
-        else:
-            raise RuntimeError("Failed to start system stack after 5 port re-allocations")
-
-        self._wait_for_health()
-        self._started = True
-        print("  [system] All services healthy.")
-
-    def stop(self) -> None:
-        if self._started:
-            self._save_llm_usage()
-            print("\n  [system] Stopping system stack...")
-            self._compose("down", "-v")
-            print("  [system] Stack stopped.")
-
-    def _save_llm_usage(self) -> None:
-        """Collect LLM usage from Brain healthz before teardown."""
-        cost_dir = os.environ.get("DINA_LLM_COST_DIR")
-        if not cost_dir:
-            return
-        total = {"total_calls": 0, "total_tokens_in": 0, "total_tokens_out": 0, "total_cost_usd": 0.0}
-        for actor in ("alonso", "sancho"):
-            try:
-                r = httpx.get(f"{self.brain_url(actor)}/healthz", timeout=5)
-                usage = r.json().get("llm_usage", {})
-                total["total_calls"] += usage.get("total_calls", 0)
-                total["total_tokens_in"] += usage.get("total_tokens_in", 0)
-                total["total_tokens_out"] += usage.get("total_tokens_out", 0)
-                total["total_cost_usd"] += usage.get("total_cost_usd", 0.0)
-            except Exception:
-                pass
-        if total["total_calls"] > 0:
-            os.makedirs(cost_dir, exist_ok=True)
-            with open(os.path.join(cost_dir, "system.json"), "w") as f:
-                json.dump(total, f)
-
-    def _compose(self, *args: str) -> subprocess.CompletedProcess:
-        # Use COMPOSE_PROJECT_NAME from env (set by run_user_story_tests.sh)
-        # or fall back to "dina-system" for isolation from other stacks.
-        project = os.environ.get("COMPOSE_PROJECT_NAME", "dina-system")
-        cmd = ["docker", "compose", "-p", project, "-f", str(COMPOSE_FILE)] + list(args)
-        return subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            cwd=str(PROJECT_ROOT),
-        )
-
-    def _all_healthy(self) -> bool:
-        """Quick probe of all service endpoints in parallel."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        checks = [
-            (self.core_url("alonso") + "/healthz", "core-alonso"),
-            (self.core_url("sancho") + "/healthz", "core-sancho"),
-            (self.brain_url("alonso") + "/healthz", "brain-alonso"),
-            (self.brain_url("sancho") + "/healthz", "brain-sancho"),
-            (self.appview_url + "/health", "appview-web"),
-            (self.plc_url + "/healthz", "plc"),
-            (self.pds_url + "/xrpc/_health", "pds"),
-        ]
-
-        def _http_ok(url: str) -> bool:
-            try:
-                r = httpx.get(url, timeout=3)
-                return r.status_code == 200
-            except Exception:
-                return False
-
-        with ThreadPoolExecutor(max_workers=len(checks) + 2) as pool:
-            futures = {pool.submit(_http_ok, url): label for url, label in checks}
-            futures[pool.submit(self._tcp_probe, "localhost", PORTS["postgres"])] = "postgres"
-            futures[pool.submit(self._tcp_probe, "localhost", PORTS["jetstream"])] = "jetstream"
-            for fut in as_completed(futures):
-                if not fut.result():
-                    return False
-        return True
-
-    def _tcp_probe(self, host: str, port: int) -> bool:
-        try:
-            sock = socket.create_connection((host, port), timeout=3)
-            sock.close()
-            return True
-        except (OSError, ConnectionRefusedError):
-            return False
-
-    def extract_core_private_key(self, actor: str = "alonso") -> bytes:
-        """Extract Core's Ed25519 private key PEM from a running container."""
-        result = self._compose(
-            "exec", "-T", f"core-{actor}",
-            "cat", "/run/secrets/service_keys/private/core_ed25519_private.pem",
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to extract core private key: {result.stderr[:200]}"
-            )
-        return result.stdout.encode() if isinstance(result.stdout, str) else result.stdout
-
-    def _wait_for_health(self) -> None:
-        deadline = time.time() + HEALTH_TIMEOUT
-        while time.time() < deadline:
-            if self._all_healthy():
-                return
-            remaining = int(deadline - time.time())
-            print(f"  [system] Waiting for services... ({remaining}s remaining)")
-            time.sleep(HEALTH_INTERVAL)
-        raise TimeoutError(
-            f"System services not healthy after {HEALTH_TIMEOUT}s"
-        )
+from tests.shared.test_stack import TestStackServices
 
 
 # ---------------------------------------------------------------------------
@@ -294,14 +25,14 @@ class SystemServices:
 
 @pytest.fixture(scope="session")
 def system_services():
-    """Start the full Docker stack for the test session."""
-    svc = SystemServices()
-    # Default: always restart to ensure tests run against latest code.
-    # Set SYSTEM_RESTART=0 to skip tear-down and reuse running containers.
-    restart = os.environ.get("SYSTEM_RESTART", "1") != "0"
-    svc.start(restart=restart)
+    """Locate the pre-started test stack for system testing.
+
+    Reads .test-stack.json written by prepare_non_unit_env.sh.
+    Does NOT manage Docker lifecycle.
+    """
+    svc = TestStackServices()
+    svc.assert_ready()
     yield svc
-    svc.stop()
 
 
 class BrainSigner:
@@ -316,13 +47,16 @@ class BrainSigner:
         self._private_key = key
 
     def _sign(self, method: str, path: str, body: bytes, query: str = "") -> dict[str, str]:
+        import secrets as _secrets
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = _secrets.token_hex(16)
         body_hash = hashlib.sha256(body).hexdigest()
-        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
         signature = self._private_key.sign(payload.encode("utf-8"))
         return {
             "X-DID": "did:key:zSystemTestSigner",
             "X-Timestamp": timestamp,
+            "X-Nonce": nonce,
             "X-Signature": signature.hex(),
         }
 
@@ -344,26 +78,26 @@ def brain_headers(system_services):
 
     Brain API endpoints now require Ed25519 — use brain_signer fixture instead.
     """
-    return {"Authorization": f"Bearer {system_services.admin_token}"}
+    return {"Authorization": f"Bearer {system_services.client_token}"}
 
 
 @pytest.fixture(scope="session")
 def admin_headers(system_services):
     """Bearer auth for Core admin endpoints (persona, unlock, etc.)."""
-    return {"Authorization": f"Bearer {system_services.admin_token}"}
+    return {"Authorization": f"Bearer {system_services.client_token}"}
 
 
 @pytest.fixture(scope="session")
 def brain_signer(system_services) -> BrainSigner:
     """Ed25519 signer for direct Brain API calls.
 
-    Extracts Core's private key from the running Docker container and returns
-    a BrainSigner that can sign POST requests to Brain's /api/v1/* endpoints.
+    Extracts Core's private key and returns a BrainSigner that can sign
+    POST requests to Brain's /api/v1/* endpoints.
 
     Usage in tests:
         r = brain_signer.post(f"{alonso_brain}/api/v1/reason", json={...}, timeout=60)
     """
-    pem = system_services.extract_core_private_key("alonso")
+    pem = system_services.core_private_key("alonso")
     return BrainSigner(pem)
 
 
@@ -664,12 +398,7 @@ def reviewer_eve(system_services):
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
-    """On test failure, fetch recent audit traces from Core and print them.
-
-    This gives immediate visibility into what Brain did during a failed test,
-    making it possible to debug reasoning path regressions without
-    re-running with extra logging.
-    """
+    """On test failure, fetch recent audit traces from Core and print them."""
     outcome = yield
     report = outcome.get_result()
 
@@ -691,9 +420,9 @@ def pytest_runtest_makereport(item, call):
     print("  AUDIT TRACE DUMP (last 10 entries per node)")
     print("=" * 80)
 
+    admin_token = services.client_token
     for actor in ("alonso", "sancho"):
         core_url = services.core_url(actor)
-        admin_token = services.admin_token
         try:
             resp = httpx.get(
                 f"{core_url}/v1/audit/query",

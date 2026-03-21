@@ -4,17 +4,18 @@ All release tests run against real Docker containers:
   Go Core + Python Brain + dummy-agent (CLI container).
 
 Requires: DINA_RELEASE=docker and running Docker daemon.
+Uses the pre-started union test stack (prepare_non_unit_env.sh).
 """
 
 from __future__ import annotations
 
-import json
 import os
 
 import httpx
 import pytest
 
-from tests.release.release_services import BrainSigner, ReleaseDockerServices
+from tests.release.release_services import BrainSigner
+from tests.shared.test_stack import TestStackServices
 
 DOCKER_MODE = os.environ.get("DINA_RELEASE") == "docker"
 
@@ -25,16 +26,17 @@ DOCKER_MODE = os.environ.get("DINA_RELEASE") == "docker"
 
 @pytest.fixture(scope="session")
 def release_services():
-    """Start Docker containers for release testing."""
+    """Locate the pre-started test stack for release testing.
+
+    Reads .test-stack.json written by prepare_non_unit_env.sh.
+    Does NOT manage Docker lifecycle.
+    """
     if not DOCKER_MODE:
         pytest.skip("Release tests require Docker (DINA_RELEASE=docker)")
 
-    svc = ReleaseDockerServices()
-    # Always restart to avoid stale code; set RELEASE_RESTART=0 to reuse
-    restart = os.environ.get("RELEASE_RESTART", "1") != "0"
-    svc.start(restart=restart)
+    svc = TestStackServices()
+    svc.assert_ready()
     yield svc
-    svc.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -43,34 +45,34 @@ def release_services():
 
 @pytest.fixture(scope="session")
 def core_url(release_services) -> str:
-    return release_services.core_url
+    return release_services.core_url("alonso")
 
 
 @pytest.fixture(scope="session")
 def brain_url(release_services) -> str:
-    return release_services.brain_url
+    return release_services.brain_url("alonso")
 
 
 @pytest.fixture(scope="session")
 def auth_headers(release_services) -> dict[str, str]:
     """Bearer token headers for Core API calls."""
-    return release_services.auth_headers()
+    return {"Authorization": f"Bearer {release_services.client_token}"}
 
 
 @pytest.fixture(scope="session")
 def core_b_url(release_services) -> str:
-    return release_services.core_b_url
+    return release_services.core_url("sancho")
 
 
 @pytest.fixture(scope="session")
 def brain_b_url(release_services) -> str:
-    return release_services.brain_b_url
+    return release_services.brain_url("sancho")
 
 
 @pytest.fixture(scope="session")
 def brain_signer(release_services) -> BrainSigner:
     """Ed25519 signer for direct Brain API calls."""
-    pem = release_services.extract_core_private_key()
+    pem = release_services.core_private_key("alonso")
     return BrainSigner(pem)
 
 
@@ -165,7 +167,7 @@ def agent_paired(release_services, core_url, auth_headers):
         "print(i.public_key_multibase()); "
         "print(i.did())"
     )
-    result = release_services.agent_shell(f"python -c \"{gen_script}\"")
+    result = release_services.agent_exec(["python", "-c", gen_script])
     if result.returncode != 0:
         pytest.skip(f"Failed to generate agent keypair: {result.stderr}")
 
@@ -176,12 +178,12 @@ def agent_paired(release_services, core_url, auth_headers):
     public_key_multibase = lines[0].strip()
     agent_did = lines[1].strip()
 
-    # Write CLI config inside the container
+    # Write CLI config inside the container — use alonso-core as internal URL
     config_script = (
         "import json, os; "
         "os.makedirs('/root/.dina/cli', exist_ok=True); "
         "json.dump("
-        "{'core_url': 'http://release-core:8100', 'persona': 'personal'}, "
+        "{'core_url': 'http://alonso-core:8100', 'persona': 'personal'}, "
         "open('/root/.dina/cli/config.json', 'w')); "
         # Symlink identity dir so CLI finds it
         "os.makedirs('/root/.dina/cli/identity', exist_ok=True); "
@@ -189,7 +191,7 @@ def agent_paired(release_services, core_url, auth_headers):
         "shutil.copy('/tmp/agent-identity/ed25519_private.pem', '/root/.dina/cli/identity/ed25519_private.pem'); "
         "shutil.copy('/tmp/agent-identity/ed25519_public.pem', '/root/.dina/cli/identity/ed25519_public.pem')"
     )
-    release_services.agent_shell(f"python -c \"{config_script}\"")
+    release_services.agent_exec(["python", "-c", config_script])
 
     # Pair via Core API: initiate + complete
     try:
