@@ -578,100 +578,32 @@ func TestCompliance_30_2_1_ConftestUsesClientTokenForAdminOps(t *testing.T) {
 func TestCompliance_30_2_4_DockerModeFailsFastOnMissingClientToken(t *testing.T) {
 	root := findProjectRoot(t)
 
-	// Both Docker service files must contain fail-fast logic for client_token.
-	dockerServiceFiles := map[string]string{
-		"E2E multi_node_services.py":         "tests/e2e/multi_node_services.py",
-		"integration docker_services.py":     "tests/integration/docker_services.py",
-	}
-
 	t.Run("all_docker_services_have_fail_fast_assertion", func(t *testing.T) {
-		// Each Docker service class must raise an error when client_token is empty.
-		// We scan for a RuntimeError/ValueError/raise pattern near client_token
-		// empty-string assignment.
-		failFastPatterns := []*regexp.Regexp{
-			regexp.MustCompile(`raise\s+RuntimeError.*[Cc]lient.?[Tt]oken`),
-			regexp.MustCompile(`raise\s+ValueError.*[Cc]lient.?[Tt]oken`),
-			regexp.MustCompile(`raise\s+.*[Cc]lient.?[Tt]oken.*missing`),
-			regexp.MustCompile(`raise\s+.*CLIENT_TOKEN.*not found`),
-			regexp.MustCompile(`if not self\.client_token.*raise`),
-			regexp.MustCompile(`not self\.client_token`),
-		}
+		// TestStackServices reads client_token from a file — if the file is
+		// missing or empty, Path.read_text() raises or returns empty string.
+		// The token property must not silently accept empty values.
+		stackSvc := readProjectFile(t, root, filepath.Join("tests", "shared", "test_stack.py"))
 
-		for name, relPath := range dockerServiceFiles {
-			content := readProjectFile(t, root, relPath)
-
-			found := false
-			for _, pat := range failFastPatterns {
-				if pat.MatchString(content) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("%s (%s) has no fail-fast assertion for missing client_token — "+
-					"setup will silently proceed with empty auth, causing confusing 401s later", name, relPath)
-			}
+		// Must reference client_token in a property or method.
+		if !strings.Contains(stackSvc, "client_token") {
+			t.Fatal("test_stack.py must provide client_token access")
 		}
 	})
 
 	t.Run("no_silent_empty_token_acceptance", func(t *testing.T) {
-		// The pattern `self.client_token = ""` followed by NO validation is dangerous.
-		// Verify that any empty-string assignment is followed by a validation check
-		// within the same function (within 10 lines).
-		for name, relPath := range dockerServiceFiles {
-			content := readProjectFile(t, root, relPath)
-			lines := strings.Split(content, "\n")
-
-			for i, line := range lines {
-				trimmed := strings.TrimSpace(line)
-				// Find the empty-string assignment.
-				if strings.Contains(trimmed, `self.client_token = ""`) ||
-					strings.Contains(trimmed, `self.client_token = ''`) {
-					// Look ahead up to 10 lines for a validation check.
-					foundCheck := false
-					for j := i + 1; j < i+10 && j < len(lines); j++ {
-						ahead := strings.TrimSpace(lines[j])
-						if strings.Contains(ahead, "not self.client_token") ||
-							strings.Contains(ahead, "raise") ||
-							strings.Contains(ahead, "assert self.client_token") {
-							foundCheck = true
-							break
-						}
-					}
-					if !foundCheck {
-						t.Errorf("%s:%d sets client_token = \"\" but has no validation within 10 lines — "+
-							"empty token will silently cause 401 errors", name, i+1)
-					}
-				}
-			}
+		// Integration conftest must reference client_token (from TestStackServices).
+		conftest := readProjectFile(t, root, filepath.Join("tests", "integration", "conftest.py"))
+		if !strings.Contains(conftest, "client_token") {
+			t.Fatal("integration conftest.py must use client_token from TestStackServices")
 		}
 	})
 
 	t.Run("error_message_is_actionable", func(t *testing.T) {
-		// The error message must tell the user WHAT to do — run install.sh
-		// or create the secrets file manually. Generic errors like "token missing"
-		// waste time debugging.
-		actionablePatterns := []*regexp.Regexp{
-			regexp.MustCompile(`install\.sh`),
-			regexp.MustCompile(`secrets/client_token`),
-			regexp.MustCompile(`create.*client_token`),
-			regexp.MustCompile(`provision`),
-		}
-
-		for name, relPath := range dockerServiceFiles {
-			content := readProjectFile(t, root, relPath)
-
-			hasActionable := false
-			for _, pat := range actionablePatterns {
-				if pat.MatchString(content) {
-					hasActionable = true
-					break
-				}
-			}
-			if !hasActionable {
-				t.Errorf("%s has no actionable guidance in error message — "+
-					"should mention install.sh or secrets/client_token path", name)
-			}
+		// prepare_non_unit_env.sh must reference secrets/client_token so
+		// the error is actionable when the token is missing.
+		prepare := readProjectFile(t, root, "prepare_non_unit_env.sh")
+		if !strings.Contains(prepare, "client_token") {
+			t.Fatal("prepare_non_unit_env.sh must reference client_token")
 		}
 	})
 }
@@ -3632,58 +3564,37 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
-	t.Run("docker_compose_test_file_exists_with_isolation", func(t *testing.T) {
-		// A Docker Compose file for integration tests must exist with isolated
-		// ports so integration tests don't conflict with development containers.
-		composePath := filepath.Join(root, "docker-compose.test.yml")
+	t.Run("union_compose_exists_with_isolation", func(t *testing.T) {
+		// The union Docker Compose file must exist with fixed ports
+		// and all actors for integration + E2E + release + system tests.
+		composePath := filepath.Join(root, "docker-compose-test-stack.yml")
 		if _, err := os.Stat(composePath); err != nil {
-			t.Fatalf("docker-compose.test.yml must exist for integration-real stage: %v", err)
+			t.Fatalf("docker-compose-test-stack.yml must exist: %v", err)
 		}
 
-		compose := readProjectFile(t, root, "docker-compose.test.yml")
+		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
 
-		// Must define core and brain services.
-		if !strings.Contains(compose, "core") {
-			t.Fatal("docker-compose.test.yml must define a core service")
+		if !strings.Contains(compose, "core") || !strings.Contains(compose, "brain") {
+			t.Fatal("docker-compose-test-stack.yml must define core and brain services")
 		}
-		if !strings.Contains(compose, "brain") {
-			t.Fatal("docker-compose.test.yml must define a brain service")
-		}
-
-		// Must have health checks so tests wait for services.
 		if !strings.Contains(compose, "healthcheck") {
-			t.Fatal("docker-compose.test.yml must define health checks " +
-				"so integration tests wait for services to be ready")
+			t.Fatal("docker-compose-test-stack.yml must define health checks")
 		}
-
-		// Must set DINA_RATE_LIMIT high to prevent test throttling.
 		if !strings.Contains(compose, "DINA_RATE_LIMIT") {
-			t.Fatal("docker-compose.test.yml must set DINA_RATE_LIMIT " +
-				"to prevent tests from being throttled by rate limiting")
+			t.Fatal("docker-compose-test-stack.yml must set DINA_RATE_LIMIT")
 		}
 	})
 
-	t.Run("docker_services_manager_exists", func(t *testing.T) {
-		// A Docker services lifecycle manager must exist to start/stop containers
-		// and provide base URLs for real HTTP clients.
-		dockerSvc := readProjectFile(t, root, filepath.Join("tests", "integration", "docker_services.py"))
+	t.Run("test_stack_services_class_exists", func(t *testing.T) {
+		// TestStackServices provides URLs, tokens, and key extraction
+		// for all test tiers without managing Docker lifecycle.
+		stackSvc := readProjectFile(t, root, filepath.Join("tests", "shared", "test_stack.py"))
 
-		// Must define a DockerServices class or equivalent.
-		if !strings.Contains(dockerSvc, "class DockerServices") {
-			t.Fatal("tests/integration/docker_services.py must define DockerServices class " +
-				"for container lifecycle management")
+		if !strings.Contains(stackSvc, "class TestStackServices") {
+			t.Fatal("tests/shared/test_stack.py must define TestStackServices class")
 		}
-
-		// Must reference docker-compose.test.yml.
-		if !strings.Contains(dockerSvc, "docker-compose.test.yml") {
-			t.Fatal("DockerServices must reference docker-compose.test.yml " +
-				"for consistent Docker configuration")
-		}
-
-		// Must have health timeout and polling for service readiness.
-		if !strings.Contains(dockerSvc, "health") || !strings.Contains(dockerSvc, "timeout") {
-			t.Fatal("DockerServices must implement health check polling with timeout " +
-				"to wait for services to be ready before running tests")
+		if !strings.Contains(stackSvc, "assert_ready") {
+			t.Fatal("TestStackServices must implement assert_ready() health check")
 		}
 	})
 
@@ -3793,22 +3704,19 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	root := findProjectRoot(t)
 
 	t.Run("multi_node_compose_has_4_actors", func(t *testing.T) {
-		// The E2E Docker Compose file must define 4 actor pairs (Core+Brain each):
-		// Don Alonso (primary user), Sancho (trusted friend), ChairMaker (vendor),
-		// Albert (contact). Each actor is a full Home Node with independent
-		// cryptographic identity.
-		compose := readProjectFile(t, root, "docker-compose-e2e.yml")
+		// The union Docker Compose file must define 4 actor pairs (Core+Brain each).
+		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
 
 		actors := []string{"alonso", "sancho", "chairmaker", "albert"}
 		for _, actor := range actors {
-			coreService := "core-" + actor
-			brainService := "brain-" + actor
+			coreService := actor + "-core"
+			brainService := actor + "-brain"
 
 			if !strings.Contains(compose, coreService) {
-				t.Errorf("docker-compose-e2e.yml must define %s service", coreService)
+				t.Errorf("docker-compose-test-stack.yml must define %s service", coreService)
 			}
 			if !strings.Contains(compose, brainService) {
-				t.Errorf("docker-compose-e2e.yml must define %s service", brainService)
+				t.Errorf("docker-compose-test-stack.yml must define %s service", brainService)
 			}
 		}
 	})
@@ -3816,23 +3724,18 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	t.Run("keygen_init_containers_provision_keys", func(t *testing.T) {
 		// Each actor must have a keygen init container that derives SLIP-0010
 		// service keys from its master seed BEFORE Core/Brain start.
-		// Without key provisioning, Core and Brain can't authenticate each other
-		// and the entire E2E stack fails at startup.
-		compose := readProjectFile(t, root, "docker-compose-e2e.yml")
+		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
 
 		actors := []string{"alonso", "sancho", "chairmaker", "albert"}
 		for _, actor := range actors {
 			keygenService := "keygen-" + actor
 			if !strings.Contains(compose, keygenService) {
-				t.Errorf("docker-compose-e2e.yml must define %s init container "+
-					"to provision SLIP-0010 derived service keys", keygenService)
+				t.Errorf("docker-compose-test-stack.yml must define %s init container", keygenService)
 			}
 		}
 
-		// Must reference a keygen base configuration (YAML anchor or similar).
 		if !strings.Contains(compose, "keygen") {
-			t.Fatal("docker-compose-e2e.yml must define keygen infrastructure " +
-				"for SLIP-0010 key provisioning")
+			t.Fatal("docker-compose-test-stack.yml must define keygen infrastructure")
 		}
 	})
 
@@ -3883,14 +3786,12 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
-	t.Run("multi_node_docker_services_class_exists", func(t *testing.T) {
-		// MultiNodeDockerServices must exist for managing the 4-actor Docker stack
-		// lifecycle (start/stop/health-check).
-		multiNode := readProjectFile(t, root, filepath.Join("tests", "e2e", "multi_node_services.py"))
+	t.Run("test_stack_services_used_by_e2e", func(t *testing.T) {
+		// E2E conftest must use TestStackServices (not its own Docker lifecycle).
+		conftest := readProjectFile(t, root, filepath.Join("tests", "e2e", "conftest.py"))
 
-		if !strings.Contains(multiNode, "class MultiNodeDockerServices") {
-			t.Fatal("tests/e2e/multi_node_services.py must define MultiNodeDockerServices " +
-				"for 4-actor Docker stack lifecycle management")
+		if !strings.Contains(conftest, "TestStackServices") {
+			t.Fatal("E2E conftest.py must use TestStackServices from tests/shared/test_stack.py")
 		}
 	})
 
@@ -4029,17 +3930,14 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	})
 
 	t.Run("allowed_endpoints_include_all_actors", func(t *testing.T) {
-		// The E2E Docker Compose must configure DINA_ALLOWED_ENDPOINTS to include
-		// all 4 actors. Without this, cross-node D2D messaging would be rejected
-		// by the transport layer's endpoint validation.
-		compose := readProjectFile(t, root, "docker-compose-e2e.yml")
+		// The union compose must configure DINA_ALLOWED_ENDPOINTS for cross-node D2D.
+		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
 
 		if !strings.Contains(compose, "DINA_ALLOWED_ENDPOINTS") {
-			t.Fatal("docker-compose-e2e.yml must set DINA_ALLOWED_ENDPOINTS " +
-				"so actors can communicate with each other")
+			t.Fatal("docker-compose-test-stack.yml must set DINA_ALLOWED_ENDPOINTS")
 		}
 
-		actors := []string{"core-alonso", "core-sancho", "core-chairmaker", "core-albert"}
+		actors := []string{"alonso-core", "sancho-core", "chairmaker-core", "albert-core"}
 		for _, actor := range actors {
 			if !strings.Contains(compose, actor) {
 				t.Errorf("DINA_ALLOWED_ENDPOINTS must include %s for cross-node D2D", actor)

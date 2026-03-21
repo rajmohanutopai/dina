@@ -842,14 +842,27 @@ def _extract_go_section(name: str) -> int:
     return int(m.group(1)) if m else 0
 
 
+_PY_FILE_SECTION_RE = re.compile(r"test_0*(\d+)_\w+\.py")
+
+
 def _extract_py_section(
     func_name: str,
     override: dict[str, int] | None,
+    qualified: str = "",
 ) -> int:
     if override and func_name in override:
         return override[func_name]
+    # Try filename first (e.g. test_01_purchase_journey.py → 1)
+    # — more reliable than function name for user story / release tests
+    if qualified:
+        fm = _PY_FILE_SECTION_RE.search(qualified)
+        if fm:
+            return int(fm.group(1))
+    # Fallback: extract from function name (e.g. test_rel_001_fresh → 1)
     m = _PY_SECTION_RE.match(func_name)
-    return int(m.group(1)) if m else 0
+    if m:
+        return int(m.group(1))
+    return 0
 
 
 def parse_go_json(output: str) -> list[TestResult]:
@@ -921,13 +934,13 @@ def parse_pytest_output(
     for line in output.splitlines():
         m = _PY_LINE_RE.match(line)
         if m:
-            qualified = m.group(2)
+            qualified = m.group(1) + "::" + m.group(2)
             py_status = m.group(3)
         else:
             mx = _PY_XDIST_RE.match(line)
             if mx:
                 py_status = mx.group(1)
-                qualified = mx.group(3)
+                qualified = mx.group(2) + "::" + mx.group(3)
             else:
                 continue
         func_name = qualified.split("::")[-1]
@@ -937,7 +950,7 @@ def parse_pytest_output(
             TestResult(
                 name=func_name,
                 status=_STATUS_MAP.get(py_status, "FAIL"),
-                section=_extract_py_section(base_name, section_override),
+                section=_extract_py_section(base_name, section_override, qualified),
                 duration=durations.get(func_name, 0.0),
             )
         )
@@ -1135,6 +1148,66 @@ SUITES = {
             6: "Jetstream Consumer",
             7: "Scorer Jobs",
             8: "xRPC Params",
+        },
+    },
+    "release": {
+        "name": "Release",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+                "tests/release/"],
+        "cwd": None,
+        "parser": "pytest",
+        "test_dir": "tests/release",
+        "section_names": {
+            1: "Fresh Machine Install",
+            2: "First Conversation",
+            3: "Vault Persistence Across Restart",
+            4: "Locked-State and Seal Verification",
+            5: "Recovery Phrase & Disaster Recovery",
+            6: "Two Dinas Talk to Each Other",
+            7: "PDS and Trust Network E2E",
+            8: "Agent Gateway (Real/Rogue Client)",
+            9: "Persona Wall and PII Leakage",
+            10: "Hostile-Network D2D & Sancho Moment",
+            11: "Failure Handling & Degraded Operation",
+            12: "README & Public Claims Check",
+            15: "Install Re-Run (Idempotent)",
+            16: "Upgrade Verification",
+            17: "Admin Access Lifecycle",
+            18: "Connector Outage & Re-Auth",
+            19: "Silence Protocol & Daily Briefing",
+            20: "Draft-Don't-Send & Cart Handover",
+            21: "Export / Import Portability",
+            22: "External Exposure Audit",
+            23: "CLI Agent Integration & Pairing",
+            24: "Recommendation Integrity",
+            25: "Anti-Her & Staging Pipeline",
+            26: "Silence Stress",
+            27: "Action Integrity",
+            28: "Install Lifecycle",
+        },
+    },
+    "user_stories": {
+        "name": "User Stories",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+                "tests/system/user_stories/"],
+        "cwd": None,
+        "parser": "pytest",
+        "test_dir": "tests/system/user_stories",
+        "section_names": {
+            1: "The Purchase Journey",
+            2: "The Sancho Moment",
+            3: "The Dead Internet Filter",
+            4: "The Persona Wall",
+            5: "The Agent Gateway",
+            6: "License Renewal",
+            7: "Daily Briefing",
+            8: "Move to New Machine",
+            9: "Connector Expiry",
+            10: "Operator Journey",
+            11: "Anti-Her",
+            12: "Verified Truth",
+            13: "Silence Stress",
+            14: "Agent Sandbox",
         },
     },
     "install": {
@@ -1866,15 +1939,13 @@ def output_json(data: dict) -> None:
 def parse_args(argv: list[str]) -> dict:
     """Parse CLI flags into a dict.
 
-    Keys: suite, json, no_color, service_mode, all_mode, restart, verbose.
+    Keys: suite, json, no_color, all_mode, verbose.
     """
     opts: dict = {
         "suite": None,
         "json": False,
         "no_color": False,
-        "service_mode": "local",
         "all_mode": False,
-        "restart": False,
         "verbose": False,
     }
     i = 1
@@ -1884,16 +1955,10 @@ def parse_args(argv: list[str]) -> dict:
             opts["json"] = True
         elif a == "--no-color":
             opts["no_color"] = True
-        elif a == "--docker":
-            opts["service_mode"] = "docker"
-        elif a == "--local":
-            opts["service_mode"] = "local"
         elif a == "--mock":
-            opts["service_mode"] = "mock"
+            pass  # accepted for backward compat, no-op (Docker lifecycle removed)
         elif a == "--all":
             opts["all_mode"] = True
-        elif a == "--restart":
-            opts["restart"] = True
         elif a in ("-v", "--verbose"):
             opts["verbose"] = True
         elif a == "--unit":
@@ -1921,9 +1986,7 @@ def main() -> None:
     suite_filter = opts["suite"]
     json_mode = opts["json"]
     no_color = opts["no_color"]
-    service_mode = opts["service_mode"]
     all_mode = opts["all_mode"]
-    restart = opts["restart"]
     verbose = opts["verbose"]
     quick = not all_mode  # default is quick; --all disables it
 
@@ -1946,65 +2009,14 @@ def main() -> None:
         mode_tag = "quick" if quick else "all (including slow tests)"
         print(f"Mode: {mode_tag}", file=sys.stderr, flush=True)
 
-    # -- Service lifecycle management ----------------------------------------
-    has_e2e = "e2e" in keys
-    has_non_e2e = bool(set(keys) - {"e2e"})
+    # -- Service lifecycle -----------------------------------------------
+    # Docker lifecycle is managed by prepare_non_unit_env.sh, not here.
+    # test_status.py is a pure test runner and reporter.
     startup_time = 0.0
 
-    # Start main docker-compose stack (fake PLC + PDS + Core + Brain)
-    # so E2E Suite 16 can test real AT Protocol PDS integration.
-    if service_mode != "mock" or has_e2e:
-        try:
-            main_stack_startup = _start_main_stack(restart=restart)
-            startup_time += main_stack_startup
-        except Exception as exc:
-            if not json_mode:
-                print(f"  Warning: Main stack failed to start: {exc}",
-                      file=sys.stderr)
-
-    if service_mode == "mock" and not has_e2e:
-        if not json_mode:
-            print("Mock mode (no real services).", file=sys.stderr, flush=True)
-    else:
-        # Integration services (Core:18100, Brain:18200) and E2E Docker
-        # (19100-19103 / 19200-19203) use separate port ranges, so both
-        # can run simultaneously without conflict.
-        if has_non_e2e and service_mode != "mock":
-            mode_label = "Docker" if service_mode == "docker" else "Local"
-            if not json_mode:
-                print(f"{mode_label} mode.", file=sys.stderr, flush=True)
-            os.environ["DINA_INTEGRATION"] = "docker"  # Real clients for both modes
-            if service_mode == "docker":
-                os.environ["DINA_DOCKER_SERVICES"] = "1"  # xdist only for Docker
-            # Refresh mock_pass_is_skip now that env var is set
-            SUITES["integration"]["mock_pass_is_skip"] = False
-            try:
-                if service_mode == "docker":
-                    startup_time = _start_docker()
-                else:
-                    startup_time = _start_local()
-            except Exception as exc:
-                print(
-                    f"ERROR: Failed to start {mode_label}: {exc}",
-                    file=sys.stderr,
-                )
-                sys.exit(3)
-
-        # Start E2E Docker stack (4 actors × Core+Brain) — always Docker
-        if has_e2e:
-            if not json_mode:
-                print("E2E Docker mode.", file=sys.stderr, flush=True)
-            try:
-                e2e_startup = _start_e2e_docker(restart=restart)
-                startup_time = max(startup_time, e2e_startup)
-            except Exception as exc:
-                print(
-                    f"ERROR: Failed to start E2E Docker: {exc}",
-                    file=sys.stderr,
-                )
-                # Don't abort the entire run — skip E2E, run the rest.
-                keys = [k for k in keys if k != "e2e"]
-                has_e2e = False
+    # If DINA_INTEGRATION is set, integration tests use real clients.
+    if os.environ.get("DINA_INTEGRATION") == "docker":
+        SUITES["integration"]["mock_pass_is_skip"] = False
 
     try:
         all_json: dict = {}

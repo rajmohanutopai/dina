@@ -1464,11 +1464,11 @@
       "line": 455
     },
     "TST-INT-210": {
-      "scenario": "Protection 1b: Single-writer pattern under load",
-      "path": "7.9",
-      "row": 2,
-      "section": "Security Boundary Tests",
-      "line": 456
+      "scenario": "Deny nonexistent approval returns 404",
+      "path": "2.4",
+      "row": 99,
+      "section": "End-to-End User Flows",
+      "line": 0
     },
     "TST-INT-211": {
       "scenario": "Protection 1b: Writes to different personas independent",
@@ -3753,6 +3753,55 @@
       "path": "18.23",
       "row": 4,
       "section": "AppView Federation Correctness"
+    },
+    "TST-INT-750": {
+      "scenario": "Reason returns 202 for sensitive persona",
+      "path": "24.1",
+      "row": 1,
+      "section": "Async Approval Flow",
+      "line": 0
+    },
+    "TST-INT-751": {
+      "scenario": "Status 404 for unknown request ID",
+      "path": "24.1",
+      "row": 2,
+      "section": "Async Approval Flow",
+      "line": 0
+    },
+    "TST-INT-752": {
+      "scenario": "Pending reason lifecycle via result endpoint",
+      "path": "24.1",
+      "row": 3,
+      "section": "Async Approval Flow",
+      "line": 0
+    },
+    "TST-INT-753": {
+      "scenario": "Full approve-resume cycle",
+      "path": "24.1",
+      "row": 4,
+      "section": "Async Approval Flow",
+      "line": 0
+    },
+    "TST-INT-754": {
+      "scenario": "Wrong caller gets 403",
+      "path": "24.1",
+      "row": 5,
+      "section": "Async Approval Flow",
+      "line": 0
+    },
+    "TST-INT-755": {
+      "scenario": "Second approval cycle via result",
+      "path": "24.1",
+      "row": 6,
+      "section": "Async Approval Flow",
+      "line": 0
+    },
+    "TST-INT-756": {
+      "scenario": "Deny marks request denied",
+      "path": "24.1",
+      "row": 7,
+      "section": "Async Approval Flow",
+      "line": 0
     }
   },
   "summary": {

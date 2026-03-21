@@ -1322,6 +1322,25 @@
 
 ---
 
+## 24. Async Approval Flow
+
+> Agent request → 202 pending → approval/deny → resume/reject.
+> Tests the approval-wait-resume reasoning pipeline.
+
+### 24.1 Approval Lifecycle
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-750]** Reason returns 202 for sensitive persona | Agent asks question requiring sensitive persona | 202 Accepted with request_id |
+| 2 | **[TST-INT-751]** Status 404 for unknown request ID | Query status of non-existent request_id | 404 Not Found |
+| 3 | **[TST-INT-752]** Pending reason lifecycle via result endpoint | Create pending request, query status | Status transitions: pending → complete |
+| 4 | **[TST-INT-753]** Full approve-resume cycle | Agent asks → 202 → approve → resume | Answer returned with vault context |
+| 5 | **[TST-INT-754]** Wrong caller gets 403 | Query status with different caller DID | 403 Forbidden |
+| 6 | **[TST-INT-755]** Second approval cycle via result | Two sequential approval flows | Both complete independently |
+| 7 | **[TST-INT-756]** Deny marks request denied | Agent asks → 202 → deny | Status = denied |
+
+---
+
 ## Appendix A: Test Environment Setup
 
 ### Docker Compose (test)

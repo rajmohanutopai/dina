@@ -1,7 +1,7 @@
 """Shared pytest fixtures for Dina integration tests.
 
 Dual-mode: set DINA_INTEGRATION=docker to use real HTTP clients against
-Docker containers (docker-compose.test.yml). Without it, uses mocks.
+Docker containers (docker-compose-test-stack.yml). Without it, uses mocks.
 """
 
 from __future__ import annotations

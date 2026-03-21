@@ -52,7 +52,7 @@ class TestAsyncApprovalFlow:
     """Full async approval-wait-resume lifecycle."""
 
     def test_reason_returns_202_for_sensitive_persona(self, core) -> None:
-        """Reason request touching sensitive persona gets 202 (not 403).
+        """TST-INT-750: Reason request touching sensitive persona gets 202 (not 403).
 
         This test creates a sensitive persona, locks it, then sends a
         reason request. Core should return 202 with a request_id.
@@ -84,13 +84,13 @@ class TestAsyncApprovalFlow:
             assert data.get("approval_id", "").startswith("apr-")
 
     def test_reason_status_404_for_unknown(self, core) -> None:
-        """GET /api/v1/reason/{id}/status returns 404 for unknown IDs."""
+        """TST-INT-751: GET /api/v1/reason/{id}/status returns 404 for unknown IDs."""
         resp = _get(core, "/api/v1/reason/reason-nonexistent-id/status")
         assert resp.status_code == 404
         assert "not found" in resp.json().get("error", "").lower()
 
     def test_pending_reason_lifecycle_via_result_endpoint(self, core) -> None:
-        """Full lifecycle: reason 202 → submit result → poll complete.
+        """TST-INT-752: Full lifecycle: reason 202 → submit result → poll complete.
 
         Bypasses the LLM by directly submitting a result via the Brain
         callback endpoint. Proves the Core-side pending_reason store
@@ -148,7 +148,7 @@ class TestAsyncApprovalFlow:
         })
 
     def test_full_approve_resume_cycle(self, core) -> None:
-        """Full cycle: create sensitive persona → reason → 202 → approve → poll → answer.
+        """TST-INT-753: Full cycle: create sensitive persona → reason → 202 → approve → poll → answer.
 
         This is the complete end-to-end test of the async approval flow.
         Requires Brain + LLM to be available.
@@ -222,7 +222,7 @@ class TestAsyncApprovalFlow:
         pytest.fail("Request never completed after approval")
 
     def test_wrong_caller_gets_403(self, core) -> None:
-        """Status poll with wrong caller DID returns 403 (access denied).
+        """TST-INT-754: Status poll with wrong caller DID returns 403 (access denied).
 
         Creates a pending record via the reason endpoint, then polls
         with a forged X-DID header to simulate a different agent.
@@ -256,7 +256,7 @@ class TestAsyncApprovalFlow:
         assert "access denied" in rogue_resp.json().get("error", "").lower()
 
     def test_second_approval_cycle_via_result(self, core) -> None:
-        """Second-approval cycle: result endpoint returns pending_approval with new approval_id.
+        """TST-INT-755: Second-approval cycle: result endpoint returns pending_approval with new approval_id.
 
         Simulates Brain reporting that a second persona also needs approval.
         The pending record's approval_id should rotate and expiry should extend.
@@ -310,7 +310,7 @@ class TestAsyncApprovalFlow:
         assert final.json()["status"] == "complete"
 
     def test_deny_marks_request_denied(self, core) -> None:
-        """Denying an approval marks the pending request as denied."""
+        """TST-INT-756: Denying an approval marks the pending request as denied."""
         # Create sensitive persona
         _post(core, "/v1/personas", {
             "name": "health", "tier": "sensitive", "passphrase": "test",

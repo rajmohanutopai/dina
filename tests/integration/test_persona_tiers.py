@@ -157,7 +157,7 @@ class TestApprovalLifecycle:
         assert "approvals" in data
 
     def test_deny_nonexistent_returns_404(self, core) -> None:
-        """Denying a nonexistent approval returns 404."""
+        """TST-INT-210: Denying a nonexistent approval returns 404."""
         resp = _post(core, "/v1/persona/deny", {"id": "nonexistent-id"})
         assert resp.status_code == 404
 

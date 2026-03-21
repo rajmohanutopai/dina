@@ -9,13 +9,54 @@ Uses the pre-started union test stack (prepare_non_unit_env.sh).
 
 from __future__ import annotations
 
+import hashlib
 import os
+from datetime import datetime, timezone
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-from tests.release.release_services import BrainSigner
 from tests.shared.test_stack import TestStackServices
+
+
+class BrainSigner:
+    """Ed25519 request signer for calling Brain API endpoints directly."""
+
+    def __init__(self, private_key_pem: bytes) -> None:
+        self._private_key = load_pem_private_key(private_key_pem, password=None)
+
+    def _sign(self, method: str, path: str, body: bytes, query: str = "") -> dict[str, str]:
+        import secrets
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = secrets.token_hex(16)
+        body_hash = hashlib.sha256(body).hexdigest()
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
+        signature = self._private_key.sign(payload.encode("utf-8"))
+        return {
+            "X-DID": "did:key:zReleaseTestSigner",
+            "X-Timestamp": timestamp,
+            "X-Nonce": nonce,
+            "X-Signature": signature.hex(),
+        }
+
+    def sign_request(self, method: str, path: str, body: bytes = b"") -> tuple[str, str, str, str]:
+        import secrets
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = secrets.token_hex(16)
+        body_hash = hashlib.sha256(body).hexdigest()
+        payload = f"{method}\n{path}\n\n{timestamp}\n{nonce}\n{body_hash}"
+        signature = self._private_key.sign(payload.encode("utf-8"))
+        return "did:key:zReleaseTestSigner", timestamp, nonce, signature.hex()
+
+    def post(self, url: str, *, json: dict | None = None, timeout: int = 30) -> httpx.Response:
+        import json as _json
+        body = _json.dumps(json).encode() if json is not None else b""
+        parsed = httpx.URL(url)
+        path = parsed.raw_path.decode("ascii")
+        headers = self._sign("POST", path, body)
+        headers["Content-Type"] = "application/json"
+        return httpx.post(url, content=body, headers=headers, timeout=timeout)
 
 DOCKER_MODE = os.environ.get("DINA_RELEASE") == "docker"
 
