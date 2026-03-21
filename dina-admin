@@ -121,12 +121,13 @@ _model_usage() {
     echo -e "    ${CYAN}list${RESET}                          Show active and available models"
     echo -e "    ${CYAN}status${RESET}                        Same as list"
     echo -e "    ${CYAN}set${RESET}                           Interactive model selection"
-    echo -e "    ${CYAN}set${RESET} <role> <model>            Set directly (role: lite, primary, heavy)"
+    echo -e "    ${CYAN}set${RESET} <role> <model>            Set directly (role: lite, primary, heavy, embed)"
     echo ""
     echo -e "  ${DIM}Examples:${RESET}"
     echo -e "    ${CYAN}dina-admin model set${RESET}                                      ${DIM}(interactive)${RESET}"
     echo -e "    ${CYAN}dina-admin model set lite gemini/gemini-2.5-flash${RESET}         ${DIM}(direct)${RESET}"
     echo -e "    ${CYAN}dina-admin model set heavy claude/claude-sonnet-4-6${RESET}       ${DIM}(direct)${RESET}"
+    echo -e "    ${CYAN}dina-admin model set embed gemini/models/gemini-embedding-001${RESET}  ${DIM}(embed)${RESET}"
 }
 
 _brain_healthz() {
@@ -167,6 +168,16 @@ _model_list() {
         echo ""
         jq -r '.providers | to_entries[] | .key as $p | .value.models // {} | keys[] | "    \($p)/\(.)"' \
             "$json_file" 2>/dev/null
+
+        # Show embedding models
+        echo ""
+        echo -e "  ${BOLD}Embedding models:${RESET}"
+        echo ""
+        jq -r '.providers | to_entries[] | select(.value.embed_model) | "    \(.key): \(.value.embed_model)"' \
+            "$json_file" 2>/dev/null
+        if ! jq -e '.providers | to_entries[] | select(.value.embed_model)' "$json_file" > /dev/null 2>&1; then
+            echo "    (none configured)"
+        fi
     fi
 
     echo ""
@@ -189,32 +200,43 @@ _model_set() {
     if [ -n "${1:-}" ] && [ -n "${2:-}" ]; then
         local role="$1" model="$2"
         case "$role" in
-            lite|primary|heavy) ;;
+            lite|primary|heavy)
+                # Validate model exists in models.json
+                local found
+                found=$(jq -r --arg m "$model" \
+                    '.providers | to_entries[] | .key as $p | .value.models // {} | keys[] | "\($p)/\(.)"' \
+                    "$json_file" 2>/dev/null | grep -F "$model" | head -1 || true)
+                if [ -z "$found" ]; then
+                    echo -e "  ${YELLOW}Warning:${RESET} '$model' not found in models.json (setting anyway)"
+                    found="$model"
+                fi
+                local tmp="${json_file}.tmp"
+                jq --arg role "$role" --arg val "$found" \
+                    '.defaults[$role] = $val' "$json_file" > "$tmp" && mv "$tmp" "$json_file"
+                echo -e "  ${GREEN}✓${RESET} Set ${BOLD}${role}${RESET} = ${found}"
+                ;;
+            embed)
+                # Embed model is per-provider: providers.<provider>.embed_model
+                # Format: <provider>/<model> (e.g. gemini/models/gemini-embedding-001)
+                local provider="${model%%/*}"
+                local embed_id="${model#*/}"
+                if [ -z "$provider" ] || [ -z "$embed_id" ] || [ "$provider" = "$model" ]; then
+                    echo -e "  ${RED}Format:${RESET} <provider>/<embed_model>" >&2
+                    echo -e "  ${DIM}Example: gemini/models/gemini-embedding-001${RESET}"
+                    echo -e "  ${DIM}Example: openai/text-embedding-3-small${RESET}"
+                    exit 1
+                fi
+                local tmp="${json_file}.tmp"
+                jq --arg p "$provider" --arg m "$embed_id" \
+                    '.providers[$p].embed_model = $m' "$json_file" > "$tmp" && mv "$tmp" "$json_file"
+                echo -e "  ${GREEN}✓${RESET} Set ${BOLD}${provider}${RESET} embed = ${embed_id}"
+                ;;
             *)
                 echo -e "  ${RED}Unknown role:${RESET} $role" >&2
-                echo -e "  ${DIM}Valid roles: lite, primary, heavy${RESET}"
+                echo -e "  ${DIM}Valid roles: lite, primary, heavy, embed${RESET}"
                 exit 1
                 ;;
         esac
-        # Validate model exists in models.json
-        local found
-        found=$(jq -r --arg m "$model" \
-            '.providers | to_entries[] | .key as $p | .value.models // {} | keys[] | "\($p)/\(.)"' \
-            "$json_file" 2>/dev/null | grep -F "$model" | head -1 || true)
-        if [ -z "$found" ]; then
-            echo -e "  ${YELLOW}Warning:${RESET} '$model' not found in models.json (setting anyway)"
-            # Try to construct full ref — if model contains /, use as-is
-            if echo "$model" | grep -q "/"; then
-                found="$model"
-            else
-                found="$model"
-            fi
-        fi
-        # Update models.json
-        local tmp="${json_file}.tmp"
-        jq --arg role "$role" --arg val "$found" \
-            '.defaults[$role] = $val' "$json_file" > "$tmp" && mv "$tmp" "$json_file"
-        echo -e "  ${GREEN}✓${RESET} Set ${BOLD}${role}${RESET} = ${found}"
         echo ""
         echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
         return
@@ -303,6 +325,39 @@ _model_set() {
             [ "$_dup" = false ] && needed_providers+=("$sel_prov")
         fi
     done
+
+    # Embedding model selection
+    echo ""
+    echo -e "  ${BOLD}Embedding model:${RESET}"
+    # Show current embed models per provider
+    local embed_providers=()
+    while IFS= read -r ep; do
+        embed_providers+=("$ep")
+    done < <(jq -r '.providers | to_entries[] | select(.value.embed_model) | "\(.key): \(.value.embed_model)"' \
+        "$json_file" 2>/dev/null)
+    if [ ${#embed_providers[@]} -gt 0 ]; then
+        for ep in "${embed_providers[@]}"; do
+            echo -e "    ${DIM}current: ${ep}${RESET}"
+        done
+    else
+        echo -e "    ${DIM}(none configured)${RESET}"
+    fi
+    printf "  Enter <provider>/<model> or press Enter to keep: "
+    local embed_input
+    read -r embed_input
+    if [ -n "$embed_input" ]; then
+        local embed_prov="${embed_input%%/*}"
+        local embed_id="${embed_input#*/}"
+        if [ -n "$embed_prov" ] && [ -n "$embed_id" ] && [ "$embed_prov" != "$embed_input" ]; then
+            local tmp="${json_file}.tmp"
+            jq --arg p "$embed_prov" --arg m "$embed_id" \
+                '.providers[$p].embed_model = $m' "$json_file" > "$tmp" && mv "$tmp" "$json_file"
+            echo -e "  ${GREEN}✓${RESET} ${embed_prov} embed = ${embed_id}"
+            changed=true
+        else
+            echo -e "  ${YELLOW}Format: <provider>/<model> (e.g. gemini/models/gemini-embedding-001)${RESET}"
+        fi
+    fi
 
     # Check API keys for all needed providers
     if [ ${#needed_providers[@]} -gt 0 ] && [ -f "$env_file" ]; then

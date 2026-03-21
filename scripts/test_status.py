@@ -1231,6 +1231,8 @@ SUITES = {
         "cwd": None,
         "parser": "pytest",
         "test_dir": "tests/install",
+        "timeout": 900,  # install.sh does docker build + up — needs more time
+        "flat": True,
     },
 }
 
@@ -1511,7 +1513,7 @@ def run_suite(
             except ImportError:
                 pass  # pytest-xdist not installed, run sequentially
 
-    timeout = 600 if cfg.get("e2e_sections") else 300
+    timeout = cfg.get("timeout", 600 if cfg.get("e2e_sections") else 300)
 
     t0 = _time.monotonic()
     try:

@@ -87,6 +87,8 @@ def status(ctx: click.Context) -> None:
         # Counts
         try:
             personas = client.list_personas()
+            if isinstance(personas, dict):
+                personas = personas.get("personas", [])
             result["personas"] = len(personas) if isinstance(personas, list) else "?"
         except AdminClientError:
             result["personas"] = "?"
