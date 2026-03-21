@@ -347,6 +347,19 @@ func main() {
 	{
 		existingPersonas, _ := personaMgr.List(context.Background())
 		if len(existingPersonas) == 0 {
+			// In test mode, use "test" as the passphrase so tests can unlock.
+			// In production, use empty passphrase (user sets it during onboarding).
+			var bootstrapPassHash string
+			if isDevOrTest {
+				salt := make([]byte, 16)
+				crypto_rand.Read(salt)
+				var hashErr error
+				bootstrapPassHash, hashErr = auth.HashPassphrase("test", salt)
+				if hashErr != nil {
+					slog.Warn("bootstrap: could not hash test passphrase", "error", hashErr)
+				}
+			}
+
 			bootstrapPersonas := []struct {
 				name, tier string
 			}{
@@ -356,7 +369,7 @@ func main() {
 				{"finance", "sensitive"},
 			}
 			for _, p := range bootstrapPersonas {
-				if _, err := personaMgr.Create(context.Background(), p.name, p.tier, ""); err != nil {
+				if _, err := personaMgr.Create(context.Background(), p.name, p.tier, bootstrapPassHash); err != nil {
 					slog.Warn("bootstrap: could not create persona", "name", p.name, "error", err)
 				}
 			}
