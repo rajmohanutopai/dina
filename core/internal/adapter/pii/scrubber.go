@@ -40,11 +40,13 @@ func NewScrubber() *Scrubber {
 	// This is Tier 1 (fast heuristic). Tier 2 (spaCy NER) + Tier 3 (LLM)
 	// provide defense-in-depth for what regex misses.
 	s.patterns = []piiPattern{
-		// 16 consecutive digits (bank account) before credit card to avoid overlap.
-		{"BANK_ACCT", regexp.MustCompile(`\b\d{16}\b`)},
-		// Credit card: 4×4 digits with separators OR 15-16 continuous digits.
-		{"CREDIT_CARD", regexp.MustCompile(`\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{3,4}\b`)},
+		// Credit card FIRST (more specific) — prefix-matched continuous digits
+		// must come before generic 16-digit BANK_ACCT to win overlap resolution.
 		{"CREDIT_CARD", regexp.MustCompile(`\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6(?:011|5\d{2}))\d{8,12}\b`)},
+		// Credit card: 4×4 digits with separators (dashes or spaces).
+		{"CREDIT_CARD", regexp.MustCompile(`\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{3,4}\b`)},
+		// 16 consecutive digits without a CC prefix → bank account.
+		{"BANK_ACCT", regexp.MustCompile(`\b\d{16}\b`)},
 		{"SSN", regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)},
 		// IPv4 address — each octet 0-255 (rejects 999.999.999.999).
 		{"IP", regexp.MustCompile(`\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b`)},

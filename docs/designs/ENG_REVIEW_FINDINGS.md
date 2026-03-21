@@ -1147,7 +1147,7 @@ Legitimate inactive users (on vacation) decay at same rate as dormant attackers.
 
 ### TS9. [VALID] LOW — Cleanup doesn't revert flags from deleted anomaly events
 **Status:** Fixed
-**Resolution:** cleanup-expired now queries involvedDids from to-be-deleted anomaly events, decrements coordinationFlagCount (floor 0) for all affected profiles, then deletes the events.
+**Resolution:** Anomaly events are evidence records, not flag sources — coordinationFlagCount is maintained solely by process-tombstones.ts. Deleting resolved anomaly events does not require flag changes. Incorrect decrement logic removed; cleanup now correctly deletes events only.
 Deleting old anomaly events leaves orphaned coordination flags on profiles.
 
 ---
