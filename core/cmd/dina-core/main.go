@@ -347,10 +347,12 @@ func main() {
 	{
 		existingPersonas, _ := personaMgr.List(context.Background())
 		if len(existingPersonas) == 0 {
-			// In test mode, use "test" as the passphrase so tests can unlock.
-			// In production, use empty passphrase (user sets it during onboarding).
+			// In test mode (DINA_TEST_MODE=true), use "test" as the passphrase
+			// so E2E/integration tests can unlock sensitive personas.
+			// In all other modes (including dev), use empty passphrase
+			// (user sets it during onboarding).
 			var bootstrapPassHash string
-			if isDevOrTest {
+			if os.Getenv("DINA_TEST_MODE") == "true" {
 				salt := make([]byte, 16)
 				crypto_rand.Read(salt)
 				var hashErr error
