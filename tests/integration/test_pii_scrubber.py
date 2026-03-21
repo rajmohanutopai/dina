@@ -150,7 +150,8 @@ class TestPIIScrubbing:
 
         # Text was modified (PII replaced with tokens)
         assert scrubbed != query
-        assert "ThinkPad X1 Carbon" in restored
+        # Product name (not PII) survives scrubbing
+        assert "ThinkPad X1 Carbon" in scrubbed
 
 
 # -----------------------------------------------------------------------
