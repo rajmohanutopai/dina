@@ -1140,7 +1140,8 @@ No revocation, auth scope, or invalid ID tests.
 Legitimate inactive users (on vacation) decay at same rate as dormant attackers.
 
 ### TS9. [VALID] LOW — Cleanup doesn't revert flags from deleted anomaly events
-**Status:** Open
+**Status:** Fixed
+**Resolution:** cleanup-expired now queries involvedDids from to-be-deleted anomaly events, decrements coordinationFlagCount (floor 0) for all affected profiles, then deletes the events.
 Deleting old anomaly events leaves orphaned coordination flags on profiles.
 
 ---
@@ -1454,7 +1455,7 @@ The test suite validates **cryptographic correctness** extremely well but comple
 | TS2 | Slow-burn Sybil attack evades 48h detection window | M | `anomaly-detection.ts` |
 | TS6 | Sybil detection only scans already-flagged DIDs | M | `detect-sybil.ts` |
 | TS7 | 50K+ queries per batch in refresh-profiles — batch/join | M | `refresh-profiles.ts` |
-| TS9 | Cleanup doesn't revert flags from deleted anomaly events | S | `detect-sybil.ts` |
+| TS9 | ~~Cleanup doesn't revert flags~~ — **Fixed**: flags decremented before delete | S | `cleanup-expired.ts` |
 
 ### Test Gaps
 
