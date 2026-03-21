@@ -584,15 +584,36 @@ class RealPIIScrubber:
             tier2_scrubbed = data.get("scrubbed", scrubbed)
             # BR1: Brain no longer returns raw PII values in entities
             # (security fix — values must not leave Brain over HTTP).
-            # Detect what was replaced by diffing tier1 output vs tier2 output.
+            # Recover original values by finding what each token replaced
+            # in the pre-Tier2 text (scrubbed = Tier 1 output).
+            pre_tier2 = scrubbed  # text before Brain NER
             for ent in data.get("entities") or []:
                 token = ent.get("token", "")
-                if token and token in tier2_scrubbed:
-                    # Find the original value that this token replaced
-                    # by searching the pre-tier2 text for what's now a token.
-                    # We know the token is in tier2_scrubbed but not in the
-                    # original pre-tier2 text (scrubbed = tier1 output).
-                    replacement_map[token] = token  # placeholder — exact value unknown from HTTP
+                if token and token in tier2_scrubbed and token not in pre_tier2:
+                    # Token was inserted by Tier 2. Find the original value
+                    # by locating the token position in tier2_scrubbed and
+                    # extracting the corresponding substring from pre_tier2.
+                    pos = tier2_scrubbed.find(token)
+                    if pos >= 0:
+                        # Walk pre_tier2 to find what was replaced.
+                        # Simple heuristic: the text before and after the token
+                        # in tier2_scrubbed should match pre_tier2 before/after
+                        # the original value.
+                        prefix = tier2_scrubbed[:pos]
+                        suffix = tier2_scrubbed[pos + len(token):]
+                        # Find where prefix ends in pre_tier2
+                        if pre_tier2.startswith(prefix):
+                            remaining = pre_tier2[len(prefix):]
+                            # Find where suffix starts in remaining
+                            if suffix and suffix[0:20] in remaining:
+                                end_pos = remaining.find(suffix[0:20])
+                                if end_pos > 0:
+                                    original_value = remaining[:end_pos]
+                                    replacement_map[token] = original_value
+                                    self._known_pii.add(original_value)
+                                    continue
+                        # Fallback: token → token (can't recover)
+                        replacement_map[token] = token
             scrubbed = tier2_scrubbed
 
         # If both API tiers returned the text unchanged, log a warning.
