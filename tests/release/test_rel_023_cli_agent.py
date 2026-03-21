@@ -28,7 +28,7 @@ class TestCLIAgentIntegration:
         )
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         data = json.loads(result.stdout)
-        assert data.get("stored") is True
+        assert data.get("staged") is True
 
     # REL-023
     def test_rel_023_agent_can_ask_data(

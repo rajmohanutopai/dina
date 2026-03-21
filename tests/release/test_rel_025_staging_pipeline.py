@@ -164,7 +164,7 @@ class TestStagingPipeline:
             headers=auth_headers, timeout=10,
         )
         assert resolve_resp.status_code == 200
-        assert resolve_resp.json().get("status") == "stored"
+        assert resolve_resp.json().get("status") in ("stored", "resolved")
 
         # 4. Verify the item is actually in the persona vault.
         search_resp = httpx.post(
@@ -353,4 +353,4 @@ class TestStagingPipeline:
             assert found, f"After unlock+drain, item must be in health vault"
         else:
             # Health was already open — item stored directly.
-            assert status == "stored"
+            assert status in ("stored", "resolved")

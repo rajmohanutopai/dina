@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 import pytest
@@ -65,6 +66,15 @@ DOCKER_MODE = os.environ.get("DINA_RELEASE") == "docker"
 # Release adapter over TestStackServices
 # ---------------------------------------------------------------------------
 
+# Well-known actor DIDs matching docker-compose-test-stack.yml DINA_OWN_DID.
+_ACTOR_DIDS: dict[str, str] = {
+    "alonso": "did:plc:alonso",
+    "sancho": "did:plc:sancho",
+    "chairmaker": "did:plc:chairmaker",
+    "albert": "did:plc:albert",
+}
+
+
 class _ReleaseAdapter:
     """Wraps TestStackServices with release-test-specific helpers.
 
@@ -91,6 +101,22 @@ class _ReleaseAdapter:
 
     def assert_ready(self) -> None:
         self._stack.assert_ready()
+
+    # --- Compose file access ---
+
+    @property
+    def _compose_file(self) -> Path:
+        return Path(self._stack._manifest["compose_file"])
+
+    def core_service(self, actor: str) -> str:
+        """Return the Docker Compose service name for an actor's Core."""
+        return f"{actor}-core"
+
+    # --- Actor DIDs ---
+
+    def actor_did(self, actor: str) -> str:
+        """Return the DID for a given actor name."""
+        return _ACTOR_DIDS[actor]
 
     def agent_exec(self, *args: str, timeout: int = 30) -> 'subprocess.CompletedProcess':
         """Run `dina --json <args>` inside the dummy-agent container."""
@@ -165,6 +191,18 @@ def auth_headers(release_services) -> dict[str, str]:
 @pytest.fixture(scope="session")
 def core_b_url(release_services) -> str:
     return release_services.core_url("sancho")
+
+
+@pytest.fixture(scope="session")
+def actor_a_did(release_services) -> str:
+    """DID for the primary actor (alonso)."""
+    return release_services.actor_did("alonso")
+
+
+@pytest.fixture(scope="session")
+def actor_b_did(release_services) -> str:
+    """DID for the secondary actor (sancho)."""
+    return release_services.actor_did("sancho")
 
 
 @pytest.fixture(scope="session")
