@@ -21,6 +21,9 @@ func vaultErrStatus(err error) int {
 	if errors.Is(err, domain.ErrPersonaLocked) {
 		return http.StatusForbidden
 	}
+	if errors.Is(err, domain.ErrPersonaNotFound) {
+		return http.StatusNotFound
+	}
 	var approvalErr *identity.ErrApprovalRequired
 	if errors.As(err, &approvalErr) {
 		return http.StatusForbidden

@@ -62,11 +62,11 @@ func (s *VaultService) ensureOpen(ctx context.Context, persona domain.PersonaNam
 func (s *VaultService) ensureAuthorized(ctx context.Context, agentDID string, persona domain.PersonaName, action, target, opName string) error {
 	if s.personaMgr != nil {
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
-			return fmt.Errorf("%s: %w", opName, err)
+			return fmt.Errorf("%s: persona %s: %w", opName, persona, err)
 		}
 	}
 	if err := s.ensureOpen(ctx, persona); err != nil {
-		return fmt.Errorf("%s: %w", opName, err)
+		return fmt.Errorf("%s: persona %s: %w", opName, persona, err)
 	}
 	if s.gatekeeper != nil {
 		intent := domain.Intent{
