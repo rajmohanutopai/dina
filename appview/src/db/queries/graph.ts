@@ -48,8 +48,13 @@ export async function withGraphTimeout<T>(
 ): Promise<T> {
   try {
     return await db.transaction(async (tx) => {
+      // XR1: Validate numeric before sql.raw interpolation (defense-in-depth).
+      const timeoutMs = Math.floor(Number(CONSTANTS.GRAPH_QUERY_TIMEOUT_MS))
+      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        throw new Error(`Invalid GRAPH_QUERY_TIMEOUT_MS: ${CONSTANTS.GRAPH_QUERY_TIMEOUT_MS}`)
+      }
       await tx.execute(
-        sql.raw(`SET LOCAL statement_timeout = '${CONSTANTS.GRAPH_QUERY_TIMEOUT_MS}ms'`)
+        sql.raw(`SET LOCAL statement_timeout = '${timeoutMs}ms'`)
       )
       return await fn(tx as unknown as DrizzleDB)
     })

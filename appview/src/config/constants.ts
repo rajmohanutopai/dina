@@ -74,6 +74,9 @@ export const CONSTANTS = {
   CACHE_TTL_RESOLVE: 5_000,
   CACHE_TTL_GET_PROFILE: 10_000,
   CACHE_TTL_SEARCH: 3_000,
+  // XR2: Graph BFS is the most expensive query (up to 500 nodes, 100 queries).
+  // 30s TTL prevents abuse while keeping data reasonably fresh.
+  CACHE_TTL_GET_GRAPH: 30_000,
 
   // Reconnection
   MAX_RECONNECT_DELAY_MS: 60_000,

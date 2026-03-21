@@ -14,4 +14,6 @@ export const subjectClaims = pgTable('subject_claims', {
 }, (table) => [
   index('subject_claims_source_idx').on(table.sourceSubjectId),
   index('subject_claims_target_idx').on(table.targetSubjectId),
+  // DB3: author_did index for future author-based queries.
+  index('subject_claims_author_did_idx').on(table.authorDid),
 ])

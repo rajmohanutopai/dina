@@ -12,4 +12,6 @@ export const media = pgTable('media', {
   indexedAt: timestamp('indexed_at').notNull().defaultNow(),
 }, (table) => [
   index('media_parent_uri_idx').on(table.parentUri),
+  // DB3: author_did index for future author-based queries.
+  index('media_author_did_idx').on(table.authorDid),
 ])

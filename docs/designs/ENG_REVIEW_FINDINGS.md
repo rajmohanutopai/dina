@@ -958,13 +958,15 @@ No revocation, auth scope, or invalid ID tests.
 **Fix:** Batch-fetch trust scores for all nodes in nextFrontier before next BFS level.
 
 ### DB2. [VALID] LOW — N+1 in dirty-flags.ts DID marking
-**Status:** Open
+**Status:** Fixed
+**Resolution:** Replaced per-DID upsert loop with single `db.insert().values([...all DIDs]).onConflictDoUpdate()` batch statement. Reduces N round-trips to 1.
 **File:** `appview/src/db/queries/dirty-flags.ts:53-62`
 **Problem:** Loop inserts one upsert per affected DID. Typically small (author + subject + mentions = <10), but could batch.
 **Fix:** Use `db.insert().values([...all DIDs])` for single-statement batch upsert.
 
 ### DB3. [VALID] LOW — Missing indexes on 2 tables
-**Status:** Open
+**Status:** Fixed
+**Resolution:** Added `author_did` indexes: `media_author_did_idx` on media, `subject_claims_author_did_idx` on subject_claims.
 **Files:** `appview/src/db/schema/media.ts`, `appview/src/db/schema/subject-claims.ts`
 **Problem:** Both missing `author_did` index. No functional impact today but could cause slow queries if code queries by author in the future.
 
@@ -1043,25 +1045,29 @@ No revocation, auth scope, or invalid ID tests.
 - Public endpoints by design (trust data is public per AT Protocol)
 
 ### XR1. [VALID - HARDENING] MEDIUM — graph.ts string interpolation in sql.raw statement_timeout
-**Status:** Open
+**Status:** Fixed
+**Resolution:** Numeric validation added before sql.raw interpolation: `Math.floor(Number(...))` + `Number.isFinite` + positive check. Throws on invalid value instead of constructing injectable SQL.
 **File:** `appview/src/db/queries/graph.ts:52`
 **Problem:** `sql.raw(\`SET LOCAL statement_timeout = '${CONSTANTS.GRAPH_QUERY_TIMEOUT_MS}ms'\`)` — numeric constant (100) interpolated into raw SQL. Safe today but dangerous pattern. If this value ever comes from env var or user input, it becomes SQL injection.
 **Fix:** Use parameterized interval or validate the constant is numeric before interpolation.
 
 ### XR2. [VALID] HIGH — getGraph endpoint not cached (most expensive query)
-**Status:** Open
+**Status:** Fixed
+**Resolution:** getGraph wrapped in SWR cache with 30s TTL. Cache key includes did+maxDepth+domain for correct invalidation. CACHE_TTL_GET_GRAPH (30_000ms) added to constants.
 **File:** `appview/src/api/xrpc/get-graph.ts:14-18`
 **Problem:** Graph BFS traversal (up to 500 nodes, 100 queries) runs on every request. resolve, search, and getProfile all use SWR caching; getGraph does not. At 60 RPM rate limit, an attacker can force 60 graph traversals/minute = 6,000 DB queries/minute just from this endpoint.
 **Fix:** Wrap getGraph in SWR cache with 30-60 second TTL.
 
 ### XR3. [PARTIAL] MEDIUM — Unvalidated `domain` parameter across 3 endpoints
-**Status:** Open
+**Status:** Fixed
+**Resolution:** All 3 endpoints (resolve, get-graph, search) now validate domain with `.max(253).regex(/^[a-z0-9.-]+$/i)`. Rejects special characters, path traversal, and SQL injection patterns at Zod validation.
 **Files:** `resolve.ts:14`, `get-graph.ts:9`, `search.ts:12`
 **Problem:** `domain` parameter accepts any string (max 253 chars) with no format validation. Passed to WHERE clauses. Could cause timing attacks or inefficient index usage on invalid domain strings.
 **Fix:** Add regex validation: `z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional()`
 
 ### XR4. [VALID] MEDIUM — No FTS search complexity limits
-**Status:** Open
+**Status:** Fixed
+**Resolution:** Query max reduced from 500 to 200 chars. FTS queries wrapped in 200ms `statement_timeout` transaction — canceled queries return empty results instead of blocking. Non-FTS queries unaffected.
 **File:** `appview/src/api/xrpc/search.ts:95-98`
 **Problem:** FTS query `q` allows up to 500 chars. `plainto_tsquery` is safe from injection but complex queries can be CPU-intensive. No per-endpoint rate limiting (only global 60 RPM per IP).
 **Fix:** Add per-query timeout or limit FTS query complexity.
@@ -1439,12 +1445,12 @@ The test suite validates **cryptographic correctness** extremely well but comple
 | ID | Summary | Effort | Files |
 |----|---------|--------|-------|
 | DB1 | N+1 in graph.ts trust score fetching — batch-fetch per BFS level | M | `graph.ts` |
-| DB2 | N+1 in dirty-flags.ts DID marking — batch upsert | S | `dirty-flags.ts` |
-| DB3 | Missing indexes on media + subject-claims (author_did) | S | Schema files |
-| XR1 | graph.ts string interpolation in sql.raw statement_timeout — validate numeric | S | `graph.ts` |
-| XR2 | getGraph endpoint not cached (most expensive query) — wrap in SWR cache | M | `get-graph.ts` |
-| XR3 | Unvalidated `domain` parameter — add regex validation | S | `resolve.ts`, `get-graph.ts`, `search.ts` |
-| XR4 | No FTS search complexity limits — add per-query timeout | S | `search.ts` |
+| DB2 | ~~N+1 in dirty-flags.ts~~ — **Fixed**: batch upsert | S | `dirty-flags.ts` |
+| DB3 | ~~Missing indexes~~ — **Fixed**: `author_did` indexes added | S | Schema files |
+| XR1 | ~~graph.ts sql.raw interpolation~~ — **Fixed**: numeric validation before interpolation | S | `graph.ts` |
+| XR2 | ~~getGraph not cached~~ — **Fixed**: SWR cache with 30s TTL | M | `get-graph.ts` |
+| XR3 | ~~Unvalidated `domain` parameter~~ — **Fixed**: regex `/^[a-z0-9.-]+$/i` | S | `resolve.ts`, `get-graph.ts`, `search.ts` |
+| XR4 | ~~No FTS complexity limits~~ — **Fixed**: 200ms statement_timeout + q max 200 | S | `search.ts` |
 | TS2 | Slow-burn Sybil attack evades 48h detection window | M | `anomaly-detection.ts` |
 | TS6 | Sybil detection only scans already-flagged DIDs | M | `detect-sybil.ts` |
 | TS7 | 50K+ queries per batch in refresh-profiles — batch/join | M | `refresh-profiles.ts` |

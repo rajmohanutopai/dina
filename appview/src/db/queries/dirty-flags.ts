@@ -49,13 +49,17 @@ export async function markDirty(db: DrizzleDB, params: DirtyMarkParams): Promise
     for (const m of params.mentionedDids) affectedDids.add(m.did)
   }
 
-  // Mark each DID profile for recalculation
-  for (const did of affectedDids) {
-    await db.insert(didProfiles).values({
-      did,
-      needsRecalc: true,
-      computedAt: new Date(0),
-    }).onConflictDoUpdate({
+  // DB2: Batch upsert all affected DIDs in a single statement
+  // instead of one INSERT per DID (was N+1).
+  const dids = [...affectedDids]
+  if (dids.length > 0) {
+    await db.insert(didProfiles).values(
+      dids.map(did => ({
+        did,
+        needsRecalc: true,
+        computedAt: new Date(0),
+      }))
+    ).onConflictDoUpdate({
       target: didProfiles.did,
       set: { needsRecalc: true },
     })

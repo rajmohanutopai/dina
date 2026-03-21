@@ -7,9 +7,10 @@ import type { SearchResponse } from '@/shared/types/api-types.js'
 const CONFIDENCE_ORDER = ['speculative', 'moderate', 'high', 'certain'] as const
 
 export const SearchParams = z.object({
-  q: z.string().max(500).optional(),
+  // XR4: Reduced from 500 to 200 to limit FTS query complexity.
+  q: z.string().max(200).optional(),
   category: z.string().max(200).optional(),
-  domain: z.string().max(253).optional(),
+  domain: z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional(),
   subjectType: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim']).optional(),
   sentiment: z.enum(['positive', 'neutral', 'negative']).optional(),
   tags: z.string().max(1000).optional(),
@@ -92,7 +93,8 @@ export async function search(
   }
 
   let orderClause: any[]
-  if (q && sort === 'relevant') {
+  const useFTS = !!(q && sort === 'relevant')
+  if (useFTS) {
     const tsQuery = sql`plainto_tsquery('english', ${q})`
     conditions.push(sql`search_vector @@ ${tsQuery}`)
     orderClause = [sql`ts_rank(search_vector, ${tsQuery}) DESC`, desc(attestations.uri)]
@@ -100,11 +102,33 @@ export async function search(
     orderClause = [desc(attestations.recordCreatedAt), desc(attestations.uri)]
   }
 
-  const results = await db.select()
-    .from(attestations)
-    .where(and(...conditions))
-    .orderBy(...orderClause)
-    .limit(limit + 1)
+  // XR4: Wrap in statement_timeout when FTS is used to prevent
+  // CPU-intensive queries from blocking the database.
+  const runQuery = async (queryDb: DrizzleDB) => {
+    return queryDb.select()
+      .from(attestations)
+      .where(and(...conditions))
+      .orderBy(...orderClause)
+      .limit(limit + 1)
+  }
+
+  let results: Awaited<ReturnType<typeof runQuery>>
+  if (useFTS) {
+    try {
+      results = await db.transaction(async (tx) => {
+        await tx.execute(sql.raw(`SET LOCAL statement_timeout = '200ms'`))
+        return runQuery(tx as unknown as DrizzleDB)
+      })
+    } catch (err: any) {
+      if (err?.code === '57014') {
+        // Query canceled by statement_timeout — return empty results.
+        return { results: [], cursor: undefined, totalEstimate: 0 }
+      }
+      throw err
+    }
+  } else {
+    results = await runQuery(db)
+  }
 
   const hasMore = results.length > limit
   const page = hasMore ? results.slice(0, limit) : results

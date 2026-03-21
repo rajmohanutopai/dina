@@ -11,7 +11,7 @@ import type { ResolveResponse, GraphContext } from '@/shared/types/api-types.js'
 export const ResolveParams = z.object({
   subject: z.string().max(4096),
   requesterDid: z.string().optional(),
-  domain: z.string().optional(),
+  domain: z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional(),
   context: z.enum([
     'before-transaction', 'before-interaction',
     'content-verification', 'product-evaluation', 'general-lookup',
