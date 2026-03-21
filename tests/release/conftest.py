@@ -21,6 +21,68 @@ DOCKER_MODE = os.environ.get("DINA_RELEASE") == "docker"
 
 
 # ---------------------------------------------------------------------------
+# Release adapter over TestStackServices
+# ---------------------------------------------------------------------------
+
+class _ReleaseAdapter:
+    """Wraps TestStackServices with release-test-specific helpers.
+
+    Provides agent_exec(*args) and agent_shell(cmd) matching the old
+    ReleaseDockerServices interface.
+    """
+
+    def __init__(self, stack: TestStackServices) -> None:
+        self._stack = stack
+
+    # Delegate standard methods
+    def core_url(self, actor: str) -> str:
+        return self._stack.core_url(actor)
+
+    def brain_url(self, actor: str) -> str:
+        return self._stack.brain_url(actor)
+
+    @property
+    def client_token(self) -> str:
+        return self._stack.client_token
+
+    def core_private_key(self, actor: str) -> bytes:
+        return self._stack.core_private_key(actor)
+
+    def assert_ready(self) -> None:
+        self._stack.assert_ready()
+
+    def agent_exec(self, *args: str, timeout: int = 30) -> 'subprocess.CompletedProcess':
+        """Run `dina --json <args>` inside the dummy-agent container."""
+        import subprocess
+        manifest = self._stack._manifest
+        project = manifest["project"]
+        compose_file = manifest["compose_file"]
+        cmd = [
+            "docker", "compose", "-p", project, "-f", compose_file,
+            "exec", "-T", "dummy-agent",
+            "dina", "--json",
+        ] + list(args)
+        return subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+        )
+
+    def agent_shell(self, command: str) -> 'subprocess.CompletedProcess':
+        """Run a shell command inside the dummy-agent container."""
+        import subprocess
+        manifest = self._stack._manifest
+        project = manifest["project"]
+        compose_file = manifest["compose_file"]
+        cmd = [
+            "docker", "compose", "-p", project, "-f", compose_file,
+            "exec", "-T", "dummy-agent",
+            "sh", "-c", command,
+        ]
+        return subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Docker services (session-scoped)
 # ---------------------------------------------------------------------------
 
@@ -34,9 +96,9 @@ def release_services():
     if not DOCKER_MODE:
         pytest.skip("Release tests require Docker (DINA_RELEASE=docker)")
 
-    svc = TestStackServices()
-    svc.assert_ready()
-    yield svc
+    stack = TestStackServices()
+    stack.assert_ready()
+    yield _ReleaseAdapter(stack)
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +229,7 @@ def agent_paired(release_services, core_url, auth_headers):
         "print(i.public_key_multibase()); "
         "print(i.did())"
     )
-    result = release_services.agent_exec(["python", "-c", gen_script])
+    result = release_services.agent_shell(f'python -c "{gen_script}"')
     if result.returncode != 0:
         pytest.skip(f"Failed to generate agent keypair: {result.stderr}")
 
@@ -191,7 +253,7 @@ def agent_paired(release_services, core_url, auth_headers):
         "shutil.copy('/tmp/agent-identity/ed25519_private.pem', '/root/.dina/cli/identity/ed25519_private.pem'); "
         "shutil.copy('/tmp/agent-identity/ed25519_public.pem', '/root/.dina/cli/identity/ed25519_public.pem')"
     )
-    release_services.agent_exec(["python", "-c", config_script])
+    release_services.agent_shell(f'python -c "{config_script}"')
 
     # Pair via Core API: initiate + complete
     try:

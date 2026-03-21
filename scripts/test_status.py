@@ -1002,6 +1002,65 @@ def parse_pytest_output(
     return results
 
 
+def parse_vitest_output(output: str) -> list[TestResult]:
+    """Parse vitest verbose output.
+
+    Lines like:
+      ✓ tests/unit/01-foo.test.ts > §1.1 Section > UT-FOO-001: test name 1ms
+      × tests/unit/01-foo.test.ts > §1.1 Section > UT-FOO-002: test name 2ms
+    """
+    import re
+    results: list[TestResult] = []
+    # Match: ✓ or × followed by file > section > test name [duration]
+    pat = re.compile(
+        r"^\s*([✓×↓])\s+(.+?)\s+(\d+m?s)?\s*$"
+    )
+    section_pat = re.compile(r"§(\d+)")
+
+    for line in output.splitlines():
+        m = pat.match(line)
+        if not m:
+            continue
+        symbol, name, dur_str = m.group(1), m.group(2), m.group(3)
+
+        if symbol == "✓":
+            status = "PASS"
+        elif symbol == "×":
+            status = "FAIL"
+        elif symbol == "↓":
+            status = "SKIP"
+        else:
+            continue
+
+        # Extract section number: §N.M or SSN.M or from filename NN-name.test.ts
+        sec = 0
+        sec_m = section_pat.search(name)
+        if sec_m:
+            sec = int(sec_m.group(1))
+        else:
+            # Fallback: extract from filename like tests/unit/05-api-cache.test.ts
+            file_m = re.search(r'/(\d{2})-', name)
+            if file_m:
+                sec = int(file_m.group(1))
+
+        # Parse duration
+        duration = 0.0
+        if dur_str:
+            if dur_str.endswith("ms"):
+                duration = float(dur_str[:-2]) / 1000.0
+            elif dur_str.endswith("s"):
+                duration = float(dur_str[:-1])
+
+        results.append(TestResult(
+            name=name.strip(),
+            status=status,
+            section=sec,
+            duration=duration,
+        ))
+
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Suite configuration & runner
 # ---------------------------------------------------------------------------
@@ -1052,6 +1111,31 @@ SUITES = {
                 "cli/tests/"],
         "cwd": None,
         "parser": "pytest",
+        "flat": True,
+    },
+    "admin_cli": {
+        "name": "Admin CLI (Py)",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+                "admin-cli/tests/"],
+        "cwd": None,
+        "parser": "pytest",
+        "flat": True,  # no section breakdown — all tests in one group
+    },
+    "appview": {
+        "name": "AppView (TS)",
+        "cmd": ["npx", "vitest", "run", "tests/unit/", "--reporter=verbose"],
+        "cwd": "appview",
+        "parser": "vitest",
+        "section_names": {
+            1: "Scorer Algorithms",
+            2: "Ingester Components",
+            3: "Shared Utilities",
+            4: "Configuration",
+            5: "API Cache (SWR)",
+            6: "Jetstream Consumer",
+            7: "Scorer Jobs",
+            8: "xRPC Params",
+        },
     },
     "install": {
         "name": "Install (pexpect)",
@@ -1305,6 +1389,9 @@ def run_suite(
                 PROJECT_ROOT / cfg["test_dir"],
                 plan_path,
             )
+    elif "section_names" in cfg:
+        # Inline section names (e.g. AppView)
+        section_map = dict(cfg["section_names"])
     else:
         # Flat suite (e.g. CLI) — no section plan, all tests grouped as one
         section_map = {1: cfg["name"]}
@@ -1359,6 +1446,8 @@ def run_suite(
 
     if cfg["parser"] == "go":
         tests = parse_go_json(output)
+    elif cfg["parser"] == "vitest":
+        tests = parse_vitest_output(output)
     else:
         tests = parse_pytest_output(output, section_override)
 
@@ -1408,11 +1497,10 @@ def run_suite(
                 file=sys.stderr,
             )
 
-    # Flat suites (no plan, no e2e_sections): all tests → section 1
-    if "plan" not in cfg and not cfg.get("e2e_sections"):
+    # Flat suites: force ALL tests to section 1 (no per-section breakdown)
+    if cfg.get("flat") or ("plan" not in cfg and not cfg.get("e2e_sections") and "section_names" not in cfg):
         for t in tests:
-            if t.section == 0:
-                t.section = 1
+            t.section = 1
 
     # Mock-based suites: PASS doesn't mean implemented — remap to SKIP
     if cfg.get("mock_pass_is_skip"):
@@ -1462,9 +1550,9 @@ def aggregate(
         else:
             s.failed += 1
 
-    if unmapped:
-        print(f"  ({unmapped} tests could not be mapped to a section)",
-              file=sys.stderr)
+    # Suppress unmapped noise — these are tests in packages outside the
+    # TEST_PLAN.md section structure (e.g. handler/, service/ unit tests).
+    # They still run and are counted in TOTAL.
 
     return sorted(stats.values(), key=lambda x: x.number)
 
@@ -1808,6 +1896,8 @@ def parse_args(argv: list[str]) -> dict:
             opts["restart"] = True
         elif a in ("-v", "--verbose"):
             opts["verbose"] = True
+        elif a == "--unit":
+            opts["suite"] = "core,brain,cli,admin_cli,appview"
         elif a == "--suite" and i + 1 < len(argv):
             i += 1
             opts["suite"] = argv[i].lower()
@@ -1841,14 +1931,16 @@ def main() -> None:
 
     keys = list(SUITES)
     if suite_filter:
-        if suite_filter not in SUITES:
+        requested = [s.strip() for s in suite_filter.split(",")]
+        bad = [s for s in requested if s not in SUITES]
+        if bad:
             print(
-                f"ERROR: Unknown suite '{suite_filter}'. "
+                f"ERROR: Unknown suite(s): {', '.join(bad)}. "
                 f"Valid: {', '.join(SUITES)}",
                 file=sys.stderr,
             )
             sys.exit(2)
-        keys = [suite_filter]
+        keys = requested
 
     if not json_mode:
         mode_tag = "quick" if quick else "all (including slow tests)"

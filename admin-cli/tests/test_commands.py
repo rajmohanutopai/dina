@@ -286,7 +286,7 @@ def test_config_loads_socket(monkeypatch, tmp_path):
     from dina_admin_cli.config import load_config
 
     sock_file = tmp_path / "admin.sock"
-    sock_file.touch()
+    sock_file.touch(mode=0o600)
     monkeypatch.setenv("DINA_ADMIN_SOCKET", str(sock_file))
 
     cfg = load_config()
@@ -299,7 +299,7 @@ def test_config_custom_timeout(monkeypatch, tmp_path):
     from dina_admin_cli.config import load_config
 
     sock_file = tmp_path / "admin.sock"
-    sock_file.touch()
+    sock_file.touch(mode=0o600)
     monkeypatch.setenv("DINA_ADMIN_SOCKET", str(sock_file))
     monkeypatch.setenv("DINA_TIMEOUT", "10")
 

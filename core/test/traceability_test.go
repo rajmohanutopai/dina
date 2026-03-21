@@ -3050,9 +3050,13 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		}
 		content := string(data)
 
-		// Must reference test execution (test_status.py handles Go build + test).
-		if !strings.Contains(content, "test_status") && !strings.Contains(content, "go test") {
-			t.Fatal("run_all_tests.sh must invoke test_status.py or go test for CI pipeline")
+		// Must reference test execution — either directly or via sub-scripts.
+		hasTestRef := strings.Contains(content, "test_status") ||
+			strings.Contains(content, "go test") ||
+			strings.Contains(content, "run_unit_tests") ||
+			strings.Contains(content, "run_non_unit_tests")
+		if !hasTestRef {
+			t.Fatal("run_all_tests.sh must invoke test runners for CI pipeline")
 		}
 	})
 
