@@ -63,6 +63,11 @@ func (l *Loader) Load() (*Config, error) {
 		loadSecretFile(path, &cfg.ClientToken)
 	}
 
+	// F15: Validate inline — callers no longer need a separate Validate() call.
+	if err := l.Validate(cfg); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 

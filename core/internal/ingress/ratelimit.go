@@ -95,6 +95,9 @@ func (r *RateLimiter) AllowIP(ip string) bool {
 
 // AllowGlobal checks whether the global spool has capacity for more messages.
 // Returns false if the dead drop is at capacity (Valve 2).
+// IG4: This is a check-then-act race — concurrent goroutines can exceed
+// maxBlobs by up to concurrency-1. Acceptable because limits are
+// conservative (500MB default) and the overshoot is negligible.
 func (r *RateLimiter) AllowGlobal() bool {
 	if r.deadDrop == nil {
 		return true

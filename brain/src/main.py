@@ -327,20 +327,35 @@ def create_app() -> FastAPI:
     # PII scrubber — prefer PresidioScrubber, fall back to spaCy, then None.
     scrubber: object | None = None
     scrubber_tier = "none"
+    # F13: Use specific exception types for diagnostic clarity.
     try:
         from .adapter.scrubber_presidio import PresidioScrubber
         scrubber = PresidioScrubber()
         scrubber_tier = "presidio"
         log.info("brain.scrubber.presidio.loaded")
-    except Exception:
+    except ImportError:
+        log.info("brain.scrubber.presidio.not_installed")
         try:
             scrubber = _SpacyScrubber()
             scrubber_tier = "spacy"
             log.info("brain.scrubber.spacy.fallback")
-        except Exception as exc:
+        except (ImportError, OSError) as exc:
             log.warning(
                 "brain.scrubber.unavailable",
-                extra={"error": type(exc).__name__},
+                extra={"error": type(exc).__name__, "detail": str(exc)},
+            )
+            scrubber = None
+    except (OSError, RuntimeError) as exc:
+        log.warning("brain.scrubber.presidio.init_failed",
+                     extra={"error": type(exc).__name__, "detail": str(exc)})
+        try:
+            scrubber = _SpacyScrubber()
+            scrubber_tier = "spacy"
+            log.info("brain.scrubber.spacy.fallback")
+        except (ImportError, OSError) as exc2:
+            log.warning(
+                "brain.scrubber.unavailable",
+                extra={"error": type(exc2).__name__, "detail": str(exc2)},
             )
             scrubber = None
     if scrubber_tier != "presidio":

@@ -36,19 +36,26 @@ type piiMatch struct {
 func NewScrubber() *Scrubber {
 	s := &Scrubber{}
 	// Order matters: more specific patterns first to prevent partial matches.
+	// F09: Improved patterns — IP validates octet range, Indian phone added.
+	// This is Tier 1 (fast heuristic). Tier 2 (spaCy NER) + Tier 3 (LLM)
+	// provide defense-in-depth for what regex misses.
 	s.patterns = []piiPattern{
 		// 16 consecutive digits (bank account) before credit card to avoid overlap.
 		{"BANK_ACCT", regexp.MustCompile(`\b\d{16}\b`)},
-		// Credit card: 4×4 digits with required separators (dashes or spaces).
-		{"CREDIT_CARD", regexp.MustCompile(`\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b`)},
+		// Credit card: 4×4 digits with separators OR 15-16 continuous digits.
+		{"CREDIT_CARD", regexp.MustCompile(`\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{3,4}\b`)},
+		{"CREDIT_CARD", regexp.MustCompile(`\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6(?:011|5\d{2}))\d{8,12}\b`)},
 		{"SSN", regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)},
-		// IPv4 address.
-		{"IP", regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)},
+		// IPv4 address — each octet 0-255 (rejects 999.999.999.999).
+		{"IP", regexp.MustCompile(`\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b`)},
+		// Email — handles most standard formats including + addressing.
 		{"EMAIL", regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)},
 		// International phone: +CC followed by digits and separators.
 		{"PHONE", regexp.MustCompile(`\+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d`)},
 		// US/domestic phone: optional +1, then 10 digits in 3-3-4 groups.
 		{"PHONE", regexp.MustCompile(`\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`)},
+		// Indian phone: 10 digits starting with 6-9.
+		{"PHONE", regexp.MustCompile(`\b[6-9]\d{4}[\s-]?\d{5}\b`)},
 		// Street address: number + street name + street type suffix.
 		{"ADDRESS", regexp.MustCompile(`\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)`)},
 		{"AADHAAR", regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`)},

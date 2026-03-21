@@ -57,14 +57,10 @@ func main() {
 	// ---------- Load configuration ----------
 
 	cfgLoader := config.NewLoader()
+	// F15: Load() now includes Validate() — single call, no duplicate.
 	cfg, err := cfgLoader.Load()
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
-	}
-
-	if err := cfgLoader.Validate(cfg); err != nil {
-		slog.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
 
