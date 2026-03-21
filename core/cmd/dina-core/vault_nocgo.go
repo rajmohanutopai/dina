@@ -66,3 +66,8 @@ func newContactDirectory(_ vaultBackend) contactDirectoryFull {
 func newReminderScheduler(_ vaultBackend) port.ReminderScheduler {
 	return taskqueue.NewReminderScheduler()
 }
+
+// newTraceStore returns nil in no-CGO mode (tracing disabled).
+func newTraceStore(_ vaultBackend) port.TraceStore {
+	return nil
+}

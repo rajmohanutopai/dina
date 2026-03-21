@@ -25,8 +25,9 @@ type VaultService struct {
 	writer     port.VaultWriter
 	gatekeeper port.Gatekeeper
 	clock      port.Clock
-	personaMgr port.PersonaManager // optional — tier enforcement
-	autoUnlock AutoUnlockFunc      // optional — auto-opens sensitive vaults for user requests
+	personaMgr port.PersonaManager       // optional — tier enforcement
+	autoUnlock AutoUnlockFunc            // optional — auto-opens sensitive vaults for user requests
+	Tracer     middleware.TraceEmitter   // optional — emit authz traces
 }
 
 // SetPersonaManager enables persona tier enforcement on vault operations.
@@ -62,10 +63,20 @@ func (s *VaultService) ensureOpen(ctx context.Context, persona domain.PersonaNam
 func (s *VaultService) ensureAuthorized(ctx context.Context, agentDID string, persona domain.PersonaName, action, target, opName string) error {
 	if s.personaMgr != nil {
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
+			if s.Tracer != nil {
+				s.Tracer.Emit(ctx, "authz_error", "core", map[string]string{
+					"persona": string(persona), "action": action, "error_type": "access_denied",
+				})
+			}
 			return fmt.Errorf("%s: persona %s: %w", opName, persona, err)
 		}
 	}
 	if err := s.ensureOpen(ctx, persona); err != nil {
+		if s.Tracer != nil {
+			s.Tracer.Emit(ctx, "authz_error", "core", map[string]string{
+				"persona": string(persona), "action": action, "error_type": "persona_locked",
+			})
+		}
 		return fmt.Errorf("%s: persona %s: %w", opName, persona, err)
 	}
 	if s.gatekeeper != nil {

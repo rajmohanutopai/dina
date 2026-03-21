@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -8,7 +9,9 @@ import (
 
 // Recovery catches panics in downstream handlers and returns a 500 response.
 // It logs the panic value and stack trace safely without exposing details to the client.
-type Recovery struct{}
+type Recovery struct {
+	Emitter TraceEmitter // optional — emit panic_recovered trace
+}
 
 // Handler returns middleware that recovers from panics.
 func (rec *Recovery) Handler(next http.Handler) http.Handler {
@@ -22,6 +25,19 @@ func (rec *Recovery) Handler(next http.Handler) http.Handler {
 					slog.Any("error", err),
 					slog.String("stack", string(stack)),
 				)
+				// Emit trace event so panics appear in dina-admin trace output.
+				if rec.Emitter != nil {
+					// Normalize error to type name only — never raw panic text
+					// which may contain user data or stack details.
+					errType := fmt.Sprintf("%T", err)
+					if errType == "string" {
+						errType = "panic_string"
+					}
+					rec.Emitter.Emit(r.Context(), "panic_recovered", "core", map[string]string{
+						"path":       r.URL.Path,
+						"error_type": errType,
+					})
+				}
 				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 			}
 		}()

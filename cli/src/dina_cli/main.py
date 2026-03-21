@@ -20,7 +20,7 @@ import httpx
 
 from .client import DinaClient, DinaClientError
 from .config import CONFIG_FILE, IDENTITY_DIR, load_config, save_config, _load_saved
-from .output import print_error, print_result
+from .output import print_error, print_error_with_trace, print_result, print_result_with_trace
 from .session import SessionStore
 from .signing import CLIIdentity
 
@@ -168,12 +168,12 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
             "metadata": json.dumps(metadata),
         }, session=session)
         staging_id = result.get("id", "")
-        print_result({
+        print_result_with_trace({
             "id": f"stg_{staging_id[:8]}" if staging_id else "stg_ok",
             "staged": True,
-        }, json_mode)
+        }, json_mode, client.req_id)
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -202,7 +202,7 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
             persona = result.get("persona", "sensitive")
 
             if json_mode:
-                print_result(result, json_mode)
+                print_result_with_trace(result, json_mode, client.req_id)
                 return
 
             click.echo(
@@ -210,6 +210,7 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
                 err=True,
             )
             click.echo("A notification has been sent. Approve via Telegram or dina-admin.", err=True)
+            click.echo(f"  req_id: {client.req_id}", err=True)
 
             if not request_id:
                 # No request_id — can't poll. Old-style 403.
@@ -261,7 +262,7 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
         error_code = result.get("error_code", "")
         if error_code:
             if json_mode:
-                print_result(result, json_mode)
+                print_result_with_trace(result, json_mode, client.req_id)
             else:
                 _ERROR_MESSAGES = {
                     "llm_not_configured": "LLM not configured. Run 'dina-admin model list' to see options.",
@@ -271,18 +272,20 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
                 }
                 msg = result.get("message") or _ERROR_MESSAGES.get(error_code, f"Error: {error_code}")
                 click.echo(msg, err=True)
+                click.echo(f"  req_id: {client.req_id}", err=True)
             ctx.exit(1)
             return
 
         # Normal (immediate) response
         if json_mode:
-            print_result(result, json_mode)
+            print_result_with_trace(result, json_mode, client.req_id)
         else:
             answer = result.get("content", result.get("response", ""))
             if answer:
                 click.echo(answer)
             else:
                 click.echo("I don't have any information about that yet.")
+            click.echo(f"  req_id: {client.req_id}", err=True)
     except DinaClientError as exc:
         if "approval_required" in str(exc).lower():
             click.echo("Access to sensitive data requires approval.", err=True)
@@ -290,7 +293,8 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
         elif "persona locked" in str(exc).lower():
             click.echo("Some data is locked. Unlock on your Home Node: ./dina-admin persona unlock", err=True)
         else:
-            print_error(str(exc), json_mode)
+            print_error_with_trace(str(exc), json_mode, client.req_id)
+        click.echo(f"  req_id: {client.req_id}", err=True)
         ctx.exit(1)
 
 
@@ -308,7 +312,7 @@ def reason_status_cmd(ctx: click.Context, request_id: str) -> None:
     try:
         status = client.reason_status(request_id)
         if json_mode:
-            print_result(status, json_mode)
+            print_result_with_trace(status, json_mode, client.req_id)
         elif status.get("status") == "complete":
             answer = status.get("content", "")
             if answer:
@@ -324,7 +328,7 @@ def reason_status_cmd(ctx: click.Context, request_id: str) -> None:
         else:
             click.echo(f"Status: {status.get('status', 'unknown')}")
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -390,7 +394,7 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
         if result.get("risk"):
             output["risk"] = result["risk"]
 
-        print_result(output, json_mode)
+        print_result_with_trace(output, json_mode, client.req_id)
 
     except DinaClientError as exc:
         # Fallback: if Core/Brain is unavailable, use conservative local policy
@@ -409,9 +413,9 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
             if status == "pending_approval":
                 output["dashboard_url"] = f"{config.core_url}/approvals/{val_id}"
                 output["note"] = "Guardian unavailable — conservative fallback"
-            print_result(output, json_mode)
+            print_result_with_trace(output, json_mode, client.req_id)
         else:
-            print_error(str(exc), json_mode)
+            print_error_with_trace(str(exc), json_mode, client.req_id)
             ctx.exit(1)
 
 
@@ -428,14 +432,14 @@ def validate_status(ctx: click.Context, val_id: str) -> None:
     try:
         raw = client.kv_get(f"approval:{val_id}")
         if raw is None:
-            print_error(f"Approval {val_id} not found", json_mode)
+            print_error_with_trace(f"Approval {val_id} not found", json_mode, client.req_id)
             ctx.exit(1)
             return
         decision = json.loads(raw)
         decision["id"] = val_id
-        print_result(decision, json_mode)
+        print_result_with_trace(decision, json_mode, client.req_id)
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -459,9 +463,9 @@ def scrub(ctx: click.Context, text: str) -> None:
         if entities:
             sessions.save(session_id, entities)
 
-        print_result({"scrubbed": scrubbed, "session": session_id}, json_mode)
+        print_result_with_trace({"scrubbed": scrubbed, "session": session_id}, json_mode, client.req_id)
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -522,13 +526,13 @@ def draft(ctx: click.Context, content: str, recipient: str, channel: str, subjec
                 "draft_id": draft_id,
             }),
         })
-        print_result({
+        print_result_with_trace({
             "draft_id": draft_id,
             "status": "pending_review",
             "dashboard_url": f"{config.core_url}/drafts/{draft_id}",
-        }, json_mode)
+        }, json_mode, client.req_id)
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -590,9 +594,9 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
             }
             for it in items
         ]
-        print_result(entries, json_mode)
+        print_result_with_trace(entries, json_mode, client.req_id)
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -1179,11 +1183,11 @@ def session_start(ctx: click.Context, name: str) -> None:
         )
         data = resp.json()
         if json_mode:
-            print_result(data, json_mode)
+            print_result_with_trace(data, json_mode, client.req_id)
         else:
             click.echo(f"  Session: {data.get('id', '?')} ({data.get('name', name)}) active")
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -1202,7 +1206,7 @@ def session_end(ctx: click.Context, name: str) -> None:
         if not json_mode:
             click.echo(f"  Session '{name}' ended. All grants revoked.")
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -1217,7 +1221,7 @@ def session_list(ctx: click.Context) -> None:
         data = resp.json()
         sessions = data.get("sessions", [])
         if json_mode:
-            print_result(sessions, json_mode)
+            print_result_with_trace(sessions, json_mode, client.req_id)
         elif not sessions:
             click.echo("  No active sessions.")
         else:
@@ -1231,7 +1235,7 @@ def session_list(ctx: click.Context) -> None:
                     f"{s.get('status', '?'):<10} {grants}"
                 )
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
 
@@ -1289,9 +1293,9 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
         if action == "deny":
             msg = decision.get("reason", "blocked")
             if json_mode:
-                print_result({"status": "denied", "reason": msg}, json_mode)
+                print_result_with_trace({"status": "denied", "reason": msg}, json_mode, client.req_id)
             else:
-                print_error(f"Task denied: {msg}", json_mode)
+                print_error_with_trace(f"Task denied: {msg}", json_mode, client.req_id)
             return
 
         if dry_run:
@@ -1301,7 +1305,7 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
                 r = {"status": status, "dry_run": True}
                 if proposal_id:
                     r["proposal_id"] = proposal_id
-                print_result(r, json_mode)
+                print_result_with_trace(r, json_mode, client.req_id)
             else:
                 click.echo(f"  [dry-run] Validation: {status}")
                 if proposal_id:
@@ -1331,12 +1335,12 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
                 if s in ("denied", "expired"):
                     reason = status.get("decision_reason", s)
                     if json_mode:
-                        print_result({"status": s, "reason": reason}, json_mode)
+                        print_result_with_trace({"status": s, "reason": reason}, json_mode, client.req_id)
                     else:
-                        print_error(f"Task {s}: {reason}", json_mode)
+                        print_error_with_trace(f"Task {s}: {reason}", json_mode, client.req_id)
                     return
             else:
-                print_error("Approval timeout (5 min). Retry later.", json_mode)
+                print_error_with_trace("Approval timeout (5 min). Retry later.", json_mode, client.req_id)
                 return
 
         # 3. Invoke OpenClaw.
@@ -1366,7 +1370,7 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
         try:
             result = openclaw.run_task(description, dina_session=session_name)
         except OpenClawError as exc:
-            print_error(f"OpenClaw error: {exc}", json_mode)
+            print_error_with_trace(f"OpenClaw error: {exc}", json_mode, client.req_id)
             return
         finally:
             openclaw.close()
@@ -1383,10 +1387,10 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
         }, session=session_name)
 
         # 5. Display.
-        print_result(result, json_mode)
+        print_result_with_trace(result, json_mode, client.req_id)
 
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
     finally:
         try:

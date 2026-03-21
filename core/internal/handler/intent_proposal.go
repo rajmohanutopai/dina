@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -17,9 +18,9 @@ import (
 //   - Agent device (Ed25519): can poll status of its own proposals only
 //   - Agents cannot approve/deny — only admin can
 type IntentProposalHandler struct {
-	// Brain forwards events to Brain's guardian via ProcessEvent.
+	// Brain forwards events to Brain's guardian via ProcessEventWithContext.
 	Brain interface {
-		ProcessEvent(event []byte) ([]byte, error)
+		ProcessEventWithContext(ctx context.Context, event []byte) ([]byte, error)
 	}
 
 	// BrainHTTP fetches data from Brain's HTTP API (proposals endpoint).
@@ -57,7 +58,7 @@ func (h *IntentProposalHandler) HandleApprove(w http.ResponseWriter, r *http.Req
 		},
 	})
 
-	resp, err := h.Brain.ProcessEvent(event)
+	resp, err := h.Brain.ProcessEventWithContext(r.Context(), event)
 	if err != nil {
 		jsonError(w, "brain unavailable", http.StatusBadGateway)
 		return
@@ -100,7 +101,7 @@ func (h *IntentProposalHandler) HandleDeny(w http.ResponseWriter, r *http.Reques
 		},
 	})
 
-	resp, err := h.Brain.ProcessEvent(event)
+	resp, err := h.Brain.ProcessEventWithContext(r.Context(), event)
 	if err != nil {
 		jsonError(w, "brain unavailable", http.StatusBadGateway)
 		return

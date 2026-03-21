@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -23,6 +24,7 @@ type AgentHandler struct {
 	// Accepts raw JSON, returns raw JSON.
 	Brain interface {
 		ProcessEvent(event []byte) ([]byte, error)
+		ProcessEventWithContext(ctx context.Context, event []byte) ([]byte, error)
 	}
 }
 
@@ -100,8 +102,8 @@ func (h *AgentHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Forward to brain's guardian.
-	resp, err := h.Brain.ProcessEvent(patched)
+	// Forward to brain's guardian (propagate context for request-ID tracing).
+	resp, err := h.Brain.ProcessEventWithContext(r.Context(), patched)
 	if err != nil {
 		msg := err.Error()
 		// Distinguish circuit breaker (brain down) from other errors.

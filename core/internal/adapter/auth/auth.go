@@ -1071,6 +1071,7 @@ func (c *adminEndpointChecker) IsAdminEndpoint(path string) bool {
 		"/v1/did/sign",
 		"/v1/did/rotate",
 		"/v1/vault/backup",
+		"/v1/trace",
 	}
 	for _, exact := range adminExact {
 		if path == exact || hasPathPrefix(path, exact) {

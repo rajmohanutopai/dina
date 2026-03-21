@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as _json
+import uuid
 from typing import Any
 
 import httpx
@@ -26,10 +27,16 @@ class DinaClient:
         self._identity = CLIIdentity()
         self._identity.ensure_loaded()
         self._verbose = verbose
+        self._req_id = uuid.uuid4().hex[:12]
         self._core = httpx.Client(
             base_url=config.core_url,
             timeout=config.timeout,
         )
+
+    @property
+    def req_id(self) -> str:
+        """Return the request ID for this client instance (for trace correlation)."""
+        return self._req_id
 
     # -- Context manager support ------------------------------------------
 
@@ -94,6 +101,7 @@ class DinaClient:
             headers["X-Timestamp"] = ts
             headers["X-Nonce"] = nonce
             headers["X-Signature"] = sig
+            headers["X-Request-ID"] = self._req_id
             kwargs["headers"] = headers
 
         if self._verbose:

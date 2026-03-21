@@ -225,6 +225,7 @@ func SocketAdminAuth(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), TokenKindKey, "client")
 		ctx = context.WithValue(ctx, AgentDIDKey, "socket-local")
 		ctx = context.WithValue(ctx, TokenScopeKey, "admin")
+		ctx = context.WithValue(ctx, CallerTypeKey, "admin")
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
