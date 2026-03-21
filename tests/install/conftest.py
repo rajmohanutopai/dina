@@ -149,30 +149,38 @@ def installed_dir(docker_available, tmp_path_factory):
         },
     )
 
-    # Answer prompts for a basic install
+    # Answer prompts rendered by the JSON-lines presenter.
+    # The wizard emits structured prompts; install.sh renders them as:
+    #   choice → "Enter choice:" or "Enter one or more numbers..."
+    #   text   → "<message>:"
+
     # 1. Identity: create new (option 1)
-    child.expect("Enter choice \\[1-3\\]:", timeout=300)
+    child.expect("Enter choice:", timeout=300)
     child.sendline("1")
 
-    # 2. Passphrase
-    child.expect("Passphrase:", timeout=30)
+    # 2. Recovery phrase ack (press Enter)
+    child.expect("Press Enter", timeout=30)
+    child.sendline("")
+
+    # 3. Passphrase
+    child.expect("passphrase", timeout=30)
     child.sendline("testpass123")
-    child.expect("Confirm:", timeout=10)
+    child.expect("Confirm", timeout=10)
     child.sendline("testpass123")
 
-    # 3. Startup mode: auto-start (option 2)
-    child.expect("Enter choice \\[1-2", timeout=10)
+    # 4. Startup mode: auto-start (option 2)
+    child.expect("Enter choice:", timeout=10)
     child.sendline("2")
 
-    # 4. Owner name (press Enter to skip)
+    # 5. Owner name (press Enter to skip)
     child.expect("call you", timeout=30)
     child.sendline("")
 
-    # 5. Telegram: skip (option 2)
-    child.expect("Enter choice \\[1-2", timeout=30)
+    # 6. Telegram: skip (option 2)
+    child.expect("Enter choice", timeout=30)
     child.sendline("2")
 
-    # 6. LLM provider: skip (option 6)
+    # 7. LLM provider: skip (option 6)
     child.expect("Enter one or more numbers", timeout=30)
     child.sendline("6")
 

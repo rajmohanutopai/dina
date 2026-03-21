@@ -2,29 +2,23 @@
 # install.sh — One-command Dina Home Node setup
 #
 # Usage:
-#   ./install.sh                 # first-time setup
+#   ./install.sh                 # first-time setup (interactive)
 #   ./install.sh --skip-build    # skip Docker build (use existing images)
+#   ./install.sh --config FILE   # non-interactive (read config from JSON file)
 #   ./install.sh --verbose       # show detailed internal output
 #
-# What it does:
-#   1. Checks prerequisites (docker, docker compose, curl)
-#   2. Allocates ports
-#   3. Generates secrets (service key directory, identity seed)
-#   4. Wraps identity seed with passphrase (Argon2id + AES-256-GCM)
-#   5. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
-#   6. Creates .env configuration with your API key
-#   7. Builds and starts Docker containers
-#   8. Waits for health checks to pass
+# Architecture:
+#   install.sh is a PRESENTER — it renders prompts, collects input, and
+#   displays progress. All validation, provisioning, and state management
+#   live in the installer core (scripts/installer/).
 #
-# Security: The raw identity seed never touches disk. It is wrapped with a
-# user-chosen passphrase and only the encrypted form is stored. Two modes:
-#   - Maximum Security: passphrase required on every restart (never stored)
-#   - Server Mode: passphrase stored in secrets/ for unattended boot
+#   The installer core runs inside a Docker container. install.sh talks
+#   to it via a JSON-lines protocol over stdin/stdout. The seed never
+#   leaves the container process.
 #
-# Host filesystem: only secrets/ and .env are created.
-# All runtime data lives in Docker named volumes (dina-data, dina-models).
-#
-# Idempotent: safe to re-run. Existing secrets and seeds are preserved.
+# Security: The raw identity seed never touches disk or shell variables.
+# It is generated inside the installer container, wrapped with the user's
+# passphrase (Argon2id + AES-256-GCM), and only the encrypted form exits.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -36,40 +30,74 @@ cd "$(dirname "$0")"
 DINA_DIR="${DINA_DIR:-$(pwd)}"
 SECRETS_DIR="${DINA_DIR}/secrets"
 ENV_FILE="${DINA_DIR}/.env"
-HEALTH_TIMEOUT=90     # seconds to wait for health check
-HEALTH_INTERVAL=3     # seconds between health check attempts
+HEALTH_TIMEOUT=90
+HEALTH_INTERVAL=3
 SKIP_BUILD=false
 CONFIG_ONLY=false
+CONFIG_FILE=""
 VERBOSE=false
-
-# Default port bases (auto-allocated if in use)
-DEFAULT_CORE_PORT=8100
-DEFAULT_PDS_PORT=2583
 
 for arg in "$@"; do
     case "$arg" in
         --skip-build) SKIP_BUILD=true ;;
         --config-only) CONFIG_ONLY=true; SKIP_BUILD=true ;;
         --verbose|-v) VERBOSE=true ;;
+        --config)
+            # Next arg is the config file — handled below
+            ;;
     esac
 done
 
+# Parse --config FILE (two-arg flag)
+_prev=""
+for _a in "$@"; do
+    if [ "${_prev}" = "--config" ]; then
+        CONFIG_FILE="${_a}"
+        break
+    fi
+    _prev="${_a}"
+done
+
 # ---------------------------------------------------------------------------
-# Shared modules
+# Shared modules (colors only — logic is in the installer core)
 # ---------------------------------------------------------------------------
 
 # shellcheck source=scripts/setup/colors.sh
 source scripts/setup/colors.sh
 # shellcheck source=scripts/setup/env_ensure.sh
 source scripts/setup/env_ensure.sh
-# shellcheck source=scripts/setup/llm_provider.sh
-source scripts/setup/llm_provider.sh
-# shellcheck source=scripts/setup/telegram.sh
-source scripts/setup/telegram.sh
+
+# Output helpers
+verbose_ok()   { [ "${VERBOSE}" = true ] && ok "$1"   || true; }
+verbose_skip() { [ "${VERBOSE}" = true ] && skip "$1"  || true; }
+verbose_info() { [ "${VERBOSE}" = true ] && info "$1"  || true; }
+
+step_begin() {
+    if [ "${VERBOSE}" = true ]; then
+        echo ""
+        echo -e "${BOLD}$1${RESET}"
+    else
+        printf "  %-44s" "$1"
+    fi
+}
+step_end() {
+    [ "${VERBOSE}" = true ] || echo -e "${GREEN}done${RESET}"
+}
 
 # ---------------------------------------------------------------------------
-# Crypto runner — runs Python crypto scripts inside a Docker container
-# so the host machine does not need Python installed.
+# Docker Compose detection
+# ---------------------------------------------------------------------------
+
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE="docker-compose"
+else
+    fail "Docker Compose not found. Install: ${CYAN}https://docs.docker.com/compose/install/${RESET}"
+fi
+
+# ---------------------------------------------------------------------------
+# Crypto image (used to run the installer core)
 # ---------------------------------------------------------------------------
 
 CRYPTO_IMAGE="dina-crypto-tools"
@@ -88,7 +116,6 @@ build_crypto_image() {
             fail "Failed to build crypto tools image. Check that Docker is running."
         fi
     else
-        # Run build in background with a spinner
         docker build -q -t "${CRYPTO_IMAGE}" -f scripts/setup/Dockerfile.crypto scripts/setup/ >/dev/null 2>&1 &
         local _build_pid=$!
         local _spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
@@ -108,55 +135,6 @@ build_crypto_image() {
             fail "Failed to build crypto tools image. Check that Docker is running."
         fi
     fi
-}
-
-# Run a Python crypto script inside the container.
-# Usage: run_crypto <script> [script-args...] [-e VAR=val ...] [-v host:cont ...]
-run_crypto() {
-    build_crypto_image
-    local script="$1"; shift
-    local docker_args=()
-    local script_args=()
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            -e|-v) docker_args+=("$1" "$2"); shift 2 ;;
-            *)     script_args+=("$1"); shift ;;
-        esac
-    done
-    # Use ${arr[@]+"${arr[@]}"} to safely expand potentially empty arrays
-    # under set -u (bash <4.4 treats empty "${arr[@]}" as unbound).
-    docker run --rm --user "$(id -u):$(id -g)" \
-        -v "${DINA_DIR}/scripts:/scripts:ro" \
-        ${docker_args[@]+"${docker_args[@]}"} \
-        "${CRYPTO_IMAGE}" \
-        python3 "/scripts/${script#scripts/}" ${script_args[@]+"${script_args[@]}"}
-}
-
-# ---------------------------------------------------------------------------
-# Output helpers (default = clean user-facing; --verbose = full detail)
-# ---------------------------------------------------------------------------
-
-# Verbose-only output — replaces ok/skip/info for internal details.
-verbose_ok()   { [ "${VERBOSE}" = true ] && ok "$1"   || true; }
-verbose_skip() { [ "${VERBOSE}" = true ] && skip "$1"  || true; }
-verbose_info() { [ "${VERBOSE}" = true ] && info "$1"  || true; }
-
-# Progress lines for non-interactive sections.
-#   step_begin "Doing something..."   → prints line without newline
-#   step_end                          → appends "done" (default) or nothing (verbose)
-step_begin() {
-    if [ "${VERBOSE}" = true ]; then
-        echo ""
-        echo -e "${BOLD}$1${RESET}"
-    else
-        printf "  %-44s" "$1"
-    fi
-}
-step_end() {
-    [ "${VERBOSE}" = true ] || echo -e "${GREEN}done${RESET}"
-}
-step_end_skip() {
-    [ "${VERBOSE}" = true ] || echo -e "${DIM}already done${RESET}"
 }
 
 # ---------------------------------------------------------------------------
@@ -179,653 +157,288 @@ step_begin "Checking your system..."
 command -v docker >/dev/null 2>&1 || fail "Docker not found.\n\n  Dina needs Docker to run. Please install Docker and try again:\n  ${CYAN}https://docs.docker.com/get-docker/${RESET}"
 verbose_ok "Docker found"
 
-# Check for 'docker compose' (v2 plugin) or 'docker-compose' (legacy)
-if docker compose version >/dev/null 2>&1; then
-    COMPOSE="docker compose"
-    verbose_ok "Docker Compose found (plugin)"
-elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE="docker-compose"
-    verbose_ok "Docker Compose found (standalone)"
-else
-    fail "Docker Compose not found.\n\n  Dina needs Docker Compose to run. Please install it and try again:\n  ${CYAN}https://docs.docker.com/compose/install/${RESET}"
-fi
-
 command -v curl >/dev/null 2>&1 || fail "curl not found. Please install curl and try again."
 verbose_ok "curl found"
 
-command -v openssl >/dev/null 2>&1 || fail "openssl not found. Please install openssl and try again."
-verbose_ok "openssl found"
+command -v jq >/dev/null 2>&1 || fail "jq not found. Please install jq and try again:\n  ${CYAN}https://jqlang.github.io/jq/download/${RESET}"
+verbose_ok "jq found"
 
-# Check Docker daemon is accessible
 if ! docker info >/dev/null 2>&1; then
     [ "${VERBOSE}" = true ] || echo ""
-    fail "Cannot connect to Docker.\n\n  Please make sure these commands work before running install.sh:\n\n    ${REVERSE} docker run hello-world ${RESET}\n    ${REVERSE} docker compose version ${RESET}\n\n  If they don't, please install or configure Docker and try again."
+    fail "Cannot connect to Docker.\n\n  Please make sure Docker is running."
 fi
 verbose_ok "Docker daemon running"
 
 step_end
 
 # ---------------------------------------------------------------------------
-# Step 2: Port allocation (verbose-only — shown in final banner)
+# Step 2: Build crypto image
 # ---------------------------------------------------------------------------
 
-if [ "${VERBOSE}" = true ]; then
-    echo ""
-    echo -e "${BOLD}Allocating ports${RESET}"
-fi
-
-# If ports were previously allocated and saved in .env, reuse them.
-if [ -f "${ENV_FILE}" ]; then
-    SAVED_CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
-    SAVED_PDS_PORT=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
-fi
-
-# Use saved ports, env overrides, or auto-detect free ports.
-CORE_PORT="${SAVED_CORE_PORT:-${DINA_CORE_PORT:-}}"
-PDS_PORT="${SAVED_PDS_PORT:-${DINA_PDS_PORT:-}}"
-
-if [ -z "${CORE_PORT}" ]; then
-    CORE_PORT=$(find_free_port "${DEFAULT_CORE_PORT}")
-fi
-if [ -z "${PDS_PORT}" ]; then
-    PDS_PORT=$(find_free_port "${DEFAULT_PDS_PORT}")
-fi
-
-verbose_ok "Core port: ${CORE_PORT}"
-verbose_ok "PDS port:  ${PDS_PORT}"
-
-# ---------------------------------------------------------------------------
-# Step 3: Prepare crypto tools + secure storage
-# ---------------------------------------------------------------------------
-
-# Build the crypto Docker image first (its own line with spinner)
 build_crypto_image
 
-step_begin "Preparing secure storage..."
-
 # ---------------------------------------------------------------------------
-# Ownership repair: Docker bind mounts may have created secrets/ as root
-# during a prior run. We must own these paths before proceeding.
+# Step 3: Run installer core wizard (or non-interactive apply)
 # ---------------------------------------------------------------------------
-_repair_ownership() {
-    [ -d "${SECRETS_DIR}" ] || return 0
+#
+# The wizard runs inside a Docker container. install.sh reads structured
+# JSON messages from stdout, renders prompts, collects input, and sends
+# answers back via stdin. The seed stays inside the container.
 
-    local need_fix=0
-    # First check: can we even read/write the top-level directory?
-    # A root-owned 700 directory is not traversable by the current user,
-    # so find would silently produce no output — we must check this first.
-    if [ ! -w "${SECRETS_DIR}" ] || [ ! -x "${SECRETS_DIR}" ]; then
-        need_fix=1
-    elif find "${SECRETS_DIR}" -maxdepth 3 \( ! -writable -o ! -readable \) -print -quit 2>/dev/null | grep -q .; then
-        need_fix=1
-    fi
-
-    [ "$need_fix" -eq 1 ] || return 0
-
-    # Not writable — need sudo to reclaim ownership
-    echo ""
-    echo -e "  ${YELLOW}Fixing file ownership${RESET} ${DIM}(a previous run created files as root)${RESET}"
-    if sudo chown -R "$(id -u):$(id -g)" "${SECRETS_DIR}"; then
-        verbose_ok "Ownership repaired"
-    else
-        fail "Cannot fix ownership of ${SECRETS_DIR}.\n\n  Run:  ${CYAN}sudo chown -R \$(id -u):\$(id -g) secrets/${RESET}\n  Then run ./install.sh again."
-    fi
-}
-
-[ -d "${SECRETS_DIR}" ] && _repair_ownership
-mkdir -p "${SECRETS_DIR}"
-
-# Service key directories (Ed25519 keypairs for Core↔Brain mutual auth)
-# Pre-create all bind-mounted paths BEFORE Docker Compose runs, so Docker
-# doesn't create them as root.
-#   core/   → mounted only to Core container (private key)
-#   brain/  → mounted only to Brain container (private key)
-#   public/ → mounted read-only to both containers (public keys)
-SERVICE_KEY_DIR="${SECRETS_DIR}/service_keys"
-mkdir -p "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain" "${SERVICE_KEY_DIR}/public"
-chmod 700 "${SERVICE_KEY_DIR}" "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain"
-chmod 755 "${SERVICE_KEY_DIR}/public"
-verbose_ok "Service key directories ready"
-
-# Session ID — 3-char alphanumeric identifier for this deployment.
-# Scopes all container names (core-a7k, brain-a7k) and Docker resources.
-# Lowercase only — Docker Compose project names require it.
-# Generated once; preserved across re-runs.
-SESSION_ID_FILE="${SECRETS_DIR}/session_id"
-if [ -f "${SESSION_ID_FILE}" ]; then
-    DINA_SESSION=$(cat "${SESSION_ID_FILE}")
-    verbose_skip "Session ID: ${DINA_SESSION}"
-else
-    DINA_SESSION=$(openssl rand -hex 2 | tr -d '\n' | head -c 3)
-    printf '%s' "${DINA_SESSION}" > "${SESSION_ID_FILE}"
-    chmod 600 "${SESSION_ID_FILE}"
-    verbose_ok "Session ID: ${DINA_SESSION}"
-fi
-
-# PDS secrets (JWT secret, admin password, K256 rotation key)
-PDS_JWT_SECRET=""
-PDS_ADMIN_PASSWORD=""
-PDS_ROTATION_KEY=""
-
+# Allocate ports on the HOST (not inside the container, which has its own
+# network namespace). Reuse saved ports from .env if present.
 if [ -f "${ENV_FILE}" ]; then
-    PDS_JWT_SECRET=$(sed -n 's/^DINA_PDS_JWT_SECRET=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
-    PDS_ADMIN_PASSWORD=$(sed -n 's/^DINA_PDS_ADMIN_PASSWORD=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
-    PDS_ROTATION_KEY=$(sed -n 's/^DINA_PDS_ROTATION_KEY_HEX=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    _saved_core=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    _saved_pds=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
+CORE_PORT="${_saved_core:-$(find_free_port 8100)}"
+PDS_PORT="${_saved_pds:-$(find_free_port 2583)}"
+verbose_ok "Ports: core=${CORE_PORT}, pds=${PDS_PORT}"
 
-PDS_GENERATED=false
-if [ -z "${PDS_JWT_SECRET}" ]; then
-    PDS_JWT_SECRET=$(openssl rand -hex 32)
-    PDS_GENERATED=true
-fi
+# Variables populated by the wizard result
+SEED_MODE=""
+DINA_SESSION=""
 
-if [ -z "${PDS_ADMIN_PASSWORD}" ]; then
-    PDS_ADMIN_PASSWORD=$(openssl rand -hex 16)
-    PDS_GENERATED=true
-fi
+if [ -n "${CONFIG_FILE}" ]; then
+    # --- Non-interactive mode: apply config from JSON file ---
+    # Resolve to absolute path so we can bind-mount it into the container.
+    _ABS_CONFIG="$(cd "$(dirname "${CONFIG_FILE}")" && pwd)/$(basename "${CONFIG_FILE}")"
+    [ -f "${_ABS_CONFIG}" ] || fail "Config file not found: ${CONFIG_FILE}"
+    info "Applying config from ${CONFIG_FILE}..."
+    _RESULT=$(docker run --rm --user "$(id -u):$(id -g)" \
+        -v "${DINA_DIR}:/work" \
+        -v "${DINA_DIR}/scripts:/work/scripts:ro" \
+        -v "${DINA_DIR}/cli:/work/cli:ro" \
+        -v "${_ABS_CONFIG}:/tmp/install-config.json:ro" \
+        -e PYTHONPATH=/work \
+        -e DINA_DIR=/work \
+        -e DINA_CORE_PORT="${CORE_PORT}" \
+        -e DINA_PDS_PORT="${PDS_PORT}" \
+        "${CRYPTO_IMAGE}" \
+        python3 -m scripts.installer apply --config /tmp/install-config.json 2>&1) || {
+        echo "${_RESULT}" >&2
+        fail "Install failed. Run with --verbose for details."
+    }
+    SEED_MODE=$(echo "${_RESULT}" | jq -r '.startup_mode // "server"' 2>/dev/null || echo "server")
+    CORE_PORT=$(echo "${_RESULT}" | jq -r '.core_port // "8100"' 2>/dev/null || echo "8100")
+    PDS_PORT=$(echo "${_RESULT}" | jq -r '.pds_port // "2583"' 2>/dev/null || echo "2583")
+    DINA_SESSION=$(echo "${_RESULT}" | jq -r '.session_id // ""' 2>/dev/null || echo "")
+    ok "Configuration applied"
 
-if [ -z "${PDS_ROTATION_KEY}" ]; then
-    PDS_ROTATION_KEY=$(openssl rand -hex 32)
-    PDS_GENERATED=true
-fi
-
-if [ "${PDS_GENERATED}" = true ]; then
-    verbose_ok "Generated PDS secrets"
-else
-    verbose_skip "PDS secrets already set"
-fi
-
-# Service key provisioning is deferred until the master seed is available
-# (after identity setup). See the provisioning block below wrap_seed.py.
-
-step_end
-
-# ---------------------------------------------------------------------------
-# Step 4: Identity setup — new or restore + wrap
-# ---------------------------------------------------------------------------
-
-# Check if seed is already wrapped (wrapped_seed.bin exists)
-SEED_ALREADY_WRAPPED=false
-if [ -f "${SECRETS_DIR}/wrapped_seed.bin" ] && [ -f "${SECRETS_DIR}/master_seed.salt" ]; then
-    SEED_ALREADY_WRAPPED=true
-fi
-
-# Strict no-legacy mode: raw DINA_MASTER_SEED in .env is not supported.
-if [ -f "${ENV_FILE}" ] && grep -q '^DINA_MASTER_SEED=' "${ENV_FILE}" 2>/dev/null; then
-    fail "Legacy DINA_MASTER_SEED detected in .env. Remove it and rerun install.sh."
-fi
-
-IDENTITY_NEW=true   # tracks whether we generated a new identity
-SEED_MODE=""        # "maximum" or "server"
-
-if [ "${SEED_ALREADY_WRAPPED}" = true ]; then
-    step_begin "Creating your identity..."
-    verbose_skip "Identity already created"
-    MASTER_SEED=""
-    IDENTITY_NEW=false
-    step_end_skip
 elif [ -t 0 ]; then
-    # Interactive terminal — ask user
-    echo ""
-    echo -e "  ${BOLD}Creating your identity${RESET}"
-    echo ""
-    echo -e "  ${DIM}Your identity generates your username (DID) and encryption keys.${RESET}"
-    echo -e "  ${DIM}Your recovery phrase is the master key — anyone with these words can access your identity and data.${RESET}"
-    echo ""
-    echo -e "    ${CYAN}1)${RESET} Create new identity          ${DIM}(first-time setup)${RESET}"
-    echo -e "    ${CYAN}2)${RESET} Restore from recovery phrase  ${DIM}(24 words from a previous install)${RESET}"
-    echo -e "    ${CYAN}3)${RESET} Restore from seed hex         ${DIM}(advanced — 64-char hex string)${RESET}"
-    echo ""
-    while true; do
-        printf "  Enter choice [1-3]: "
-        read -r IDENTITY_CHOICE
-        case "${IDENTITY_CHOICE}" in
-            1|2|3) break ;;
-            *) echo -e "  ${YELLOW}Please enter 1, 2, or 3.${RESET}" ;;
+    # --- Interactive mode: run wizard via JSON-lines protocol ---
+
+    # Start the wizard container with named pipes for bidirectional I/O.
+    _WIZARD_IN=$(mktemp -u)
+    _WIZARD_OUT=$(mktemp -u)
+    mkfifo "${_WIZARD_IN}" "${_WIZARD_OUT}"
+
+    docker run --rm -i --user "$(id -u):$(id -g)" \
+        -v "${DINA_DIR}:/work" \
+        -v "${DINA_DIR}/scripts:/work/scripts:ro" \
+        -v "${DINA_DIR}/cli:/work/cli:ro" \
+        -e PYTHONPATH=/work \
+        -e DINA_DIR=/work \
+        -e DINA_CORE_PORT="${CORE_PORT}" \
+        -e DINA_PDS_PORT="${PDS_PORT}" \
+        "${CRYPTO_IMAGE}" \
+        python3 -m scripts.installer wizard \
+        < "${_WIZARD_IN}" > "${_WIZARD_OUT}" &
+    _WIZARD_PID=$!
+
+    # Open write FD to wizard stdin (must happen after docker starts reading)
+    exec 4>"${_WIZARD_IN}"
+
+    # Read JSON lines from wizard, render prompts, send answers
+    while IFS= read -r line < "${_WIZARD_OUT}"; do
+        # Parse the JSON message
+        _type=$(echo "$line" | jq -r '.type // ""' 2>/dev/null || true)
+
+        case "${_type}" in
+            prompt)
+                _field=$(echo "$line" | jq -r '.field // ""' 2>/dev/null)
+                _kind=$(echo "$line" | jq -r '.kind // ""' 2>/dev/null)
+                _msg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                _help=$(echo "$line" | jq -r '.help_text // ""' 2>/dev/null)
+                _secret=$(echo "$line" | jq -r '.secret // false' 2>/dev/null)
+                _allow_blank=$(echo "$line" | jq -r '.allow_blank // false' 2>/dev/null)
+                _default=$(echo "$line" | jq -r '.default // ""' 2>/dev/null)
+                _multi=$(echo "$line" | jq -r '.multi_select // false' 2>/dev/null)
+
+                # Render based on kind
+                echo ""
+                if [ -n "${_help}" ] && [ "${_help}" != "null" ]; then
+                    echo -e "  ${DIM}${_help}${RESET}"
+                    echo ""
+                fi
+
+                if [ "${_kind}" = "choice" ]; then
+                    echo -e "  ${BOLD}${_msg}${RESET}"
+                    echo ""
+                    # Render choices
+                    echo "$line" | jq -r '.choices[]? | "    \u001b[36m\(.key))\u001b[0m \(.label)  \u001b[2m\(.help // "")\u001b[0m"' 2>/dev/null || true
+                    echo ""
+                    if [ "${_multi}" = "true" ]; then
+                        printf "  Enter one or more numbers separated by spaces: "
+                    elif [ -n "${_default}" ] && [ "${_default}" != "" ]; then
+                        printf "  Enter choice [default: %s]: " "${_default}"
+                    else
+                        printf "  Enter choice: "
+                    fi
+                else
+                    printf "  ${BOLD}%s:${RESET} " "${_msg}"
+                fi
+
+                # Read input
+                if [ "${_secret}" = "true" ]; then
+                    read -rs _answer
+                    echo ""
+                else
+                    read -r _answer
+                fi
+
+                # Use default if blank
+                if [ -z "${_answer}" ] && [ -n "${_default}" ]; then
+                    _answer="${_default}"
+                fi
+
+                # Send answer back to wizard (jq handles JSON escaping)
+                jq -nc --arg f "${_field}" --arg v "${_answer}" '{"field":$f,"value":$v}' >&4
+                ;;
+
+            event)
+                _name=$(echo "$line" | jq -r '.name // ""' 2>/dev/null)
+                case "${_name}" in
+                    show_recovery_phrase)
+                        # Display on alternate screen
+                        _words=$(echo "$line" | jq -r '.words[]' 2>/dev/null)
+                        tput smcup 2>/dev/null
+                        echo ""
+                        echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
+                        echo ""
+
+                        _wnum=1
+                        _line=""
+                        while IFS= read -r word; do
+                            _line="${_line}$(printf '%2d. %-12s' ${_wnum} "${word}")"
+                            if [ $((_wnum % 4)) -eq 0 ]; then
+                                echo -e "  ${YELLOW}║${RESET} ${_line} ${YELLOW}║${RESET}"
+                                _line=""
+                            fi
+                            _wnum=$((_wnum + 1))
+                        done <<< "${_words}"
+                        [ -n "${_line}" ] && echo -e "  ${YELLOW}║${RESET} ${_line} ${YELLOW}║${RESET}"
+
+                        echo ""
+                        echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
+                        echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
+                        echo ""
+                        printf "  Press Enter when you've written it down..."
+                        read -r _
+                        tput rmcup 2>/dev/null
+
+                        # Send ack
+                        jq -nc '{"field":"recovery_ack","value":"ok"}' >&4
+                        ;;
+                    info)
+                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        ok "${_imsg}"
+                        ;;
+                    warning)
+                        _wmsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        warn "${_wmsg}"
+                        ;;
+                esac
+                ;;
+
+            error)
+                _emsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                echo -e "  ${YELLOW}✗${RESET} ${_emsg}"
+                ;;
+
+            done)
+                # Extract result values
+                SEED_MODE=$(echo "$line" | jq -r '.result.startup_mode // "server"' 2>/dev/null || echo "server")
+                CORE_PORT=$(echo "$line" | jq -r '.result.core_port // "8100"' 2>/dev/null || echo "8100")
+                PDS_PORT=$(echo "$line" | jq -r '.result.pds_port // "2583"' 2>/dev/null || echo "2583")
+                DINA_SESSION=$(echo "$line" | jq -r '.result.session_id // ""' 2>/dev/null || echo "")
+                break
+                ;;
         esac
     done
 
-    case "${IDENTITY_CHOICE}" in
-        2)
-            # Restore from 24-word mnemonic
-            echo ""
-            echo -e "  ${BOLD}Enter your 24-word recovery phrase${RESET} ${DIM}(space-separated):${RESET}"
-            printf "  ${CYAN}>${RESET} "
-            read -r MNEMONIC_INPUT
+    # Cleanup: close write FD, wait for container, remove pipes
+    exec 4>&-
+    wait "${_WIZARD_PID}" 2>/dev/null
+    _WIZARD_EXIT=$?
+    rm -f "${_WIZARD_IN}" "${_WIZARD_OUT}"
 
-            while true; do
-                SEED_ERR=$(run_crypto scripts/mnemonic_to_seed.py "${MNEMONIC_INPUT}" 2>&1)
-                if [ $? -eq 0 ]; then
-                    MASTER_SEED="${SEED_ERR}"
-                    IDENTITY_NEW=false
-                    ok "Identity restored from recovery phrase"
-                    break
-                else
-                    echo -e "  ${YELLOW}✗${RESET} ${SEED_ERR}"
-                    echo ""
-                    echo -e "    ${CYAN}1)${RESET} Try again"
-                    echo -e "    ${CYAN}2)${RESET} Create new identity instead"
-                    echo ""
-                    printf "  What would you like to do? [1-2]: "
-                    read -r RETRY_MNEMONIC
-                    case "${RETRY_MNEMONIC}" in
-                        1)
-                            echo ""
-                            echo -e "  ${BOLD}Enter your 24-word recovery phrase:${RESET}"
-                            printf "  ${CYAN}>${RESET} "
-                            read -r MNEMONIC_INPUT
-                            ;;
-                        *)
-                            # Fall through to generate new
-                            MASTER_SEED=""
-                            break
-                            ;;
-                    esac
-                fi
-            done
-            ;;
-        3)
-            # Restore from raw hex seed
-            echo ""
-            printf "  ${BOLD}Enter your 64-character hex seed:${RESET} "
-            read -r HEX_INPUT
-            HEX_INPUT=$(echo "${HEX_INPUT}" | tr -d '[:space:]')
-
-            if [ ${#HEX_INPUT} -eq 64 ] && echo "${HEX_INPUT}" | grep -qE '^[0-9a-fA-F]+$'; then
-                MASTER_SEED=$(echo "${HEX_INPUT}" | tr '[:upper:]' '[:lower:]')
-                IDENTITY_NEW=false
-                ok "Identity restored from hex seed"
-            else
-                warn "Invalid hex seed (expected 64 hex characters) — creating new identity"
-                MASTER_SEED=""
-            fi
-            ;;
-        *)
-            # Default: create new (option 1 or any other input)
-            MASTER_SEED=""
-            ;;
-    esac
-
-    # Generate new seed if not restored
-    if [ -z "${MASTER_SEED}" ]; then
-        MASTER_SEED=$(openssl rand -hex 32 | tr -d '\n')
-        IDENTITY_NEW=true
-        verbose_ok "Generated new identity seed"
+    # Fail-closed: if wizard exited without sending "done", abort
+    if [ -z "${DINA_SESSION}" ]; then
+        fail "Installer wizard exited without completing. Run with --verbose for details."
     fi
+    if [ "${_WIZARD_EXIT}" -ne 0 ]; then
+        fail "Installer wizard failed (exit ${_WIZARD_EXIT})."
+    fi
+
 else
-    # Non-interactive — generate new
-    MASTER_SEED=$(openssl rand -hex 32 | tr -d '\n')
-    verbose_ok "Generated identity seed"
-fi
-
-# --- Show recovery phrase (only for new identities, before wrapping) ---
-if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
-    MNEMONIC=$(run_crypto scripts/seed_to_mnemonic.py "${MASTER_SEED}" 2>/dev/null || true)
-    if [ -n "${MNEMONIC}" ]; then
-        echo ""
-        echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
-        echo ""
-        # Build lines first, then compute box width from the widest line.
-        MNEMONIC_LINES=()
-        WORD_NUM=1
-        LINE=""
-        for word in ${MNEMONIC}; do
-            LINE="${LINE}$(printf '%2d. %-12s' ${WORD_NUM} "${word}")"
-            if [ $((WORD_NUM % 4)) -eq 0 ]; then
-                MNEMONIC_LINES+=("${LINE}")
-                LINE=""
-            fi
-            WORD_NUM=$((WORD_NUM + 1))
-        done
-        [ -n "${LINE}" ] && MNEMONIC_LINES+=("${LINE}")
-
-        BOX_W=0
-        for ml in "${MNEMONIC_LINES[@]}"; do
-            [ ${#ml} -gt ${BOX_W} ] && BOX_W=${#ml}
-        done
-        BOX_W=$((BOX_W + 2))
-
-        BORDER=$(printf '═%.0s' $(seq 1 ${BOX_W}))
-        # Helper: show phrase on the alternate screen buffer (like less/vim).
-        # When the user presses Enter, we return to the main screen and the
-        # phrase is gone from scrollback. Nothing else is lost.
-        _show_phrase_alt_screen() {
-            tput smcup 2>/dev/null  # enter alternate screen
-            echo ""
-            echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
-            echo ""
-            echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
-            for ml in "${MNEMONIC_LINES[@]}"; do
-                printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
-            done
-            echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
-            echo ""
-            echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
-            echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
-            echo ""
-            printf "  Press Enter when you've written it down..."
-            read -r _
-            tput rmcup 2>/dev/null  # return to main screen — phrase gone
-        }
-
-        # --- Verify user saved it: ask for 3 random words ---
-        # DINA_SKIP_MNEMONIC_VERIFY=1 skips the interactive verification
-        # (used by pexpect tests where capturing alternate-screen output
-        # and answering random word challenges is impractical).
-        if [ -t 0 ] && [ "${DINA_SKIP_MNEMONIC_VERIFY:-}" != "1" ]; then
-            _show_phrase_alt_screen
-
-            # Split mnemonic into array
-            WORDS=()
-            for w in ${MNEMONIC}; do
-                WORDS+=("$w")
-            done
-
-            VERIFY_PASS=false
-            while [ "${VERIFY_PASS}" = false ]; do
-                echo ""
-                echo -e "  ${BOLD}Let's verify you saved it.${RESET}"
-                echo -e "  ${DIM}Enter the words for the positions below:${RESET}"
-                echo ""
-
-                # Pick 3 random positions (1-indexed, unique, sorted)
-                _vp_nums=()
-                while [ ${#_vp_nums[@]} -lt 3 ]; do
-                    _vp_n=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % 24 + 1 ))
-                    _vp_dup=false
-                    for _vp_e in "${_vp_nums[@]}"; do [ "$_vp_e" = "$_vp_n" ] && _vp_dup=true; done
-                    [ "$_vp_dup" = false ] && _vp_nums+=("$_vp_n")
-                done
-                VERIFY_POS=($(printf '%s\n' "${_vp_nums[@]}" | sort -n))
-
-                _ALL_CORRECT=true
-                for pos in "${VERIFY_POS[@]}"; do
-                    EXPECTED="${WORDS[$((pos - 1))]}"
-                    printf "  ${BOLD}Word #%d:${RESET} " "${pos}"
-                    read -r USER_WORD
-                    USER_WORD=$(echo "${USER_WORD}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
-                    if [ "${USER_WORD}" != "${EXPECTED}" ]; then
-                        _ALL_CORRECT=false
-                        break
-                    fi
-                done
-
-                if [ "${_ALL_CORRECT}" = true ]; then
-                    VERIFY_PASS=true
-                    ok "Recovery phrase verified"
-                else
-                    echo ""
-                    echo -e "  ${YELLOW}✗${RESET} That doesn't match. Let's try again."
-                    _show_phrase_alt_screen
-                fi
-            done
-        else
-            # Non-interactive: just print the phrase to stdout (no verification)
-            echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
-            for ml in "${MNEMONIC_LINES[@]}"; do
-                printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
-            done
-            echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
-            echo ""
-            echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
-            echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
-        fi
-    fi
-fi
-
-# --- Wrap the seed with a passphrase ---
-if [ -n "${MASTER_SEED}" ]; then
-    echo ""
-    if [ -t 0 ]; then
-        # Step 1: Always collect the passphrase first
-        echo -e "  ${BOLD}Choose a passphrase to protect your identity:${RESET}"
-        echo -e "  ${DIM}(minimum 8 characters)${RESET}"
-        while true; do
-            printf "  ${BOLD}Passphrase:${RESET} "
-            read -rs SEED_PASSPHRASE
-            echo ""
-            if [ ${#SEED_PASSPHRASE} -lt 8 ]; then
-                echo -e "  ${YELLOW}✗${RESET} Passphrase must be at least 8 characters"
-                continue
-            fi
-            printf "  ${BOLD}Confirm:${RESET}    "
-            read -rs SEED_PASSPHRASE_CONFIRM
-            echo ""
-            if [ "${SEED_PASSPHRASE}" != "${SEED_PASSPHRASE_CONFIRM}" ]; then
-                echo -e "  ${YELLOW}✗${RESET} Passphrases do not match — try again"
-                continue
-            fi
-            break
-        done
-
-        # Step 2: Ask about startup mode
-        echo ""
-        echo -e "  ${BOLD}How should Dina start?${RESET}"
-        echo ""
-        echo -e "    ${CYAN}1)${RESET} Enter passphrase each time  ${DIM}(most secure)${RESET}"
-        echo -e "    ${CYAN}2)${RESET} Start automatically         ${DIM}(passphrase stored locally)${RESET}"
-        echo ""
-        echo -e "  ${DIM}You can switch later: ${CYAN}dina-admin security auto-start${RESET} ${DIM}or${RESET} ${CYAN}manual-start${RESET}"
-        echo ""
-        while true; do
-            printf "  Enter choice [1-2]: "
-            read -r SEED_MODE_CHOICE
-            case "${SEED_MODE_CHOICE}" in
-                1|2) break ;;
-                *) echo -e "  ${YELLOW}Please enter 1 or 2.${RESET}" ;;
-            esac
-        done
-
-        case "${SEED_MODE_CHOICE}" in
-            2) SEED_MODE="server" ;;
-            *) SEED_MODE="maximum" ;;
-        esac
-    else
-        # Non-interactive: auto-generate passphrase, Server Mode
-        SEED_MODE="server"
-        SEED_PASSPHRASE=$(openssl rand -base64 32 | tr -d '\n')
-        verbose_info "Non-interactive: auto-generated passphrase (Server Mode)"
-    fi
-
-    # --- Run installer core: wrap seed + provision service keys ---
-    # Same Python module used by tests — single source of truth.
-    # Secrets passed via env to avoid process-list exposure.
-    info "Securing your identity..."
-
-    # Always pass restore_hex — bash already has the seed (generated or
-    # restored) and has shown the recovery phrase to the user. The core
-    # must wrap THIS seed, not generate a new one.
-    _IC="restore_hex"
-
-    # Build JSON config (passphrase via env, not in JSON)
-    _INSTALLER_CONFIG=$(cat <<INSTJSON
+    # --- Non-interactive, no config file: auto-generate everything ---
+    info "Non-interactive mode — auto-configuring..."
+    _AUTO_CONFIG=$(cat <<AUTOJSON
 {
     "dina_dir": "/work",
-    "identity_choice": "${_IC}",
-    "passphrase": "placeholder",
-    "startup_mode": "${SEED_MODE}",
-    "hex_seed": "${MASTER_SEED}",
-    "write_env": false
+    "identity_choice": "new",
+    "passphrase": "$(openssl rand -base64 32 | tr -d '\n')",
+    "startup_mode": "server"
 }
-INSTJSON
+AUTOJSON
     )
-
-    # Call the installer core inside the crypto Docker container.
-    # The Python module reads DINA_SEED_PASSPHRASE from env and overrides
-    # the placeholder passphrase in the JSON config.
-    _INSTALLER_RESULT=$(echo "${_INSTALLER_CONFIG}" | \
-        docker run --rm -i --user "$(id -u):$(id -g)" \
-            -v "${DINA_DIR}:/work" \
-            -v "${DINA_DIR}/scripts:/work/scripts:ro" \
-            -v "${DINA_DIR}/cli:/work/cli:ro" \
-            -e DINA_SEED_PASSPHRASE="${SEED_PASSPHRASE}" \
-            -e PYTHONPATH=/work \
-            "${CRYPTO_IMAGE}" \
-            python3 -m scripts.installer apply 2>&1) || {
-        [ "${VERBOSE}" = true ] && echo "${_INSTALLER_RESULT}"
-        fail "Failed to secure identity. Run with --verbose for details."
+    _RESULT=$(echo "${_AUTO_CONFIG}" | docker run --rm -i --user "$(id -u):$(id -g)" \
+        -v "${DINA_DIR}:/work" \
+        -v "${DINA_DIR}/scripts:/work/scripts:ro" \
+        -v "${DINA_DIR}/cli:/work/cli:ro" \
+        -e PYTHONPATH=/work \
+        -e DINA_DIR=/work \
+        -e DINA_CORE_PORT="${CORE_PORT}" \
+        -e DINA_PDS_PORT="${PDS_PORT}" \
+        "${CRYPTO_IMAGE}" \
+        python3 -m scripts.installer apply 2>&1) || {
+        [ "${VERBOSE}" = true ] && echo "${_RESULT}" >&2
+        fail "Auto-configure failed."
     }
-
-    # Docker may have written files as root despite --user. Reclaim ownership.
-    _repair_ownership
-
-    # Verify key files
-    for _kf in core/core_ed25519_private.pem brain/brain_ed25519_private.pem \
-               public/core_ed25519_public.pem public/brain_ed25519_public.pem; do
-        [ -f "${SERVICE_KEY_DIR}/${_kf}" ] || fail "Service key missing: ${_kf}"
-    done
-    verbose_ok "Identity seed encrypted + service keys provisioned"
-
-    # Zero the seed variable — raw seed must not persist
-    MASTER_SEED="0000000000000000000000000000000000000000000000000000000000000000"
-    unset MASTER_SEED
-    SEED_PASSPHRASE=""; unset SEED_PASSPHRASE
-    SEED_PASSPHRASE_CONFIRM=""; unset SEED_PASSPHRASE_CONFIRM
-    verbose_ok "Raw seed zeroed from memory"
-
-    ok "Identity secured"
-
-    # Show mode-specific guidance
-    echo ""
-    if [ "${SEED_MODE}" = "maximum" ]; then
-        echo -e "  ${DIM}You'll need your passphrase each time Dina starts.${RESET}"
-        echo -e "  ${DIM}Run ${CYAN}./run.sh --start${RESET}${DIM} — it will prompt you.${RESET}"
-        echo -e "  ${DIM}Note: Dina will not restart unattended. Use ${CYAN}./run.sh --start${RESET}${DIM} to start it again.${RESET}"
-    else
-        echo -e "  ${DIM}Dina will start automatically — no passphrase needed on restart.${RESET}"
-    fi
+    SEED_MODE=$(echo "${_RESULT}" | jq -r '.startup_mode // "server"' 2>/dev/null || echo "server")
+    CORE_PORT=$(echo "${_RESULT}" | jq -r '.core_port // "8100"' 2>/dev/null || echo "8100")
+    PDS_PORT=$(echo "${_RESULT}" | jq -r '.pds_port // "2583"' 2>/dev/null || echo "2583")
+    DINA_SESSION=$(echo "${_RESULT}" | jq -r '.session_id // ""' 2>/dev/null || echo "")
+    ok "Auto-configured"
 fi
 
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 5: Configure
-# ---------------------------------------------------------------------------
-
-echo -e "  ${BOLD}Configuring Dina${RESET}"
-
-# --- Owner name ---
-OWNER_NAME=""
-if [ -f "${ENV_FILE}" ]; then
-    OWNER_NAME=$(sed -n 's/^DINA_OWNER_NAME=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
-fi
-if [ -z "${OWNER_NAME}" ] && [ -t 0 ]; then
-    echo ""
-    printf "  ${BOLD}What should Dina call you?${RESET} "
-    read -r OWNER_NAME
-    OWNER_NAME=$(echo "${OWNER_NAME}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    if [ -n "${OWNER_NAME}" ]; then
-        ok "Hello, ${OWNER_NAME}"
-    fi
-fi
-
-# --- Optional: Telegram bot setup ---
-# Runs for both new and existing .env (skips if already configured).
-if has_telegram "${ENV_FILE}" 2>/dev/null; then
-    verbose_skip "Telegram already configured"
-else
-    setup_telegram "${ENV_FILE}"
-fi
-
-if [ ! -f "${ENV_FILE}" ]; then
-    # --- Interactive LLM provider selection ---
-    setup_llm_provider
-
-    # Write .env file (seed is NOT stored here — it's in secrets/wrapped_seed.bin)
-    cat > "${ENV_FILE}" << ENVEOF
-# Dina Home Node Configuration
-# Generated by install.sh — $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-#
-# Identity seed is encrypted in secrets/wrapped_seed.bin (not stored here).
-
-# Session ID — scopes container names and Docker resources for this deployment.
-DINA_SESSION=${DINA_SESSION}
-COMPOSE_PROJECT_NAME=dina-${DINA_SESSION}
-
-# Host ports (auto-allocated to avoid conflicts with other sessions)
-DINA_CORE_PORT=${CORE_PORT}
-DINA_PDS_PORT=${PDS_PORT}
-
-# AT Protocol PDS secrets (auto-generated, do not edit)
-DINA_PDS_JWT_SECRET=${PDS_JWT_SECRET}
-DINA_PDS_ADMIN_PASSWORD=${PDS_ADMIN_PASSWORD}
-DINA_PDS_ROTATION_KEY_HEX=${PDS_ROTATION_KEY}
-ENVEOF
-
-    # Owner name
-    if [ -n "${OWNER_NAME}" ]; then
-        echo "" >> "${ENV_FILE}"
-        echo "# Owner" >> "${ENV_FILE}"
-        echo "DINA_OWNER_NAME=${OWNER_NAME}" >> "${ENV_FILE}"
-    fi
-
-    write_llm_to_env "${ENV_FILE}"
-    write_telegram_to_env "${ENV_FILE}"
-
-    # Add provider hint
-    echo "" >> "${ENV_FILE}"
-    echo "# Add more providers: see models.json or run ./dina-admin model list" >> "${ENV_FILE}"
-
-    chmod 600 "${ENV_FILE}"
-    verbose_ok "Created .env"
-else
-    # Backfill required keys in existing .env (migration from older installs)
-    if [ "${VERBOSE}" = true ]; then
-        ensure_required_env "${ENV_FILE}"
-    else
-        ensure_required_env "${ENV_FILE}" > /dev/null
-    fi
-    write_telegram_to_env "${ENV_FILE}"
-    # Backfill owner name if collected but not yet in .env
-    if [ -n "${OWNER_NAME}" ] && ! grep -q "^DINA_OWNER_NAME=" "${ENV_FILE}" 2>/dev/null; then
-        echo "" >> "${ENV_FILE}"
-        echo "# Owner" >> "${ENV_FILE}"
-        echo "DINA_OWNER_NAME=${OWNER_NAME}" >> "${ENV_FILE}"
-    fi
-fi
-
-# Re-read ports from .env (ensure_required_env may have written new values)
-CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || echo "${CORE_PORT}")
-PDS_PORT=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || echo "${PDS_PORT}")
-
-echo ""
-
-# ---------------------------------------------------------------------------
-# Step 6: Lock permissions (verbose-only)
-# ---------------------------------------------------------------------------
-
-if [ "${VERBOSE}" = true ]; then
-    echo -e "${BOLD}Locking permissions${RESET}"
-fi
-
-# Repair ownership if Docker created/modified files as root during build/start
-_repair_ownership
-chmod 700 "${SECRETS_DIR}"
-# Lock files but preserve directory permissions (service_keys/ has subdirs)
-find "${SECRETS_DIR}" -maxdepth 1 -type f -exec chmod 600 {} +
-
-# Ensure .env and secrets/ are in .gitignore (safety net)
-GITIGNORE="${DINA_DIR}/.gitignore"
-if [ -f "${GITIGNORE}" ]; then
-    grep -qxF '.env' "${GITIGNORE}" 2>/dev/null || echo '.env' >> "${GITIGNORE}"
-    grep -qxF 'secrets/' "${GITIGNORE}" 2>/dev/null || echo 'secrets/' >> "${GITIGNORE}"
-else
-    printf '.env\nsecrets/\n' > "${GITIGNORE}"
-fi
-
-verbose_ok "Permissions locked"
-
-# ---------------------------------------------------------------------------
-# Step 7: Build Docker images
+# Step 4: Config-only exit
 # ---------------------------------------------------------------------------
 
 if [ "${CONFIG_ONLY}" = true ]; then
-    echo ""
     ok "Configuration complete (--config-only)"
     echo ""
     echo -e "  ${DIM}To build and start: ${CYAN}./install.sh${RESET}"
     exit 0
 fi
+
+# Re-read ports from .env if the wizard wrote them
+if [ -f "${ENV_FILE}" ]; then
+    _ep=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    [ -n "${_ep}" ] && CORE_PORT="${_ep}"
+    _pp=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    [ -n "${_pp}" ] && PDS_PORT="${_pp}"
+    _ss=$(sed -n 's/^DINA_SESSION=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    [ -n "${_ss}" ] && DINA_SESSION="${_ss}"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 5: Build Docker images
+# ---------------------------------------------------------------------------
 
 echo -e "  ${BOLD}Building Dina...${RESET}"
 
@@ -839,8 +452,6 @@ else
         if [ "${VERBOSE}" = true ]; then
             echo -e "  ${DIM}${line}${RESET}"
         else
-            # Extract service name and step from Docker build output
-            # e.g. "#21 [core builder 2/7] RUN apt-get..." → "core  builder 2/7"
             _svc=$(echo "$line" | grep -oE '\[(core|brain|admin) [a-z]+ [0-9]+/[0-9]+\]' | tr -d '[]' || true)
             if [ -n "$_svc" ]; then
                 _build_last_svc="$_svc"
@@ -863,7 +474,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 8: Start containers
+# Step 6: Start containers
 # ---------------------------------------------------------------------------
 
 step_begin "Starting Dina..."
@@ -887,7 +498,7 @@ fi
 step_end
 
 # ---------------------------------------------------------------------------
-# Step 9: Wait for health
+# Step 7: Wait for health
 # ---------------------------------------------------------------------------
 
 step_begin "Waiting for Dina to be ready..."
@@ -921,11 +532,9 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
         echo "    $line"
     done
     echo ""
-    # Show logs for containers that are restarting, exited, or unhealthy
     for svc in pds core brain; do
         SVC_STATUS=$($COMPOSE ps "$svc" --format "{{.Status}}" 2>/dev/null || true)
         HEALTH=$($COMPOSE ps "$svc" --format "{{.Health}}" 2>/dev/null || true)
-        # Show logs if: unhealthy, restarting, exited, or no health status
         if echo "${SVC_STATUS}" | grep -qiE "restarting|exit" 2>/dev/null; then
             echo -e "  ${RED}${svc}${RESET} is ${SVC_STATUS} — last 20 log lines:"
             $COMPOSE logs --tail=20 "$svc" 2>/dev/null | while IFS= read -r line; do
@@ -948,8 +557,6 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
 fi
 
 # Maximum Security: clear passphrase from disk now that Core has started
-# and read the secret into memory. Future starts will require the user
-# to enter the passphrase (via run.sh or dina-admin security auto-start).
 if [ "${SEED_MODE}" = "maximum" ]; then
     : > "${SECRETS_DIR}/seed_password"
     chmod 600 "${SECRETS_DIR}/seed_password"
@@ -957,7 +564,7 @@ if [ "${SEED_MODE}" = "maximum" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Smoke test: verify LLM actually works (not just "configured")
+# Step 8: Smoke test
 # ---------------------------------------------------------------------------
 
 TOKEN_FILE="${SECRETS_DIR}/client_token"
@@ -991,7 +598,7 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Final banner
+# Step 9: Final banner
 # ---------------------------------------------------------------------------
 
 echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
@@ -1007,12 +614,7 @@ if [ -n "${SEED_MODE}" ]; then
         echo -e "  Security:  ${CYAN}starts automatically${RESET}"
     fi
 fi
-if has_telegram "${ENV_FILE}"; then
-    echo -e "  Telegram:  ${GREEN}connected${RESET}"
-else
-    echo -e "  Telegram:  ${YELLOW}not connected${RESET} ${DIM}(approvals via dina-admin persona approvals)${RESET}"
-fi
-# Check LLM status from Brain's healthz (inside the container network)
+# Check LLM status from Brain's healthz
 _brain_health=$($COMPOSE exec -T brain python -c \
     "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
     2>/dev/null || true)
@@ -1027,7 +629,7 @@ if [ -n "${_brain_health}" ]; then
         echo -e "             ${DIM}Primary: ${_primary}${RESET}"
         echo -e "             ${DIM}Heavy:   ${_heavy}${RESET}"
     else
-        echo -e "  LLM:       ${YELLOW}not configured${RESET} ${DIM}edit .env to add your API key${RESET}"
+        echo -e "  LLM:       ${YELLOW}not configured${RESET} ${DIM}run ./dina-admin model set${RESET}"
     fi
 fi
 echo ""
@@ -1039,7 +641,7 @@ echo -e "    ${CYAN}./run.sh --logs${RESET}     Logs"
 
 if [ "${VERBOSE}" = true ]; then
     echo ""
-    echo -e "  ${DIM}Session: ${DINA_SESSION} (core-${DINA_SESSION}, brain-${DINA_SESSION})${RESET}"
+    echo -e "  ${DIM}Session: ${DINA_SESSION}${RESET}"
     echo -e "  ${DIM}PDS: http://localhost:${PDS_PORT}${RESET}"
     echo -e "  ${DIM}Health: http://localhost:${CORE_PORT}/healthz${RESET}"
 fi

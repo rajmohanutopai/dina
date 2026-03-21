@@ -167,10 +167,10 @@ class TestInputValidation:
             cwd=str(install_dir), timeout=180, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
-        child.expect("Enter choice \\[1-3\\]:", timeout=160)
+        child.expect("Enter choice:", timeout=160)
         child.sendline("garbage")
         idx = child.expect(
-            ["Please enter 1, 2, or 3", "Enter choice \\[1-3\\]:",
+            ["Please enter 1, 2, or 3", "Enter choice:",
              pexpect.TIMEOUT],
             timeout=10,
         )
@@ -183,19 +183,19 @@ class TestInputValidation:
             cwd=str(install_dir), timeout=300, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
-        child.expect("Enter choice \\[1-3\\]:", timeout=160)
+        child.expect("Enter choice:", timeout=160)
         child.sendline("1")
-        child.expect("[Pp]assphrase", timeout=30)
+        child.expect("Press Enter", timeout=30)
+        child.sendline("")
+        child.expect("passphrase", timeout=30)
         child.sendline("testpass123")
-        child.expect("[Cc]onfirm", timeout=10)
+        child.expect("Confirm", timeout=10)
         child.sendline("testpass123")
-        child.expect("Enter choice \\[1-2", timeout=10)
+        child.expect("Enter choice:", timeout=10)
         child.sendline("2")
-        # Owner name — skip
         child.expect("call you", timeout=30)
         child.sendline("")
-        # Telegram — skip
-        child.expect("Enter choice \\[1-2", timeout=30)
+        child.expect("Enter choice", timeout=30)
         child.sendline("2")
 
         child.expect("Enter one or more numbers", timeout=30)
@@ -214,17 +214,19 @@ class TestInputValidation:
             cwd=str(install_dir), timeout=180, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
-        child.expect("Enter choice \\[1-3\\]:", timeout=160)
+        child.expect("Enter choice:", timeout=160)
         child.sendline("1")
-        child.expect("[Pp]assphrase", timeout=30)
+        child.expect("Press Enter", timeout=30)
+        child.sendline("")
+        child.expect("passphrase", timeout=30)
         child.sendline("testpass123")
-        child.expect("[Cc]onfirm", timeout=10)
+        child.expect("Confirm", timeout=10)
         child.sendline("testpass123")
 
-        child.expect("Enter choice \\[1-2", timeout=10)
+        child.expect("Enter choice:", timeout=10)
         child.sendline("xyz")
         idx = child.expect(
-            ["Please enter 1 or 2", "Enter choice \\[1-2",
+            ["Please enter 1 or 2", "Enter choice:",
              pexpect.TIMEOUT],
             timeout=10,
         )
@@ -238,23 +240,24 @@ class TestInputValidation:
             cwd=str(install_dir), timeout=300, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
-        child.expect("Enter choice \\[1-3\\]:", timeout=160)
+        child.expect("Enter choice:", timeout=160)
         child.sendline("1")
-        child.expect("[Pp]assphrase", timeout=30)
+        child.expect("Press Enter", timeout=30)
+        child.sendline("")
+        child.expect("passphrase", timeout=30)
         child.sendline("testpass123")
-        child.expect("[Cc]onfirm", timeout=10)
+        child.expect("Confirm", timeout=10)
         child.sendline("testpass123")
-        child.expect("Enter choice \\[1-2", timeout=10)
+        child.expect("Enter choice:", timeout=10)
         child.sendline("2")
-        # Owner name — skip
         child.expect("call you", timeout=30)
         child.sendline("")
 
         # At Telegram prompt, enter garbage
-        child.expect("Enter choice \\[1-2", timeout=30)
+        child.expect("Enter choice", timeout=30)
         child.sendline("abc")
         idx = child.expect(
-            ["Please enter 1 or 2", "Enter choice \\[1-2",
+            ["Please enter 1 or 2", "Enter choice",
              pexpect.TIMEOUT],
             timeout=10,
         )

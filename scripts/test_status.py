@@ -1214,6 +1214,7 @@ SUITES = {
         "name": "Install",
         "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/install/test_installer_core.py",
+                "tests/install/test_installer_wizard.py",
                 "tests/install/test_model_set.py",
                 "tests/install/test_post_install.py"],
         "cwd": None,

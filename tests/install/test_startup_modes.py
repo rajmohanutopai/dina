@@ -66,24 +66,23 @@ class TestManualStartMode:
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
 
-        child.expect("Enter choice \\[1-3\\]:", timeout=120)
+        child.expect("Enter choice:", timeout=120)
         child.sendline("1")
-        child.expect("Passphrase:", timeout=30)
+        child.expect("Press Enter", timeout=30)
+        child.sendline("")
+        child.expect("passphrase", timeout=30)
         child.sendline("testpass123")
-        child.expect("Confirm:", timeout=10)
+        child.expect("Confirm", timeout=10)
         child.sendline("testpass123")
 
         # Option 1 = maximum security (manual-start)
-        child.expect("Enter choice \\[1-2", timeout=10)
+        child.expect("Enter choice:", timeout=10)
         child.sendline("1")
 
-        # Owner name — skip
         child.expect("call you", timeout=30)
         child.sendline("")
-        # Telegram — skip
-        child.expect("Enter choice \\[1-2", timeout=30)
+        child.expect("Enter choice", timeout=30)
         child.sendline("2")
-        # LLM — skip
         child.expect("Enter one or more numbers", timeout=30)
         child.sendline("6")
 

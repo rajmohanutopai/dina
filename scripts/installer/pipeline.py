@@ -65,11 +65,15 @@ def run_install(config: InstallerConfig) -> InstallerResult:
         message=f"session={session_id}",
     ))
 
-    # Port allocation
+    # Port allocation — use explicit ports if provided (install.sh allocates
+    # on the host), otherwise auto-allocate (only safe when running on host).
     env_file = config.dina_dir / ".env"
-    core_port, pds_port = allocate_ports(
-        env_file=env_file if env_file.exists() else None,
-    )
+    if config.core_port and config.pds_port:
+        core_port, pds_port = config.core_port, config.pds_port
+    else:
+        core_port, pds_port = allocate_ports(
+            env_file=env_file if env_file.exists() else None,
+        )
     steps.append(StepResult(
         name="allocate_ports", success=True,
         message=f"core={core_port}, pds={pds_port}",

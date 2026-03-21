@@ -61,6 +61,13 @@ class InstallerConfig(BaseModel):
     # User
     owner_name: str = ""
 
+    # Explicit ports — when set, skip auto-allocation (which uses socket
+    # probing and must run on the host, not inside a Docker container).
+    # install.sh allocates ports on the host and passes them here.
+    # Tests and direct invocations leave these as None for auto-allocation.
+    core_port: int | None = None
+    pds_port: int | None = None
+
     # Phase control — install.sh sets this to False because it writes
     # .env itself (after collecting LLM/Telegram prompts interactively).
     # Tests set this to True (default) to get a complete install.
