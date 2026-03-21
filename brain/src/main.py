@@ -225,15 +225,16 @@ def create_app() -> FastAPI:
         gcfg = get_provider_config("gemini")
         gm = os.environ.get("GEMINI_MODEL", "").strip() or (primary_model if primary_provider == "gemini" else "")
         gm = gm or list(gcfg.get("models", {}).keys())[0] if gcfg.get("models") else "gemini-3.1-pro-preview"
+        gemini_embed = gcfg.get("embed_model", "models/gemini-embedding-001")
         try:
-            providers["gemini"] = GeminiProvider(google_key, model=gm)
-            log.info("brain.provider.gemini", extra={"model": gm})
+            providers["gemini"] = GeminiProvider(google_key, model=gm, embed_model=gemini_embed)
+            log.info("brain.provider.gemini", extra={"model": gm, "embed_model": gemini_embed})
         except Exception as exc:
             log.warning("brain.provider.gemini.failed", extra={"error": str(exc)})
         gl = os.environ.get("GEMINI_LITE_MODEL", "").strip() or (lite_model if lite_provider == "gemini" else "")
         if gl:
             try:
-                providers["gemini-lite"] = GeminiProvider(google_key, model=gl)
+                providers["gemini-lite"] = GeminiProvider(google_key, model=gl, embed_model=gemini_embed)
                 log.info("brain.provider.gemini-lite", extra={"model": gl})
             except Exception as exc:
                 log.warning("brain.provider.gemini-lite.failed", extra={"error": str(exc)})
@@ -265,9 +266,10 @@ def create_app() -> FastAPI:
         ocfg = get_provider_config("openai")
         om = os.environ.get("OPENAI_MODEL", "").strip() or (primary_model if primary_provider == "openai" else "")
         om = om or list(ocfg.get("models", {}).keys())[0] if ocfg.get("models") else "gpt-5.4"
+        openai_embed = ocfg.get("embed_model", "text-embedding-3-small")
         try:
-            providers["openai"] = OpenAIProvider(openai_key, model=om)
-            log.info("brain.provider.openai", extra={"model": om})
+            providers["openai"] = OpenAIProvider(openai_key, model=om, embed_model=openai_embed)
+            log.info("brain.provider.openai", extra={"model": om, "embed_model": openai_embed})
         except Exception as exc:
             log.warning("brain.provider.openai.failed", extra={"error": str(exc)})
         ol = os.environ.get("OPENAI_LITE_MODEL", "").strip() or (lite_model if lite_provider == "openai" else "")

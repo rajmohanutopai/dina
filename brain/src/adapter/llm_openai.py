@@ -35,6 +35,7 @@ class OpenAIProvider:
         self,
         api_key: str,
         model: str = "gpt-5.4",
+        embed_model: str = "text-embedding-3-small",
     ) -> None:
         if not api_key:
             raise ConfigError(
@@ -42,6 +43,7 @@ class OpenAIProvider:
             )
         self._api_key = api_key
         self._model = model
+        self._embed_model = embed_model
         self._client: Any = None  # lazy import
 
     # -- Lazy library import -------------------------------------------------
@@ -227,15 +229,29 @@ class OpenAIProvider:
         return result
 
     async def embed(self, text: str) -> list[float]:
-        """Not supported — use GeminiProvider or LlamaProvider for embeddings.
+        """Generate an embedding vector via OpenAI Embeddings API.
+
+        Uses text-embedding-3-small by default (1536 dimensions).
 
         Raises:
-            NotImplementedError: Always.
+            LLMError: On API error or timeout.
         """
-        raise NotImplementedError(
-            "OpenAI embeddings not implemented. "
-            "Use GeminiProvider or LlamaProvider for embedding generation."
-        )
+        client = self._ensure_client()
+        try:
+            resp = await asyncio.wait_for(
+                client.embeddings.create(
+                    input=text,
+                    model=self._embed_model,
+                ),
+                timeout=_TIMEOUT_S,
+            )
+            return list(resp.data[0].embedding)
+        except asyncio.TimeoutError:
+            raise LLMError(
+                f"OpenAI embed request timed out after {_TIMEOUT_S}s"
+            )
+        except Exception as exc:
+            raise LLMError(f"OpenAI embed error: {exc}") from exc
 
     async def classify(self, text: str, categories: list[str]) -> str:
         """Not supported — use complete() with a classification prompt.

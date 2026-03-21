@@ -15,7 +15,7 @@
       "display_name": "Google Gemini",
       "api_key_env": "GEMINI_API_KEY",
       "api_key_env_alt": "GOOGLE_API_KEY",
-      "embed_model": "models/text-embedding-004",
+      "embed_model": "models/gemini-embedding-001",
       "models": {
         "gemini-3.1-pro-preview": { "pricing": [2.00, 12.00] },
         "gemini-3.1-flash-lite-preview": { "pricing": [0.25, 1.50] },
@@ -35,6 +35,7 @@
     "openai": {
       "display_name": "OpenAI GPT",
       "api_key_env": "OPENAI_API_KEY",
+      "embed_model": "text-embedding-3-small",
       "models": {
         "gpt-5.4": { "pricing": [5.00, 15.00] },
         "gpt-5-mini": { "pricing": [0.40, 1.60] }
