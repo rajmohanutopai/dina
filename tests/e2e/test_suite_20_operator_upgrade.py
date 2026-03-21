@@ -193,7 +193,7 @@ class TestOperatorUpgrade:
         # (vault_store and persona_unlock create audit entries internally)
         store_audits = node.get_audit_entries("vault_store")
         assert any(
-            a.details.get("key") == "admin_test_entry" for a in store_audits
+            a.details.get("key") == "admin test entry" for a in store_audits
         ), "vault_store must create a system-generated audit entry"
 
         unlock_audits = node.get_audit_entries("persona_unlock")

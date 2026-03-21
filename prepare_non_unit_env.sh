@@ -168,9 +168,10 @@ cmd_down() {
 cmd_purge() {
   echo "=== Purging test stack (containers + volumes + images) ==="
   do_compose down -v --remove-orphans --rmi all 2>/dev/null || true
+  docker image prune -f 2>/dev/null || true
   rm -f "$MANIFEST"
   rm -rf "$KEY_DIR"
-  echo "=== Stack and all images removed ==="
+  echo "=== Stack and all images removed (including dangling layers) ==="
 }
 
 cmd_purge_dina() {
@@ -181,9 +182,10 @@ cmd_purge_dina() {
     | grep "^dina-test-" \
     | grep -v -E "postgres|pds|plc|jetstream" \
     | xargs -r docker rmi 2>/dev/null || true
+  docker image prune -f 2>/dev/null || true
   rm -f "$MANIFEST"
   rm -rf "$KEY_DIR"
-  echo "=== Dina images removed, infra images kept ==="
+  echo "=== Dina images removed, infra images kept (dangling layers pruned) ==="
 }
 
 cmd_restart() {

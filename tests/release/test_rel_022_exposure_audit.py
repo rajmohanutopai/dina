@@ -20,14 +20,15 @@ class TestExposureAudit:
     # REL-022
     def test_rel_022_only_core_port_exposed(self, release_services) -> None:
         """Only Core port is mapped to the host — Brain is internal."""
+        compose_file = release_services._compose_file
         result = subprocess.run(
             [
                 "docker", "compose",
-                "-f", str(release_services._compose_file),
+                "-f", str(compose_file),
                 "ps", "--format", "json",
             ],
             capture_output=True, text=True, timeout=30,
-            cwd=str(release_services._compose_file.parent),
+            cwd=str(compose_file.parent),
         )
         if result.returncode != 0:
             pytest.skip("Cannot inspect Docker containers")
@@ -96,16 +97,18 @@ class TestExposureAudit:
     # REL-022
     def test_rel_022_container_runs_non_root(self, release_services) -> None:
         """Core container main process (PID 1) runs as non-root user."""
+        compose_file = release_services._compose_file
+        core_svc = release_services.core_service("alonso")
         # docker exec defaults to root shell; check the actual PID 1 UID
         result = subprocess.run(
             [
                 "docker", "compose",
-                "-f", str(release_services._compose_file),
-                "exec", "-T", "release-core",
+                "-f", str(compose_file),
+                "exec", "-T", core_svc,
                 "sh", "-c", "cat /proc/1/status | grep '^Uid:' | awk '{print $2}'",
             ],
             capture_output=True, text=True, timeout=15,
-            cwd=str(release_services._compose_file.parent),
+            cwd=str(compose_file.parent),
         )
         if result.returncode != 0:
             pytest.skip("Cannot exec into container")

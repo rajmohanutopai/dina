@@ -74,7 +74,7 @@ class TestHostileNetwork:
 
     # REL-010
     def test_rel_010_empty_body_handled_without_crash(
-        self, core_url, auth_headers,
+        self, core_url, auth_headers, actor_b_did,
     ) -> None:
         """Empty body D2D send does not crash the server.
 
@@ -84,7 +84,7 @@ class TestHostileNetwork:
         resp = httpx.post(
             f"{core_url}/v1/msg/send",
             json={
-                "to": "did:plc:release-b",
+                "to": actor_b_did,
                 "body": "",
                 "type": "dina/test/empty",
             },

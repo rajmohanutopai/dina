@@ -171,7 +171,7 @@ class TestAntiHerHumanConnection:
 
         The intent classifier must intercept this before reasoning.
         """
-        core_url = release_services.core_url
+        core_url = release_services.core_url("alonso")
         token = release_services.client_token
         resp = httpx.post(
             f"{core_url}/api/v1/reason",
@@ -218,7 +218,7 @@ class TestAntiHerHumanConnection:
 
         'I'm sad about my job, help me update my resume' is a task.
         """
-        core_url = release_services.core_url
+        core_url = release_services.core_url("alonso")
         token = release_services.client_token
         resp = httpx.post(
             f"{core_url}/api/v1/reason",

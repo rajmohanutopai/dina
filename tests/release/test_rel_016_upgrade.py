@@ -23,11 +23,13 @@ class TestUpgradeVerification:
     # REL-016
     def test_rel_016_no_auto_update_service(self, release_services) -> None:
         """No auto-update cron job or service runs inside the container."""
+        compose_file = release_services._compose_file
+        core_svc = release_services.core_service("alonso")
         result = subprocess.run(
             [
                 "docker", "compose",
-                "-f", str(release_services._compose_file),
-                "exec", "-T", "release-core",
+                "-f", str(compose_file),
+                "exec", "-T", core_svc,
                 "sh", "-c",
                 "ls /etc/cron.d/ 2>/dev/null; "
                 "ls /etc/cron.daily/ 2>/dev/null; "
@@ -35,7 +37,7 @@ class TestUpgradeVerification:
                 "echo DONE",
             ],
             capture_output=True, text=True, timeout=15,
-            cwd=str(release_services._compose_file.parent),
+            cwd=str(compose_file.parent),
         )
         if result.returncode != 0:
             pytest.skip("Cannot exec into container")
@@ -47,14 +49,15 @@ class TestUpgradeVerification:
     # REL-016
     def test_rel_016_no_watchtower_or_ouroboros(self, release_services) -> None:
         """No auto-update container (watchtower, ouroboros) in the stack."""
+        compose_file = release_services._compose_file
         result = subprocess.run(
             [
                 "docker", "compose",
-                "-f", str(release_services._compose_file),
+                "-f", str(compose_file),
                 "ps", "--format", "json",
             ],
             capture_output=True, text=True, timeout=15,
-            cwd=str(release_services._compose_file.parent),
+            cwd=str(compose_file.parent),
         )
         if result.returncode != 0:
             pytest.skip("Cannot inspect containers")

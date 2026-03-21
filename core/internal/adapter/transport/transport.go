@@ -169,14 +169,10 @@ func ssrfSafeDialContext(dialer *net.Dialer) func(ctx context.Context, network, 
 			return nil, fmt.Errorf("ssrf: invalid address %q: %w", addr, err)
 		}
 
-		// Check DINA_ALLOWED_ENDPOINTS for dev allowlisting.
+		// Check DINA_ALLOWED_ENDPOINTS for dev/Docker allowlisting.
 		allowed := os.Getenv("DINA_ALLOWED_ENDPOINTS")
-		if allowed != "" {
-			for _, ep := range strings.Split(allowed, ",") {
-				if strings.TrimSpace(ep) == host {
-					return dialer.DialContext(ctx, network, addr)
-				}
-			}
+		if isHostAllowed(host, allowed) {
+			return dialer.DialContext(ctx, network, addr)
 		}
 
 		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
@@ -193,6 +189,29 @@ func ssrfSafeDialContext(dialer *net.Dialer) func(ctx context.Context, network, 
 		// Connect to the first resolved non-private IP.
 		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
 	}
+}
+
+// isHostAllowed checks if a hostname is in the DINA_ALLOWED_ENDPOINTS list.
+// Accepts both bare hostnames ("alonso-core") and full URLs
+// ("http://alonso-core:8100") — extracts hostname from URLs.
+func isHostAllowed(host, allowedCSV string) bool {
+	if allowedCSV == "" {
+		return false
+	}
+	for _, ep := range strings.Split(allowedCSV, ",") {
+		ep = strings.TrimSpace(ep)
+		if ep == "" {
+			continue
+		}
+		epHost := ep
+		if u, err := url.Parse(ep); err == nil && u.Host != "" {
+			epHost = u.Hostname()
+		}
+		if epHost == host {
+			return true
+		}
+	}
+	return false
 }
 
 // validateEndpointURL checks that a URL is safe for outbound HTTP delivery.

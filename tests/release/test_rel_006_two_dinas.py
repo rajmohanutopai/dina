@@ -3,8 +3,8 @@
 Verify Dina-to-Dina encrypted messaging works between two separate
 Core+Brain nodes running in the release Docker stack.
 
-Node A: release-core (did:plc:release-a)
-Node B: release-core-b (did:plc:release-b)
+Node A: alonso-core (did:plc:alonso)
+Node B: sancho-core (did:plc:sancho)
 
 Execution class: Harness.
 """
@@ -31,7 +31,7 @@ class TestTwoDinas:
 
     # REL-006
     def test_rel_006_send_message_a_to_b(
-        self, core_url, auth_headers,
+        self, core_url, auth_headers, actor_b_did,
     ) -> None:
         """Node A sends a D2D message to Node B with a unique marker."""
         marker = f"rel006_{os.getpid()}_{int(time.time())}"
@@ -40,7 +40,7 @@ class TestTwoDinas:
         resp = httpx.post(
             f"{core_url}/v1/msg/send",
             json={
-                "to": "did:plc:release-b",
+                "to": actor_b_did,
                 "body": base64.b64encode(body_payload.encode()).decode(),
                 "type": "dina/test/ping",
             },
@@ -80,13 +80,16 @@ class TestTwoDinas:
             for msg in messages:
                 msg_type = msg.get("Type") or msg.get("type")
                 if msg_type == "dina/test/ping":
-                    msg_body = msg.get("Body") or msg.get("body") or ""
-                    # If we have a marker, verify this is our exact message
-                    if expected_marker and expected_marker in str(msg_body):
+                    msg_body_raw = msg.get("Body") or msg.get("body") or ""
+                    # Decode base64 body before checking marker
+                    try:
+                        msg_body = base64.b64decode(msg_body_raw).decode("utf-8", errors="replace")
+                    except Exception:
+                        msg_body = str(msg_body_raw)
+                    if expected_marker and expected_marker in msg_body:
                         found = True
                         break
                     elif not expected_marker:
-                        # No marker (older test run) — accept any ping
                         found = True
                         break
             if found:
@@ -99,7 +102,7 @@ class TestTwoDinas:
 
     # REL-006
     def test_rel_006_send_message_b_to_a(
-        self, core_b_url, core_url, auth_headers,
+        self, core_b_url, core_url, auth_headers, actor_a_did,
     ) -> None:
         """Node B sends a D2D message back to Node A."""
         body_payload = json.dumps({"greeting": "hello from node B"})
@@ -107,7 +110,7 @@ class TestTwoDinas:
         resp = httpx.post(
             f"{core_b_url}/v1/msg/send",
             json={
-                "to": "did:plc:release-a",
+                "to": actor_a_did,
                 "body": base64.b64encode(body_payload.encode()).decode(),
                 "type": "dina/test/pong",
             },
@@ -134,7 +137,8 @@ class TestTwoDinas:
 
             messages = resp.json().get("messages", [])
             for msg in messages:
-                if msg.get("Type") == "dina/test/pong":
+                msg_type = msg.get("Type") or msg.get("type")
+                if msg_type == "dina/test/pong":
                     found = True
                     break
             if found:
