@@ -336,6 +336,7 @@ class TestIngressChannelScoring:
         assert result["confidence"] == "low"
         assert result["retrieval_policy"] == "caveated"
 
+    # TST-BRAIN-820
     def test_d2d_known_trusted_contact(self, scorer):
         """(d2d) with known trusted contact → contact_ring1 / medium / caveated."""
         item = {"ingress_channel": "d2d", "sender": "did:plc:sancho",
@@ -347,6 +348,7 @@ class TestIngressChannelScoring:
         assert result["retrieval_policy"] == "caveated"
         assert result["contact_did"] == "did:plc:sancho"
 
+    # TST-BRAIN-821
     def test_d2d_known_unknown_trust_contact(self, scorer):
         """(d2d) with unknown-trust contact → contact_ring2 / medium / caveated."""
         item = {"ingress_channel": "d2d", "sender": "did:plc:albert",
@@ -357,6 +359,7 @@ class TestIngressChannelScoring:
         assert result["confidence"] == "medium"
         assert result["retrieval_policy"] == "caveated"
 
+    # TST-BRAIN-822
     def test_d2d_unknown_sender(self, scorer):
         """(d2d) with unknown sender → unknown / low / quarantine."""
         item = {"ingress_channel": "d2d", "sender": "did:plc:stranger",

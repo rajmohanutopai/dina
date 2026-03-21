@@ -181,6 +181,7 @@ func TestSignature_28_TamperedMethod_Rejected(t *testing.T) {
 // Replay Protection (Timestamp Window)
 // --------------------------------------------------------------------------
 
+// TST-CORE-1223
 func TestSignature_28_ExpiredTimestamp_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -195,6 +196,7 @@ func TestSignature_28_ExpiredTimestamp_Rejected(t *testing.T) {
 	testutil.RequireContains(t, err.Error(), "timestamp")
 }
 
+// TST-CORE-1224
 func TestSignature_28_FutureTimestamp_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -223,6 +225,7 @@ func TestSignature_28_WithinWindow_Accepted(t *testing.T) {
 	testutil.RequireEqual(t, kind, domain.TokenClient)
 }
 
+// TST-CORE-1225
 func TestSignature_28_InvalidTimestampFormat_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 

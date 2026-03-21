@@ -93,6 +93,7 @@ func TestInjectUserOrigin_AmbiguousAgentDID(t *testing.T) {
 // FC1 — KV key blocklist for device-scoped callers
 // ---------------------------------------------------------------------------
 
+// TST-CORE-1226
 func TestFC1_DeviceBlockedFromUserSettings(t *testing.T) {
 	// Device caller requesting user_settings → blocked
 	r := httptest.NewRequest("GET", "/v1/vault/kv/user_settings", nil)
@@ -104,6 +105,7 @@ func TestFC1_DeviceBlockedFromUserSettings(t *testing.T) {
 	}
 }
 
+// TST-CORE-1227
 func TestFC1_DeviceBlockedFromAdminPrefixKeys(t *testing.T) {
 	for _, key := range []string{"admin:config", "admin:secrets"} {
 		r := httptest.NewRequest("GET", "/v1/vault/kv/"+key, nil)
@@ -116,6 +118,7 @@ func TestFC1_DeviceBlockedFromAdminPrefixKeys(t *testing.T) {
 	}
 }
 
+// TST-CORE-1228
 func TestFC1_DeviceAllowedOnSafeKeys(t *testing.T) {
 	for _, key := range []string{"approval:apr-001", "scratchpad:task-1", "session:state"} {
 		r := httptest.NewRequest("GET", "/v1/vault/kv/"+key, nil)
@@ -128,6 +131,7 @@ func TestFC1_DeviceAllowedOnSafeKeys(t *testing.T) {
 	}
 }
 
+// TST-CORE-1229
 func TestFC1_AdminNotBlockedFromUserSettings(t *testing.T) {
 	// Admin/brain caller → NOT blocked
 	for _, caller := range []string{"", "brain"} {
@@ -147,6 +151,7 @@ func TestFC1_AdminNotBlockedFromUserSettings(t *testing.T) {
 // GH6 — clientError JSON injection prevention
 // ---------------------------------------------------------------------------
 
+// TST-CORE-1230
 func TestGH6_ClientErrorEscapesQuotes(t *testing.T) {
 	rec := httptest.NewRecorder()
 	clientError(rec, `msg with "quotes" and \backslash`, 400, nil)
@@ -162,6 +167,7 @@ func TestGH6_ClientErrorEscapesQuotes(t *testing.T) {
 	}
 }
 
+// TST-CORE-1231
 func TestGH6_ClientErrorEscapesControlChars(t *testing.T) {
 	rec := httptest.NewRecorder()
 	clientError(rec, "line1\nline2\ttab", 500, nil)
@@ -179,6 +185,7 @@ func TestGH6_ClientErrorEscapesControlChars(t *testing.T) {
 // GH11 — Import path traversal validation
 // ---------------------------------------------------------------------------
 
+// TST-CORE-1232
 func TestGH11_ImportPathTraversalBlocked(t *testing.T) {
 	h := &ExportHandler{ExportBaseDir: "/tmp/dina-exports"}
 

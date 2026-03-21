@@ -334,19 +334,24 @@ class TestDeviceSignedAgentContext:
             f"vault read must be blocked: {r.status_code} {r.text}"
         )
 
-    def test_vault_store_to_default_allowed(self):
-        """Device-scoped agents CAN write to default-tier persona."""
+    def test_staging_ingest_allowed(self):
+        """Phase 4: device-scoped agents write via staging, not vault/store."""
         r = _device_post(
             self._core_url, self._priv, self._did,
-            "/v1/vault/store",
+            "/v1/staging/ingest",
             {
-                "persona": "general",
-                "item": {"Summary": "test note from device", "Type": "note"},
+                "source": "dina-cli",
+                "source_id": "test-device-write",
+                "type": "note",
+                "summary": "test note from device",
+                "body": "test body",
+                "sender": "user",
             },
         )
         assert r.status_code == 201, (
-            f"store to general must succeed: {r.status_code} {r.text}"
+            f"staging ingest must succeed: {r.status_code} {r.text}"
         )
+        assert r.json().get("staged") is True
 
     def test_reason_endpoint_not_blocked(self):
         """Device-signed /api/v1/reason passes authz (in device allowlist).

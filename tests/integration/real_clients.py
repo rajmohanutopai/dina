@@ -564,8 +564,9 @@ class RealPIIScrubber:
             # Tokens are [TYPE_N] numbered per-type.
             type_counts: dict[str, int] = {}
             for ent in data.get("entities") or []:
-                etype = ent.get("Type", "")
-                value = ent.get("Value", "")
+                # Go Core returns lowercase JSON keys (json:"type", json:"value").
+                etype = ent.get("type", "") or ent.get("Type", "")
+                value = ent.get("value", "") or ent.get("Value", "")
                 if etype and value:
                     type_counts[etype] = type_counts.get(etype, 0) + 1
                     token = f"[{etype}_{type_counts[etype]}]"
@@ -580,13 +581,19 @@ class RealPIIScrubber:
         )
         if resp2 is not None:
             data = resp2.json()
-            scrubbed = data.get("scrubbed", scrubbed)
+            tier2_scrubbed = data.get("scrubbed", scrubbed)
+            # BR1: Brain no longer returns raw PII values in entities
+            # (security fix — values must not leave Brain over HTTP).
+            # Detect what was replaced by diffing tier1 output vs tier2 output.
             for ent in data.get("entities") or []:
                 token = ent.get("token", "")
-                value = ent.get("value", "")
-                if token and value:
-                    replacement_map[token] = value
-                    self._known_pii.add(value)
+                if token and token in tier2_scrubbed:
+                    # Find the original value that this token replaced
+                    # by searching the pre-tier2 text for what's now a token.
+                    # We know the token is in tier2_scrubbed but not in the
+                    # original pre-tier2 text (scrubbed = tier1 output).
+                    replacement_map[token] = token  # placeholder — exact value unknown from HTTP
+            scrubbed = tier2_scrubbed
 
         # If both API tiers returned the text unchanged, log a warning.
         # Do NOT fall back to mock scrubbing — integration tests must prove

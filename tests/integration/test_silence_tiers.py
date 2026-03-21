@@ -2657,6 +2657,7 @@ class TestClassificationEdgeCases:
         )
         assert abs(result["age_hours"] - 72.0) < 0.01
 
+    # TST-INT-804
     def test_staleness_check_uses_event_timestamp_not_ingestion_time(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -3628,12 +3629,18 @@ class TestNotificationPIIScrubbing:
             "Scrubbed body must differ from original when PII is present"
         )
 
-        # De-anonymize using the replacement map
-        restored = mock_dina.scrubber.desanitize(scrubbed_body, rmap)
+        # Primary: PII absent from scrubbed text.
+        assert "Rajmohan" not in scrubbed_body
+        assert "+91-9876543210" not in scrubbed_body
 
-        assert restored == original_content, (
-            "De-anonymizing with the replacement map must reconstruct the "
-            f"original text exactly.\n  Expected: {original_content!r}\n"
+        # Tier 1 (regex) round-trip: phone number restorable.
+        # BR1: Brain NER entities (person names) are NOT restorable via
+        # HTTP round-trip — values stripped from response for PII safety.
+        # Full round-trip works in-process (Entity Vault pattern).
+        restored = mock_dina.scrubber.desanitize(scrubbed_body, rmap)
+        assert "+91-9876543210" in restored, (
+            "Tier 1 (regex) PII must be restorable via replacement map.\n"
+            f"  Restored: {restored!r}\n"
             f"  Got:      {restored!r}"
         )
 

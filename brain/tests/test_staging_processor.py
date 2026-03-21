@@ -257,6 +257,7 @@ async def test_resolve_includes_lineage(core, processor):
 # ---------------------------------------------------------------------------
 
 
+# TST-BRAIN-823
 @pytest.mark.asyncio
 async def test_enrichment_failure_calls_staging_fail(core, enrichment):
     """When enrich_raw raises, staging_fail is called and item is not resolved."""

@@ -43,6 +43,7 @@ def _post(core, path, body=None):
 class TestStagingIngest:
     """POST /v1/staging/ingest stores items in staging."""
 
+    # TST-INT-800
     def test_ingest_returns_staging_id(self, core) -> None:
         """Ingest returns a staging ID with status 201."""
         item = {
@@ -137,7 +138,8 @@ class TestStagingClaimResolve:
         })
         assert resolve_resp.status_code == 200
         data = resolve_resp.json()
-        assert data.get("status") == "stored", f"expected stored, got: {data}"
+        # GH10: Core now returns "resolved" (O(n) scan removed).
+        assert data.get("status") in ("stored", "resolved"), f"expected stored/resolved, got: {data}"
 
         # Verify the classified item was actually persisted in the persona vault.
         search_resp = _post(core, "/v1/vault/query", {
@@ -240,6 +242,7 @@ class TestConnectorAuth:
             f"connector must NOT access vault/query: {resp.status_code} {resp.text}"
         )
 
+    # TST-INT-801
     def test_connector_signed_staging_claim_denied(self):
         """Connector service key cannot claim staging items (Brain-only)."""
         body = json.dumps({"limit": 10}).encode()
@@ -338,7 +341,7 @@ class TestEnrichmentBeforePublish:
             },
         })
         assert resp.status_code == 200, f"enriched resolve: {resp.text}"
-        assert resp.json().get("status") == "stored"
+        assert resp.json().get("status") in ("stored", "resolved")
 
         # Verify item is searchable with enrichment fields.
         search_resp = _post(core, "/v1/vault/query", {

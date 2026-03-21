@@ -155,13 +155,16 @@ class TestCLIEd25519Signing:
             assert pair_audits[-1].details["device_id"] == device.device_id
 
     # TST-E2E-086
-    def test_15_signed_vault_query_returns_200(
+    def test_15_signed_vault_query_returns_403(
         self,
         cli_identity: CLIIdentity,
         don_alonso,
         docker_services,
     ) -> None:
-        """E2E-15.3 Signed vault/query request returns 200."""
+        """E2E-15.3 Device-signed vault/query returns 403 (not in device allowlist).
+
+        Devices are persona-blind for reads — they use /api/v1/reason (Brain-mediated).
+        """
         if DOCKER_MODE and docker_services is not None:
             if not _docker_ed25519_paired:
                 pytest.skip("Ed25519 pairing not available — rebuild Docker images")
@@ -171,7 +174,7 @@ class TestCLIEd25519Signing:
             headers["Content-Type"] = "application/json"
 
             resp = httpx.post(f"{base}/v1/vault/query", content=body, headers=headers, timeout=10)
-            assert resp.status_code == 200, f"Signed query failed: {resp.status_code} {resp.text}"
+            assert resp.status_code == 403, f"Device vault/query should be 403: {resp.status_code}"
         else:
             # Mock mode: verify sign_request produces valid components
             did, ts, nonce, sig = cli_identity.sign_request("POST", "/v1/vault/query", b'{"query":"test"}')
@@ -181,32 +184,41 @@ class TestCLIEd25519Signing:
             assert len(sig) == 128  # 64 bytes hex-encoded
 
     # TST-E2E-087
-    def test_15_signed_vault_store_returns_200(
+    def test_15_signed_staging_ingest_returns_201(
         self,
         cli_identity: CLIIdentity,
         don_alonso,
         docker_services,
     ) -> None:
-        """E2E-15.4 Signed vault/store request returns 200."""
+        """E2E-15.4 Phase 4: device writes via staging/ingest, vault/store returns 403."""
         if DOCKER_MODE and docker_services is not None:
             if not _docker_ed25519_paired:
                 pytest.skip("Ed25519 pairing not available — rebuild Docker images")
             base = docker_services.core_url("alonso")
-            body = json.dumps({
-                "persona": "general",
-                "item": {
-                    "Type": "note",
-                    "Source": "e2e_test",
-                    "Summary": "E2E signing test",
-                    "BodyText": "Signed vault store test",
-                    "Metadata": "{}",
-                },
-            }).encode()
-            headers = _signed_headers(cli_identity, "POST", "/v1/vault/store", body)
-            headers["Content-Type"] = "application/json"
 
-            resp = httpx.post(f"{base}/v1/vault/store", content=body, headers=headers, timeout=10)
-            assert resp.status_code in (200, 201), f"Signed store failed: {resp.status_code} {resp.text}"
+            # Staging ingest should succeed (201).
+            staging_body = json.dumps({
+                "source": "dina-cli",
+                "source_id": "e2e-sign-test",
+                "type": "note",
+                "summary": "E2E signing test",
+                "body": "Signed staging ingest test",
+                "sender": "user",
+            }).encode()
+            headers = _signed_headers(cli_identity, "POST", "/v1/staging/ingest", staging_body)
+            headers["Content-Type"] = "application/json"
+            resp = httpx.post(f"{base}/v1/staging/ingest", content=staging_body, headers=headers, timeout=10)
+            assert resp.status_code == 201, f"Staging ingest failed: {resp.status_code} {resp.text}"
+
+            # Vault/store should be blocked (403).
+            store_body = json.dumps({
+                "persona": "general",
+                "item": {"Type": "note", "Summary": "blocked"},
+            }).encode()
+            headers2 = _signed_headers(cli_identity, "POST", "/v1/vault/store", store_body)
+            headers2["Content-Type"] = "application/json"
+            resp2 = httpx.post(f"{base}/v1/vault/store", content=store_body, headers=headers2, timeout=10)
+            assert resp2.status_code == 403, f"Device vault/store should be 403: {resp2.status_code}"
         else:
             # Mock mode: verify canonical payload construction and signature
             body = b'{"persona":"general","item_type":"note","summary":"test"}'

@@ -64,6 +64,7 @@ func newStagingItem(connectorID, source, sourceID, summary string) domain.Stagin
 //    ID returned.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1200
 func TestStagingInbox_Ingest(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -90,6 +91,7 @@ func TestStagingInbox_Ingest(t *testing.T) {
 //    source, source_id) twice. Second returns existing ID, no error.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1201
 func TestStagingInbox_DedupOnConnectorSourceID(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -116,6 +118,7 @@ func TestStagingInbox_DedupOnConnectorSourceID(t *testing.T) {
 //    with status=classifying.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1202
 func TestStagingInbox_Claim(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -145,6 +148,7 @@ func TestStagingInbox_Claim(t *testing.T) {
 //    and lease_until are set.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1203
 func TestStagingInbox_ClaimSetsLease(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -173,6 +177,7 @@ func TestStagingInbox_ClaimSetsLease(t *testing.T) {
 //    lease (1ns), sleep briefly, call Sweep. Verify item reverts to received.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1204
 func TestStagingInbox_ExpiredLeaseReverts(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -208,6 +213,7 @@ func TestStagingInbox_ExpiredLeaseReverts(t *testing.T) {
 //    isPersonaOpen=true. Verify status=stored and body cleared.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1205
 func TestStagingInbox_ResolveOpenPersona(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -243,6 +249,7 @@ func TestStagingInbox_ResolveOpenPersona(t *testing.T) {
 //    Verify status=pending_unlock, body cleared, classified_item kept.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1206
 func TestStagingInbox_ResolveLockedPersona(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -281,6 +288,7 @@ func TestStagingInbox_ResolveLockedPersona(t *testing.T) {
 //    status=stored.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1207
 func TestStagingInbox_DrainPending(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -327,6 +335,7 @@ func TestStagingInbox_DrainPending(t *testing.T) {
 //    status=failed, error set, retry_count=1.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1208
 func TestStagingInbox_MarkFailed(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -355,6 +364,7 @@ func TestStagingInbox_MarkFailed(t *testing.T) {
 //     past. Sweep. Verify item gone.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1209
 func TestStagingInbox_SweepExpired(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -425,6 +435,7 @@ func TestStagingInbox_SweepExpired(t *testing.T) {
 //     ListByStatus filters correctly.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1210
 func TestStagingInbox_ListByStatus(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -490,6 +501,7 @@ func TestStagingInbox_ListByStatus(t *testing.T) {
 //     connector_id).
 // --------------------------------------------------------------------------
 
+// TST-CORE-1211
 func TestStagingInbox_LineageInResolve(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -529,6 +541,7 @@ func TestStagingInbox_LineageInResolve(t *testing.T) {
 //     verify no item claimed twice.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1212
 func TestStagingInbox_ConcurrentClaim(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -585,6 +598,7 @@ func TestStagingInbox_ConcurrentClaim(t *testing.T) {
 //     or /v1/staging/claim.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1213
 func TestStagingInbox_ConnectorAuthz(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -623,6 +637,7 @@ func TestStagingInbox_ConnectorAuthz(t *testing.T) {
 //     clients cannot access /v1/vault/store. They must use /v1/staging/ingest.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1214
 func TestStagingInbox_Phase4_DeviceVaultStoreLockdown(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -656,6 +671,7 @@ func TestStagingInbox_Phase4_DeviceVaultStoreLockdown(t *testing.T) {
 //     can still write directly to vault after Phase 4.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1215
 func TestStagingInbox_Phase4_BrainVaultStoreAllowed(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -679,6 +695,7 @@ func TestStagingInbox_Phase4_BrainVaultStoreAllowed(t *testing.T) {
 //     can still write directly to vault after Phase 4.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1216
 func TestStagingInbox_Phase4_AdminVaultStoreAllowed(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -698,6 +715,7 @@ func TestStagingInbox_Phase4_AdminVaultStoreAllowed(t *testing.T) {
 //     (POST /v1/approvals/{id}/approve or /deny).
 // --------------------------------------------------------------------------
 
+// TST-CORE-1217
 func TestCXH1_DeviceCannotSelfApprove(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -735,6 +753,7 @@ func TestCXH1_DeviceCannotSelfApprove(t *testing.T) {
 //     body to approve endpoint returns 400, not silent default approval.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1218
 func TestCXH1_ApprovalHandlerRejectsMalformedJSON(t *testing.T) {
 	h := &handler.ApprovalHandler{Persona: &handler.PersonaHandler{}}
 
@@ -759,6 +778,7 @@ func TestCXH1_ApprovalHandlerRejectsMalformedJSON(t *testing.T) {
 //     device-scoped callers from approve/deny.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1219
 func TestCXH1_ApprovalHandlerBlocksDeviceCaller(t *testing.T) {
 	h := &handler.ApprovalHandler{Persona: &handler.PersonaHandler{}}
 
@@ -911,6 +931,7 @@ func TestCXH6_SyncStatusNoProxyURL(t *testing.T) {
 //     NaN and Inf values that would corrupt HNSW distance calculations.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1220
 func TestVT3_EmbeddingRejectsNaNInf(t *testing.T) {
 	// Valid embedding should work.
 	valid := make([]float32, 768)
@@ -947,6 +968,7 @@ func TestVT3_EmbeddingRejectsNaNInf(t *testing.T) {
 //     lease deadline, not from now. Proves the remaining lease actually grows.
 // --------------------------------------------------------------------------
 
+// TST-CORE-1221
 func TestVT6_ExtendLeaseAdditive(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()

@@ -2660,6 +2660,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 // the payload with NaCl sealed box to Node B's X25519 key. Node B decrypts,
 // extracts the envelope, verifies the Ed25519 signature. The test covers
 // the exact wire format used by Core's transport layer.
+// TST-CORE-1222
 func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 	sImpl := realSigner
 	testutil.RequireImplementation(t, sImpl, "Signer")
