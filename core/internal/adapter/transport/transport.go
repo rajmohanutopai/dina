@@ -169,11 +169,19 @@ func ssrfSafeDialContext(dialer *net.Dialer) func(ctx context.Context, network, 
 			return nil, fmt.Errorf("ssrf: invalid address %q: %w", addr, err)
 		}
 
-		// Check DINA_ALLOWED_ENDPOINTS for dev allowlisting.
+		// Check DINA_ALLOWED_ENDPOINTS for dev/Docker allowlisting.
+		// Accepts both bare hostnames ("alonso-core") and full URLs
+		// ("http://alonso-core:8100") — extracts hostname from URLs.
 		allowed := os.Getenv("DINA_ALLOWED_ENDPOINTS")
 		if allowed != "" {
 			for _, ep := range strings.Split(allowed, ",") {
-				if strings.TrimSpace(ep) == host {
+				ep = strings.TrimSpace(ep)
+				epHost := ep
+				// Extract hostname from URL if it looks like a URL.
+				if u, err := url.Parse(ep); err == nil && u.Host != "" {
+					epHost = u.Hostname()
+				}
+				if epHost == host {
 					return dialer.DialContext(ctx, network, addr)
 				}
 			}
