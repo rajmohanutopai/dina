@@ -4,9 +4,17 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 
 ---
 
-## Uncommitted Work
+## Shipped (Developer Alpha)
 
-- [ ] **Commit current changes** — prompt injection defense docs, engagement gate removal, test performance fixes, E2E scaffolding, dina.html updates
+The following major features have been implemented and tested:
+
+- [x] **Universal staging pipeline** — 4-phase ingestion (CLI, Telegram, D2D, connectors) with provenance tracking
+- [x] **Async approval-wait-resume** — intent validation with session-scoped grants
+- [x] **Device roles + pairing** — Ed25519 device keys, pairing ceremony, persisted across restarts
+- [x] **Trust scoring** — Core queries AppView for trust resolution, integrated with gatekeeper
+- [x] **D2D staging** — encrypted messages flow through staging pipeline
+- [x] **Vault lockdown** — 4-tier persona access (default/standard/sensitive/locked) with gatekeeper enforcement
+- [x] **70+ engineering review fixes** — security hardening, test infrastructure, API contract alignment
 
 ---
 
@@ -14,28 +22,47 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 
 ### Brain (Python)
 
-- [ ] **1.1 Cloud API setup** — Gemini Flash Lite, Deepgram Nova-3, gemini-embedding-001 — API keys + provider config
+- [x] **1.1 Cloud API setup** — DONE. Gemini, Anthropic, gemini-embedding-001 configured. LLM router with multi-provider support.
 - [ ] **1.3 Port YouTube analysis** — YouTube video analysis as ADK tool
 - [ ] **1.4 Port memory search** — vector search + RAG as ADK tools
+- [x] **1.2 dina-brain skeleton** — DONE. FastAPI app, guardian loop, silence classification, `/api/v1/process` and `/api/v1/reason` endpoints.
+- [x] **1.5 Silence filter** — DONE. Three-priority classification (Fiduciary/Solicited/Engagement) with heuristic + LLM fallback.
+- [x] **1.6 LLM routing** — DONE. Multi-provider (Gemini, Anthropic, local), Entity Vault scrubbing for sensitive personas.
+- [x] **1.7 dina-core skeleton** — DONE. Go + net/http, SQLCipher vaults, vault/store/query, hybrid search (FTS5 + HNSW).
+- [x] **1.8 DID key management** — DONE. BIP-39, SLIP-0010, HKDF vault DEKs, Ed25519 signing, persona unlock with TTL.
+- [x] **1.9 PII scrubber** — DONE. 3-tier: regex (Go) + spaCy NER (Python) + Entity Vault pattern.
+- [x] **1.10a Gatekeeper auth** — DONE. Ed25519 service keys, device keys, static allowlists, 4-tier persona access.
+- [x] **1.10b Admin UI** — DONE. FastAPI admin at `/admin/*`, dashboard, settings, contacts, devices, chat, history.
+- [x] **1.10c Task queue + scratchpad** — DONE. Outbox pattern in `dina_tasks`, staging scratchpad.
 
 ### Infrastructure
 
-- [-] **1.10 docker-compose** — 3+1 containers (core, brain, pds; llama optional), healthchecks, Docker Secrets — `E2E: MultiNodeDockerServices manages 4 Core+Brain pairs; docker-compose-e2e.yml works but production compose not yet created`
+- [x] **1.10 docker-compose** — DONE. Core + Brain containers, healthchecks, service key provisioning, E2E and release compose files.
 
 ---
 
 ## Phase 1b — Guardian Angel Loop
 
+### Brain (Python)
+
+- [x] **1.15 Context assembly for nudges** — DONE. Brain queries vault for relationships/history, assembles nudge text.
+- [x] **1.16 Nudge delivery (WebSocket)** — DONE. Core pushes nudges via WebSocket, `/v1/notify` endpoint.
+
 ### Dina-to-Dina
 
-- [-] **1.17 Encrypted messaging + Dead Drop** — NaCl encryption works E2E, signature + persistence are stubs — see [D2D Pipeline Gaps](#d2d-pipeline-gaps)
-- [-] **1.19 Basic D2D messaging** — encryption works, signature verification + persistence are stubs
+- [x] **1.17 Encrypted messaging + Dead Drop** — DONE. NaCl encryption, dead-drop spool, sweeper, rate limiting all working.
+- [x] **1.17a Rate limiting** — DONE. IP token bucket, per-DID limits, spool cap, circuit breaker.
+- [-] **1.19 Basic D2D messaging** — NaCl encryption + delivery working; signature verification + inbox persistence are stubs — see [D2D Pipeline Gaps](#d2d-pipeline-gaps)
 - [ ] **1.19a NAT relay** — ~100 lines, forwards encrypted blobs, community-run
 
 ---
 
 ## Phase 1c — Safety & Persistence
 
+- [x] **1.22a Migration CLI (export/import)** — DONE. `POST /v1/export` and `POST /v1/import` endpoints, AES-256-GCM encrypted archives.
+- [x] **1.23 BIP-39 recovery** — DONE. 24-word mnemonic generation and restore.
+- [x] **1.24 Persona system** — DONE. Per-persona SQLCipher files, HKDF-derived DEKs, 4-tier access (default/standard/sensitive/locked), audit log.
+- [x] **1.29 Client authentication** — DONE. Ed25519 device pairing (initiate/complete), per-device revocable keys, persisted across restarts.
 - [-] **1.22 Off-site backup** — encrypted vault snapshots to S3/Backblaze — encryption covered in Go §4 Vault; actual S3/Backblaze integration not done
 - [ ] **1.29a Supply chain security** — pin digests day one, Cosign + SBOM when CI exists (see [SECURITY.md](SECURITY.md))
 
@@ -43,7 +70,7 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 
 ## Prompt Injection Defense (7-Layer Implementation)
 
-**Architecture:** fully documented in [`docs/architecture/19-prompt-injection-defense.md`](docs/architecture/19-prompt-injection-defense.md). Zero implementation code exists. Existing gatekeeper tests (Go §6) cover sharing policy enforcement, but the 7-layer defense pipeline itself is not implemented.
+**Architecture:** fully documented in [`docs/architecture/19-prompt-injection-defense.md`](docs/architecture/19-prompt-injection-defense.md). Layer 2 (Split Brain boundary) and Layer 6 (Egress Gatekeeper) are partially implemented. PII scrubbing (3-tier) and Entity Vault pattern provide defense-in-depth. Remaining layers (1,3,4,5,7) are not yet built.
 
 **Principle:** You cannot prevent prompt injection — you contain the blast radius.
 
@@ -73,7 +100,7 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 - [ ] **1.32 Android on-device LLM** — LiteRT-LM + Gemma 3n E2B
 - [-] **1.33 Managed hosting** — multi-tenant, email signup + Gmail connect, billing
 - [ ] **1.34 FunctionGemma 270M** — ultra-lightweight intent classification
-- [ ] **1.35 Telegram connector** — Bot API, webhook/long polling
+- [x] **1.35 Telegram connector** — DONE. Bot API via long polling, messages ingested through universal staging pipeline.
 - [ ] **1.37 Daily briefing** — end-of-day summary of Priority 3 (Engagement) items
 - [ ] **1.38 Push notifications** — FCM/APNs, payload contains NO data
 - [-] **1.39 Security hardening** — container updates, rate limiting audit, attack surface review
@@ -84,22 +111,22 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 
 ### Intelligence
 
-- [-] **2.1 Embedding generation** — EmbeddingGemma 308M
-- [ ] **2.2 Tier 2 Index** — sqlite-vec + FTS5 hybrid search
+- [x] **2.1 Embedding generation** — DONE. gemini-embedding-001 (768-dim), stored as BLOBs in SQLCipher, hydrated into HNSW in-memory index.
+- [x] **2.2 Tier 2 Index** — DONE. HNSW in-memory (coder/hnsw) + FTS5 hybrid search: `0.4 x FTS5 + 0.6 x cosine`.
 - [ ] **2.6 Fine-tuned PII model** — Gemma 3n E4B for higher accuracy
 - [ ] **2.7 Multi-agent orchestration** — Google ADK Sequential/Parallel/Loop agents
 - [ ] **2.15 Nomic Embed V2** — 475M MoE upgrade
 
 ### Trust
 
-- [-] **2.3 Trust AppView** — Go + PostgreSQL, `indigo` firehose consumer, query API. **AppView is for trust only** — D2D messaging is direct P2P (no relay/AppView in path). See [AT Protocol Routing](#at-protocol-routing)
+- [x] **2.3 Trust AppView** — DONE. TypeScript + PostgreSQL, Jetstream firehose consumer, 19 record type handlers, 9 scorer jobs, 5 xRPC endpoints (resolve, search, get-profile, get-attestations, get-graph). **AppView is for trust only** — D2D messaging is direct P2P.
 - [ ] **2.4 Outcome data collection** — track Cart Handover purchases, follow-up surveys
 - [ ] **2.5 Trust Rings (Ring 1-2)** — ZKP or Aadhaar e-KYC compromise
 
 ### Behavioral
 
 - [ ] **2.8 Emotional state awareness** — classifier for upset/impulsive states, cooling-off
-- [-] **2.9 Anti-Her safeguard** — redirect toward human connection when needed
+- [x] **2.9 Anti-Her safeguard** — DONE. Guardian detects loneliness/isolation patterns, nudges toward human connection.
 - [ ] **2.10 Bot discovery** — decentralized via Trust Network
 
 ### Infrastructure
@@ -152,7 +179,7 @@ NaCl encryption works E2E (Docker tests assert real decryption at `real_d2d.py:1
 **AppView + Relay are for the Trust Network (Layer 3) only.** D2D messaging (Layer 4) is direct P2P — no relay, no AppView, no firehose. See [`docs/architecture/09-layer4-dina-to-dina.md`](docs/architecture/09-layer4-dina-to-dina.md).
 
 - [ ] **PLC Directory integration** — resolve DIDs dynamically instead of hardcoded `DINA_KNOWN_PEERS`
-- [ ] **Trust AppView** — Go + PostgreSQL, `indigo` firehose consumer for attestations/bot scores (depends on: PDS)
+- [x] **Trust AppView** — DONE. TypeScript + PostgreSQL, Jetstream consumer for attestations/bot scores, 5 xRPC endpoints
 - [ ] **DID document dual service** — advertise both `AtprotoPersonalDataServer` (trust PDS) and `DinaMessaging` (direct D2D endpoint)
 
 ---

@@ -224,7 +224,8 @@ TCP and socket listeners construct similar middleware chains separately.
 `cfgLoader.Load()` and `cfgLoader.Validate(cfg)` appear to overlap.
 
 ### FL1. docker-compose-release.yml ships with DINA_TEST_MODE=true (Codex)
-**Status:** Open
+**Status:** Fixed
+**Resolution:** WARNING comment added at top of file: test mode, rate limit override, hardcoded seeds, test credentials. "Do NOT deploy in production."
 **File:** `docker-compose-release.yml:73-80,148-155`
 **Problem:** A release-looking compose file enables test mode and hardcodes deterministic seeds. Someone will cargo-cult this into a real deployment.
 **Fix:** Rename to `docker-compose-test.yml` or move under `tests/`. Remove fixed seeds.
@@ -234,15 +235,20 @@ TCP and socket listeners construct similar middleware chains separately.
 ## Documentation Findings (from CEO Review)
 
 ### D01. ROADMAP.md is stale — most items show "NOT STARTED" for working code
-**Status:** Open
+**Status:** Fixed
+**Resolution:** 20+ items marked DONE, 3 marked IN PROGRESS. Summary timeline updated.
 ### D02. TODO.md is stale — completed items still marked incomplete
-**Status:** Open
+**Status:** Fixed
+**Resolution:** Added "Shipped (Developer Alpha)" section. Completed items marked with [x].
 ### D03. CLIENT_TOKEN exists but isn't documented as known Phase 1 limitation
-**Status:** Open
+**Status:** Fixed
+**Resolution:** "Known Limitations (Developer Alpha)" section added to README.md covering CLIENT_TOKEN, in-memory sessions, single-worker Brain, no mobile clients.
 ### D04. Prompt injection defense gaps not documented in README
-**Status:** Open
+**Status:** Fixed
+**Resolution:** Added to README Known Limitations: Tier 1 only, layers 1/3/4/5/7 not built, Entity Vault defense-in-depth.
 ### D05. No "What Works Today" section in README
-**Status:** Open
+**Status:** Fixed
+**Resolution:** "What Works Today (Developer Alpha)" section added to README.md with 12-item feature list.
 
 ---
 
@@ -1410,12 +1416,12 @@ The test suite validates **cryptographic correctness** extremely well but comple
 
 | ID | Summary | Effort |
 |----|---------|--------|
-| D01 | ROADMAP.md is stale — most items show "NOT STARTED" for working code | S |
-| D02 | TODO.md is stale — completed items still marked incomplete | S |
-| D03 | CLIENT_TOKEN exists but isn't documented as known Phase 1 limitation | S |
-| D04 | Prompt injection defense gaps not documented in README | S |
-| D05 | No "What Works Today" section in README | M |
-| FL1 | docker-compose-release.yml ships with DINA_TEST_MODE=true — rename or move to tests/ | S |
+| D01 | ~~ROADMAP.md stale~~ — **Fixed**: 20+ items updated | S |
+| D02 | ~~TODO.md stale~~ — **Fixed**: shipped section added | S |
+| D03 | ~~CLIENT_TOKEN undocumented~~ — **Fixed**: Known Limitations in README | S |
+| D04 | ~~Prompt injection gaps~~ — **Fixed**: documented in README | S |
+| D05 | ~~No "What Works Today"~~ — **Fixed**: 12-item section in README | M |
+| FL1 | ~~docker-compose-release test mode~~ — **Fixed**: WARNING comment added | S |
 
 ## TO-FIX: Quick Fixes (next session)
 

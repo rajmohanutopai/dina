@@ -1,5 +1,11 @@
 # Dina Release Test Compose — Full stack for release validation, zero mocks.
 #
+# WARNING: This file is for TESTING ONLY, not production use.
+# It contains DINA_TEST_MODE=true, DINA_RATE_LIMIT=100000, hardcoded
+# DINA_SEED_HEX / DINA_MASTER_SEED values, and test credentials
+# (PDS_JWT_SECRET, PDS_ADMIN_PASSWORD, POSTGRES_PASSWORD).
+# Do NOT deploy this compose file in any production or public environment.
+#
 # Node A (release-core / release-brain): primary node + dummy-agent
 # Node B (release-core-b / release-brain-b): second node for D2D tests
 # AT Protocol tier: PLC + PDS + Jetstream + AppView (Postgres) for trust tests

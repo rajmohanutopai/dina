@@ -349,6 +349,33 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 
 ---
 
+## What Works Today (Developer Alpha)
+
+- **Home Node:** Go Core + Python Brain sidecar, running via Docker Compose
+- **Vault:** SQLCipher encrypted per-persona files, hybrid search (FTS5 keyword + HNSW vector, `0.4 x FTS5 + 0.6 x cosine`)
+- **Identity:** `did:plc`, Ed25519 signing, BIP-39 24-word mnemonic, SLIP-0010 key derivation under `m/9999'`
+- **Auth:** Ed25519 device keys (pairing ceremony), Ed25519 service keys (SLIP-0010 derived), CLIENT_TOKEN for admin UI
+- **Staging:** Universal ingestion pipeline accepting content from CLI, Telegram, D2D messages, and connectors
+- **Trust:** 4-tier persona access control (default / standard / sensitive / locked) with gatekeeper enforcement
+- **Agents:** Intent validation, session-scoped grants, async approval-wait-resume flow
+- **PII:** 3-tier scrubbing (regex in Go + spaCy NER in Python + Entity Vault pattern for cloud LLM calls)
+- **D2D:** NaCl `crypto_box_seal` encrypted messaging between Home Nodes, dead-drop durability when vault is locked
+- **CLI:** `dina remember`, `ask`, `draft`, `validate`, `task`, `configure`, `session`, `status`
+- **Admin:** `dina-admin` CLI (Unix socket), web UI at `/admin/*` (dashboard, settings, contacts, devices, chat, history)
+- **Trust Network:** AT Protocol AppView in TypeScript (Jetstream ingester + 9 scorer jobs + 5 xRPC endpoints)
+
+---
+
+## Known Limitations (Developer Alpha)
+
+- **CLIENT_TOKEN** is a static bearer token for admin UI authentication, not a per-session credential. It does not rotate automatically.
+- **Admin sessions** are held in-memory by the Brain process and are lost on restart.
+- **Single-worker Brain** — the Python Brain runs as a single uvicorn worker. No horizontal scaling yet.
+- **No Android or iOS clients** — interaction is via CLI, Telegram bot, or admin web UI only.
+- **Prompt injection defense is Tier 1 only** (regex PII scrubbing + guard scan). Layers 1, 3, 4, 5, and 7 of the 7-layer defense described in `docs/architecture/19-prompt-injection-defense.md` are not yet built. The Entity Vault pattern provides defense-in-depth for cloud LLM calls by scrubbing identifying entities before they leave the Home Node.
+
+---
+
 *Built by [Rajmohan Harindranath](https://github.com/rajmohanutopai), who imagined Dina in a [novel](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) from 2012-2017 and is building her in the open for real in 2026.*
 
 *MIT License. Free forever.*
