@@ -1,13 +1,14 @@
-"""Black-box install tests — drive install.sh via pexpect like a real user.
+"""Black-box install tests — verify Docker lifecycle and prompt flows.
 
-These tests verify the complete install lifecycle:
-- Interactive prompts work correctly
-- Secrets are created with correct permissions
-- Service keys are provisioned
-- .env is written with expected values
-- Containers start and become healthy
-- DID is reachable
-- Full lifecycle: install → stop → start → verify
+These tests require Docker and drive install.sh/run.sh via pexpect.
+Provisioning logic (secrets, keys, .env, permissions) is covered by
+test_installer_core.py — these tests focus on what can't be tested
+without real containers:
+  - Container health after install
+  - DID reachable
+  - Stop/start lifecycle
+  - Device pairing survives restart
+  - Multi-provider skip prompt flow
 """
 
 from __future__ import annotations
@@ -30,46 +31,8 @@ def _get_core_port(install_dir: Path) -> str:
     return "8100"
 
 
-class TestFreshInstall:
-    """First-time install with default options."""
-
-    def test_install_creates_secrets(self, installed_dir: Path) -> None:
-        """Install creates all required secret files."""
-        secrets = installed_dir / "secrets"
-        assert secrets.is_dir(), "secrets/ not created"
-        assert (secrets / "wrapped_seed.bin").is_file(), "wrapped_seed.bin missing"
-        assert (secrets / "master_seed.salt").is_file(), "master_seed.salt missing"
-        assert (secrets / "seed_password").is_file(), "seed_password missing"
-        assert (secrets / "session_id").is_file(), "session_id missing"
-
-    def test_install_creates_service_keys(self, installed_dir: Path) -> None:
-        """Install provisions Ed25519 service key PEMs."""
-        keys = installed_dir / "secrets" / "service_keys"
-        assert (keys / "core" / "core_ed25519_private.pem").is_file()
-        assert (keys / "brain" / "brain_ed25519_private.pem").is_file()
-        assert (keys / "public" / "core_ed25519_public.pem").is_file()
-        assert (keys / "public" / "brain_ed25519_public.pem").is_file()
-
-    def test_install_creates_env(self, installed_dir: Path) -> None:
-        """Install creates .env with required keys."""
-        env_file = installed_dir / ".env"
-        assert env_file.is_file(), ".env not created"
-        content = env_file.read_text()
-        assert "DINA_SESSION=" in content
-        assert "DINA_CORE_PORT=" in content
-        assert "DINA_PDS_PORT=" in content
-        assert "DINA_PDS_JWT_SECRET=" in content
-
-    def test_install_secrets_permissions(self, installed_dir: Path) -> None:
-        """Secrets directory has restricted permissions."""
-        secrets = installed_dir / "secrets"
-        mode = stat.S_IMODE(secrets.stat().st_mode)
-        assert mode == 0o700, f"secrets/ should be 0700, got {oct(mode)}"
-
-    def test_install_seed_password_has_content(self, installed_dir: Path) -> None:
-        """In auto-start mode, seed_password should be non-empty."""
-        seed_pw = installed_dir / "secrets" / "seed_password"
-        assert seed_pw.stat().st_size > 0, "seed_password empty in auto-start mode"
+class TestContainersHealthy:
+    """Verify containers are healthy after install."""
 
     def test_install_containers_healthy(self, installed_dir: Path) -> None:
         """All containers are healthy after install."""
@@ -125,14 +88,18 @@ class TestFullLifecycle:
         with pytest.raises(httpx.ConnectError):
             httpx.get(f"http://localhost:{port}/healthz", timeout=3)
 
-        # 4. Start via run.sh
+        # 4. Start via run.sh --start
         child = pexpect.spawn(
             "bash",
-            [str(installed_dir / "run.sh")],
+            [str(installed_dir / "run.sh"), "--start"],
             cwd=str(installed_dir),
             timeout=180,
             encoding="utf-8",
-            env={**os.environ, "DINA_DIR": str(installed_dir)},
+            env={
+                **os.environ,
+                "DINA_DIR": str(installed_dir),
+                "DINA_SKIP_LLM_CHECK": "1",
+            },
         )
         idx = child.expect(
             ["Dina is running", pexpect.TIMEOUT],
@@ -156,13 +123,7 @@ class TestFullLifecycle:
 
 
 class TestDevicePairingSurvivesRestart:
-    """Paired device authentication works after Core restart.
-
-    This is the regression test for the bug where device registrations
-    were lost on restart because:
-    1. PairingManager stored devices in-memory only (no persistence)
-    2. Auth validator lost device keys on restart (no reload)
-    """
+    """Paired device authentication works after Core restart."""
 
     def test_paired_device_auth_survives_restart(self, installed_dir: Path) -> None:
         """Pair → restart → signed request still authenticates."""
@@ -190,8 +151,7 @@ class TestDevicePairingSurvivesRestart:
         import time as _time
 
         priv_key = Ed25519PrivateKey.generate()
-        pub_bytes = priv_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
-        # Multibase: z + base58btc(0xed01 + pubkey)
+        pub_bytes = priv_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
         import base58 as _b58
         multicodec = bytes([0xed, 0x01]) + pub_bytes
         multibase = "z" + _b58.b58encode(multicodec).decode()
@@ -226,9 +186,7 @@ class TestDevicePairingSurvivesRestart:
             },
             timeout=10,
         )
-        assert pre_resp.status_code == 200, (
-            f"Signed request failed BEFORE restart: {pre_resp.status_code}"
-        )
+        assert pre_resp.status_code == 200
 
         # 5. Restart Core
         result = subprocess.run(
@@ -246,7 +204,11 @@ class TestDevicePairingSurvivesRestart:
             cwd=str(installed_dir),
             timeout=180,
             encoding="utf-8",
-            env={**os.environ, "DINA_DIR": str(installed_dir)},
+            env={
+                **os.environ,
+                "DINA_DIR": str(installed_dir),
+                "DINA_SKIP_LLM_CHECK": "1",
+            },
         )
         idx = child.expect(
             ["Dina is running", "Containers already running", pexpect.TIMEOUT],
@@ -272,9 +234,70 @@ class TestDevicePairingSurvivesRestart:
             timeout=10,
         )
         assert post_resp.status_code == 200, (
-            f"Signed request failed AFTER restart: {post_resp.status_code} "
-            f"(device key not reloaded into auth validator)"
+            f"Signed request failed AFTER restart: {post_resp.status_code}"
         )
+
+
+class TestInstallRerun:
+    """Verify install.sh --skip-build is idempotent against a live install."""
+
+    def test_rerun_preserves_did(self, installed_dir: Path) -> None:
+        """Rerunning install.sh --skip-build preserves the DID."""
+        port = _get_core_port(installed_dir)
+
+        # Get DID before rerun
+        resp = httpx.get(
+            f"http://localhost:{port}/.well-known/atproto-did", timeout=10,
+        )
+        assert resp.status_code == 200
+        did_before = resp.text.strip()
+
+        # Rerun install with --skip-build
+        result = subprocess.run(
+            [str(installed_dir / "install.sh"), "--skip-build"],
+            cwd=str(installed_dir),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "DINA_DIR": str(installed_dir)},
+        )
+        assert result.returncode == 0, f"Rerun failed: {result.stderr[:500]}"
+
+        # DID must be unchanged
+        resp = httpx.get(
+            f"http://localhost:{port}/.well-known/atproto-did", timeout=10,
+        )
+        assert resp.status_code == 200
+        did_after = resp.text.strip()
+        assert did_before == did_after, (
+            f"DID changed after rerun: {did_before} → {did_after}"
+        )
+
+    def test_rerun_preserves_secrets(self, installed_dir: Path) -> None:
+        """Rerunning install.sh --skip-build does not rotate secrets."""
+        secrets = installed_dir / "secrets"
+        seed_before = (secrets / "wrapped_seed.bin").read_bytes()
+        salt_before = (secrets / "master_seed.salt").read_bytes()
+        session_before = (secrets / "session_id").read_text()
+        key_before = (
+            secrets / "service_keys/core/core_ed25519_private.pem"
+        ).read_bytes()
+
+        result = subprocess.run(
+            [str(installed_dir / "install.sh"), "--skip-build"],
+            cwd=str(installed_dir),
+            capture_output=True,
+            timeout=120,
+            env={**os.environ, "DINA_DIR": str(installed_dir)},
+        )
+        assert result.returncode == 0
+
+        assert (secrets / "wrapped_seed.bin").read_bytes() == seed_before
+        assert (secrets / "master_seed.salt").read_bytes() == salt_before
+        assert (secrets / "session_id").read_text() == session_before
+        assert (
+            secrets / "service_keys/core/core_ed25519_private.pem"
+        ).read_bytes() == key_before
 
 
 class TestInstallPrompts:
@@ -288,7 +311,7 @@ class TestInstallPrompts:
             cwd=str(install_dir),
             timeout=300,
             encoding="utf-8",
-            env={**os.environ, "DINA_DIR": str(install_dir)},
+            env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
 
         child.expect("Enter choice \\[1-3\\]:", timeout=120)
@@ -297,12 +320,17 @@ class TestInstallPrompts:
         child.sendline("testpass123")
         child.expect("Confirm:", timeout=10)
         child.sendline("testpass123")
-        child.expect("Enter choice \\[1-2\\]:", timeout=10)
+        child.expect("Enter choice \\[1-2", timeout=10)
         child.sendline("2")
+        # Owner name — skip
+        child.expect("call you", timeout=30)
+        child.sendline("")
+        # Telegram — skip
+        child.expect("Enter choice \\[1-2", timeout=30)
+        child.sendline("2")
+        # LLM — skip
         child.expect("Enter one or more numbers", timeout=30)
         child.sendline("6")
-        child.expect("Enter choice \\[1-2\\]:", timeout=30)
-        child.sendline("2")
 
         try:
             child.expect("Dina is ready!", timeout=300)

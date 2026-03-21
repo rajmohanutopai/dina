@@ -54,11 +54,12 @@ def core(request):
     """Provide (core_url, token).
 
     Prefers DINA_CORE_URL + DINA_CLIENT_TOKEN env vars (fast, no install).
-    Falls back to installed_dir fixture (full pexpect install, slow).
+    Falls back to installed_dir fixture (runs install.sh via pexpect once
+    per session — slow on first call, shared across all tests).
     """
     if _CORE_URL and _CLIENT_TOKEN:
         return {"url": _CORE_URL, "token": _CLIENT_TOKEN}
-    # Fall back to installed_dir fixture
+    # Fall back to installed_dir fixture (session-scoped pexpect install)
     installed_dir = request.getfixturevalue("installed_dir")
     url, token = _resolve_core(installed_dir)
     return {"url": url, "token": token}

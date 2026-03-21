@@ -30,7 +30,7 @@ setup_telegram() {
         return
     fi
 
-    [ -t 0 ] || return  # skip in non-interactive mode
+    [ -t 0 ] || return 0  # skip in non-interactive mode
 
     echo ""
     echo -e "  ${BOLD}Connect Telegram? ${GREEN}(recommended for notifications and approvals)${RESET}"

@@ -142,7 +142,11 @@ def installed_dir(docker_available, tmp_path_factory):
         cwd=str(dest),
         timeout=600,
         encoding="utf-8",
-        env={**os.environ, "DINA_DIR": str(dest)},
+        env={
+            **os.environ,
+            "DINA_DIR": str(dest),
+            "DINA_SKIP_MNEMONIC_VERIFY": "1",
+        },
     )
 
     # Answer prompts for a basic install
@@ -157,16 +161,20 @@ def installed_dir(docker_available, tmp_path_factory):
     child.sendline("testpass123")
 
     # 3. Startup mode: auto-start (option 2)
-    child.expect("Enter choice \\[1-2\\]:", timeout=10)
+    child.expect("Enter choice \\[1-2", timeout=10)
     child.sendline("2")
 
-    # 4. LLM provider: skip (option 6)
-    child.expect("Enter one or more numbers", timeout=30)
-    child.sendline("6")
+    # 4. Owner name (press Enter to skip)
+    child.expect("call you", timeout=30)
+    child.sendline("")
 
     # 5. Telegram: skip (option 2)
-    child.expect("Enter choice \\[1-2\\]:", timeout=30)
+    child.expect("Enter choice \\[1-2", timeout=30)
     child.sendline("2")
+
+    # 6. LLM provider: skip (option 6)
+    child.expect("Enter one or more numbers", timeout=30)
+    child.sendline("6")
 
     # Wait for completion or timeout
     try:

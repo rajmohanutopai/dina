@@ -14,11 +14,25 @@ except Exception as e:
     sys.exit(1)
 "
 
+# Extract alonso Core URL and client token from test stack for install tests.
+# test_post_install.py uses DINA_CORE_URL + DINA_CLIENT_TOKEN to skip the
+# slow pexpect install and test against the already-running stack instead.
+eval "$(python3 -c "
+import sys, json; sys.path.insert(0, '.')
+from tests.shared.test_stack import TestStackServices
+ts = TestStackServices()
+print(f'export DINA_CORE_URL={ts.core_url(\"alonso\")}')
+print(f'export DINA_CLIENT_TOKEN={ts.client_token}')
+")"
+
 # Run all non-unit suites via test_status.py for structured table output.
-# --mock tells test_status.py NOT to manage Docker (stack is pre-started).
 # Env vars tell conftest files to use real clients against the union stack.
+# 'install' = fast core/model/post-install tests (~6s)
+# 'install-pexpect' = shell lifecycle tests (prompt flow, run.sh, rerun)
 DINA_INTEGRATION=docker \
 DINA_E2E=docker \
 DINA_RELEASE=docker \
 DINA_RATE_LIMIT=100000 \
-  python scripts/test_status.py --suite integration,e2e,release,user_stories,install
+DINA_CORE_URL="$DINA_CORE_URL" \
+DINA_CLIENT_TOKEN="$DINA_CLIENT_TOKEN" \
+  python scripts/test_status.py --suite integration,e2e,release,user_stories,install,install-pexpect

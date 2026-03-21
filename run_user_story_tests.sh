@@ -42,7 +42,7 @@ fi
 # Generate 3-char session ID for Docker project isolation.
 # Port allocation is handled by conftest.py (auto-scans for free ports,
 # retries on conflict — no TOCTOU race).
-SESSION_ID="${DINA_TEST_SESSION:-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3 || true)}"
+SESSION_ID="${DINA_TEST_SESSION:-$(openssl rand -hex 2 | tr -d '\n' | head -c 3)}"
 export COMPOSE_PROJECT_NAME="dina-system-${SESSION_ID}"
 # conftest.py reads PORT_CORE_ALONSO as starting hint; defaults to 19300.
 PORT_BASE="${DINA_TEST_PORT_BASE:-19300}"

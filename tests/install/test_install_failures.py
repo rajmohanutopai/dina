@@ -130,45 +130,96 @@ class TestCorruptSeedArtifacts:
     """Verify Core fails closed with useful logs when seed artifacts are corrupt."""
 
     def test_corrupt_wrapped_seed_fails_closed(self, installed_dir: Path) -> None:
-        """Corrupting wrapped_seed.bin causes Core to fail with clear error."""
-        # Corrupt the wrapped seed
+        """Corrupting wrapped_seed.bin causes Core to fail with clear error.
+
+        Saves and restores the original file so the session fixture is not
+        poisoned for subsequent tests.
+        """
         seed_path = installed_dir / "secrets" / "wrapped_seed.bin"
-        seed_path.write_bytes(b"\xff" * 60)  # garbage
+        original = seed_path.read_bytes()
 
-        # Restart containers to pick up the corrupt file
-        result = subprocess.run(
-            ["bash", str(installed_dir / "run.sh"), "--stop"],
-            cwd=str(installed_dir),
-            capture_output=True,
-            timeout=60,
-            env={**os.environ, "DINA_DIR": str(installed_dir)},
-        )
+        try:
+            # Corrupt the wrapped seed
+            seed_path.write_bytes(b"\xff" * 60)  # garbage
 
-        child = pexpect.spawn(
-            "bash",
-            [str(installed_dir / "run.sh")],
-            cwd=str(installed_dir),
-            timeout=180,
-            encoding="utf-8",
-            env={**os.environ, "DINA_DIR": str(installed_dir)},
-        )
+            # Restart containers to pick up the corrupt file
+            subprocess.run(
+                ["bash", str(installed_dir / "run.sh"), "--stop"],
+                cwd=str(installed_dir),
+                capture_output=True,
+                timeout=60,
+                env={
+                    **os.environ,
+                    "DINA_DIR": str(installed_dir),
+                    "DINA_SKIP_LLM_CHECK": "1",
+                },
+            )
 
-        # Core should fail to start — run.sh should show timeout or error with logs
-        idx = child.expect(
-            [
-                "Health check timed out",
-                "unwrap",        # Core log: "Failed to unwrap identity seed"
-                "Restarting",    # Container status showing restart loop
-                "Dina is running",  # should NOT reach this with corrupt seed
-                pexpect.TIMEOUT,
-            ],
-            timeout=120,
-        )
-        child.close()
+            child = pexpect.spawn(
+                "bash",
+                [str(installed_dir / "run.sh"), "--start"],
+                cwd=str(installed_dir),
+                timeout=180,
+                encoding="utf-8",
+                env={
+                    **os.environ,
+                    "DINA_DIR": str(installed_dir),
+                    "DINA_SKIP_LLM_CHECK": "1",
+                },
+            )
 
-        assert idx in (0, 1, 2), (
-            "Core should fail closed with corrupt wrapped_seed.bin"
-        )
+            # Core should fail to start
+            idx = child.expect(
+                [
+                    "Health check timed out",
+                    "unwrap",
+                    "Restarting",
+                    "Dina is running",
+                    pexpect.TIMEOUT,
+                ],
+                timeout=120,
+            )
+            child.close()
+
+            assert idx in (0, 1, 2), (
+                "Core should fail closed with corrupt wrapped_seed.bin"
+            )
+        finally:
+            # Restore original so subsequent tests are not poisoned
+            seed_path.write_bytes(original)
+            # Restart with good seed to leave healthy state for subsequent tests
+            subprocess.run(
+                ["bash", str(installed_dir / "run.sh"), "--stop"],
+                cwd=str(installed_dir),
+                capture_output=True,
+                timeout=60,
+                env={
+                    **os.environ,
+                    "DINA_DIR": str(installed_dir),
+                    "DINA_SKIP_LLM_CHECK": "1",
+                },
+            )
+            child = pexpect.spawn(
+                "bash",
+                [str(installed_dir / "run.sh"), "--start"],
+                cwd=str(installed_dir),
+                timeout=180,
+                encoding="utf-8",
+                env={
+                    **os.environ,
+                    "DINA_DIR": str(installed_dir),
+                    "DINA_SKIP_LLM_CHECK": "1",
+                },
+            )
+            idx = child.expect(
+                ["Dina is running", "Containers already running", pexpect.TIMEOUT],
+                timeout=120,
+            )
+            child.close()
+            assert idx in (0, 1), (
+                "Failed to restore healthy state after corrupt-seed test — "
+                "installed_dir is poisoned for subsequent tests"
+            )
 
 
 class TestDockerNotRunning:

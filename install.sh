@@ -123,11 +123,13 @@ run_crypto() {
             *)     script_args+=("$1"); shift ;;
         esac
     done
+    # Use ${arr[@]+"${arr[@]}"} to safely expand potentially empty arrays
+    # under set -u (bash <4.4 treats empty "${arr[@]}" as unbound).
     docker run --rm --user "$(id -u):$(id -g)" \
         -v "${DINA_DIR}/scripts:/scripts:ro" \
-        "${docker_args[@]}" \
+        ${docker_args[@]+"${docker_args[@]}"} \
         "${CRYPTO_IMAGE}" \
-        python3 "/scripts/${script#scripts/}" "${script_args[@]}"
+        python3 "/scripts/${script#scripts/}" ${script_args[@]+"${script_args[@]}"}
 }
 
 # ---------------------------------------------------------------------------
@@ -294,7 +296,7 @@ if [ -f "${SESSION_ID_FILE}" ]; then
     DINA_SESSION=$(cat "${SESSION_ID_FILE}")
     verbose_skip "Session ID: ${DINA_SESSION}"
 else
-    DINA_SESSION=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3 || true)
+    DINA_SESSION=$(openssl rand -hex 2 | tr -d '\n' | head -c 3)
     printf '%s' "${DINA_SESSION}" > "${SESSION_ID_FILE}"
     chmod 600 "${SESSION_ID_FILE}"
     verbose_ok "Session ID: ${DINA_SESSION}"
@@ -507,7 +509,10 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
         }
 
         # --- Verify user saved it: ask for 3 random words ---
-        if [ -t 0 ]; then
+        # DINA_SKIP_MNEMONIC_VERIFY=1 skips the interactive verification
+        # (used by pexpect tests where capturing alternate-screen output
+        # and answering random word challenges is impractical).
+        if [ -t 0 ] && [ "${DINA_SKIP_MNEMONIC_VERIFY:-}" != "1" ]; then
             _show_phrase_alt_screen
 
             # Split mnemonic into array
@@ -622,48 +627,54 @@ if [ -n "${MASTER_SEED}" ]; then
         verbose_info "Non-interactive: auto-generated passphrase (Server Mode)"
     fi
 
-    # Call wrap_seed.py — secrets passed via env to avoid process-list exposure.
+    # --- Run installer core: wrap seed + provision service keys ---
+    # Same Python module used by tests — single source of truth.
+    # Secrets passed via env to avoid process-list exposure.
     info "Securing your identity..."
-    if run_crypto scripts/wrap_seed.py /secrets \
-        -e DINA_SEED_HEX="${MASTER_SEED}" \
-        -e DINA_SEED_PASSPHRASE="${SEED_PASSPHRASE}" \
-        -v "${SECRETS_DIR}:/secrets" \
-        >/dev/null 2>&1; then
-        # Docker may have written files as root despite --user. Reclaim ownership.
-        _repair_ownership
-        verbose_ok "Identity seed encrypted"
-    else
-        fail "Failed to encrypt identity seed"
-    fi
 
-    # Always write the passphrase for initial startup — Core needs it to
-    # decrypt the wrapped seed. For Maximum Security mode, we clear it from
-    # disk after containers are healthy (see post-health-check section below).
-    printf '%s' "${SEED_PASSPHRASE}" > "${SECRETS_DIR}/seed_password"
-    chmod 600 "${SECRETS_DIR}/seed_password"
-    if [ "${SEED_MODE}" = "server" ]; then
-        verbose_ok "Passphrase stored (Server Mode)"
-    else
-        verbose_ok "Passphrase written for initial startup (will be cleared)"
-    fi
+    # Always pass restore_hex — bash already has the seed (generated or
+    # restored) and has shown the recovery phrase to the user. The core
+    # must wrap THIS seed, not generate a new one.
+    _IC="restore_hex"
 
-    # Provision deterministic service keys from master seed (SLIP-0010 at m/9999'/3'/').
-    # Must happen before the seed is zeroed. Writes PEM files to the same layout
-    # that Docker mounts expect (core/, brain/, public/).
-    run_crypto scripts/provision_derived_service_keys.py /service_keys \
-        -e DINA_SEED_HEX="${MASTER_SEED}" \
-        -v "${SERVICE_KEY_DIR}:/service_keys" \
-        || fail "Failed to provision service keys"
+    # Build JSON config (passphrase via env, not in JSON)
+    _INSTALLER_CONFIG=$(cat <<INSTJSON
+{
+    "dina_dir": "/work",
+    "identity_choice": "${_IC}",
+    "passphrase": "placeholder",
+    "startup_mode": "${SEED_MODE}",
+    "hex_seed": "${MASTER_SEED}",
+    "write_env": false
+}
+INSTJSON
+    )
+
+    # Call the installer core inside the crypto Docker container.
+    # The Python module reads DINA_SEED_PASSPHRASE from env and overrides
+    # the placeholder passphrase in the JSON config.
+    _INSTALLER_RESULT=$(echo "${_INSTALLER_CONFIG}" | \
+        docker run --rm -i --user "$(id -u):$(id -g)" \
+            -v "${DINA_DIR}:/work" \
+            -v "${DINA_DIR}/scripts:/work/scripts:ro" \
+            -v "${DINA_DIR}/cli:/work/cli:ro" \
+            -e DINA_SEED_PASSPHRASE="${SEED_PASSPHRASE}" \
+            -e PYTHONPATH=/work \
+            "${CRYPTO_IMAGE}" \
+            python3 -m scripts.installer apply 2>&1) || {
+        [ "${VERBOSE}" = true ] && echo "${_INSTALLER_RESULT}"
+        fail "Failed to secure identity. Run with --verbose for details."
+    }
 
     # Docker may have written files as root despite --user. Reclaim ownership.
     _repair_ownership
 
-    # Verify all key files were actually written
+    # Verify key files
     for _kf in core/core_ed25519_private.pem brain/brain_ed25519_private.pem \
                public/core_ed25519_public.pem public/brain_ed25519_public.pem; do
         [ -f "${SERVICE_KEY_DIR}/${_kf}" ] || fail "Service key missing: ${_kf}"
     done
-    verbose_ok "Service keys provisioned (seed-derived)"
+    verbose_ok "Identity seed encrypted + service keys provisioned"
 
     # Zero the seed variable — raw seed must not persist
     MASTER_SEED="0000000000000000000000000000000000000000000000000000000000000000"

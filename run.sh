@@ -216,20 +216,12 @@ ensure_required_env "${ENV_FILE}"
 # Fill optional configuration gaps
 # ---------------------------------------------------------------------------
 
-# Check LLM provider
-if ! has_llm_provider "${ENV_FILE}"; then
-    warn "No LLM provider configured"
-    if [ -t 0 ]; then
-        setup_llm_provider
-        write_llm_to_env "${ENV_FILE}"
-        if [ ${#LLM_PROVIDERS[@]} -gt 0 ]; then
-            ok "LLM provider(s) configured"
-        fi
-    else
-        info "Run interactively to configure LLM provider, or edit .env directly"
-    fi
-else
+# Check LLM provider — warn but never block startup.
+# LLM setup belongs in install.sh or dina-admin, not in the restart path.
+if has_llm_provider "${ENV_FILE}"; then
     ok "LLM provider configured"
+else
+    warn "No LLM provider configured — run ${CYAN}./dina-admin model set${RESET} to add one"
 fi
 
 # Check Telegram (optional — just show status, don't prompt)

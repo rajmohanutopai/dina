@@ -75,7 +75,7 @@ ensure_required_env() {
         if [ -f "${secrets_dir}/session_id" ]; then
             session=$(cat "${secrets_dir}/session_id")
         else
-            session=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3 || true)
+            session=$(openssl rand -hex 2 | tr -d '\n' | head -c 3)
         fi
         echo "" >> "$env_file"
         echo "# Session ID — scopes container names and Docker resources" >> "$env_file"
