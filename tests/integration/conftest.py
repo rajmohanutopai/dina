@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -125,7 +126,7 @@ from tests.integration.mocks import (
 )
 
 if DOCKER_MODE:
-    from tests.integration.docker_services import DockerServices
+    from tests.shared.test_stack import TestStackServices
     from tests.integration.real_clients import (
         RealAdminAPI,
         RealAuditLog,
@@ -144,21 +145,65 @@ if DOCKER_MODE:
 # Docker services (session-scoped)
 # ---------------------------------------------------------------------------
 
+class _IntegrationServices:
+    """Thin adapter over TestStackServices for integration tests.
+
+    Provides core_url/brain_url as properties (defaulting to "alonso" actor)
+    and client_token, matching the old DockerServices interface.
+
+    Also sets DINA_INTEGRATION_SERVICE_KEY_DIR so _ServiceSigner finds the
+    union stack's alonso keys (not the host's install.sh keys).
+    """
+
+    def __init__(self, stack: TestStackServices) -> None:
+        self._stack = stack
+        # Point service key signer at alonso's extracted keys.
+        # Layout: .test-stack-keys/alonso/brain/brain_ed25519_private.pem
+        #         .test-stack-keys/alonso/core/core_ed25519_private.pem
+        # _ServiceSigner looks for <root>/<service>/<service>_ed25519_private.pem
+        key_dir = self._stack._manifest.get("secrets", {}).get("alonso_keys", "")
+        if key_dir:
+            os.environ["DINA_INTEGRATION_SERVICE_KEY_DIR"] = str(
+                Path(key_dir).resolve()
+            )
+
+    @property
+    def core_url(self) -> str:
+        return self._stack.core_url("alonso")
+
+    @property
+    def brain_url(self) -> str:
+        return self._stack.brain_url("alonso")
+
+    @property
+    def client_token(self) -> str:
+        return self._stack.client_token
+
+    def is_running(self) -> bool:
+        """Check if core and brain are healthy."""
+        try:
+            import httpx
+            r1 = httpx.get(f"{self.core_url}/healthz", timeout=3)
+            r2 = httpx.get(f"{self.brain_url}/healthz", timeout=3)
+            return r1.is_success and r2.is_success
+        except Exception:
+            return False
+
+
 @pytest.fixture(scope="session")
 def docker_services():
-    """Start Docker containers for integration testing.
+    """Locate the pre-started test stack for integration testing.
 
-    Only active when DINA_INTEGRATION=docker. Session-scoped so containers
-    are started once and shared across all tests.
+    Only active when DINA_INTEGRATION=docker. Reads .test-stack.json
+    written by prepare_non_unit_env.sh. Does NOT manage Docker lifecycle.
     """
     if not DOCKER_MODE:
         yield None
         return
 
-    svc = DockerServices()
-    svc.start()
-    yield svc
-    svc.stop()
+    stack = TestStackServices()
+    stack.assert_ready()
+    yield _IntegrationServices(stack)
 
 
 # ---------------------------------------------------------------------------

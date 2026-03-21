@@ -48,7 +48,7 @@ from tests.e2e.mocks import (
 
 DOCKER_MODE = os.environ.get("DINA_E2E") == "docker"
 
-from tests.e2e.multi_node_services import MultiNodeDockerServices
+from tests.shared.test_stack import TestStackServices
 from tests.e2e.real_nodes import RealHomeNode
 from tests.e2e.real_d2d import RealD2DNetwork
 
@@ -59,21 +59,19 @@ from tests.e2e.real_d2d import RealD2DNetwork
 
 @pytest.fixture(scope="session")
 def docker_services():
-    """Start Docker containers for E2E testing.
+    """Locate the pre-started test stack for E2E testing.
 
-    Session-scoped so containers are started once and shared across
-    all tests.  Uses the multi-node stack (4 Core+Brain pairs:
-    alonso, sancho, chairmaker, albert).
+    Session-scoped. Reads .test-stack.json written by prepare_non_unit_env.sh.
+    Does NOT manage Docker lifecycle — just verifies services are healthy.
 
     Skips the entire E2E suite when DINA_E2E != 'docker'.
     """
     if not DOCKER_MODE:
         pytest.skip("E2E tests require Docker (DINA_E2E=docker)")
 
-    svc = MultiNodeDockerServices()
-    svc.start()
+    svc = TestStackServices()
+    svc.assert_ready()
     yield svc
-    svc.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +200,8 @@ def _core_private_keys(docker_services) -> dict[str, bytes | None]:
     keys: dict[str, bytes | None] = {}
     for actor in ["alonso", "sancho", "chairmaker", "albert"]:
         try:
-            keys[actor] = docker_services.extract_core_private_key(actor)
-        except (RuntimeError, Exception):
+            keys[actor] = docker_services.core_private_key(actor)
+        except (RuntimeError, FileNotFoundError, Exception):
             keys[actor] = None
     return keys
 

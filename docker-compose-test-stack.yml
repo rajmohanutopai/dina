@@ -1,0 +1,530 @@
+# Dina Unified Test Stack — All tiers in one flat compose, no profiles.
+#
+# Combines: 4 actor Home Nodes (Core+Brain), AT Protocol pipeline (PLC, PDS,
+# Jetstream, AppView), and a dummy-agent for CLI testing. Every service starts
+# together on a single bridge network with fixed host ports.
+#
+# WARNING: TESTING ONLY. Contains hardcoded seeds, test credentials, and
+# DINA_TEST_MODE=true / DINA_RATE_LIMIT=100000. Do NOT deploy in production.
+#
+# Usage:
+#   COMPOSE_PROJECT_NAME=dina-test docker compose -f docker-compose-test-stack.yml up --build -d
+#   <run tests>
+#   COMPOSE_PROJECT_NAME=dina-test docker compose -f docker-compose-test-stack.yml down -v
+
+# ============================================================================
+# YAML Anchors — shared config blocks reused across services
+# ============================================================================
+
+# -- Core service base (Go vault keeper) --
+x-core-base: &core-base
+  build:
+    context: ./core
+    dockerfile: Dockerfile
+    additional_contexts:
+      admin-cli: ./admin-cli
+  healthcheck: &core-healthcheck
+    test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
+    interval: 5s
+    timeout: 5s
+    retries: 15
+    start_period: 10s
+  networks:
+    - test-net
+
+# -- Core environment shared vars --
+x-core-env: &core-env
+  DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
+  DINA_LISTEN_ADDR: ":8100"
+  DINA_VAULT_PATH: /data/vault
+  DINA_RATE_LIMIT: "100000"
+  DINA_SPOOL_MAX: "10485760"
+  DINA_LOG_LEVEL: debug
+  DINA_TEST_MODE: "true"
+  DINA_ENV: test
+  DINA_CLIENT_TOKEN_FILE: /run/secrets/client_token
+  DINA_APPVIEW_URL: http://appview-web:3000
+  DINA_PLC_URL: http://plc:2582
+  DINA_PDS_URL: http://pds:3000
+
+# -- Brain service base (Python sidecar) --
+x-brain-base: &brain-base
+  build:
+    context: ./brain
+    dockerfile: Dockerfile
+  healthcheck: &brain-healthcheck
+    test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+    interval: 10s
+    timeout: 10s
+    retries: 15
+    start_period: 5s
+  networks:
+    - test-net
+
+# -- Brain environment shared vars --
+x-brain-env: &brain-env
+  DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
+  DINA_BRAIN_PORT: "8200"
+  DINA_LOG_LEVEL: DEBUG
+  DINA_TEST_MODE: "true"
+  GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+  OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+
+# -- Keygen init container base (derives SLIP-0010 service keys from seed) --
+x-keygen-base: &keygen-base
+  build:
+    context: ./brain
+    dockerfile: Dockerfile
+  entrypoint: ["sh", "-c"]
+  command:
+    - >
+      python /tmp/provision.py /tmp/keys &&
+      cp /tmp/keys/core/* /keys-core-priv/ &&
+      cp /tmp/keys/brain/* /keys-brain-priv/ &&
+      cp /tmp/keys/public/* /keys-pub/
+  restart: "no"
+  networks:
+    - test-net
+
+# ============================================================================
+# Services
+# ============================================================================
+
+services:
+
+  # ==========================================================================
+  # Infrastructure — AT Protocol pipeline
+  # ==========================================================================
+
+  # -- Fake PLC directory (DID resolution) --
+  plc:
+    build:
+      context: ./plc
+      dockerfile: Dockerfile
+    ports:
+      - "2582:2582"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:2582/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - test-net
+
+  # -- AT Protocol PDS (Personal Data Server) --
+  pds:
+    image: ghcr.io/bluesky-social/pds:0.4
+    ports:
+      - "2583:3000"
+    volumes:
+      - pds-data:/pds
+    environment:
+      PDS_HOSTNAME: localhost
+      PDS_PORT: "3000"
+      PDS_DATA_DIRECTORY: /pds
+      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
+      PDS_DID_PLC_URL: http://plc:2582
+      PDS_JWT_SECRET: test-jwt-secret-union-stack
+      PDS_ADMIN_PASSWORD: test-admin-pw
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: "24cfb0e961883c268cda68dc69bbca0c6df510bff656decec5d9b4c0c0bd928a"
+      PDS_DEV_MODE: "true"
+      PDS_INVITE_REQUIRED: "false"
+    depends_on:
+      plc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/xrpc/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - test-net
+
+  # -- Jetstream firehose consumer (relays repo events over WebSocket) --
+  jetstream:
+    image: ghcr.io/bluesky-social/jetstream:sha-e027425
+    platform: linux/amd64
+    environment:
+      JETSTREAM_WS_URL: ws://pds:3000/xrpc/com.atproto.sync.subscribeRepos
+      JETSTREAM_LISTEN_ADDR: ":6008"
+      JETSTREAM_LIVENESS_TTL: "120s"
+    depends_on:
+      pds:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6008'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - test-net
+
+  # -- PostgreSQL for AppView trust data --
+  postgres:
+    image: postgres:17
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: dina_trust
+      POSTGRES_USER: dina
+      POSTGRES_PASSWORD: dina
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-net
+
+  # ==========================================================================
+  # AppView — Trust Network (migrate, web API, ingester, scorer)
+  # ==========================================================================
+
+  # -- One-shot DB migration (exits after pushing schema) --
+  appview-migrate:
+    build:
+      context: ./appview
+      target: migrator
+    command: ["npx", "drizzle-kit", "push", "--force"]
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - test-net
+
+  # -- AppView xRPC API (5 endpoints, trust queries) --
+  appview-web:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/web/server.js"]
+    ports:
+      - "3001:3000"
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+      PORT: "3000"
+      NODE_ENV: production
+      RATE_LIMIT_RPM: "100000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      appview-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-net
+
+  # -- AppView ingester (Jetstream firehose → Postgres) --
+  appview-ingester:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/ingester/main.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+      DATABASE_POOL_MAX: "20"
+      JETSTREAM_URL: ws://jetstream:6008
+      NODE_ENV: test
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jetstream:
+        condition: service_healthy
+      appview-migrate:
+        condition: service_completed_successfully
+    networks:
+      - test-net
+
+  # -- AppView scorer (9 background trust-scoring jobs) --
+  appview-scorer:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/scorer/main.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+      NODE_ENV: test
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      appview-migrate:
+        condition: service_completed_successfully
+    networks:
+      - test-net
+
+  # ==========================================================================
+  # Keygen Init Containers — provision SLIP-0010 service keys per actor
+  # ==========================================================================
+
+  keygen-alonso:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0101010101010101010101010101010101010101010101010101010101010101"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - alonso-keys-core-priv:/keys-core-priv
+      - alonso-keys-brain-priv:/keys-brain-priv
+      - alonso-keys-pub:/keys-pub
+
+  keygen-sancho:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0202020202020202020202020202020202020202020202020202020202020202"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - sancho-keys-core-priv:/keys-core-priv
+      - sancho-keys-brain-priv:/keys-brain-priv
+      - sancho-keys-pub:/keys-pub
+
+  keygen-chairmaker:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0303030303030303030303030303030303030303030303030303030303030303"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - chairmaker-keys-core-priv:/keys-core-priv
+      - chairmaker-keys-brain-priv:/keys-brain-priv
+      - chairmaker-keys-pub:/keys-pub
+
+  keygen-albert:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0404040404040404040404040404040404040404040404040404040404040404"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - albert-keys-core-priv:/keys-core-priv
+      - albert-keys-brain-priv:/keys-brain-priv
+      - albert-keys-pub:/keys-pub
+
+  # ==========================================================================
+  # Actor 1: Don Alonso (primary user) — Core port 19100, Brain port 19200
+  # ==========================================================================
+
+  alonso-core:
+    <<: *core-base
+    ports:
+      - "19100:8100"
+    environment:
+      <<: *core-env
+      DINA_BRAIN_URL: http://alonso-brain:8200
+      DINA_MASTER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
+      DINA_OWN_DID: "did:plc:alonso"
+      DINA_KNOWN_PEERS: "did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
+      DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
+    volumes:
+      - alonso-data:/data
+      - alonso-keys-core-priv:/run/secrets/service_keys/private:ro
+      - alonso-keys-pub:/run/secrets/service_keys/public:ro
+      - ./secrets/client_token:/run/secrets/client_token:ro
+    depends_on:
+      alonso-brain:
+        condition: service_healthy
+      keygen-alonso:
+        condition: service_completed_successfully
+
+  alonso-brain:
+    <<: *brain-base
+    ports:
+      - "19200:8200"
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://alonso-core:8100
+    volumes:
+      - alonso-data:/data
+      - alonso-keys-brain-priv:/run/secrets/service_keys/private:ro
+      - alonso-keys-pub:/run/secrets/service_keys/public:ro
+    depends_on:
+      keygen-alonso:
+        condition: service_completed_successfully
+
+  # ==========================================================================
+  # Actor 2: Sancho (trusted friend) — Core port 19300, Brain port 19400
+  # ==========================================================================
+
+  sancho-core:
+    <<: *core-base
+    ports:
+      - "19300:8100"
+    environment:
+      <<: *core-env
+      DINA_BRAIN_URL: http://sancho-brain:8200
+      DINA_MASTER_SEED: "0202020202020202020202020202020202020202020202020202020202020202"
+      DINA_OWN_DID: "did:plc:sancho"
+      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
+    volumes:
+      - sancho-data:/data
+      - sancho-keys-core-priv:/run/secrets/service_keys/private:ro
+      - sancho-keys-pub:/run/secrets/service_keys/public:ro
+      - ./secrets/client_token:/run/secrets/client_token:ro
+    depends_on:
+      sancho-brain:
+        condition: service_healthy
+      keygen-sancho:
+        condition: service_completed_successfully
+
+  sancho-brain:
+    <<: *brain-base
+    ports:
+      - "19400:8200"
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://sancho-core:8100
+    volumes:
+      - sancho-data:/data
+      - sancho-keys-brain-priv:/run/secrets/service_keys/private:ro
+      - sancho-keys-pub:/run/secrets/service_keys/public:ro
+    depends_on:
+      keygen-sancho:
+        condition: service_completed_successfully
+
+  # ==========================================================================
+  # Actor 3: ChairMaker (vendor/seller) — Core port 19500, Brain port 19600
+  # ==========================================================================
+
+  chairmaker-core:
+    <<: *core-base
+    ports:
+      - "19500:8100"
+    environment:
+      <<: *core-env
+      DINA_BRAIN_URL: http://chairmaker-brain:8200
+      DINA_MASTER_SEED: "0303030303030303030303030303030303030303030303030303030303030303"
+      DINA_OWN_DID: "did:plc:chairmaker"
+      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://albert-core:8100"
+    volumes:
+      - chairmaker-data:/data
+      - chairmaker-keys-core-priv:/run/secrets/service_keys/private:ro
+      - chairmaker-keys-pub:/run/secrets/service_keys/public:ro
+      - ./secrets/client_token:/run/secrets/client_token:ro
+    depends_on:
+      chairmaker-brain:
+        condition: service_healthy
+      keygen-chairmaker:
+        condition: service_completed_successfully
+
+  chairmaker-brain:
+    <<: *brain-base
+    ports:
+      - "19600:8200"
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://chairmaker-core:8100
+    volumes:
+      - chairmaker-data:/data
+      - chairmaker-keys-brain-priv:/run/secrets/service_keys/private:ro
+      - chairmaker-keys-pub:/run/secrets/service_keys/public:ro
+    depends_on:
+      keygen-chairmaker:
+        condition: service_completed_successfully
+
+  # ==========================================================================
+  # Actor 4: Albert (contact) — Core port 19700, Brain port 19800
+  # ==========================================================================
+
+  albert-core:
+    <<: *core-base
+    ports:
+      - "19700:8100"
+    environment:
+      <<: *core-env
+      DINA_BRAIN_URL: http://albert-brain:8200
+      DINA_MASTER_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
+      DINA_OWN_DID: "did:plc:albert"
+      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100"
+    volumes:
+      - albert-data:/data
+      - albert-keys-core-priv:/run/secrets/service_keys/private:ro
+      - albert-keys-pub:/run/secrets/service_keys/public:ro
+      - ./secrets/client_token:/run/secrets/client_token:ro
+    depends_on:
+      albert-brain:
+        condition: service_healthy
+      keygen-albert:
+        condition: service_completed_successfully
+
+  albert-brain:
+    <<: *brain-base
+    ports:
+      - "19800:8200"
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://albert-core:8100
+    volumes:
+      - albert-data:/data
+      - albert-keys-brain-priv:/run/secrets/service_keys/private:ro
+      - albert-keys-pub:/run/secrets/service_keys/public:ro
+    depends_on:
+      keygen-albert:
+        condition: service_completed_successfully
+
+  # ==========================================================================
+  # Dummy Agent — CLI container for pairing and agent testing
+  # ==========================================================================
+
+  dummy-agent:
+    build:
+      context: ./cli
+      dockerfile: Dockerfile
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./secrets/client_token:/run/secrets/client_token:ro
+      - alonso-keys-pub:/keys-pub:ro
+    environment:
+      DINA_CORE_URL: http://alonso-core:8100
+    networks:
+      - test-net
+
+# ============================================================================
+# Volumes — all named, one per actor per key type + infrastructure
+# ============================================================================
+
+volumes:
+  # Infrastructure
+  pds-data:
+  pgdata:
+
+  # Actor data (encrypted vault files)
+  alonso-data:
+  sancho-data:
+  chairmaker-data:
+  albert-data:
+
+  # Actor keys — isolated per service (Core private, Brain private, shared public)
+  alonso-keys-core-priv:
+  alonso-keys-brain-priv:
+  alonso-keys-pub:
+
+  sancho-keys-core-priv:
+  sancho-keys-brain-priv:
+  sancho-keys-pub:
+
+  chairmaker-keys-core-priv:
+  chairmaker-keys-brain-priv:
+  chairmaker-keys-pub:
+
+  albert-keys-core-priv:
+  albert-keys-brain-priv:
+  albert-keys-pub:
+
+# ============================================================================
+# Networks — single flat bridge for all services
+# ============================================================================
+
+networks:
+  test-net:
+    driver: bridge

@@ -255,6 +255,10 @@ appview/dist/
 # Claude Code session artifacts
 .claude/scheduled_tasks.lock
 
+# Test stack artifacts (from prepare_non_unit_env.sh)
+.test-stack.json
+.test-stack-keys/
+
 # Scratch / personal notes
 issues.txt
 marketing.txt
