@@ -279,7 +279,9 @@ elif [ -t 0 ]; then
                 # Render based on kind
                 echo ""
                 if [ -n "${_help}" ] && [ "${_help}" != "null" ]; then
-                    echo -e "  ${DIM}${_help}${RESET}"
+                    # Indent continuation lines to match the 2-space prefix
+                    _help_indented=$(echo -e "${_help}" | sed '2,$s/^/  /')
+                    echo -e "  ${DIM}${_help_indented}${RESET}"
                     echo ""
                 fi
 
