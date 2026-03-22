@@ -255,36 +255,19 @@ class TestWizardLLMProviders:
 
 
 class TestWizardVerification:
-    """Recovery phrase word verification."""
+    """Recovery phrase verification is handled by install.sh (presenter).
 
-    def test_verification_prompts_3_words(self, tmp_path: Path) -> None:
-        """Wizard asks for 3 words and emits ok on success."""
-        # First run to get the phrase (with verification skipped)
-        answers_gen = [
-            {"field": "identity_choice", "value": "1"},
-            {"field": "recovery_ack", "value": "ok"},
-            {"field": "passphrase", "value": "testpass123"},
-            {"field": "passphrase_confirm", "value": "testpass123"},
-            {"field": "startup_mode", "value": "2"},
-            {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},
-        ]
-        msgs = _run_wizard_with_answers(tmp_path, answers_gen, skip_verify=True)
-        phrase = [m for m in msgs if m.get("name") == "show_recovery_phrase"][0]["words"]
+    The wizard emits show_recovery_phrase, waits for recovery_ack,
+    then waits for verification_done. Install.sh handles the alt-screen
+    display and word checking loop.
+    """
 
-        # Second run in NEW dir with same phrase via mocked resolve_identity.
-        # Mock positions [0, 5, 10] so we know which words to answer.
-        verify_dir = tmp_path / "verify"
-        seed_bytes = b"\x01" * 32  # dummy seed
-        mock_resolve = lambda cfg: (seed_bytes, list(phrase))
-
+    def test_wizard_waits_for_verification_done(self, tmp_path: Path) -> None:
+        """Wizard waits for verification_done after recovery_ack."""
         answers = [
             {"field": "identity_choice", "value": "1"},
             {"field": "recovery_ack", "value": "ok"},
-            {"field": "verify_word_1", "value": phrase[0]},
-            {"field": "verify_word_6", "value": phrase[5]},
-            {"field": "verify_word_11", "value": phrase[10]},
+            {"field": "verification_done", "value": "ok"},
             {"field": "passphrase", "value": "testpass123"},
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},
@@ -292,22 +275,15 @@ class TestWizardVerification:
             {"field": "telegram_choice", "value": "2"},
             {"field": "llm_selection", "value": "6"},
         ]
-        with patch("random.sample", return_value=[0, 5, 10]), \
-             patch("scripts.installer.wizard.resolve_identity", mock_resolve):
-            msgs2 = _run_wizard_with_answers(verify_dir, answers, skip_verify=False)
+        # skip_verify=False so wizard reads verification_done
+        msgs = _run_wizard_with_answers(tmp_path, answers, skip_verify=False)
 
-        # Should have verification prompts
-        verify_prompts = [m for m in msgs2 if m.get("type") == "prompt"
-                         and "verify_word" in m.get("field", "")]
-        assert len(verify_prompts) == 3
-
-        # Should have ok for verified
-        ok_msgs = [m for m in msgs2 if m.get("name") == "ok"
-                   and "verified" in m.get("message", "").lower()]
-        assert len(ok_msgs) == 1
+        # Should have recovery phrase event
+        phrase_events = [m for m in msgs if m.get("name") == "show_recovery_phrase"]
+        assert len(phrase_events) == 1
 
         # Should complete
-        done = [m for m in msgs2 if m.get("type") == "done"]
+        done = [m for m in msgs if m.get("type") == "done"]
         assert len(done) == 1
 
 

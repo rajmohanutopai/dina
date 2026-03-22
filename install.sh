@@ -236,8 +236,8 @@ elif [ -t 0 ]; then
     # Cleanup on Ctrl+C or unexpected exit
     _wizard_cleanup() {
         exec 4>&- 2>/dev/null
-        kill "${_WIZARD_PID}" 2>/dev/null
-        wait "${_WIZARD_PID}" 2>/dev/null
+        [ -n "${_WIZARD_PID:-}" ] && kill "${_WIZARD_PID}" 2>/dev/null
+        [ -n "${_WIZARD_PID:-}" ] && wait "${_WIZARD_PID}" 2>/dev/null
         rm -f "${_WIZARD_IN}" "${_WIZARD_OUT}"
         tput rmcup 2>/dev/null  # restore main screen if on alt screen
         echo ""
@@ -367,6 +367,78 @@ elif [ -t 0 ]; then
 
                         # Send ack
                         jq -nc '{"field":"recovery_ack","value":"ok"}' >&4
+
+                        # Verify user saved it (unless skipped for tests)
+                        if [ "${DINA_SKIP_MNEMONIC_VERIFY:-}" != "1" ]; then
+                            # Build word array
+                            _WORDS=()
+                            while IFS= read -r _w; do
+                                _WORDS+=("$_w")
+                            done <<< "${_words}"
+
+                            _verified=false
+                            while [ "${_verified}" = false ]; do
+                                echo ""
+                                echo -e "  ${BOLD}Let's verify you saved it.${RESET}"
+                                echo -e "  ${DIM}Enter the words for the positions below:${RESET}"
+
+                                # Pick 3 random positions (1-indexed, sorted)
+                                _vp=()
+                                while [ ${#_vp[@]} -lt 3 ]; do
+                                    _n=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % ${#_WORDS[@]} + 1 ))
+                                    _dup=false
+                                    for _e in "${_vp[@]+"${_vp[@]}"}"; do [ "$_e" = "$_n" ] && _dup=true; done
+                                    [ "$_dup" = false ] && _vp+=("$_n")
+                                done
+                                _vp_sorted=($(printf '%s\n' "${_vp[@]}" | sort -n))
+
+                                _all_ok=true
+                                for _p in "${_vp_sorted[@]}"; do
+                                    printf "  ${BOLD}Word #%d:${RESET} " "$_p"
+                                    read -r _uword
+                                    _uword=$(echo "$_uword" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+                                    _expected=$(echo "${_WORDS[$((_p - 1))]}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+                                    if [ "$_uword" != "$_expected" ]; then
+                                        _all_ok=false
+                                        break
+                                    fi
+                                done
+
+                                if [ "$_all_ok" = true ]; then
+                                    _verified=true
+                                    echo -e "  ${GREEN}[ok]${RESET}   Recovery phrase verified"
+                                else
+                                    echo ""
+                                    echo -e "  ${YELLOW}✗${RESET} That doesn't match. Let's try again."
+                                    # Re-show phrase on alt screen
+                                    tput smcup 2>/dev/null
+                                    echo ""
+                                    echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
+                                    echo ""
+                                    _wnum=1
+                                    _line=""
+                                    echo -e "  ${YELLOW}╔══════════════════════════════════════════════════════════════════╗${RESET}"
+                                    while IFS= read -r word; do
+                                        _line="${_line}$(printf '%2d. %-12s' ${_wnum} "${word}")"
+                                        if [ $((_wnum % 4)) -eq 0 ]; then
+                                            echo -e "  ${YELLOW}║${RESET} ${_line} ${YELLOW}║${RESET}"
+                                            _line=""
+                                        fi
+                                        _wnum=$((_wnum + 1))
+                                    done <<< "${_words}"
+                                    [ -n "${_line}" ] && echo -e "  ${YELLOW}║${RESET} ${_line} ${YELLOW}║${RESET}"
+                                    echo -e "  ${YELLOW}╚══════════════════════════════════════════════════════════════════╝${RESET}"
+                                    echo ""
+                                    echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
+                                    echo ""
+                                    printf "  Press Enter when you've written it down..."
+                                    read -r _
+                                    tput rmcup 2>/dev/null
+                                fi
+                            done
+                            # Tell wizard verification is done
+                            jq -nc '{"field":"verification_done","value":"ok"}' >&4
+                        fi
                         ;;
                     info)
                         _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
