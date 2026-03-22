@@ -21,6 +21,7 @@
 # passphrase (Argon2id + AES-256-GCM), and only the encrypted form exits.
 
 set -euo pipefail
+trap 'echo "EXIT at line $LINENO (exit code $?)" >&2' ERR
 cd "$(dirname "$0")"
 
 # ---------------------------------------------------------------------------
@@ -36,12 +37,14 @@ SKIP_BUILD=false
 CONFIG_ONLY=false
 CONFIG_FILE=""
 VERBOSE=false
+QUICK=false
 
 for arg in "$@"; do
     case "$arg" in
         --skip-build) SKIP_BUILD=true ;;
         --config-only) CONFIG_ONLY=true; SKIP_BUILD=true ;;
         --verbose|-v) VERBOSE=true ;;
+        --quick) QUICK=true ;;
         --config)
             # Next arg is the config file — handled below
             ;;
@@ -373,7 +376,7 @@ elif [ -t 0 ]; then
                         jq -nc '{"field":"recovery_ack","value":"ok"}' >&4
 
                         # Verify user saved it (unless skipped for tests)
-                        if [ "${DINA_SKIP_MNEMONIC_VERIFY:-}" != "1" ]; then
+                        if [ "${DINA_SKIP_MNEMONIC_VERIFY:-}" != "1" ] && [ "${QUICK}" != true ]; then
                             # Build word array
                             _WORDS=()
                             while IFS= read -r _w; do
