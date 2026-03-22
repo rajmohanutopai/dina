@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -21,7 +22,9 @@ from unittest.mock import patch
 import pytest
 
 
-def _run_wizard_with_answers(dina_dir: Path, answers: list[dict]) -> list[dict]:
+def _run_wizard_with_answers(
+    dina_dir: Path, answers: list[dict], *, skip_verify: bool = True,
+) -> list[dict]:
     """Run the wizard with pre-loaded answers, return all emitted messages."""
     # Build stdin: one JSON line per answer
     stdin_lines = "\n".join(json.dumps(a) for a in answers) + "\n"
@@ -30,7 +33,10 @@ def _run_wizard_with_answers(dina_dir: Path, answers: list[dict]) -> list[dict]:
     # Capture stdout
     fake_stdout = io.StringIO()
 
-    with patch("sys.stdin", fake_stdin), patch("sys.stdout", fake_stdout):
+    env_patch = {"DINA_SKIP_MNEMONIC_VERIFY": "1"} if skip_verify else {}
+    with patch("sys.stdin", fake_stdin), patch("sys.stdout", fake_stdout), \
+         patch.dict("os.environ", env_patch), \
+         patch("scripts.installer.wizard._validate_api_key", return_value=(True, "")):
         from scripts.installer.wizard import run_wizard
         run_wizard(dina_dir)
 
@@ -199,11 +205,14 @@ class TestWizardIdempotent:
         _run_wizard_with_answers(tmp_path, answers1)
         seed_before = (tmp_path / "secrets" / "wrapped_seed.bin").read_bytes()
 
-        # Second run — should skip identity, only ask config questions
+        # Second run — should skip identity, only ask config questions.
+        # Owner name was empty in first run, so wizard asks again.
+        # Telegram was skipped (no token in .env), so wizard asks again.
+        # LLM was skipped (no API keys in .env), so wizard asks again.
         answers2 = [
             {"field": "owner_name", "value": "NewName"},
             {"field": "telegram_choice", "value": "2"},
-            # No LLM prompt — .env already exists
+            {"field": "llm_selection", "value": "6"},          # Skip LLM again
         ]
         messages2 = _run_wizard_with_answers(tmp_path, answers2)
 
@@ -243,3 +252,101 @@ class TestWizardLLMProviders:
 
         env = (tmp_path / ".env").read_text()
         assert "GEMINI_API_KEY=AIzaSyTestKey123" in env
+
+
+class TestWizardVerification:
+    """Recovery phrase word verification."""
+
+    def test_verification_prompts_3_words(self, tmp_path: Path) -> None:
+        """Wizard asks for 3 words and emits ok on success."""
+        # First run to get the phrase (with verification skipped)
+        answers_gen = [
+            {"field": "identity_choice", "value": "1"},
+            {"field": "recovery_ack", "value": "ok"},
+            {"field": "passphrase", "value": "testpass123"},
+            {"field": "passphrase_confirm", "value": "testpass123"},
+            {"field": "startup_mode", "value": "2"},
+            {"field": "owner_name", "value": ""},
+            {"field": "telegram_choice", "value": "2"},
+            {"field": "llm_selection", "value": "6"},
+        ]
+        msgs = _run_wizard_with_answers(tmp_path, answers_gen, skip_verify=True)
+        phrase = [m for m in msgs if m.get("name") == "show_recovery_phrase"][0]["words"]
+
+        # Second run in NEW dir with same phrase via mocked resolve_identity.
+        # Mock positions [0, 5, 10] so we know which words to answer.
+        verify_dir = tmp_path / "verify"
+        seed_bytes = b"\x01" * 32  # dummy seed
+        mock_resolve = lambda cfg: (seed_bytes, list(phrase))
+
+        answers = [
+            {"field": "identity_choice", "value": "1"},
+            {"field": "recovery_ack", "value": "ok"},
+            {"field": "verify_word_1", "value": phrase[0]},
+            {"field": "verify_word_6", "value": phrase[5]},
+            {"field": "verify_word_11", "value": phrase[10]},
+            {"field": "passphrase", "value": "testpass123"},
+            {"field": "passphrase_confirm", "value": "testpass123"},
+            {"field": "startup_mode", "value": "2"},
+            {"field": "owner_name", "value": ""},
+            {"field": "telegram_choice", "value": "2"},
+            {"field": "llm_selection", "value": "6"},
+        ]
+        with patch("random.sample", return_value=[0, 5, 10]), \
+             patch("scripts.installer.wizard.resolve_identity", mock_resolve):
+            msgs2 = _run_wizard_with_answers(verify_dir, answers, skip_verify=False)
+
+        # Should have verification prompts
+        verify_prompts = [m for m in msgs2 if m.get("type") == "prompt"
+                         and "verify_word" in m.get("field", "")]
+        assert len(verify_prompts) == 3
+
+        # Should have ok for verified
+        ok_msgs = [m for m in msgs2 if m.get("name") == "ok"
+                   and "verified" in m.get("message", "").lower()]
+        assert len(ok_msgs) == 1
+
+        # Should complete
+        done = [m for m in msgs2 if m.get("type") == "done"]
+        assert len(done) == 1
+
+
+class TestWizardIdempotentConfig:
+    """Re-run skips owner name, Telegram, and LLM if already in .env."""
+
+    def test_rerun_skips_owner_and_telegram(self, tmp_path: Path) -> None:
+        """If owner name and Telegram token are in .env, wizard doesn't re-ask."""
+        # First install with owner + telegram
+        answers1 = [
+            {"field": "identity_choice", "value": "1"},
+            {"field": "recovery_ack", "value": "ok"},
+            {"field": "passphrase", "value": "testpass123"},
+            {"field": "passphrase_confirm", "value": "testpass123"},
+            {"field": "startup_mode", "value": "2"},
+            {"field": "owner_name", "value": "Raj"},
+            {"field": "telegram_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:ABC-DEF"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "6"},
+        ]
+        _run_wizard_with_answers(tmp_path, answers1)
+
+        env = (tmp_path / ".env").read_text()
+        assert "DINA_OWNER_NAME=Raj" in env
+        assert "DINA_TELEGRAM_TOKEN=123456:ABC-DEF" in env
+
+        # Re-run — should NOT ask for owner_name or telegram
+        # Only LLM is asked (no API keys in .env)
+        answers2 = [
+            {"field": "llm_selection", "value": "6"},
+        ]
+        msgs2 = _run_wizard_with_answers(tmp_path, answers2)
+
+        # No owner_name or telegram prompts
+        owner_prompts = [m for m in msgs2 if m.get("field") == "owner_name"]
+        telegram_prompts = [m for m in msgs2 if m.get("field") == "telegram_choice"]
+        assert len(owner_prompts) == 0, "Should not re-ask owner name"
+        assert len(telegram_prompts) == 0, "Should not re-ask Telegram"
+
+        done = [m for m in msgs2 if m.get("type") == "done"]
+        assert len(done) == 1

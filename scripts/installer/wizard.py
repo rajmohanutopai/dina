@@ -325,7 +325,7 @@ def _step_llm_providers() -> list[LLMProviderConfig]:
             if not valid:
                 _error(f"api_key_{env_key}", f"Validation failed: {err_msg}")
                 continue
-            _event("info", message=f"  {label} API key validated ✓")
+            _event("ok", message=f"{label} API key validated")
             providers.append(LLMProviderConfig(env_key=env_key, env_value=key_val.strip()))
             if token == "4":
                 # OpenRouter auto-adds default model
@@ -366,7 +366,7 @@ def _step_telegram() -> TelegramConfig | None:
     ).strip()
 
     if not token:
-        _event("info", message="No token entered — skipping Telegram setup")
+        _event("info", message="Skipping Telegram — approve requests via: dina-admin persona approvals")
         return None
 
     user_id = _prompt(
@@ -437,15 +437,24 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
             if os.environ.get("DINA_SKIP_MNEMONIC_VERIFY") != "1":
                 import random
                 positions = sorted(random.sample(range(len(recovery_phrase)), 3))
+                _event("info", message="Let's verify you saved it.")
+                _event("info", message="Enter the words for the positions below:")
                 for pos in positions:
                     while True:
                         answer = _prompt(
                             f"verify_word_{pos + 1}", "text",
-                            f"What is word #{pos + 1}?",
+                            f"Word #{pos + 1}",
                         )
                         if answer.strip().lower() == recovery_phrase[pos].lower():
                             break
-                        _error(f"verify_word_{pos + 1}", "Incorrect. Try again.")
+                        # Show the phrase again so user can re-read it
+                        _emit({
+                            "type": "event",
+                            "name": "show_recovery_phrase",
+                            "words": recovery_phrase,
+                        })
+                        _read_answer()  # wait for ack
+                _event("ok", message="Recovery phrase verified")
 
         # Step 4: Passphrase
         passphrase = _step_passphrase()
@@ -462,7 +471,7 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
         # Zero seed
         seed = b"\x00" * 32  # noqa: F841
 
-        _event("info", message="Identity secured")
+        _event("ok", message="Identity secured")
 
     # Step 6: Owner name (skip if already set in .env)
     existing_owner = _read_env_value(env_file, "DINA_OWNER_NAME")
@@ -470,6 +479,8 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
         owner_name = existing_owner
     else:
         owner_name = _step_owner_name()
+    if owner_name:
+        _event("ok", message=f"Hello, {owner_name}")
 
     # Step 7: Telegram (skip if already configured in .env)
     existing_telegram = _read_env_value(env_file, "DINA_TELEGRAM_TOKEN")
@@ -487,6 +498,9 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
     )
     if not _has_llm:
         llm_providers = _step_llm_providers()
+        if llm_providers:
+            n = len([p for p in llm_providers if p.env_key != "OPENROUTER_MODEL"])
+            _event("info", message=f"{n} provider(s) configured")
 
     # === Write config ===
     session_id = ensure_session_id(secrets_dir)

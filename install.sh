@@ -233,6 +233,17 @@ elif [ -t 0 ]; then
     _WIZARD_OUT=$(mktemp -u)
     mkfifo "${_WIZARD_IN}" "${_WIZARD_OUT}"
 
+    # Cleanup on Ctrl+C or unexpected exit
+    _wizard_cleanup() {
+        exec 4>&- 2>/dev/null
+        kill "${_WIZARD_PID}" 2>/dev/null
+        wait "${_WIZARD_PID}" 2>/dev/null
+        rm -f "${_WIZARD_IN}" "${_WIZARD_OUT}"
+        tput rmcup 2>/dev/null  # restore main screen if on alt screen
+        echo ""
+    }
+    trap _wizard_cleanup INT TERM EXIT
+
     docker run --rm -i --user "$(id -u):$(id -g)" \
         -v "${DINA_DIR}:/work" \
         -v "${DINA_DIR}/scripts:/work/scripts:ro" \
@@ -243,7 +254,7 @@ elif [ -t 0 ]; then
         -e DINA_PDS_PORT="${PDS_PORT}" \
         "${CRYPTO_IMAGE}" \
         python3 -m scripts.installer wizard \
-        < "${_WIZARD_IN}" > "${_WIZARD_OUT}" &
+        < "${_WIZARD_IN}" > "${_WIZARD_OUT}" 2>/dev/null &
     _WIZARD_PID=$!
 
     # Open write FD to wizard stdin (must happen after docker starts reading)
@@ -354,6 +365,10 @@ elif [ -t 0 ]; then
                         ;;
                     info)
                         _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        echo -e "  ${DIM}${_imsg}${RESET}"
+                        ;;
+                    ok)
+                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
                         ok "${_imsg}"
                         ;;
                     warning)
@@ -380,7 +395,8 @@ elif [ -t 0 ]; then
     done
 
     # Cleanup: close write FD, wait for container, remove pipes
-    exec 4>&-
+    trap - INT TERM EXIT  # clear trap before normal cleanup
+    exec 4>&- 2>/dev/null
     wait "${_WIZARD_PID}" 2>/dev/null
     _WIZARD_EXIT=$?
     rm -f "${_WIZARD_IN}" "${_WIZARD_OUT}"
