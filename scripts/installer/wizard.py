@@ -498,7 +498,7 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
         llm_providers = _step_llm_providers()
         if llm_providers:
             n = len([p for p in llm_providers if p.env_key != "OPENROUTER_MODEL"])
-            _event("info", message=f"{n} provider(s) configured")
+            _event("ok", message=f"{n} provider(s) configured")
 
     # === Write config ===
     _log("writing config...")

@@ -265,7 +265,7 @@ elif [ -t 0 ]; then
     while IFS= read -r line < "${_WIZARD_OUT}"; do
         # Parse the JSON message
         _type=$(echo "$line" | jq -r '.type // ""' 2>/dev/null || true)
-        [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[wizard] ${_type}: $(echo "$line" | jq -c '.' 2>/dev/null | head -c 120)${RESET}" >&2
+        if [ "${VERBOSE}" = true ]; then echo -e "  ${DIM}[wizard] ${_type}: $(echo "$line" | jq -c '.' 2>/dev/null | head -c 120)${RESET}" >&2; fi
 
         case "${_type}" in
             prompt)
@@ -331,7 +331,7 @@ elif [ -t 0 ]; then
                 fi
 
                 # Send answer back to wizard (jq handles JSON escaping)
-                [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[answer] ${_field}=${_answer:0:20}${RESET}" >&2
+                if [ "${VERBOSE}" = true ]; then echo -e "  ${DIM}[answer] ${_field}=${_answer:0:20}${RESET}" >&2; fi
                 jq -nc --arg f "${_field}" --arg v "${_answer}" '{"field":$f,"value":$v}' >&4
                 ;;
 
@@ -369,7 +369,7 @@ elif [ -t 0 ]; then
                         tput rmcup 2>/dev/null
 
                         # Send ack
-                        [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[answer] recovery_ack=ok${RESET}" >&2
+                        if [ "${VERBOSE}" = true ]; then echo -e "  ${DIM}[answer] recovery_ack=ok${RESET}" >&2; fi
                         jq -nc '{"field":"recovery_ack","value":"ok"}' >&4
 
                         # Verify user saved it (unless skipped for tests)
@@ -441,7 +441,7 @@ elif [ -t 0 ]; then
                                 fi
                             done
                             # Tell wizard verification is done
-                            [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[answer] verification_done=ok${RESET}" >&2
+                            if [ "${VERBOSE}" = true ]; then echo -e "  ${DIM}[answer] verification_done=ok${RESET}" >&2; fi
                             jq -nc '{"field":"verification_done","value":"ok"}' >&4
                         fi
                         ;;
@@ -528,7 +528,7 @@ AUTOJSON
         -e DINA_PDS_PORT="${PDS_PORT}" \
         "${CRYPTO_IMAGE}" \
         python3 -m scripts.installer apply 2>&1) || {
-        [ "${VERBOSE}" = true ] && echo "${_RESULT}" >&2
+        if [ "${VERBOSE}" = true ]; then echo "${_RESULT}" >&2; fi
         fail "Auto-configure failed."
     }
     SEED_MODE=$(echo "${_RESULT}" | jq -r '.startup_mode // "server"' 2>/dev/null || echo "server")
