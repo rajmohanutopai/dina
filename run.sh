@@ -119,10 +119,11 @@ case "${1:-}" in
                 # Verify LLM actually works with a real call
                 _token_file="${SECRETS_DIR}/client_token"
                 _llm_ok=false
+                _reason_resp=""
                 if [ -f "$_token_file" ]; then
                     _token=$(cat "$_token_file" 2>/dev/null || true)
                     if [ -n "$_token" ]; then
-                        _reason_resp=$(curl -sf -X POST \
+                        _reason_resp=$(curl -sf -m 15 -X POST \
                             -H "Authorization: Bearer $_token" \
                             -H "Content-Type: application/json" \
                             -d '{"prompt":"Reply OK"}' \

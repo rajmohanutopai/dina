@@ -117,7 +117,8 @@ class GeminiProvider:
                             name=tc["name"],
                             args=tc.get("args", {}),
                             id=tc.get("id"),
-                        )
+                        ),
+                        thought_signature=tc.get("thought_signature"),
                     ))
                 if parts:
                     contents.append(types.Content(role="model", parts=parts))
@@ -205,6 +206,7 @@ class GeminiProvider:
                                 "name": fc.name,
                                 "args": dict(fc.args) if fc.args else {},
                                 "id": getattr(fc, "id", None),
+                                "thought_signature": getattr(part, "thought_signature", None),
                             })
                         elif getattr(part, "text", None):
                             response_text += part.text
