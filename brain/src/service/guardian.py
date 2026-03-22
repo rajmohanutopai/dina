@@ -571,6 +571,7 @@ class GuardianLoop:
         event_extractor: Any = None,  # EventExtractor (for post-publish drain hook)
         persona_selector: Any = None,  # PersonaSelector
         persona_registry: Any = None,  # PersonaRegistry
+        staging_processor: Any = None,  # StagingProcessor
     ) -> None:
         self._core = core
         self._llm = llm_router
@@ -582,6 +583,7 @@ class GuardianLoop:
         self._telegram = telegram
         self._selector = persona_selector
         self._persona_registry = persona_registry
+        self._staging_processor = staging_processor
         self._routing_ambiguity_surfaced: list[str] = []
         self._event_extractor = event_extractor
 
@@ -925,6 +927,7 @@ class GuardianLoop:
             "reason_resume": self._handle_reason_resume,
             "agent_response": self._handle_agent_response,
             "contact_neglect": self._handle_contact_neglect,
+            "staging_drain": self._handle_staging_drain,
         }
 
         try:
@@ -1479,6 +1482,23 @@ class GuardianLoop:
 
     # ------------------------------------------------------------------
     # Post-Publication (drain hook — derived artifacts only)
+    async def _handle_staging_drain(self, event: dict) -> dict:
+        """Handle staging_drain event — immediately process pending staged items.
+
+        Triggered by Core after a staging ingest, so the user doesn't have
+        to wait for the next 5-minute sync cycle.
+        """
+        if self._staging_processor is None:
+            return {"action": "staging_drain", "skipped": True}
+        try:
+            resolved = await self._staging_processor.process_pending(limit=5)
+            log.info("guardian.staging_drain", resolved=resolved,
+                     trigger=event.get("trigger", "unknown"))
+            return {"action": "staging_drain", "resolved": resolved}
+        except Exception as exc:
+            log.warning("guardian.staging_drain_failed", error=str(exc))
+            return {"action": "staging_drain", "error": str(exc)}
+
     async def _scan_routing_ambiguity(self) -> None:
         """Surface items routed to general due to ambiguous persona match.
 

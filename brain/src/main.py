@@ -533,6 +533,7 @@ def create_app() -> FastAPI:
         event_extractor=event_extractor,
         persona_selector=persona_selector,
         persona_registry=persona_registry,
+        staging_processor=staging_processor,
     )
 
     # -- Telegram connector (optional — graceful degradation) --

@@ -35,6 +35,7 @@ func validateEnrichment(item domain.VaultItem) string {
 type StagingHandler struct {
 	Staging port.StagingInbox
 	Devices *service.DeviceService // for device role lookup
+	Brain   port.BrainClient      // for triggering immediate drain after ingest
 }
 
 // ingestRequest is the JSON body for POST /v1/staging/ingest.
@@ -106,6 +107,19 @@ func (h *StagingHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		"id":     id,
 		"staged": true,
 	})
+
+	// Trigger immediate staging drain via Brain (non-blocking).
+	if h.Brain != nil {
+		go func() {
+			_ = h.Brain.Process(r.Context(), domain.TaskEvent{
+				Type: "staging_drain",
+				Payload: map[string]interface{}{
+					"trigger": "ingest",
+					"item_id": id,
+				},
+			})
+		}()
+	}
 }
 
 // deriveProvenance sets ingress provenance from auth context.

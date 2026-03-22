@@ -66,6 +66,9 @@ func (l *Logging) Handler(next http.Handler) http.Handler {
 		if caller, ok := r.Context().Value(CallerTypeKey).(string); ok && caller != "" {
 			attrs = append(attrs, slog.String("caller", caller))
 		}
+		if svcID, ok := r.Context().Value(ServiceIDKey).(string); ok && svcID != "" {
+			attrs = append(attrs, slog.String("service", svcID))
+		}
 		if did := r.Header.Get("X-DID"); did != "" {
 			attrs = append(attrs, slog.String("did", did))
 		}

@@ -977,7 +977,7 @@ func main() {
 			return vaultSvc.Store(ctx, "staging", p, item)
 		},
 	)
-	stagingH := &handler.StagingHandler{Staging: stagingInbox, Devices: deviceSvc}
+	stagingH := &handler.StagingHandler{Staging: stagingInbox, Devices: deviceSvc, Brain: brain}
 
 	// Wire late-binding D2D staging function now that stagingInbox exists.
 	stageD2DMemory = func(ctx context.Context, msg *domain.DinaMessage) {
@@ -1360,9 +1360,9 @@ func main() {
 	var chain http.Handler = mux
 	chain = timeout.Handler(chain)
 	chain = authzMW(chain)
+	chain = logging.Handler(chain) // after auth so caller/did context is available
 	chain = authMW.Handler(chain)
 	chain = rateLimitMW.Handler(chain)
-	chain = logging.Handler(chain)
 	chain = recovery.Handler(chain)
 	chain = middleware.BodyLimit(1 << 20)(chain) // 1 MB default body limit
 	chain = middleware.RequestIDMiddleware(chain) // cross-service audit correlation
