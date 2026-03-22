@@ -73,7 +73,7 @@ class StagingProcessor:
         try:
             items = await self._core.staging_claim(limit)
         except Exception as exc:
-            log.warning("staging.claim_failed", extra={"error": str(exc)})
+            log.warning("staging.claim_failed", error=str(exc))
             return 0
 
         if not items:
@@ -190,9 +190,7 @@ class StagingProcessor:
                 except Exception as enrich_exc:
                     if heartbeat_task:
                         heartbeat_task.cancel()
-                    log.warning("staging.enrichment_failed", extra={
-                        "id": item_id, "error": str(enrich_exc),
-                    })
+                    log.warning("staging.enrichment_failed", id=item_id, error=str(enrich_exc))
                     try:
                         await self._core.staging_fail(
                             item_id, f"enrichment failed: {enrich_exc}",
@@ -243,17 +241,16 @@ class StagingProcessor:
                         except Exception:
                             pass  # best-effort
 
-                log.info("staging.resolved", extra={
-                    "id": item_id, "personas": personas,
-                })
+                log.info("staging.resolved", id=item_id, personas=personas)
 
                 # Surface ambiguous routing for daily brief.
                 if routing_meta and routing_meta.get("status") == "ambiguous":
-                    log.info("staging.routing_ambiguous", extra={
-                        "id": item_id,
-                        "candidates": routing_meta.get("candidates", []),
-                        "reason": routing_meta.get("reason", ""),
-                    })
+                    log.info(
+                        "staging.routing_ambiguous",
+                        id=item_id,
+                        candidates=routing_meta.get("candidates", []),
+                        reason=routing_meta.get("reason", ""),
+                    )
                     # Store as a brief-surfaceable event via Core KV
                     try:
                         brief_item = json.dumps({
@@ -278,9 +275,7 @@ class StagingProcessor:
                         pass  # best-effort
 
             except Exception as exc:
-                log.warning("staging.classify_failed", extra={
-                    "id": item_id, "error": str(exc),
-                })
+                log.warning("staging.classify_failed", id=item_id, error=str(exc))
                 try:
                     await self._core.staging_fail(item_id, str(exc))
                 except Exception:

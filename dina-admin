@@ -458,22 +458,35 @@ if [ "${1:-}" = "logs" ]; then
         case "$1" in
             -f|--follow)  follow=true; shift ;;
             -n|--lines)   tail_lines="$2"; shift 2 ;;
+            --since)      since="$2"; shift 2 ;;
+            clear)
+                # Restart containers to get fresh logs (least-privilege approach).
+                echo "Restarting containers to clear logs..."
+                $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" restart >/dev/null 2>&1
+                echo "Logs cleared (containers restarted)."
+                exit 0
+                ;;
             core|brain|pds) service="$1"; shift ;;
             *)            shift ;;
         esac
     done
 
+    _since_flag=""
+    if [ -n "${since:-}" ]; then
+        _since_flag="--since=$since"
+    fi
+
     if [ -n "$service" ]; then
         if [ "$follow" = true ]; then
-            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines" "$service"
+            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines" ${_since_flag} "$service"
         else
-            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines" "$service"
+            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines" ${_since_flag} "$service"
         fi
     else
         if [ "$follow" = true ]; then
-            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines"
+            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines" ${_since_flag}
         else
-            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines"
+            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines" ${_since_flag}
         fi
     fi
     exit 0

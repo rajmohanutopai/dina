@@ -12,6 +12,7 @@ Usage: docker compose exec core dina-admin ...
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import click
@@ -101,6 +102,24 @@ def status(ctx: click.Context) -> None:
             result["devices"] = len(device_list) if isinstance(device_list, list) else "?"
         except AdminClientError:
             result["devices"] = "?"
+
+        # LLM status from Brain healthz
+        try:
+            import urllib.request
+            import json as _json
+            brain_url = os.environ.get("DINA_BRAIN_URL", "http://brain:8200")
+            req = urllib.request.Request(f"{brain_url}/healthz", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                brain_health = _json.loads(resp.read())
+            llm_models = brain_health.get("llm_models", {})
+            llm_usage = brain_health.get("llm_usage", {})
+            result["llm"] = brain_health.get("llm_router", "unavailable")
+            result["llm_lite"] = llm_models.get("lite", "?")
+            result["llm_primary"] = llm_models.get("primary", "?")
+            result["llm_heavy"] = llm_models.get("heavy", "?")
+            result["llm_calls"] = llm_usage.get("total_calls", 0)
+        except Exception:
+            result["llm"] = "unreachable"
 
         print_result(result, json_mode)
     except AdminClientError as exc:

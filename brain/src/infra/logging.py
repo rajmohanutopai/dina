@@ -41,6 +41,10 @@ def setup_logging(level: str = "INFO") -> None:
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
+        structlog.processors.CallsiteParameterAdder(
+            [structlog.processors.CallsiteParameter.PATHNAME,
+             structlog.processors.CallsiteParameter.LINENO],
+        ),
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),

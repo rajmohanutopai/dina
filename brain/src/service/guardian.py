@@ -1583,9 +1583,7 @@ class GuardianLoop:
                     item, persona, vault_item_id=vault_item_id,
                 )
             except Exception as exc:
-                log.warning("post_publish.event_extraction_failed", extra={
-                    "vault_item_id": vault_item_id, "error": str(exc),
-                })
+                log.warning("post_publish.event_extraction_failed", vault_item_id=vault_item_id, error=str(exc))
 
         # Contact last_seen update (DID-keyed, not sender email).
         contact_did = event.get("contact_did", "")
@@ -1843,9 +1841,9 @@ class GuardianLoop:
         if hasattr(self, "_telegram") and self._telegram:
             try:
                 await self._telegram.send_approval_prompt(approval)
-                log.info("approval_prompt_sent", extra={"approval_id": approval["id"]})
+                log.info("approval_prompt_sent", approval_id=approval["id"])
             except Exception:
-                log.warning("approval_prompt_send_failed", extra={"approval_id": approval["id"]})
+                log.warning("approval_prompt_send_failed", approval_id=approval["id"])
 
         return {
             "type": "approval_notification",
@@ -2952,7 +2950,7 @@ class GuardianLoop:
         persona_tier = event.get("persona_tier", "default")
         persona_tier = (persona_tier or "default").strip().lower()
         if persona_tier not in ("default", "standard", "sensitive", "locked"):
-            log.warning("guardian.invalid_persona_tier", extra={"tier": persona_tier})
+            log.warning("guardian.invalid_persona_tier", tier=persona_tier)
             persona_tier = "default"
         provider = event.get("provider")
         skip_vault = event.get("skip_vault_enrichment", False)

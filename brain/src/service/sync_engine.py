@@ -72,23 +72,23 @@ _FIDUCIARY_KEYWORDS = re.compile(
 def _validate_mcp_items(raw: object) -> list[dict]:
     """Validate and sanitize MCP fetch result items (MED-17)."""
     if not isinstance(raw, dict):
-        log.warning("sync.mcp.invalid_response_type", extra={"type": type(raw).__name__})
+        log.warning("sync.mcp.invalid_response_type", type=type(raw).__name__)
         return []
     items = raw.get("items", [])
     if not isinstance(items, list):
-        log.warning("sync.mcp.invalid_items_type", extra={"type": type(items).__name__})
+        log.warning("sync.mcp.invalid_items_type", type=type(items).__name__)
         return []
     validated: list[dict] = []
     for i, item in enumerate(items[:_MAX_ITEMS_PER_BATCH]):
         if not isinstance(item, dict):
-            log.warning("sync.mcp.invalid_item", extra={"index": i})
+            log.warning("sync.mcp.invalid_item", index=i)
             continue
         try:
             if len(json.dumps(item, default=str)) > _MAX_ITEM_SIZE:
-                log.warning("sync.mcp.oversized_item", extra={"index": i})
+                log.warning("sync.mcp.oversized_item", index=i)
                 continue
         except (TypeError, ValueError):
-            log.warning("sync.mcp.unserializable_item", extra={"index": i})
+            log.warning("sync.mcp.unserializable_item", index=i)
             continue
         validated.append(item)
     return validated
@@ -295,7 +295,7 @@ class SyncEngine:
             try:
                 classification = self._triage(item)
             except Exception as exc:
-                log.warning("sync.triage.error", extra={"error": type(exc).__name__})
+                log.warning("sync.triage.error", error=type(exc).__name__)
                 continue
 
             if classification == "SKIP":
@@ -392,8 +392,5 @@ class SyncEngine:
                     "metadata": item.get("metadata", "{}") if isinstance(item.get("metadata"), str) else "{}",
                 })
             except Exception as exc:
-                log.warning("sync.staging_ingest_failed", extra={
-                    "source_id": item.get("source_id", ""),
-                    "error": str(exc),
-                })
+                log.warning("sync.staging_ingest_failed", source_id=item.get("source_id", ""), error=str(exc))
 
