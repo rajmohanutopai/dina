@@ -162,9 +162,9 @@ def create_app() -> FastAPI:
     brain_identity = ServiceIdentity(Path(cfg.service_key_dir), service_name="brain")
     try:
         brain_identity.ensure_key()
-        log.info("brain.service_key.ready", did=brain_identity.did())
+        log.info("brain.service_key.ready", extra={"did": brain_identity.did()})
     except Exception as exc:
-        log.error("brain.service_key.failed", error=str(exc))
+        log.error("brain.service_key.failed", extra={"error": str(exc)})
         raise
 
     # Lazy loader for Core's public key — resolves on first request, not at startup.
@@ -183,7 +183,7 @@ def create_app() -> FastAPI:
         except FileNotFoundError:
             log.debug("brain.core_key.not_yet_available")
         except Exception as exc:
-            log.warning("brain.core_key.load_error", error=str(exc))
+            log.warning("brain.core_key.load_error", extra={"error": str(exc)})
         return _core_key_cache[0]
 
     # 2b. Construct adapters
@@ -203,7 +203,7 @@ def create_app() -> FastAPI:
     if llama_url:
         try:
             providers["llama"] = LlamaProvider(llama_url)
-            log.info("brain.provider.llama", url=llama_url)
+            log.info("brain.provider.llama", extra={"url": llama_url})
         except Exception as exc:
             log.warning(
                 "brain.provider.llama.failed",
@@ -228,16 +228,16 @@ def create_app() -> FastAPI:
         gemini_embed = gcfg.get("embed_model", "models/gemini-embedding-001")
         try:
             providers["gemini"] = GeminiProvider(google_key, model=gm, embed_model=gemini_embed)
-            log.info("brain.provider.gemini", model=gm, embed_model=gemini_embed)
+            log.info("brain.provider.gemini", extra={"model": gm, "embed_model": gemini_embed})
         except Exception as exc:
-            log.warning("brain.provider.gemini.failed", error=str(exc))
+            log.warning("brain.provider.gemini.failed", extra={"error": str(exc)})
         gl = os.environ.get("GEMINI_LITE_MODEL", "").strip() or (lite_model if lite_provider == "gemini" else "")
         if gl:
             try:
                 providers["gemini-lite"] = GeminiProvider(google_key, model=gl, embed_model=gemini_embed)
-                log.info("brain.provider.gemini-lite", model=gl)
+                log.info("brain.provider.gemini-lite", extra={"model": gl})
             except Exception as exc:
-                log.warning("brain.provider.gemini-lite.failed", error=str(exc))
+                log.warning("brain.provider.gemini-lite.failed", extra={"error": str(exc)})
 
     # --- Claude ---
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -247,18 +247,18 @@ def create_app() -> FastAPI:
         cm = cm or list(ccfg.get("models", {}).keys())[0] if ccfg.get("models") else "claude-sonnet-4-6"
         try:
             providers["claude"] = ClaudeProvider(anthropic_key, model=cm)
-            log.info("brain.provider.claude", model=cm)
+            log.info("brain.provider.claude", extra={"model": cm})
         except Exception as exc:
-            log.warning("brain.provider.claude.failed", error=str(exc))
+            log.warning("brain.provider.claude.failed", extra={"error": str(exc)})
         cl = os.environ.get("CLAUDE_LITE_MODEL", "").strip() or (lite_model if lite_provider == "claude" else "")
         if not cl and len(list(ccfg.get("models", {}).keys())) > 1:
             cl = list(ccfg.get("models", {}).keys())[1]
         if cl:
             try:
                 providers["claude-lite"] = ClaudeProvider(anthropic_key, model=cl)
-                log.info("brain.provider.claude-lite", model=cl)
+                log.info("brain.provider.claude-lite", extra={"model": cl})
             except Exception as exc:
-                log.warning("brain.provider.claude-lite.failed", error=str(exc))
+                log.warning("brain.provider.claude-lite.failed", extra={"error": str(exc)})
 
     # --- OpenAI ---
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -269,18 +269,18 @@ def create_app() -> FastAPI:
         openai_embed = ocfg.get("embed_model", "text-embedding-3-small")
         try:
             providers["openai"] = OpenAIProvider(openai_key, model=om, embed_model=openai_embed)
-            log.info("brain.provider.openai", model=om, embed_model=openai_embed)
+            log.info("brain.provider.openai", extra={"model": om, "embed_model": openai_embed})
         except Exception as exc:
-            log.warning("brain.provider.openai.failed", error=str(exc))
+            log.warning("brain.provider.openai.failed", extra={"error": str(exc)})
         ol = os.environ.get("OPENAI_LITE_MODEL", "").strip() or (lite_model if lite_provider == "openai" else "")
         if not ol and len(list(ocfg.get("models", {}).keys())) > 1:
             ol = list(ocfg.get("models", {}).keys())[1]
         if ol:
             try:
                 providers["openai-lite"] = OpenAIProvider(openai_key, model=ol)
-                log.info("brain.provider.openai-lite", model=ol)
+                log.info("brain.provider.openai-lite", extra={"model": ol})
             except Exception as exc:
-                log.warning("brain.provider.openai-lite.failed", error=str(exc))
+                log.warning("brain.provider.openai-lite.failed", extra={"error": str(exc)})
 
     # --- OpenRouter ---
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
@@ -348,7 +348,8 @@ def create_app() -> FastAPI:
             )
             scrubber = None
     except (OSError, RuntimeError) as exc:
-        log.warning("brain.scrubber.presidio.init_failed", error=type(exc).__name__, detail=str(exc))
+        log.warning("brain.scrubber.presidio.init_failed",
+                     extra={"error": type(exc).__name__, "detail": str(exc)})
         try:
             scrubber = _SpacyScrubber()
             scrubber_tier = "spacy"
@@ -411,12 +412,12 @@ def create_app() -> FastAPI:
             try:
                 new_providers["gemini"] = GeminiProvider(gkey, model=_gmodels[0])
             except Exception as exc:
-                log.warning("reload.gemini.failed", error=str(exc))
+                log.warning("reload.gemini.failed", extra={"error": str(exc)})
             if len(_gmodels) > 1:
                 try:
                     new_providers["gemini-lite"] = GeminiProvider(gkey, model=_gmodels[1])
                 except Exception as exc:
-                    log.warning("reload.gemini-lite.failed", error=str(exc))
+                    log.warning("reload.gemini-lite.failed", extra={"error": str(exc)})
 
         # Claude
         akey = (kv.get("anthropic_api_key") or "").strip() or os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -424,12 +425,12 @@ def create_app() -> FastAPI:
             try:
                 new_providers["claude"] = ClaudeProvider(akey, model=_cmodels[0])
             except Exception as exc:
-                log.warning("reload.claude.failed", error=str(exc))
+                log.warning("reload.claude.failed", extra={"error": str(exc)})
             if len(_cmodels) > 1:
                 try:
                     new_providers["claude-lite"] = ClaudeProvider(akey, model=_cmodels[1])
                 except Exception as exc:
-                    log.warning("reload.claude-lite.failed", error=str(exc))
+                    log.warning("reload.claude-lite.failed", extra={"error": str(exc)})
 
         # OpenAI
         okey = (kv.get("openai_api_key") or "").strip() or os.environ.get("OPENAI_API_KEY", "").strip()
@@ -438,12 +439,12 @@ def create_app() -> FastAPI:
             try:
                 new_providers["openai"] = OpenAIProvider(okey, model=omodel)
             except Exception as exc:
-                log.warning("reload.openai.failed", error=str(exc))
+                log.warning("reload.openai.failed", extra={"error": str(exc)})
             if len(_omodels) > 1:
                 try:
                     new_providers["openai-lite"] = OpenAIProvider(okey, model=_omodels[1])
                 except Exception as exc:
-                    log.warning("reload.openai-lite.failed", error=str(exc))
+                    log.warning("reload.openai-lite.failed", extra={"error": str(exc)})
 
         # OpenRouter
         rkey = (kv.get("openrouter_api_key") or "").strip() or os.environ.get("OPENROUTER_API_KEY", "").strip()
@@ -452,7 +453,7 @@ def create_app() -> FastAPI:
                 rmodel = (kv.get("openrouter_model") or "").strip() or _rmodels[0]
                 new_providers["openrouter"] = OpenRouterProvider(rkey, model=rmodel)
             except Exception as exc:
-                log.warning("reload.openrouter.failed", error=str(exc))
+                log.warning("reload.openrouter.failed", extra={"error": str(exc)})
 
         preferred = (kv.get("preferred_cloud") or "").strip() or cfg.cloud_llm
         llm_router.reconfigure(new_providers, {
@@ -507,9 +508,9 @@ def create_app() -> FastAPI:
         try:
             contacts = await brain_core_client.list_contacts()
             trust_scorer.update_contacts(contacts)
-            log.info("trust_scorer.contacts_loaded", count=len(contacts))
+            log.info("trust_scorer.contacts_loaded", extra={"count": len(contacts)})
         except Exception as exc:
-            log.warning("trust_scorer.contacts_load_failed", error=str(exc))
+            log.warning("trust_scorer.contacts_load_failed", extra={"error": str(exc)})
 
     import asyncio
     try:
@@ -521,7 +522,7 @@ def create_app() -> FastAPI:
     for _src_name in _mcp_source_names:
         sync_engine.register_source(_src_name)
     if _mcp_source_names:
-        log.info("sync.sources_registered", sources=_mcp_source_names)
+        log.info("sync.sources_registered", extra={"sources": _mcp_source_names})
     guardian = GuardianLoop(
         core=brain_core_client,
         llm_router=llm_router,
@@ -588,12 +589,12 @@ def create_app() -> FastAPI:
                 pass
             sources = engine.sources
             if not sources:
-                log.warning("sync.no_sources", hint="No MCP servers configured")
+                log.warning("sync.no_sources", extra={"hint": "No MCP servers configured"})
             for source in sources:
                 try:
                     await engine.run_sync_cycle(source)
                 except Exception as exc:
-                    log.warning("sync.cycle_failed", error=type(exc).__name__)
+                    log.warning("sync.cycle_failed", extra={"error": type(exc).__name__})
             # Legacy enrichment sweep: drains items stored before the
             # "enrichment before publication" change. New items arrive
             # fully enriched via staging_processor. Becomes a no-op when
@@ -602,14 +603,14 @@ def create_app() -> FastAPI:
                 for p in persona_registry.all_names():
                     enriched = await enrichment_svc.enrich_pending(p, limit=10)
                     if enriched:
-                        log.info("enrichment.sweep", persona=p, enriched=enriched)
+                        log.info("enrichment.sweep", extra={"persona": p, "enriched": enriched})
             except Exception:
                 pass  # best-effort
             # Staging processor: classify pending ingested items.
             try:
                 staged = await staging_processor.process_pending(limit=20)
                 if staged:
-                    log.info("staging.processed", count=staged)
+                    log.info("staging.processed", extra={"count": staged})
             except Exception:
                 pass  # best-effort
             await asyncio.sleep(300)
