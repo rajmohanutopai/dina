@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Generate Dina test report from captured suite output.
+"""Generate Dina test report from JSON suite results.
 
-Called by run_all_tests.sh after all suites complete. Reads per-suite log
-files from a temp directory, parses results tables, and produces:
-  1. A terminal grand summary table (printed to stdout)
-  2. A standalone HTML report at all_test_results.html
+Called by run_all_tests.sh after all suites complete. Reads per-phase JSON
+files (produced by test_status.py --json-file), and generates a standalone
+HTML report at all_test_results.html.
 
 Usage:
-    python3 scripts/generate_test_report.py <suite_output_dir> <total_elapsed_s>
+    python3 scripts/generate_test_report.py <json_file> [<json_file>...] [--elapsed <seconds>]
+
+Example:
+    python3 scripts/generate_test_report.py /tmp/unit.json /tmp/nonunit.json --elapsed 120
 """
 
 from __future__ import annotations
 
 import json
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -23,537 +24,161 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 SUITE_COLORS = {
-    1: "#2563EB",  # Core blue
-    2: "#059669",  # Brain green
-    3: "#7C3AED",  # PDS purple
-    4: "#D97706",  # Amber
-    5: "#0891B2",  # Teal
+    "core": "#2563EB",
+    "brain": "#16A34A",
+    "cli": "#9333EA",
+    "admin_cli": "#D97706",
+    "appview": "#0891B2",
+    "integration": "#2563EB",
+    "e2e": "#059669",
+    "release": "#7C3AED",
+    "user_stories": "#059669",
+    "install": "#D97706",
+    "appview_integration": "#0891B2",
+    "install-pexpect": "#78716C",
 }
 
-EMPTY_SUMMARY = {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "xfail": 0}
+NAME_MAP = {
+    "core": "Core (Go)",
+    "brain": "Brain (Py)",
+    "cli": "CLI (Py)",
+    "admin_cli": "Admin CLI (Py)",
+    "appview": "AppView (TS)",
+    "integration": "Integration",
+    "e2e": "E2E (Docker)",
+    "release": "Release",
+    "user_stories": "User Stories",
+    "install": "Install",
+    "appview_integration": "AppView Integration (TS)",
+    "install-pexpect": "Install Lifecycle (pexpect)",
+}
 
-# Story descriptions — the narrative heart of Dina, mirroring run_user_story_tests.sh
+# Story descriptions — the narrative heart of Dina.
+# Each desc line is a tuple: (bold_lead, rest). Bold lead is the attention-grabbing
+# opening phrase; rest is the supporting detail. Matches run_user_story_tests.sh banner.
 USER_STORY_META = {
     1: {
         "name": "The Purchase Journey",
         "desc": [
-            '\u201cI need a chair\u201d -> 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)',
-            "Dina checks health vault (back pain, needs lumbar), finance vault (budget 10-20K INR)",
-            "Trust-weighted reviews: skip CheapChair (low trust score), recommends ErgoMax Elite",
+            ('\u201cI need a chair\u201d', '\u2192 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)'),
+            (None, 'Dina checks health vault (back pain, needs lumbar), finance vault (budget 10\u201320K INR)'),
+            (None, 'Trust-weighted reviews: skip CheapChair (low trust score), recommends ErgoMax Elite'),
         ],
     },
     2: {
         "name": "The Sancho Moment",
         "desc": [
-            "Sancho arrives -> Sancho\u2019s Dina contacts your Dina (D2D encrypted, Ed25519 signed)",
-            'Your Dina searches vault by Sancho\u2019s DID, finds: \u201chis mother had a fall\u201d, \u201clikes cardamom tea\u201d',
-            'Nudge: \u201cSancho 15 min away. Ask about his sick mother. Make cardamom tea.\u201d',
+            ('Sancho arrives', '\u2192 Sancho\u2019s Dina contacts your Dina (D2D encrypted, Ed25519 signed)'),
+            (None, 'Your Dina searches vault by Sancho\u2019s DID, finds: \u201chis mother had a fall\u201d, \u201clikes cardamom tea\u201d'),
+            (None, 'Nudge: \u201cSancho 15 min away. Ask about his sick mother. Make cardamom tea.\u201d'),
         ],
     },
     3: {
         "name": "The Dead Internet Filter",
         "desc": [
-            '\u201cIs this video AI?\u201d -> Dina resolves creator DID via AT Protocol Trust Network',
-            'Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history -> \u201cauthentic, trusted creator\u201d',
-            'BotFarm (Ring 1): 0 attestations, 3-day-old account -> \u201cunverified, check other sources\u201d',
+            ('\u201cIs this video AI?\u201d', '\u2192 Dina resolves creator DID via AT Protocol Trust Network'),
+            (None, 'Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history \u2192 \u201cauthentic, trusted creator\u201d'),
+            (None, 'BotFarm (Ring 1): 0 attestations, 3\u2011day\u2011old account \u2192 \u201cunverified, check other sources\u201d'),
         ],
     },
     4: {
         "name": "The Persona Wall",
         "desc": [
-            'Shopping agent asks \u201cany health conditions?\u201d -> Guardian blocks cross-persona access',
-            'Health (restricted): \u201cL4-L5 herniation\u201d withheld. Proposes \u201cchronic back pain\u201d only',
-            "User approves minimal disclosure. PII scrubber confirms no diagnosis leaked",
+            ('Shopping agent asks \u201cany health conditions?\u201d', '\u2192 Guardian blocks cross-persona access'),
+            (None, 'Health (restricted): \u201cL4\u2011L5 herniation\u201d withheld. Proposes \u201cchronic back pain\u201d only'),
+            (None, 'User approves minimal disclosure. PII scrubber confirms no diagnosis leaked'),
         ],
     },
     5: {
         "name": "The Agent Gateway",
         "desc": [
-            "OpenClaw/Perplexity Computer wants to send email -> pairs with Home Node, asks Dina first",
-            'Dina checks: safe? matches your rules? PII leaking? \u201csend_email\u201d -> MODERATE, asks you first',
-            "Safe tasks (web search) pass silently. Rogue agent with no auth -> 401, blocked at the gate",
+            ('OpenClaw/Perplexity Computer wants to send email', '\u2192 pairs with Home Node, asks Dina first'),
+            (None, 'Dina checks: safe? matches your rules? PII leaking? \u201csend_email\u201d \u2192 MODERATE, asks you first'),
+            (None, 'Safe tasks (web search) pass silently. Rogue agent with no auth \u2192 401, blocked at the gate'),
         ],
     },
     6: {
         "name": "The License Renewal",
         "desc": [
-            "User uploads license scan -> Brain extracts fields with confidence scores",
-            "Deterministic reminder fires 30 days before expiry (no LLM in the scheduling)",
-            "Delegation: Brain generates strict JSON for DMV-Bot. Guardian flags for human review",
+            ('User uploads license scan', '\u2192 Brain extracts fields with confidence scores'),
+            (None, 'Deterministic reminder fires 30 days before expiry (no LLM in the scheduling)'),
+            (None, 'Delegation: Brain generates strict JSON for DMV-Bot. Guardian flags for human review'),
         ],
     },
     7: {
         "name": "The Daily Briefing",
         "desc": [
-            "Most noise waits quietly. Real harm interrupts immediately.",
-            "At the end of the day, Dina gives one calm summary and clears the queue.",
+            (None, 'Most noise waits quietly. Real harm interrupts immediately.'),
+            (None, 'At the end of the day, Dina gives one calm summary and clears the queue.'),
         ],
     },
     8: {
         "name": "Move to a New Machine",
         "desc": [
-            "Dina exports from the old machine and imports on the new one as an encrypted archive.",
-            "The wrong seed cannot unlock the vault. The same seed restores identity and data.",
-            "Migration is non-destructive: the old machine still works after export.",
+            (None, 'Dina exports from the old machine and imports on the new one as an encrypted archive.'),
+            (None, 'The wrong seed cannot unlock the vault. The same seed restores identity and data.'),
+            (None, 'Migration is non\u2011destructive: the old machine still works after export.'),
         ],
     },
     9: {
         "name": "Connector Credential Expiry",
         "desc": [
-            "Gmail OAuth expires \u2014 connector status: expired. Vault and identity still work.",
-            "User reconfigures credentials, connector resumes. No cascade, no crash.",
+            ('Gmail OAuth expires', '\u2014 connector status: expired. Vault and identity still work.'),
+            (None, 'User reconfigures credentials, connector resumes. No cascade, no crash.'),
         ],
     },
     10: {
         "name": "The Operator Journey",
         "desc": [
-            "Re-run install script \u2014 DID unchanged (idempotent). No rotation, no orphaned data.",
-            "Identity is derived from master seed \u2014 immutable after bootstrap.",
+            ('Re-run install script', '\u2014 DID unchanged (idempotent). No rotation, no orphaned data.'),
+            (None, 'Identity is derived from master seed \u2014 immutable after bootstrap.'),
         ],
     },
     11: {
         "name": "The Anti-Her",
         "desc": [
-            '\u201cHaven\u2019t talked to Sarah in 45 days\u201d -> proactive nudge in briefing, not on demand.',
-            'Life event follow-up: \u201cSancho\u2019s mother was ill\u201d -> \u201cyou might want to check in.\u201d',
-            "Emotional dependency detected -> Dina suggests specific humans, never herself.",
+            ('\u201cHaven\u2019t talked to Sarah in 45 days\u201d', '\u2192 proactive nudge in briefing, not on demand.'),
+            (None, 'Life event follow-up: \u201cSancho\u2019s mother was ill\u201d \u2192 \u201cyou might want to check in.\u201d'),
+            (None, 'Emotional dependency detected \u2192 Dina suggests specific humans, never herself.'),
         ],
     },
     12: {
         "name": "Verified Truth",
         "desc": [
-            "When Dina has little evidence, she says so honestly.",
-            "When people disagree, she says the evidence is mixed instead of pretending certainty.",
-            "When the signal is strong, she speaks clearly and points back to the original sources.",
+            (None, 'When Dina has little evidence, she says so honestly.'),
+            (None, 'When people disagree, she says the evidence is mixed instead of pretending certainty.'),
+            (None, 'When the signal is strong, she speaks clearly and points back to the original sources.'),
         ],
     },
     13: {
         "name": "Silence Under Stress",
         "desc": [
-            "Even in a flood of alerts, Dina interrupts only for what truly matters.",
-            "Fake urgency from strangers is suspicious; trusted urgent events can break through.",
+            (None, 'Even in a flood of alerts, Dina interrupts only for what truly matters.'),
+            (None, 'Fake urgency from strangers is suspicious; trusted urgent events can break through.'),
         ],
     },
     14: {
         "name": "Agent Sandbox",
         "desc": [
-            "No auth, no access. Revoked means revoked immediately.",
-            "Sensitive actions stay blocked unless you approve them.",
-            "Agents cannot impersonate someone else.",
+            (None, 'No auth, no access. Revoked means revoked immediately.'),
+            (None, 'Sensitive actions stay blocked unless you approve them.'),
+            (None, 'Agents cannot impersonate someone else.'),
         ],
     },
 }
 
 
 # ---------------------------------------------------------------------------
-# ANSI / text helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
-
-def strip_ansi(text: str) -> str:
-    """Remove ANSI escape sequences from text."""
-    return re.sub(r"\x1b\[[0-9;]*m", "", text)
-
-
-def fmt_duration(seconds: int) -> str:
+def fmt_duration(seconds: int | float) -> str:
     """Format seconds as Xm Ys."""
-    m, s = divmod(seconds, 60)
+    s = int(seconds)
+    m, s = divmod(s, 60)
     if m > 0:
         return f"{m}m{s:02d}s"
     return f"{s}s"
-
-
-# ---------------------------------------------------------------------------
-# Parsers
-# ---------------------------------------------------------------------------
-
-
-def _extract_integers(parts: list[str]) -> list[int]:
-    """Extract pure integer values from pipe-split parts."""
-    nums = []
-    for p in parts:
-        p = p.strip()
-        if re.match(r"^\d+$", p):
-            nums.append(int(p))
-    return nums
-
-
-def _nums_to_summary(nums: list[int]) -> dict | None:
-    """Map 4-5 consecutive integers to total/pass/skip/fail(/xfail)."""
-    if len(nums) < 4:
-        return None
-    return {
-        "total": nums[0],
-        "passed": nums[1],
-        "skipped": nums[2],
-        "failed": nums[3],
-        "xfail": nums[4] if len(nums) >= 5 else 0,
-    }
-
-
-def parse_pipe_tables(clean_text: str) -> tuple[list[dict], dict | None]:
-    """Parse pipe-delimited tables from test runner output.
-
-    Returns (sub_suites, grand_summary_total).
-
-    Each sub_suite: {"name": str, "sections": [...], "total": dict|None}
-    """
-    lines = clean_text.splitlines()
-
-    sub_suites: list[dict] = []
-    grand_total: dict | None = None
-
-    current_name: str | None = None
-    current_sections: list[dict] = []
-    current_total: dict | None = None
-    in_grand_summary = False
-
-    for line in lines:
-        # Detect "=== Name ===" or "=== Name ===  (Xm Ys)"
-        hdr = re.match(r"\s*===\s+(.+?)\s+===", line)
-        if hdr:
-            # Save previous section
-            if current_name is not None:
-                if in_grand_summary:
-                    if current_total:
-                        grand_total = current_total
-                else:
-                    sub_suites.append({
-                        "name": current_name,
-                        "sections": current_sections,
-                        "total": current_total,
-                    })
-
-            raw_name = hdr.group(1).strip()
-            current_name = re.sub(r"\s*\([\d.]+[msh]+[\d.]*[msh]*\)\s*$", "", raw_name)
-            current_sections = []
-            current_total = None
-            in_grand_summary = "grand summary" in current_name.lower()
-            continue
-
-        if "|" not in line:
-            continue
-
-        parts = [p.strip() for p in line.split("|")]
-
-        # TOTAL line
-        if any("TOTAL" in p for p in parts):
-            nums = _extract_integers(parts)
-            s = _nums_to_summary(nums)
-            if s:
-                current_total = s
-            continue
-
-        # Section row (starts with a number)
-        if parts and parts[0] and parts[0].isdigit():
-            name = parts[1] if len(parts) > 1 else ""
-            nums = _extract_integers(parts[2:])
-            s = _nums_to_summary(nums)
-            if s:
-                s["number"] = int(parts[0])
-                s["name"] = name
-                current_sections.append(s)
-
-    # Save last section
-    if current_name is not None:
-        if in_grand_summary:
-            if current_total:
-                grand_total = current_total
-        else:
-            sub_suites.append({
-                "name": current_name,
-                "sections": current_sections,
-                "total": current_total,
-            })
-
-    return sub_suites, grand_total
-
-
-def parse_user_story_output(clean_text: str) -> tuple[list[dict], dict | None]:
-    """Parse user story banner output (run_user_story_tests.sh --brief).
-
-    Returns (stories, overall_summary).
-    """
-    stories: list[dict] = []
-    overall_passed: int | None = None
-    overall_total: int | None = None
-    overall_skipped = 0
-
-    for line in clean_text.splitlines():
-        # Per-story inside ║: "║  01 The Purchase Journey  13/13 passed  ║"
-        if "\u2551" in line:  # ║
-            m = re.search(r"(\d{2})\s+(.+?)\s+(\d+)/(\d+)\s+passed", line)
-            if m:
-                stories.append({
-                    "number": int(m.group(1)),
-                    "name": m.group(2).strip(),
-                    "total": int(m.group(4)),
-                    "passed": int(m.group(3)),
-                    "failed": int(m.group(4)) - int(m.group(3)),
-                    "skipped": 0,
-                    "xfail": 0,
-                })
-            continue
-
-        # Overall: "103/103 passed" (not inside ║)
-        m = re.search(r"(\d+)/(\d+)\s+passed", line)
-        if m:
-            overall_passed = int(m.group(1))
-            overall_total = int(m.group(2))
-
-        # Skipped count: "5 skipped"
-        m = re.search(r"(\d+)\s+skipped", line)
-        if m:
-            overall_skipped = int(m.group(1))
-
-    if overall_total is not None:
-        summary = {
-            "total": overall_total,
-            "passed": overall_passed or 0,
-            "failed": overall_total - (overall_passed or 0),
-            "skipped": overall_skipped,
-            "xfail": 0,
-        }
-    elif stories:
-        summary = {
-            "total": sum(s["total"] for s in stories),
-            "passed": sum(s["passed"] for s in stories),
-            "failed": sum(s["failed"] for s in stories),
-            "skipped": 0,
-            "xfail": 0,
-        }
-    else:
-        summary = None
-
-    return stories, summary
-
-
-def parse_pytest_summary(clean_text: str) -> dict | None:
-    """Fallback: parse pytest's final summary line.
-
-    E.g.: "714 passed, 12 skipped, 5 xfailed in 245.12s"
-    """
-    # Look for the pytest summary line (= ... =)
-    for line in reversed(clean_text.splitlines()):
-        if "passed" in line and ("=" in line or "failed" in line or "error" in line):
-            passed = _extract_first_int(r"(\d+)\s+passed", line)
-            if passed is None:
-                continue
-            failed = _extract_first_int(r"(\d+)\s+failed", line) or 0
-            skipped = _extract_first_int(r"(\d+)\s+skipped", line) or 0
-            xfailed = _extract_first_int(r"(\d+)\s+xfailed", line) or 0
-            errors = _extract_first_int(r"(\d+)\s+error", line) or 0
-            total = passed + failed + skipped + xfailed + errors
-            return {
-                "total": total,
-                "passed": passed,
-                "failed": failed + errors,
-                "skipped": skipped,
-                "xfail": xfailed,
-            }
-    return None
-
-
-def _extract_first_int(pattern: str, text: str) -> int | None:
-    m = re.search(pattern, text)
-    return int(m.group(1)) if m else None
-
-
-# ---------------------------------------------------------------------------
-# Orchestrator
-# ---------------------------------------------------------------------------
-
-
-def parse_suite_log(filepath: str, suite_name: str, suite_num: int) -> dict:
-    """Parse a single suite's captured output log."""
-    try:
-        text = Path(filepath).read_text()
-    except FileNotFoundError:
-        return {
-            "number": suite_num,
-            "name": suite_name,
-            "sub_suites": [],
-            "summary": dict(EMPTY_SUMMARY),
-        }
-
-    clean = strip_ansi(text)
-
-    # Try pipe-delimited tables (test_status.py, test_release.py, test_appview.ts)
-    sub_suites, grand_total = parse_pipe_tables(clean)
-
-    if sub_suites:
-        if grand_total:
-            overall = grand_total
-        elif len(sub_suites) == 1 and sub_suites[0].get("total"):
-            overall = sub_suites[0]["total"]
-        else:
-            overall = {
-                "total": sum(
-                    (s["total"] or {}).get("total", 0) for s in sub_suites
-                ),
-                "passed": sum(
-                    (s["total"] or {}).get("passed", 0) for s in sub_suites
-                ),
-                "failed": sum(
-                    (s["total"] or {}).get("failed", 0) for s in sub_suites
-                ),
-                "skipped": sum(
-                    (s["total"] or {}).get("skipped", 0) for s in sub_suites
-                ),
-                "xfail": sum(
-                    (s["total"] or {}).get("xfail", 0) for s in sub_suites
-                ),
-            }
-        return {
-            "number": suite_num,
-            "name": suite_name,
-            "sub_suites": sub_suites,
-            "summary": overall,
-        }
-
-    # Try user story format
-    stories, story_summary = parse_user_story_output(clean)
-    if stories:
-        return {
-            "number": suite_num,
-            "name": suite_name,
-            "sub_suites": [
-                {"name": suite_name, "sections": stories, "total": story_summary}
-            ],
-            "summary": story_summary or dict(EMPTY_SUMMARY),
-        }
-
-    # Fallback: pytest summary line
-    fallback = parse_pytest_summary(clean)
-    return {
-        "number": suite_num,
-        "name": suite_name,
-        "sub_suites": [],
-        "summary": fallback or dict(EMPTY_SUMMARY),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Terminal grand summary
-# ---------------------------------------------------------------------------
-
-_GREEN = "\033[32m"
-_RED = "\033[1;31m"
-_BOLD = "\033[1m"
-_CYAN = "\033[36m"
-_DIM = "\033[2m"
-_RESET = "\033[0m"
-
-
-def _flatten_summary_rows(suites: list[dict]) -> list[dict]:
-    """Expand suites with multiple sub-suites into flat summary rows.
-
-    A suite like "Integration Tests" with sub-suites Core (Go), Brain (Py),
-    Integration, E2E (Docker), CLI (Py) becomes 5 separate rows.
-    Single sub-suite entries stay as one row.
-    """
-    rows: list[dict] = []
-    for s in suites:
-        subs = s.get("sub_suites", [])
-        if len(subs) > 1:
-            # Expand: each sub-suite becomes its own row
-            for sub in subs:
-                total = sub.get("total") or dict(EMPTY_SUMMARY)
-                rows.append({"name": sub["name"], "summary": total})
-        else:
-            # Single sub-suite or no sub-suites: one row
-            rows.append({"name": s["name"], "summary": s["summary"]})
-    return rows
-
-
-def render_terminal_summary(
-    suites: list[dict], total_elapsed: int, *, use_color: bool = True
-) -> None:
-    """Print a grand summary table to stdout."""
-    if not use_color:
-        g = r = b = c = d = x = ""
-    else:
-        g, r, b, c, d, x = _GREEN, _RED, _BOLD, _CYAN, _DIM, _RESET
-
-    rows = _flatten_summary_rows(suites)
-
-    has_xfail = any(row["summary"].get("xfail", 0) > 0 for row in rows)
-    xf_hdr = " \u2502 XFail" if has_xfail else ""
-    xf_rule = "\u253c\u2500\u2500\u2500\u2500\u2500\u2500" if has_xfail else ""
-
-    bar = "\u2550" * 64
-    print()
-    print(f"  {b}{c}{bar}{x}")
-    print(f"  {b}  Grand Summary  ({fmt_duration(total_elapsed)}){x}")
-    print(f"  {b}{c}{bar}{x}")
-    print()
-
-    # Header
-    print(
-        f"  {b}{'Suite':<30}{x}"
-        f" \u2502 {'Total':>5}"
-        f" \u2502 {'Pass':>5}"
-        f" \u2502 {'Fail':>5}"
-        f" \u2502 {'Skip':>5}"
-        f"{xf_hdr}"
-        f" \u2502 Status"
-    )
-    rule = (
-        f"  {'\u2500' * 30}"
-        f"\u253c{'\u2500' * 7}"
-        f"\u253c{'\u2500' * 7}"
-        f"\u253c{'\u2500' * 7}"
-        f"\u253c{'\u2500' * 7}"
-        f"{xf_rule}"
-        f"\u253c{'\u2500' * 10}"
-    )
-    print(rule)
-
-    gt = gp = gf = gs = gx = 0
-    for row in rows:
-        sm = row["summary"]
-        t, p, f_, sk, xf = (
-            sm["total"], sm["passed"], sm["failed"], sm["skipped"], sm.get("xfail", 0),
-        )
-        gt += t
-        gp += p
-        gf += f_
-        gs += sk
-        gx += xf
-
-        status = f"{g}PASS{x}" if f_ == 0 else f"{r}FAIL{x}"
-        xf_col = f" \u2502 {xf:>5}" if has_xfail else ""
-        print(
-            f"  {row['name']:<30}"
-            f" \u2502 {t:>5}"
-            f" \u2502 {p:>5}"
-            f" \u2502 {f_:>5}"
-            f" \u2502 {sk:>5}"
-            f"{xf_col}"
-            f" \u2502 {status}"
-        )
-
-    print(rule)
-    all_pass = gf == 0
-    total_status = (
-        f"{g}{b}ALL PASS{x}" if all_pass else f"{r}{b}FAILED{x}"
-    )
-    xf_tot = f" \u2502 {gx:>5}" if has_xfail else ""
-    print(
-        f"  {b}{'TOTAL':<30}{x}"
-        f" \u2502 {b}{gt:>5}{x}"
-        f" \u2502 {g}{gp:>5}{x}"
-        f" \u2502 {(r if gf else d)}{gf:>5}{x}"
-        f" \u2502 {(d)}{gs:>5}{x}"
-        f"{xf_tot}"
-        f" \u2502 {total_status}"
-    )
-    print()
-
-
-# ---------------------------------------------------------------------------
-# HTML report
-# ---------------------------------------------------------------------------
 
 
 def _pass_rate(summary: dict) -> float:
@@ -575,6 +200,40 @@ def _badge(text: str, cls: str) -> str:
     return f'<span class="badge {cls}">{text}</span>'
 
 
+# ---------------------------------------------------------------------------
+# Load JSON data
+# ---------------------------------------------------------------------------
+
+def load_suites(json_files: list[str]) -> list[dict]:
+    """Load suite data from JSON files (produced by test_status.py --json-file)."""
+    suites = []
+    for path in json_files:
+        p = Path(path)
+        if not p.exists() or p.stat().st_size == 0:
+            continue
+        try:
+            data = json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        for key, suite in data.items():
+            if key.startswith("_"):
+                continue
+            summary = suite.get("summary", {})
+            sections = suite.get("sections", [])
+            suites.append({
+                "key": key,
+                "name": NAME_MAP.get(key, key),
+                "color": SUITE_COLORS.get(key, "#78716C"),
+                "summary": summary,
+                "sections": sections,
+            })
+    return suites
+
+
+# ---------------------------------------------------------------------------
+# HTML generation
+# ---------------------------------------------------------------------------
+
 def _section_rows_html(sections: list[dict], has_xfail: bool) -> str:
     """Build <tr> rows for a sections table."""
     rows = []
@@ -583,10 +242,10 @@ def _section_rows_html(sections: list[dict], has_xfail: bool) -> str:
         xf_td = f'<td class="num">{sec.get("xfail", 0)}</td>' if has_xfail else ""
         rows.append(
             f'<tr>'
-            f'<td class="num">{sec["number"]}</td>'
-            f'<td>{sec["name"]}</td>'
-            f'<td class="num">{sec["total"]}</td>'
-            f'<td class="num">{sec["passed"]}</td>'
+            f'<td class="num">{sec.get("number", "")}</td>'
+            f'<td>{sec.get("name", "")}</td>'
+            f'<td class="num">{sec.get("total", 0)}</td>'
+            f'<td class="num">{sec.get("passed", 0)}</td>'
             f'<td class="num">{sec.get("failed", 0)}</td>'
             f'<td class="num">{sec.get("skipped", 0)}</td>'
             f'{xf_td}'
@@ -596,28 +255,38 @@ def _section_rows_html(sections: list[dict], has_xfail: bool) -> str:
     return "\n".join(rows)
 
 
-def _user_stories_card_html(stories: list[dict], summary: dict) -> str:
-    """Build the user stories showcase card with descriptions."""
+def _desc_line_html(bold_lead: str | None, rest: str) -> str:
+    """Render a single description line with optional bold lead phrase."""
+    if bold_lead:
+        return f'<p><strong>{bold_lead}</strong> {rest}</p>'
+    return f'<p>{rest}</p>'
+
+
+def _user_stories_card_html(sections: list[dict], summary: dict) -> str:
+    """Build the user stories showcase card matching the terminal banner layout."""
     story_blocks = []
-    for story in stories:
-        num = story["number"]
+    for sec in sections:
+        num = sec.get("number", 0)
         meta = USER_STORY_META.get(num, {})
-        name = meta.get("name", story.get("name", f"Story {num:02d}"))
+        name = meta.get("name", sec.get("name", f"Story {num:02d}"))
         descriptions = meta.get("desc", [])
 
-        passed = story["passed"]
-        total = story["total"]
-        is_pass = story.get("failed", 0) == 0
+        passed = sec.get("passed", 0)
+        total = sec.get("total", 0)
+        is_pass = sec.get("failed", 0) == 0
         badge_cls = "pass" if is_pass else "fail"
 
-        desc_html = "\n".join(f"<p>{d}</p>" for d in descriptions)
+        desc_html = "\n".join(
+            _desc_line_html(d[0], d[1]) if isinstance(d, tuple) else f"<p>{d}</p>"
+            for d in descriptions
+        )
 
         story_blocks.append(
             f'<div class="story">'
             f'<div class="story-header">'
             f'<span class="story-num {badge_cls}">{num:02d}</span>'
             f'<span class="story-name">{name}</span>'
-            f'<span class="badge {badge_cls}">{passed}/{total}</span>'
+            f'<span class="badge {badge_cls}">{passed}/{total} passed</span>'
             f'</div>'
             f'<div class="story-desc">{desc_html}</div>'
             f'</div>'
@@ -625,22 +294,24 @@ def _user_stories_card_html(stories: list[dict], summary: dict) -> str:
 
     stories_html = "\n".join(story_blocks)
     sm = summary
-    stats = [f'{sm["total"]} tests']
-    stats.append(f'<span class="c-pass">{sm["passed"]} passed</span>')
-    if sm["failed"]:
+    stats = [f'{sm.get("total", 0)} tests']
+    stats.append(f'<span class="c-pass">{sm.get("passed", 0)} passed</span>')
+    if sm.get("failed", 0):
         stats.append(f'<span class="c-fail">{sm["failed"]} failed</span>')
-    if sm["skipped"]:
+    if sm.get("skipped", 0):
         stats.append(f'<span class="c-skip">{sm["skipped"]} skipped</span>')
     stats_html = ' <span class="dot">&middot;</span> '.join(stats)
 
-    rate = sm["passed"] / sm["total"] * 100 if sm["total"] else 100
-    rate_cls = "pass" if sm["failed"] == 0 else ("warn" if rate >= 90 else "fail")
+    rate = _pass_rate(sm)
+    rate_cls = "pass" if sm.get("failed", 0) == 0 else ("warn" if rate >= 90 else "fail")
 
     return (
         f'<div class="card stories-showcase">'
         f'<div class="stories-header">'
-        f'<h2>User Story Tests</h2>'
-        f'<div class="stories-tagline">Full stack integration — no mocks.</div>'
+        f'<h2>DINA User Story Tests</h2>'
+        f'<div class="stories-tagline">'
+        f'Stack: 2x Go Core + 2x Python Brain + PDS + AppView + Postgres'
+        f' &mdash; zero mocks, real crypto, real trust</div>'
         f'<div class="pass-rate {rate_cls}" style="font-size:1.4rem;margin:8px 0">'
         f'{rate:.1f}%</div>'
         f'<div class="stories-stats">{stats_html}</div>'
@@ -656,39 +327,33 @@ def generate_html(
     """Generate a standalone HTML test report."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Flatten sub-suites into individual rows (matches terminal grand summary)
-    flat_rows = _flatten_summary_rows(suites)
-
-    # Grand totals from flattened rows
-    gt = sum(r["summary"]["total"] for r in flat_rows)
-    gp = sum(r["summary"]["passed"] for r in flat_rows)
-    gf = sum(r["summary"]["failed"] for r in flat_rows)
-    gs = sum(r["summary"]["skipped"] for r in flat_rows)
-    gx = sum(r["summary"].get("xfail", 0) for r in flat_rows)
+    # Grand totals
+    gt = sum(s["summary"].get("total", 0) for s in suites)
+    gp = sum(s["summary"].get("passed", 0) for s in suites)
+    gf = sum(s["summary"].get("failed", 0) for s in suites)
+    gs = sum(s["summary"].get("skipped", 0) for s in suites)
+    gx = sum(s["summary"].get("xfail", 0) for s in suites)
     has_xfail = gx > 0
     rate = gp / gt * 100 if gt else 100
     rate_class = "pass" if gf == 0 else ("warn" if rate >= 90 else "fail")
 
-    # Assign colors to flattened rows (cycle through palette)
-    _colors = list(SUITE_COLORS.values())
-
-    # Build per-suite summary rows (expanded)
+    # Build summary table rows
     suite_summary_rows = []
-    for i, row in enumerate(flat_rows):
-        sm = row["summary"]
+    for s in suites:
+        sm = s["summary"]
         st = _status_class(sm)
-        color = _colors[i % len(_colors)]
+        color = s["color"]
         xf_td = f'<td class="num">{sm.get("xfail", 0)}</td>' if has_xfail else ""
         suite_summary_rows.append(
             f'<tr>'
             f'<td><span class="suite-dot" style="background:{color}"></span> '
-            f'{row["name"]}</td>'
-            f'<td class="num">{sm["total"]}</td>'
-            f'<td class="num">{sm["passed"]}</td>'
-            f'<td class="num">{sm["failed"]}</td>'
-            f'<td class="num">{sm["skipped"]}</td>'
+            f'{s["name"]}</td>'
+            f'<td class="num">{sm.get("total", 0)}</td>'
+            f'<td class="num">{sm.get("passed", 0)}</td>'
+            f'<td class="num">{sm.get("failed", 0)}</td>'
+            f'<td class="num">{sm.get("skipped", 0)}</td>'
             f'{xf_td}'
-            f'<td>{_badge("PASS" if sm["failed"] == 0 else "FAIL", st)}</td>'
+            f'<td>{_badge("PASS" if sm.get("failed", 0) == 0 else "FAIL", st)}</td>'
             f'</tr>'
         )
     xf_th = '<th class="num">XFail</th>' if has_xfail else ""
@@ -719,72 +384,51 @@ def generate_html(
     user_story_suite = None
     other_suites = []
     for s in suites:
-        if "user stor" in s["name"].lower():
+        if s["key"] == "user_stories":
             user_story_suite = s
         else:
             other_suites.append(s)
 
     # Build user stories showcase card (rendered first)
     user_stories_card = ""
-    if user_story_suite:
-        stories = []
-        for sub in user_story_suite.get("sub_suites", []):
-            stories.extend(sub.get("sections", []))
-        if stories:
-            user_stories_card = _user_stories_card_html(
-                stories, user_story_suite["summary"]
-            )
+    if user_story_suite and user_story_suite.get("sections"):
+        user_stories_card = _user_stories_card_html(
+            user_story_suite["sections"], user_story_suite["summary"]
+        )
 
-    # Build per-suite detail cards (remaining suites)
+    # Build per-suite detail cards
     suite_cards = []
     for s in other_suites:
-        color = SUITE_COLORS.get(s["number"], "#78716C")
+        color = s["color"]
         sm = s["summary"]
         sr = _pass_rate(sm)
-        sr_cls = "pass" if sm["failed"] == 0 else ("warn" if sr >= 90 else "fail")
+        sr_cls = "pass" if sm.get("failed", 0) == 0 else ("warn" if sr >= 90 else "fail")
 
-        # Sub-suite tables
-        sub_tables = []
-        for sub in s.get("sub_suites", []):
-            sections = sub.get("sections", [])
-            total = sub.get("total")
-            if not sections and not total:
-                continue
-
+        sections = s.get("sections", [])
+        if sections:
             sub_has_xfail = any(sec.get("xfail", 0) > 0 for sec in sections)
-            if total:
-                sub_has_xfail = sub_has_xfail or total.get("xfail", 0) > 0
             xf_sec_th = '<th class="num">XFail</th>' if sub_has_xfail else ""
-
             section_html = _section_rows_html(sections, sub_has_xfail)
 
-            # TOTAL footer
-            total_html = ""
-            if total:
-                xf_foot = (
-                    f'<td class="num">{total.get("xfail", 0)}</td>'
-                    if sub_has_xfail else ""
-                )
-                total_html = f"""
+            total_sm = sm
+            xf_foot = (
+                f'<td class="num">{total_sm.get("xfail", 0)}</td>'
+                if sub_has_xfail else ""
+            )
+            total_html = f"""
                 <tfoot>
                   <tr>
                     <td></td><td>TOTAL</td>
-                    <td class="num">{total["total"]}</td>
-                    <td class="num">{total["passed"]}</td>
-                    <td class="num">{total["failed"]}</td>
-                    <td class="num">{total["skipped"]}</td>
+                    <td class="num">{total_sm.get("total", 0)}</td>
+                    <td class="num">{total_sm.get("passed", 0)}</td>
+                    <td class="num">{total_sm.get("failed", 0)}</td>
+                    <td class="num">{total_sm.get("skipped", 0)}</td>
                     {xf_foot}
                     <td></td>
                   </tr>
                 </tfoot>"""
 
-            # Sub-suite heading (only if multiple sub-suites)
-            sub_heading = ""
-            if len(s.get("sub_suites", [])) > 1:
-                sub_heading = f'<h4>{sub["name"]}</h4>'
-
-            sub_tables.append(f"""
-            {sub_heading}
+            sub_tables_html = f"""
             <table>
               <thead>
                 <tr>
@@ -798,10 +442,8 @@ def generate_html(
                 {section_html}
               </tbody>
               {total_html}
-            </table>""")
-
-        sub_tables_html = "\n".join(sub_tables)
-        if not sub_tables_html:
+            </table>"""
+        else:
             sub_tables_html = (
                 '<p class="no-detail">No section-level detail available.</p>'
             )
@@ -814,11 +456,11 @@ def generate_html(
       </div>
       <div class="pass-bar"><div class="pass-bar-fill" style="width:{sr:.1f}%;background:{color}"></div></div>
       <div class="suite-stats">
-        <span>{sm["total"]} tests</span>
+        <span>{sm.get("total", 0)} tests</span>
         <span class="dot">&middot;</span>
-        <span class="c-pass">{sm["passed"]} passed</span>
-        {f'<span class="dot">&middot;</span><span class="c-fail">{sm["failed"]} failed</span>' if sm["failed"] else ""}
-        {f'<span class="dot">&middot;</span><span class="c-skip">{sm["skipped"]} skipped</span>' if sm["skipped"] else ""}
+        <span class="c-pass">{sm.get("passed", 0)} passed</span>
+        {f'<span class="dot">&middot;</span><span class="c-fail">{sm.get("failed", 0)} failed</span>' if sm.get("failed", 0) else ""}
+        {f'<span class="dot">&middot;</span><span class="c-skip">{sm.get("skipped", 0)} skipped</span>' if sm.get("skipped", 0) else ""}
         {f'<span class="dot">&middot;</span><span class="c-xfail">{sm.get("xfail", 0)} xfail</span>' if sm.get("xfail", 0) else ""}
       </div>
       {sub_tables_html}
@@ -826,7 +468,29 @@ def generate_html(
 
     suite_cards_html = user_stories_card + "\n".join(suite_cards)
 
-    html = f"""<!DOCTYPE html>
+    html = _HTML_TEMPLATE.format(
+        now=now,
+        elapsed=fmt_duration(total_elapsed),
+        rate=f"{rate:.1f}",
+        rate_class=rate_class,
+        gt=gt, gp=gp, gf=gf, gs=gs, gx=gx,
+        has_xfail=has_xfail,
+        xfail_stat_html=f'''<div class="stat xfail">
+      <div class="stat-value">{gx}</div>
+      <div class="stat-label">XFail</div>
+    </div>''' if has_xfail else "",
+        summary_table=summary_table,
+        suite_cards_html=suite_cards_html,
+    )
+
+    output_path.write_text(html)
+
+
+# ---------------------------------------------------------------------------
+# HTML template (extracted to avoid deeply nested f-strings)
+# ---------------------------------------------------------------------------
+
+_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1117,11 +781,11 @@ footer a:hover {{ text-decoration: underline; }}
 <header>
   <h1>Dina &mdash; Test Results</h1>
   <div class="sub">The Architecture of Agency</div>
-  <div class="timestamp">Generated {now} &middot; {fmt_duration(total_elapsed)} total runtime</div>
+  <div class="timestamp">Generated {now} &middot; {elapsed} total runtime</div>
 </header>
 
 <div class="card">
-  <div class="hero-rate {rate_class}">{rate:.1f}%</div>
+  <div class="hero-rate {rate_class}">{rate}%</div>
   <div class="hero-label">Overall Pass Rate</div>
   <div class="stats-row">
     <div class="stat total">
@@ -1140,10 +804,7 @@ footer a:hover {{ text-decoration: underline; }}
       <div class="stat-value">{gs}</div>
       <div class="stat-label">Skipped</div>
     </div>
-    {"" if not has_xfail else f'''<div class="stat xfail">
-      <div class="stat-value">{gx}</div>
-      <div class="stat-label">XFail</div>
-    </div>'''}
+    {xfail_stat_html}
   </div>
   {summary_table}
 </div>
@@ -1161,55 +822,40 @@ footer a:hover {{ text-decoration: underline; }}
 </body>
 </html>"""
 
-    output_path.write_text(html)
-
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
-    if len(sys.argv) < 3:
+    json_files = []
+    elapsed = 0
+
+    i = 1
+    while i < len(sys.argv):
+        if sys.argv[i] == "--elapsed" and i + 1 < len(sys.argv):
+            elapsed = int(sys.argv[i + 1])
+            i += 2
+        else:
+            json_files.append(sys.argv[i])
+            i += 1
+
+    if not json_files:
         print(
-            f"Usage: {sys.argv[0]} <suite_output_dir> <total_elapsed_s>",
+            f"Usage: {sys.argv[0]} <json_file> [<json_file>...] [--elapsed <seconds>]",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    suite_dir = Path(sys.argv[1])
-    total_elapsed = int(sys.argv[2])
-
-    # Read suite metadata files
-    suites: list[dict] = []
-    for meta_file in sorted(suite_dir.glob("suite_*.meta.json")):
-        try:
-            meta = json.loads(meta_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-        num = meta["number"]
-        name = meta["name"]
-
-        log_file = suite_dir / f"suite_{num}.log"
-        parsed = parse_suite_log(str(log_file), name, num)
-        parsed["elapsed_s"] = meta.get("elapsed_s", 0)
-        parsed["suite_passed"] = meta.get("passed", True)
-        suites.append(parsed)
-
+    suites = load_suites(json_files)
     if not suites:
+        print("No test results found.", file=sys.stderr)
         return
 
-    use_color = sys.stdout.isatty()
-    render_terminal_summary(suites, total_elapsed, use_color=use_color)
-
     html_path = Path.cwd() / "all_test_results.html"
-    generate_html(suites, total_elapsed, html_path)
+    generate_html(suites, elapsed, html_path)
 
-    g = _GREEN if use_color else ""
-    d = _DIM if use_color else ""
-    x = _RESET if use_color else ""
-    print(f"  {g}HTML report:{x} {d}{html_path}{x}")
-    print()
+    print(f"  HTML report: {html_path}")
 
 
 if __name__ == "__main__":

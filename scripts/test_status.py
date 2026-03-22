@@ -1221,6 +1221,32 @@ SUITES = {
         "parser": "pytest",
         "test_dir": "tests/install",
     },
+    "appview_integration": {
+        "name": "AppView Integration (TS)",
+        "cmd": ["npx", "vitest", "run", "tests/integration/", "--reporter=verbose"],
+        "cwd": "appview",
+        "parser": "vitest",
+        "section_names": {
+            1: "Ingester Handlers",
+            2: "Deletion & Tombstones",
+            3: "Trust Edge Sync",
+            4: "Subject Resolution",
+            5: "Idempotency",
+            6: "Backpressure & Watermark",
+            7: "Rate Limiter",
+            8: "Graph Queries",
+            9: "Scorer Jobs",
+            10: "API Endpoints",
+            11: "Database Schema",
+            12: "Dirty Flags",
+            13: "Cursor Management",
+            14: "Backfill Script",
+            15: "Label Service",
+            16: "Docker Integration",
+            17: "End-to-End Flows",
+            18: "Web Server",
+        },
+    },
     "install-pexpect": {
         "name": "Install Lifecycle (pexpect)",
         "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
@@ -1960,6 +1986,7 @@ def parse_args(argv: list[str]) -> dict:
     opts: dict = {
         "suite": None,
         "json": False,
+        "json_file": None,
         "no_color": False,
         "all_mode": False,
         "verbose": False,
@@ -1969,6 +1996,9 @@ def parse_args(argv: list[str]) -> dict:
         a = argv[i]
         if a == "--json":
             opts["json"] = True
+        elif a == "--json-file" and i + 1 < len(argv):
+            i += 1
+            opts["json_file"] = argv[i]
         elif a == "--no-color":
             opts["no_color"] = True
         elif a == "--mock":
@@ -2001,6 +2031,7 @@ def main() -> None:
     opts = parse_args(sys.argv)
     suite_filter = opts["suite"]
     json_mode = opts["json"]
+    json_file = opts["json_file"]
     no_color = opts["no_color"]
     all_mode = opts["all_mode"]
     verbose = opts["verbose"]
@@ -2065,7 +2096,8 @@ def main() -> None:
             xfa = sum(s.xfail for s in sections)
             sec_dur = sum(s.duration for s in sections)
 
-            if json_mode:
+            # Collect JSON data when --json or --json-file is active.
+            if json_mode or json_file:
                 all_json[key] = {
                     "sections": [
                         {
@@ -2101,7 +2133,8 @@ def main() -> None:
                         "wall_time_s": round(wall_time, 3),
                     },
                 }
-            else:
+
+            if not json_mode:
                 render_suite(name, sections, c, wall_time,
                              tests=tests, verbose=verbose)
 
@@ -2109,12 +2142,18 @@ def main() -> None:
 
         total_time = _time.monotonic() - script_t0
 
-        if json_mode:
+        # Finalize JSON data.
+        if json_mode or json_file:
             all_json["_timing"] = {
                 "startup_s": round(startup_time, 3),
                 "total_s": round(total_time, 3),
             }
             all_json["_log_dir"] = str(log_dir)
+
+        if json_file:
+            Path(json_file).write_text(json.dumps(all_json, indent=2) + "\n")
+
+        if json_mode:
             output_json(all_json)
             print(f"\nDetailed logs: {log_dir}/", file=sys.stderr)
         else:
