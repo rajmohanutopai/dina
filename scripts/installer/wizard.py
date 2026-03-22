@@ -48,17 +48,30 @@ from scripts.installer.secrets import (
 )
 
 
+_VERBOSE = os.environ.get("DINA_VERBOSE") == "true"
+
+
+def _log(msg: str) -> None:
+    """Write a debug line to stderr (visible in --verbose mode)."""
+    if _VERBOSE:
+        print(f"[wizard] {msg}", file=sys.stderr, flush=True)
+
+
 def _emit(msg: dict) -> None:
     """Write a JSON line to stdout."""
+    _log(f"emit: {msg.get('type', '?')} {msg.get('name', msg.get('field', ''))}")
     print(json.dumps(msg, default=str), flush=True)
 
 
 def _read_answer() -> dict:
     """Read a JSON line from stdin."""
+    _log("waiting for answer...")
     line = sys.stdin.readline()
     if not line:
         raise EOFError("stdin closed")
-    return json.loads(line.strip())
+    ans = json.loads(line.strip())
+    _log(f"got: {ans.get('field', '?')}={str(ans.get('value', ''))[:20]}")
+    return ans
 
 
 def _prompt(

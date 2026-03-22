@@ -252,9 +252,10 @@ elif [ -t 0 ]; then
         -e DINA_DIR=/work \
         -e DINA_CORE_PORT="${CORE_PORT}" \
         -e DINA_PDS_PORT="${PDS_PORT}" \
+        -e DINA_VERBOSE="${VERBOSE}" \
         "${CRYPTO_IMAGE}" \
         python3 -m scripts.installer wizard \
-        < "${_WIZARD_IN}" > "${_WIZARD_OUT}" 2>/dev/null &
+        < "${_WIZARD_IN}" > "${_WIZARD_OUT}" 2>"${DINA_DIR}/.wizard-stderr.log" &
     _WIZARD_PID=$!
 
     # Open write FD to wizard stdin (must happen after docker starts reading)
@@ -264,6 +265,7 @@ elif [ -t 0 ]; then
     while IFS= read -r line < "${_WIZARD_OUT}"; do
         # Parse the JSON message
         _type=$(echo "$line" | jq -r '.type // ""' 2>/dev/null || true)
+        [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[wizard] ${_type}: $(echo "$line" | jq -c '.' 2>/dev/null | head -c 120)${RESET}" >&2
 
         case "${_type}" in
             prompt)
@@ -329,6 +331,7 @@ elif [ -t 0 ]; then
                 fi
 
                 # Send answer back to wizard (jq handles JSON escaping)
+                [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[answer] ${_field}=${_answer:0:20}${RESET}" >&2
                 jq -nc --arg f "${_field}" --arg v "${_answer}" '{"field":$f,"value":$v}' >&4
                 ;;
 
@@ -366,6 +369,7 @@ elif [ -t 0 ]; then
                         tput rmcup 2>/dev/null
 
                         # Send ack
+                        [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[answer] recovery_ack=ok${RESET}" >&2
                         jq -nc '{"field":"recovery_ack","value":"ok"}' >&4
 
                         # Verify user saved it (unless skipped for tests)
@@ -437,6 +441,7 @@ elif [ -t 0 ]; then
                                 fi
                             done
                             # Tell wizard verification is done
+                            [ "${VERBOSE}" = true ] && echo -e "  ${DIM}[answer] verification_done=ok${RESET}" >&2
                             jq -nc '{"field":"verification_done","value":"ok"}' >&4
                         fi
                         ;;
@@ -484,11 +489,22 @@ elif [ -t 0 ]; then
 
     # Fail-closed: if wizard exited without sending "done", abort
     if [ -z "${DINA_SESSION}" ]; then
-        fail "Installer wizard exited without completing. Run with --verbose for details."
+        if [ -f "${DINA_DIR}/.wizard-stderr.log" ] && [ -s "${DINA_DIR}/.wizard-stderr.log" ]; then
+            echo "" >&2
+            echo -e "  ${RED}Wizard error:${RESET}" >&2
+            tail -20 "${DINA_DIR}/.wizard-stderr.log" >&2
+        fi
+        fail "Installer wizard exited without completing."
     fi
     if [ "${_WIZARD_EXIT}" -ne 0 ]; then
+        if [ -f "${DINA_DIR}/.wizard-stderr.log" ] && [ -s "${DINA_DIR}/.wizard-stderr.log" ]; then
+            echo "" >&2
+            echo -e "  ${RED}Wizard error:${RESET}" >&2
+            tail -20 "${DINA_DIR}/.wizard-stderr.log" >&2
+        fi
         fail "Installer wizard failed (exit ${_WIZARD_EXIT})."
     fi
+    rm -f "${DINA_DIR}/.wizard-stderr.log"
 
 else
     # --- Non-interactive, no config file: auto-generate everything ---
