@@ -1,14 +1,24 @@
 package middleware
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 )
 
+// TraceEmitter records structured trace events for request debugging.
+// Implemented by handler.Tracer; nil-safe — middleware skips emit when nil.
+type TraceEmitter interface {
+	Emit(ctx context.Context, step, component string, detail map[string]string)
+}
+
 // Logging provides structured request logging.
 // It logs method, path, status code, and duration. No PII is captured.
-type Logging struct{}
+type Logging struct {
+	Emitter TraceEmitter // optional — set to emit trace events per request
+}
 
 // statusWriter wraps http.ResponseWriter to capture the response status code.
 type statusWriter struct {
@@ -71,6 +81,16 @@ func (l *Logging) Handler(next http.Handler) http.Handler {
 			slog.Info("http request", args...)
 		} else {
 			slog.Info("http request", args...)
+		}
+
+		// Emit trace event for request debugging (no-op when Emitter is nil).
+		if l.Emitter != nil {
+			l.Emitter.Emit(r.Context(), "http_response", "core", map[string]string{
+				"method":   r.Method,
+				"path":     path,
+				"status":   fmt.Sprintf("%d", sw.status),
+				"duration": duration.String(),
+			})
 		}
 	})
 }

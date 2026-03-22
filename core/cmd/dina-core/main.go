@@ -242,6 +242,26 @@ func main() {
 	}
 	slog.Info("Identity database opened", "path", cfg.VaultPath)
 
+	// 3b. Request trace store (uses identity.sqlite for ephemeral debug traces).
+	traceStore := newTraceStore(vaultMgr)
+	tracer := &handler.Tracer{Store: traceStore}
+	traceH := &handler.TraceHandler{Store: traceStore}
+
+	// Periodic trace purge: discard events older than 1 hour.
+	if traceStore != nil {
+		go func() {
+			ticker := time.NewTicker(10 * time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				if n, err := traceStore.Purge(context.Background(), 3600); err != nil {
+					slog.Warn("trace purge error", "error", err)
+				} else if n > 0 {
+					slog.Info("trace purge", "purged", n)
+				}
+			}
+		}()
+	}
+
 	// 4. PII
 	scrubber := pii.NewScrubber()
 
@@ -596,6 +616,7 @@ func main() {
 
 	// 12. Brain Client (service-key auth only).
 	brain := brainclient.New(cfg.BrainURL, coreKey)
+	brain.Tracer = tracer
 
 	// Wire approval → Brain push (now that brain client exists).
 	// The OnApprovalNeeded callback was partially set above (WebSocket broadcast).
@@ -685,6 +706,7 @@ func main() {
 		vaultMgr, vaultMgr, vaultMgr, gkSvc, clk,
 	)
 	vaultSvc.SetPersonaManager(personaMgr)
+	vaultSvc.Tracer = tracer
 
 	transportSvc := service.NewTransportService(
 		nacl, identitySigner, converter, didResolverPort,
@@ -933,6 +955,7 @@ func main() {
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
 	// Agent validation proxy uses Ed25519 service-key auth.
 	agentBrain := brainclient.New(cfg.BrainURL, coreKey)
+	agentBrain.Tracer = tracer
 	agentH := &handler.AgentHandler{Brain: agentBrain}
 
 	// Staging inbox (connector ingestion pipeline).
@@ -1152,6 +1175,9 @@ func main() {
 	mux.HandleFunc("/v1/audit/query", auditH.HandleQuery)
 	mux.HandleFunc("/v1/audit/append", auditH.HandleAppend)
 
+	// Trace API (admin-only)
+	mux.HandleFunc("/v1/trace/", traceH.HandleQuery)
+
 	// Task API
 	mux.HandleFunc("/v1/task/ack", taskH.HandleAck)
 
@@ -1325,8 +1351,8 @@ func main() {
 	authMW := &middleware.Auth{Tokens: tokenValidator, ScopeResolver: tokenValidator}
 	authzMW := middleware.NewAuthzMiddleware(auth.NewAdminEndpointChecker())
 	rateLimitMW := &middleware.RateLimit{Limiter: rateLimiter, TrustedProxies: parseCIDRs(cfg.TrustedProxies)}
-	recovery := &middleware.Recovery{}
-	logging := &middleware.Logging{}
+	recovery := &middleware.Recovery{Emitter: tracer}
+	logging := &middleware.Logging{Emitter: tracer}
 	timeout := &middleware.Timeout{Duration: 30 * time.Second}
 	cors := &middleware.CORS{AllowOrigin: cfg.AllowedOrigins}
 
@@ -1377,6 +1403,7 @@ func main() {
 		socketChain = logging.Handler(socketChain)
 		socketChain = recovery.Handler(socketChain)
 		socketChain = middleware.BodyLimit(1 << 20)(socketChain)
+		socketChain = middleware.RequestIDMiddleware(socketChain)
 
 		// Clean up stale socket file from previous run.
 		os.Remove(cfg.AdminSocketPath)

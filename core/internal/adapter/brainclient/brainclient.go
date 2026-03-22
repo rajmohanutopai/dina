@@ -48,12 +48,18 @@ const (
 	defaultCooldown    = 30 * time.Second
 )
 
+// TraceEmitter records structured trace events (optional, nil-safe).
+type TraceEmitter interface {
+	Emit(ctx context.Context, step, component string, detail map[string]string)
+}
+
 // BrainClient implements testutil.BrainClient — typed HTTP calls to brain.
 type BrainClient struct {
 	mu         sync.Mutex
 	baseURL    string
 	serviceKey *servicekey.ServiceKey
 	httpClient *http.Client
+	Tracer     TraceEmitter // optional — emit brain_call/brain_response traces
 
 	// Circuit breaker state.
 	cbState     string
@@ -86,6 +92,12 @@ func New(baseURL string, sk *servicekey.ServiceKey) *BrainClient {
 // ProcessEvent sends an event to brain's guardian loop (POST /api/v1/process).
 // Returns the response body or an error.
 func (c *BrainClient) ProcessEvent(event []byte) ([]byte, error) {
+	return c.ProcessEventWithContext(context.Background(), event)
+}
+
+// ProcessEventWithContext is like ProcessEvent but accepts a context for
+// request-ID propagation and cancellation.
+func (c *BrainClient) ProcessEventWithContext(ctx context.Context, event []byte) ([]byte, error) {
 	c.mu.Lock()
 	// Check circuit breaker state.
 	if c.cbState == stateOpen {
@@ -105,7 +117,16 @@ func (c *BrainClient) ProcessEvent(event []byte) ([]byte, error) {
 	}
 
 	reqURL := c.baseURL + "/api/v1/process"
-	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(event))
+
+	// Trace: brain_call
+	if c.Tracer != nil {
+		c.Tracer.Emit(ctx, "brain_call", "core", map[string]string{
+			"endpoint": "/api/v1/process",
+		})
+	}
+	callStart := time.Now()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(event))
 	if err != nil {
 		c.recordFailure()
 		return nil, fmt.Errorf("brainclient: request creation failed: %w", err)
@@ -116,6 +137,11 @@ func (c *BrainClient) ProcessEvent(event []byte) ([]byte, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.recordFailure()
+		if c.Tracer != nil {
+			c.Tracer.Emit(ctx, "brain_response", "core", map[string]string{
+				"status": "error", "duration": time.Since(callStart).String(),
+			})
+		}
 		return nil, fmt.Errorf("brainclient: request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -124,6 +150,13 @@ func (c *BrainClient) ProcessEvent(event []byte) ([]byte, error) {
 	if err != nil {
 		c.recordFailure()
 		return nil, fmt.Errorf("brainclient: failed to read response: %w", err)
+	}
+
+	// Trace: brain_response
+	if c.Tracer != nil {
+		c.Tracer.Emit(ctx, "brain_response", "core", map[string]string{
+			"status": fmt.Sprintf("%d", resp.StatusCode), "duration": time.Since(callStart).String(),
+		})
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -265,6 +298,10 @@ func (c *BrainClient) Reason(ctx context.Context, query string) (*domain.ReasonR
 		return nil, fmt.Errorf("brainclient: marshal query: %w", err)
 	}
 
+	if c.Tracer != nil {
+		c.Tracer.Emit(ctx, "brain_call", "core", map[string]string{"endpoint": "/api/v1/reason"})
+	}
+
 	reqURL := c.baseURL + "/api/v1/reason"
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
 	if err != nil {
@@ -285,6 +322,13 @@ func (c *BrainClient) Reason(ctx context.Context, query string) (*domain.ReasonR
 	if err != nil {
 		c.recordFailure()
 		return nil, fmt.Errorf("brainclient: failed to read response: %w", err)
+	}
+
+	// Trace: brain_response for Reason
+	if c.Tracer != nil {
+		c.Tracer.Emit(ctx, "brain_response", "core", map[string]string{
+			"endpoint": "/api/v1/reason", "status": fmt.Sprintf("%d", resp.StatusCode),
+		})
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -332,6 +376,10 @@ func (c *BrainClient) ReasonWithContext(ctx context.Context, query, agentDID, se
 		return nil, fmt.Errorf("brainclient: marshal query: %w", err)
 	}
 
+	if c.Tracer != nil {
+		c.Tracer.Emit(ctx, "brain_call", "core", map[string]string{"endpoint": "/api/v1/reason"})
+	}
+
 	reqURL := c.baseURL + "/api/v1/reason"
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
 	if err != nil {
@@ -352,6 +400,12 @@ func (c *BrainClient) ReasonWithContext(ctx context.Context, query, agentDID, se
 	if err != nil {
 		c.recordFailure()
 		return nil, fmt.Errorf("brainclient: failed to read response: %w", err)
+	}
+
+	if c.Tracer != nil {
+		c.Tracer.Emit(ctx, "brain_response", "core", map[string]string{
+			"endpoint": "/api/v1/reason", "status": fmt.Sprintf("%d", resp.StatusCode),
+		})
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

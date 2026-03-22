@@ -547,3 +547,36 @@ def model_set(env_var: str, model_id: str) -> None:
     """
     click.echo("This command must be run from the host (not inside the container).")
     click.echo(f"Run: ./dina-admin model set {env_var} {model_id}")
+
+
+# ── trace ────────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.argument("req_id")
+@click.pass_context
+def trace(ctx: click.Context, req_id: str) -> None:
+    """Show request trace timeline."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        resp = client._request("GET", f"/v1/trace/{req_id}")
+        data = resp.json()
+        events = data.get("events", [])
+        if json_mode:
+            click.echo(json.dumps(data, indent=2))
+            return
+        if not events:
+            click.echo(f"No trace found for {req_id}")
+            return
+        base_ts = events[0]["ts_ms"]
+        for e in events:
+            offset = e["ts_ms"] - base_ts
+            detail = json.loads(e["detail"]) if isinstance(e["detail"], str) else e["detail"]
+            parts = [f"{k}={v}" for k, v in detail.items()]
+            click.echo(
+                f"  [+{offset}ms]  {e['component']:<6} {e['step']:<20} {' '.join(parts)}"
+            )
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)

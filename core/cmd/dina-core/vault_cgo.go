@@ -53,3 +53,9 @@ func newReminderScheduler(backend vaultBackend) port.ReminderScheduler {
 	pool := backend.(*sqlite.VaultAdapter).Pool()
 	return sqlite.NewSQLiteReminderScheduler(pool)
 }
+
+// newTraceStore returns a SQLite-backed trace store using identity.sqlite.
+func newTraceStore(backend vaultBackend) port.TraceStore {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewTraceStore(pool.DB("identity"))
+}

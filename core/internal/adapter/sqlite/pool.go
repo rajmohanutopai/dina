@@ -381,6 +381,29 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v3 complete")
 	}
 
+	// --- Identity migration v5: request trace table ---
+	if !hasTable(db, "request_trace") {
+		slog.Info("sqlite: applying identity migration v5 (request_trace table)")
+
+		_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS request_trace (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			req_id    TEXT NOT NULL,
+			ts_ms     INTEGER NOT NULL,
+			step      TEXT NOT NULL,
+			component TEXT NOT NULL,
+			detail    TEXT NOT NULL DEFAULT '{}'
+		)`)
+		if err != nil {
+			return fmt.Errorf("identity v5: create request_trace: %w", err)
+		}
+		db.ExecContext(ctx,
+			`CREATE INDEX IF NOT EXISTS idx_request_trace_req_id ON request_trace(req_id)`)
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (5, 'Request trace table for cross-service debugging')`)
+
+		slog.Info("sqlite: identity migration v5 complete")
+	}
+
 	// --- Identity migration v4: staging provenance columns ---
 	if !hasColumn(db, "staging_inbox", "ingress_channel") {
 		slog.Info("sqlite: applying identity migration v4 (staging provenance)")
