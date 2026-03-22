@@ -135,6 +135,43 @@ def setup_personas(system_services, admin_headers, brain_headers):
                 )
             except Exception:
                 pass
+        # Grant Brain access to sensitive personas (health) via approval flow.
+        # This mirrors the real admin flow: Brain requests access → Core creates
+        # pending approval → admin approves → grant is active.
+        # Without this, cross-persona disclosure tests fail because Brain can't
+        # query the health vault (ErrApprovalRequired).
+        for name in PERSONAS:
+            tier = PERSONA_TIERS[name]
+            if tier == "sensitive":
+                # Trigger a vault query as Brain to create pending approval
+                try:
+                    httpx.post(
+                        f"{base}/v1/vault/query",
+                        json={"persona": name, "query": "test", "mode": "fts5"},
+                        headers=brain_headers,
+                        timeout=10,
+                    )
+                except Exception:
+                    pass
+                # List pending approvals and approve them
+                try:
+                    r = httpx.get(
+                        f"{base}/v1/approvals",
+                        headers=admin_headers,
+                        timeout=10,
+                    )
+                    if r.status_code == 200:
+                        for approval in r.json().get("approvals", []):
+                            if approval.get("persona_id") == name:
+                                httpx.post(
+                                    f"{base}/v1/persona/approve",
+                                    json={"id": approval["id"]},
+                                    headers=admin_headers,
+                                    timeout=10,
+                                )
+                except Exception:
+                    pass
+
         # Clear vaults for clean test state
         for name in PERSONAS:
             try:

@@ -179,6 +179,10 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Search-Degraded-From", string(requestedMode))
 	}
 
+	// Ensure JSON encodes as [] not null when no results found.
+	if items == nil {
+		items = []domain.VaultItem{}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"items": items})
 }

@@ -298,7 +298,7 @@ class TestLicenseRenewal:
         assert doc_id, "No document ID in state"
 
         r = httpx.get(
-            f"{alonso_core}/v1/vault/item/{doc_id}?persona=personal",
+            f"{alonso_core}/v1/vault/item/{doc_id}?persona=general",
             headers=admin_headers,
             timeout=10,
         )
@@ -311,7 +311,7 @@ class TestLicenseRenewal:
         reminder_vault_id = _state.get("reminder_vault_id", "")
         if reminder_vault_id:
             r2 = httpx.get(
-                f"{alonso_core}/v1/vault/item/{reminder_vault_id}?persona=personal",
+                f"{alonso_core}/v1/vault/item/{reminder_vault_id}?persona=general",
                 headers=admin_headers,
                 timeout=10,
             )
@@ -362,7 +362,7 @@ class TestLicenseRenewal:
         assert doc_id, "No document ID in state"
 
         r = httpx.get(
-            f"{alonso_core}/v1/vault/item/{doc_id}?persona=personal",
+            f"{alonso_core}/v1/vault/item/{doc_id}?persona=general",
             headers=admin_headers,
             timeout=10,
         )

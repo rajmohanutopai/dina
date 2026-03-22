@@ -194,7 +194,7 @@ class TestAgentSandbox:
         # Step 4: Verify the paired agent CAN validate (200).
         # Build Ed25519 signature for the request.
         import hashlib
-        import time as _time
+        import os
 
         validate_url = f"{alonso_core}/v1/agent/validate"
         validate_body = {
@@ -210,9 +210,10 @@ class TestAgentSandbox:
         from datetime import datetime, timezone
 
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = os.urandom(16).hex()
 
-        # Canonical string: METHOD\nPATH\nQUERY\nTIMESTAMP\nBODY_HASH
-        canonical = f"POST\n/v1/agent/validate\n\n{ts}\n{body_hash}"
+        # Canonical string: METHOD\nPATH\nQUERY\nTIMESTAMP\nNONCE\nBODY_HASH
+        canonical = f"POST\n/v1/agent/validate\n\n{ts}\n{nonce}\n{body_hash}"
         sig = agent_key.sign(canonical.encode())
 
         sig_hex = sig.hex()
@@ -227,6 +228,7 @@ class TestAgentSandbox:
                 "Content-Type": "application/json",
                 "X-DID": agent_did_key,
                 "X-Timestamp": ts,
+                "X-Nonce": nonce,
                 "X-Signature": sig_hex,
             },
             timeout=15,
@@ -250,7 +252,8 @@ class TestAgentSandbox:
 
         # Step 6: Same request with fresh timestamp → 401.
         ts2 = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        canonical2 = f"POST\n/v1/agent/validate\n\n{ts2}\n{body_hash}"
+        nonce2 = os.urandom(16).hex()
+        canonical2 = f"POST\n/v1/agent/validate\n\n{ts2}\n{nonce2}\n{body_hash}"
         sig2 = agent_key.sign(canonical2.encode())
         sig2_hex = sig2.hex()
 
@@ -261,6 +264,7 @@ class TestAgentSandbox:
                 "Content-Type": "application/json",
                 "X-DID": agent_did_key,
                 "X-Timestamp": ts2,
+                "X-Nonce": nonce2,
                 "X-Signature": sig2_hex,
             },
             timeout=15,

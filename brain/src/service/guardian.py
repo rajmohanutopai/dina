@@ -2089,6 +2089,28 @@ class GuardianLoop:
                 "approved": False,
                 "requires_approval": True,
             }
+        except ApprovalRequiredError:
+            return {
+                "status": "ok",
+                "action": "disclosure_proposed",
+                "response": {
+                    "blocked": True,
+                    "block_reason": f"Persona '{source_persona}' requires user approval",
+                    "persona_tier": tier,
+                    "disclosure_id": disclosure_id,
+                    "proposal": {
+                        "safe_to_share": "",
+                        "withheld": ["Approval required — all data withheld pending user consent"],
+                        "rationale": "Sensitive persona requires explicit user approval before disclosure",
+                    },
+                    "requesting_agent": requesting_agent,
+                    "source_persona": source_persona,
+                    "target_persona": target_persona,
+                    "query": query,
+                },
+                "approved": False,
+                "requires_approval": True,
+            }
         except Exception as exc:
             log.warning("guardian.cross_persona.vault_query_failed", error=str(exc))
             return {

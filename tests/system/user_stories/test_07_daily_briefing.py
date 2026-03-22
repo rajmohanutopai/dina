@@ -250,7 +250,7 @@ class TestDailyBriefing:
         }
 
         r = httpx.put(
-            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=personal",
+            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=general",
             json={"value": json.dumps(queue_payload)},
             headers=admin_headers,
             timeout=10,
@@ -286,7 +286,7 @@ class TestDailyBriefing:
         Not 3 buzzes. Not 3 push notifications. One briefing.
         """
         r = httpx.get(
-            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=personal",
+            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=general",
             headers=admin_headers,
             timeout=10,
         )
@@ -333,7 +333,7 @@ class TestDailyBriefing:
         """
         # Overwrite with empty queue.
         r = httpx.put(
-            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=personal",
+            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=general",
             json={"value": json.dumps({"items": []})},
             headers=admin_headers,
             timeout=10,
@@ -344,7 +344,7 @@ class TestDailyBriefing:
 
         # Verify retrieval returns empty queue.
         r2 = httpx.get(
-            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=personal",
+            f"{alonso_core}/v1/vault/kv/briefing_queue?persona=general",
             headers=admin_headers,
             timeout=10,
         )

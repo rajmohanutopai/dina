@@ -915,7 +915,7 @@ func main() {
 	)
 
 	migrationSvc := service.NewMigrationService(
-		exportMgr, importMgr, backupMgr, vaultMgr, clk,
+		exportMgr, importMgr, backupMgr, vaultMgr, personaMgr, clk,
 	)
 
 	_ = service.NewSyncService(

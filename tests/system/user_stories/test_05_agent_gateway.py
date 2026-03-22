@@ -507,10 +507,10 @@ class TestAgentGateway:
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             nonce = os.urandom(16).hex()
             body_hash = hashlib.sha256(b"").hexdigest()
-            canonical = f"GET\n/v1/personas\n\n{ts}\n{nonce}\n{body_hash}"
+            canonical = f"GET\n/v1/did\n\n{ts}\n{nonce}\n{body_hash}"
             sig = priv_key.sign(canonical.encode()).hex()
             pre_r = httpx.get(
-                f"{alonso_core}/v1/personas",
+                f"{alonso_core}/v1/did",
                 headers={
                     "X-DID": agent_did,
                     "X-Timestamp": ts,
@@ -564,10 +564,10 @@ class TestAgentGateway:
                 ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 nonce = os.urandom(16).hex()
                 body_hash = hashlib.sha256(b"").hexdigest()
-                canonical = f"GET\n/v1/personas\n\n{ts}\n{nonce}\n{body_hash}"
+                canonical = f"GET\n/v1/did\n\n{ts}\n{nonce}\n{body_hash}"
                 sig = priv_key.sign(canonical.encode()).hex()
                 return httpx.get(
-                    f"{alonso_core}/v1/personas",
+                    f"{alonso_core}/v1/did",
                     headers={
                         "X-DID": agent_did,
                         "X-Timestamp": ts,

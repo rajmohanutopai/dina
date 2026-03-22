@@ -12,11 +12,12 @@ import (
 // It orchestrates the backup manager for pre-flight safety and the export/import
 // managers for .dina archive portability.
 type MigrationService struct {
-	export  port.ExportManager
-	import_ port.ImportManager
-	backup  port.BackupManager
-	vault   port.VaultManager
-	clock   port.Clock
+	export     port.ExportManager
+	import_    port.ImportManager
+	backup     port.BackupManager
+	vault      port.VaultManager
+	personaMgr port.PersonaManager // optional — tier-aware export checks
+	clock      port.Clock
 }
 
 // NewMigrationService constructs a MigrationService with all required dependencies.
@@ -25,14 +26,16 @@ func NewMigrationService(
 	import_ port.ImportManager,
 	backup port.BackupManager,
 	vault port.VaultManager,
+	personaMgr port.PersonaManager,
 	clock port.Clock,
 ) *MigrationService {
 	return &MigrationService{
-		export:  export,
-		import_: import_,
-		backup:  backup,
-		vault:   vault,
-		clock:   clock,
+		export:     export,
+		import_:    import_,
+		backup:     backup,
+		vault:      vault,
+		personaMgr: personaMgr,
+		clock:      clock,
 	}
 }
 
@@ -47,18 +50,27 @@ func (s *MigrationService) Export(ctx context.Context, opts domain.ExportOptions
 		return "", fmt.Errorf("migration: %w: destination path is required", domain.ErrInvalidInput)
 	}
 
-	// Verify no user personas are open to ensure data consistency.
-	// The identity DB is always open (infrastructure, not a user persona)
-	// and is safe to export from — it's read-only during export.
+	// Verify no lockable personas are open to ensure data consistency.
+	// Skip: "identity" (infrastructure DB, always open, read-only during export)
+	// and default/standard tier personas (always open by design, cannot be locked).
 	openPersonas := s.vault.OpenPersonas()
-	userOpen := 0
+	lockableOpen := 0
 	for _, p := range openPersonas {
-		if p.String() != "identity" {
-			userOpen++
+		name := p.String()
+		if name == "identity" {
+			continue
 		}
+		// Default and standard tier personas are always open — safe to export.
+		if s.personaMgr != nil {
+			tier, err := s.personaMgr.GetTier(ctx, name)
+			if err == nil && (tier == "default" || tier == "standard") {
+				continue
+			}
+		}
+		lockableOpen++
 	}
-	if userOpen > 0 {
-		return "", fmt.Errorf("migration: %w: close all personas before export (%d open)", domain.ErrPersonaLocked, userOpen)
+	if lockableOpen > 0 {
+		return "", fmt.Errorf("migration: %w: close all personas before export (%d open)", domain.ErrPersonaLocked, lockableOpen)
 	}
 
 	// Checkpoint identity WAL before reading raw .sqlite bytes.

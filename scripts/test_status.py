@@ -827,6 +827,11 @@ _PY_LINE_RE = re.compile(
 _PY_XDIST_RE = re.compile(
     r"^\[gw\d+\]\s+\[\s*\d+%\]\s+(PASSED|SKIPPED|FAILED|ERROR|XFAIL|XPASS)\s+([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)"
 )
+# Short test summary lines: "FAILED file::Class::test_name - error message"
+# Pytest prints these at the bottom when verbose output is interrupted by hooks.
+_PY_SUMMARY_FAIL_RE = re.compile(
+    r"^FAILED\s+([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)\s*-"
+)
 # First number group after subject: test_auth_1_... → 1
 _PY_SECTION_RE = re.compile(r"^test_\w+?_(\d+)_")
 
@@ -931,6 +936,7 @@ def parse_pytest_output(
             durations[func_name] = float(dm.group(1))
 
     # Second pass: collect test results (standard + xdist output formats)
+    seen: set[str] = set()
     for line in output.splitlines():
         m = _PY_LINE_RE.match(line)
         if m:
@@ -942,8 +948,21 @@ def parse_pytest_output(
                 py_status = mx.group(1)
                 qualified = mx.group(2) + "::" + mx.group(3)
             else:
-                continue
+                # Catch FAILED lines from short test summary section.
+                # When pytest hooks inject output between the test name and
+                # the FAILED marker, the standard regex misses the failure.
+                mf = _PY_SUMMARY_FAIL_RE.match(line)
+                if mf:
+                    qualified = mf.group(1) + "::" + mf.group(2)
+                    py_status = "FAILED"
+                else:
+                    continue
         func_name = qualified.split("::")[-1]
+        # Deduplicate: a test matched from verbose output shouldn't be
+        # re-added from the short test summary section.
+        if func_name in seen:
+            continue
+        seen.add(func_name)
         # Strip parametrize suffix for section lookup: test_foo[param] → test_foo
         base_name = func_name.split("[")[0]
         results.append(
