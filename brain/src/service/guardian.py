@@ -569,6 +569,8 @@ class GuardianLoop:
         vault_context: Any = None,  # VaultContextAssembler
         telegram: Any = None,  # TelegramService (for approval prompts)
         event_extractor: Any = None,  # EventExtractor (for post-publish drain hook)
+        persona_selector: Any = None,  # PersonaSelector
+        persona_registry: Any = None,  # PersonaRegistry
     ) -> None:
         self._core = core
         self._llm = llm_router
@@ -578,6 +580,9 @@ class GuardianLoop:
         self._scratchpad = scratchpad
         self._vault_context = vault_context
         self._telegram = telegram
+        self._selector = persona_selector
+        self._persona_registry = persona_registry
+        self._routing_ambiguity_surfaced: list[str] = []
         self._event_extractor = event_extractor
 
         # Tracks which personas are currently unlocked.
@@ -1183,6 +1188,9 @@ class GuardianLoop:
         # ----- Proactive scan 2: promise staleness (SS17.1) -----
         await self._scan_unfulfilled_promises()
 
+        # ----- Proactive scan 3: ambiguous routing (persona selection) -----
+        await self._scan_routing_ambiguity()
+
         if not self._briefing_items:
             return {"items": [], "fiduciary_recap": [], "count": 0}
 
@@ -1286,6 +1294,10 @@ class GuardianLoop:
 
         # Clear engagement buffer after generating briefing.
         self._briefing_items = []
+
+        # Clean up routing-ambiguity KV records only after briefing is
+        # fully assembled — never before, to avoid data loss on failure.
+        await self._cleanup_routing_ambiguity()
 
         log.info(
             "guardian.briefing_generated",
@@ -1467,6 +1479,77 @@ class GuardianLoop:
 
     # ------------------------------------------------------------------
     # Post-Publication (drain hook — derived artifacts only)
+    async def _scan_routing_ambiguity(self) -> None:
+        """Surface items routed to general due to ambiguous persona match.
+
+        Reads brief:routing_ambiguous:* KV records written by StagingProcessor
+        and adds them to the briefing queue. Does NOT delete them here —
+        cleanup happens in _cleanup_routing_ambiguity() after the briefing
+        is fully assembled and returned successfully.
+        """
+        try:
+            index_raw = await self._core.get_kv("brief:routing_ambiguous_index")
+        except Exception:
+            return
+        if not index_raw:
+            return
+
+        try:
+            item_ids = json.loads(index_raw)
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        for item_id in item_ids:
+            try:
+                raw = await self._core.get_kv(f"brief:routing_ambiguous:{item_id}")
+                if not raw:
+                    continue
+                data = json.loads(raw)
+                candidates = data.get("candidates", [])
+                reason = data.get("reason", "")
+                summary = data.get("summary", "")
+                self._briefing_items.append({
+                    "type": "routing_review",
+                    "priority": "solicited",
+                    "body": (
+                        f"'{summary}' was stored in 'general' because routing was ambiguous. "
+                        f"Candidate personas: {', '.join(candidates)}. {reason}"
+                    ),
+                    "source": "persona_router",
+                    "persona_id": "general",
+                    "item_id": item_id,
+                })
+                self._routing_ambiguity_surfaced.append(item_id)
+            except Exception:
+                pass
+
+    async def _cleanup_routing_ambiguity(self) -> None:
+        """Delete surfaced routing-ambiguity KV records.
+
+        Called only after generate_briefing() has successfully assembled
+        the briefing, so records are never lost on mid-briefing failure.
+        """
+        if not self._routing_ambiguity_surfaced:
+            return
+        for item_id in self._routing_ambiguity_surfaced:
+            try:
+                await self._core.set_kv(f"brief:routing_ambiguous:{item_id}", "")
+            except Exception:
+                pass
+        # Update index
+        try:
+            index_raw = await self._core.get_kv("brief:routing_ambiguous_index")
+            if index_raw:
+                index = json.loads(index_raw)
+                remaining = [i for i in index if i not in self._routing_ambiguity_surfaced]
+                await self._core.set_kv(
+                    "brief:routing_ambiguous_index",
+                    json.dumps(remaining) if remaining else "",
+                )
+        except Exception:
+            pass
+        self._routing_ambiguity_surfaced.clear()
+
     # ------------------------------------------------------------------
 
     async def _handle_post_publish(self, event: dict) -> dict:
@@ -1532,7 +1615,7 @@ class GuardianLoop:
             6. Return extraction results with per-field confidence.
         """
         body = event.get("body", "")
-        persona_id = event.get("persona_id", "personal")
+        persona_id = event.get("persona_id", "general")
         source = event.get("source", "document_scan")
 
         # Step 1: PII-scrub the document before sending to cloud LLM.
@@ -2983,7 +3066,7 @@ class GuardianLoop:
             if not skip_vault:
                 async def _density_query() -> list:
                     items = await self._core.search_vault(
-                        "personal", "trust attestation", mode="fts5",
+                        "general", "trust attestation", mode="fts5",
                     )
                     return items if items else []
 
@@ -3121,7 +3204,7 @@ class GuardianLoop:
                 }
                 await self._core.audit_append({
                     "action": "reason_trace",
-                    "persona": event.get("persona_id", "personal"),
+                    "persona": event.get("persona_id", "general"),
                     "requester": "brain",
                     "query_type": "reason",
                     "reason": f"vault_enriched={vault_enriched}",
@@ -4033,6 +4116,8 @@ class GuardianLoop:
             return {"action": "vault_already_unlocked", "persona_id": persona_id}
 
         self._unlocked_personas.add(persona_id)
+        if self._persona_registry:
+            self._persona_registry.update_locked(persona_id, False)
         log.info("guardian.vault_unlocked", persona_id=persona_id)
         return {"action": "vault_unlocked", "persona_id": persona_id}
 
@@ -4040,6 +4125,8 @@ class GuardianLoop:
         """Handle vault_locked event — flush in-memory state for persona."""
         persona_id = event.get("persona_id", "default")
         self._unlocked_personas.discard(persona_id)
+        if self._persona_registry:
+            self._persona_registry.update_locked(persona_id, True)
 
         # Flush any briefing items for this persona.
         self._briefing_items = [
@@ -4055,6 +4142,8 @@ class GuardianLoop:
         """Handle persona_unlocked event — retry queued queries."""
         persona_id = event.get("persona_id", "default")
         self._unlocked_personas.add(persona_id)
+        if self._persona_registry:
+            self._persona_registry.update_locked(persona_id, False)
         log.info("guardian.persona_unlocked", persona_id=persona_id)
         return {"action": "retry_query", "persona_id": persona_id}
 

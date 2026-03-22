@@ -56,8 +56,18 @@ func (h *PersonaHandler) HandleListPersonas(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	resp := map[string]interface{}{"personas": personas}
+
+	// Add enriched persona_details if PersonaManager supports it.
+	if h.Personas != nil {
+		details, detailErr := h.Personas.ListDetailed(r.Context())
+		if detailErr == nil {
+			resp["persona_details"] = details
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{"personas": personas}); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, `{"error":"failed to encode response"}`, http.StatusInternalServerError)
 	}
 }

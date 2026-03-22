@@ -21,7 +21,7 @@ func vaultErrStatus(err error) int {
 	if errors.Is(err, domain.ErrPersonaLocked) {
 		return http.StatusForbidden
 	}
-	if errors.Is(err, domain.ErrPersonaNotFound) {
+	if errors.Is(err, domain.ErrPersonaNotFound) || errors.Is(err, identity.ErrPersonaNotFound) {
 		return http.StatusNotFound
 	}
 	var approvalErr *identity.ErrApprovalRequired
@@ -35,6 +35,9 @@ func vaultErrStatus(err error) int {
 func vaultErrMsg(err error, defaultMsg string) string {
 	if errors.Is(err, domain.ErrPersonaLocked) {
 		return "persona locked"
+	}
+	if errors.Is(err, domain.ErrPersonaNotFound) || errors.Is(err, identity.ErrPersonaNotFound) {
+		return "persona not found"
 	}
 	return defaultMsg
 }

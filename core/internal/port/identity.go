@@ -43,6 +43,8 @@ type DIDManager interface {
 type PersonaManager interface {
 	Create(ctx context.Context, name, tier string, passphraseHash ...string) (string, error)
 	List(ctx context.Context) ([]string, error)
+	// ListDetailed returns all personas with their tier and lock state.
+	ListDetailed(ctx context.Context) ([]domain.PersonaDetail, error)
 	Unlock(ctx context.Context, personaID, passphrase string, ttlSeconds int) error
 	Lock(ctx context.Context, personaID string) error
 	IsLocked(personaID string) (bool, error)

@@ -39,8 +39,9 @@ _PERSONA_MAP: dict[str, tuple[Sensitivity, str]] = {
     "finance": (Sensitivity.ELEVATED, "financial persona override"),
     "legal": (Sensitivity.ELEVATED, "legal persona override"),
     "work": (Sensitivity.ELEVATED, "work persona override"),
-    "personal": (Sensitivity.GENERAL, "personal persona — general"),
-    "social": (Sensitivity.GENERAL, "social persona — general"),
+    "general": (Sensitivity.GENERAL, "general persona"),
+    "personal": (Sensitivity.GENERAL, "personal → general"),
+    "social": (Sensitivity.GENERAL, "social → general"),
 }
 
 # ---------------------------------------------------------------------------
@@ -138,8 +139,33 @@ class DomainClassifier:
         is skipped and low-confidence results default to GENERAL.
     """
 
-    def __init__(self, llm: Any = None) -> None:
+    # Tier → Sensitivity mapping (Brain-side logic).
+    _TIER_SENSITIVITY = {
+        "sensitive": Sensitivity.SENSITIVE,
+        "locked": Sensitivity.SENSITIVE,
+        "standard": Sensitivity.ELEVATED,
+        "default": Sensitivity.GENERAL,
+    }
+
+    def __init__(self, llm: Any = None, registry: Any = None) -> None:
         self._llm = llm
+        self._registry = registry
+
+    def _resolve_persona_sensitivity(self, key: str) -> tuple[Sensitivity | None, str]:
+        """Resolve persona name to sensitivity level.
+
+        Uses registry (dynamic) first, falls back to static _PERSONA_MAP.
+        Returns (sensitivity, reason) or (None, "") if unknown.
+        """
+        if self._registry:
+            tier = self._registry.tier(key)
+            if tier:
+                sensitivity = self._TIER_SENSITIVITY.get(tier, Sensitivity.GENERAL)
+                return sensitivity, f"{key} persona (tier={tier})"
+        # Fallback to static map
+        if key in _PERSONA_MAP:
+            return _PERSONA_MAP[key]
+        return None, ""
 
     def classify(
         self,
@@ -166,8 +192,8 @@ class DomainClassifier:
         # Layer 1: Persona override.
         if persona:
             key = persona.strip("/").lower()
-            if key in _PERSONA_MAP:
-                sensitivity, reason = _PERSONA_MAP[key]
+            sensitivity, reason = self._resolve_persona_sensitivity(key)
+            if sensitivity is not None:
                 result = Classification(
                     sensitivity=sensitivity,
                     domain=key if key in ("health", "medical", "financial", "finance", "legal") else "general",

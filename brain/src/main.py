@@ -464,6 +464,12 @@ def create_app() -> FastAPI:
         # Update the local providers dict so healthz sees the new state
         providers.clear()
         providers.update(new_providers)
+    # --- Persona registry + selector ---
+    from .service.persona_registry import PersonaRegistry
+    from .service.persona_selector import PersonaSelector
+    persona_registry = PersonaRegistry()
+    persona_selector = PersonaSelector(registry=persona_registry, llm=llm_router)
+
     entity_vault = EntityVaultService(scrubber=scrubber, core_client=brain_core_client)
     nudge = NudgeAssembler(core=brain_core_client, llm=llm_router, entity_vault=entity_vault)
     scratchpad = ScratchpadService(core=brain_core_client)
@@ -476,7 +482,7 @@ def create_app() -> FastAPI:
         core=brain_core_client, llm=llm_router, entity_vault=entity_vault,
     )
     from .service.domain_classifier import DomainClassifier
-    domain_clf = DomainClassifier(llm=llm_router)
+    domain_clf = DomainClassifier(llm=llm_router, registry=persona_registry)
     from .service.event_extractor import EventExtractor
     event_extractor = EventExtractor(core=brain_core_client)
     staging_processor = StagingProcessor(
@@ -488,6 +494,7 @@ def create_app() -> FastAPI:
             vault_context={"source": item.get("source", ""), "type": item.get("type", "")},
         ).domain,
         event_extractor=event_extractor,
+        persona_selector=persona_selector,
     )
     sync_engine = SyncEngine(
         core=brain_core_client, mcp=mcp_client, llm=llm_router,
@@ -525,6 +532,8 @@ def create_app() -> FastAPI:
         scratchpad=scratchpad,
         vault_context=vault_context,
         event_extractor=event_extractor,
+        persona_selector=persona_selector,
+        persona_registry=persona_registry,
     )
 
     # -- Telegram connector (optional — graceful degradation) --
@@ -572,6 +581,11 @@ def create_app() -> FastAPI:
                 trust_scorer.update_contacts(contacts)
             except Exception:
                 pass
+            # Refresh persona registry (picks up new/deleted personas).
+            try:
+                await persona_registry.refresh(brain_core_client)
+            except Exception:
+                pass
             sources = engine.sources
             if not sources:
                 log.warning("sync.no_sources", extra={"hint": "No MCP servers configured"})
@@ -585,7 +599,7 @@ def create_app() -> FastAPI:
             # fully enriched via staging_processor. Becomes a no-op when
             # all legacy items are drained (enrichment_status != pending).
             try:
-                for p in ("general", "consumer", "health", "work", "social"):
+                for p in persona_registry.all_names():
                     enriched = await enrichment_svc.enrich_pending(p, limit=10)
                     if enriched:
                         log.info("enrichment.sweep", extra={"persona": p, "enriched": enriched})
@@ -602,6 +616,9 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
+        # Load persona registry before anything else — selector needs it.
+        await persona_registry.load(brain_core_client)
+
         sync_task = asyncio.create_task(_sync_loop(sync_engine))
 
         # Start Telegram polling if configured.

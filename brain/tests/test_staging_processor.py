@@ -375,7 +375,7 @@ async def test_finance_type_classifies_to_financial(core, enrichment):
 
     await processor.process_pending()
     call = core.staging_resolve.call_args
-    assert call.args[1] == "financial"
+    assert call.args[1] == "finance"
 
 
 # ---------------------------------------------------------------------------

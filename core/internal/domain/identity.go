@@ -91,6 +91,14 @@ const (
 	TierLocked    PersonaTier = "locked"    // passphrase required, agents denied
 )
 
+// PersonaDetail holds enriched persona metadata for the API response.
+type PersonaDetail struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Tier   string `json:"tier"`
+	Locked bool   `json:"locked"`
+}
+
 // ValidTier returns true if the tier name is valid.
 func ValidTier(tier PersonaTier) bool {
 	switch tier {

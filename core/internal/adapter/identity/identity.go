@@ -1512,6 +1512,23 @@ func (pm *PersonaManager) List(_ context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// ListDetailed returns all personas with their tier and lock state.
+func (pm *PersonaManager) ListDetailed(_ context.Context) ([]domain.PersonaDetail, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	details := make([]domain.PersonaDetail, 0, len(pm.personas))
+	for id, p := range pm.personas {
+		details = append(details, domain.PersonaDetail{
+			ID:     id,
+			Name:   p.Name,
+			Tier:   p.Tier,
+			Locked: p.Locked,
+		})
+	}
+	return details, nil
+}
+
 // GetDEKVersion returns the DEK derivation version for a persona.
 // Returns 1 for legacy personas, 2 for Argon2id-upgraded personas.
 // Returns 0 and ErrPersonaNotFound if the persona does not exist.

@@ -283,6 +283,12 @@ components:
           type: array
           items:
             type: string
+          description: Backward-compatible list of persona IDs.
+        persona_details:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/PersonaInfo'
+          description: Rich persona metadata (tier, lock state).
 
     # ── Contact DTOs ──
 

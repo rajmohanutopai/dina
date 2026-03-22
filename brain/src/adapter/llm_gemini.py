@@ -276,6 +276,7 @@ class GeminiProvider:
                 client.aio.models.embed_content(
                     model=self._embed_model,
                     contents=text,
+                    config={"output_dimensionality": 768},
                 ),
                 timeout=_TIMEOUT_S,
             )

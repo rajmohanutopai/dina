@@ -493,3 +493,21 @@ Decision:
       type: string
     audit:
       type: boolean
+
+# ─── Persona Info ────────────────────────────────────────────────────────
+
+PersonaInfo:
+  type: object
+  required: [id, name, tier, locked]
+  properties:
+    id:
+      type: string
+      description: Full persona ID (e.g. "persona-general").
+    name:
+      type: string
+      description: Short name (e.g. "general").
+    tier:
+      $ref: '#/PersonaTier'
+    locked:
+      type: boolean
+      description: Whether the persona vault is currently locked.

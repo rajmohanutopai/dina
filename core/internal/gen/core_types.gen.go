@@ -121,22 +121,22 @@ func (e CompletePairingRequestRole) Valid() bool {
 
 // Defines values for CreatePersonaRequestTier.
 const (
-	Default   CreatePersonaRequestTier = "default"
-	Locked    CreatePersonaRequestTier = "locked"
-	Sensitive CreatePersonaRequestTier = "sensitive"
-	Standard  CreatePersonaRequestTier = "standard"
+	CreatePersonaRequestTierDefault   CreatePersonaRequestTier = "default"
+	CreatePersonaRequestTierLocked    CreatePersonaRequestTier = "locked"
+	CreatePersonaRequestTierSensitive CreatePersonaRequestTier = "sensitive"
+	CreatePersonaRequestTierStandard  CreatePersonaRequestTier = "standard"
 )
 
 // Valid indicates whether the value is a known member of the CreatePersonaRequestTier enum.
 func (e CreatePersonaRequestTier) Valid() bool {
 	switch e {
-	case Default:
+	case CreatePersonaRequestTierDefault:
 		return true
-	case Locked:
+	case CreatePersonaRequestTierLocked:
 		return true
-	case Sensitive:
+	case CreatePersonaRequestTierSensitive:
 		return true
-	case Standard:
+	case CreatePersonaRequestTierStandard:
 		return true
 	default:
 		return false
@@ -212,6 +212,30 @@ func (e PairedDeviceRole) Valid() bool {
 	case PairedDeviceRoleAgent:
 		return true
 	case PairedDeviceRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonaTier.
+const (
+	PersonaTierDefault   PersonaTier = "default"
+	PersonaTierLocked    PersonaTier = "locked"
+	PersonaTierSensitive PersonaTier = "sensitive"
+	PersonaTierStandard  PersonaTier = "standard"
+)
+
+// Valid indicates whether the value is a known member of the PersonaTier enum.
+func (e PersonaTier) Valid() bool {
+	switch e {
+	case PersonaTierDefault:
+		return true
+	case PersonaTierLocked:
+		return true
+	case PersonaTierSensitive:
+		return true
+	case PersonaTierStandard:
 		return true
 	default:
 		return false
@@ -836,10 +860,32 @@ type PairedDevice struct {
 // PairedDeviceRole 'user' (personal CLI) or 'agent' (OpenClaw/bot).
 type PairedDeviceRole string
 
+// PersonaInfo defines model for PersonaInfo.
+type PersonaInfo struct {
+	// Id Full persona ID (e.g. "persona-general").
+	Id string `json:"id"`
+
+	// Locked Whether the persona vault is currently locked.
+	Locked bool `json:"locked"`
+
+	// Name Short name (e.g. "general").
+	Name string `json:"name"`
+
+	// Tier Access tier for a persona's vault.
+	Tier PersonaTier `json:"tier"`
+}
+
 // PersonaListResponse defines model for PersonaListResponse.
 type PersonaListResponse struct {
+	// PersonaDetails Rich persona metadata (tier, lock state).
+	PersonaDetails []PersonaInfo `json:"persona_details,omitempty"`
+
+	// Personas Backward-compatible list of persona IDs.
 	Personas []string `json:"personas,omitempty"`
 }
+
+// PersonaTier Access tier for a persona's vault.
+type PersonaTier string
 
 // ReasonAccepted 202 response when reasoning needs persona approval.
 type ReasonAccepted struct {

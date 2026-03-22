@@ -110,6 +110,10 @@ class CoreClient(Protocol):
         """GET /v1/personas — list persona IDs."""
         ...
 
+    async def list_personas_detailed(self) -> list[dict]:
+        """GET /v1/personas — return persona_details with tier + locked state."""
+        ...
+
     # -- Vault query (typed search) --
 
     async def query_vault(

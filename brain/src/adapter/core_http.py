@@ -685,6 +685,20 @@ class CoreHTTPClient:
         data = resp.json()
         return data.get("personas", [])
 
+    async def list_personas_detailed(self) -> list[dict]:
+        """GET /v1/personas — return persona_details with tier + locked state.
+
+        Falls back to constructing minimal dicts from the personas string
+        array if Core hasn't been upgraded to return persona_details.
+        """
+        resp = await self._request("GET", "/v1/personas")
+        data = resp.json()
+        details = data.get("persona_details")
+        if details:
+            return details
+        # Backward compat: Core returns only string IDs
+        return [{"id": pid, "name": pid.removeprefix("persona-")} for pid in data.get("personas", [])]
+
     # -- Devices -------------------------------------------------------------
 
     async def list_devices(self) -> list[PairedDevice]:
