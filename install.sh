@@ -269,14 +269,14 @@ elif [ -t 0 ]; then
 
         case "${_type}" in
             prompt)
-                _field=$(echo "$line" | jq -r '.field // ""' 2>/dev/null)
-                _kind=$(echo "$line" | jq -r '.kind // ""' 2>/dev/null)
-                _msg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
-                _help=$(echo "$line" | jq -r '.help_text // ""' 2>/dev/null)
-                _secret=$(echo "$line" | jq -r '.secret // false' 2>/dev/null)
-                _allow_blank=$(echo "$line" | jq -r '.allow_blank // false' 2>/dev/null)
-                _default=$(echo "$line" | jq -r '.default // ""' 2>/dev/null)
-                _multi=$(echo "$line" | jq -r '.multi_select // false' 2>/dev/null)
+                _field=$(echo "$line" | jq -r '.field // ""' 2>/dev/null || true)
+                _kind=$(echo "$line" | jq -r '.kind // ""' 2>/dev/null || true)
+                _msg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null || true)
+                _help=$(echo "$line" | jq -r '.help_text // ""' 2>/dev/null || true)
+                _secret=$(echo "$line" | jq -r '.secret // false' 2>/dev/null || true)
+                _allow_blank=$(echo "$line" | jq -r '.allow_blank // false' 2>/dev/null || true)
+                _default=$(echo "$line" | jq -r '.default // ""' 2>/dev/null || true)
+                _multi=$(echo "$line" | jq -r '.multi_select // false' 2>/dev/null || true)
 
                 # Render based on kind (no blank line before verify_word prompts)
                 case "${_field}" in
@@ -336,11 +336,11 @@ elif [ -t 0 ]; then
                 ;;
 
             event)
-                _name=$(echo "$line" | jq -r '.name // ""' 2>/dev/null)
+                _name=$(echo "$line" | jq -r '.name // ""' 2>/dev/null || true)
                 case "${_name}" in
                     show_recovery_phrase)
                         # Display on alternate screen
-                        _words=$(echo "$line" | jq -r '.words[]' 2>/dev/null)
+                        _words=$(echo "$line" | jq -r '.words[]' 2>/dev/null || true)
                         tput smcup 2>/dev/null
                         echo ""
                         echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
@@ -446,26 +446,26 @@ elif [ -t 0 ]; then
                         fi
                         ;;
                     info)
-                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null || true)
                         echo -e "  ${DIM}${_imsg}${RESET}"
                         ;;
                     ok)
-                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null || true)
                         ok "${_imsg}"
                         ;;
                     heading)
-                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null || true)
                         echo -e "  ${BOLD}${_imsg}${RESET}"
                         ;;
                     warning)
-                        _wmsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        _wmsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null || true)
                         warn "${_wmsg}"
                         ;;
                 esac
                 ;;
 
             error)
-                _emsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                _emsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null || true)
                 echo -e "  ${YELLOW}✗${RESET} ${_emsg}"
                 ;;
 
