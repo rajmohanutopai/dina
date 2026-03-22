@@ -183,19 +183,20 @@ def _step_restore_hex() -> str | None:
 
 def _step_passphrase() -> str:
     """Ask for passphrase with confirmation. Returns validated passphrase."""
+    _event("heading", message="Choose a passphrase to protect your identity:")
+    _event("info", message="(minimum 8 characters)")
     while True:
         pw = _prompt(
             "passphrase", "text",
-            "Choose a passphrase to protect your identity",
+            "Passphrase",
             secret=True,
-            help_text="minimum 8 characters",
         )
         if len(pw) < 8:
             _error("passphrase", "Passphrase must be at least 8 characters")
             continue
         confirm = _prompt(
             "passphrase_confirm", "text",
-            "Confirm passphrase",
+            "Confirm",
             secret=True,
         )
         if pw != confirm:
@@ -433,28 +434,50 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
             # Wait for acknowledgement
             _read_answer()  # {"field":"recovery_ack","value":"ok"}
 
-            # Step 3b: Verify user remembers — ask for 3 random words
+            # Step 3b: Verify user remembers — ask for 3 random words.
+            # On any mistake: re-show the phrase and restart from word #1.
+            # After 3 failed rounds, abort — user needs to write it down properly.
             if os.environ.get("DINA_SKIP_MNEMONIC_VERIFY") != "1":
                 import random
+                max_rounds = 3
                 positions = sorted(random.sample(range(len(recovery_phrase)), 3))
-                _event("info", message="Let's verify you saved it.")
-                _event("info", message="Enter the words for the positions below:")
-                for pos in positions:
-                    while True:
+                verified = False
+
+                for attempt in range(max_rounds):
+                    _event("info", message="")
+                    if attempt == 0:
+                        _event("heading", message="Let's verify you saved it.")
+                    else:
+                        _event("heading", message=f"Let's try again (attempt {attempt + 1}/{max_rounds}).")
+                    _event("info", message="Enter the words for the positions below:")
+
+                    all_correct = True
+                    for pos in positions:
                         answer = _prompt(
                             f"verify_word_{pos + 1}", "text",
                             f"Word #{pos + 1}",
                         )
-                        if answer.strip().lower() == recovery_phrase[pos].lower():
-                            break
-                        # Show the phrase again so user can re-read it
-                        _emit({
-                            "type": "event",
-                            "name": "show_recovery_phrase",
-                            "words": recovery_phrase,
-                        })
-                        _read_answer()  # wait for ack
-                _event("ok", message="Recovery phrase verified")
+                        if answer.strip().lower() != recovery_phrase[pos].lower():
+                            all_correct = False
+                            # Re-show the phrase so user can re-read it
+                            _emit({
+                                "type": "event",
+                                "name": "show_recovery_phrase",
+                                "words": recovery_phrase,
+                            })
+                            _read_answer()  # wait for ack
+                            break  # restart from word #1
+
+                    if all_correct:
+                        verified = True
+                        break
+
+                if verified:
+                    _event("ok", message="Recovery phrase verified")
+                else:
+                    _error("verify", "Could not verify recovery phrase after 3 attempts. "
+                           "Please write down your phrase and try install again.")
+                    sys.exit(1)
 
         # Step 4: Passphrase
         passphrase = _step_passphrase()

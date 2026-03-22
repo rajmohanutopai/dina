@@ -276,8 +276,11 @@ elif [ -t 0 ]; then
                 _default=$(echo "$line" | jq -r '.default // ""' 2>/dev/null)
                 _multi=$(echo "$line" | jq -r '.multi_select // false' 2>/dev/null)
 
-                # Render based on kind
-                echo ""
+                # Render based on kind (no blank line before verify_word prompts)
+                case "${_field}" in
+                    verify_word_*) ;;
+                    *) echo "" ;;
+                esac
                 if [ -n "${_help}" ] && [ "${_help}" != "null" ]; then
                     # Indent continuation lines to match the 2-space prefix
                     _help_indented=$(echo -e "${_help}" | sed '2,$s/^/  /')
@@ -307,7 +310,7 @@ elif [ -t 0 ]; then
                     read -rs _answer
                     # Show masked preview so user knows something was entered
                     if [ -n "${_answer}" ]; then
-                        local _len=${#_answer}
+                        _len=${#_answer}
                         if [ ${_len} -gt 8 ]; then
                             echo "${_answer:0:4}$( printf '*%.0s' $(seq 1 $((_len - 6))) )${_answer: -2}"
                         else
@@ -372,6 +375,10 @@ elif [ -t 0 ]; then
                     ok)
                         _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
                         ok "${_imsg}"
+                        ;;
+                    heading)
+                        _imsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+                        echo -e "  ${BOLD}${_imsg}${RESET}"
                         ;;
                     warning)
                         _wmsg=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
