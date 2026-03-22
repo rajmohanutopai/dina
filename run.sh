@@ -116,7 +116,37 @@ case "${1:-}" in
                 _primary=$(echo "$_brain_health" | jq -r '.llm_models.primary // "?"' 2>/dev/null || echo "?")
                 _heavy=$(echo "$_brain_health" | jq -r '.llm_models.heavy // "?"' 2>/dev/null || echo "?")
 
-                echo -e "  LLM:       ${GREEN}available${RESET}"
+                # Verify LLM actually works with a real call
+                _token_file="${SECRETS_DIR}/client_token"
+                _llm_ok=false
+                _reason_resp=""
+                if [ -f "$_token_file" ]; then
+                    _token=$(cat "$_token_file" 2>/dev/null || true)
+                    if [ -n "$_token" ]; then
+                        _reason_resp=$(curl -sf -m 30 -X POST \
+                            -H "Authorization: Bearer $_token" \
+                            -H "Content-Type: application/json" \
+                            -d '{"prompt":"Reply: ok"}' \
+                            "http://localhost:${CORE_PORT}/api/v1/reason" 2>/dev/null || true)
+                        if [ -n "$_reason_resp" ]; then
+                            _error_code=$(echo "$_reason_resp" | jq -r '.error_code // empty' 2>/dev/null || true)
+                            _content=$(echo "$_reason_resp" | jq -r '.content // empty' 2>/dev/null || true)
+                            if [ -z "$_error_code" ] && [ -n "$_content" ]; then
+                                _llm_ok=true
+                            fi
+                        fi
+                    fi
+                fi
+
+                if [ "$_llm_ok" = true ]; then
+                    echo -e "  LLM:       ${GREEN}available${RESET}"
+                else
+                    _msg=""
+                    if [ -n "$_reason_resp" ]; then
+                        _msg=$(echo "$_reason_resp" | jq -r '.message // .error // empty' 2>/dev/null || true)
+                    fi
+                    echo -e "  LLM:       ${YELLOW}not working${RESET} ${DIM}${_msg}${RESET}"
+                fi
                 echo -e "             ${DIM}Lite:    ${_lite}${RESET}"
                 echo -e "             ${DIM}Primary: ${_primary}${RESET}"
                 echo -e "             ${DIM}Heavy:   ${_heavy}${RESET}"
