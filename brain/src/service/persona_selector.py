@@ -139,11 +139,10 @@ class PersonaSelector:
             {"role": "user", "content": prompt},
         ]
 
-        resp = await self._llm.complete(
-            messages,
-            temperature=0.1,
-            max_tokens=200,
+        resp = await self._llm.route(
             task_type="classification",
+            prompt=prompt,
+            messages=messages,
         )
 
         content = resp.get("content", "")
