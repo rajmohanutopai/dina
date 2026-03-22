@@ -224,6 +224,17 @@ def _step_startup_mode() -> StartupMode:
             _error("startup_mode", "Please enter 1 or 2.")
 
 
+def _read_env_value(env_file: Path, key: str) -> str:
+    """Read a value from an existing .env file. Returns "" if not found."""
+    if not env_file.exists():
+        return ""
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
 def _step_owner_name() -> str:
     """Ask for owner name (optional)."""
     name = _prompt(
@@ -232,6 +243,19 @@ def _step_owner_name() -> str:
         allow_blank=True,
     )
     return name.strip()
+
+
+def _validate_api_key(env_key: str, api_key: str) -> tuple[bool, str]:
+    """Validate an API key using scripts/validate_key.py (real completion test).
+
+    Returns (True, "") on success, (False, error_message) on failure.
+    """
+    from scripts.validate_key import validate
+    try:
+        ok = validate(env_key, api_key)
+        return ok, ("" if ok else "Key did not work")
+    except Exception as e:
+        return False, str(e)
 
 
 def _step_llm_providers() -> list[LLMProviderConfig]:
@@ -295,7 +319,13 @@ def _step_llm_providers() -> list[LLMProviderConfig]:
             if not key_val.strip():
                 _event("info", message=f"Skipped {label}")
                 break
-            # Accept the key (validation is best-effort, done by Brain at startup)
+            # Validate the API key with a real completion test
+            _event("info", message=f"Validating {label} API key...")
+            valid, err_msg = _validate_api_key(env_key, key_val.strip())
+            if not valid:
+                _error(f"api_key_{env_key}", f"Validation failed: {err_msg}")
+                continue
+            _event("info", message=f"  {label} API key validated ✓")
             providers.append(LLMProviderConfig(env_key=env_key, env_value=key_val.strip()))
             if token == "4":
                 # OpenRouter auto-adds default model
@@ -403,6 +433,20 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
             # Wait for acknowledgement
             _read_answer()  # {"field":"recovery_ack","value":"ok"}
 
+            # Step 3b: Verify user remembers — ask for 3 random words
+            if os.environ.get("DINA_SKIP_MNEMONIC_VERIFY") != "1":
+                import random
+                positions = sorted(random.sample(range(len(recovery_phrase)), 3))
+                for pos in positions:
+                    while True:
+                        answer = _prompt(
+                            f"verify_word_{pos + 1}", "text",
+                            f"What is word #{pos + 1}?",
+                        )
+                        if answer.strip().lower() == recovery_phrase[pos].lower():
+                            break
+                        _error(f"verify_word_{pos + 1}", "Incorrect. Try again.")
+
         # Step 4: Passphrase
         passphrase = _step_passphrase()
 
@@ -420,15 +464,28 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
 
         _event("info", message="Identity secured")
 
-    # Step 6: Owner name
-    owner_name = _step_owner_name()
+    # Step 6: Owner name (skip if already set in .env)
+    existing_owner = _read_env_value(env_file, "DINA_OWNER_NAME")
+    if existing_owner:
+        owner_name = existing_owner
+    else:
+        owner_name = _step_owner_name()
 
-    # Step 7: Telegram
-    telegram = _step_telegram()
+    # Step 7: Telegram (skip if already configured in .env)
+    existing_telegram = _read_env_value(env_file, "DINA_TELEGRAM_TOKEN")
+    if existing_telegram:
+        telegram = TelegramConfig(token=existing_telegram)
+    else:
+        telegram = _step_telegram()
 
-    # Step 8: LLM providers (only for first install — .env doesn't exist yet)
+    # Step 8: LLM providers (skip if any API key already in .env)
     llm_providers: list[LLMProviderConfig] = []
-    if not env_file.exists():
+    _has_llm = any(
+        _read_env_value(env_file, k)
+        for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY",
+                   "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_BASE_URL")
+    )
+    if not _has_llm:
         llm_providers = _step_llm_providers()
 
     # === Write config ===

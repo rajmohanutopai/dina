@@ -292,7 +292,17 @@ elif [ -t 0 ]; then
                 # Read input
                 if [ "${_secret}" = "true" ]; then
                     read -rs _answer
-                    echo ""
+                    # Show masked preview so user knows something was entered
+                    if [ -n "${_answer}" ]; then
+                        local _len=${#_answer}
+                        if [ ${_len} -gt 8 ]; then
+                            echo "${_answer:0:4}$( printf '*%.0s' $(seq 1 $((_len - 6))) )${_answer: -2}"
+                        else
+                            echo "********"
+                        fi
+                    else
+                        echo ""
+                    fi
                 else
                     read -r _answer
                 fi
@@ -319,6 +329,7 @@ elif [ -t 0 ]; then
 
                         _wnum=1
                         _line=""
+                        echo -e "  ${YELLOW}╔══════════════════════════════════════════════════════════════════╗${RESET}"
                         while IFS= read -r word; do
                             _line="${_line}$(printf '%2d. %-12s' ${_wnum} "${word}")"
                             if [ $((_wnum % 4)) -eq 0 ]; then
@@ -328,6 +339,7 @@ elif [ -t 0 ]; then
                             _wnum=$((_wnum + 1))
                         done <<< "${_words}"
                         [ -n "${_line}" ] && echo -e "  ${YELLOW}║${RESET} ${_line} ${YELLOW}║${RESET}"
+                        echo -e "  ${YELLOW}╚══════════════════════════════════════════════════════════════════╝${RESET}"
 
                         echo ""
                         echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
