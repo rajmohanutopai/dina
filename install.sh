@@ -21,7 +21,6 @@
 # passphrase (Argon2id + AES-256-GCM), and only the encrypted form exits.
 
 set -euo pipefail
-trap 'echo "EXIT at line $LINENO (exit code $?)" >&2' ERR
 cd "$(dirname "$0")"
 
 # ---------------------------------------------------------------------------
@@ -265,7 +264,10 @@ elif [ -t 0 ]; then
     # Open write FD to wizard stdin (must happen after docker starts reading)
     exec 4>"${_WIZARD_IN}"
 
-    # Read JSON lines from wizard, render prompts, send answers
+    # Read JSON lines from wizard, render prompts, send answers.
+    # Disable set -e inside the loop — pipe operations (echo|jq) can
+    # transiently fail with SIGPIPE under pipefail, killing the script.
+    set +e
     while IFS= read -r line < "${_WIZARD_OUT}"; do
         # Parse the JSON message
         _type=$(echo "$line" | jq -r '.type // ""' 2>/dev/null || true)
@@ -483,6 +485,8 @@ elif [ -t 0 ]; then
                 ;;
         esac
     done
+
+    set -e  # re-enable after wizard loop
 
     # Cleanup: close write FD, wait for container, remove pipes
     trap - INT TERM EXIT  # clear trap before normal cleanup
