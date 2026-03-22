@@ -256,6 +256,7 @@ elif [ -t 0 ]; then
         -e DINA_CORE_PORT="${CORE_PORT}" \
         -e DINA_PDS_PORT="${PDS_PORT}" \
         -e DINA_VERBOSE="${VERBOSE}" \
+        -e DINA_SKIP_MNEMONIC_VERIFY="$([ "${QUICK}" = true ] && echo 1 || echo 0)" \
         "${CRYPTO_IMAGE}" \
         python3 -m scripts.installer wizard \
         < "${_WIZARD_IN}" > "${_WIZARD_OUT}" 2>"${DINA_DIR}/.wizard-stderr.log" &
