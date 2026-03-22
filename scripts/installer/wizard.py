@@ -501,17 +501,21 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
             _event("info", message=f"{n} provider(s) configured")
 
     # === Write config ===
+    _log("writing config...")
     session_id = ensure_session_id(secrets_dir)
+    _log(f"session_id={session_id}")
     # Use explicit ports if provided (host-allocated), else auto-detect.
     if core_port and pds_port:
-        pass  # already set
+        _log(f"ports: core={core_port}, pds={pds_port} (from env)")
     else:
         core_port, pds_port = allocate_ports(
             env_file=env_file if env_file.exists() else None,
         )
+        _log(f"ports: core={core_port}, pds={pds_port} (auto)")
     pds_secrets = generate_pds_secrets(
         env_file=env_file if env_file.exists() else None,
     )
+    _log("pds_secrets generated")
 
     config = InstallerConfig(
         dina_dir=dina_dir,
@@ -526,8 +530,10 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
     )
 
     if not env_file.exists():
+        _log("write_env (first install)")
         write_env(config, session_id, core_port, pds_port, pds_secrets)
     else:
+        _log("backfill_env (re-run)")
         backfill_env(env_file, session_id, core_port, pds_port, pds_secrets)
         # Backfill owner name
         if owner_name:
@@ -536,7 +542,9 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
                 with open(env_file, "a") as f:
                     f.write(f"\n# Owner\nDINA_OWNER_NAME={owner_name}\n")
 
+    _log("lock_permissions")
     lock_permissions(secrets_dir)
+    _log("ensure_gitignore")
     ensure_gitignore(dina_dir)
 
     # Verify service keys
