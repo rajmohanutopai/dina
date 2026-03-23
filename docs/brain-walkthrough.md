@@ -161,6 +161,10 @@ After classification, `process_event` branches:
 - **Engagement** → save to briefing buffer and ACK.
 - **Fiduciary/Solicited** → checkpoint step 1, assemble nudge, checkpoint step 2, deliver via core, ACK, clear scratchpad.
 
+**Staging drain** (line 930) — The `staging_drain` event is fired by Core as a non-blocking goroutine after every ingest. The guardian delegates to `staging_processor.process_pending(limit=5)`, which claims and classifies pending staged items immediately so the user doesn't have to wait for the next sync cycle. The 5-minute periodic sync in the lifespan background task (lines 609-613) serves as a safety net, calling the same processor with `limit=20` in case any drain events are missed or the brain was restarting.
+
+**Session-scoped access control** — When resolving staged items, the staging processor extracts `session` and `origin_did` from item metadata and forwards them as `X-Session` and `X-Agent-DID` headers on `staging_resolve` and `staging_resolve_multi` calls (`core_http.py:390-394`, `424-427`). Core's `AccessPersona()` uses these headers to enforce session-scoped grant checks — an agent can only write to personas it was granted access to for the current session.
+
 The checkpoint pattern (lines 302-317) is critical. Each step is written to core's scratchpad before proceeding to the next. If the brain crashes between steps, the next restart can `resume()` from the last checkpoint instead of re-running completed work.
 
 <details>
@@ -342,6 +346,7 @@ Seven typed exceptions, all inheriting from `DinaError` (line 13):
 - **PIIScrubError** (line 55) — **Hard security gate.** Cloud send is refused.
 - **ConfigError** (line 64) — Missing or invalid config. Process dies at startup.
 - **CloudConsentError** (line 73) — User hasn't consented to cloud LLM usage.
+- **ApprovalRequiredError** (line 32) — Core returned HTTP 403 with `approval_required`. The approval request has already been created by Core (and a notification sent to the user via WebSocket + Telegram). Brain does **not** call `staging_fail` — the item is already marked `pending_unlock` by Core. The CLI should inform the user and exit; retrying the same query after approval succeeds.
 
 <details>
 <summary><strong>Design Decision — Why typed exceptions instead of error codes or Result types?</strong></summary>
@@ -512,16 +517,39 @@ The triage pipeline processes potentially thousands of emails per sync cycle. An
 
 </details>
 
+### StagingProcessor (service/staging_processor.py)
+
+The staging processor is the publication pipeline for ingested items (503 lines). Items arrive in Core's staging inbox from connectors (push) or Brain's MCP sync (pull). The processor claims pending items and runs a 7-step pipeline:
+
+1. **Claim** — `staging_claim(limit)` atomically leases up to `limit` items from Core's staging inbox.
+2. **Classify persona** — `_classify_personas()` determines one or more target personas. Resolution order: domain classifier (keyword/source-based) → PersonaSelector (LLM, constrained to installed personas) → deterministic type-based fallback → `"general"`. Multi-persona routing ranks secondaries by sensitivity (`_SENSITIVITY_RANK`: health=5 > financial=4 > work=3 > social/consumer=1 > general=0).
+3. **Score trust** — `TrustScorer.score()` assigns sender trust, source type, confidence, and retrieval policy based on contact ring and ingress provenance.
+4. **Build classified VaultItem** — Merge item metadata, trust provenance, original timestamp, and routing metadata into a VaultItem template ready for enrichment.
+5. **Enrich** — `EnrichmentService.enrich_raw()` generates L0 summary, L1 entities, and embedding vector. A lease heartbeat task (VT6) extends the staging lease every 5 minutes during this slow LLM step. If enrichment fails, the item is marked failed via `staging_fail` and stays in staging for retry (Core's sweeper requeues items with `retry_count <= 3`).
+6. **Resolve via Core** — Single-persona items call `staging_resolve`; multi-persona items call `staging_resolve_multi`. Both forward `X-Session` and `X-Agent-DID` headers for session-scoped access control. Core atomically decides `stored` vs `pending_unlock` (for locked personas). `ApprovalRequiredError` is caught but not re-failed — Core has already marked the item as `pending_unlock` and created an approval request.
+7. **Post-processing** — On successful storage: extract events/reminders via `EventExtractor.extract_and_create()`, update contact `last_contact` timestamp, and surface routing ambiguity to the daily briefing via Core's KV store.
+
 ### DomainClassifier (service/domain_classifier.py)
 
 A four-layer classifier that determines content sensitivity (249 lines):
 
-- **Layer 1: Persona override** (lines 167-186) — The `health` persona automatically maps to SENSITIVE. The `financial` persona maps to ELEVATED. Short-circuits on SENSITIVE/LOCAL_ONLY.
+- **Layer 1: Persona override** (lines 167-186) — Uses `PersonaRegistry.tier()` (dynamic, from Core) first, mapping `sensitive`/`locked` tiers → SENSITIVE, `standard` → ELEVATED, `default` → GENERAL via `_TIER_SENSITIVITY` (line 143). Falls back to the static `_PERSONA_MAP` only when the registry is unavailable or the persona is unknown. Short-circuits on SENSITIVE/LOCAL_ONLY.
+  The static `_PERSONA_MAP` (lines 35-45) also contains legacy alias entries for backward compatibility with older classifiers: `personal` → GENERAL (maps to general), `social` → GENERAL (maps to general), `financial` → ELEVATED (synonym for finance), and `medical` → SENSITIVE (synonym for health).
 - **Layer 2: Keyword signals** (lines 188-189, function at lines 87-128) — Regex patterns for health (diagnosis, prescription, blood sugar), finance (bank account, credit card, IFSC), and legal (lawsuit, subpoena, deposition). Each domain is scored by strong and weak keyword counts.
 - **Layer 3: Vault context** (lines 192-216) — If the source is `health_system` or the item type is `medical_record`, the sensitivity is SENSITIVE regardless of keywords.
 - **Layer 4: LLM fallback** (line 241) — Skipped in the current implementation. Defaults to GENERAL with low confidence (0.3).
 
 The selection rule (lines 218-239): highest confidence wins. On ties, higher sensitivity wins. This ensures that a health keyword (confidence 0.6) + a vault source match (confidence 0.9) resolves to the vault source's SENSITIVE classification.
+
+### PersonaRegistry (service/persona_registry.py)
+
+A cached metadata store for installed personas (154 lines). Queries Core's `GET /v1/personas` at startup, caches the result as frozen `PersonaInfo` dataclasses, and refreshes on persona-related events or periodic poll. Provides synchronous lookups: `exists()`, `tier()`, `locked()`, `all_names()`. Falls back to a conservative hardcoded set (general, work, health, finance) when Core is unreachable at first load — but keeps the last known good cache on subsequent refresh failures. `update_locked()` handles event-driven lock/unlock state changes without a full refresh.
+
+### PersonaSelector (service/persona_selector.py)
+
+Uses a constrained LLM to suggest which persona an incoming item belongs to, choosing only from the set of installed personas (`PersonaRegistry.all_names()`). The system prompt declares the available personas with their tiers and instructs the LLM to respond with a JSON `SelectionResult` (primary, secondary, confidence, reason). The selector validates the LLM's answer against the registry — any hallucinated persona name is rejected.
+
+Returns `SelectionResult` or `None`. This is an important contract: the AI *suggests*, it is never authoritative. When the selector returns `None` (no LLM available, low confidence, or invalid answer), the caller falls back to the deterministic type-based resolution in `StagingProcessor._resolve_fallback()`. The staging processor's `_classify_persona` method tries the domain classifier first (keyword/source-based hint), then PersonaSelector (LLM), then deterministic fallback, then `"general"` — the AI layer sits in the middle of a deterministic sandwich.
 
 ---
 

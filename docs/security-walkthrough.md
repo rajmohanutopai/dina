@@ -180,13 +180,109 @@ When a request targets a sensitive persona that is not currently open, the gatek
 
 Here is how the flow works:
 
-**Denial with approval_id:** When Brain or an agent requests access to a sensitive persona (e.g., `/health`), Core's gatekeeper checks the persona's access tier. If the persona requires approval, Core returns a 403 response that includes the `approval_id`. Any staging items that were part of the denied request are marked `pending_unlock` — the classified data (persona, type, metadata) is preserved so nothing is lost during the wait.
+**Denial with approval_id:** When Brain or an agent requests access to a sensitive persona (e.g., `/health`), Core's gatekeeper checks the persona's access tier via `AccessPersona()`. If the persona requires approval (no active grant exists), Core returns `ErrApprovalRequired` and creates an approval request. The 403 response includes the `approval_id` so the caller can track the approval lifecycle. Any staging items that were part of the denied request are marked `pending_unlock` via `MarkPendingApproval` — the classified data (persona, type, metadata) is preserved so nothing is lost during the wait.
 
 **Approval:** Both `/v1/persona/approve` and `/v1/approvals/{id}/approve` resolve to the same approval path in Core. When the approval is granted, `completeApproval()` does two things: it opens the persona vault (derives the DEK, opens the database file) AND drains any pending staging items that were waiting on that persona. This means data that arrived while the persona was closed is not lost — it flows into the vault as soon as access is granted.
 
-**v1 auto-open for sensitive personas:** In v1, sensitive personas use policy-gated auto-open for authorized requests. Instead of requiring a passphrase from the user, Core checks the request against the persona's access policy. If the requester (Brain, agent with session grant, or user) is authorized by policy, Core auto-opens the persona — derives the DEK and opens the database transparently. This removes the friction of passphrase prompts for sensitive personas while maintaining the approval gate. Locked personas (e.g., `/financial`) still require explicit human action and remain fully closed (DEK not in RAM) until unlocked.
+**v1 auto-open for sensitive personas:** In v1, sensitive personas use policy-gated auto-open for authorized requests. Instead of requiring a passphrase from the user, Core checks the request against the persona's access policy. If the requester (Brain, agent with session grant, or user) is authorized by policy, Core auto-opens the persona — derives the DEK and opens the database transparently. This removes the friction of passphrase prompts for sensitive personas while maintaining the approval gate. Locked personas (reserved for future high-stakes use cases) still require explicit human action and remain fully closed (DEK not in RAM) until unlocked.
 
-**Session-scoped access control:** Staging resolve operations enforce `X-Session` and `X-Agent-DID` headers. This ensures that staging items created within a session can only be resolved by the same session and agent identity. An agent cannot access staging items from another agent's session, even if both target the same persona.
+**Session-scoped access control:** Staging resolve operations enforce `X-Session` and `X-Agent-DID` headers. Core's middleware injects these into the request context, and `AccessPersona()` calls `hasActiveGrant(personaID, sessionID, agentDID)` — a triple-bound check that requires all three to match. An agent cannot access staging items from another agent's session, even if both target the same persona. Brain's `core_http.py` attaches these headers on every `staging_resolve`, `staging_resolve_multi`, and `vault_query` call that originates from a session-bearing request.
+
+**Device callers blocked from approval mutations.** `ApprovalHandler.HandleApprove` and `HandleDeny` check the caller type and reject `agent`-type callers with 403. A paired device cannot approve its own access requests — only admin-scoped callers (CLIENT_TOKEN or admin service key) can mutate approvals. This prevents a compromised agent from self-granting access to sensitive personas.
+
+**Multi-target resolve.** When content spans multiple personas (e.g., a health-related email that also affects financial planning), the resolve request carries a `targets` array. The handler calls `AccessPersona()` for each target independently. Accessible targets are stored via `ResolveMulti`; denied targets get their own pending rows via `CreatePendingCopy` with deterministic IDs (`{staging_id}-{persona}`). Each persona's outcome (stored vs. pending_unlock) is independent — errors on secondary targets do not prevent other targets from being processed. Denied targets drain independently after approval.
+
+7. Staging Pipeline Security
+
+Every memory-producing flow — CLI, connectors, Telegram, Dina-to-Dina, admin imports — enters the vault through the staging inbox. Nothing bypasses it.
+
+**Provenance derivation.** Ingress provenance fields (`ingress_channel`, `origin_did`, `origin_kind`, `producer_id`) are server-derived from the authenticated request context (caller type, agent DID, token kind, device role). External callers cannot spoof provenance. Only Brain — authenticated via its service key — can relay provenance for Telegram and D2D flows, because those messages arrive at Brain first and are forwarded to Core's staging inbox on behalf of the original sender. Connectors must always supply `connector_id`.
+
+**Enrichment validation.** Before resolve, the handler validates that items arrive fully enriched with `enrichment_status=ready`, `content_l0`, `content_l1`, and `embedding`. Incomplete items are hard-rejected — no partial records reach the vault. This prevents Brain from storing classification stubs or corrupted entries.
+
+**Auto-open failure semantics.** `EnsureVaultOpen` (`staging.go:ensureOpen`) distinguishes two failure modes. `ErrPersonaLocked` is expected for locked-tier personas — it returns nil so `Resolve()` proceeds and marks the item `pending_unlock`. Any other error (DEK derivation failure, vault I/O error) is treated as infrastructure failure — the handler aborts with HTTP 500. This prevents DEK bugs or disk errors from being silently misreported as "please approve access."
+
+**Session enforcement on resolve.** Every staging resolve and multi-resolve call carries `X-Session` and `X-Agent-DID` headers. Core's middleware extracts these and passes them to `AccessPersona()`, which calls `hasActiveGrant()` with the triple binding. Items ingested by agents carry `session` and `origin_did` in their metadata JSON; the staging processor extracts these and forwards them as headers on the resolve call.
+
+8. Persona Access Tiers (4-Tier Gatekeeper)
+
+Core enforces a 4-tier access model with canonical persona names:
+
+| Tier | Boot State | Users | Brain | Agents | Canonical Name |
+|------|-----------|-------|-------|--------|----------------|
+| **Default** | Auto-open | Free | Free | Free | `general` |
+| **Standard** | Auto-open | Free | Free | Session grant | `work` |
+| **Sensitive** | Closed | Confirm | Approval | Approval | `health`, `finance` |
+| **Locked** | Closed | Passphrase | Denied | Denied | Reserved (future) |
+
+Default and standard personas auto-open at boot. Sensitive personas use v1 policy-gated auto-open: authorized requests (`EnsureVaultOpen`) transparently derive the DEK and open the database — no passphrase prompt. The approval gate and audit trail remain. Locked personas keep the DEK out of RAM entirely; Brain gets `403 Persona Locked` and must wait for explicit human unlock via `POST /v1/persona/unlock`.
+
+Brain never invents persona names. The `PersonaRegistry` queries Core's `GET /v1/personas` at startup and caches canonical names, tiers, and lock states. Aliases (e.g., `financial` -> `finance`, `medical` -> `health`) are resolved by the `PersonaSelector` during classification.
+
+9. Rate Limiting
+
+Core implements a two-layer rate limiting design applied to all HTTP endpoints.
+
+**Ingress rate limiter** (`ingress.RateLimiter`): Per-IP token bucket — each IP gets `ipRate` tokens per `ipWindow`. When the window elapses, the bucket refills. A second valve checks global spool capacity via `AllowGlobal()` — if the dead drop spool exceeds `spoolMaxBlobs`, new messages are rejected with 429. Memory is capped at 10,000 IP buckets with a background purge loop running every 5 minutes.
+
+**Middleware rate limiter** (`middleware.RateLimit`): Wraps any HTTP handler. Extracts the client IP via `clientIP()`, which implements rightmost-trusted proxy parsing: walks `X-Forwarded-For` right-to-left, skipping IPs in configured `TrustedProxies` CIDR ranges, returns the first non-trusted IP. If no trusted proxies are configured, `RemoteAddr` is used directly — safe default against IP spoofing. Returns HTTP 429 when the bucket is empty.
+
+Per-DID rate limiting is only possible when the vault is unlocked (the sender's DID is inside the NaCl encrypted envelope). When locked, Core cannot identify the sender, so ingress defense is physics-based (IP addresses, disk quotas).
+
+Tests set `DINA_RATE_LIMIT=100000` to effectively disable rate limiting during test runs.
+
+10. Telegram Bot Security
+
+Telegram is both a data connector and a full admin channel (approve/deny requests, receive nudges). Three files implement it following hexagonal architecture: port (`telegram.py`), adapter (`telegram_bot.py`), service (`telegram.py`).
+
+**Owner-only access.** Two gates: (1) Allowlist gate — only Telegram user IDs listed in `DINA_TELEGRAM_ALLOWED_USERS` can initiate pairing. (2) Pairing gate — an allowed user sends `/start`, and the service persists their user ID to Core's KV store (`telegram_paired_users`). Paired users survive Brain restarts.
+
+**Core validates all mutations.** The Telegram service calls Core's approval API like any other client — Core enforces its own authorization checks. A bug in the Telegram service cannot bypass Core's approval logic.
+
+**No secrets in Telegram messages.** Approval prompts show agent DID and persona name, not vault contents or keys. Error messages to Telegram are generic; detailed errors are logged server-side only. Markdown special characters are escaped to prevent formatting injection.
+
+**Graceful degradation.** If `python-telegram-bot` is not installed or the token is invalid, Brain starts normally with Telegram disabled. Approvals fall back to the admin dashboard or CLI.
+
+11. Device Pairing Security
+
+Device pairing uses single-use 6-digit codes as short-lived physical proximity proofs. The code space is 100000-999999.
+
+**Code generation:** Core generates a 32-byte cryptographic secret (`crypto/rand`), derives a 6-digit numeric code via `SHA-256(secret) -> BigEndian uint32 -> mod 900000 + 100000`. Collision detection retries up to 5 times against live (non-expired, non-used) pending codes. Codes expire after 5 minutes.
+
+**Hard cap:** A maximum of 100 pending codes prevents memory exhaustion (SEC-MED-13). Codes are single-use and deleted immediately on completion — not just marked used.
+
+**Constant-time comparison.** `ValidateToken()` iterates all non-revoked devices with constant-time hash comparison (`crypto/subtle`) — no timing oracle. Device records are persisted to a JSON file and reloaded on startup.
+
+**Two completion paths:** Key-based (Ed25519 public key via `public_key_multibase`) and token-based (CLIENT_TOKEN for admin web UI). An optional `role` field distinguishes `"user"` from `"agent"` devices.
+
+12. PII Scrubber (3-Tier Pipeline)
+
+Raw data never leaves the Home Node unscrubbed. The PII scrubber has three tiers:
+
+**Tier 1 — Regex (Go core, always):** Fast pattern matching via `POST /v1/pii/scrub`. Catches structured PII: credit cards, phone numbers, Aadhaar/SSN, emails, bank accounts. Sub-millisecond.
+
+**Tier 2 — spaCy NER (Python brain, always):** Statistical NER model (`en_core_web_sm`, ~15MB) catches contextual PII that regex cannot: person names, organizations, locations, addresses. Runs in milliseconds on CPU.
+
+**Tier 3 — LLM NER (llama, optional):** Catches highly indirect references that spaCy misses (coded language, paraphrasing). Requires `--profile local-llm` (Gemma 3n via llama:8080).
+
+Entities are replaced with indexed tokens (`[PERSON_1]`, `[ORG_1]`, etc.) before sending to cloud LLMs. The de-sanitizer restores originals in the response. Why not use a cloud LLM for PII scrubbing? Circular dependency — sending unscrubbed text to a cloud API for detection constitutes the leak. PII scrubbing must always be local.
+
+13. OpenAPI Codegen and Contract Security
+
+The Core-Brain HTTP interface is defined by OpenAPI specs in `api/`. The specs are the source of truth for the HTTP boundary — security-relevant schemas (persona access types, approval request/response shapes, staging statuses, auth headers) are defined once and code-generated into both Go and Python.
+
+```
+api/
+  components/schemas.yaml     Shared enums (17) + domain types (15+)
+  core-api.yaml               Core's ~50 endpoints (hand-authored, source of truth)
+  brain-api.yaml              Brain's 3 endpoints (extracted from FastAPI)
+```
+
+**Ownership rule:** Core spec is hand-authored and generates Python client types. Brain spec is extracted from FastAPI/Pydantic and generates Go client types. Never feed generated types back into the owning service. This prevents type drift between the two services where mismatched field names or missing validation could create security gaps.
+
+**CI drift gate:** `make check-generate` compares generated code against the committed spec. If they diverge, CI fails — preventing deployed services from silently using stale types.
+
+**Wire format:** All JSON uses `snake_case`. All domain types that cross HTTP carry `json:"snake_case"` tags.
 
 
 >> Some normal questions and answers

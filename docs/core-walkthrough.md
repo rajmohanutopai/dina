@@ -17,6 +17,7 @@
 | | — The Sweeper | COMPLETE |
 | | — The Outbox: Retry on the Other Side | COMPLETE |
 | | [Where HTTP Lives in Core](#where-http-lives-in-core) | COMPLETE |
+| | — OpenAPI Codegen Pipeline | COMPLETE |
 | III | [The Request Journey — From HTTP to Vault](#act-iii-the-request-journey--from-http-to-vault) | COMPLETE |
 | | — The Middleware Chain | COMPLETE |
 | | — Example: Storing a Verdict in the Vault | COMPLETE |
@@ -32,9 +33,12 @@
 | VII | [Device Pairing — Adding a Second Screen](#act-vii-device-pairing--adding-a-second-screen) | COMPLETE |
 | VIII | [The Connector Pipeline — From Ingestion to Vault](#act-viii-the-connector-pipeline--from-ingestion-to-vault) | COMPLETE |
 | | — The Remember Endpoint | COMPLETE |
+| | — Brain-Side Persona Discovery: PersonaRegistry and PersonaSelector | COMPLETE |
+| | — Connector Lifecycle: MCP Transport and Sync Engine | COMPLETE |
 | IX | [Silence First — Notifications, Reminders, and the Daily Briefing](#act-ix-silence-first--notifications-reminders-and-the-daily-briefing) | COMPLETE |
 | | — The Three-Tier Priority System | COMPLETE |
 | | — Reminders: Deterministic Triggers, LLM-Free | COMPLETE |
+| | — Telegram Bot as Admin Channel | COMPLETE |
 | X | [The Trust Network — Verified Truth at the Ingress Gate](#act-x-the-trust-network--verified-truth-at-the-ingress-gate) | COMPLETE |
 | | — The Trust Cache | COMPLETE |
 | | — The Trust Resolver | COMPLETE |
@@ -153,7 +157,7 @@ Seed + HKDF(salt=SHA256("dina:backup:salt"),    info="dina:backup:key:v1")      
 
 Both the persona name and a deterministic salt (`SHA256("dina:salt:<persona>")`) feed into HKDF. The persona name in the `info` parameter mathematically guarantees each persona gets a different encryption key from the same seed, while the per-persona salt adds domain separation. The derivation is versioned — v1 is the current default, v2 (with a different info tag) exists for vault re-encryption during DEK migration. Because the version goes into the HKDF info string, v1 and v2 produce different DEKs from the same seed, which is required for re-encrypting a vault without data loss.
 
-**Persona signing keys** use SLIP-0010 with a 4-level path: `m/9999'/1'/<personaIndex>'/<generation>'`. Persona indexes are assigned by convention: 0=consumer, 1=professional, 2=social, 3=health, 4=financial, 5=citizen, 6+=custom. Each persona can rotate independently by incrementing its generation counter.
+**Persona signing keys** use SLIP-0010 with a 4-level path: `m/9999'/1'/<personaIndex>'/<generation>'`. Persona indexes are assigned by convention: 0=general, 1=work, 2=health, 3=finance, 4+=custom. Each persona can rotate independently by incrementing its generation counter.
 
 Signing keys (Ed25519, asymmetric) prove **who you are** — "this message is from me." Vault DEKs (AES-256, symmetric) protect **what you store** — "only I can read this data."
 
@@ -503,6 +507,18 @@ In all three cases, the external caller authenticates to Core (device key or cli
 - **Vault storage** — local SQLCipher files, no network.
 - **Dead drop** — local filesystem, no network.
 - **Reminder loop** — in-process goroutine, no network.
+
+### OpenAPI Codegen Pipeline
+
+Core's HTTP contract is not just code — it is a formal specification. The source of truth lives in `api/core-api.yaml` (hand-authored, ~50 endpoints) with shared enums and domain types in `api/components/schemas.yaml`. Brain's contract lives in `api/brain-api.yaml` (extracted from FastAPI/Pydantic source). Running `make generate` triggers a three-step pipeline:
+
+1. **Bundle** — `scripts/bundle_openapi.py` resolves `$ref` pointers in the Core spec, producing `api/core-api.bundled.yaml` (a single self-contained file).
+2. **Go codegen** — `oapi-codegen` (configured via `api/oapi-codegen.yaml`) generates Go types from the bundled Core spec into `core/internal/gen/core_types.gen.go`. A second invocation generates Go types for Brain's API into `core/internal/gen/brainapi/brain_types.gen.go` — these are the types Core uses when calling Brain as an HTTP client.
+3. **Python codegen** — `datamodel-codegen` generates Pydantic v2 models from the bundled Core spec into `brain/src/gen/core_types.py` — the types Brain uses when calling Core's API.
+
+The ownership rule prevents circular generation: Core's spec is hand-authored and generates *client* types for Brain. Brain's spec is extracted from FastAPI and generates *client* types for Core. Neither service feeds generated types back into its own source. All JSON uses `snake_case` on the wire; Go types carry `json:"snake_case"` tags.
+
+CI enforces drift via `make check-generate` — if anyone edits the spec without regenerating, `git diff --exit-code` on the `gen/` directories fails the build. This gate ensures the Go types, Python models, and OpenAPI spec never diverge.
 
 ---
 
@@ -926,6 +942,35 @@ The alternative — letting connectors write directly to vault personas — woul
 
 The response maps staging statuses to user-friendly semantics: `stored` returns 200 with "Memory stored successfully." `pending_unlock` is returned as `needs_approval` (202 Accepted) with a message explaining that the item was classified into a sensitive persona and requires approval. `classifying` maps to `processing`. A companion `GET /api/v1/remember/{id}` endpoint allows polling for status after the initial request returns.
 
+### Brain-Side Persona Discovery: PersonaRegistry and PersonaSelector
+
+The staging pipeline's `Resolve` step requires Brain to decide which persona an item belongs to. Two Brain-side services support this — noted here because they directly consume Core's persona API.
+
+**PersonaRegistry** (`brain/src/service/persona_registry.py`) queries Core's `GET /v1/personas` at startup and caches persona metadata (names, tiers, lock states) as immutable `PersonaInfo` snapshots. If Core is unreachable at startup, a conservative fallback list (general, work, health, finance) is used. The cache refreshes on persona-related 404 errors, explicit events from Core, or a periodic poll. Brain services never hardcode persona names — they ask the registry.
+
+**PersonaSelector** (`brain/src/service/persona_selector.py`) uses a constrained LLM prompt to classify items into the installed persona set. Resolution order: (1) if the item has a valid explicit `persona_hint`, use it, (2) otherwise ask the LLM to choose from the registry's persona list, (3) validate the LLM's answer against the registry — drop anything not installed, (4) fall back to the default persona. The LLM is constrained to choose from actual persona names; it cannot invent new ones. The result is a `SelectionResult` with primary persona, optional secondary personas (for multi-target fan-out), confidence score, and reason string.
+
+Both are Brain-side services — Core is unaware of them. See `docs/brain-walkthrough.md` for the full classification pipeline.
+
+### Connector Lifecycle: MCP Transport and Sync Engine
+
+The staging pipeline above handles data *after* it arrives at Core. This section covers how data gets there — the MCP transport layer and sync engine that live in Brain.
+
+**Two MCP transports:** Connectors are external MCP servers, not code inside Brain. Brain communicates with them via two transport adapters that both implement the `MCPClient` protocol (`call_tool`, `list_tools`, `disconnect`):
+
+| Transport | Adapter | Session Model | Use Case |
+|-----------|---------|---------------|----------|
+| **stdio** | `MCPStdioClient` (`brain/src/adapter/mcp_stdio.py`) | Child process per server, JSON-RPC 2.0 over stdin/stdout | Local connectors (OpenClaw) |
+| **HTTP** | `MCPHTTPClient` (`brain/src/adapter/mcp_http.py`) | Stateless REST calls (`POST /tools/{tool}`) | Remote/containerized connectors |
+
+Stdio sessions are lazily started on first `call_tool` and detect process death via `returncode` check — a crashed connector is recreated on the next call. Child processes inherit only a safe subset of environment variables (`PATH`, `HOME`, `LANG`, etc.) — vault keys, service keys, and API tokens are never leaked to MCP server processes. HTTP sessions use a shared `httpx.AsyncClient` with a 30-second timeout and tool name validation (`^[a-zA-Z0-9_-]+$`) to prevent path injection.
+
+**Sync engine 6-step cycle** (`brain/src/service/sync_engine.py`): (1) read last sync cursor from Core KV, (2) fetch new items via `mcp.call_tool(source, "{source}_fetch", {since: cursor})`, (3) triage each item (Pass 1 category filter for bulk mail, Pass 2a regex for no-reply senders, fiduciary keyword override), (4) push PRIMARY items to Core's staging inbox in batches of 100, (5) update the cursor in Core KV, (6) return stats. Deduplication is two-tier: fast in-memory `OrderedDict` per source (bounded at 10,000 IDs with LRU eviction) and cold FTS5 search by `source_id` against Core vault.
+
+**OAuth delegation:** Dina never manages OAuth tokens. Connectors handle their own authentication with upstream APIs — token storage, refresh, and re-authorization are entirely the connector's responsibility. If a connector's token expires and refresh fails, the MCP call fails, Brain records the failure in the health state machine, and the user sees a Tier 2 notification. The sync cursor is preserved — when the connector recovers, sync resumes from the last successful position.
+
+**MCP error handling:** Timeout (30s per call) raises `MCPError` and aborts the sync cycle with cursor preserved. Process death (stdio) is detected on the next call and the session is recreated. Invalid JSON responses produce `MCPError` with the first 200 bytes for debugging. HTTP errors include the status code and truncated body (500 chars). Server command not found is a fatal `MCPError` — the source cannot start.
+
 ---
 
 ## Act IX: Silence First — Notifications, Reminders, and the Daily Briefing
@@ -977,6 +1022,16 @@ The background ReminderLoop (`core/internal/reminder/loop.go`, started at line 5
 The callback (wired at lines 569-586) sends a `reminder_fired` event to Brain with the full reminder context — ID, type, kind, message, metadata, source item ID, source, and persona. Brain then composes a contextual notification: it queries the vault for related items (e.g., for a license renewal reminder, it fetches address, insurance provider, nearby offices) and assembles a helpful nudge.
 
 No cron library. No LLM in the trigger loop. The reminder fires deterministically at the scheduled time. Brain adds intelligence only in the response — what to say, not when to say it.
+
+### Telegram Bot as Admin Channel
+
+Telegram is not just a data connector — it is a full admin channel. Brain's Telegram bot (`brain/src/adapter/telegram_bot.py`) wraps `python-telegram-bot` v22.x with zero business logic in the adapter. The service layer (`brain/src/service/telegram.py`) handles access control, Guardian routing, and approval workflows. The composition root (`brain/src/main.py`) wires these together when `DINA_TELEGRAM_TOKEN` is set — if the package is missing, Telegram is disabled gracefully.
+
+**Commands:** `/start` initiates pairing — registers the Telegram user ID in Core's KV store (`telegram_paired_users` key) via `POST /v1/kv`. Free-text DMs from paired users are forwarded to the Guardian as `reason` events, with the response returned inline. The commands `approve <id>`, `approve-single <id>`, and `deny <id>` are intercepted before Guardian processing and routed directly to Core's approval endpoints (`POST /v1/persona/approve` or `POST /v1/persona/deny`).
+
+**Approval workflow via Telegram:** An agent requests access to a sensitive persona. Core creates a pending approval and notifies Brain (via `TaskEvent` with type `approval_needed`). Guardian's `_handle_approval_needed()` fires, and `TelegramService.send_approval_prompt()` pushes a Markdown-formatted message to all paired Telegram users with the approval ID, agent DID, persona, session, and reason. The user replies `approve abc123` in the chat. The service intercepts the reply, calls `CoreClient.approve_request(id, scope="session", granted_by="telegram")`, Core creates the session grant, opens the vault, drains pending staging items, and the agent's workflow resumes. The `granted_by="telegram"` field creates an audit trail distinguishing Telegram approvals from admin-UI or CLI approvals.
+
+**Access control:** Two gates — an allowlist gate (only user IDs in `DINA_TELEGRAM_ALLOWED_USERS` can pair) and a pairing gate (paired users survive Brain restarts via KV persistence). Group messages require both an allowed group chat ID and an @-mention of the bot. Device callers (CLI, paired devices) are blocked from triggering approval mutations through Telegram — approvals must come from a human.
 
 ---
 
@@ -1205,7 +1260,7 @@ Core's trust resolver (`/v1/trust/resolve?did={did}`) fetches these profiles fro
 
 **What it proves:** Persona isolation as a security boundary — a shopping agent cannot read health data, even when the request is reasonable.
 
-The health persona is created with tier `restricted`. Three medical records are stored: a spinal diagnosis ("L4-L5 disc herniation, Dr. Sharma, Apollo Hospital"), ergonomic recommendations ("chronic back pain, needs lumbar support, avoid sitting > 1 hour"), and a medication record ("Ibuprofen 400mg"). A shopping agent (consumer persona, tier `open`) asks: "Does the user have any health conditions that affect chair selection?"
+The health persona is created with tier `sensitive`. Three medical records are stored: a spinal diagnosis ("L4-L5 disc herniation, Dr. Sharma, Apollo Hospital"), ergonomic recommendations ("chronic back pain, needs lumbar support, avoid sitting > 1 hour"), and a medication record ("Ibuprofen 400mg"). A shopping agent (general persona, tier `default`) asks: "Does the user have any health conditions that affect chair selection?"
 
 Brain's guardian processes the `cross_persona_request` event with a **deterministic tier gate** — no LLM involved in the block decision. Restricted tier → automatic block. The guardian then builds a minimal disclosure proposal:
 
@@ -1215,14 +1270,14 @@ Brain's guardian processes the `cross_persona_request` event with a **determinis
 The user reviews and approves the proposal. Brain sends the approved text and runs a final PII audit — `medical_patterns_found: [], clean: true`. An audit record is written to core's KV store.
 
 **Core's role:**
-- **Vault** enforces persona compartmentalization — health and consumer are separate encrypted databases with separate DEKs. Core has no cross-persona query API; each `POST /v1/vault/query` targets a single persona. Brain's guardian handles the cross-persona disclosure decision before querying Core for the source persona's data.
+- **Vault** enforces persona compartmentalization — health and general are separate encrypted databases with separate DEKs. Core has no cross-persona query API; each `POST /v1/vault/query` targets a single persona. Brain's guardian handles the cross-persona disclosure decision before querying Core for the source persona's data.
 - **KV store** records the audit trail of every disclosure decision.
 
 <details>
 <summary><strong>Design Decision — Why deterministic tier gates instead of LLM-based access control?</strong></summary>
 <br>
 
-An LLM could theoretically decide whether to share data across personas. But LLMs are probabilistic — they might allow disclosure 99% of the time and leak 1% of the time. For a system that guards medical records, 1% is unacceptable. The tier gate is a boolean: restricted tier → block. Always. The LLM's job is limited to building the *proposal* (which terms are safe to share), not the *decision* (whether to share at all). The human makes the final call. This is the Deterministic Sandwich pattern: deterministic gate → LLM proposal → deterministic audit.
+An LLM could theoretically decide whether to share data across personas. But LLMs are probabilistic — they might allow disclosure 99% of the time and leak 1% of the time. For a system that guards medical records, 1% is unacceptable. The tier gate is a boolean: sensitive tier → block. Always. The LLM's job is limited to building the *proposal* (which terms are safe to share), not the *decision* (whether to share at all). The human makes the final call. This is the Deterministic Sandwich pattern: deterministic gate → LLM proposal → deterministic audit.
 
 </details>
 
@@ -1240,13 +1295,13 @@ The guardian's classification is deterministic (no LLM):
 - **BLOCKED** → `deny`: `read_vault`, `export_data`, `access_keys` — categorically denied, always.
 - **Unauthenticated agent** → `401`: Core's auth middleware rejects the request before it reaches the guardian. Note: the `AgentHandler` overrides `trust_level` to `"verified"` for every device that passes auth — so the untrusted path through the guardian cannot trigger via this endpoint; unauthenticated devices are stopped at the door.
 
-Vault isolation is verified: data stored in the health persona is invisible from the consumer persona. Finally, admin revokes the agent's device (`DELETE /v1/devices/{device_id}`), and the device is marked as `Revoked` in the device list — subsequent requests with the revoked token are rejected.
+Vault isolation is verified: data stored in the health persona is invisible from the general persona. Finally, admin revokes the agent's device (`DELETE /v1/devices/{device_id}`), and the device is marked as `Revoked` in the device list — subsequent requests with the revoked token are rejected.
 
 **Core's role:**
 - **Device pairing** registers the agent through the same ceremony used by phones and laptops — agents are first-class devices.
 - **Agent validation proxy** (`/v1/agent/validate`) — Core authenticates the device, then forwards the intent to brain's guardian via BrainClient. Brain stays non-public.
 - **Auth validator** validates the agent's Ed25519 signature on every request, and revokes it immediately when the admin calls `DELETE /v1/devices/{id}`.
-- **Vault** enforces persona isolation — the agent in the consumer context cannot query health data, regardless of what it asks for.
+- **Vault** enforces persona isolation — the agent in the general context cannot query health data, regardless of what it asks for.
 
 ### Story 06: The License Renewal (10 tests)
 

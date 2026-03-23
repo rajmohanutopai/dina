@@ -56,6 +56,10 @@ Key rotation is possible without changing identity — only the derived keys rot
 
 ---
 
+## API Contract
+
+The Core↔Brain HTTP interface is defined by OpenAPI specs in `api/`. The spec is the source of truth — `make generate` regenerates Go and Python types, `make check-generate` is the CI drift gate. Security-relevant schemas (authentication headers, approval responses, session parameters) are defined in `api/components/schemas.yaml` and `api/core-api.yaml`. See ARCHITECTURE.md for full codegen details.
+
 ## Authentication
 
 Three authentication methods, each for a different trust boundary.
@@ -171,10 +175,10 @@ Check Known Gaps Section please
 |------|-----------|-------|-------|--------|-------|
 | **Default** | Auto-open | Free access | Free access | Free access | Silent |
 | **Standard** | Auto-open | Free access | Free access | Needs session grant | On agent access |
-| **Sensitive** | Closed | Unlock with confirmation | Needs approval | Needs approval via Telegram/admin | Always |
+| **Sensitive** | Closed | v1 auto-open | Needs approval | Needs approval via Telegram/admin | Always |
 | **Locked** | Closed | Passphrase required | Denied (403) | Denied (403) | Always |
 
-The default persona is "general" — always open. Standard personas (consumer, social, work) auto-open at boot but require agents to work within named sessions. Sensitive personas (health, finance) require explicit user approval before agents can access them. Locked personas require a persona-specific passphrase.
+Bootstrap personas (created on first run): `general` (default), `work` (standard), `health` (sensitive), `finance` (sensitive). The default persona is always open. Standard personas auto-open at boot but require agents to work within named sessions. Sensitive personas are v1 policy-gated: Core auto-opens the vault for authorized requests (derives DEK, opens database) without a passphrase prompt. Agents need approval via Telegram or admin CLI; the 403 response includes an `approval_id`. Locked personas (reserved for future high-stakes use) keep the DEK out of RAM entirely — explicit manual unlock required.
 
 ### Agent Sessions
 
@@ -182,12 +186,15 @@ Agents work within named sessions that scope access grants:
 
 ```
 dina session start --name "chair-research"
-dina recall "back pain" --session chair-research --persona health
+#   Session: ses_a3kx7m2pw4qr (chair-research) active
+dina ask --session ses_a3kx7m2pw4qr "back pain history"
   → Awaiting user approval on Telegram...
-  → Health access granted for session "chair-research"
-dina session end --name "chair-research"
+  → Health access granted for session ses_a3kx7m2pw4qr
+dina session end ses_a3kx7m2pw4qr
   → All grants revoked
 ```
+
+`--session` is required on `dina remember`, `dina ask`, and `dina validate`. Session + agent DID are triple-bound in grants — a stolen session ID cannot be used from a different device.
 
 Sessions persist across crashes (agent can reconnect by name). Each session's grants are revoked when the session ends. Different agents can have different active sessions.
 
@@ -462,7 +469,7 @@ This needs to be thought through and implemented in a future release
 | 2 (Verified) | Plaintext for low-risk intents, late binding for risky ones | Verified contacts |
 | 3 (Transactional) | Plaintext — business/public info | Plumber, restaurants |
 
-**Why this matters:** When an action agent (OpenClaw, Perplexity Computer) needs to "send an email to your daughter," it must never see her actual email address. The agent drafts with `TO: {{dina.vault.social.daughter.email}}` and Dina hydrates locally at send time. This is Zero-Knowledge Execution — the cloud agent executes the task without ever holding the PII.
+**Why this matters:** When an action agent (OpenClaw, Perplexity Computer) needs to "send an email to your daughter," it must never see her actual email address. The agent drafts with `TO: {{dina.vault.general.daughter.email}}` and Dina hydrates locally at send time. This is Zero-Knowledge Execution — the cloud agent executes the task without ever holding the PII.
 
 **Status:** Domain types defined (`TrustRing`, `EntityResolutionRequest/Response` in `domain/contact.go`). Gateway handler and late-binding hydration engine are Phase 3. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for implementation plan.
 
