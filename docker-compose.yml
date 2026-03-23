@@ -29,8 +29,8 @@ services:
       - "${DINA_CORE_PORT:-8100}:8100"
     volumes:
       - dina-data:/data
-      - ./secrets/service_keys/core:/run/secrets/service_keys/private
-      - ./secrets/service_keys/public:/run/secrets/service_keys/public:ro
+      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/core:/run/secrets/service_keys/private
+      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/public:/run/secrets/service_keys/public:ro
     environment:
       - DINA_ENV=${DINA_ENV:-development}
       - DINA_VAULT_PATH=/data/vault
@@ -79,8 +79,8 @@ services:
       - ./dina.html:/app/dina.html:ro
       - ./docs/images:/app/images:ro
       - ./models.json:/app/models.json:ro
-      - ./secrets/service_keys/brain:/run/secrets/service_keys/private
-      - ./secrets/service_keys/public:/run/secrets/service_keys/public:ro
+      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/brain:/run/secrets/service_keys/private
+      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/public:/run/secrets/service_keys/public:ro
     environment:
       - DINA_CORE_URL=http://core:8100
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys

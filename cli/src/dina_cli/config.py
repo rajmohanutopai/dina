@@ -9,9 +9,33 @@ from pathlib import Path
 
 import click
 
-CONFIG_DIR = Path.home() / ".dina" / "cli"
+_GLOBAL_CONFIG_DIR = Path.home() / ".dina" / "cli"
+_LOCAL_CONFIG_DIR = Path.cwd() / ".dina" / "cli"
+
+
+def _resolve_config_dir() -> Path:
+    """Find config directory: local (.dina/cli/) first, then global (~/.dina/cli/).
+
+    For multi-instance: each Dina project has .dina/cli/ in its directory.
+    The user runs commands from the project folder, and the local config is used.
+    Single-instance: ~/.dina/cli/ is the global default.
+    """
+    if (_LOCAL_CONFIG_DIR / "config.json").exists():
+        return _LOCAL_CONFIG_DIR
+    return _GLOBAL_CONFIG_DIR
+
+
+CONFIG_DIR = _resolve_config_dir()
 CONFIG_FILE = CONFIG_DIR / "config.json"
 IDENTITY_DIR = CONFIG_DIR / "identity"
+
+
+def set_config_dir(path: Path) -> None:
+    """Change the config directory (called by dina configure)."""
+    global CONFIG_DIR, CONFIG_FILE, IDENTITY_DIR
+    CONFIG_DIR = path
+    CONFIG_FILE = CONFIG_DIR / "config.json"
+    IDENTITY_DIR = CONFIG_DIR / "identity"
 
 
 @dataclass(frozen=True)

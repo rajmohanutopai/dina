@@ -708,6 +708,20 @@ def configure(ctx: click.Context, role: str) -> None:
     click.echo("=" * 40)
     click.echo()
 
+    # Config directory — where keypair + config.json are stored.
+    # Default: ~/.dina/cli (global). For multi-instance, use ./.dina/cli (local).
+    from .config import CONFIG_DIR, _GLOBAL_CONFIG_DIR, set_config_dir
+    config_dir = click.prompt(
+        "Config directory",
+        default=str(CONFIG_DIR),
+    )
+    config_path = Path(config_dir)
+    if config_path != CONFIG_DIR:
+        set_config_dir(config_path)
+    if config_path != _GLOBAL_CONFIG_DIR:
+        click.echo(f"  Using local config: {config_path}")
+        click.echo(f"  Run dina commands from this directory to use this config.")
+
     # Load existing saved config for defaults
     from .config import _load_saved
     existing = _load_saved()

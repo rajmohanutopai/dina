@@ -2,10 +2,17 @@
 # install.sh — One-command Dina Home Node setup
 #
 # Usage:
-#   ./install.sh                 # first-time setup (interactive)
-#   ./install.sh --skip-build    # skip Docker build (use existing images)
-#   ./install.sh --config FILE   # non-interactive (read config from JSON file)
-#   ./install.sh --verbose       # show detailed internal output
+#   ./install.sh                       # first-time setup (interactive)
+#   ./install.sh --port 9100           # use specific Core port (PDS = port+1)
+#   ./install.sh --instance alice      # named instance (isolated data + containers)
+#   ./install.sh --skip-build          # skip Docker build (use existing images)
+#   ./install.sh --config FILE         # non-interactive (read config from JSON file)
+#   ./install.sh --verbose             # show detailed internal output
+#
+# Multi-instance:
+#   ./install.sh --instance alice --port 8100    # Alice's Dina on 8100
+#   ./install.sh --instance bob   --port 9100    # Bob's Dina on 9100
+#   Each instance gets isolated containers (dina-alice-*), data, and secrets.
 #
 # Architecture:
 #   install.sh is a PRESENTER — it renders prompts, collects input, and
@@ -37,6 +44,8 @@ CONFIG_ONLY=false
 CONFIG_FILE=""
 VERBOSE=false
 QUICK=false
+INSTANCE_NAME=""
+EXPLICIT_PORT=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -44,21 +53,39 @@ for arg in "$@"; do
         --config-only) CONFIG_ONLY=true; SKIP_BUILD=true ;;
         --verbose|-v) VERBOSE=true ;;
         --quick) QUICK=true ;;
-        --config)
-            # Next arg is the config file — handled below
+        --config|--port|--instance)
+            # Two-arg flags — handled below
             ;;
     esac
 done
 
-# Parse --config FILE (two-arg flag)
+# Parse two-arg flags
 _prev=""
 for _a in "$@"; do
-    if [ "${_prev}" = "--config" ]; then
-        CONFIG_FILE="${_a}"
-        break
-    fi
+    case "${_prev}" in
+        --config)   CONFIG_FILE="${_a}" ;;
+        --port)     EXPLICIT_PORT="${_a}" ;;
+        --instance) INSTANCE_NAME="${_a}" ;;
+    esac
     _prev="${_a}"
 done
+
+# Instance isolation: separate project name, data dir, secrets, CLI config.
+if [ -n "${INSTANCE_NAME}" ]; then
+    export COMPOSE_PROJECT_NAME="dina-${INSTANCE_NAME}"
+    # Use instance-specific data/secrets subdirectories
+    DINA_DIR="${DINA_DIR}/instances/${INSTANCE_NAME}"
+    mkdir -p "${DINA_DIR}"
+    SECRETS_DIR="${DINA_DIR}/secrets"
+    ENV_FILE="${DINA_DIR}/.env"
+    # CLI config isolation — each instance gets its own keypair + config
+    export DINA_CONFIG_DIR="${DINA_DIR}/cli"
+    echo ""
+    echo "  Instance: ${INSTANCE_NAME}"
+    echo "  Data:     ${DINA_DIR}"
+    echo "  CLI:      export DINA_CONFIG_DIR=${DINA_CONFIG_DIR}"
+    echo ""
+fi
 
 # ---------------------------------------------------------------------------
 # Shared modules (colors only — logic is in the installer core)
@@ -193,8 +220,14 @@ if [ -f "${ENV_FILE}" ]; then
     _saved_core=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
     _saved_pds=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
-CORE_PORT="${_saved_core:-$(find_free_port 8100)}"
-PDS_PORT="${_saved_pds:-$(find_free_port 2583)}"
+# --port overrides saved/auto-detected ports. PDS = core_port + 1 when explicit.
+if [ -n "${EXPLICIT_PORT}" ]; then
+    CORE_PORT="${EXPLICIT_PORT}"
+    PDS_PORT=$(( EXPLICIT_PORT + 1 ))
+else
+    CORE_PORT="${_saved_core:-$(find_free_port 8100)}"
+    PDS_PORT="${_saved_pds:-$(find_free_port 2583)}"
+fi
 verbose_ok "Ports: core=${CORE_PORT}, pds=${PDS_PORT}"
 
 # Variables populated by the wizard result
