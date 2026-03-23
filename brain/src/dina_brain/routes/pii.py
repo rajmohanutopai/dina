@@ -80,7 +80,10 @@ async def scrub_pii(request: ScrubRequest) -> ScrubResponse:
         )
 
     try:
-        scrubbed, entities = await asyncio.to_thread(_scrubber.scrub, request.text)
+        # V1: patterns-only (no NER). Catches emails, phones, SSNs, gov IDs.
+        # NER disabled — too many false positives (B12, biryani, pet names).
+        scrub_fn = getattr(_scrubber, "scrub_patterns_only", _scrubber.scrub)
+        scrubbed, entities = await asyncio.to_thread(scrub_fn, request.text)
     except Exception as exc:
         log.error(
             "pii.scrub.error",

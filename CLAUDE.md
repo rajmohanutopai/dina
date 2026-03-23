@@ -44,7 +44,7 @@ core/               Go Core — sovereign cryptographic kernel
 
 brain/              Python Brain (sidecar) — intelligence & orchestration
                     Guardian angel loop (Google ADK), silence classification, nudge assembly,
-                    agent orchestration (MCP → OpenClaw), admin UI, PII scrubber (spaCy)
+                    agent orchestration (MCP → OpenClaw), admin UI, PII scrubber (Presidio patterns)
                     Port 8200 (internal: /api/* brain API, /admin/* admin UI)
 
 appview/            TypeScript AppView — decentralized Trust Network
@@ -96,7 +96,7 @@ docker-compose.yml:
 | Key Mgmt | BIP-39 mnemonic → SLIP-0010 (signing) + HKDF (vault DEKs) | Hierarchical deterministic keys under purpose `m/9999'` |
 | Trust | AT Protocol PDS + AppView | Decentralized trust network (19 record types) |
 | Messaging | NaCl `crypto_box_seal` over HTTPS | Dina-to-Dina encrypted P2P |
-| PII | 3-tier: regex (Go) + spaCy NER (Python) + LLM NER (optional) | Raw data never leaves Home Node |
+| PII | 2-tier (V1): regex (Go) + Presidio patterns (Python). NER disabled in V1, allow-list filters false positives. V2: GLiNER local model. | Raw data never leaves Home Node |
 | Agents | MCP (Model Context Protocol) | External agent communication (OpenClaw, etc.) |
 | Embedding | EmbeddingGemma / gemini-embedding-001 (768-dim) | Semantic search vectors |
 | Privacy | ZK-SNARKs (Phase 2+) | Prove facts without revealing raw data |

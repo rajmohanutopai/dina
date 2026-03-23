@@ -64,6 +64,31 @@ SAFE_ENTITIES: frozenset[str] = frozenset({
     "LANGUAGE",
 })
 
+# Entity types that Presidio should scrub. Two categories:
+# 1. NER entities: names, organizations, locations (regex can't catch)
+# 2. Government/financial IDs: Aadhaar, PAN, SSN, etc. (Presidio custom recognizers)
+# Excluded: DATE, TIME, MONEY, QUANTITY, PRODUCT — non-identifying.
+SCRUB_ENTITIES: frozenset[str] = frozenset({
+    # NER entities
+    "PERSON",
+    "ORGANIZATION", "ORG",
+    "LOCATION", "GPE", "LOC", "FAC",
+    # Structured PII (Presidio custom recognizers)
+    "EMAIL_ADDRESS",
+    "PHONE_NUMBER", "IN_PHONE_NUMBER",
+    "CREDIT_CARD",
+    "CRYPTO",
+    "IP_ADDRESS",
+    "US_SSN",
+    "URL",
+    "MEDICAL_LICENSE",
+    "MEDICAL_CONDITION", "MEDICATION", "BLOOD_TYPE", "HEALTH_INSURANCE_ID",
+    # India-specific
+    "AADHAAR_NUMBER", "IN_PAN", "IN_IFSC", "IN_UPI_ID", "IN_PASSPORT", "IN_BANK_ACCOUNT",
+    # EU
+    "DE_STEUER_ID", "DE_PERSONALAUSWEIS", "FR_NIR", "FR_NIF", "NL_BSN", "SWIFT_BIC",
+})
+
 # ---------------------------------------------------------------------------
 # Country names — country-level GPE is not PII.
 # ---------------------------------------------------------------------------
@@ -221,6 +246,7 @@ class PresidioScrubber:
         use_faker: bool = True,
         faker_locale: str | None = None,
         enable_gliner: bool | None = None,
+        allowlist_path: str | None = None,
     ) -> None:
         # Ensure tldextract (used by Presidio's URL recognizer) has a writable
         # cache directory — prevents OSError in Docker / read-only $HOME.
@@ -247,6 +273,34 @@ class PresidioScrubber:
             self._enable_gliner = enable_gliner
         else:
             self._enable_gliner = os.environ.get("DINA_GLINER", "0") == "1"
+
+        # Allow-list: tokens that must never be scrubbed. Loaded from YAML.
+        self._allowlist: frozenset[str] = frozenset()
+        al_path = allowlist_path or os.environ.get("DINA_PII_ALLOWLIST")
+        if al_path is None:
+            # Default: look in brain/config/pii_allowlist.yaml
+            _here = os.path.dirname(os.path.abspath(__file__))
+            candidate = os.path.join(_here, "..", "..", "config", "pii_allowlist.yaml")
+            if os.path.isfile(candidate):
+                al_path = candidate
+        if al_path and os.path.isfile(al_path):
+            self._allowlist = self._load_allowlist(al_path)
+            logger.info("pii_allowlist_loaded", path=al_path, count=len(self._allowlist))
+
+    @staticmethod
+    def _load_allowlist(path: str) -> frozenset[str]:
+        """Load allow-list from YAML. All values flattened into a case-insensitive set."""
+        import yaml
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        tokens: set[str] = set()
+        for category, items in data.items():
+            if isinstance(items, list):
+                for item in items:
+                    tokens.add(str(item).strip())
+                    tokens.add(str(item).strip().upper())
+                    tokens.add(str(item).strip().lower())
+        return frozenset(tokens)
 
     # -- Faker integration --------------------------------------------------
 
@@ -299,16 +353,13 @@ class PresidioScrubber:
         count = counter.get(entity_type, 0) + 1
         counter[entity_type] = count
 
-        # Try Faker for natural-language replacements that LLMs handle well.
-        faker = self._ensure_faker()
-        if faker is not None:
-            gen = _FAKER_GENERATORS.get(entity_type, _faker_fallback)
-            fake_value = gen(faker, count)
-            # Wrap in delimiters to prevent substring collision during rehydration.
-            placeholder = f"<<PII:{fake_value}>>"
-        else:
-            # Fallback: opaque delimited tag with UUID for uniqueness.
-            placeholder = f"<<PII_{entity_type}_{count}_{uuid4().hex[:8]}>>"
+        # Opaque tokens: [PERSON_1], [ORG_1], [LOC_1].
+        # Same format as the spaCy scrubber for consistent rehydration.
+        # Faker names were removed because:
+        # 1. LLMs rephrase Faker names, breaking exact-match rehydration
+        # 2. Faker type mismatches (person→org) cause confusion
+        # 3. Opaque tokens are unambiguous for the entity vault
+        placeholder = f"[{entity_type}_{count}]"
 
         seen[real_value] = placeholder
         return placeholder
@@ -467,6 +518,19 @@ class PresidioScrubber:
             if entity_type in SAFE_ENTITIES:
                 continue
 
+            # Only scrub known identifying entity types.
+            if entity_type not in SCRUB_ENTITIES:
+                continue
+
+            # Skip low-confidence NER detections (PERSON, ORG, LOC only).
+            # spaCy misclassifies common words as entities (e.g. "B12" as
+            # ORG, "Raju" as ORG, "biryani" as PERSON). Pattern-based
+            # recognizers (Aadhaar, PAN, SSN, etc.) are not filtered —
+            # they match fixed formats and don't produce false positives.
+            _NER_TYPES = ("PERSON", "ORGANIZATION", "ORG", "LOCATION", "GPE", "LOC", "FAC")
+            if entity_type in _NER_TYPES and result.score < 0.7:
+                continue
+
             start, end = result.start, result.end
             value = text[start:end]
 
@@ -480,6 +544,10 @@ class PresidioScrubber:
 
             # Skip country-level GPE.
             if entity_type in ("LOCATION", "GPE") and value.strip() in COUNTRY_NAMES:
+                continue
+
+            # Allow-list: skip tokens that are known non-PII.
+            if value.strip() in self._allowlist:
                 continue
 
             mapped = _LABEL_MAP.get(entity_type, entity_type)
@@ -577,6 +645,10 @@ class PresidioScrubber:
                 continue
 
             if len(value.strip()) <= 2:
+                continue
+
+            # Allow-list: skip tokens that are known non-PII.
+            if value.strip() in self._allowlist:
                 continue
 
             mapped = _LABEL_MAP.get(entity_type, entity_type)

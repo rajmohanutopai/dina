@@ -1264,7 +1264,7 @@ The health persona is created with tier `sensitive`. Three medical records are s
 
 Brain's guardian processes the `cross_persona_request` event with a **deterministic tier gate** — no LLM involved in the block decision. Restricted tier → automatic block. The guardian then builds a minimal disclosure proposal:
 
-- **Withheld:** L4-L5, herniation, Dr. Sharma, Apollo, Ibuprofen (medical PII detected via Presidio NER with optional GLiNER, regex fallback)
+- **Withheld:** L4-L5, herniation, Dr. Sharma, Apollo, Ibuprofen (medical PII detected via Presidio pattern recognizers + regex fallback; NER disabled in V1)
 - **Safe to share:** "chronic back pain", "needs lumbar support", "avoid prolonged standing" (general health terms that don't identify the condition)
 
 The user reviews and approves the proposal. Brain sends the approved text and runs a final PII audit — `medical_patterns_found: [], clean: true`. An audit record is written to core's KV store.

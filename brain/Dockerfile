@@ -11,5 +11,6 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY src/ /app/src/
+COPY config/ /app/config/
 EXPOSE 8200
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8200"]

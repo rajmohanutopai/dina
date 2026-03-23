@@ -480,7 +480,7 @@ def test_vault_list_json():
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert len(data) == 2
-    mc.vault_query.assert_called_once_with("persona-general", query="", limit=20, offset=0)
+    mc.vault_query.assert_called_once_with("general", query="", limit=20, offset=0)
 
 
 def test_vault_list_empty():
@@ -502,7 +502,7 @@ def test_vault_list_with_offset():
         mock_client=mc,
     )
     assert result.exit_code == 0
-    mc.vault_query.assert_called_once_with("persona-health", query="", limit=20, offset=20)
+    mc.vault_query.assert_called_once_with("health", query="", limit=20, offset=20)
 
 
 # ── vault search ────────────────────────────────────────────────────────────
@@ -521,7 +521,7 @@ def test_vault_search_json():
     data = json.loads(result.output)
     assert len(data) == 1
     mc.vault_query.assert_called_once_with(
-        "persona-general", query="tea", mode="fts5", limit=20, offset=0,
+        "general", query="tea", mode="fts5", limit=20, offset=0,
     )
 
 
@@ -550,7 +550,7 @@ def test_vault_delete_json():
     data = json.loads(result.output)
     assert data["status"] == "deleted"
     assert data["id"] == "item-123"
-    mc.vault_delete.assert_called_once_with("persona-general", "item-123")
+    mc.vault_delete.assert_called_once_with("general", "item-123")
 
 
 def test_vault_delete_human():

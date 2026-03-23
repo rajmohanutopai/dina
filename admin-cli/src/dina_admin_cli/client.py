@@ -107,9 +107,17 @@ class AdminClient:
     # -- Personas ---------------------------------------------------------
 
     def list_personas(self) -> list:
-        """GET /v1/personas."""
+        """GET /v1/personas — returns persona_details (enriched) or personas (string IDs)."""
         resp = self._request("GET", "/v1/personas")
-        return resp.json()
+        data = resp.json()
+        # Prefer persona_details (has name, tier, locked); fall back to personas (string IDs).
+        if isinstance(data, dict):
+            details = data.get("persona_details")
+            if details:
+                return details
+            # Fallback: wrap string IDs as dicts for consistent downstream use.
+            return [{"id": p, "name": p.replace("persona-", ""), "tier": "?"} for p in data.get("personas", [])]
+        return data
 
     def create_persona(self, name: str, tier: str, passphrase: str) -> dict:
         """POST /v1/personas."""

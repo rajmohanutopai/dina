@@ -615,31 +615,30 @@ def test_pii_3_3_3_rehydrate_after_llm(entity_vault) -> None:
 
 
 # TST-BRAIN-818
-def test_f08_rehydrate_rejects_hallucinated_tokens(entity_vault) -> None:
-    """F08: rehydrate() must NOT replace bare inner values.
+def test_f08_rehydrate_matches_bare_and_bracketed(entity_vault) -> None:
+    """F08: rehydrate() matches both bracketed and bare opaque tokens.
 
-    If the LLM hallucinates a string like "Robert Smith" that matches
-    the bare inner value of a <<PII:Robert Smith>> token, it must NOT
-    be replaced with real PII. Only exact vault keys should be matched.
+    LLMs often strip brackets from [PERSON_1] → PERSON_1. Both forms
+    must rehydrate. Opaque tokens are unambiguous (no LLM would
+    hallucinate "PERSON_1" naturally), so bare matching is safe.
+    Unrelated strings must NOT be touched.
     """
     entities = [
-        {"type": "PERSON", "value": "Dr. Sharma", "token": "<<PII_PERSON_1_a3f2>>"},
+        {"type": "PERSON", "value": "Dr. Sharma", "token": "[PERSON_1]"},
     ]
     vault = entity_vault.create_vault(entities)
 
-    # LLM response contains the full token → should be replaced.
-    response_with_token = "<<PII_PERSON_1_a3f2>> is your doctor."
-    rehydrated = entity_vault.rehydrate(response_with_token, vault)
+    # Bracketed token → should be replaced.
+    response_bracketed = "[PERSON_1] is your doctor."
+    rehydrated = entity_vault.rehydrate(response_bracketed, vault)
     assert rehydrated == "Dr. Sharma is your doctor."
 
-    # LLM response contains a hallucinated bare string that is NOT a vault key.
-    # This must NOT be rehydrated — it's the LLM's own output, not our token.
-    response_hallucinated = "PII_PERSON_1_a3f2 is your doctor."
-    rehydrated_hal = entity_vault.rehydrate(response_hallucinated, vault)
-    assert rehydrated_hal == "PII_PERSON_1_a3f2 is your doctor."
-    assert "Dr. Sharma" not in rehydrated_hal
+    # Bare token (LLM stripped brackets) → should also be replaced.
+    response_bare = "PERSON_1 is your doctor."
+    rehydrated_bare = entity_vault.rehydrate(response_bare, vault)
+    assert rehydrated_bare == "Dr. Sharma is your doctor."
 
-    # A completely unrelated name should also not be touched.
+    # Completely unrelated name must NOT be touched.
     response_unrelated = "Robert Smith is your doctor."
     rehydrated_unr = entity_vault.rehydrate(response_unrelated, vault)
     assert rehydrated_unr == "Robert Smith is your doctor."
@@ -1572,12 +1571,12 @@ def test_pii_3_9_4_faker_rehydrate_roundtrip(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-454
-def test_pii_3_9_5_faker_fallback_tags() -> None:
-    """SS3.9.5: When Faker is disabled, falls back to <TYPE_N> tags."""
+def test_pii_3_9_5_opaque_tokens() -> None:
+    """SS3.9.5: Presidio uses opaque [TYPE_N] tokens for exact-match rehydration."""
     pytest.importorskip("presidio_analyzer")
     from src.adapter.scrubber_presidio import PresidioScrubber
 
-    scrubber = PresidioScrubber(use_faker=False)
+    scrubber = PresidioScrubber()
     try:
         scrubber._ensure_analyzer()
     except Exception:
@@ -1590,21 +1589,20 @@ def test_pii_3_9_5_faker_fallback_tags() -> None:
     assert len(person_entities) >= 1, (
         f"PERSON entity must be detected for 'John Smith', got: {entities}"
     )
-    # Should use tag format when Faker is disabled.
-    assert person_entities[0]["token"].startswith("<"), (
-        f"Token must start with '<' when Faker disabled, got: {person_entities[0]['token']}"
+    # Should use opaque [TYPE_N] format for exact-match rehydration.
+    assert person_entities[0]["token"].startswith("["), (
+        f"Token must start with '[', got: {person_entities[0]['token']}"
     )
-    assert person_entities[0]["token"].endswith(">"), (
-        f"Token must end with '>' when Faker disabled, got: {person_entities[0]['token']}"
+    assert person_entities[0]["token"].endswith("]"), (
+        f"Token must end with ']', got: {person_entities[0]['token']}"
     )
     # Counter-proof: original name must NOT appear in scrubbed text
     assert "John Smith" not in scrubbed, "Original PII must be replaced"
 
 
 # TST-BRAIN-455
-def test_pii_3_9_6_faker_org(presidio_scrubber) -> None:
-    """SS3.9.6: Organizations replaced with Faker company names."""
-    faker = pytest.importorskip("faker")
+def test_pii_3_9_6_org_opaque_token(presidio_scrubber) -> None:
+    """SS3.9.6: Organizations replaced with opaque [ORG_N] tokens."""
     text = "She works at Google Inc."
 
     scrubbed, entities = presidio_scrubber.scrub(text)
@@ -1619,9 +1617,9 @@ def test_pii_3_9_6_faker_org(presidio_scrubber) -> None:
     assert "token" in org, "Entity must include 'token' field"
     assert org["token"], "Token cannot be empty"
 
-    # Token must use Faker format (<<PII:...>>), not fallback tag format
-    assert org["token"].startswith("<<PII:"), (
-        f"Token should use Faker <<PII:...>> format, got {org['token']!r}"
+    # Token must use opaque [ORG_N] format
+    assert org["token"].startswith("[ORG_"), (
+        f"Token should use [ORG_N] format, got {org['token']!r}"
     )
 
     # Original org name removed from scrubbed text

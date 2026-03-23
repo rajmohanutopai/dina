@@ -259,13 +259,21 @@ class EntityVaultService:
             return text
         import re
 
-        # F08: Only replace exact vault keys — no bare-value expansion.
-        # The vault keys are scrubber-generated tokens with random suffixes,
-        # making hallucination collisions negligible.
+        # Build lookup: exact tokens + bare tokens (brackets stripped).
+        # LLMs often strip brackets from [PERSON_1] → PERSON_1, so we
+        # match both forms. Longest-first prevents partial matches.
+        lookup: dict[str, str] = {}
+        for token, original in vault.items():
+            lookup[token] = original
+            # Also match bare form: [PERSON_1] → PERSON_1
+            bare = token.strip("[]<>")
+            if bare and bare != token:
+                lookup[bare] = original
+
         pattern = re.compile(
-            "|".join(re.escape(t) for t in sorted(vault, key=len, reverse=True))
+            "|".join(re.escape(t) for t in sorted(lookup, key=len, reverse=True))
         )
-        return pattern.sub(lambda m: vault[m.group()], text)
+        return pattern.sub(lambda m: lookup[m.group()], text)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -308,17 +316,15 @@ class EntityVaultService:
                 ent.model_dump() if hasattr(ent, 'model_dump') else ent
             )
 
-        # -- Tier 2: Presidio NER scrub (local, in-process) --
-        # Feed Tier 1 output to Tier 2 so Presidio sees tokens, not raw PII.
-        if sensitivity == Sensitivity.GENERAL:
-            # GENERAL: pattern-only (emails, phones, IDs — not names).
-            scrub_fn = getattr(
-                self._scrubber, "scrub_patterns_only", self._scrubber.scrub,
-            )
-            tier2_scrubbed, tier2_entities = await asyncio.to_thread(scrub_fn, tier1_scrubbed)
-        else:
-            # ELEVATED / SENSITIVE: full NER scrubbing.
-            tier2_scrubbed, tier2_entities = await asyncio.to_thread(self._scrubber.scrub, tier1_scrubbed)
+        # -- Tier 2: Presidio pattern-only scrub (local, in-process) --
+        # V1: Only pattern recognizers (emails, phones, SSNs, gov IDs).
+        # NER (spaCy) is disabled — it produces too many false positives
+        # (B12→ORG, biryani→PERSON, Raju→ORG). Free-text name/address
+        # detection is deferred to V2 (GLiNER local model).
+        scrub_fn = getattr(
+            self._scrubber, "scrub_patterns_only", self._scrubber.scrub,
+        )
+        tier2_scrubbed, tier2_entities = await asyncio.to_thread(scrub_fn, tier1_scrubbed)
         combined_entities.extend(tier2_entities or [])
 
         return tier2_scrubbed, combined_entities

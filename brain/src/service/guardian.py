@@ -116,15 +116,14 @@ _TRUST_RELEVANT_QUERY = re.compile(
 
 # Instruction prepended to scrubbed prompts so the LLM preserves PII
 # tokens verbatim in its response, enabling rehydration to restore the
-# original values.  Even if the LLM strips the <<PII:…>> delimiters,
-# rehydrate() will match the bare fake name — but keeping delimiters
-# intact is preferred to avoid false-positive substring matches.
+# original values. Opaque tokens like [PERSON_1] are unambiguous —
+# the LLM cannot rephrase them, so exact-match rehydration works.
 _PII_PRESERVE_INSTRUCTION = (
-    "IMPORTANT: This text contains privacy placeholders wrapped in "
-    "<<PII:…>> delimiters (e.g. <<PII:John Smith>>, <<PII:Acme Corp>>). "
-    "You MUST use these exact tokens — including the delimiters — "
+    "IMPORTANT: This text contains privacy placeholders in square brackets "
+    "(e.g. [PERSON_1], [ORG_1], [LOC_1]). "
+    "You MUST use these exact tokens — including the brackets — "
     "whenever you refer to the corresponding person, place, or "
-    "organization. Never invent new names or drop the delimiters.\n\n"
+    "organization. Never replace them with real names or drop the brackets.\n\n"
 )
 
 # ---------------------------------------------------------------------------

@@ -171,7 +171,7 @@ def vault_list(ctx: click.Context, persona: str, limit: int, offset: int) -> Non
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        items = client.vault_query(f"persona-{persona}", query="", limit=limit, offset=offset)
+        items = client.vault_query(persona, query="", limit=limit, offset=offset)
         _print_items(items, json_mode)
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
@@ -190,7 +190,7 @@ def vault_search(ctx: click.Context, query: str, persona: str, mode: str, limit:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        items = client.vault_query(f"persona-{persona}", query=query, mode=mode, limit=limit, offset=offset)
+        items = client.vault_query(persona, query=query, mode=mode, limit=limit, offset=offset)
         _print_items(items, json_mode)
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
@@ -207,7 +207,7 @@ def vault_delete(ctx: click.Context, item_id: str, persona: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        client.vault_delete(f"persona-{persona}", item_id)
+        client.vault_delete(persona, item_id)
         if json_mode:
             print_result({"status": "deleted", "id": item_id}, json_mode)
         else:
@@ -498,7 +498,9 @@ def persona_list(ctx: click.Context) -> None:
                 for p in data:
                     name = p.get("name", p.get("id", "?"))
                     tier = p.get("tier", "?")
-                    click.echo(f"  {name}  (tier: {tier})")
+                    locked = p.get("locked", False)
+                    state = "locked" if locked else "open"
+                    click.echo(f"  {name}  (tier: {tier}, {state})")
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)

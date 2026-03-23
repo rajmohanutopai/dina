@@ -36,7 +36,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 |---|---|---|---|
 | **Private core** | `dina-core` + `dina-brain` + encrypted vault | Yes | Identity, multi-persona vaults, safety, ingestion/classification, messaging, nudges, action gating, delegation |
 | **Public trust layer** | `dina-pds` + Trust AppView ecosystem | Yes | Publish and query public trust records, attestations, outcomes, bot reputation |
-| **Local inference** | `llama` | Optional | Higher-privacy local LLM routing, local NER, local embeddings |
+| **Local inference** | `llama` | Optional | Higher-privacy local LLM routing, local embeddings. V2: local NER via GLiNER. |
 
 **Canonical Phase 1 rule:** Dina v1 ships both the private core and a working public trust layer. The private core comes first, and user value must still hold even when the Trust Network is small. The trust layer is part of the release, but its usefulness compounds with network adoption.
 
@@ -598,7 +598,7 @@ The Home Node is split into three private services that communicate over a local
 
 An optional local inference container sits beside them:
 
-- **llama (llama.cpp):** Serves Gemma 3n via an OpenAI-compatible API on localhost. Brain calls it for classification, embeddings, and LLM-based NER (Tier 3 PII scrubbing). Without llama, brain calls cloud LLM APIs directly and falls back to regex + spaCy scrubbing.
+- **llama (llama.cpp):** Serves Gemma 3n via an OpenAI-compatible API on localhost. Brain calls it for classification and embeddings. Without llama, brain calls cloud LLM APIs directly. PII scrubbing uses deterministic patterns in both profiles (V1).
 
 ```
 docker-compose target shape (5 containers — llama optional via --profile local-llm):
@@ -963,14 +963,14 @@ Sancho's Dina sends "arriving in 15 minutes"
 │  OWNS:                                                  │
 │  - Model inference (Gemma 3n, FunctionGemma, embeddings)│
 │                                                         │
-│  Called by BOTH core and brain (when present):           │
-│  - Core calls it for: PII Tier 3 (LLM NER fallback)     │
+│  Called by brain (when present):                         │
 │  - Brain calls it for: reasoning, classification,       │
-│    embeddings, Tier 3 PII scrubbing                     │
+│    embeddings                                           │
 │                                                         │
 │  Stateless. No database. No business logic.             │
-│  Without llama: brain uses cloud APIs + spaCy NER,      │
-│  core uses regex. PII scrubbing: Tier 1+2 (no Tier 3). │
+│  Without llama: brain uses cloud APIs.                  │
+│  PII scrubbing: Tier 1 (regex) + Tier 2 (Presidio      │
+│  patterns) in both profiles (V1, no NER).               │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -1362,7 +1362,7 @@ BANNED_LOG_PATTERNS = [
 ]
 ```
 
-No spaCy NER on log lines — wrong layer, expensive, unreliable. PII scrubbing belongs on the data path to cloud LLMs (`/v1/pii/scrub`), not on internal log output. Don't add runtime complexity for a problem solved by writing better code.
+No NER on log lines — wrong layer, expensive, unreliable. PII scrubbing belongs on the data path to cloud LLMs (`/v1/pii/scrub`), not on internal log output. Don't add runtime complexity for a problem solved by writing better code.
 
 ### Eight Layers
 
@@ -2896,7 +2896,7 @@ PASS-THROUGH SEARCH PROTOCOL:
 1. **Core never calls external APIs.** All fetching goes through Brain → MCP → OpenClaw. Core is a pure storage kernel.
 2. **Data is encrypted immediately upon storage.** Brain calls `POST /v1/vault/store` → Core writes to the SQLCipher-encrypted persona database. No plaintext staging.
 3. **OpenClaw is sandboxed.** OpenClaw has no access to the vault, keys, or personas. It receives task requests ("fetch emails") and returns structured JSON. A compromised OpenClaw cannot read existing memories.
-4. **Brain scrubs before storing.** Data from OpenClaw passes through PII scrubbing (Tier 1 regex + Tier 2 spaCy) before brain sends summaries to cloud LLMs for reasoning.
+4. **Brain scrubs before storing.** Data from OpenClaw passes through PII scrubbing (Tier 1 regex + Tier 2 Presidio patterns) before brain sends summaries to cloud LLMs for reasoning.
 5. **User can see sync status.** Last successful sync, items ingested, current state — all visible in admin UI.
 6. **Phone-based connectors (SMS) authenticate to Home Node with device-specific Ed25519 keys** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket.
 7. **OAuth tokens live in OpenClaw, not in Dina.** Dina never touches Gmail/Calendar credentials. If OpenClaw is compromised, revoke its tokens — Dina's vault and identity are unaffected.
@@ -3116,11 +3116,11 @@ These fields are **never accepted from external callers**. The staging handler d
 
 Where Dina thinks. This is the most complex layer.
 
-**Sidecar mapping:** Layer 6 is split across dina-core and dina-brain. The PII scrubber has three tiers: Tier 1 (regex) runs in dina-core (Go — fast, no external calls); Tier 2 (spaCy NER) runs in dina-brain (Python — always available, ~15MB model); Tier 3 (LLM NER via Gemma 3n) runs on llama when available. Silence classification, context assembly, nudge generation, and all agent reasoning run in dina-brain (Python + Google ADK). In the default Cloud profile, brain calls Gemini Flash Lite for text and Deepgram Nova-3 for voice STT. With `--profile local-llm`, brain routes text inference to llama:8080.
+**Sidecar mapping:** Layer 6 is split across dina-core and dina-brain. The V1 PII scrubber has two tiers: Tier 1 (regex) runs in dina-core (Go — fast, no external calls); Tier 2 (Presidio deterministic pattern recognizers + allow-list) runs in dina-brain (Python — no NER, patterns only). Silence classification, context assembly, nudge generation, and all agent reasoning run in dina-brain (Python + Google ADK). In the default Cloud profile, brain calls Gemini Flash Lite for text and Deepgram Nova-3 for voice STT. With `--profile local-llm`, brain routes text inference to llama:8080.
 
 ### The PII Scrubber
 
-Before any text leaves the device for LLM processing, it passes through local sanitization. The scrubber has three tiers — the first two are always available, the third requires llama.
+Before any text leaves the device for LLM processing, it passes through local sanitization. The V1 scrubber uses deterministic patterns and an allow-list — no NER.
 
 ```
 Raw text from Vault
@@ -3137,36 +3137,30 @@ Raw text from Vault
 └──────────────┬──────────────────────┘
                ↓
 ┌─────────────────────────────────────┐
-│  Tier 2: spaCy NER (Python brain)   │  ← Always. ~15MB model, milliseconds.
+│  Tier 2: Presidio patterns (Brain)  │  ← Always. Deterministic.
 │  Local, runs in brain container      │
 │                                     │
-│  en_core_web_sm (or _md for better  │
-│  accuracy, ~50MB):                  │
-│  - Person names       (PERSON)      │
-│  - Organizations      (ORG)         │
-│  - Locations           (GPE/LOC)    │
-│  - Addresses                        │
-│  - Medical terms       (custom)     │
-└──────────────┬──────────────────────┘
-               ↓
-┌─────────────────────────────────────┐
-│  Tier 3: LLM NER (llama)           │  ← Optional. --profile local-llm.
-│  Gemma 3n via llama:8080            │
+│  Pattern recognizers (no NER):      │
+│  - EmailRecognizer                  │
+│  - PhoneRecognizer                  │
+│  - CreditCardRecognizer             │
+│  - SSN, Aadhaar, PAN, IFSC, UPI    │
+│  - EU IDs (Steuer-ID, NIR, BSN)    │
 │                                     │
-│  Catches highly indirect references │
-│  that spaCy misses:                 │
-│  - "The CEO of [ORG] who wrote a   │
-│     novel about AI in 2017"         │
-│  - Coded language, paraphrasing     │
+│  Allow-list post-filter:            │
+│  (brain/config/pii_allowlist.yaml)  │
+│  - Medical: B12, A1C, HbA1c, CBC   │
+│  - Food: biryani, roti, dal...      │
+│  - Technical: API, SDK, DNS...      │
+│  - Financial abbreviations          │
+│  - Immigration codes                │
 └──────────────┬──────────────────────┘
                ↓
 ┌─────────────────────────────────────┐
-│  Replacement map (all tiers):       │
-│  "Sancho" → [PERSON_1]             │
+│  Replacement map (opaque tokens):   │
 │  "4111-2222" → [CC_NUM]            │
-│  "Infosys" → [ORG_1]              │
 │  "sancho@email" → [EMAIL_1]        │
-│  "Bengaluru" → [LOC_1]            │
+│  "1234-5678-9012" → [AADHAAR_1]   │
 └──────────────┬──────────────────────┘
                ↓
 Sanitized text → sent to LLM for reasoning
@@ -3174,43 +3168,42 @@ Sanitized text → sent to LLM for reasoning
 Response received
                ↓
 ┌─────────────────────────────────────┐
-│  De-sanitizer (Local)               │
-│  [PERSON_1] → "Sancho"             │
-│  [ORG_1] → "Infosys"              │
+│  Rehydrator (Local)                 │
+│  Matches both [EMAIL_1] and        │
+│  bare EMAIL_1 (LLMs strip brackets)│
 │  [EMAIL_1] → "sancho@email"        │
+│  [CC_NUM] → "4111-2222"            │
 └─────────────────────────────────────┘
                ↓
-Final response with real names restored
+Final response with real values restored
 ```
 
-**The flow:** Brain gets a task requiring cloud LLM → calls `core:/v1/pii/scrub` (Tier 1: regex) → runs spaCy NER locally (Tier 2: contextual entities) → optionally calls llama for LLM NER (Tier 3: ambiguous cases) → sends fully scrubbed text to cloud LLM. Tiers 1 and 2 are always available. Tier 3 requires `--profile local-llm`.
+**The flow:** Brain gets a task requiring cloud LLM → calls `core:/v1/pii/scrub` (Tier 1: regex) → runs Presidio pattern recognizers locally (Tier 2: additional structured patterns + allow-list filtering) → sends scrubbed text to cloud LLM. Both tiers are always available, deterministic, and have near-zero false positives.
 
 **Tier 1 — Regex (Go core, always available):** Fast pattern matching in Go. Catches structured PII: credit cards, phone numbers, Aadhaar/SSN, emails, bank accounts. Sub-millisecond. Runs as `POST /v1/pii/scrub` endpoint.
 
-**Tier 2 — spaCy NER (Python brain, always available):** spaCy's statistical NER model runs in the brain container. `en_core_web_sm` (~15MB) for Phase 1, upgrade to `en_core_web_md` (~50MB) for better accuracy. Catches contextual PII that regex cannot: person names, organizations, locations, addresses. Runs in milliseconds on CPU. No llama, no GPU, no extra container required. This is the default NER layer for all deployment profiles.
+**Tier 2 — Presidio pattern recognizers (Python brain, always available):** Deterministic pattern matchers: EmailRecognizer, PhoneRecognizer, CreditCardRecognizer, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs (Steuer-ID, NIR/NIF, BSN, SWIFT/BIC). All results are post-filtered against an allow-list (`brain/config/pii_allowlist.yaml`) containing medical terms (B12, A1C, HbA1c, CBC...), financial abbreviations, immigration codes, technical acronyms, and food names. spaCy NER is **disabled** in V1 — it produced too many false positives on real data (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON).
 
-**Tier 3 — LLM NER (llama, optional):** For edge cases where spaCy misses highly indirect or paraphrased references. Runs Gemma 3n via llama:8080. Only available with `--profile local-llm`. Options:
-- **Phase 1: `Gemma 3n E2B`** (2B active params, ~2GB RAM). Prompt: "Extract all PII entities from this text." General-purpose — no fine-tuning needed.
-- **Phase 1 fallback: `FunctionGemma 270M`** (270M params, ~529MB). Fine-tuned for structured extraction. 2500+ tok/sec.
-- **Phase 2: Fine-tuned Gemma 3n E4B** (4B active, ~3GB RAM). Custom PII-detection fine-tuning for highest accuracy.
+**V1 known gap:** Names and addresses in free text are NOT detected. "Dr. Sharma prescribed insulin" — neither regex nor pattern recognizers see anything suspicious. This is an accepted trade-off: deterministic patterns with zero false positives are preferred over NER with frequent false positives on Indian names, medical terms, and food.
 
-**PII scrubbing by deployment profile:**
+**V2 plan:** GLiNER (~300M params, local CPU) for contextual NER. An LLM adjudicator handles ambiguous cases via a privacy gateway pattern — the LLM sees only the ambiguous token in context, not the full document. This closes the name/address gap without the false-positive problem.
 
-| | **Cloud LLM** (default, Phase 1) | **Local LLM** / **Hybrid** |
+**PII scrubbing by deployment profile (V1):**
+
+| | **Cloud LLM** (default) | **Local LLM** / **Hybrid** |
 |---|---|---|
-| **Method** | Regex (Go) + spaCy NER (Python) | Regex (Go) + spaCy NER (Python) + LLM NER (llama) |
-| **Catches** | Structured PII + contextual PII (names, orgs, locations, addresses) | All of the above + highly indirect references, coded language |
-| **Misses** | Highly indirect references: "The person who founded that Bangalore software company and wrote fiction about AI" — no explicit entity for spaCy to tag | Near-zero misses. LLM understands paraphrasing and context. |
+| **Method** | Regex (Go) + Presidio patterns (Python) + allow-list | Same (V1). V2 adds GLiNER contextual NER. |
+| **Catches** | Structured PII: emails, phones, credit cards, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs | Same as Cloud LLM (V1) |
+| **Misses** | Names, addresses, organizations in free text. Highly indirect references. | Same (V1). With llama, sensitive data stays local — missed PII never leaves Home Node. |
 | **Sensitive personas** | Health/financial queries scrubbed via **Entity Vault** (Tier 1+2 mandatory) then routed to cloud. Cloud sees topics but cannot identify who. | Best privacy — processed entirely on llama, never leaves Home Node |
-| **Model size** | spaCy `en_core_web_sm`: ~15MB (included in brain image) | spaCy + Gemma 3n E4B: ~3GB |
-| **Latency** | Regex: <1ms. spaCy: ~5-20ms. | Regex: <1ms. spaCy: ~5-20ms. LLM NER: ~500ms-2s. |
+| **Latency** | Regex: <1ms. Presidio patterns: ~2-5ms. | Same for PII. LLM inference: ~500ms-2s. |
 
 **Why not use a cloud LLM for PII scrubbing?** Circular dependency: to scrub PII from text before sending it to a cloud LLM, you would have to send the un-scrubbed text to a cloud LLM first. The routing itself constitutes the leak. PII scrubbing must always be local. Dina will never route data to a cloud API for the purpose of PII detection.
 
-**Residual risk (all profiles):** Even with three tiers, PII scrubbing cannot guarantee zero leakage for extremely indirect references. Mitigations:
-1. **spaCy NER closes the biggest gap** — person names, organizations, and locations are the most common contextual PII. With Tier 1 + Tier 2, the vast majority of identifying information is caught in all profiles.
-2. **The Entity Vault pattern** (see below) ensures the cloud LLM processes reasoning logic without observing the underlying entities. It sees health/financial **topics** but cannot identify **who**.
-3. **Users handling highly sensitive non-persona data** (e.g., confidential business communications) should use Local LLM or Hybrid profile for LLM NER as a third layer.
+**Residual risk (V1):** Without NER, names and addresses in free text pass through unscrubbed. Mitigations:
+1. **The Entity Vault pattern** (see below) ensures the cloud LLM processes reasoning logic without observing structured identifiers. It sees health/financial **topics** but cannot link them to specific identifiers (emails, phone numbers, government IDs).
+2. **Users handling highly sensitive data** should use Local LLM profile so data never leaves the Home Node regardless of scrubbing gaps.
+3. **V2 (GLiNER)** will close the name/address gap with a local contextual NER model, eliminating the biggest V1 limitation.
 
 ### The Entity Vault Pattern
 
@@ -3221,67 +3214,68 @@ Final response with real names restored
 **Mechanism — the Entity Vault:**
 
 ```
-User query: "What did Dr. Sharma say about my blood sugar at Apollo Hospital?"
+User query: "Email sancho@example.com about my blood sugar results — A1C was 11.2"
         │
         ▼
 ┌─────────────────────────────────────────────────────┐
 │  Stage 1: Regex (Go core, /v1/pii/scrub)            │
-│  No structured PII found in this query.             │
+│  Detected: "sancho@example.com" → [EMAIL_1]         │
 └──────────────────────┬──────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────┐
-│  Stage 2: spaCy NER (Python brain, local)           │
+│  Stage 2: Presidio patterns (Python brain, local)   │
 │                                                     │
-│  Detected entities:                                 │
-│    "Dr. Sharma"      → PERSON  → [PERSON_1]        │
-│    "Apollo Hospital" → ORG     → [ORG_1]           │
+│  Pattern recognizers: no additional structured PII.  │
+│  Allow-list: "A1C" is a medical term → not scrubbed.│
 │                                                     │
 │  Entity Vault (ephemeral, in-memory dict):          │
-│    { "[PERSON_1]": "Dr. Sharma",                    │
-│      "[ORG_1]": "Apollo Hospital" }                 │
+│    { "[EMAIL_1]": "sancho@example.com" }            │
 │                                                     │
 │  Scrubbed query:                                    │
-│    "What did [PERSON_1] say about my blood sugar    │
-│     at [ORG_1]?"                                    │
+│    "Email [EMAIL_1] about my blood sugar results    │
+│     — A1C was 11.2"                                 │
 └──────────────────────┬──────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │  Cloud LLM (Gemini / Claude / GPT-4)                │
 │                                                     │
-│  Sees: "What did [PERSON_1] say about my blood      │
-│         sugar at [ORG_1]?"                          │
+│  Sees: "Email [EMAIL_1] about my blood sugar        │
+│         results — A1C was 11.2"                     │
 │                                                     │
 │  Processes reasoning. Returns:                      │
-│  "[PERSON_1] at [ORG_1] noted your A1C was 11.2.   │
-│   This is above the target range of 7.0..."         │
+│  "Draft email to [EMAIL_1]: Your A1C was 11.2,     │
+│   which is above the target range of 7.0..."        │
 └──────────────────────┬──────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │  Rehydration (Python brain, local)                  │
 │                                                     │
 │  Reads Entity Vault, replaces tokens:               │
-│    [PERSON_1] → "Dr. Sharma"                        │
-│    [ORG_1]    → "Apollo Hospital"                   │
+│    [EMAIL_1] → "sancho@example.com"                 │
+│  (Also matches bare EMAIL_1 if LLM strips brackets) │
 │                                                     │
 │  Final response to user:                            │
-│  "Dr. Sharma at Apollo Hospital noted your A1C was  │
-│   11.2. This is above the target range of 7.0..."   │
+│  "Draft email to sancho@example.com: Your A1C was   │
+│   11.2, which is above the target range of 7.0..."  │
 └─────────────────────────────────────────────────────┘
 ```
 
-**What the cloud LLM sees vs. what it doesn't:**
+**V1 known gap illustrated:** In this example, if the query contained "Dr. Sharma at Apollo Hospital" instead of an email address, V1 would NOT scrub those names — pattern recognizers don't detect names or organizations in free text. The cloud LLM would see "Dr. Sharma" and "Apollo Hospital". V2 (GLiNER) addresses this gap.
+
+**What the cloud LLM sees vs. what it doesn't (V1):**
 
 | Cloud LLM sees | Cloud LLM does NOT see |
 |---|---|
-| Health **topics** (blood sugar, A1C, medication) | **Who** the patient is (name, email, location) |
-| Financial **concepts** (portfolio, tax, returns) | **Whose** finances (name, account numbers, SSN) |
-| Reasoning **logic** (compare, analyze, summarize) | **Which** doctor, hospital, bank, employer |
-| Placeholder tokens: `[PERSON_1]`, `[ORG_1]` | The real entities behind those tokens |
+| Health **topics** (blood sugar, A1C, medication) | **Structured identifiers** (email, phone, SSN, Aadhaar, credit card) |
+| Financial **concepts** (portfolio, tax, returns) | **Whose** finances (account numbers, PAN, IFSC) |
+| Reasoning **logic** (compare, analyze, summarize) | Structured PII replaced with opaque tokens |
+| Names in free text (V1 gap — addressed in V2) | The real values behind `[EMAIL_1]`, `[CC_NUM]`, etc. |
 
-**Why this is safe enough for Phase 1:**
-1. The cloud LLM cannot link `[PERSON_1]`'s blood sugar to any real human. There is no name, no email, no location, no account number in the query.
+**Why this is safe enough for V1:**
+1. Structured identifiers (emails, phones, SSNs, credit cards, government IDs) are reliably scrubbed with zero false positives. These are the highest-risk PII categories.
 2. This is **strictly better** than the alternative — if Dina rejects health queries, the user types the same question directly into ChatGPT with **zero scrubbing**.
-3. Health/financial **topics** are not PII. Millions of people ask cloud LLMs about blood sugar and tax returns. The privacy risk is in the **identity**, which is scrubbed.
+3. Health/financial **topics** are not PII. Millions of people ask cloud LLMs about blood sugar and tax returns. The privacy risk is in the **structured identifiers**, which are scrubbed.
+4. Names in free text are a V1 gap. Users handling highly sensitive data with names should use Local LLM profile.
 
 **Entity Vault lifecycle:**
 - **Created** per-request in brain's memory. Not persisted to disk.
@@ -3291,7 +3285,7 @@ User query: "What did Dr. Sharma say about my blood sugar at Apollo Hospital?"
 
 **With llama available (Local LLM / Hybrid profile):** Health/financial queries skip the Entity Vault entirely — processed on llama, never leave the Home Node. This is the best privacy option. The Entity Vault is a **pragmatic fallback** for Cloud LLM profile users who don't have llama.
 
-**User consent:** During initial setup, Cloud LLM profile users see: *"Health and financial queries will be processed by your configured cloud LLM (e.g., Gemini). All identifying information (names, organizations, locations) is scrubbed before sending. The cloud provider sees health/financial topics but cannot identify you. For maximum privacy, enable the Local LLM profile."* User must explicitly acknowledge this.
+**User consent:** During initial setup, Cloud LLM profile users see: *"Health and financial queries will be processed by your configured cloud LLM (e.g., Gemini). Structured identifiers (emails, phone numbers, government IDs) are scrubbed before sending. Names in free text are not scrubbed in V1. The cloud provider sees health/financial topics. For maximum privacy, enable the Local LLM profile."* User must explicitly acknowledge this.
 
 ### LLM Routing
 
@@ -5453,12 +5447,12 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Core runtime | Go + net/http (HTTP server) | Fast compilation, single static binary, excellent crypto stdlib, goroutines for concurrency. Pure sovereign kernel — no external API calls, no OAuth, no connector code. |
 | Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, per-persona encrypted `.sqlite` files (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own HKDF-derived DEK. No separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. FTS5 tokenizer: `unicode61 remove_diacritics 1` (multilingual — Hindi, Tamil, Kannada, etc.). Porter stemmer forbidden (English-only). Phase 3: ICU tokenizer for CJK. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
 | Vector search | **Encrypted Cold Storage with Volatile RAM Hydration.** 768-dim embeddings stored as BLOBs in SQLCipher (encrypted at rest). On persona unlock, hydrated into pure-Go HNSW index in RAM ([`github.com/coder/hnsw`](https://github.com/coder/hnsw), CC0 license). Query: <1ms. On lock: index destroyed + GC. Hybrid search: `0.4 × FTS5 + 0.6 × cosine`. | **Security:** mmap-based vector DBs (sqlite-vec, FAISS) store vectors as plaintext files, bypassing SQLCipher encryption. HNSW-in-RAM means vectors exist unencrypted only while persona is unlocked — same threat model as decrypted text in RAM. **DevOps:** pure Go, no C++ cross-compilation. **ACID:** embedding BLOB in same row as text — no orphaned vectors. |
-| PII scrubbing | Three tiers: (1) Regex in Go core (always), (2) spaCy NER in Python brain (always, ~15MB model), (3) LLM NER via llama:8080 (optional, `--profile local-llm`). | Tier 1+2 catch structured + contextual PII in all profiles. Tier 3 adds LLM-based detection for edge cases. |
+| PII scrubbing | Two tiers (V1): (1) Regex in Go core (always), (2) Presidio deterministic pattern recognizers in Python brain (always) + allow-list. NER disabled in V1 (false positives). V2: GLiNER local model. | Tier 1+2 catch structured PII with near-zero false positives. V1 gap: names/addresses in free text. V2 adds contextual NER. |
 | Client ↔ Node protocol | Authenticated WebSocket (TLS + Ed25519 signatures for paired devices) plus browser session traffic to `dina-admin` | Encrypted channel. All paired client devices use Ed25519 request signing. Browser-admin traffic terminates at `dina-admin`, which authenticates to core with Ed25519. |
 | Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
 | **Home Node (dina-brain)** | | |
 | Brain runtime | Python + Google ADK (v1.25+, Apache 2.0) | Model-agnostic agent framework, multi-agent orchestration |
-| PII scrubbing (Tier 2) | spaCy + `en_core_web_sm` (~15MB) | Statistical NER: person names, orgs, locations. Always available, milliseconds on CPU. Upgrade to `en_core_web_md` (~50MB) for better accuracy. |
+| PII scrubbing (Tier 2) | Presidio pattern recognizers + allow-list (`brain/config/pii_allowlist.yaml`) | Deterministic pattern matchers (emails, phones, credit cards, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs). NER disabled in V1. Allow-list filters false positives from medical terms, food, acronyms. |
 | Text LLM (Online) | Gemini 2.5 Flash Lite API ($0.10/$0.40 per 1M tokens) | Cheapest Gemini model, 1M context, native function calling + JSON mode, 305+ t/s |
 | Text LLM (Local) | llama (llama.cpp) + Gemma 3n E4B GGUF (~3GB RAM) | OpenAI-compatible API on port 8080, CPU/Apple Silicon inference. Optional via `--profile local-llm`. |
 | Voice STT (Online) | Deepgram Nova-3 ($0.0077/min, WebSocket streaming) | ~150-300ms latency, purpose-built real-time STT. Fallback: Gemini Flash Lite Live API. |
@@ -5469,8 +5463,8 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Embeddings (Online) | `gemini-embedding-001` ($0.01/1M tokens) | 768/3072 dims, 100+ languages |
 | Embeddings (Local) | EmbeddingGemma 308M (GGUF) via llama:8080 | ~300MB RAM, 100+ languages, Matryoshka dims. Available with `--profile local-llm`. |
 | **Container orchestration** | | |
-| Default (cloud LLM) | docker-compose target shape: core, brain, admin, pds. | 2GB+ RAM minimum. Cloud LLM for reasoning, regex + spaCy NER PII scrubbing. |
-| With local LLM | docker-compose target shape: core, brain, admin, pds, llama. `--profile local-llm`. | 8GB RAM minimum. Mac Mini M4 (16GB) recommended. Three-tier PII scrubbing (regex + spaCy + LLM NER), full offline LLM. |
+| Default (cloud LLM) | docker-compose target shape: core, brain, admin, pds. | 2GB+ RAM minimum. Cloud LLM for reasoning, regex + Presidio patterns PII scrubbing (V1). |
+| With local LLM | docker-compose target shape: core, brain, admin, pds, llama. `--profile local-llm`. | 8GB RAM minimum. Mac Mini M4 (16GB) recommended. Same PII scrubbing as default (V1), full offline LLM. |
 | Managed hosting | docker-compose or Fly.io | Same containers, orchestrated by hosting operator |
 | **Identity & Crypto** | | |
 | Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
@@ -5893,7 +5887,7 @@ Four things total: domain, API key, OpenClaw URL, vault mode, plus install-time 
 | **Containers** | 4 (core, brain, admin, pds) | 5 (core, brain, admin, pds, llama) | 5 (core, brain, admin, pds, llama) |
 | **Text LLM** | Gemini Flash Lite / Claude (cloud API) | Gemma 3n E4B via llama:8080 (local) | llama for simple tasks, cloud for complex reasoning |
 | **Voice STT** | Deepgram Nova-3 (WebSocket streaming, ~150-300ms). Fallback: Gemini Flash Lite Live API. | Deepgram (or future: whisper.cpp when added) | Deepgram for streaming, local for batch |
-| **PII scrubbing** | Tier 1 (regex in Go) + Tier 2 (spaCy NER in Python) | Tier 1 + 2 + Tier 3 (LLM NER via Gemma 3n on llama) | Tier 1 + 2 + 3 (llama always available) |
+| **PII scrubbing** | Tier 1 (regex in Go) + Tier 2 (Presidio patterns in Python, V1) | Same as Cloud (V1). Sensitive data stays local regardless. | Same as Cloud (V1). Local processing for sensitive data. |
 | **Embeddings** | `gemini-embedding-001` (cloud, $0.01/1M tokens) | EmbeddingGemma 308M via llama:8080 (local) | Local via llama (never leaves machine) |
 | **Minimum RAM** | **2GB** (Go core ~200MB + Python brain ~500MB + PDS ~100MB + OS ~300MB + headroom) | **8GB** (+ Gemma 3n E4B ~3GB). Mac Mini M4 (16GB+) recommended. | **8GB** (same as local) |
 | **CPU** | 2 cores | 4+ cores. Apple Silicon or x86 with AVX2. | 4+ cores |
@@ -5935,7 +5929,7 @@ Four things total: domain, API key, OpenClaw URL, vault mode, plus install-time 
 - DID signing/verification (Ed25519, never leaves Home Node)
 - Persona compartment enforcement (cryptographic, never leaves Home Node)
 
-**Sensitive persona rule (all profiles):** Health and financial persona data is always processed through the strongest available privacy path. With llama: processed locally, never leaves the Home Node (best privacy). Without llama (Cloud LLM profile): mandatory Entity Vault scrubbing — Tier 1 (regex) + Tier 2 (spaCy NER) strip all identifying entities before routing to cloud LLM. The cloud provider sees health/financial **topics** but cannot identify **who**. User must consent to this tradeoff during setup. This is enforced at the LLM router level in dina-brain. See "The Entity Vault Pattern" in Layer 6 for the full mechanism.
+**Sensitive persona rule (all profiles):** Health and financial persona data is always processed through the strongest available privacy path. With llama: processed locally, never leaves the Home Node (best privacy). Without llama (Cloud LLM profile): mandatory Entity Vault scrubbing — Tier 1 (regex) + Tier 2 (Presidio patterns) strip structured identifiers before routing to cloud LLM. The cloud provider sees health/financial **topics** but cannot link them to structured identifiers (email, phone, SSN, etc.). V1 gap: names in free text are not scrubbed. User must consent to this tradeoff during setup. This is enforced at the LLM router level in dina-brain. See "The Entity Vault Pattern" in Layer 6 for the full mechanism.
 
 **Switching profiles:** `docker compose up -d` (cloud LLM) or `docker compose --profile local-llm up -d` (local LLM). Brain auto-detects whether llama:8080 is available and routes accordingly. Users can switch at any time — the vault, identity, and messaging layers are identical across all profiles.
 
@@ -5945,7 +5939,7 @@ Four things total: domain, API key, OpenClaw URL, vault mode, plus install-time 
 |-------|---------|-------|-----------|---------|
 | **Text LLM** | | | | |
 | Home Node | Cloud API | Gemini 2.5 Flash Lite ($0.10/$0.40 per 1M tokens) | Summarization, drafting, context assembly, classification, routing | Cloud (default) |
-| Home Node | llama.cpp (GGUF) | Gemma 3n E4B (~3GB RAM) | Same as above, but local. Also: PII scrubbing NER fallback | Local LLM |
+| Home Node | llama.cpp (GGUF) | Gemma 3n E4B (~3GB RAM) | Same as above, but local. Sensitive data never leaves Home Node. | Local LLM |
 | Home Node | Cloud API | Gemini 2.5 Flash / Pro / Claude / GPT-4 | Complex multi-step reasoning when Flash Lite quality is insufficient | Cloud (escalation), Hybrid |
 | **Voice STT** | | | | |
 | Home Node | Cloud API (WebSocket) | Deepgram Nova-3 ($0.0077/min, ~150-300ms) | Real-time voice command transcription, continuous dictation | All profiles |

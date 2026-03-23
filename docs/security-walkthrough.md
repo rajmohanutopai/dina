@@ -255,17 +255,19 @@ Device pairing uses single-use 6-digit codes as short-lived physical proximity p
 
 **Two completion paths:** Key-based (Ed25519 public key via `public_key_multibase`) and token-based (CLIENT_TOKEN for admin web UI). An optional `role` field distinguishes `"user"` from `"agent"` devices.
 
-12. PII Scrubber (3-Tier Pipeline)
+12. PII Scrubber (V1: 2-Tier Deterministic Pipeline)
 
-Raw data never leaves the Home Node unscrubbed. The PII scrubber has three tiers:
+Raw data never leaves the Home Node unscrubbed. The V1 PII scrubber uses deterministic patterns and an allow-list — no NER.
 
 **Tier 1 — Regex (Go core, always):** Fast pattern matching via `POST /v1/pii/scrub`. Catches structured PII: credit cards, phone numbers, Aadhaar/SSN, emails, bank accounts. Sub-millisecond.
 
-**Tier 2 — spaCy NER (Python brain, always):** Statistical NER model (`en_core_web_sm`, ~15MB) catches contextual PII that regex cannot: person names, organizations, locations, addresses. Runs in milliseconds on CPU.
+**Tier 2 — Presidio pattern recognizers (Python brain, always):** Deterministic pattern matchers (EmailRecognizer, PhoneRecognizer, CreditCardRecognizer, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs, etc.) catch structured PII that Go regex may miss. spaCy NER is **disabled** in V1 — it produced too many false positives in real data (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON). An allow-list (`brain/config/pii_allowlist.yaml`) post-filters all Presidio results: medical terms (B12, A1C, HbA1c, CBC...), financial abbreviations, immigration codes, technical acronyms, food names.
 
-**Tier 3 — LLM NER (llama, optional):** Catches highly indirect references that spaCy misses (coded language, paraphrasing). Requires `--profile local-llm` (Gemma 3n via llama:8080).
+**V1 known gap:** Names and addresses in free text are NOT detected. This is an accepted trade-off — deterministic patterns with zero false positives are preferred over NER with frequent false positives on Indian names, medical terms, and food.
 
-Entities are replaced with indexed tokens (`[PERSON_1]`, `[ORG_1]`, etc.) before sending to cloud LLMs. The de-sanitizer restores originals in the response. Why not use a cloud LLM for PII scrubbing? Circular dependency — sending unscrubbed text to a cloud API for detection constitutes the leak. PII scrubbing must always be local.
+**V2 plan:** GLiNER (~300M params, local) for contextual NER, with an LLM adjudicator for ambiguous cases via a privacy gateway pattern.
+
+Entities are replaced with opaque indexed tokens (`[PERSON_1]`, `[ORG_1]`, etc.) before sending to cloud LLMs. Rehydration matches both bracketed `[PERSON_1]` and bare `PERSON_1` forms (LLMs sometimes strip brackets). The de-sanitizer restores originals in the response. Why not use a cloud LLM for PII scrubbing? Circular dependency — sending unscrubbed text to a cloud API for detection constitutes the leak. PII scrubbing must always be local.
 
 13. OpenAPI Codegen and Contract Security
 

@@ -1,0 +1,178 @@
+# PII Allow-List — tokens that must NEVER be scrubbed.
+# Organized by category. Extend per deployment.
+#
+# These are common false positives from NER models and pattern recognizers.
+# V1: used as a post-filter on Presidio pattern results.
+# V2: will also filter GLiNER NER results.
+
+medical:
+  # Vitamins and supplements
+  - B12
+  - B6
+  - B1
+  - B2
+  - B3
+  - B5
+  - B7
+  - B9
+  - D3
+  - D2
+  - K2
+  - C
+  - A1C
+  - HbA1c
+  # Lab tests
+  - CBC
+  - TSH
+  - PSA
+  - BMP
+  - CMP
+  - LDL
+  - HDL
+  - ECG
+  - EKG
+  - MRI
+  - CT
+  - EEG
+  - EMG
+  # Medical abbreviations
+  - ICU
+  - ER
+  - BP
+  - IV
+  - PT
+  - OT
+  - RN
+  - MD
+  - DO
+  - NP
+  - PA
+  - BMI
+  - CPR
+  # Conditions (abbreviations)
+  - HIV
+  - TB
+  - COPD
+  - ADHD
+  - OCD
+  - PTSD
+  - UTI
+  - GERD
+  - IBS
+  - MS
+  - ALS
+  - PCOS
+
+financial:
+  - FDIC
+  - SIPC
+  - FINRA
+  - SEC
+  - IRS
+  - ACH
+  - SWIFT
+  - FICO
+  - APR
+  - APY
+  - CD
+  - IRA
+  - "401k"
+  - HSA
+  - FSA
+  - W2
+  - W4
+  - "1099"
+  - NYSE
+  - NASDAQ
+  - "S&P"
+  - DJIA
+  - ETF
+  - IPO
+  - GDP
+  - CPI
+  - EMI
+  - SIP
+  - FD
+  - RD
+  - NPS
+  - PPF
+  - GST
+  - TDS
+  - PF
+  - NEFT
+  - RTGS
+  - IMPS
+  - UPI
+
+immigration:
+  - H1B
+  - H4
+  - L1
+  - L2
+  - F1
+  - J1
+  - OPT
+  - EAD
+  - I-140
+  - I-485
+  - I-130
+  - I-20
+  - USCIS
+  - ICE
+  - CBP
+  - DHS
+
+technical:
+  - SKU
+  - EAN
+  - UPC
+  - ISBN
+  - ASIN
+  - CEO
+  - CTO
+  - CFO
+  - COO
+  - VP
+  - SVP
+  - HR
+  - PR
+  - QA
+  - UAT
+  - MVP
+  - POC
+  - SLA
+  - KPI
+  - OKR
+  - PTO
+  - WFH
+  - EOD
+  - ETA
+  - API
+  - SDK
+  - CLI
+  - URL
+  - DNS
+  - SSL
+  - TLS
+  - SSH
+  - FTP
+  - HTTP
+  - HTTPS
+
+food_and_common:
+  # Foods that NER models misclassify
+  - biryani
+  - tikka
+  - masala
+  - paneer
+  - roti
+  - naan
+  - dosa
+  - samosa
+  - chai
+  - lassi
+  # Common words misclassified as entities
+  - cardamom
+  - saffron
+  - turmeric
+  - cinnamon

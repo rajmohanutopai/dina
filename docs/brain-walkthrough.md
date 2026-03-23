@@ -8,7 +8,7 @@ The brain is a Python FastAPI sidecar that provides Dina with the ability to *th
 <summary><strong>Design Decision — Why a separate Python sidecar instead of embedding LLM logic in Go?</strong></summary>
 <br>
 
-Go excels at I/O-bound, low-latency work: HTTP routing, crypto operations, database queries. But the LLM ecosystem — Presidio NER, spaCy models, OpenAI/Gemini/Claude SDKs, Faker for synthetic data — is overwhelmingly Python. Embedding all of this in Go would mean maintaining FFI bridges or re-implementing complex NLP pipelines in a language with no ML ecosystem. The sidecar pattern gives us the best of both worlds: Go handles crypto and storage at native speed, Python handles reasoning and NLP with the full ML toolkit. The two processes authenticate via Ed25519 service keys — each service has its own keypair derived from the master seed at install time via SLIP-0010, and requests are signed with `X-DID`, `X-Timestamp`, and `X-Signature` headers. If the brain crashes, core continues to serve — your vault stays open, your identity stays valid. The brain is disposable; your data is not.
+Go excels at I/O-bound, low-latency work: HTTP routing, crypto operations, database queries. But the LLM ecosystem — Presidio pattern recognizers, OpenAI/Gemini/Claude SDKs, NLP pipelines — is overwhelmingly Python. Embedding all of this in Go would mean maintaining FFI bridges or re-implementing complex pipelines in a language with no ML ecosystem. The sidecar pattern gives us the best of both worlds: Go handles crypto and storage at native speed, Python handles reasoning and NLP with the full ML toolkit. The two processes authenticate via Ed25519 service keys — each service has its own keypair derived from the master seed at install time via SLIP-0010, and requests are signed with `X-DID`, `X-Timestamp`, and `X-Signature` headers. If the brain crashes, core continues to serve — your vault stays open, your identity stays valid. The brain is disposable; your data is not.
 
 </details>
 
@@ -58,13 +58,13 @@ Dina's design philosophy is sovereignty — the user chooses their tools, not us
 
 ### Step 3: PII Scrubber (lines 236-251)
 
-The scrubber follows a three-tier fallback chain: **Presidio** (best, full NER with synthetic data replacement) → **spaCy** (good, basic NER) → **None** (degraded, Tier 1 regex only via core). The brain never fails to start because a scrubber is missing — it just logs a warning and proceeds with reduced capability. But here is the critical invariant: **if the scrubber is `None` and a cloud LLM call needs PII scrubbing, the call is refused** (`entity_vault.py:131-139`). The system degrades gracefully but never degrades *unsafely*.
+The V1 scrubber follows a two-tier fallback chain: **Presidio patterns** (best, deterministic recognizers + allow-list) → **None** (degraded, Tier 1 regex only via core). spaCy NER is **disabled** in V1 — it produced too many false positives on real data (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON). The brain never fails to start because a scrubber is missing — it just logs a warning and proceeds with reduced capability. But here is the critical invariant: **if the scrubber is `None` and a cloud LLM call needs PII scrubbing, the call is refused** (`entity_vault.py:131-139`). The system degrades gracefully but never degrades *unsafely*.
 
 <details>
-<summary><strong>Design Decision — Why two tiers of PII scrubbing (Go regex + Python NER) instead of one?</strong></summary>
+<summary><strong>Design Decision — Why two tiers of PII scrubbing (Go regex + Python patterns) instead of one?</strong></summary>
 <br>
 
-Tier 1 (Go regex in core, `POST /v1/pii/scrub`) catches structured PII with deterministic patterns: email addresses, phone numbers, credit card numbers, Aadhaar/PAN numbers, IP addresses. These are fast, accurate, and have near-zero false positives. But regex cannot catch *names*. "Dr. Sharma prescribed insulin" — regex sees nothing suspicious. Tier 2 (Presidio wrapping spaCy NER) catches named entities: PERSON, ORG, LOC. It's slower and has false positives (it might tag "Apple" the fruit as ORG), but it catches what regex cannot. Running Tier 1 first means Tier 2 sees `[EMAIL_1]` instead of `rajmohan@example.com`, avoiding duplicate detection and keeping entity numbering consistent (`entity_vault.py:245-286`). The two tiers are complementary, not redundant.
+Tier 1 (Go regex in core, `POST /v1/pii/scrub`) catches structured PII with deterministic patterns: email addresses, phone numbers, credit card numbers, Aadhaar/PAN numbers, IP addresses. These are fast, accurate, and have near-zero false positives. Tier 2 (Presidio pattern recognizers — EmailRecognizer, PhoneRecognizer, CreditCardRecognizer, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs) catches additional structured patterns that Go regex may miss, with an allow-list (`brain/config/pii_allowlist.yaml`) post-filtering false positives from medical terms, food names, and technical acronyms. Running Tier 1 first means Tier 2 sees `[EMAIL_1]` instead of `rajmohan@example.com`, avoiding duplicate detection and keeping entity numbering consistent (`entity_vault.py:245-286`). The two tiers are complementary, not redundant. **V1 known gap:** names and addresses in free text are NOT detected — accepted trade-off until V2 (GLiNER local model for contextual NER).
 
 </details>
 
@@ -270,7 +270,7 @@ The `EntityVaultService` in `service/entity_vault.py` is the most security-criti
 
 2. **Two-tier scrub** (lines 121-142) — For each message in the conversation:
    - **Tier 1**: `POST /v1/pii/scrub` to core (Go regex) catches emails, phones, IDs.
-   - **Tier 2**: Presidio NER (Python, in-process) catches names, orgs, locations.
+   - **Tier 2**: Presidio pattern recognizers (Python, in-process) catch additional structured PII. NER is disabled in V1; an allow-list filters false positives.
    - If *either tier fails*, `PIIScrubError` is raised and the cloud call is blocked. This is the hard security gate.
 
 3. **Build vault** (line 145) — An in-memory dict mapping tokens to originals: `{"[PERSON_1]": "Dr. Sharma", "[ORG_1]": "Apollo Hospital"}`.
@@ -285,7 +285,7 @@ The `EntityVaultService` in `service/entity_vault.py` is the most security-criti
 <summary><strong>Design Decision — Why an ephemeral in-memory vault instead of a persistent entity map?</strong></summary>
 <br>
 
-A persistent map would let the brain remember past scrubbing results: "We already know `[PERSON_1]` is Dr. Sharma from the last call." But persistence creates risk: the map is a PII-to-token lookup table. If it's stored in a database, it's a target. If it's cached in Redis, it might be exposed via `MONITOR`. If it's written to disk, it might survive a container restart. The ephemeral approach eliminates all of these risks. Each cloud LLM call creates a fresh vault, uses it for exactly one request-response cycle, and destroys it. The tradeoff is that the brain re-scrubs text it's seen before — but scrubbing is fast (regex + NER over a few KB of text), and the security guarantee is worth the microseconds.
+A persistent map would let the brain remember past scrubbing results: "We already know `[PERSON_1]` is Dr. Sharma from the last call." But persistence creates risk: the map is a PII-to-token lookup table. If it's stored in a database, it's a target. If it's cached in Redis, it might be exposed via `MONITOR`. If it's written to disk, it might survive a container restart. The ephemeral approach eliminates all of these risks. Each cloud LLM call creates a fresh vault, uses it for exactly one request-response cycle, and destroys it. The tradeoff is that the brain re-scrubs text it's seen before — but scrubbing is fast (regex + patterns over a few KB of text), and the security guarantee is worth the microseconds.
 
 </details>
 
@@ -293,8 +293,8 @@ A persistent map would let the brain remember past scrubbing results: "We alread
 
 The `_two_tier_scrub` method adjusts intensity based on sensitivity level:
 
-- **GENERAL** → Tier 1 + Tier 2 `scrub_patterns_only` (emails, phones, IDs — but not names). A casual question like "what's the weather?" doesn't need NER.
-- **ELEVATED / SENSITIVE** → Full pipeline. Tier 1 + Tier 2 full NER. Every name, organization, and location is scrubbed.
+- **GENERAL** → Tier 1 + Tier 2 `scrub_patterns_only` (emails, phones, IDs). V1 uses patterns only at all levels since NER is disabled.
+- **ELEVATED / SENSITIVE** → Full pattern pipeline. Tier 1 + Tier 2 patterns with allow-list filtering. In V2 (GLiNER), these levels will add contextual NER for names, organizations, and locations.
 
 The ordering matters: Tier 1 runs first (line 268), so Tier 2 sees `[EMAIL_1]` instead of `rajmohan@example.com`. This prevents Presidio from double-detecting the email as both an EMAIL_ADDRESS and a PERSON (some email addresses contain names).
 
@@ -444,21 +444,21 @@ Every cloud LLM provider has converged on the OpenAI chat completions format: `{
 
 ### PresidioScrubber (adapter/scrubber_presidio.py)
 
-At 622 lines, this is the largest adapter. It wraps Microsoft Presidio + spaCy NER with three important additions:
+At 622 lines, this is the largest adapter. In V1, it wraps Microsoft Presidio's **deterministic pattern recognizers only** — spaCy NER is disabled. Three important design choices:
 
 1. **SAFE_ENTITIES whitelist** (lines 46-64) — DATE, TIME, MONEY, PERCENT, CARDINAL, etc. are never scrubbed. These are essential for LLM reasoning ("the payment of $500 is due on March 15") and don't identify anyone.
 
-2. **Country-level GPE filter** (lines 70-83) — "India" is not PII. "Bengaluru" might be. The `COUNTRY_NAMES` frozenset passes country-level GPE through while scrubbing city/state/locality GPE.
+2. **Allow-list post-filter** (`brain/config/pii_allowlist.yaml`) — All Presidio results are filtered against an allow-list of medical terms (B12, A1C, HbA1c, CBC...), financial abbreviations, immigration codes, technical acronyms, and food names. This eliminates the false positives that made NER unusable in V1 (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON).
 
-3. **Synthetic data replacement** — When Faker is available, PII is replaced with realistic fake values: `Dr. Sharma` → `Dr. Meera Patel`, not `[PERSON_1]`. LLMs reason measurably better with natural language than with token tags. The same real value always maps to the same fake value within a single `scrub()` call (consistent fakes), so the LLM sees coherent references.
+3. **India-specific recognizers** — Aadhaar numbers, PAN card numbers, IFSC codes, UPI IDs. Plus EU recognizers for German Steuer-ID, French NIR/NIF, Dutch BSN, SWIFT/BIC.
 
-4. **India-specific recognizers** — Aadhaar numbers, PAN card numbers, IFSC codes, UPI IDs. Plus EU recognizers for German Steuer-ID, French NIR/NIF, Dutch BSN, SWIFT/BIC.
+4. **Opaque token replacement** — PII is replaced with indexed tokens: `Dr. Sharma` → `[PERSON_1]`, not Faker synthetic names. Exact-match rehydration works reliably with opaque tokens. Rehydration matches both bracketed `[PERSON_1]` and bare `PERSON_1` forms (LLMs sometimes strip brackets).
 
 <details>
-<summary><strong>Design Decision — Why Faker-based synthetic data instead of simple token tags?</strong></summary>
+<summary><strong>Design Decision — Why opaque tokens instead of Faker synthetic data in V1?</strong></summary>
 <br>
 
-Research shows that LLMs perform significantly worse when PII is replaced with tags like `[PERSON_1]`. The model sees a conversation where "Dr. [PERSON_1] at [ORG_1] prescribed [PERSON_1] medication for..." — the references are confusing, the grammar is broken, and the model's attention mechanism treats `[PERSON_1]` as an unknown token rather than a name. By replacing with synthetic but realistic values ("Dr. Meera Patel at Fortis Hospital prescribed..."), the LLM sees grammatically correct, contextually coherent text and produces better responses. The replacement is consistent within a single scrub call (the same real name always maps to the same fake name), so cross-references work. After the LLM responds, the Entity Vault rehydrates by replacing fake names back to real ones. The tradeoff is a Faker dependency, which is optional — the scrubber falls back to numbered tags if Faker isn't installed.
+Faker-based synthetic replacement (`Dr. Sharma` → `Dr. Meera Patel`) produces natural-looking text but creates fragile rehydration: the LLM might paraphrase "Dr. Meera Patel" as "Dr. Patel" or "Meera", breaking the reverse mapping. Opaque tokens (`[PERSON_1]`) are ugly but reliable — exact-match rehydration works consistently. V1 prioritizes correctness over LLM reasoning quality. The rehydrator matches both bracketed and bare forms to handle LLMs that strip brackets. V2 may revisit synthetic replacement once GLiNER provides more reliable entity boundaries.
 
 </details>
 
@@ -601,7 +601,7 @@ Tool declarations are provider-agnostic dicts (`vault_context.VAULT_TOOLS`). The
 
 ### POST /v1/pii/scrub (routes/pii.py)
 
-Exposes Tier 2 NER-based PII scrubbing directly. If no scrubber is available (Presidio not installed), returns the text unchanged with an empty entity list. This endpoint is used by core for ad-hoc scrubbing needs outside the standard LLM pipeline.
+Exposes Tier 2 pattern-based PII scrubbing directly. In V1, this uses Presidio's deterministic pattern recognizers (no NER). If no scrubber is available (Presidio not installed), returns the text unchanged with an empty entity list. This endpoint is used by core for ad-hoc scrubbing needs outside the standard LLM pipeline.
 
 ---
 
@@ -701,9 +701,7 @@ The guardian checks the source persona's tier. Health is `restricted` → automa
 **Step 2: Minimal Disclosure Proposal**
 The guardian queries the health persona's vault and classifies each sentence:
 
-- **Medical PII detection** uses a two-tier approach:
-  - **Primary:** `PresidioScrubber.detect()` with optional GLiNER NER (`urchade/gliner_multi_pii-v1` model, opt-in via `DINA_GLINER=1`). Detects `MEDICAL_CONDITION`, `MEDICATION`, `BLOOD_TYPE`, `HEALTH_INSURANCE_ID`, and `PERSON` entity types.
-  - **Fallback:** Regex (`_MEDICAL_PII_REGEX_FALLBACK`) when Presidio is unavailable.
+- **Medical PII detection** uses Presidio pattern recognizers with allow-list filtering. In V1, NER is disabled; detection relies on deterministic patterns for structured medical identifiers (health insurance IDs, etc.) plus regex fallback (`_MEDICAL_PII_REGEX_FALLBACK`) for medical terms (herniation, ibuprofen, MRI, etc.). V2 plan: GLiNER (`urchade/gliner_multi_pii-v1` model) for contextual medical NER.
 
 - Sentences containing medical entities are **withheld**: "L4-L5 disc herniation", "Dr. Sharma at Apollo Hospital", "Ibuprofen 400mg twice daily."
 - General health terms are **safe to share**: "chronic back pain", "needs lumbar support", "avoid prolonged standing."
@@ -715,16 +713,14 @@ The proposal is returned with `requires_approval=True`. The user sees what will 
 After approval, the guardian runs `_classify_sentence_medical()` on the approved text one more time. If any medical PII slipped through (the user manually typed something sensitive), it's caught. The audit result — `medical_patterns_found: [], clean: true` — is written to core's KV store.
 
 <details>
-<summary><strong>Design Decision — Why GLiNER for medical NER?</strong></summary>
+<summary><strong>Design Decision — Why deterministic patterns + allow-list in V1 instead of GLiNER?</strong></summary>
 <br>
 
-The regex fallback (`_MEDICAL_PII_REGEX_FALLBACK`) catches terms we thought to list: "herniation", "ibuprofen", "MRI", etc. But medical terminology is vast — thousands of conditions, medications, and procedures. GLiNER's `urchade/gliner_multi_pii-v1` model (F1 90.87%) detects 50+ PII entity types including `medical condition` and `medication` using a pre-trained transformer. It runs locally on CPU (~200MB model), requires no cloud calls, and catches terms the regex misses.
-
-GLiNER is opt-in (`DINA_GLINER=1`) because the model is heavy for resource-constrained deployments. When disabled, the regex fallback still provides defense-in-depth. When enabled, GLiNER is the primary detector and the regex becomes the secondary safety net. Both paths satisfy the same test assertions — the Persona Wall works regardless of which detector is active.
+spaCy NER produced too many false positives on real data: B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON. V1 uses deterministic Presidio pattern recognizers plus an allow-list (`brain/config/pii_allowlist.yaml`) for medical terms, food names, and technical acronyms. The regex fallback (`_MEDICAL_PII_REGEX_FALLBACK`) catches terms we thought to list: "herniation", "ibuprofen", "MRI", etc. V1 known gap: names and addresses in free text are NOT detected. V2 plan: GLiNER (`urchade/gliner_multi_pii-v1`, ~300M params, local CPU) for contextual NER with an LLM adjudicator for ambiguous cases.
 
 </details>
 
-**Key brain components:** Guardian (tier gate + proposal builder + PII audit), PII scrubber with GLiNER (medical NER), entity vault (cross-persona query), Deterministic Sandwich (deterministic block → LLM proposal → deterministic audit).
+**Key brain components:** Guardian (tier gate + proposal builder + PII audit), PII scrubber with Presidio patterns + allow-list (V1), entity vault (cross-persona query), Deterministic Sandwich (deterministic block → LLM proposal → deterministic audit).
 
 ### Story 05: The Agent Gateway (10 tests)
 
@@ -766,7 +762,7 @@ Brain generates a `DelegationRequest` JSON for an RTO bot. The schema enforces `
 **4. Guardian Enforcement** (`service/guardian.py`):
 The guardian classifies the delegation as HIGH risk (interacts with government system, involves PII). Sets `requires_approval=True`. The constraints enforce `no_storage=True`, `no_forwarding=True`, `max_ttl_seconds ≤ 3600`. The bot gets a time-limited, non-storable, non-forwardable permission slip.
 
-**Key brain components:** LLM extraction (confidence scoring), PII scrubber (pre-storage), vault enrichment (reminder context), schema-strict generation (DelegationRequest), guardian (risk classification + constraint enforcement).
+**Key brain components:** LLM extraction (confidence scoring), PII scrubber with Presidio patterns (pre-storage), vault enrichment (reminder context), schema-strict generation (DelegationRequest), guardian (risk classification + constraint enforcement).
 
 ---
 
@@ -781,7 +777,7 @@ The relationship between core and brain is asymmetric by design:
 | Auth | Verifies Ed25519 signatures + issues internal tokens | Signs requests with service key |
 | Crypto | NaCl seal/unseal, Ed25519 | None — delegates to core |
 | Reasoning | None | Full LLM pipeline |
-| PII scrubbing | Tier 1 (regex) | Tier 2 (NER) |
+| PII scrubbing | Tier 1 (regex) | Tier 2 (Presidio patterns + allow-list) |
 | Event processing | Queues and dispatches | Classifies and decides |
 | Agent safety | Enforces gatekeeper rules | Classifies intent risk |
 
