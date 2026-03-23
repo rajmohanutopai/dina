@@ -209,3 +209,20 @@ class AdminClient:
     def vault_delete(self, persona: str, item_id: str) -> None:
         """DELETE /v1/vault/item/{id}?persona={persona} — delete a vault item."""
         self._request("DELETE", f"/v1/vault/item/{item_id}", params={"persona": persona})
+
+    # -- KV (admin-prefixed keys) ------------------------------------------
+
+    def get_kv(self, key: str) -> str | None:
+        """GET /v1/vault/kv/{key} — retrieve a KV value (None if missing)."""
+        try:
+            resp = self._request("GET", f"/v1/vault/kv/{key}")
+            data = resp.json()
+            return data.get("value")
+        except AdminClientError as exc:
+            if "404" in str(exc):
+                return None
+            raise
+
+    def set_kv(self, key: str, value: str) -> None:
+        """PUT /v1/vault/kv/{key} — store a KV value."""
+        self._request("PUT", f"/v1/vault/kv/{key}", json={"value": value})

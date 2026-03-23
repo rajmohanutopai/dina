@@ -244,7 +244,8 @@ class DinaClient:
         """Get a KV value by key. Returns None if the key does not exist."""
         try:
             resp = self._request(self._core, "GET", f"/v1/vault/kv/{key}")
-            return resp.text
+            data = resp.json()
+            return data.get("value") if isinstance(data, dict) else resp.text
         except DinaClientError as exc:
             if "HTTP 404" in str(exc):
                 return None

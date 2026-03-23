@@ -2,7 +2,7 @@
 
 Commands: status, approvals {list,approve,deny},
 device {list,pair,revoke}, persona {list,create,unlock},
-identity {show,sign}.
+identity {show,sign}, policy {list,set,reset}.
 
 Runs inside the Core container via Unix socket.
 Usage: docker compose exec core dina-admin ...
@@ -702,6 +702,137 @@ def trace(ctx: click.Context, req_id: str) -> None:
             click.echo(
                 f"  [+{offset}ms]  {e['component']:<6} {e['step']:<20} {' '.join(parts)}"
             )
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+# ── policy (action risk policy) ──────────────────────────────────────────
+
+_POLICY_KV_KEY = "admin:action_risk_policy"
+_VALID_RISK_LEVELS = ("safe", "moderate", "high", "blocked")
+
+# Default policy — mirrors the module-level frozensets in guardian.py.
+_DEFAULT_POLICY: dict[str, list[str]] = {
+    "blocked": ["access_keys", "export_data", "read_vault"],
+    "high": ["delete_data", "share_data", "sign_contract", "transfer_money"],
+    "moderate": [
+        "calendar_create", "draft_create", "draft_email", "form_fill",
+        "install_extension", "pay_crypto", "pay_upi", "research",
+        "send_email", "send_message", "share_location", "web_checkout",
+    ],
+}
+
+
+@cli.group()
+def policy() -> None:
+    """Manage the action risk policy (which actions are safe/moderate/high/blocked).
+
+    \b
+    Examples:
+      dina-admin policy list                          # show current policy
+      dina-admin policy set send_email high           # escalate send_email to high
+      dina-admin policy set research safe             # downgrade research to safe
+      dina-admin policy reset                         # restore defaults
+    """
+
+
+def _load_policy(client: AdminClient) -> dict:
+    """Load the current policy from KV, or return defaults."""
+    raw = client.get_kv(_POLICY_KV_KEY)
+    if raw:
+        return json.loads(raw)
+    return dict(_DEFAULT_POLICY)
+
+
+def _save_policy(client: AdminClient, pol: dict) -> None:
+    """Persist the policy to KV (admin + agent-readable copy)."""
+    value = json.dumps(pol)
+    client.set_kv(_POLICY_KV_KEY, value)
+    # Agent-readable copy — admin: prefix blocks device-scoped callers,
+    # so we also write to policy: prefix for dina validate-actions.
+    client.set_kv("policy:action_risk", value)
+
+
+@policy.command("list")
+@click.pass_context
+def policy_list(ctx: click.Context) -> None:
+    """Show the current action risk policy."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        pol = _load_policy(client)
+        if json_mode:
+            print_result(pol, json_mode)
+            return
+
+        click.echo("Action Risk Policy")
+        click.echo("==================")
+        for level, label in [
+            ("blocked", "BLOCKED (always denied)"),
+            ("high", "HIGH (requires user approval, high severity)"),
+            ("moderate", "MODERATE (requires user approval)"),
+            ("safe", "SAFE (auto-approved)"),
+        ]:
+            actions = sorted(pol.get(level, []))
+            click.echo()
+            click.echo(f"{label}:")
+            for a in actions:
+                click.echo(f"  - {a}")
+            if not actions:
+                click.echo("  (none)")
+        click.echo()
+        click.echo("Unlisted actions default to SAFE.")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@policy.command("set")
+@click.argument("action")
+@click.argument("risk", type=click.Choice(_VALID_RISK_LEVELS))
+@click.pass_context
+def policy_set(ctx: click.Context, action: str, risk: str) -> None:
+    """Move an action to a risk level (safe/moderate/high/blocked)."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        pol = _load_policy(client)
+
+        # Remove the action from all existing levels
+        for level in ("blocked", "high", "moderate", "safe"):
+            actions = pol.get(level, [])
+            if action in actions:
+                actions.remove(action)
+                pol[level] = actions
+
+        # Add to the target level
+        pol.setdefault(risk, []).append(action)
+        pol[risk] = sorted(set(pol[risk]))
+
+        _save_policy(client, pol)
+        if json_mode:
+            print_result({"action": action, "risk": risk, "status": "updated"}, json_mode)
+        else:
+            click.echo(f"Updated: {action} -> {risk.upper()}")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@policy.command("reset")
+@click.confirmation_option(prompt="Reset action risk policy to defaults?")
+@click.pass_context
+def policy_reset(ctx: click.Context) -> None:
+    """Reset the action risk policy to factory defaults."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        _save_policy(client, dict(_DEFAULT_POLICY))
+        if json_mode:
+            print_result({"status": "reset", "policy": _DEFAULT_POLICY}, json_mode)
+        else:
+            click.echo("Policy reset to defaults.")
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)

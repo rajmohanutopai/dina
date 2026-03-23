@@ -448,6 +448,54 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
             ctx.exit(1)
 
 
+# ── validate-actions ──────────────────────────────────────────────────────
+
+
+@cli.command("validate-actions")
+@click.pass_context
+def validate_actions(ctx: click.Context) -> None:
+    """List all known actions with their current risk level.
+
+    Returns the active policy so agents know which action names to use
+    and what approval behavior to expect for each.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        raw = client.kv_get("policy:action_risk")
+        if raw is None:
+            # No custom policy — use built-in defaults
+            policy = {
+                "blocked": ["access_keys", "export_data", "read_vault"],
+                "high": ["delete_data", "share_data", "sign_contract", "transfer_money"],
+                "moderate": [
+                    "calendar_create", "draft_create", "draft_email", "form_fill",
+                    "install_extension", "pay_crypto", "pay_upi", "research",
+                    "send_email", "send_message", "share_location", "web_checkout",
+                ],
+            }
+        else:
+            policy = json.loads(raw)
+
+        if json_mode:
+            # Flat list with action→risk mapping for programmatic use
+            actions = {}
+            for risk in ("blocked", "high", "moderate", "safe"):
+                for action in policy.get(risk, []):
+                    actions[action] = risk
+            print_result({"actions": actions, "default_risk": "safe"}, json_mode)
+        else:
+            click.echo("Action Risk Levels")
+            click.echo("==================")
+            for risk in ("blocked", "high", "moderate", "safe"):
+                for action in sorted(policy.get(risk, [])):
+                    click.echo(f"  {action:<30} {risk.upper()}")
+            click.echo(f"  {'(unlisted actions)':<30} SAFE")
+    except DinaClientError as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
 # ── validate-status ───────────────────────────────────────────────────────
 
 

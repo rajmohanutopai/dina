@@ -172,6 +172,32 @@ dina validate <action> <description> --session <ses_xxx>
 
 ---
 
+### dina validate-actions
+
+```
+dina validate-actions
+```
+
+Returns all known actions with their current risk level. Call this at session start to discover what actions exist and what approval behavior to expect.
+
+**Returns (text):**
+```
+  search                         SAFE
+  send_email                     MODERATE
+  delete_data                    HIGH
+  access_keys                    BLOCKED
+  (unlisted actions)             SAFE
+```
+
+**Returns (--json):**
+```json
+{"actions": {"search": "safe", "send_email": "moderate", ...}, "default_risk": "safe"}
+```
+
+The policy is configurable by the user via `dina-admin policy set <action> <risk>`. Actions not in the policy default to SAFE.
+
+---
+
 ### dina validate-status
 
 ```

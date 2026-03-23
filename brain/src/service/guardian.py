@@ -33,6 +33,7 @@ import json
 import re
 import time
 import traceback
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -319,6 +320,73 @@ _MODERATE_ACTIONS = frozenset({
     "research",  # Autonomous research delegation to external agent (OpenClaw)
 })
 
+# ---------------------------------------------------------------------------
+# Configurable Action Risk Policy
+# ---------------------------------------------------------------------------
+
+# KV key used to persist the policy in Core's identity store.
+ACTION_RISK_POLICY_KV_KEY = "admin:action_risk_policy"
+
+
+@dataclass
+class ActionRiskPolicy:
+    """Configurable mapping of action names to risk levels.
+
+    The policy determines which actions are SAFE, MODERATE, HIGH, or
+    BLOCKED.  It is loaded from Core KV at startup and can be edited
+    via ``dina-admin policy`` commands.
+
+    Any action not explicitly listed in ``blocked``, ``high``, or
+    ``moderate`` is implicitly SAFE (auto-approved).
+    """
+
+    blocked: set[str] = field(default_factory=set)
+    high: set[str] = field(default_factory=set)
+    moderate: set[str] = field(default_factory=set)
+    safe: set[str] = field(default_factory=set)  # explicitly registered safe actions
+
+    def classify(self, action: str) -> IntentRisk:
+        """Return the risk level for *action*."""
+        if action in self.blocked:
+            return IntentRisk.BLOCKED
+        if action in self.high:
+            return IntentRisk.HIGH
+        if action in self.moderate:
+            return IntentRisk.MODERATE
+        return IntentRisk.SAFE  # explicit safe + unlisted both resolve to SAFE
+
+    # -- Serialisation helpers for KV persistence ---
+
+    def to_dict(self) -> dict:
+        """Serialise to a JSON-safe dict."""
+        return {
+            "blocked": sorted(self.blocked),
+            "high": sorted(self.high),
+            "moderate": sorted(self.moderate),
+            "safe": sorted(self.safe),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ActionRiskPolicy:
+        """Deserialise from a dict (e.g. parsed from KV JSON)."""
+        return cls(
+            blocked=set(data.get("blocked", [])),
+            high=set(data.get("high", [])),
+            moderate=set(data.get("moderate", [])),
+            safe=set(data.get("safe", [])),
+        )
+
+    @classmethod
+    def defaults(cls) -> ActionRiskPolicy:
+        """Return a policy with the default hardcoded values."""
+        return cls(
+            blocked=set(_BLOCKED_ACTIONS),
+            high=set(_HIGH_ACTIONS),
+            moderate=set(_MODERATE_ACTIONS),
+            safe=set(),  # no explicit safe actions by default; unlisted = safe
+        )
+
+
 # DIDComm message type prefixes and their handlers.
 _DIDCOMM_HANDLERS: dict[str, str] = {
     "dina/social/": "nudge_assembly",
@@ -576,6 +644,7 @@ class GuardianLoop:
         persona_selector: Any = None,  # PersonaSelector
         persona_registry: Any = None,  # PersonaRegistry
         staging_processor: Any = None,  # StagingProcessor
+        action_policy: ActionRiskPolicy | None = None,  # Configurable action risk policy
     ) -> None:
         self._core = core
         self._llm = llm_router
@@ -590,6 +659,7 @@ class GuardianLoop:
         self._staging_processor = staging_processor
         self._routing_ambiguity_surfaced: list[str] = []
         self._event_extractor = event_extractor
+        self._action_policy = action_policy or ActionRiskPolicy.defaults()
 
         # Tracks which personas are currently unlocked.
         self._unlocked_personas: set[str] = set()
@@ -1076,8 +1146,11 @@ class GuardianLoop:
                 "requires_approval": False,
             }
 
-        # ---- Blocked: untrusted + vault access ----
-        if trust_level == "untrusted" or action in _BLOCKED_ACTIONS:
+        # ---- Classify via configurable policy ----
+        # Untrusted agents are always blocked regardless of action.
+        policy_decision = self._action_policy.classify(action)
+
+        if trust_level == "untrusted" or policy_decision == IntentRisk.BLOCKED:
             decision = IntentRisk.BLOCKED
             reason = f"Blocked: {action} by {trust_level} agent"
             await self._audit_intent(intent, decision, reason)
@@ -1090,7 +1163,7 @@ class GuardianLoop:
             }
 
         # ---- HIGH risk: requires user review (high severity) ----
-        if action in _HIGH_ACTIONS or risk_hint == "high":
+        if policy_decision == IntentRisk.HIGH or risk_hint == "high":
             decision = IntentRisk.HIGH
             reason = f"High-risk action: {action} requires user approval"
             await self._audit_intent(intent, decision, reason)
@@ -1106,7 +1179,7 @@ class GuardianLoop:
             }
 
         # ---- MODERATE risk: requires user review ----
-        if action in _MODERATE_ACTIONS or risk_hint == "risky":
+        if policy_decision == IntentRisk.MODERATE or risk_hint == "risky":
             decision = IntentRisk.MODERATE
             reason = f"Moderate-risk action: {action} requires user approval"
             await self._audit_intent(intent, decision, reason)

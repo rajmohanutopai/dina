@@ -44,7 +44,7 @@ from .adapter.mcp_stdio import MCPStdioClient
 from .service.llm_router import LLMRouter
 from .service.entity_vault import EntityVaultService
 from .service.scratchpad import ScratchpadService
-from .service.guardian import GuardianLoop
+from .service.guardian import GuardianLoop, ActionRiskPolicy, ACTION_RISK_POLICY_KV_KEY
 from .service.nudge import NudgeAssembler
 from .service.sync_engine import SyncEngine
 from .service.vault_context import VaultContextAssembler
@@ -619,6 +619,28 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         # Load persona registry before anything else — selector needs it.
         await persona_registry.load(brain_core_client)
+
+        # Load configurable action risk policy from Core KV.
+        # If not found (first run), bootstrap with defaults and persist.
+        try:
+            raw_policy = await brain_core_client.get_kv(ACTION_RISK_POLICY_KV_KEY)
+            if raw_policy:
+                policy = ActionRiskPolicy.from_dict(json.loads(raw_policy))
+                log.info("brain.action_policy.loaded_from_kv")
+            else:
+                policy = ActionRiskPolicy.defaults()
+                policy_json = json.dumps(policy.to_dict())
+                await brain_core_client.set_kv(ACTION_RISK_POLICY_KV_KEY, policy_json)
+                # Agent-readable copy (admin: prefix blocks device-scoped callers).
+                await brain_core_client.set_kv("policy:action_risk", policy_json)
+                log.info("brain.action_policy.bootstrapped_defaults")
+            guardian._action_policy = policy
+        except Exception as exc:
+            log.warning(
+                "brain.action_policy.load_failed",
+                extra={"error": str(exc)},
+            )
+            # Guardian keeps the default policy set at construction time.
 
         sync_task = asyncio.create_task(_sync_loop(sync_engine))
 
