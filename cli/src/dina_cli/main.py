@@ -611,16 +611,26 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
             params={"action": action_filter, "limit": str(limit)} if action_filter else {"limit": str(limit)},
         )
         items = resp.json().get("entries", [])
-        entries = [
-            {
-                "action": it.get("Type", it.get("type", "")),
-                "summary": it.get("Summary", it.get("summary", "")),
-                "source": it.get("Source", it.get("source", "")),
-                "timestamp": it.get("IngestedAt", it.get("timestamp", "")),
-            }
-            for it in items
-        ]
-        print_result_with_trace(entries, json_mode, client.req_id)
+        if json_mode:
+            print_result_with_trace(items, json_mode, client.req_id)
+        else:
+            if not items:
+                click.echo("No audit entries.")
+            else:
+                for it in items:
+                    ts = it.get("timestamp", "")
+                    action = it.get("action", "")
+                    persona = it.get("persona", "")
+                    requester = it.get("requester", "")
+                    reason = it.get("reason", "")
+                    line = f"  {ts}  {action}"
+                    if persona:
+                        line += f"  persona={persona}"
+                    if requester:
+                        line += f"  by={requester}"
+                    if reason:
+                        line += f"  ({reason})"
+                    click.echo(line)
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)

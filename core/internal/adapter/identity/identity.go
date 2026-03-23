@@ -1255,12 +1255,12 @@ func (pm *PersonaManager) StartSession(_ context.Context, agentDID, name string)
 
 // EndSession ends an active session, revokes all its grants, and closes
 // sensitive persona vaults that were opened via approval.
-func (pm *PersonaManager) EndSession(_ context.Context, agentDID, name string) error {
+func (pm *PersonaManager) EndSession(_ context.Context, agentDID, nameOrID string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
 	for i, s := range pm.sessions {
-		if s.AgentDID == agentDID && s.Name == name && s.Status == domain.SessionActive {
+		if s.AgentDID == agentDID && (s.Name == nameOrID || s.ID == nameOrID) && s.Status == domain.SessionActive {
 			// Collect sensitive personas to close after revoking grants.
 			var personasToClose []string
 			for _, g := range s.Grants {
@@ -1287,7 +1287,7 @@ func (pm *PersonaManager) EndSession(_ context.Context, agentDID, name string) e
 			return nil
 		}
 	}
-	return fmt.Errorf("no active session named %q for agent %s", name, agentDID)
+	return fmt.Errorf("no active session named %q for agent %s", nameOrID, agentDID)
 }
 
 // GetSession returns an active session by agent DID and name.

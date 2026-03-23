@@ -176,3 +176,26 @@ food_and_common:
   - saffron
   - turmeric
   - cinnamon
+
+common_words:
+  # English words that match SWIFT/BIC or other financial patterns
+  - supplements
+  - appointment
+  - department
+  - assessment
+  - development
+  - environment
+  - management
+  - treatment
+  - statement
+  - agreement
+  - investment
+  - government
+  - improvement
+  - achievement
+  - replacement
+  - requirement
+  - arrangement
+  - enforcement
+  - measurement
+  - entertainment

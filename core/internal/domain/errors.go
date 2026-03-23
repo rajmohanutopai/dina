@@ -16,6 +16,7 @@ var (
 	ErrInvalidPersona   = errors.New("invalid persona name")
 	ErrInvalidDID       = errors.New("invalid DID")
 	ErrNotFound         = errors.New("not found")
+	ErrItemNotFound     = errors.New("item not found")
 	ErrInvalidInput     = errors.New("invalid input")
 	ErrInvalidPath      = errors.New("invalid derivation path")
 	ErrInvalidMnemonic    = errors.New("invalid mnemonic")

@@ -56,6 +56,7 @@ func (h *SessionHandler) HandleStartSession(w http.ResponseWriter, r *http.Reque
 
 type endSessionReq struct {
 	Name string `json:"name"`
+	ID   string `json:"id"`
 }
 
 // HandleEndSession handles POST /v1/session/end.
@@ -66,19 +67,29 @@ func (h *SessionHandler) HandleEndSession(w http.ResponseWriter, r *http.Request
 	}
 
 	var req endSessionReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Accept either name or id — CLI sends id, Telegram sends name.
+	sessionRef := req.Name
+	if sessionRef == "" {
+		sessionRef = req.ID
+	}
+	if sessionRef == "" {
+		http.Error(w, `{"error":"name or id is required"}`, http.StatusBadRequest)
 		return
 	}
 
 	agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
-	if err := h.Sessions.EndSession(r.Context(), agentDID, req.Name); err != nil {
+	if err := h.Sessions.EndSession(r.Context(), agentDID, sessionRef); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ended", "name": req.Name})
+	json.NewEncoder(w).Encode(map[string]string{"status": "ended", "session": sessionRef})
 }
 
 // HandleListSessions handles GET /v1/sessions.

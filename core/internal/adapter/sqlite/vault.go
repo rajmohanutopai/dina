@@ -370,12 +370,16 @@ func (a *VaultAdapter) Delete(ctx context.Context, persona domain.PersonaName, i
 		return fmt.Errorf("sqlite: persona %q not open", persona)
 	}
 
-	_, err := db.ExecContext(ctx,
-		`UPDATE vault_items SET deleted = 1, updated_at = ? WHERE id = ?`,
+	res, err := db.ExecContext(ctx,
+		`UPDATE vault_items SET deleted = 1, updated_at = ? WHERE id = ? AND deleted = 0`,
 		time.Now().Unix(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite: delete item: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return domain.ErrItemNotFound
 	}
 	return nil
 }

@@ -339,7 +339,7 @@ def intent_list(ctx: click.Context) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        r = client._request("GET", "/v1/intent/proposals")
+        r = client._request("GET", "/v1/intent/proposals/")
         proposals = r.json().get("proposals", [])
         if json_mode:
             click.echo(json.dumps(proposals, indent=2))
