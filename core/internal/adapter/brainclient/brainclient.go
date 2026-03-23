@@ -525,6 +525,53 @@ func (c *BrainClient) ListProposals() ([]byte, error) {
 	return body, nil
 }
 
+// ScrubPII calls Brain's Tier 2 NER endpoint for deeper PII scrubbing.
+func (c *BrainClient) ScrubPII(ctx context.Context, text string) (*domain.ScrubResult, error) {
+	reqURL := c.baseURL + "/api/v1/pii/scrub"
+	body, _ := json.Marshal(map[string]string{"text": text})
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("brain PII scrub: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.signRequest(req, body)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brain PII scrub: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("brain PII scrub: read: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("brain PII scrub: status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Scrubbed string `json:"scrubbed"`
+		Entities []struct {
+			Type  string `json:"type"`
+			Token string `json:"token"`
+		} `json:"entities"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("brain PII scrub: parse: %w", err)
+	}
+
+	entities := make([]domain.PIIEntity, len(result.Entities))
+	for i, e := range result.Entities {
+		entities[i] = domain.PIIEntity{
+			Type:  e.Type,
+			Value: e.Token, // Brain returns "token" (the replacement), map to Value
+		}
+	}
+	return &domain.ScrubResult{Scrubbed: result.Scrubbed, Entities: entities}, nil
+}
+
 // IsHealthy returns true if the brain is available and healthy.
 func (c *BrainClient) IsHealthy(_ context.Context) bool {
 	if !c.IsAvailable() {

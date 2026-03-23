@@ -979,7 +979,36 @@ func main() {
 			return vaultSvc.Store(ctx, "staging", p, item)
 		},
 	)
-	stagingH := &handler.StagingHandler{Staging: stagingInbox, Devices: deviceSvc, Brain: brain}
+	stagingH := &handler.StagingHandler{
+		Staging:   stagingInbox,
+		Devices:   deviceSvc,
+		Brain:     brain,
+		Personas:  personaMgr,
+		Approvals: personaMgr,
+		EnsureVaultOpen: func(ctx context.Context, persona string) error {
+			p, err := domain.NewPersonaName(persona)
+			if err != nil {
+				return err
+			}
+			if vaultMgr.IsOpen(p) {
+				return nil
+			}
+			personaID := "persona-" + persona
+			tier, _ := personaMgr.GetTier(ctx, personaID)
+			if tier == "locked" {
+				return domain.ErrPersonaLocked
+			}
+			dekVersion, dvErr := personaMgr.GetDEKVersion(ctx, personaID)
+			if dvErr != nil || dekVersion == 0 {
+				dekVersion = 1
+			}
+			dek, dErr := keyDeriver.DerivePersonaDEKVersioned(masterSeed, p, dekVersion)
+			if dErr != nil {
+				return fmt.Errorf("staging auto-open: DEK derivation failed: %w", dErr)
+			}
+			return vaultMgr.Open(ctx, p, dek)
+		},
+	}
 
 	// Wire late-binding D2D staging function now that stagingInbox exists.
 	stageD2DMemory = func(ctx context.Context, msg *domain.DinaMessage) {
@@ -1277,6 +1306,11 @@ func main() {
 	reasonH := &handler.ReasonHandler{Brain: brain, PendingReasons: pendingReasonStore}
 	mux.HandleFunc("/api/v1/reason", reasonH.HandleReason)
 	mux.HandleFunc("/api/v1/reason/", reasonH.HandleReasonStatus) // GET /api/v1/reason/{id}/status
+
+	// User-facing solicited memory write — wraps staging with synchronous completion.
+	rememberH := &handler.RememberHandler{StagingHandler: stagingH, Staging: stagingInbox, Brain: brain}
+	mux.HandleFunc("/api/v1/remember", rememberH.HandleRemember)
+	mux.HandleFunc("/api/v1/remember/", rememberH.HandleRememberStatus) // GET /api/v1/remember/{id}
 	mux.HandleFunc("/v1/reason/", reasonH.HandleReasonResult)     // POST /v1/reason/{id}/result (Brain callback)
 
 	// Admin proxy

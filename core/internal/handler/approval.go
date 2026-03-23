@@ -128,13 +128,7 @@ func (h *ApprovalHandler) approveByID(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	// Open the vault for the approved persona if not already open.
-	p.openVaultForApproval(r, approvedPersona)
-
-	// Trigger resume for any pending reason requests linked to this approval.
-	if p.PendingReasons != nil && p.Brain != nil {
-		go p.resumePendingReasons(id)
-	}
+	p.completeApproval(r, id, approvedPersona)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "approved", "id": id})

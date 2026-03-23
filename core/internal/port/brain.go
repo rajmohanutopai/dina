@@ -17,4 +17,6 @@ type BrainClient interface {
 	// request as user-originated, enabling auto-unlock of sensitive personas.
 	ReasonAsUser(ctx context.Context, query, source string) (*domain.ReasonResult, error)
 	IsHealthy(ctx context.Context) bool
+	// ScrubPII sends text to Brain's Tier 2 NER (spaCy + Faker) for deeper PII scrubbing.
+	ScrubPII(ctx context.Context, text string) (*domain.ScrubResult, error)
 }

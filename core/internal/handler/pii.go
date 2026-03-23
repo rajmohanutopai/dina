@@ -8,6 +8,9 @@ import (
 )
 
 // PIIHandler exposes PII scrubbing endpoints.
+// Tier 1 regex only — names/orgs/locations are handled by Brain's Tier 2
+// internally during staging enrichment (not exposed via this endpoint,
+// because BR1 prevents returning original PII values over HTTP).
 type PIIHandler struct {
 	Scrubber port.PIIScrubber
 }

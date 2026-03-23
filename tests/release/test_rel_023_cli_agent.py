@@ -19,27 +19,31 @@ class TestCLIAgentIntegration:
 
     # REL-023
     def test_rel_023_agent_can_store_data(
-        self, release_services, agent_paired,
+        self, release_services, agent_paired, agent_session,
     ) -> None:
         """Agent stores a fact via `dina remember`."""
         result = release_services.agent_exec(
-            "remember", "user prefers lumbar support in office chairs",
+            "remember", "--session", agent_session,
+            "user prefers lumbar support in office chairs",
             "--category", "preference",
         )
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         data = json.loads(result.stdout)
-        assert data.get("staged") is True
+        assert data.get("status") in ("stored", "needs_approval", "processing"), (
+            f"Expected stored/needs_approval/processing, got: {data}"
+        )
 
     # REL-023
     def test_rel_023_agent_can_ask_data(
-        self, release_services, agent_paired,
+        self, release_services, agent_paired, agent_session,
     ) -> None:
         """Agent asks a question via `dina ask`."""
         # Store a fact with a distinctive phrase
         import os
         marker = f"rel023_{os.getpid()}"
         remember_result = release_services.agent_exec(
-            "remember", f"{marker} ergonomic chair with adjustable lumbar and titanium armrests",
+            "remember", "--session", agent_session,
+            f"{marker} ergonomic chair with adjustable lumbar and titanium armrests",
         )
         assert remember_result.returncode == 0, (
             f"remember failed: {remember_result.stderr}"
@@ -48,7 +52,10 @@ class TestCLIAgentIntegration:
         # Ask — must return an answer referencing the distinctive stored phrase
         import subprocess as _sp
         try:
-            result = release_services.agent_exec("ask", f"{marker} chair", timeout=60)
+            result = release_services.agent_exec(
+                "ask", "--session", agent_session,
+                f"{marker} chair", timeout=60,
+            )
         except _sp.TimeoutExpired:
             pytest.skip("ask timed out — LLM may not be configured in release stack")
         if result.returncode != 0:
@@ -82,11 +89,12 @@ class TestCLIAgentIntegration:
 
     # REL-023
     def test_rel_023_agent_validates_safe_action(
-        self, release_services, agent_paired,
+        self, release_services, agent_paired, agent_session,
     ) -> None:
         """Safe action (search) is auto-approved via `dina validate`."""
         result = release_services.agent_exec(
-            "validate", "search", "best office chair 2026",
+            "validate", "--session", agent_session,
+            "search", "best office chair 2026",
         )
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         data = json.loads(result.stdout)
@@ -95,11 +103,12 @@ class TestCLIAgentIntegration:
 
     # REL-023
     def test_rel_023_agent_validates_risky_action(
-        self, release_services, agent_paired,
+        self, release_services, agent_paired, agent_session,
     ) -> None:
         """Risky action (send_email) requires approval via `dina validate`."""
         result = release_services.agent_exec(
-            "validate", "send_email", "draft to sancho@example.com",
+            "validate", "--session", agent_session,
+            "send_email", "draft to sancho@example.com",
         )
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         data = json.loads(result.stdout)
@@ -118,7 +127,7 @@ class TestCLIAgentIntegration:
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         data = json.loads(result.stdout)
         assert "scrubbed" in data
-        assert "session" in data
+        assert "pii_id" in data
         # Email must be removed from scrubbed text
         scrubbed = data["scrubbed"]
         assert "raj@example.com" not in scrubbed, (
@@ -172,12 +181,13 @@ class TestCLIAgentIntegration:
 
     # REL-023
     def test_rel_023_agent_validate_status_polling(
-        self, release_services, agent_paired,
+        self, release_services, agent_paired, agent_session,
     ) -> None:
         """Agent polls validation status via `dina validate-status`."""
         # Submit an action first
         result = release_services.agent_exec(
-            "validate", "transfer_money", "send 500 INR to merchant",
+            "validate", "--session", agent_session,
+            "transfer_money", "send 500 INR to merchant",
         )
         assert result.returncode == 0, f"validate failed: {result.stderr}"
         data = json.loads(result.stdout)

@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
@@ -30,12 +33,20 @@ func validateEnrichment(item domain.VaultItem) string {
 	return ""
 }
 
+// EnsureVaultOpenFunc auto-opens a persona vault if it's closed.
+// Called after AccessPersona() succeeds so StagingInbox.Resolve() finds
+// the vault open and stores immediately (v1 auto-open behavior).
+type EnsureVaultOpenFunc func(ctx context.Context, persona string) error
+
 // StagingHandler exposes staging inbox endpoints for universal
 // content ingestion — CLI, connectors, Telegram, D2D, and admin.
 type StagingHandler struct {
-	Staging port.StagingInbox
-	Devices *service.DeviceService // for device role lookup
-	Brain   port.BrainClient      // for triggering immediate drain after ingest
+	Staging        port.StagingInbox
+	Devices        *service.DeviceService // for device role lookup
+	Brain          port.BrainClient       // for triggering immediate drain after ingest
+	Personas       port.PersonaManager    // for session-scoped access checks on resolve
+	Approvals      port.ApprovalManager   // for creating approval requests on access denial
+	EnsureVaultOpen EnsureVaultOpenFunc   // auto-opens vault after access check succeeds
 }
 
 // ingestRequest is the JSON body for POST /v1/staging/ingest.
@@ -283,31 +294,206 @@ func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Multi-target resolve (cross-persona content).
+	// Session-scoped access check + resolve.
+	// Single-target: check access, return 403 or resolve.
+	// Multi-target: check each target independently. Accessible targets
+	// resolve immediately; denied targets get approval requests and
+	// pending staging copies. Preserves ResolveMulti's per-persona
+	// independent behavior.
 	if len(req.Targets) > 0 {
-		if err := h.Staging.ResolveMulti(r.Context(), req.ID, req.Targets); err != nil {
-			clientError(w, "resolve failed", http.StatusInternalServerError, err)
-			return
-		}
+		h.resolveMultiWithAccessCheck(w, r, req)
 	} else if req.TargetPersona != "" {
-		// Single-target resolve.
-		if err := h.Staging.Resolve(r.Context(), req.ID, req.TargetPersona, req.ClassifiedItem); err != nil {
-			clientError(w, "resolve failed", http.StatusInternalServerError, err)
-			return
-		}
+		h.resolveSingleWithAccessCheck(w, r, req)
 	} else {
 		http.Error(w, `{"error":"missing target_persona or targets"}`, http.StatusBadRequest)
+	}
+}
+
+// resolveSingleWithAccessCheck handles single-target resolve with access check.
+// If access is denied, creates an approval request and marks the item pending.
+func (h *StagingHandler) resolveSingleWithAccessCheck(w http.ResponseWriter, r *http.Request, req resolveRequest) {
+	if h.Personas != nil {
+		pid := "persona-" + req.TargetPersona
+		if err := h.Personas.AccessPersona(r.Context(), pid); err != nil {
+			h.handleAccessDenied(w, r, req.ID, req.TargetPersona, req.ClassifiedItem, err)
+			return
+		}
+	}
+
+	// v1 auto-open: AccessPersona succeeded, so ensure the vault file is
+	// actually open before StagingInbox.Resolve checks isPersonaOpen().
+	// Without this, Resolve marks the item pending_unlock even though
+	// the caller is authorized.
+	if err := h.ensureOpen(r.Context(), req.TargetPersona); err != nil {
+		clientError(w, "vault open failed", http.StatusInternalServerError, err)
 		return
 	}
 
-	// GH10: Removed O(n) scan of 1000 pending items per resolve call.
-	// The previous code listed all pending_unlock items just to check if
-	// this item ended up pending. The resolve operation itself is
-	// authoritative — if it succeeded without error, the item was resolved.
-	// Brain (the caller) knows the persona state and handles pending_unlock
-	// via the drain mechanism.
+	if err := h.Staging.Resolve(r.Context(), req.ID, req.TargetPersona, req.ClassifiedItem); err != nil {
+		clientError(w, "resolve failed", http.StatusInternalServerError, err)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": "resolved"})
+}
+
+// resolveMultiWithAccessCheck handles multi-target resolve with per-persona
+// access checks. Accessible targets resolve immediately; denied targets get
+// approval requests and pending staging copies. This preserves ResolveMulti's
+// original per-persona-independent behavior.
+func (h *StagingHandler) resolveMultiWithAccessCheck(w http.ResponseWriter, r *http.Request, req resolveRequest) {
+	var accessible []domain.ResolveTarget
+	var denied []domain.ResolveTarget
+
+	// Partition targets by access.
+	for _, t := range req.Targets {
+		if h.Personas == nil {
+			accessible = append(accessible, t)
+			continue
+		}
+		pid := "persona-" + t.Persona
+		if err := h.Personas.AccessPersona(r.Context(), pid); err != nil {
+			denied = append(denied, t)
+		} else {
+			accessible = append(accessible, t)
+		}
+	}
+
+	// v1 auto-open: ensure vaults are open for accessible targets.
+	for _, t := range accessible {
+		if err := h.ensureOpen(r.Context(), t.Persona); err != nil {
+			clientError(w, "vault open failed", http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// Resolve accessible targets via ResolveMulti.
+	if len(accessible) > 0 {
+		if err := h.Staging.ResolveMulti(r.Context(), req.ID, accessible); err != nil {
+			clientError(w, "resolve failed", http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// Handle denied targets: create approval requests + pending copies.
+	for _, t := range denied {
+		h.createApprovalAndPendCopy(r, req.ID, t, len(accessible) > 0)
+	}
+
+	// If nothing was accessible, mark the original staging item as pending
+	// and return approval_required for the first denied target.
+	if len(accessible) == 0 && len(denied) > 0 {
+		first := denied[0]
+		// Mark the original staging item as pending_unlock.
+		if markErr := h.Staging.MarkPendingApproval(r.Context(), req.ID, first.Persona, first.ClassifiedItem); markErr != nil {
+			slog.Warn("staging.resolve: failed to mark pending_approval",
+				"id", req.ID, "persona", first.Persona, "error", markErr)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":      "approval_required",
+			"persona":    first.Persona,
+			"staging_id": req.ID,
+			"message":    "Approve access to target persona(s) to complete storage.",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": "resolved"})
+}
+
+// createApprovalAndPendCopy creates an approval request and a pending staging
+// copy for a denied target in a multi-target resolve. If hasAccessible is true,
+// the original staging row is already taken by accessible targets, so a new
+// copy row is created.
+func (h *StagingHandler) createApprovalAndPendCopy(r *http.Request, stagingID string, target domain.ResolveTarget, hasAccessible bool) {
+	sessionName, _ := r.Context().Value(middleware.SessionNameKey).(string)
+	agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
+
+	if h.Approvals != nil {
+		reqID, err := h.Approvals.RequestApproval(r.Context(), domain.ApprovalRequest{
+			ClientDID: agentDID,
+			PersonaID: target.Persona,
+			SessionID: sessionName,
+			Action:    "staging_resolve",
+			Reason:    "Store memory in " + target.Persona,
+		})
+		if err == nil {
+			slog.Info("staging.resolve: approval requested",
+				"id", stagingID, "persona", target.Persona, "approval_id", reqID)
+		}
+	}
+
+	// Create a pending copy with a deterministic ID matching ResolveMulti's
+	// convention so DrainPending can find it.
+	if hasAccessible {
+		copyID := stagingID + "-" + target.Persona
+		if err := h.Staging.CreatePendingCopy(r.Context(), copyID, target.Persona, target.ClassifiedItem); err != nil {
+			slog.Warn("staging.resolve: failed to create pending copy",
+				"id", stagingID, "persona", target.Persona, "error", err)
+		}
+	}
+}
+
+// handleAccessDenied creates an approval request and marks the staging item
+// as pending_unlock for a denied single-target resolve.
+func (h *StagingHandler) handleAccessDenied(w http.ResponseWriter, r *http.Request, stagingID, persona string, classifiedItem domain.VaultItem, accessErr error) {
+	var approvalErr *identity.ErrApprovalRequired
+	if errors.As(accessErr, &approvalErr) && h.Approvals != nil {
+		sessionName, _ := r.Context().Value(middleware.SessionNameKey).(string)
+		agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
+		reqID, aprErr := h.Approvals.RequestApproval(r.Context(), domain.ApprovalRequest{
+			ClientDID: agentDID,
+			PersonaID: persona,
+			SessionID: sessionName,
+			Action:    "staging_resolve",
+			Reason:    "Store memory in " + persona,
+		})
+		if aprErr == nil {
+			slog.Info("staging.resolve: approval requested",
+				"id", stagingID, "persona", persona, "approval_id", reqID)
+
+			if markErr := h.Staging.MarkPendingApproval(r.Context(), stagingID, persona, classifiedItem); markErr != nil {
+				slog.Warn("staging.resolve: failed to mark pending_approval",
+					"id", stagingID, "persona", persona, "error", markErr)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":       "approval_required",
+				"approval_id": reqID,
+				"persona":     persona,
+				"staging_id":  stagingID,
+				"message":     "Approve access to " + persona + " persona to complete storage.",
+			})
+			return
+		}
+	}
+	slog.Warn("staging.resolve: access denied",
+		"id", stagingID, "persona", persona, "error", accessErr.Error())
+	clientError(w, "persona access denied", http.StatusForbidden, accessErr)
+}
+
+// ensureOpen auto-opens a persona vault after access check succeeds.
+// Returns nil on success or if the persona is locked (expected — Resolve
+// will mark pending_unlock). Returns a non-nil error only for
+// infrastructure failures (DEK derivation, vault I/O) which must be
+// surfaced as 500, not silently converted into pending_unlock.
+func (h *StagingHandler) ensureOpen(ctx context.Context, persona string) error {
+	if h.EnsureVaultOpen == nil {
+		return nil
+	}
+	err := h.EnsureVaultOpen(ctx, persona)
+	if err == nil || errors.Is(err, domain.ErrPersonaLocked) {
+		return nil // locked is expected — Resolve handles it via pending_unlock
+	}
+	slog.Error("staging.resolve: vault auto-open failed",
+		"persona", persona, "error", err)
+	return err
 }
 
 // failRequest is the JSON body for POST /v1/staging/fail.

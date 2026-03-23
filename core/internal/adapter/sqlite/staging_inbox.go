@@ -115,6 +115,31 @@ func (s *StagingInbox) Ingest(ctx context.Context, item domain.StagingItem) (str
 }
 
 // Claim marks up to `limit` received items as classifying with a lease.
+// GetStatus returns the current status of a staging item by ID.
+// If callerDID is non-empty, enforces ownership — only the originating
+// caller can query status (prevents cross-agent status disclosure).
+func (s *StagingInbox) GetStatus(ctx context.Context, id, callerDID string) (string, error) {
+	db := s.db()
+	if db == nil {
+		return "", fmt.Errorf("staging: identity database not open")
+	}
+	var status string
+	var query string
+	var args []interface{}
+	if callerDID != "" {
+		query = `SELECT status FROM staging_inbox WHERE id=? AND origin_did=?`
+		args = []interface{}{id, callerDID}
+	} else {
+		query = `SELECT status FROM staging_inbox WHERE id=?`
+		args = []interface{}{id}
+	}
+	err := db.QueryRowContext(ctx, query, args...).Scan(&status)
+	if err != nil {
+		return "", fmt.Errorf("staging: item %s not found", id)
+	}
+	return status, nil
+}
+
 func (s *StagingInbox) Claim(ctx context.Context, limit int, leaseDuration time.Duration) ([]domain.StagingItem, error) {
 	db := s.db()
 	if db == nil {
@@ -315,6 +340,46 @@ func (s *StagingInbox) MarkFailed(ctx context.Context, id, errMsg string) error 
 	_, err := db.ExecContext(ctx,
 		`UPDATE staging_inbox SET status='failed', error=?, retry_count=retry_count+1, updated_at=? WHERE id=?`,
 		errMsg, now, id)
+	return err
+}
+
+// MarkPendingApproval marks an item as pending_unlock with classified data.
+// Used when resolve is blocked by access control and an approval was created.
+func (s *StagingInbox) MarkPendingApproval(ctx context.Context, id, targetPersona string, classifiedItem domain.VaultItem) error {
+	db := s.db()
+	if db == nil {
+		return fmt.Errorf("staging: identity database not open")
+	}
+	classifiedJSON, err := json.Marshal(classifiedItem)
+	if err != nil {
+		return fmt.Errorf("staging: marshal classified item: %w", err)
+	}
+	now := time.Now().Unix()
+	_, err = db.ExecContext(ctx,
+		`UPDATE staging_inbox SET status='pending_unlock', target_persona=?,
+		 classified_item=?, body='', updated_at=? WHERE id=?`,
+		targetPersona, string(classifiedJSON), now, id)
+	return err
+}
+
+// CreatePendingCopy creates a new staging row in pending_unlock state.
+// Used for multi-target resolve when individual targets need separate rows.
+func (s *StagingInbox) CreatePendingCopy(ctx context.Context, copyID, targetPersona string, classifiedItem domain.VaultItem) error {
+	db := s.db()
+	if db == nil {
+		return fmt.Errorf("staging: identity database not open")
+	}
+	classifiedJSON, err := json.Marshal(classifiedItem)
+	if err != nil {
+		return fmt.Errorf("staging: marshal classified item: %w", err)
+	}
+	now := time.Now().Unix()
+	_, err = db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO staging_inbox (id, connector_id, source, source_id, status,
+			target_persona, classified_item, expires_at, created_at, updated_at)
+		 VALUES (?, '', '', ?, 'pending_unlock', ?, ?, ?, ?, ?)`,
+		copyID, classifiedItem.SourceID, targetPersona, string(classifiedJSON),
+		now+int64(domain.DefaultStagingTTL), now, now)
 	return err
 }
 

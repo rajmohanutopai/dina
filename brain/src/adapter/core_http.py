@@ -384,13 +384,19 @@ class CoreHTTPClient:
 
     async def staging_resolve(
         self, staging_id: str, target_persona: str, classified_item: dict,
+        session: str = "", agent_did: str = "",
     ) -> dict:
         """POST /v1/staging/resolve — Brain sends classification, Core decides."""
+        extra_headers = {}
+        if session:
+            extra_headers["X-Session"] = session
+        if agent_did:
+            extra_headers["X-Agent-DID"] = agent_did
         resp = await self._request("POST", "/v1/staging/resolve", json={
             "id": staging_id,
             "target_persona": target_persona,
             "classified_item": classified_item,
-        })
+        }, headers=extra_headers or None)
         return resp.json()
 
     async def staging_extend_lease(self, staging_id: str, extension_seconds: int = 900) -> dict:
@@ -411,12 +417,18 @@ class CoreHTTPClient:
 
     async def staging_resolve_multi(
         self, staging_id: str, targets: list[dict],
+        session: str = "", agent_did: str = "",
     ) -> dict:
         """POST /v1/staging/resolve — multi-persona resolve."""
+        extra_headers = {}
+        if session:
+            extra_headers["X-Session"] = session
+        if agent_did:
+            extra_headers["X-Agent-DID"] = agent_did
         resp = await self._request("POST", "/v1/staging/resolve", json={
             "id": staging_id,
             "targets": targets,
-        })
+        }, headers=extra_headers or None)
         return resp.json()
 
     async def update_contact_last_seen(self, did: str, timestamp: int) -> None:

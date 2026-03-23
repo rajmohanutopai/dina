@@ -159,20 +159,33 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
     json_mode = ctx.obj["json"]
     try:
         source_id = f"cli-{uuid.uuid4().hex[:12]}"
-        metadata = {"category": category, "session": session}
-        result = client.staging_ingest({
-            "source": "dina-cli",
-            "source_id": source_id,
-            "type": "note",
-            "summary": text,
-            "body": text,
-            "metadata": json.dumps(metadata),
-        }, session=session)
-        staging_id = result.get("id", "")
-        print_result_with_trace({
-            "id": f"stg_{staging_id[:8]}" if staging_id else "stg_ok",
-            "staged": True,
-        }, json_mode, client.req_id)
+        metadata = json.dumps({"category": category, "session": session})
+        result = client.remember(text, session=session, source_id=source_id, metadata=metadata)
+        status = result.get("status", "processing")
+        message = result.get("message", "")
+        item_id = result.get("id", "")
+        output = {"status": status}
+        if message:
+            output["message"] = message
+        if item_id and status not in ("stored",):
+            output["id"] = item_id
+            output["check"] = f"dina remember-status {item_id}"
+        print_result_with_trace(output, json_mode, client.req_id)
+    except DinaClientError as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
+@cli.command("remember-status")
+@click.argument("item_id")
+@click.pass_context
+def remember_status(ctx: click.Context, item_id: str) -> None:
+    """Check the status of a pending remember operation."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        result = client.remember_check(item_id)
+        print_result_with_trace(result, json_mode, client.req_id)
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
@@ -472,7 +485,7 @@ def scrub(ctx: click.Context, text: str) -> None:
         if entities:
             sessions.save(session_id, entities)
 
-        print_result_with_trace({"scrubbed": scrubbed, "session": session_id}, json_mode, client.req_id)
+        print_result_with_trace({"scrubbed": scrubbed, "pii_id": session_id}, json_mode, client.req_id)
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)

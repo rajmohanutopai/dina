@@ -57,6 +57,20 @@ func dedupKey(producerID, source, sourceID string) string {
 	return producerID + "|" + source + "|" + sourceID
 }
 
+// GetStatus returns the current status of a staging item.
+func (s *StagingInbox) GetStatus(_ context.Context, id, callerDID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.items[id]
+	if !ok {
+		return "", fmt.Errorf("staging: item %s not found", id)
+	}
+	if callerDID != "" && item.OriginDID != callerDID {
+		return "", fmt.Errorf("staging: item %s not found", id)
+	}
+	return item.Status, nil
+}
+
 // Ingest stores a raw item in the staging inbox.
 // Deduplicates on (producer_id, source, source_id) — if a duplicate
 // exists, the existing staging ID is returned without modification.
@@ -257,6 +271,53 @@ func (s *StagingInbox) MarkFailed(_ context.Context, id, errMsg string) error {
 	item.RetryCount++
 	item.UpdatedAt = time.Now().Unix()
 
+	return nil
+}
+
+// MarkPendingApproval marks an item as pending_unlock with classified data.
+// Used when resolve is blocked by access control and an approval was created.
+func (s *StagingInbox) MarkPendingApproval(_ context.Context, id, targetPersona string, classifiedItem domain.VaultItem) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.items[id]
+	if !ok {
+		return fmt.Errorf("staging: item %s not found", id)
+	}
+
+	classifiedJSON, err := json.Marshal(classifiedItem)
+	if err != nil {
+		return fmt.Errorf("staging: marshal classified item: %w", err)
+	}
+
+	item.Status = domain.StagingPendingUnlock
+	item.TargetPersona = targetPersona
+	item.ClassifiedItem = string(classifiedJSON)
+	item.Body = ""
+	item.UpdatedAt = time.Now().Unix()
+
+	return nil
+}
+
+// CreatePendingCopy creates a new staging row in pending_unlock state.
+// Used for multi-target resolve when individual targets need separate rows.
+func (s *StagingInbox) CreatePendingCopy(_ context.Context, copyID, targetPersona string, classifiedItem domain.VaultItem) error {
+	classifiedJSON, err := json.Marshal(classifiedItem)
+	if err != nil {
+		return fmt.Errorf("staging: marshal classified item: %w", err)
+	}
+	now := time.Now().Unix()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.items[copyID] = &domain.StagingItem{
+		ID:             copyID,
+		Status:         domain.StagingPendingUnlock,
+		TargetPersona:  targetPersona,
+		ClassifiedItem: string(classifiedJSON),
+		ExpiresAt:      now + int64(domain.DefaultStagingTTL),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
 	return nil
 }
 

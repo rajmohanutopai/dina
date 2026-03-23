@@ -17,6 +17,10 @@ type StagingInbox interface {
 	// Returns the staging item ID.
 	Ingest(ctx context.Context, item domain.StagingItem) (string, error)
 
+	// GetStatus returns the current status of a staging item.
+	// If callerDID is non-empty, enforces ownership (origin_did must match).
+	GetStatus(ctx context.Context, id, callerDID string) (string, error)
+
 	// Claim marks up to `limit` received items as classifying with a lease.
 	// Returns the claimed items. Expired leases auto-revert to received.
 	Claim(ctx context.Context, limit int, leaseDuration time.Duration) ([]domain.StagingItem, error)
@@ -38,6 +42,18 @@ type StagingInbox interface {
 
 	// MarkFailed records a classification failure with an error message.
 	MarkFailed(ctx context.Context, id, errMsg string) error
+
+	// MarkPendingApproval marks an item as pending_unlock with its classified
+	// data and target persona. Used when staging resolve is blocked by access
+	// control and an approval request has been created. The classified item is
+	// preserved so DrainPending can store it after approval.
+	MarkPendingApproval(ctx context.Context, id, targetPersona string, classifiedItem domain.VaultItem) error
+
+	// CreatePendingCopy creates a new staging row in pending_unlock state.
+	// Used for multi-target resolve when individual targets are denied —
+	// the accessible targets go through ResolveMulti on the original row,
+	// while denied targets get their own pending rows for later drain.
+	CreatePendingCopy(ctx context.Context, copyID, targetPersona string, classifiedItem domain.VaultItem) error
 
 	// DrainPending promotes pending_unlock items for a persona to its vault.
 	// Called by Core when a persona is unlocked. No Brain dependency.

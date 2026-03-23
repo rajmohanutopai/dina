@@ -15,6 +15,8 @@ import json
 import logging
 from typing import Any
 
+from ..domain.errors import ApprovalRequiredError
+
 log = logging.getLogger(__name__)
 
 # Sensitivity ranking for "highest sensitivity wins" persona routing.
@@ -202,9 +204,23 @@ class StagingProcessor:
                     if heartbeat_task and not heartbeat_task.done():
                         heartbeat_task.cancel()
 
+                # Extract session + agent DID from item provenance for
+                # session-scoped access control. Both are required for
+                # AccessPersona() to enforce the correct grant check.
+                item_session = ""
+                item_agent_did = origin_did  # origin_did is the originating agent/device DID
+                try:
+                    _meta = json.loads(item.metadata or "{}")
+                    item_session = _meta.get("session", "")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
                 resolve_status = "stored"
                 if len(personas) == 1:
-                    result = await self._core.staging_resolve(item_id, personas[0], base_classified)
+                    result = await self._core.staging_resolve(
+                        item_id, personas[0], base_classified,
+                        session=item_session, agent_did=item_agent_did,
+                    )
                     resolve_status = result.get("status", "stored") if isinstance(result, dict) else "stored"
                 else:
                     targets = []
@@ -212,7 +228,10 @@ class StagingProcessor:
                         copy = dict(base_classified)
                         copy["id"] = f"stg-{item_id}-{persona}"
                         targets.append({"persona": persona, "classified_item": copy})
-                    result = await self._core.staging_resolve_multi(item_id, targets)
+                    result = await self._core.staging_resolve_multi(
+                        item_id, targets,
+                        session=item_session, agent_did=item_agent_did,
+                    )
                     resolve_status = result.get("status", "stored") if isinstance(result, dict) else "stored"
 
                 resolved += 1
@@ -273,10 +292,20 @@ class StagingProcessor:
                     except Exception:
                         pass  # best-effort
 
+            except ApprovalRequiredError as exc:
+                # Core already marked the item as pending_unlock and created
+                # an approval request. Nothing to do here — GetStatus will
+                # return pending_unlock so RememberHandler reports needs_approval.
+                log.info("staging.needs_approval", extra={
+                    "id": item_id,
+                    "persona": exc.persona,
+                    "approval_id": exc.approval_id,
+                })
             except Exception as exc:
-                log.warning("staging.classify_failed", extra={"id": item_id, "error": str(exc)})
+                err_str = str(exc)
+                log.warning("staging.classify_failed", extra={"id": item_id, "error": err_str})
                 try:
-                    await self._core.staging_fail(item_id, str(exc))
+                    await self._core.staging_fail(item_id, err_str)
                 except Exception:
                     pass
 

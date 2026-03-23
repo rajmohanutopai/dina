@@ -294,7 +294,9 @@ func TestTelegram_EnsureOpen_AlreadyOpen_NoAutoUnlock(t *testing.T) {
 }
 
 // TST-TEL-009: Auto-unlock NOT called for non-user-originated → ErrPersonaLocked.
-func TestTelegram_EnsureOpen_NonUserOriginated_Denied(t *testing.T) {
+func TestTelegram_EnsureOpen_NonUserOriginated_AutoOpens(t *testing.T) {
+	// v1 model: sensitive personas auto-open for any authorized request.
+	// ensureOpen no longer checks UserOriginated — AccessPersona gates access.
 	mgr := newTelVaultMgr()
 	vs := service.NewVaultService(mgr, mgr, mgr, &telAllowGatekeeper{}, &telClock{})
 
@@ -307,13 +309,10 @@ func TestTelegram_EnsureOpen_NonUserOriginated_Denied(t *testing.T) {
 
 	persona, _ := domain.NewPersonaName("health")
 	_, err := vs.Query(telBrainCtx(), "brain-service", persona, domain.SearchQuery{Mode: domain.SearchFTS5})
-	if err == nil {
-		t.Fatal("should fail when vault is closed and not user-originated")
+	if err != nil {
+		t.Fatalf("v1: authorized request should auto-open sensitive vault, got: %v", err)
 	}
-	if !errors.Is(err, domain.ErrPersonaLocked) {
-		t.Fatalf("expected ErrPersonaLocked, got: %v", err)
-	}
-	testutil.RequireFalse(t, autoUnlockCalled, "autoUnlock should NOT fire for non-user-originated")
+	testutil.RequireTrue(t, autoUnlockCalled, "autoUnlock should fire for authorized request")
 }
 
 // TST-TEL-010: Auto-unlock propagates through Store().

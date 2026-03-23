@@ -362,16 +362,36 @@ func (h *PersonaHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Open the vault for the approved persona if not already open.
-	h.openVaultForApproval(r, approvedPersona)
-
-	// Trigger resume for any pending reason requests linked to this approval.
-	if h.PendingReasons != nil && h.Brain != nil {
-		go h.resumePendingReasons(req.ID)
-	}
+	h.completeApproval(r, req.ID, approvedPersona)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "approved", "id": req.ID})
+}
+
+// completeApproval performs post-approval actions: opens the vault, drains
+// pending staging items, and triggers resume for pending reason requests.
+// Called by both HandleApprove (/v1/persona/approve) and ApprovalHandler
+// (/v1/approvals/{id}/approve) to ensure consistent behavior.
+func (h *PersonaHandler) completeApproval(r *http.Request, approvalID, approvedPersona string) {
+	// Open the vault for the approved persona if not already open.
+	h.openVaultForApproval(r, approvedPersona)
+
+	// Drain staging items that were pending_unlock for this persona.
+	// Without this, approved items sit in pending_unlock until Sweep
+	// reverts them back to received (up to 15 minutes later).
+	if h.StagingInbox != nil && approvedPersona != "" {
+		rawName := strings.TrimPrefix(approvedPersona, "persona-")
+		if n, err := h.StagingInbox.DrainPending(r.Context(), rawName); err != nil {
+			slog.Warn("approval: staging drain failed", "persona", rawName, "error", err)
+		} else if n > 0 {
+			slog.Info("approval: staging drain after approval", "persona", rawName, "drained", n)
+		}
+	}
+
+	// Trigger resume for any pending reason requests linked to this approval.
+	if h.PendingReasons != nil && h.Brain != nil {
+		go h.resumePendingReasons(approvalID)
+	}
 }
 
 // openVaultForApproval opens the vault for the approved persona if not already open.

@@ -342,6 +342,31 @@ async def test_classification_failure_calls_fail(core, enrichment):
 
 
 # ---------------------------------------------------------------------------
+# Approval-required (access denied → not failed, stays pending)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_approval_required_does_not_call_staging_fail(core, enrichment):
+    """When Core returns approval_required, the item is NOT marked failed.
+
+    Core's HandleResolve already marks it pending_unlock and creates the
+    approval request. Brain must not call staging_fail on top of that.
+    """
+    from src.domain.errors import ApprovalRequiredError
+
+    processor = StagingProcessor(core=core, enrichment=enrichment)
+    core.staging_claim.return_value = [_make_item(id="stg-approval")]
+    core.staging_resolve.side_effect = ApprovalRequiredError(
+        persona="health", approval_id="apr-123", message="Approve access",
+    )
+
+    count = await processor.process_pending()
+    assert count == 0  # not resolved
+    core.staging_fail.assert_not_awaited()  # must NOT mark as failed
+
+
+# ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
 

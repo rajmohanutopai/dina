@@ -1107,8 +1107,9 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		// Vault query is NOT allowed — reads go through Brain.
 		deviceAllowedPrefix := []string{
 			"/api/v1/reason",        // Brain-mediated reasoning (persona-blind)
+			"/api/v1/remember",      // solicited memory write + status polling
 			"/v1/vault/kv",          // KV store (approval status, session state)
-			"/v1/staging/ingest",    // universal content ingestion (remember, notes)
+			"/v1/staging/ingest",    // universal content ingestion (background connectors)
 			"/v1/msg/send",
 			"/v1/msg/inbox",
 			"/v1/did/document",

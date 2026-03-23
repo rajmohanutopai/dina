@@ -366,3 +366,20 @@ def agent_paired(release_services, core_url, auth_headers):
         pytest.skip("Cannot reach Core for agent pairing")
 
     return agent_did
+
+
+@pytest.fixture(scope="session")
+def agent_session(release_services, agent_paired):
+    """Create a session for the paired agent. Returns the session ID."""
+    result = release_services.agent_exec("session", "start", "--name", "release-test")
+    if result.returncode != 0:
+        pytest.skip(f"Failed to create session: {result.stderr}")
+    try:
+        import json
+        data = json.loads(result.stdout)
+        session_id = data.get("id", "")
+        if not session_id:
+            pytest.skip(f"No session ID in response: {result.stdout}")
+        return session_id
+    except Exception:
+        pytest.skip(f"Failed to parse session response: {result.stdout}")

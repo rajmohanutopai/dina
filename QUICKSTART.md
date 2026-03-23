@@ -95,14 +95,20 @@ Should show `Paired: yes`, your device DID, and your Dina's DID.
 ## 5. Try it out
 
 ```bash
-dina remember "I like strong cardamom tea"
-dina ask "what kind of tea do I like?"
+# Start a session first
+dina session start --name "getting started"
+# Use the session ID returned above
+dina remember --session <session-id> "I like strong cardamom tea"
+dina ask --session <session-id> "what kind of tea do I like?"
 
-dina remember "Daughter turns 7 on March 15, loves dinosaurs"
-dina ask "daughter birthday"
+dina remember --session <session-id> "Daughter turns 7 on March 15, loves dinosaurs"
+dina ask --session <session-id> "when is daughter's birthday"
 
-dina scrub "Call Rajmohan at 9876543210"
-dina validate search "best office chair 2026"
+dina scrub "Call John at 9876543210"
+dina validate --session <session-id> search "best office chair 2026"
+
+# End session when done
+dina session end <session-id>
 ```
 
 ## 6. Go online (optional)
@@ -144,13 +150,16 @@ Dina works as an [OpenClaw](https://openclaw.org) skill — any AI agent (Claude
 The skill manifest is at [`docs/dina-openclaw-skill.md`](docs/dina-openclaw-skill.md). Point your agent to it, or use the CLI commands directly:
 
 ```
-dina remember <text>              Store a fact in encrypted vault
-dina ask <query>                  Ask Dina (Brain-mediated reasoning across personas)
-dina scrub <text>                 Remove PII before sending to external APIs
-dina rehydrate <text> --session   Restore PII on the response
-dina validate <action> <desc>     Check if a destructive action is approved
-dina status                       Show pairing status and connectivity
-dina unpair                       Revoke this device from the Home Node
+dina session start [--name <desc>]          Start a session (returns session ID)
+dina session end <session-id>               End session, revoke grants
+dina session list                           List active sessions
+dina remember --session <id> <text>         Store a fact in encrypted vault
+dina ask --session <id> <query>             Ask Dina (reasoning across personas)
+dina scrub <text>                           Remove PII before sending to external APIs
+dina rehydrate <text> --session <scrub-id>  Restore PII on the response
+dina validate --session <id> <action> <desc>  Check if action is approved
+dina status                                 Show pairing status and connectivity
+dina unpair                                 Revoke this device from the Home Node
 ```
 
 **Example: AI agent with PII-safe external API calls**
@@ -158,21 +167,28 @@ dina unpair                       Revoke this device from the Home Node
 ```bash
 # Agent scrubs PII before calling an external API
 dina scrub "Patient Raj Kumar, Aadhaar 9876-5432-1012, diagnosis: Type 2 diabetes"
-# → {"scrubbed": "[PERSON_1], [AADHAAR_1], diagnosis: Type 2 diabetes", "session": "sess_k9m2"}
+# → {"scrubbed": "[PERSON_1], [AADHAAR_1], diagnosis: Type 2 diabetes", "pii_id": "pii_k9m2"}
 
 # Agent sends scrubbed text to external API, then restores PII on the response
-dina rehydrate "<api response with placeholders>" --session sess_k9m2
+dina rehydrate "<api response with placeholders>" --session pii_k9m2
 ```
 
 **Example: AI agent with persistent memory**
 
 ```bash
-# Session 1: agent stores a fact
-dina remember "Daughter turns 7 on March 15, loves dinosaurs" --category relationship
+# Start a session
+dina session start --name "family info"
+# → ses_a3kx7m2pw4qr
 
-# Session 47: different agent session, same vault
-dina ask "daughter birthday"
-# → instant recall from encrypted vault
+# Store a fact
+dina remember --session ses_a3kx7m2pw4qr "Daughter turns 7 on March 15, loves dinosaurs" --category relationship
+
+# Later: recall from encrypted vault
+dina ask --session ses_a3kx7m2pw4qr "daughter birthday"
+# → instant recall
+
+# End session
+dina session end ses_a3kx7m2pw4qr
 ```
 
 ## That's it

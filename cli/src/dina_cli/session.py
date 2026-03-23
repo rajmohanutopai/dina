@@ -16,8 +16,8 @@ class SessionStore:
         self._dir = base_dir or Path.home() / ".dina" / "cli" / "sessions"
 
     def new_id(self) -> str:
-        """Generate a short, unique session identifier."""
-        return f"sess_{uuid.uuid4().hex[:8]}"
+        """Generate a short, unique PII scrub identifier."""
+        return f"pii_{uuid.uuid4().hex[:8]}"
 
     def save(self, session_id: str, entities: list[dict]) -> None:
         """Persist entities for a scrub session (atomic write).

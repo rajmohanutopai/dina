@@ -262,6 +262,36 @@ class DinaClient:
 
     # -- PII ---------------------------------------------------------------
 
+    def remember(self, text: str, session: str = "", source_id: str = "", metadata: str = "") -> dict:
+        """Store a memory via POST /api/v1/remember.
+
+        Returns semantic completion: stored / needs_approval / processing / failed.
+        Blocks up to ~15s waiting for staging to complete.
+        Use remember_check(id) to poll if status is 'processing'.
+        """
+        resp = self._request(
+            self._core,
+            "POST",
+            "/api/v1/remember",
+            json={
+                "text": text,
+                "session": session,
+                "source": "dina-cli",
+                "source_id": source_id,
+                "metadata": metadata,
+            },
+        )
+        return resp.json()
+
+    def remember_check(self, item_id: str) -> dict:
+        """Check status of a pending remember via GET /api/v1/remember/{id}."""
+        resp = self._request(
+            self._core,
+            "GET",
+            f"/api/v1/remember/{item_id}",
+        )
+        return resp.json()
+
     def pii_scrub(self, text: str) -> dict:
         """Scrub PII from text."""
         resp = self._request(
