@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
@@ -26,9 +27,14 @@ func (h *SessionHandler) HandleStartSession(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req startSessionReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
+	}
+	// Name is optional metadata, not a security boundary.
+	// Generate a default if not provided.
+	if req.Name == "" {
+		req.Name = "SName-" + time.Now().Format("02Jan1504:05")
 	}
 
 	agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)

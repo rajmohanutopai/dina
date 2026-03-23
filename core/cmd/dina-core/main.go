@@ -1140,7 +1140,7 @@ func main() {
 	sessionH := &handler.SessionHandler{Sessions: personaMgr}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
-	piiH := &handler.PIIHandler{Scrubber: scrubber}
+	piiH := &handler.PIIHandler{Scrubber: scrubber, Brain: brain}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
 	exportH := &handler.ExportHandler{Migration: migrationSvc}
 	reminderH := &handler.ReminderHandler{

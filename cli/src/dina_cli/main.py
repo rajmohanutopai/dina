@@ -141,19 +141,23 @@ def status(ctx: click.Context) -> None:
 
 @cli.command()
 @click.argument("text")
-@click.option("--category", default="note", help="Category: fact, preference, decision, relationship, event, note")
+@click.option("--category", default="note", help="Optional metadata label. Ex: fact, preference, decision, relationship, event, note")
 @click.option("--session", required=True, help="Session ID (create with: dina session start)")
 @click.pass_context
 def remember(ctx: click.Context, text: str, category: str, session: str) -> None:
     """Store a fact via the staging pipeline.
 
     Requires an active session. Create one first:
-      dina session start --name "my-session"
 
-    Content goes through Core's staging inbox → Brain classifies it
-    into the right persona → enriches → stores to vault. Provenance
-    (ingress_channel, origin_kind) is set server-side from your
-    device's auth context. Sender is derived from device role.
+    dina session start --name "my-session"
+
+    dina remember --session sess-123 "My daughter's birthday is on April 7th"
+
+    dina ask --session sess-123 "When is my daughter's birthday?"
+
+    Dina checks all persona to get the data if this session has access.
+
+    Classifies and stores in right persona vault.
     """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
@@ -276,7 +280,7 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
                 # else: still pending or resuming — keep polling
 
             click.echo("Timed out waiting for approval.", err=True)
-            click.echo(f"Check later: dina reason-status {request_id}", err=True)
+            click.echo(f"Check later: dina ask-status {request_id}", err=True)
             ctx.exit(1)
             return
 

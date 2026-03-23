@@ -45,8 +45,8 @@ def print_result_with_trace(data: dict | list, json_mode: bool, req_id: str = ""
     if req_id and isinstance(req_id, str) and isinstance(data, dict):
         data = {**data, "req_id": req_id}
     print_result(data, json_mode)
-    # Always show req_id on stderr (text + JSON list responses)
-    if req_id and isinstance(req_id, str):
+    # Show req_id on stderr only for list responses (dicts already have it inline).
+    if req_id and isinstance(req_id, str) and not isinstance(data, dict):
         click.echo(f"  req_id: {req_id}", err=True)
 
 
