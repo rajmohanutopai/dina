@@ -1211,6 +1211,21 @@ func (e *ErrApprovalRequired) Error() string {
 // ---------------------------------------------------------------------------
 
 // StartSession creates a new named session for an agent.
+// generateSessionID produces a short, URL-safe, human-readable session ID.
+// Format: ses_<12 chars> using base32 encoding of 7.5 random bytes (60 bits).
+// Example: ses_a3kx7m2pw4qr — easy to copy-paste, ~1 trillion combinations.
+func generateSessionID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	// Use lowercase base32 without padding for readability
+	const alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+	id := make([]byte, 12)
+	for i := range id {
+		id[i] = alphabet[int(b[i%8])%len(alphabet)]
+	}
+	return "ses_" + string(id)
+}
+
 func (pm *PersonaManager) StartSession(_ context.Context, agentDID, name string) (*domain.AgentSession, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -1223,7 +1238,7 @@ func (pm *PersonaManager) StartSession(_ context.Context, agentDID, name string)
 	}
 
 	sess := domain.AgentSession{
-		ID:        fmt.Sprintf("ses-%d", time.Now().UnixNano()),
+		ID:        generateSessionID(),
 		Name:      name,
 		AgentDID:  agentDID,
 		Status:    domain.SessionActive,

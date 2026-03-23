@@ -40,15 +40,20 @@ func (s *VaultService) SetAutoUnlock(fn AutoUnlockFunc) {
 	s.autoUnlock = fn
 }
 
-// ensureOpen checks if a persona vault is open. If not, and the request
-// is user-originated, auto-unlocks it. Otherwise returns ErrPersonaLocked.
+// ensureOpen checks if a persona vault is open. If not, auto-opens it
+// by deriving the DEK from the master seed. This is safe because
+// ensureAuthorized() calls AccessPersona() FIRST — the caller has already
+// passed tier-based access control before reaching this point.
+//
+// v1 simplification: sensitive personas are policy-gated (via AccessPersona),
+// not passphrase-unlocked. The running node is trusted while up.
+// Locked-tier personas are still blocked by the auto-open callback
+// (main.go checks tier == "locked" and returns ErrPersonaLocked).
 func (s *VaultService) ensureOpen(ctx context.Context, persona domain.PersonaName) error {
 	if s.manager.IsOpen(persona) {
 		return nil
 	}
-	// Only auto-unlock for user-originated requests.
-	userOriginated, _ := ctx.Value(middleware.UserOriginatedKey).(bool)
-	if !userOriginated || s.autoUnlock == nil {
+	if s.autoUnlock == nil {
 		return domain.ErrPersonaLocked
 	}
 	return s.autoUnlock(ctx, persona)

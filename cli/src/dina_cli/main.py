@@ -142,10 +142,13 @@ def status(ctx: click.Context) -> None:
 @cli.command()
 @click.argument("text")
 @click.option("--category", default="note", help="Category: fact, preference, decision, relationship, event, note")
-@click.option("--session", default="", help="Session name for scoped access")
+@click.option("--session", required=True, help="Session ID (create with: dina session start)")
 @click.pass_context
 def remember(ctx: click.Context, text: str, category: str, session: str) -> None:
     """Store a fact via the staging pipeline.
+
+    Requires an active session. Create one first:
+      dina session start --name "my-session"
 
     Content goes through Core's staging inbox → Brain classifies it
     into the right persona → enriches → stores to vault. Provenance
@@ -156,9 +159,7 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
     json_mode = ctx.obj["json"]
     try:
         source_id = f"cli-{uuid.uuid4().hex[:12]}"
-        metadata = {"category": category}
-        if session:
-            metadata["session"] = session
+        metadata = {"category": category, "session": session}
         result = client.staging_ingest({
             "source": "dina-cli",
             "source_id": source_id,
@@ -182,10 +183,13 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
 
 @cli.command()
 @click.argument("query")
-@click.option("--session", default="", help="Session name for scoped access")
+@click.option("--session", required=True, help="Session ID (create with: dina session start)")
 @click.pass_context
 def ask(ctx: click.Context, query: str, session: str) -> None:
     """Ask Dina a question — she reasons over your encrypted vault.
+
+    Requires an active session. Create one first:
+      dina session start --name "my-session"
 
     Dina searches across all accessible personas, assembles context,
     and gives you a personalized answer. You never need to specify
@@ -353,7 +357,7 @@ def _extract_category(item: dict) -> str:
 @click.argument("description")
 @click.option("--count", default=1, type=int, help="Number of items affected")
 @click.option("--reversible", is_flag=True, help="Action is reversible")
-@click.option("--session", default="", help="Session name for scoped validation")
+@click.option("--session", required=True, help="Session ID (create with: dina session start)")
 @click.pass_context
 def validate(ctx: click.Context, action: str, description: str, count: int, reversible: bool, session: str) -> None:
     """Check if an action is approved by user policy."""
@@ -1170,10 +1174,10 @@ def session() -> None:
 
 
 @session.command("start")
-@click.option("--name", required=True, help="Session name (e.g. 'chair-research')")
+@click.option("--name", default="", help="Optional description (e.g. 'chair-research')")
 @click.pass_context
 def session_start(ctx: click.Context, name: str) -> None:
-    """Start a new named session."""
+    """Start a new session. Returns a session ID for use with --session."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
@@ -1192,19 +1196,19 @@ def session_start(ctx: click.Context, name: str) -> None:
 
 
 @session.command("end")
-@click.option("--name", required=True, help="Session name to end")
+@click.argument("session_id")
 @click.pass_context
-def session_end(ctx: click.Context, name: str) -> None:
+def session_end(ctx: click.Context, session_id: str) -> None:
     """End a session and revoke all its grants."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
         client._request(
             client._core, "POST", "/v1/session/end",
-            json={"name": name},
+            json={"id": session_id},
         )
         if not json_mode:
-            click.echo(f"  Session '{name}' ended. All grants revoked.")
+            click.echo(f"  Session '{session_id}' ended. All grants revoked.")
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)

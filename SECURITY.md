@@ -161,6 +161,10 @@ The connection is then registered in the WebSocket hub with the device identity 
 
 Each persona is a separate encrypted SQLite database file with its own DEK (derived from master seed via HKDF). Cross-persona access is enforced cryptographically — a compromised persona cannot access another.
 
+### Current Security Risk
+
+Check Known Gaps Section please
+
 ### 4-Tier Access Model
 
 | Tier | Boot State | Users | Brain | Agents | Audit |
@@ -416,6 +420,26 @@ Full architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md), section on prompt injec
 ## Known Gaps (Phase 1)
 
 Documented limitations of the current implementation, with the deployment context that makes them acceptable and the planned resolution.
+
+### Current Security Risk
+
+In the current release, the persona vault is secure if DEK is not there in RAM - so copying the file will not give you access.
+But In the current release, some open issues are there. 
+For example - open persona window risk: When a sensitive persona is unlocked for an active session, authorization is code-enforced, not cryptographic. A compromised Brain process could potentially access open persona data by reusing valid grant credentials.
+   
+   Some possible mitigation paths (planned): 
+   - Per-request grant tokens (not reusable session grants)
+   - Request-scoped DEK derivation ?
+   - Brain process attestation
+   - Encrypted Session ID 
+   - Separate process boundary for sensitive vault access
+      A small vault service holds the DEK and enforces per-request/session policy.
+   - KMS/HSM/TEE-backed key release
+      The main app never gets long-lived raw DEKs freely in memory.
+   - Per-session capability-wrapped access
+      The unlock operation returns a scoped capability, not a global open bit.
+
+This needs to be thought through and implemented in a future release 
 
 ### Admin Auth Trust Boundary
 

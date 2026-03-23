@@ -363,14 +363,16 @@ func main() {
 	// Bootstrap: create default personas on first run.
 	// Covers 90% of life — Brain's classifier routes data automatically.
 	// general (default) + work (standard) auto-open at boot.
-	// health + finance (sensitive) stay closed until user approves access.
+	// health + finance (sensitive) auto-open on authorized access (v1 model).
+	// Empty passphrase hash is valid for sensitive personas — they are
+	// policy-gated via AccessPersona(), not passphrase-unlocked.
 	{
 		existingPersonas, _ := personaMgr.List(context.Background())
 		if len(existingPersonas) == 0 {
 			// In test mode (DINA_TEST_MODE=true), use "test" as the passphrase
-			// so E2E/integration tests can unlock sensitive personas.
-			// In all other modes (including dev), use empty passphrase
-			// (user sets it during onboarding).
+			// so E2E/integration tests can explicitly unlock sensitive personas.
+			// In production, sensitive personas don't need a passphrase —
+			// they auto-open when AccessPersona() authorizes the request.
 			var bootstrapPassHash string
 			if os.Getenv("DINA_TEST_MODE") == "true" {
 				salt := make([]byte, 16)
@@ -1047,12 +1049,15 @@ func main() {
 		})
 	}
 
-	// Auto-unlock sensitive persona vaults for user-originated requests (Telegram/admin).
-	// Wired after staging inbox so the closure can reference it for drain-on-unlock.
+	// Auto-open persona vaults on authorized access.
+	// v1: sensitive personas are policy-gated (AccessPersona), not passphrase-unlocked.
+	// The running node derives DEK from master seed and opens the vault on demand.
+	// Locked-tier personas remain blocked — they require explicit manual unlock.
 	vaultSvc.SetAutoUnlock(func(ctx context.Context, persona domain.PersonaName) error {
 		personaID := "persona-" + string(persona)
 		tier, _ := personaMgr.GetTier(ctx, personaID)
 		if tier == "locked" {
+			// Locked tier: explicit manual unlock only. Never auto-open.
 			return domain.ErrPersonaLocked
 		}
 		dekVersion, dvErr := personaMgr.GetDEKVersion(ctx, personaID)
@@ -1061,17 +1066,17 @@ func main() {
 		}
 		dek, dErr := keyDeriver.DerivePersonaDEKVersioned(masterSeed, persona, dekVersion)
 		if dErr != nil {
-			return fmt.Errorf("auto-unlock: DEK derivation failed: %w", dErr)
+			return fmt.Errorf("auto-open: DEK derivation failed: %w", dErr)
 		}
 		if oErr := vaultMgr.Open(ctx, persona, dek); oErr != nil {
-			return fmt.Errorf("auto-unlock: vault open failed: %w", oErr)
+			return fmt.Errorf("auto-open: vault open failed: %w", oErr)
 		}
-		slog.Info("Sensitive persona auto-unlocked for user request",
+		slog.Info("Persona vault auto-opened on authorized access",
 			"persona", string(persona), "tier", tier)
 		if n, drainErr := stagingInbox.DrainPending(ctx, string(persona)); drainErr != nil {
-			slog.Warn("auto-unlock: staging drain failed", "persona", string(persona), "error", drainErr)
+			slog.Warn("auto-open: staging drain failed", "persona", string(persona), "error", drainErr)
 		} else if n > 0 {
-			slog.Info("auto-unlock: drained pending staging", "persona", string(persona), "drained", n)
+			slog.Info("auto-open: drained pending staging", "persona", string(persona), "drained", n)
 		}
 		return nil
 	})
