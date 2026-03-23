@@ -3030,6 +3030,14 @@ class GuardianLoop:
                             "guardian.reason.vault_enriched",
                             tools_called=len(result.get("tools_called", [])),
                         )
+
+                    # Note: approval_required personas are surfaced to the
+                    # LLM via list_personas tool results. If the LLM needs
+                    # that data, it will call search_vault which raises
+                    # ApprovalRequiredError (caught below). We don't
+                    # override the LLM's response here — the LLM may have
+                    # found the answer in other personas (e.g., tea in
+                    # general while finance needs approval).
                 except ApprovalRequiredError as exc:
                     # Don't propagate — return pending_approval so Core creates
                     # a PendingReasonRecord and returns 202 to the CLI.
@@ -3122,12 +3130,19 @@ class GuardianLoop:
 
                 if remove_indices:
                     content = self._remove_sentences(sentences, remove_indices)
-                    # If guard_scan removed everything, provide the anti-her redirect
-                    # as a safety net. The intent classifier (Step 1b) should catch
-                    # most cases before reasoning, but edge cases may slip through.
+                    # If guard_scan removed everything, check WHY:
+                    # - anti_her_sentences → redirect to humans (Law 4)
+                    # - unsolicited/fabricated only → neutral "no data" response
                     if not content.strip():
-                        content = await self._build_anti_her_redirect()
-                        log.info("guardian.anti_her_fallback_redirect")
+                        anti_her_flagged = guard_result.get("anti_her_sentences", [])
+                        if anti_her_flagged:
+                            content = await self._build_anti_her_redirect()
+                            log.info("guardian.anti_her_fallback_redirect")
+                        else:
+                            content = "I don't have relevant information stored for that query."
+                            log.info("guardian.empty_after_guard_scan",
+                                     removed=len(remove_indices),
+                                     reason="unsolicited/fabricated content removed")
 
             # Step 5: Rehydrate PII tokens in the (now cleaned) response.
             if vault and self._entity_vault:

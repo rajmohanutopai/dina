@@ -182,6 +182,7 @@ class ToolExecutor:
         self._core = core
         self._llm_router = llm_router
         self._tools_called: list[dict] = []
+        self._approval_required: dict | None = None  # set when a persona needs approval
         # Agent context — set before tool execution to attribute vault access
         # to the originating agent instead of Brain's service key.
         self.agent_did: str = ""
@@ -286,8 +287,20 @@ class ToolExecutor:
                     info["recent_summaries"] = []
             except PersonaLockedError:
                 info["status"] = "locked"
-            except ApprovalRequiredError:
+            except ApprovalRequiredError as exc:
                 info["status"] = "approval_required"
+                info["message"] = (
+                    f"Access to {persona} requires approval. "
+                    f"The user should run: dina-admin approvals approve <id>"
+                )
+                if exc.approval_id:
+                    info["approval_id"] = exc.approval_id
+                # Record for post-reasoning check by Guardian.
+                self._approval_required = {
+                    "persona": persona,
+                    "approval_id": exc.approval_id,
+                    "message": f"Access to {persona} persona requires approval.",
+                }
             except Exception:
                 info["status"] = "browse_failed"
 
@@ -651,6 +664,8 @@ class ReasoningAgent:
                 result["tools_called"] = executor.tools_called
                 if accumulated_vault:
                     result["_tool_vault"] = accumulated_vault
+                if executor._approval_required:
+                    result["_approval_required"] = executor._approval_required
                 return result
 
             # Execute each tool call

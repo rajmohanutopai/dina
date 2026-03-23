@@ -465,3 +465,110 @@ def test_identity_help():
     result = runner.invoke(cli, ["identity", "--help"])
     assert result.exit_code == 0
     assert "Node identity" in result.output
+
+
+# ── vault list ──────────────────────────────────────────────────────────────
+
+
+def test_vault_list_json():
+    mc = MagicMock()
+    mc.vault_query.return_value = [
+        {"id": "item-1", "type": "email", "summary": "Test email"},
+        {"id": "item-2", "type": "note", "summary": "A note"},
+    ]
+    result = _invoke(["--json", "vault", "list", "--persona", "general"], mock_client=mc)
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert len(data) == 2
+    mc.vault_query.assert_called_once_with("persona-general", query="", limit=20, offset=0)
+
+
+def test_vault_list_empty():
+    mc = MagicMock()
+    mc.vault_query.return_value = []
+    result = _invoke(["vault", "list", "--persona", "general"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "No items found" in result.output
+
+
+def test_vault_list_with_offset():
+    """--offset is passed through to vault_query."""
+    mc = MagicMock()
+    mc.vault_query.return_value = [
+        {"id": "item-3", "type": "note", "summary": "Page 2 item"},
+    ]
+    result = _invoke(
+        ["--json", "vault", "list", "--persona", "health", "--offset", "20"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    mc.vault_query.assert_called_once_with("persona-health", query="", limit=20, offset=20)
+
+
+# ── vault search ────────────────────────────────────────────────────────────
+
+
+def test_vault_search_json():
+    mc = MagicMock()
+    mc.vault_query.return_value = [
+        {"id": "item-1", "type": "email", "summary": "Tea preferences"},
+    ]
+    result = _invoke(
+        ["--json", "vault", "search", "tea", "--persona", "general"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert len(data) == 1
+    mc.vault_query.assert_called_once_with(
+        "persona-general", query="tea", mode="fts5", limit=20, offset=0,
+    )
+
+
+def test_vault_search_empty_results():
+    mc = MagicMock()
+    mc.vault_query.return_value = []
+    result = _invoke(
+        ["vault", "search", "nonexistent", "--persona", "general"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    assert "No items found" in result.output
+
+
+# ── vault delete ────────────────────────────────────────────────────────────
+
+
+def test_vault_delete_json():
+    mc = MagicMock()
+    mc.vault_delete.return_value = None
+    result = _invoke(
+        ["--json", "vault", "delete", "item-123", "--persona", "general", "--yes"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "deleted"
+    assert data["id"] == "item-123"
+    mc.vault_delete.assert_called_once_with("persona-general", "item-123")
+
+
+def test_vault_delete_human():
+    mc = MagicMock()
+    mc.vault_delete.return_value = None
+    result = _invoke(
+        ["vault", "delete", "item-456", "--persona", "health", "--yes"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    assert "Deleted: item-456" in result.output
+
+
+def test_vault_delete_error():
+    mc = MagicMock()
+    mc.vault_delete.side_effect = AdminClientError("HTTP 404: item not found")
+    result = _invoke(
+        ["--json", "vault", "delete", "item-bad", "--persona", "general", "--yes"],
+        mock_client=mc,
+    )
+    assert result.exit_code != 0

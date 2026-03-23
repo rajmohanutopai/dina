@@ -556,3 +556,150 @@ async def test_fc2_enrichment_no_scrub_when_no_entity_vault():
     result = await svc.enrich_raw(item)
     assert result["enrichment_status"] == "ready"
     llm.route.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# PII rehydration in enrich_raw — prevents <<PII:...>> tokens in vault
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-820
+@pytest.mark.asyncio
+async def test_enrich_raw_rehydrates_l0_l1():
+    """LLM generates text with PII tokens; enrich_raw rehydrates L1 before storing.
+
+    L0 is generated deterministically from metadata and only falls back to
+    LLM output if deterministic L0 is empty or <10 chars. So the LLM-generated
+    L0 with tokens may or may not be used. L1 always comes from LLM. We verify
+    rehydration is called and L1 has no leftover tokens.
+    """
+    from unittest.mock import MagicMock
+
+    entity_vault = MagicMock()
+    # scrub() is async in EntityVault — use AsyncMock for it specifically.
+    pii_vault = {"[PERSON_1]": "Dr. Sharma", "[EMAIL_1]": "dr.sharma@clinic.com"}
+    entity_vault.scrub = AsyncMock(return_value=(
+        "[PERSON_1] has high blood pressure",
+        pii_vault,
+    ))
+    # rehydrate() is sync — use regular side_effect.
+    entity_vault.rehydrate.side_effect = lambda text, vault: (
+        text.replace("[PERSON_1]", "Dr. Sharma")
+            .replace("[EMAIL_1]", "dr.sharma@clinic.com")
+    )
+
+    llm = AsyncMock()
+    llm.route.return_value = {
+        "content": json.dumps({
+            "l0": "Health note from [PERSON_1]",
+            "l1": "[PERSON_1] reports high blood pressure for the patient.",
+        }),
+    }
+    llm.embed.return_value = [0.1] * 768
+
+    svc = EnrichmentService(
+        core=AsyncMock(), llm=llm, entity_vault=entity_vault,
+    )
+
+    # Use sparse metadata so deterministic L0 is short (<10 chars) and
+    # LLM-generated L0 is used instead — exercising rehydration on L0 too.
+    item = {
+        "type": "", "source": "gmail",
+        "sender": "",
+        "summary": "",
+        "body_text": "Dr. Sharma reports high blood pressure",
+        "sender_trust": "contact_ring1", "confidence": "high",
+    }
+
+    result = await svc.enrich_raw(item)
+
+    # L1 must be rehydrated — no PII tokens.
+    assert "[PERSON_1]" not in result["content_l1"], (
+        "L1 must not contain PII tokens after rehydration"
+    )
+    assert "Dr. Sharma" in result["content_l1"]
+
+    # rehydrate must have been called for both L0 and L1.
+    assert entity_vault.rehydrate.call_count == 2
+
+
+# TST-BRAIN-821
+@pytest.mark.asyncio
+async def test_enrich_raw_without_entity_vault_no_rehydrate():
+    """Without entity_vault, L0/L1 stored as-is (no scrub, no rehydrate).
+
+    Uses sparse metadata so deterministic L0 is empty and LLM L0 is used.
+    """
+    llm = AsyncMock()
+    llm.route.return_value = {
+        "content": json.dumps({
+            "l0": "Email from Dr. Sharma",
+            "l1": "Dr. Sharma sent blood test results.",
+        }),
+    }
+    llm.embed.return_value = [0.1] * 768
+
+    svc = EnrichmentService(core=AsyncMock(), llm=llm)  # no entity_vault
+
+    # Sparse metadata so deterministic L0 is empty → LLM L0 is used.
+    item = {
+        "type": "", "summary": "",
+        "body_text": "Dr. Sharma sent results",
+        "sender_trust": "self", "confidence": "high",
+    }
+
+    result = await svc.enrich_raw(item)
+
+    # L0 from LLM, L1 from LLM — no rehydration applied.
+    assert result["content_l0"] == "Email from Dr. Sharma"
+    assert result["content_l1"] == "Dr. Sharma sent blood test results."
+
+
+# TST-BRAIN-822
+@pytest.mark.asyncio
+async def test_enrich_raw_body_and_summary_not_scrubbed_in_item():
+    """body_text and summary in item_dict are NOT modified (original values preserved)."""
+    from unittest.mock import MagicMock
+
+    entity_vault = MagicMock()
+    entity_vault.scrub = AsyncMock(return_value=(
+        "[PERSON_1] sent results",
+        {"[PERSON_1]": "Dr. Sharma"},
+    ))
+    # rehydrate() is sync.
+    entity_vault.rehydrate.side_effect = lambda text, vault: text.replace(
+        "[PERSON_1]", "Dr. Sharma",
+    )
+
+    llm = AsyncMock()
+    llm.route.return_value = {
+        "content": json.dumps({
+            "l0": "Note from [PERSON_1]",
+            "l1": "[PERSON_1] sent blood test results.",
+        }),
+    }
+    llm.embed.return_value = [0.1] * 768
+
+    svc = EnrichmentService(
+        core=AsyncMock(), llm=llm, entity_vault=entity_vault,
+    )
+
+    original_body = "Dr. Sharma sent blood test results"
+    original_summary = "Blood test from Dr. Sharma"
+    item = {
+        "type": "email", "source": "gmail",
+        "sender": "dr.sharma@clinic.com",
+        "summary": original_summary,
+        "body_text": original_body,
+        "sender_trust": "contact_ring1", "confidence": "high",
+    }
+
+    result = await svc.enrich_raw(item)
+
+    # body_text and summary must remain untouched — vault stores originals.
+    assert result["body_text"] == original_body, (
+        "body_text must not be scrubbed — vault is the secure boundary"
+    )
+    assert result["summary"] == original_summary, (
+        "summary must not be scrubbed — vault is the secure boundary"
+    )

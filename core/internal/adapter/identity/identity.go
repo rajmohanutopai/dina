@@ -1106,17 +1106,20 @@ func (pm *PersonaManager) AccessPersona(ctx context.Context, personaID string) e
 
 	case "standard":
 		// Users and brain: auto-approved
-		// Agents: need session grant
+		// Agents: auto-approved if they have an active session.
+		// Standard tier does not require explicit grants — the session
+		// itself is sufficient authorization. Only sensitive tier
+		// requires explicit approval via dina-admin/Telegram.
 		if effectiveCaller == "agent" {
 			sessionID := ""
 			if sid, ok := ctx.Value(middleware.SessionNameKey).(string); ok {
 				sessionID = sid
 			}
-			if !pm.hasActiveGrant(cid, sessionID, agentDID) {
-				pm.addAuditEntry(cid, "access_denied", "agent needs session grant for standard tier")
+			if sessionID == "" {
+				pm.addAuditEntry(cid, "access_denied", "agent needs active session for standard tier")
 				return &ErrApprovalRequired{PersonaID: cid, CallerType: callerType}
 			}
-			pm.addAuditEntry(cid, "access_granted", fmt.Sprintf("agent session grant, caller=%s", callerType))
+			pm.addAuditEntry(cid, "access_granted", fmt.Sprintf("agent session auto-grant, caller=%s", callerType))
 		}
 
 	default: // "default" or "open"

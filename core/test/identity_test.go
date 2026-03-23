@@ -1641,7 +1641,8 @@ func TestIdentity_3_3_20_AccessPersonaSensitiveDeniesAllNonUser(t *testing.T) {
 // TST-CORE-TIER-006
 func TestIdentity_3_3_21_SessionStartAndGrant(t *testing.T) {
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "consumer", "standard")
+	// Use sensitive tier — standard tier auto-approves with just a session.
+	_, err := pm.Create(idCtx, "health-grant-test", "sensitive")
 	testutil.RequireNoError(t, err)
 
 	// Start session
@@ -1654,45 +1655,52 @@ func TestIdentity_3_3_21_SessionStartAndGrant(t *testing.T) {
 		t.Fatalf("session status = %q, want active", sess.Status)
 	}
 
-	// Agent still denied (no grant yet)
+	// Agent denied on sensitive persona (no grant yet)
 	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
 	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "chair-research")
-	err = pm.AccessPersona(agentCtx, "consumer")
+	err = pm.AccessPersona(agentCtx, "health-grant-test")
 	if err == nil {
 		t.Fatal("should deny agent before grant is added")
 	}
 
 	// Add grant
-	err = pm.AddGrant(idCtx, sess.Name, "consumer", "session", "user-approval")
+	err = pm.AddGrant(idCtx, sess.Name, "health-grant-test", "session", "user-approval")
 	testutil.RequireNoError(t, err)
 
 	// Now agent should succeed
-	err = pm.AccessPersona(agentCtx, "consumer")
+	err = pm.AccessPersona(agentCtx, "health-grant-test")
 	testutil.RequireNoError(t, err)
+
+	// Also verify: standard tier auto-approves with just a session
+	_, err = pm.Create(idCtx, "work-auto", "standard")
+	testutil.RequireNoError(t, err)
+	err = pm.AccessPersona(agentCtx, "work-auto")
+	testutil.RequireNoError(t, err) // no explicit grant needed
 }
 
 // TST-CORE-TIER-007
 func TestIdentity_3_3_22_SessionEndRevokesGrants(t *testing.T) {
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "consumer2", "standard")
+	// Use sensitive tier — standard auto-approves with session.
+	_, err := pm.Create(idCtx, "health-revoke-test", "sensitive")
 	testutil.RequireNoError(t, err)
 
 	sess, err := pm.StartSession(idCtx, "did:key:agent2", "temp-work")
 	testutil.RequireNoError(t, err)
-	err = pm.AddGrant(idCtx, sess.Name, "consumer2", "session", "user")
+	err = pm.AddGrant(idCtx, sess.Name, "health-revoke-test", "session", "user")
 	testutil.RequireNoError(t, err)
 
 	// Grant active
 	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
 	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "temp-work")
-	testutil.RequireNoError(t, pm.AccessPersona(agentCtx, "consumer2"))
+	testutil.RequireNoError(t, pm.AccessPersona(agentCtx, "health-revoke-test"))
 
 	// End session
 	err = pm.EndSession(idCtx, "did:key:agent2", "temp-work")
 	testutil.RequireNoError(t, err)
 
 	// Grant revoked — agent denied again
-	err = pm.AccessPersona(agentCtx, "consumer2")
+	err = pm.AccessPersona(agentCtx, "health-revoke-test")
 	if err == nil {
 		t.Fatal("should deny agent after session ended")
 	}
@@ -1821,14 +1829,16 @@ func TestIdentity_3_3_26_LockedTierDeniesAgentEvenUnlocked(t *testing.T) {
 // TST-CORE-TIER-012
 func TestIdentity_3_3_27_SingleUseGrantConsumed(t *testing.T) {
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "consumer3", "standard")
+	// Use sensitive tier — standard auto-approves, single-use grants
+	// are only meaningful for sensitive personas.
+	_, err := pm.Create(idCtx, "health-single-test", "sensitive")
 	testutil.RequireNoError(t, err)
 
 	sess, err := pm.StartSession(idCtx, "did:key:agent6", "single-test")
 	testutil.RequireNoError(t, err)
 
 	// Add single-use grant
-	err = pm.AddGrant(idCtx, sess.Name, "consumer3", "single", "user")
+	err = pm.AddGrant(idCtx, sess.Name, "health-single-test", "single", "user")
 	testutil.RequireNoError(t, err)
 
 	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
@@ -1836,11 +1846,11 @@ func TestIdentity_3_3_27_SingleUseGrantConsumed(t *testing.T) {
 	agentCtx = context.WithValue(agentCtx, middleware.AgentDIDKey, "did:key:agent6")
 
 	// First access: should succeed (grant consumed)
-	err = pm.AccessPersona(agentCtx, "consumer3")
+	err = pm.AccessPersona(agentCtx, "health-single-test")
 	testutil.RequireNoError(t, err)
 
 	// Second access: should fail (grant was single-use)
-	err = pm.AccessPersona(agentCtx, "consumer3")
+	err = pm.AccessPersona(agentCtx, "health-single-test")
 	if err == nil {
 		t.Fatal("single-use grant should be consumed after first access")
 	}
@@ -1849,26 +1859,28 @@ func TestIdentity_3_3_27_SingleUseGrantConsumed(t *testing.T) {
 // TST-CORE-TIER-013
 func TestIdentity_3_3_28_CrossAgentSessionIsolation(t *testing.T) {
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "consumer4", "standard")
+	// Use sensitive tier — standard auto-approves for any agent with a session.
+	// Cross-agent isolation is enforced at the sensitive tier (grant binding).
+	_, err := pm.Create(idCtx, "health-isolation-test", "sensitive")
 	testutil.RequireNoError(t, err)
 
 	// Agent A starts session and gets grant
 	_, err = pm.StartSession(idCtx, "did:key:agentA", "shared-name")
 	testutil.RequireNoError(t, err)
-	err = pm.AddGrant(idCtx, "shared-name", "consumer4", "session", "user")
+	err = pm.AddGrant(idCtx, "shared-name", "health-isolation-test", "session", "user")
 	testutil.RequireNoError(t, err)
 
 	// Agent A: should succeed
 	ctxA := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
 	ctxA = context.WithValue(ctxA, middleware.SessionNameKey, "shared-name")
 	ctxA = context.WithValue(ctxA, middleware.AgentDIDKey, "did:key:agentA")
-	testutil.RequireNoError(t, pm.AccessPersona(ctxA, "consumer4"))
+	testutil.RequireNoError(t, pm.AccessPersona(ctxA, "health-isolation-test"))
 
 	// Agent B: same session name, different DID — should fail
 	ctxB := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
 	ctxB = context.WithValue(ctxB, middleware.SessionNameKey, "shared-name")
 	ctxB = context.WithValue(ctxB, middleware.AgentDIDKey, "did:key:agentB")
-	err = pm.AccessPersona(ctxB, "consumer4")
+	err = pm.AccessPersona(ctxB, "health-isolation-test")
 	if err == nil {
 		t.Fatal("agent B should not be able to use agent A's session grant")
 	}
