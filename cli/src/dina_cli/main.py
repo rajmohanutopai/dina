@@ -186,14 +186,15 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
 @click.option("--session", required=True, help="Session ID (create with: dina session start)")
 @click.pass_context
 def ask(ctx: click.Context, query: str, session: str) -> None:
-    """Ask Dina a question — she reasons over your encrypted vault.
+    """Ask Dina a question - she reasons over your encrypted vault.
 
     Requires an active session. Create one first:
-      dina session start --name "my-session"
+    dina session start --name "my-session"
+    dina remember --session sess-123 "My daughter's birthday is on April 7th"
+    dina ask --session sess-123 "When is my daughter's birthday?"
 
-    Dina searches across all accessible personas, assembles context,
-    and gives you a personalized answer. You never need to specify
-    which persona to search — Dina figures that out.
+    Dina checks all persona to get the data if this session has access.
+    If session does not have access, user should approve use through telegram/dina-admin
     """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
