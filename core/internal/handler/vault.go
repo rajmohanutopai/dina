@@ -158,7 +158,8 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 				PersonaID: string(persona),
 				SessionID: sessionName,
 				Action:    "vault_query",
-				Reason:    req.Query,
+				Reason:    "Query " + string(persona) + " persona",
+				Preview:   req.Query,
 			})
 			if aprErr == nil {
 				w.Header().Set("Content-Type", "application/json")
@@ -248,7 +249,8 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 				PersonaID: string(persona),
 				SessionID: sessionName,
 				Action:    "vault_store",
-				Reason:    req.Item.Summary,
+				Reason:    "Store item in " + string(persona) + " persona",
+				Preview:   req.Item.Summary,
 			})
 			if aprErr == nil {
 				w.Header().Set("Content-Type", "application/json")

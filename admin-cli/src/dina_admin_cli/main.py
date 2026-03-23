@@ -135,13 +135,21 @@ def status(ctx: click.Context) -> None:
 def approvals(ctx: click.Context) -> None:
     """Review and act on pending approval requests.
 
-    Without a subcommand, lists all pending approvals.
+    When an agent needs access to a sensitive persona (health, finance),
+    Core creates an approval request. The agent's command blocks until
+    you approve or deny it here.
+
+    \b
+    Scopes (--scope on approve):
+      session  Grant lasts until the agent's session ends. (default)
+      single   One-shot — consumed on first use, then revoked.
 
     \b
     Examples:
-      dina-admin approvals              # list pending
-      dina-admin approvals approve <id> # approve
-      dina-admin approvals deny <id>    # deny
+      dina-admin approvals                           # list pending
+      dina-admin approvals approve <id>              # approve (session scope)
+      dina-admin approvals approve <id> --scope single  # single-use grant
+      dina-admin approvals deny <id>                 # deny
     """
     if ctx.invoked_subcommand is None:
         ctx.invoke(approvals_list)
@@ -167,13 +175,19 @@ def approvals_list(ctx: click.Context) -> None:
                     action = a.get("action", "persona_access")
                     agent = a.get("client_did", "?")
                     reason = a.get("reason", "")
+                    preview = a.get("preview", "")
+                    session = a.get("session_id", "")
                     # Truncate long DIDs for display
                     if len(agent) > 24:
                         agent = agent[:20] + "..."
                     line = f"  {aid}  {action}  persona={persona}  agent={agent}"
-                    if reason:
-                        line += f"  ({reason})"
+                    if session:
+                        line += f"  session={session}"
                     click.echo(line)
+                    if reason:
+                        click.echo(f'    reason="{reason}"')
+                    if preview:
+                        click.echo(f'    preview="{preview}"')
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)

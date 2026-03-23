@@ -414,12 +414,20 @@ func (h *StagingHandler) createApprovalAndPendCopy(r *http.Request, stagingID st
 	agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
 
 	if h.Approvals != nil {
+		preview := target.ClassifiedItem.Summary
+		if preview == "" {
+			preview = target.ClassifiedItem.BodyText
+		}
+		if len(preview) > 250 {
+			preview = preview[:250] + "..."
+		}
 		reqID, err := h.Approvals.RequestApproval(r.Context(), domain.ApprovalRequest{
 			ClientDID: agentDID,
 			PersonaID: target.Persona,
 			SessionID: sessionName,
 			Action:    "staging_resolve",
 			Reason:    "Store memory in " + target.Persona,
+			Preview:   preview,
 		})
 		if err == nil {
 			slog.Info("staging.resolve: approval requested",
@@ -445,12 +453,20 @@ func (h *StagingHandler) handleAccessDenied(w http.ResponseWriter, r *http.Reque
 	if errors.As(accessErr, &approvalErr) && h.Approvals != nil {
 		sessionName, _ := r.Context().Value(middleware.SessionNameKey).(string)
 		agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
+		preview := classifiedItem.Summary
+		if preview == "" {
+			preview = classifiedItem.BodyText
+		}
+		if len(preview) > 250 {
+			preview = preview[:250] + "..."
+		}
 		reqID, aprErr := h.Approvals.RequestApproval(r.Context(), domain.ApprovalRequest{
 			ClientDID: agentDID,
 			PersonaID: persona,
 			SessionID: sessionName,
 			Action:    "staging_resolve",
 			Reason:    "Store memory in " + persona,
+			Preview:   preview,
 		})
 		if aprErr == nil {
 			slog.Info("staging.resolve: approval requested",

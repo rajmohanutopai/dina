@@ -12,7 +12,8 @@ type ApprovalRequest struct {
 	Action    string `json:"action"`      // what action triggered the request
 	Scope     string `json:"scope"`       // requested scope: "single", "session"
 	Status    string `json:"status"`      // "pending", "approved", "denied", "expired"
-	Reason    string `json:"reason"`      // human-readable reason from agent
+	Reason    string `json:"reason"`      // why approval is needed ("Store memory in finance")
+	Preview   string `json:"preview"`    // owner-visible trigger text/query/summary
 	GrantedBy string `json:"granted_by"`  // who approved (DID or "telegram")
 	ExpiresAt int64  `json:"expires_at"`  // Unix timestamp
 	CreatedAt int64  `json:"created_at"`
