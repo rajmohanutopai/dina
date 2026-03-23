@@ -137,6 +137,17 @@ func (h *ApprovalHandler) approveByID(w http.ResponseWriter, r *http.Request, id
 func (h *ApprovalHandler) denyByID(w http.ResponseWriter, r *http.Request, id string) {
 	p := h.Persona
 
+	// Get persona from the approval before denying (needed for staging cleanup).
+	var deniedPersona string
+	if pending, err := p.Approvals.ListPending(r.Context()); err == nil {
+		for _, pr := range pending {
+			if pr.ID == id {
+				deniedPersona = pr.PersonaID
+				break
+			}
+		}
+	}
+
 	if err := p.Approvals.DenyRequest(r.Context(), id); err != nil {
 		// GH4: generic error to caller; details logged server-side.
 		slog.Warn("approval.deny_failed", "id", id, "error", err)
@@ -146,6 +157,19 @@ func (h *ApprovalHandler) denyByID(w http.ResponseWriter, r *http.Request, id st
 
 	// Mark any pending reason requests for this approval as denied.
 	p.markPendingReasonsDenied(id)
+
+	// Mark pending_unlock staging items for the denied persona as failed.
+	if p.StagingInbox != nil && deniedPersona != "" {
+		rawName := strings.TrimPrefix(deniedPersona, "persona-")
+		items, err := p.StagingInbox.ListByStatus(r.Context(), "pending_unlock", 100)
+		if err == nil {
+			for _, item := range items {
+				if item.TargetPersona == rawName {
+					_ = p.StagingInbox.MarkFailed(r.Context(), item.ID, "approval denied")
+				}
+			}
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "denied", "id": id})

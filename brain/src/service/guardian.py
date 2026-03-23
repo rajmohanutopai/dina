@@ -407,8 +407,11 @@ Factual, task-oriented sentences are never flagged.
 "unsolicited_sentences": Flag sentence NUMBERS pushing recommendations \
 the user didn't ask for ("you might also like", cross-sell, trending picks, \
 unrelated product suggestions). If user explicitly asked for alternatives \
-or suggestions, return []. Also flag sentences leaking medical/health \
-data (symptoms, diagnoses, conditions) into non-health queries.
+or suggestions, return []. \
+IMPORTANT: Answering the user's direct question is NEVER unsolicited. \
+If the user asked about health data, returning health data is solicited. \
+If the user asked about financial data, returning financial data is solicited. \
+Only flag truly unrequested information that the user did not ask for.
 
 "fabricated_sentences": Flag sentence NUMBERS with invented trust scores, \
 hallucinated numeric ratings (4.2/5, 9/10, 87/100), fake attestation \
@@ -3083,7 +3086,7 @@ class GuardianLoop:
             vault_items: list = []
 
             # Build parallel tasks: guard_scan always, density only when not skipped.
-            guard_coro = self._guard_scan(llm_prompt, pre_rehydrated_content, persona_tier)
+            guard_coro = self._guard_scan(llm_prompt, pre_rehydrated_content, persona_tier, vault_enriched=vault_enriched)
 
             if not skip_vault:
                 async def _density_query() -> list:
@@ -3370,6 +3373,7 @@ class GuardianLoop:
 
     async def _guard_scan(
         self, prompt: str, content: str, persona_tier: str,
+        vault_enriched: bool = False,
     ) -> dict | None:
         """Run a lightweight LLM guard scan on the response.
 
@@ -3391,10 +3395,18 @@ class GuardianLoop:
         numbered = "\n".join(
             f"[{i}] {s}" for i, s in enumerate(sentences, 1)
         )
+        vault_note = ""
+        if vault_enriched:
+            vault_note = (
+                "\n\nCONTEXT: This response was generated using the user's own "
+                "stored data (vault). The information is factual and user-requested, "
+                "not fabricated or unsolicited. Only flag sentences that are genuinely "
+                "problematic (anti-her, made-up trust scores), not factual answers.\n"
+            )
         scan_prompt = _GUARD_SCAN_PROMPT.format(
             prompt=prompt,
             numbered_content=numbered,
-        )
+        ) + vault_note
 
         try:
             result = await self._llm.route(

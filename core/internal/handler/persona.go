@@ -494,12 +494,37 @@ func (h *PersonaHandler) HandleDeny(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get persona from the approval before denying (needed for staging cleanup).
+	var deniedPersona string
+	if pending, err := h.Approvals.ListPending(r.Context()); err == nil {
+		for _, p := range pending {
+			if p.ID == req.ID {
+				deniedPersona = p.PersonaID
+				break
+			}
+		}
+	}
+
 	if err := h.Approvals.DenyRequest(r.Context(), req.ID); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
 		return
 	}
 
 	h.markPendingReasonsDenied(req.ID)
+
+	// Mark pending_unlock staging items for the denied persona as failed.
+	// Without this, denied items stay in pending_unlock forever.
+	if h.StagingInbox != nil && deniedPersona != "" {
+		rawName := strings.TrimPrefix(deniedPersona, "persona-")
+		items, err := h.StagingInbox.ListByStatus(r.Context(), "pending_unlock", 100)
+		if err == nil {
+			for _, item := range items {
+				if item.TargetPersona == rawName {
+					_ = h.StagingInbox.MarkFailed(r.Context(), item.ID, "approval denied")
+				}
+			}
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "denied", "id": req.ID})

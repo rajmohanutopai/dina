@@ -201,8 +201,9 @@ def remember_status(ctx: click.Context, item_id: str) -> None:
 @cli.command()
 @click.argument("query")
 @click.option("--session", required=True, help="Session ID (create with: dina session start)")
+@click.option("--timeout", default=300, type=int, help="Approval poll timeout in seconds (30–1800, default 300)")
 @click.pass_context
-def ask(ctx: click.Context, query: str, session: str) -> None:
+def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
     """Ask Dina a question - she reasons over your encrypted vault.
 
     Requires an active session. Create one first:
@@ -246,10 +247,12 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
             click.echo("Awaiting approval...", err=True)
 
             import time
-            timeout = 300   # 5 minutes
-            interval = 5    # poll every 5 seconds
+            timeout = min(max(timeout, 30), 1800)  # clamp: 30s min, 30min max
             elapsed = 0
             while elapsed < timeout:
+                # Fast poll first 30s (user may approve quickly from Telegram),
+                # then slow down — they're clearly not at the screen.
+                interval = 5 if elapsed < 30 else 15
                 time.sleep(interval)
                 elapsed += interval
                 try:
@@ -1282,8 +1285,9 @@ def session_list(ctx: click.Context) -> None:
 @cli.command()
 @click.argument("description")
 @click.option("--dry-run", is_flag=True, help="Validate intent without executing")
+@click.option("--timeout", default=300, type=int, help="Approval poll timeout in seconds (30–1800, default 300)")
 @click.pass_context
-def task(ctx: click.Context, description: str, dry_run: bool) -> None:
+def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> None:
     """Delegate an autonomous task to OpenClaw.
 
     Dina validates the task-level intent once (research -> moderate, requires
@@ -1355,10 +1359,14 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
                 click.echo(f"  Task requires approval (proposal: {proposal_id})")
                 click.echo(f"  Approve with: dina-admin intent approve {proposal_id}")
 
-            # Poll for approval (5s interval, 5 min timeout).
+            # Poll for approval (fast then slow, configurable timeout).
             import time
-            for _ in range(60):
-                time.sleep(5)
+            timeout = min(max(timeout, 30), 1800)  # clamp: 30s min, 30min max
+            elapsed = 0
+            while elapsed < timeout:
+                interval = 5 if elapsed < 30 else 15
+                time.sleep(interval)
+                elapsed += interval
                 try:
                     status = client.proposal_status(proposal_id)
                 except DinaClientError:
@@ -1376,7 +1384,7 @@ def task(ctx: click.Context, description: str, dry_run: bool) -> None:
                         print_error_with_trace(f"Task {s}: {reason}", json_mode, client.req_id)
                     return
             else:
-                print_error_with_trace("Approval timeout (5 min). Retry later.", json_mode, client.req_id)
+                print_error_with_trace(f"Approval timeout ({timeout}s). Retry later.", json_mode, client.req_id)
                 return
 
         # 3. Invoke OpenClaw.

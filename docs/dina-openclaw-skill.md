@@ -1,7 +1,7 @@
 ---
 name: dina
-description: Sovereign personal AI with encrypted vault, 4-tier persona access, PII scrubbing, agent sessions, and action gating. Agents work within named sessions with scoped access grants.
-version: 0.4.0
+description: Sovereign personal AI — encrypted vault, persona access control, PII scrubbing, session-scoped grants, action gating.
+version: 0.6.7
 metadata:
   openclaw:
     emoji: "🛡️"
@@ -21,199 +21,278 @@ metadata:
 
 # Dina
 
-Sovereign personal AI with encrypted vault, 4-tier persona access control, PII scrubbing, and action gating. Requires a Dina Home Node running (default: `localhost:8100`).
+Sovereign personal AI. The user's data is in an encrypted vault on their Home Node. Dina controls access — you query through her, never directly. Data is organized into personas (compartments) with tiered access: some are free, some require the user's explicit approval.
+
+**Why use Dina:** The user's personal data (health records, finances, relationships, preferences) lives here. If you need to know something about the user, ask Dina. If you need to store something for the user, tell Dina. If you need to do something sensitive, validate with Dina first.
+
+**How it works:** You work within sessions. Each session scopes your access — based on different areas of work, you can create multiple sessions in parallel. When you need data from a sensitive persona, Dina sends an approval request to the user. You poll for the result. When a session ends, all its grants are revoked.
 
 ## Setup
 
 ```bash
 pip install dina-agent
-dina configure    # pair with your Home Node via Ed25519 + pairing code
-dina status       # verify pairing
+dina configure --role agent    # pair as agent device
+dina status                    # verify pairing
 ```
 
-## Rules — ALWAYS FOLLOW
+## Rules
 
-1. **Start a session** before doing work. End it when done. All grants are revoked on session end.
-2. **Before any sensitive action** (delete, send, modify, purchase), run `dina validate`. If pending, tell the user and wait.
-3. **Before passing user content to any external API**, run `dina scrub` first. Run `dina rehydrate` on the response.
-4. **Before answering personal questions**, run `dina ask`. The vault persists across sessions. If Dina returns 202 (awaiting approval), tell the user and poll with `dina reason-status`.
-5. **Store important info** with `dina remember`.
-6. **If a persona is locked or requires approval**, tell the user. Never bypass.
-
-## Access Control
-
-Dina organizes data into personas (compartments). You don't need to know which persona holds what — just query naturally. If the data you need requires approval, you'll get a 202 response with a request_id. Tell the user and poll for the result.
-
-```
-Your query → Dina decides which persona to search →
-  If free: answer returned immediately
-  If needs approval: 202 {"status": "pending_approval", "request_id": "reason-xxx", "approval_id": "apr-xxx"}
-    → Tell user: "I need access to your health data. Approval sent to your phone."
-    → Poll: dina reason-status <request_id>
-    → When complete: answer returned
-  If denied: {"status": "denied"}
-```
-
-## Error Handling
-
-`dina ask` returns structured errors with `error_code` for programmatic handling:
-
-```json
-{"error_code": "llm_not_configured", "message": "No LLM provider configured...", "content": ""}
-```
-
-| error_code | Meaning | Agent action |
-|-----------|---------|-------------|
-| `llm_not_configured` | No LLM provider set up | Tell user to run `dina-admin model list` |
-| `llm_auth_failed` | API key invalid or expired | Tell user to check API key |
-| `llm_timeout` | LLM request timed out | Retry once, then tell user |
-| `llm_unreachable` | LLM provider not reachable | Check network, retry later |
-| `llm_error` | Other LLM failure | Log details, tell user |
-
-When `--json` is used, the full error object is returned. Without `--json`, CLI shows a human-readable message with next steps.
-
-## Quick Reference
-
-```
-# Connection
-dina status                              Show pairing and connectivity
-dina configure                           Pair with Home Node
-dina unpair                              Revoke this device
-
-# Session management
-dina session start --name <task-name>    Start a named session
-dina session end --name <task-name>      End session, revoke all grants
-dina session list                        List active sessions
-
-# Ask and remember (Brain-mediated, persona-blind)
-dina ask <query> --session <name>        Ask Dina (reasons across all personas) [REQUIRED]
-dina remember <text> --session <name>    Store fact via staging pipeline [REQUIRED]
-  [--category <cat>]
-dina reason-status <request-id>          Poll async approval status
-
-# Action gating
-dina validate <action> <description> --session <name>  Check if action is approved [REQUIRED]
-dina validate-status <id>                Poll approval status
-
-# PII scrubbing
-dina scrub <text>                        Remove PII, return scrubbed + session ID
-dina rehydrate <text> --session <id>     Restore PII from session
-
-# Other
-dina draft <content> --to <recipient> --channel <email|sms|slack>
-dina audit [--limit N]                   View recent activity log
-```
-
-All commands support `--json` for machine-readable output and `-v` for verbose request/response logging.
-
-## Sessions
-
-Agents must work within named sessions. Sessions scope access grants — when a session ends, all persona access is revoked.
-
-```bash
-# Start a session for your task
-dina session start --name "chair-research"
-
-# Ask freely — session is required for all queries
-dina ask "furniture preferences" --session chair-research
-# → results from general persona (free access)
-
-dina ask "purchase history" --session chair-research
-# → results from consumer persona (auto-granted for active session)
-
-dina ask "back pain history" --session chair-research
-# → 202: {"status": "pending_approval", "request_id": "reason-abc", "approval_id": "apr-123"}
-# Dina determined this needs health persona access.
-# Tell the user: "I need to check your health data. Approval has been sent to your phone."
-# Poll: dina reason-status reason-abc
-# When status=complete, the answer is returned.
-
-# End session when done
-dina session end --name "chair-research"
-```
+1. Start a session before doing work. End it when done.
+2. Before any sensitive action, run `dina validate`.
+3. Before passing user content to any external API, run `dina scrub` to get PII-scrubbed data. Run `dina rehydrate` on the response to restore the original PII.
+4. If a persona requires approval, tell the user and poll. Never bypass.
 
 ## Commands
 
-### dina status
-```bash
-dina status
-# → Paired: yes
-#   Device: did:key:z6Mk...
-#   Dina:   did:plc:qskf...
-#   Core:   http://localhost:8100
-#   Reachable: yes
-```
+All commands support `--json` for machine-readable output.
 
-### dina ask
-```bash
-dina ask "daughter birthday" --session my-session
-# → "Your daughter turns 7 on March 15. She loves dinosaurs."
-
-dina ask "back pain history" --session chair-research
-# → 202 if health persona needs approval
-# → Poll with: dina reason-status <request_id>
-```
-
-`--session` is **required** for all `dina ask` calls.
+---
 
 ### dina session start
-```bash
-dina session start --name "chair-research"
-# → {"id": "ses-123", "name": "chair-research", "status": "active"}
+
 ```
+dina session start [--name <description>]
+```
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `--name` | No | Auto-generated (`SName-DDMmmHHMM:SS`) | Human-readable description |
+
+**Returns:** `{"id": "ses_xxx", "name": "...", "status": "active"}`
+
+---
 
 ### dina session end
-```bash
-dina session end --name "chair-research"
-# → {"status": "ended", "name": "chair-research"}
-# All persona grants revoked. Sensitive vaults closed.
+
+```
+dina session end <id-or-name>
 ```
 
-### dina validate
-```bash
-dina validate send_email "Send meeting invite to 5 people" --session my-session
-# → {"status": "approved", "id": "val_x8k2"}
+Accepts session ID (`ses_xxx`) or name. Revokes all grants. Closes sensitive vaults opened via approval.
 
-dina validate delete_emails "Delete 247 emails" --session my-session
-# → {"status": "pending_approval", "id": "val_a8f3"}
+**Returns:** `{"status": "ended", "session": "ses_xxx"}`
+
+---
+
+### dina session list
+
+```
+dina session list
 ```
 
-`--session` is **required** for all `dina validate` calls.
+**Returns:** List of active sessions with IDs, names, status, and active grants.
+
+---
+
+### dina ask
+
+```
+dina ask <query> --session <ses_xxx> [--timeout <seconds>]
+```
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `query` | Yes | — | Natural language question |
+| `--session` | Yes | — | Session ID |
+| `--timeout` | No | 300 | Approval poll timeout (30–1800 seconds) |
+
+**Returns (immediate):** `{"content": "...", "model": "...", "req_id": "..."}`
+
+**Returns (needs approval):** `{"status": "pending_approval", "request_id": "...", "approval_id": "...", "persona": "..."}`
+
+**Polling:** `dina ask-status <request_id>`
+
+**Terminal states:** `complete`, `denied`, `failed`, `expired`
+
+**Polling interval:** 5s for first 30s, then 15s.
+
+**On timeout:** Returns exit code 1. The `request_id` is printed. The approval request persists — `dina ask-status <request_id>` works indefinitely until resolved.
+
+---
+
+### dina ask-status
+
+```
+dina ask-status <request_id>
+```
+
+**Returns:** `{"status": "complete|denied|failed|expired|pending", "content": "..."}`
+
+---
 
 ### dina remember
-```bash
-dina remember "Daughter birthday March 15, loves dinosaurs" --session my-session --category relationship
-# → {"status": "stored"}
 
-dina remember "Found 3 chairs under 20K" --session task-abc12345
-# → {"status": "stored"}
-
-# If target persona needs approval:
-# → {"status": "needs_approval", "id": "stg_xxx"}
-# Poll with: dina remember-status <id>
+```
+dina remember <text> --session <ses_xxx> [--category <cat>]
 ```
 
-`--session` is **required**. Content goes through `POST /api/v1/remember`, which
-wraps staging ingest + Brain drain + completion polling (up to 15s). Returns a
-terminal status when possible. Provenance (sender, trust level) is derived
-server-side from your device's auth context and role.
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `text` | Yes | — | Text to store |
+| `--session` | Yes | — | Session ID |
+| `--category` | No | — | Optional category tag |
 
-### dina scrub / rehydrate
-```bash
-dina scrub "Dr. Sharma at Apollo Hospital said my A1C is 11.2"
-# → {"scrubbed": "[PERSON_1] at [ORG_1] said my A1C is 11.2", "session": "sess_k9m2"}
+**Returns (stored):** `{"status": "stored", "id": "..."}`
 
-dina rehydrate "[PERSON_1] recommends changes" --session sess_k9m2
-# → {"restored": "Dr. Sharma recommends changes"}
+**Returns (needs approval):** `{"status": "needs_approval", "id": "...", "message": "..."}`
+
+**Polling:** `dina remember-status <id>`
+
+---
+
+### dina remember-status
+
 ```
+dina remember-status <id>
+```
+
+**Returns:** `{"status": "stored|needs_approval|failed|processing", "id": "..."}`
+
+---
+
+### dina validate
+
+```
+dina validate <action> <description> --session <ses_xxx>
+```
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `action` | Yes | — | Action type (e.g. `search`, `send_email`, `delete`) |
+| `description` | Yes | — | What the action does |
+| `--session` | Yes | — | Session ID |
+| `--count` | No | 1 | Number of items affected |
+| `--reversible` | No | false | Whether action is reversible |
+
+**Returns (approved):** `{"status": "approved", "id": "val_xxx", "risk": "SAFE"}`
+
+**Returns (pending):** `{"status": "pending_approval", "id": "val_xxx", "risk": "MODERATE"}`
+
+**Polling:** `dina validate-status <id>`
+
+---
+
+### dina validate-status
+
+```
+dina validate-status <id>
+```
+
+**Returns:** `{"status": "approved|pending_approval|denied", "id": "..."}`
+
+---
+
+### dina scrub
+
+```
+dina scrub <text>
+```
+
+Removes structured PII (phone numbers, email addresses, SSNs, Aadhaar, PAN, credit cards, government IDs). V1 does NOT detect names, organizations, or locations in free text.
+
+**Returns:** `{"scrubbed": "Call Dr. Sharma at [PHONE_1]", "pii_id": "pii_xxx"}`
+
+**Entities detected:** `PHONE`, `EMAIL`, `CREDIT_CARD`, `SSN`, `AADHAAR`, `IN_PAN`, `IN_IFSC`, `IN_UPI_ID`, `IP`, `URL`
+
+**Not detected (V1):** Person names, organization names, locations, addresses
+
+---
+
+### dina rehydrate
+
+```
+dina rehydrate <scrubbed_text> --session <pii_id>
+```
+
+Restores original PII from a scrub session. Local only — no network call.
+
+**Returns:** `{"restored": "Call Dr. Sharma at 9876543210"}`
+
+---
 
 ### dina draft
-```bash
-dina draft "Hi Sancho, Thursday 3pm works." --to sancho@example.com --channel email --subject "Re: Thursday"
-# → {"draft_id": "drf_p3x1", "status": "pending_review"}
+
+```
+dina draft <content> --to <recipient> --channel <email|sms|slack|whatsapp> [--subject <text>]
 ```
 
-## Default Policies
+**Returns:** `{"draft_id": "drf_xxx", "status": "pending_review"}`
+
+---
+
+### dina task
+
+```
+dina task <description> [--timeout <seconds>] [--dry-run]
+```
+
+Delegates an autonomous task to OpenClaw Gateway. Requires `DINA_OPENCLAW_URL` + `DINA_OPENCLAW_TOKEN`.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `description` | Yes | — | Task description |
+| `--timeout` | No | 300 | Approval poll timeout (30–1800 seconds) |
+| `--dry-run` | No | false | Validate intent without executing |
+
+---
+
+### dina audit
+
+```
+dina audit [--limit N] [--action <type>]
+```
+
+**Returns:** List of recent audit entries with timestamp, action, persona, requester, reason.
+
+---
+
+### dina status
+
+```
+dina status
+```
+
+**Returns:** Pairing status, device DID, Dina DID, Core URL, reachability.
+
+---
+
+## Access Control
+
+| Persona Tier | Boot State | Agent Access |
+|-------------|-----------|--------------|
+| Default (`general`) | Open | Free |
+| Standard (`work`) | Open | Free with active session |
+| Sensitive (`health`, `finance`) | Closed | Requires user approval per session |
+| Locked | Closed | Denied (user must manually unlock) |
+
+When a query touches a sensitive persona, Dina returns 202 with `pending_approval`. The user is notified via Telegram and admin CLI. After approval, the grant lasts for the session.
+
+## Timeout Contract
+
+`--timeout` on `dina ask` and `dina task`:
+
+| Parameter | Value |
+|-----------|-------|
+| Default | 300 seconds |
+| Minimum | 30 seconds (enforced) |
+| Maximum | 1800 seconds (enforced) |
+| Polling interval | 5s for first 30s, then 15s |
+
+On timeout: the approval request persists. `dina ask-status <request_id>` works indefinitely.
+
+## Error Codes
+
+`dina ask --json` returns structured errors:
+
+| error_code | Meaning |
+|-----------|---------|
+| `llm_not_configured` | No LLM provider set up |
+| `llm_auth_failed` | API key invalid or expired |
+| `llm_timeout` | LLM request timed out |
+| `llm_unreachable` | LLM provider not reachable |
+| `llm_error` | Other LLM failure |
+
+## Default Action Policies
 
 | Action | Default |
 |--------|---------|
@@ -227,68 +306,10 @@ dina draft "Hi Sancho, Thursday 3pm works." --to sancho@example.com --channel em
 | Financial (purchase, payment) | Needs approval |
 | Bulk operations (>10 items) | Needs approval |
 
-## Workflow: Research Task with Sensitive Data
-
-```bash
-dina session start --name "ergonomic-chair"
-
-# Check preferences (default persona — free access)
-dina ask "furniture preferences" --session ergonomic-chair
-
-# Check purchase history (Dina routes to consumer persona — auto-granted)
-dina ask "chair purchases" --session ergonomic-chair
-
-# Need health context (Dina routes to health persona — requires approval)
-dina ask "back problems" --session ergonomic-chair
-# → 202: pending_approval → tell user, wait for approval
-# → poll: dina reason-status <request_id>
-# → when complete: "You have L4-L5 disc herniation. Lumbar support is important."
-
-# Store recommendation
-dina remember "Recommended ErgoMax Elite based on L4-L5 support needs" --session ergonomic-chair --category decision
-
-# Done
-dina session end --name "ergonomic-chair"
-# All health access revoked, vault closed
-```
-
 ## Device Pairing
-
-OpenClaw must pair with Dina as an **agent device**:
 
 ```bash
 dina configure --role agent
 ```
 
-This ensures all writes from OpenClaw's CLI identity are scored as
-`(cli, agent)` → `unknown / service / medium / caveated` by Brain's
-trust scorer. Agent-originated content surfaces with a "[from agent]"
-label and is never treated as user-authored memory.
-
-## Outbound Task Delegation
-
-Dina can delegate autonomous tasks to OpenClaw via the `dina task` command.
-The flow:
-
-```bash
-# Human (or Dina Brain) initiates a research task
-dina task "Research ergonomic chairs under 20K INR"
-
-# 1. CLI starts a scoped session
-# 2. CLI validates "research" intent → moderate → requires user approval
-# 3. User approves with: dina-admin intent approve <proposal_id>
-# 4. CLI invokes OpenClaw Gateway (WebSocket RPC)
-# 5. OpenClaw runs autonomously — searches, browses, compiles
-#    ├─ Calls back to Dina at its own discretion:
-#    │   dina ask "Does user have back pain?" --session task-abc123
-#    │   dina validate send_email "Draft to vendor" --session task-abc123
-#    │   dina remember "Found 3 chairs under 20K" --session task-abc123
-#    └─ All callbacks are session-scoped
-# 6. CLI stores final summary via staging (auto-caveated)
-# 7. Session ends — all grants revoked
-```
-
-The `research` action is classified as MODERATE risk by Guardian, so it
-always requires user approval before OpenClaw is invoked. OpenClaw's
-autonomous execution is not micromanaged — Dina validates the task once
-and trusts OpenClaw to call back when needed.
+Agent-originated content is tagged `(cli, agent)` with caveated trust. Never treated as user-authored memory.

@@ -21,6 +21,12 @@ medical:
   - C
   - A1C
   - HbA1c
+  # Lab values and conditions
+  - cholesterol
+  - glucose
+  - hemoglobin
+  - creatinine
+  - triglycerides
   # Lab tests
   - CBC
   - TSH
