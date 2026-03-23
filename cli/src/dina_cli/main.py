@@ -189,11 +189,15 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
     """Ask Dina a question - she reasons over your encrypted vault.
 
     Requires an active session. Create one first:
+
     dina session start --name "my-session"
+
     dina remember --session sess-123 "My daughter's birthday is on April 7th"
+
     dina ask --session sess-123 "When is my daughter's birthday?"
 
     Dina checks all persona to get the data if this session has access.
+    
     If session does not have access, user should approve use through telegram/dina-admin
     """
     client = _make_client(ctx)
