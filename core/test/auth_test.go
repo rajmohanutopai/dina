@@ -1510,9 +1510,9 @@ func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 	}
 
 	// Device-scoped CLIENT_TOKEN must be allowed on safe endpoints.
-	// Agents are persona-blind: vault endpoints removed, /api/v1/reason added.
+	// Agents are persona-blind: vault endpoints removed, /api/v1/ask added.
 	deviceAllowed := []string{
-		"/api/v1/reason",
+		"/api/v1/ask",
 		"/v1/msg/send",
 		"/v1/session/start",
 		"/healthz",
@@ -1538,7 +1538,7 @@ func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 // TST-CORE-AUTH-PERSONA-BLIND-001
 func TestAuth_1_4_9_DeviceScopedBlockedFromVault(t *testing.T) {
 	// Agents (device-scoped) must NOT have direct vault access.
-	// They interact via Brain (/api/v1/reason) only.
+	// They interact via Brain (/api/v1/ask) only.
 	checker := auth.NewAdminEndpointChecker()
 
 	// Device-scoped agents BLOCKED from vault read endpoints.
@@ -1553,8 +1553,8 @@ func TestAuth_1_4_9_DeviceScopedBlockedFromVault(t *testing.T) {
 	}
 
 	// But allowed on Brain proxy
-	testutil.RequireTrue(t, checker.AllowedForTokenKind("client", "/api/v1/reason", "device"),
-		"device-scoped agent must access /api/v1/reason")
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("client", "/api/v1/ask", "device"),
+		"device-scoped agent must access /api/v1/ask")
 
 	// And session endpoints
 	testutil.RequireTrue(t, checker.AllowedForTokenKind("client", "/v1/session/start", "device"),
@@ -1570,7 +1570,7 @@ func TestAuth_1_4_10_AdminStillAccessesVault(t *testing.T) {
 		"/v1/vault/query",
 		"/v1/vault/store",
 		"/v1/vault/item/some-id",
-		"/api/v1/reason",
+		"/api/v1/ask",
 		"/v1/session/start",
 	}
 	for _, path := range adminAllowed {

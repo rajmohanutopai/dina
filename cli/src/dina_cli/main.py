@@ -216,7 +216,7 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        result = client.reason(query, session=session)
+        result = client.ask(query, session=session)
 
         # Check for async approval-wait (202 from Core)
         if result.get("status") == "pending_approval":
@@ -249,7 +249,7 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
                 time.sleep(interval)
                 elapsed += interval
                 try:
-                    status = client.reason_status(request_id)
+                    status = client.ask_status(request_id)
                 except DinaClientError:
                     continue  # transient error, keep polling
 
@@ -320,11 +320,11 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
         ctx.exit(1)
 
 
-@cli.command("reason-status")
+@cli.command("ask-status")
 @click.argument("request_id")
 @click.pass_context
-def reason_status_cmd(ctx: click.Context, request_id: str) -> None:
-    """Check the status of a pending reason request.
+def ask_status_cmd(ctx: click.Context, request_id: str) -> None:
+    """Check the status of a pending ask request.
 
     Use this when 'dina ask' timed out waiting for approval. Pass the
     request_id that was printed at timeout.
@@ -332,7 +332,7 @@ def reason_status_cmd(ctx: click.Context, request_id: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        status = client.reason_status(request_id)
+        status = client.ask_status(request_id)
         if json_mode:
             print_result_with_trace(status, json_mode, client.req_id)
         elif status.get("status") == "complete":
@@ -528,7 +528,7 @@ def draft(ctx: click.Context, content: str, recipient: str, channel: str, subjec
 
     try:
         # Route through Brain — Brain decides persona routing for drafts
-        client.reason(
+        client.ask(
             f"Draft a message to {recipient} via {channel}"
             + (f" with subject '{subject}'" if subject else "")
             + f": {content}",

@@ -85,45 +85,55 @@ dina-admin device list
 
 ## Part 3: Store & Recall Data
 
-### 3.1 Store memories via CLI
+### 3.1 Start a session
 
 ```bash
-# Tab 2
-dina remember "Dr. Sharma said my B12 is low at 180 pg/mL. Start supplements for 3 months."
-dina remember "Meeting with Sancho next Tuesday at Cafe Coffee Day. He prefers strong chai."
-dina remember "Need to buy The Little Prince for daughter's birthday on March 25."
+# Tab 2 — all remember/ask/validate commands require --session
+dina session start --name "manual-test"
+# Note the session ID returned (e.g., ses_a3kx7m2pw4qr)
 ```
 
-**Expected:** Each returns "Remembered" with an item ID.
+**Expected:** Returns session ID like `ses_a3kx7m2pw4qr`.
 
-### 3.2 Search by keyword
+### 3.2 Store memories via CLI
 
 ```bash
-dina ask "B12"
+# Tab 2 — use the session ID from above
+dina remember --session ses_XXXX "Dr. Sharma said my B12 is low at 180 pg/mL. Start supplements for 3 months."
+dina remember --session ses_XXXX "Meeting with Sancho next Tuesday at Cafe Coffee Day. He prefers strong chai."
+dina remember --session ses_XXXX "Need to buy The Little Prince for daughter's birthday on March 25."
+```
+
+**Expected:** Each returns `{"status": "stored"}` with an item ID. The remember endpoint polls for up to 15 seconds for synchronous completion.
+
+### 3.3 Search by keyword
+
+```bash
+dina ask --session ses_XXXX "B12"
 ```
 
 **Expected:** Returns the Dr. Sharma note with B12 details.
 
-### 3.3 Search by meaning (Brain-mediated reasoning)
+### 3.4 Search by meaning (Brain-mediated reasoning)
 
 ```bash
-dina ask "health supplements"
+dina ask --session ses_XXXX "health supplements"
 ```
 
 **Expected:** Finds the B12 note even though "supplements" wasn't the exact word stored. Brain uses LLM reasoning to search across personas.
 
-### 3.4 Ask about your schedule
+### 3.5 Ask about your schedule
 
 ```bash
-dina ask "any meetings coming up?"
+dina ask --session ses_XXXX "any meetings coming up?"
 ```
 
 **Expected:** Mentions the Sancho meeting at Cafe Coffee Day. Personalized, not generic.
 
-### 3.5 Ask about a gift
+### 3.6 Ask about a gift
 
 ```bash
-dina ask "what do I need to buy for my daughter?"
+dina ask --session ses_XXXX "what do I need to buy for my daughter?"
 ```
 
 **Expected:** Mentions The Little Prince, March 25 birthday.
@@ -141,29 +151,23 @@ dina-admin persona list
 
 **Expected:** Lists `general` (default) and any others created during install.
 
-### 4.2 Create a health persona (sensitive)
+### 4.2 Check bootstrap personas
 
-```bash
-dina-admin persona create --name health --tier sensitive --passphrase my-health-pass
-```
-
-**Expected:** "Persona created" — sensitive personas start with vault closed.
-
-### 4.3 Unlock the health persona
-
-```bash
-dina-admin persona unlock --name health --passphrase my-health-pass
-```
-
-**Expected:** "Persona unlocked"
-
-### 4.4 Verify persona tiers
+The installer creates 4 bootstrap personas automatically: `general` (default), `work` (standard), `health` (sensitive), `finance` (sensitive). Sensitive personas auto-open on authorized access (v1 model) — no passphrase needed.
 
 ```bash
 dina-admin persona list
 ```
 
-**Expected:** Shows `general` (default, open) and `health` (sensitive, unlocked).
+**Expected:** Shows `general` (default), `work` (standard), `health` (sensitive), `finance` (sensitive).
+
+### 4.3 Store health-related data (triggers approval flow)
+
+```bash
+dina remember --session ses_XXXX "Dr. Sharma said my B12 is low at 180 pg/mL"
+```
+
+**Expected:** If the session has a grant for health → `{"status": "stored"}`. If not → `{"status": "needs_approval"}` with an approval ID. Approve via `dina-admin approve <id>`.
 
 ---
 
@@ -173,7 +177,7 @@ dina-admin persona list
 
 ```bash
 # Tab 2
-dina validate search "best office chair 2026"
+dina validate --session ses_XXXX search "best office chair 2026"
 ```
 
 **Expected:** Approved — searching is safe.
@@ -181,7 +185,7 @@ dina validate search "best office chair 2026"
 ### 5.2 Validate a risky action
 
 ```bash
-dina validate send_email "draft to boss@company.com"
+dina validate --session ses_XXXX send_email "draft to boss@company.com"
 ```
 
 **Expected:** Flagged for review — Dina doesn't send emails without approval. Shows approval ID.
@@ -200,12 +204,11 @@ dina validate-status <approval-id>
 
 The unified approval system. When an agent needs access to a sensitive persona or wants to perform a risky action, Dina queues an approval request. You review and approve/deny via `dina-admin`.
 
-### 6.1 Create and lock a sensitive persona
+### 6.1 Verify sensitive personas exist
 
 ```bash
-# Tab 1
-dina-admin persona create --name health --tier sensitive --passphrase test-pass
-dina-admin persona unlock --name health --passphrase test-pass
+# Tab 1 — health and finance are created at install (sensitive tier, v1 auto-open)
+dina-admin persona list
 ```
 
 ### 6.2 List pending approvals (should be empty)

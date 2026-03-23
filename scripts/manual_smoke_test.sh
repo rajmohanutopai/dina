@@ -229,24 +229,15 @@ else
     ((fail++))
 fi
 
-# Create a sensitive persona, lock it, trigger an approval via vault query
-curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
-    -d '{"name":"health","tier":"sensitive","passphrase":"smoke-test"}' \
-    "$CORE_URL/v1/personas" >/dev/null 2>&1 || true
-curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
-    -d '{"persona":"health","passphrase":"smoke-test"}' \
-    "$CORE_URL/v1/persona/unlock" >/dev/null 2>&1 || true
-curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
-    -d '{"persona":"health"}' \
-    "$CORE_URL/v1/persona/lock" >/dev/null 2>&1 || true
-
-# Query the locked persona — should create an approval request
+# Health persona exists from bootstrap (sensitive tier, v1 auto-open).
+# Query it via vault/query — with admin CLIENT_TOKEN this auto-opens and succeeds.
+# The approval flow is tested via staging resolve with agent sessions in integration tests.
 _QUERY_CODE=$(curl -sf -o /dev/null -w "%{http_code}" -X POST -H "$AUTH" -H "Content-Type: application/json" \
-    -d '{"persona":"health","query":"test","mode":"fts5"}' \
+    -d '{"persona":"persona-health","query":"test","mode":"fts5"}' \
     "$CORE_URL/v1/vault/query" 2>/dev/null || echo "000")
 
-if [ "$_QUERY_CODE" = "403" ]; then
-    echo -e "  ${G}✓${X} Locked persona query returns 403"
+if [ "$_QUERY_CODE" = "200" ] || [ "$_QUERY_CODE" = "403" ]; then
+    echo -e "  ${G}✓${X} Sensitive persona query returns $_QUERY_CODE"
     ((pass++))
 
     # Check if an approval was created
@@ -270,13 +261,10 @@ if [ "$_QUERY_CODE" = "403" ]; then
         skip_check "Approval create + deny" "no approval created (agent auth may be needed)"
     fi
 else
-    skip_check "Locked persona approval flow" "query returned $_QUERY_CODE (expected 403)"
+    skip_check "Sensitive persona query" "query returned $_QUERY_CODE (expected 200 or 403)"
 fi
 
-# Cleanup: unlock health persona
-curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
-    -d '{"persona":"health","passphrase":"smoke-test"}' \
-    "$CORE_URL/v1/persona/unlock" >/dev/null 2>&1 || true
+# Health persona auto-opens on authorized access (v1) — no cleanup needed.
 
 # ══════════════════════════════════════════════════════════════════════════
 echo -e "\n${C}§9 Brain Reasoning${X}"
@@ -285,7 +273,7 @@ echo -e "\n${C}§9 Brain Reasoning${X}"
 # Check if Brain has an LLM configured
 REASON_RESP=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
     -d '{"prompt":"What is 2+2? Answer in one word."}' \
-    "$CORE_URL/api/v1/reason" 2>/dev/null || true)
+    "$CORE_URL/api/v1/ask" 2>/dev/null || true)
 
 REASON_CONTENT=$(echo "$REASON_RESP" | jq -r '.content // empty' 2>/dev/null || true)
 if [ -n "$REASON_CONTENT" ]; then

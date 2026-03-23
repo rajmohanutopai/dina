@@ -101,7 +101,7 @@ sequenceDiagram
     participant LLM as LLM
     participant VAULT as Vault
 
-    CLI->>CORE: POST /api/v1/reason (device-signed)
+    CLI->>CORE: POST /api/v1/ask (device-signed)
     CORE->>BRAIN: Forward with agent context
     BRAIN->>BRAIN: Guardian handles reason event
 

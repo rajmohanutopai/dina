@@ -1100,13 +1100,13 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			return true
 		}
 		// Device-scoped clients: explicit allowlist only.
-		// Agents are persona-blind for reads — they use Brain (/api/v1/reason).
+		// Agents are persona-blind for reads — they use Brain (/api/v1/ask).
 		// Device clients must use /v1/staging/ingest for all memory-producing
 		// writes. /v1/vault/store is NOT allowed — only Brain (after staging
 		// resolution) and admin can write directly to vault.
 		// Vault query is NOT allowed — reads go through Brain.
 		deviceAllowedPrefix := []string{
-			"/api/v1/reason",        // Brain-mediated reasoning (persona-blind)
+			"/api/v1/ask",           // Brain-mediated reasoning (persona-blind)
 			"/api/v1/remember",      // solicited memory write + status polling
 			"/v1/vault/kv",          // KV store (approval status, session state)
 			"/v1/staging/ingest",    // universal content ingestion (background connectors)

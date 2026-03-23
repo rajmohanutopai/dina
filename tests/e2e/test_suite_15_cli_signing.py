@@ -163,7 +163,7 @@ class TestCLIEd25519Signing:
     ) -> None:
         """E2E-15.3 Device-signed vault/query returns 403 (not in device allowlist).
 
-        Devices are persona-blind for reads — they use /api/v1/reason (Brain-mediated).
+        Devices are persona-blind for reads — they use /api/v1/ask (Brain-mediated).
         """
         if DOCKER_MODE and docker_services is not None:
             if not _docker_ed25519_paired:

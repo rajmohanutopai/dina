@@ -116,17 +116,19 @@ class TestDefaultPersonas:
         })
         assert resp.status_code == 200
 
-    def test_health_closed(self, core) -> None:
+    def test_health_auto_opens(self, core) -> None:
+        """v1 auto-open: sensitive personas open for authorized callers (admin CLIENT_TOKEN)."""
         resp = _post(core, "/v1/vault/query", {
             "persona": "health", "query": "test", "mode": "fts5",
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
-    def test_finance_closed(self, core) -> None:
+    def test_finance_auto_opens(self, core) -> None:
+        """v1 auto-open: sensitive personas open for authorized callers (admin CLIENT_TOKEN)."""
         resp = _post(core, "/v1/vault/query", {
             "persona": "finance", "query": "test", "mode": "fts5",
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
 
 # ==========================================================================
@@ -171,7 +173,7 @@ class TestLLMErrorReporting:
     """
 
     def test_reason_returns_error_code_or_content(self, core) -> None:
-        resp = _post(core, "/api/v1/reason", {"prompt": "hello"}, timeout=60)
+        resp = _post(core, "/api/v1/ask", {"prompt": "hello"}, timeout=60)
         if resp.status_code == 502:
             pytest.skip("Brain not running (Core-only mode)")
         assert resp.status_code in (200, 202)
@@ -183,7 +185,7 @@ class TestLLMErrorReporting:
         )
 
     def test_error_code_classified(self, core) -> None:
-        resp = _post(core, "/api/v1/reason", {"prompt": "test"}, timeout=60)
+        resp = _post(core, "/api/v1/ask", {"prompt": "test"}, timeout=60)
         if resp.status_code == 502:
             pytest.skip("Brain not running (Core-only mode)")
         data = resp.json()
@@ -195,7 +197,7 @@ class TestLLMErrorReporting:
             }
 
     def test_error_has_message(self, core) -> None:
-        resp = _post(core, "/api/v1/reason", {"prompt": "test"}, timeout=60)
+        resp = _post(core, "/api/v1/ask", {"prompt": "test"}, timeout=60)
         if resp.status_code == 502:
             pytest.skip("Brain not running (Core-only mode)")
         data = resp.json()
@@ -263,11 +265,11 @@ class TestApprovals:
 
 class TestAsyncApproval:
     def test_reason_status_404_for_unknown(self, core) -> None:
-        resp = _get(core, "/api/v1/reason/reason-nonexistent/status")
+        resp = _get(core, "/api/v1/ask/reason-nonexistent/status")
         assert resp.status_code == 404
 
     def test_reason_endpoint_exists(self, core) -> None:
-        resp = _post(core, "/api/v1/reason", {"prompt": "test"}, timeout=60)
+        resp = _post(core, "/api/v1/ask", {"prompt": "test"}, timeout=60)
         # 502 = Brain not running (Core-only), which is fine — endpoint exists
         assert resp.status_code in (200, 202, 502)
 

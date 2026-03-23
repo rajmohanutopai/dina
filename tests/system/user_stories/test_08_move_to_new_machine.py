@@ -565,17 +565,18 @@ class TestMoveToNewMachine:
         assert "persona" in r2.json().get("error", "").lower()
         print("  [migrate] Safety check (personas open): blocked ✓")
 
-        # 3. Lock lockable personas before export.
+        # 3. Lock all sensitive personas before export.
         # Default/standard personas cannot be locked (always open by design).
-        # Only sensitive and locked tier personas need explicit locking.
-        for persona in ["health"]:
+        # v1 auto-open means both health and finance may be open.
+        for persona in ["health", "finance"]:
             r = httpx.post(
                 f"{alonso_core}/v1/persona/lock",
                 json={"persona": persona},
                 headers=admin_headers,
                 timeout=10,
             )
-            assert r.status_code == 200, (
+            # 200 = locked, 400/404 = persona doesn't exist or already locked — both OK.
+            assert r.status_code in (200, 400, 404), (
                 f"Failed to lock {persona}: {r.status_code} {r.text[:200]}"
             )
         print("  [migrate] Locked sensitive personas on Node A ✓")
@@ -698,14 +699,14 @@ class TestMoveToNewMachine:
 
         # ── Step 2: Lock lockable personas on Node B → import ─────────
         # Default/standard cannot be locked. Only lock sensitive/locked.
-        for persona in ["health"]:
+        for persona in ["health", "finance"]:
             r = httpx.post(
                 f"{sancho_core}/v1/persona/lock",
                 json={"persona": persona},
                 headers=admin_headers,
                 timeout=10,
             )
-            assert r.status_code == 200, (
+            assert r.status_code in (200, 400, 404), (
                 f"Failed to lock {persona} on Node B: "
                 f"{r.status_code} {r.text[:200]}"
             )

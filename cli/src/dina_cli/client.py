@@ -153,9 +153,9 @@ class DinaClient:
                 f"HTTP {status}: {server_msg}"
             ) from exc
 
-    # -- Reasoning (Brain-mediated, persona-blind) -------------------------
+    # -- Ask (Brain-mediated reasoning, persona-blind) ---------------------
 
-    def reason(self, prompt: str, session: str = "") -> dict:
+    def ask(self, prompt: str, session: str = "") -> dict:
         """Send a reasoning query to Brain via Core proxy.
 
         Brain decides which personas to search. The agent never
@@ -167,15 +167,15 @@ class DinaClient:
         if session:
             headers["X-Session"] = session
         resp = self._request(
-            self._core, "POST", "/api/v1/reason",
+            self._core, "POST", "/api/v1/ask",
             json=body, headers=headers,
         )
         return resp.json()
 
-    def reason_status(self, request_id: str) -> dict:
-        """Poll the status of a pending reason request."""
+    def ask_status(self, request_id: str) -> dict:
+        """Poll the status of a pending ask request."""
         resp = self._request(
-            self._core, "GET", f"/api/v1/reason/{request_id}/status",
+            self._core, "GET", f"/api/v1/ask/{request_id}/status",
         )
         return resp.json()
 

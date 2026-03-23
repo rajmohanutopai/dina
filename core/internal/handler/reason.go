@@ -255,10 +255,8 @@ func (h *ReasonHandler) HandleReasonStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Extract request_id from path: /api/v1/reason/{id}/status
-	path := r.URL.Path
-	// Strip /api/v1/reason/ prefix and /status suffix
-	path = strings.TrimPrefix(path, "/api/v1/reason/")
+	// Extract request_id from path: /api/v1/ask/{id}/status
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/ask/")
 	requestID := strings.TrimSuffix(path, "/status")
 	if requestID == "" || requestID == path {
 		http.Error(w, `{"error":"request_id is required"}`, http.StatusBadRequest)

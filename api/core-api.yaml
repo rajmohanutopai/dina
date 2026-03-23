@@ -1602,14 +1602,16 @@ paths:
         "200":
           description: Acknowledged.
 
-  # ── Reason Proxy ──
+  # ── Ask (Brain-mediated reasoning) ──
 
-  /api/v1/reason:
+  /api/v1/ask:
     post:
-      summary: Reasoning query (proxied to Brain)
+      summary: Ask Dina a question
       description: |
-        Sends a reasoning query to Brain. If Brain needs access to a sensitive
-        persona, returns 202 with a request_id for async polling.
+        Sends a reasoning query to Brain via Core proxy. Brain decides which
+        personas to search — the caller never specifies a persona. If Brain
+        needs access to a sensitive persona, returns 202 with a request_id
+        for async polling.
       requestBody:
         required: true
         content:
@@ -1634,12 +1636,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReasonAccepted"
 
-  /api/v1/reason/{requestId}/status:
+  /api/v1/ask/{requestId}/status:
     get:
-      summary: Poll status of a pending reason request
-      description: |
-        Caller-bound: only the original requester can read the result.
-        Returns 403 if caller DID doesn't match.
+      summary: Poll status of a pending ask request
       parameters:
         - name: requestId
           in: path

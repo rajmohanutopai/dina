@@ -1304,8 +1304,8 @@ func main() {
 	// Brain reasoning proxy — agents interact with Brain via Core.
 	// Core re-signs the request with its own service key (agents have device keys).
 	reasonH := &handler.ReasonHandler{Brain: brain, PendingReasons: pendingReasonStore}
-	mux.HandleFunc("/api/v1/reason", reasonH.HandleReason)
-	mux.HandleFunc("/api/v1/reason/", reasonH.HandleReasonStatus) // GET /api/v1/reason/{id}/status
+	mux.HandleFunc("/api/v1/ask", reasonH.HandleReason)        // POST /api/v1/ask
+	mux.HandleFunc("/api/v1/ask/", reasonH.HandleReasonStatus) // GET /api/v1/ask/{id}/status
 
 	// User-facing solicited memory write — wraps staging with synchronous completion.
 	rememberH := &handler.RememberHandler{StagingHandler: stagingH, Staging: stagingInbox, Brain: brain}

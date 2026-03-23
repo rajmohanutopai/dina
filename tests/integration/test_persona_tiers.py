@@ -354,7 +354,7 @@ class TestDeviceSignedAgentContext:
         assert r.json().get("staged") is True
 
     def test_reason_endpoint_not_blocked(self):
-        """Device-signed /api/v1/reason passes authz (in device allowlist).
+        """Device-signed /api/v1/ask passes authz (in device allowlist).
 
         This only proves authz admission, not full approval propagation
         through Brain. The full Brain-mediated read path is tested
@@ -364,14 +364,14 @@ class TestDeviceSignedAgentContext:
         """
         r = _device_post(
             self._core_url, self._priv, self._did,
-            "/api/v1/reason",
+            "/api/v1/ask",
             {"prompt": "hello"},
         )
         # 403 "forbidden" = authz block (bad). 403 "approval_required" = ok.
         # 200 / 502 = authz passed.
         if r.status_code == 403:
             assert "approval" in r.text.lower(), (
-                f"/api/v1/reason blocked by authz: {r.text}"
+                f"/api/v1/ask blocked by authz: {r.text}"
             )
 
 
@@ -527,7 +527,7 @@ class TestBrainMediatedApprovalPath:
         """Service-key + X-Agent-DID vault query: denied → approve → 200.
 
         This is the exact auth path Brain takes when an agent calls
-        /api/v1/reason and Brain's vault tools hit Core:
+        /api/v1/ask and Brain's vault tools hit Core:
           Brain signs with service key → Core sees TokenBrain →
           X-Agent-DID present → CallerType overridden to "agent" →
           AccessPersona → ErrApprovalRequired → 403.

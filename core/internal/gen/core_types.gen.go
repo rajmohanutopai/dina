@@ -1385,8 +1385,8 @@ type VaultStoreResponse struct {
 	Id string `json:"id,omitempty"`
 }
 
-// PostApiV1ReasonJSONBody defines parameters for PostApiV1Reason.
-type PostApiV1ReasonJSONBody struct {
+// PostApiV1AskJSONBody defines parameters for PostApiV1Ask.
+type PostApiV1AskJSONBody struct {
 	Prompt string `json:"prompt"`
 }
 
@@ -1512,8 +1512,8 @@ type PatchV1VaultItemIdEnrichParams struct {
 	Persona string `form:"persona" json:"persona"`
 }
 
-// PostApiV1ReasonJSONRequestBody defines body for PostApiV1Reason for application/json ContentType.
-type PostApiV1ReasonJSONRequestBody PostApiV1ReasonJSONBody
+// PostApiV1AskJSONRequestBody defines body for PostApiV1Ask for application/json ContentType.
+type PostApiV1AskJSONRequestBody PostApiV1AskJSONBody
 
 // PostApiV1RememberJSONRequestBody defines body for PostApiV1Remember for application/json ContentType.
 type PostApiV1RememberJSONRequestBody = RememberRequest

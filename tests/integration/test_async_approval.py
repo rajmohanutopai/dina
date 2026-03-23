@@ -68,7 +68,7 @@ class TestAsyncApprovalFlow:
         _post(core, "/v1/persona/lock", {"persona": "health"})
 
         # Send a reason request — if Brain queries health, it should get 202
-        resp = _post(core, "/api/v1/reason",
+        resp = _post(core, "/api/v1/ask",
                      {"prompt": "What does my health data say about vitamin levels?"},
                      timeout=60)
 
@@ -84,8 +84,8 @@ class TestAsyncApprovalFlow:
             assert data.get("approval_id", "").startswith("apr-")
 
     def test_reason_status_404_for_unknown(self, core) -> None:
-        """TST-INT-751: GET /api/v1/reason/{id}/status returns 404 for unknown IDs."""
-        resp = _get(core, "/api/v1/reason/reason-nonexistent-id/status")
+        """TST-INT-751: GET /api/v1/ask/{id}/status returns 404 for unknown IDs."""
+        resp = _get(core, "/api/v1/ask/reason-nonexistent-id/status")
         assert resp.status_code == 404
         assert "not found" in resp.json().get("error", "").lower()
 
@@ -103,7 +103,7 @@ class TestAsyncApprovalFlow:
         _post(core, "/v1/persona/lock", {"persona": "health"})
 
         # 2. Send reason — may get 202 if Brain queries health
-        resp = _post(core, "/api/v1/reason",
+        resp = _post(core, "/api/v1/ask",
                      {"prompt": "What are my vitamin levels?"},
                      timeout=60)
 
@@ -119,7 +119,7 @@ class TestAsyncApprovalFlow:
         assert data.get("approval_id", "").startswith("apr-")
 
         # 3. Verify status is pending_approval
-        status_resp = _get(core, f"/api/v1/reason/{request_id}/status")
+        status_resp = _get(core, f"/api/v1/ask/{request_id}/status")
         assert status_resp.status_code == 200, f"Status check failed: {status_resp.text}"
         assert status_resp.json()["status"] == "pending_approval"
 
@@ -134,7 +134,7 @@ class TestAsyncApprovalFlow:
         )
 
         # 5. Verify status is now complete with content
-        final_resp = _get(core, f"/api/v1/reason/{request_id}/status")
+        final_resp = _get(core, f"/api/v1/ask/{request_id}/status")
         assert final_resp.status_code == 200
         final = final_resp.json()
         assert final["status"] == "complete", f"Expected complete, got: {final}"
@@ -180,7 +180,7 @@ class TestAsyncApprovalFlow:
         _post(core, "/v1/persona/lock", {"persona": "health"})
 
         # 3. Send reason request
-        resp = _post(core, "/api/v1/reason",
+        resp = _post(core, "/api/v1/ask",
                      {"prompt": "What are my vitamin levels?"},
                      timeout=60)
 
@@ -202,7 +202,7 @@ class TestAsyncApprovalFlow:
         # 5. Poll for result (Brain resumes in background)
         for _ in range(30):
             time.sleep(2)
-            status_resp = _get(core, f"/api/v1/reason/{request_id}/status")
+            status_resp = _get(core, f"/api/v1/ask/{request_id}/status")
             if status_resp.status_code != 200:
                 continue
             status = status_resp.json()
@@ -213,7 +213,7 @@ class TestAsyncApprovalFlow:
                 break
 
         # If we get here, check what happened
-        final = _get(core, f"/api/v1/reason/{request_id}/status")
+        final = _get(core, f"/api/v1/ask/{request_id}/status")
         if final.status_code == 200:
             final_status = final.json().get("status")
             if final_status == "complete":
@@ -234,7 +234,7 @@ class TestAsyncApprovalFlow:
         _post(core, "/v1/persona/lock", {"persona": "health"})
 
         # Trigger a pending reason
-        resp = _post(core, "/api/v1/reason",
+        resp = _post(core, "/api/v1/ask",
                      {"prompt": "What are my health records?"},
                      timeout=60)
 
@@ -246,7 +246,7 @@ class TestAsyncApprovalFlow:
         # Poll with a different agent DID — should be denied
         rogue_headers = {**core["headers"], "X-DID": "did:key:z6MkRogueAgent"}
         rogue_resp = httpx.get(
-            f"{core['url']}/api/v1/reason/{request_id}/status",
+            f"{core['url']}/api/v1/ask/{request_id}/status",
             headers=rogue_headers, timeout=10,
         )
         assert rogue_resp.status_code == 403, (
@@ -266,7 +266,7 @@ class TestAsyncApprovalFlow:
         })
         _post(core, "/v1/persona/lock", {"persona": "health"})
 
-        resp = _post(core, "/api/v1/reason",
+        resp = _post(core, "/api/v1/ask",
                      {"prompt": "What vitamins am I deficient in?"},
                      timeout=60)
 
@@ -278,7 +278,7 @@ class TestAsyncApprovalFlow:
         first_approval_id = data["approval_id"]
 
         # Check initial status
-        status_resp = _get(core, f"/api/v1/reason/{request_id}/status")
+        status_resp = _get(core, f"/api/v1/ask/{request_id}/status")
         assert status_resp.status_code == 200
         assert status_resp.json()["status"] == "pending_approval"
 
@@ -293,7 +293,7 @@ class TestAsyncApprovalFlow:
         )
 
         # Status should still be pending_approval but with new approval_id
-        status_resp = _get(core, f"/api/v1/reason/{request_id}/status")
+        status_resp = _get(core, f"/api/v1/ask/{request_id}/status")
         assert status_resp.status_code == 200
         status = status_resp.json()
         assert status["status"] == "pending_approval"
@@ -305,7 +305,7 @@ class TestAsyncApprovalFlow:
             "model": "gemini-lite",
         })
 
-        final = _get(core, f"/api/v1/reason/{request_id}/status")
+        final = _get(core, f"/api/v1/ask/{request_id}/status")
         assert final.status_code == 200
         assert final.json()["status"] == "complete"
 
@@ -318,7 +318,7 @@ class TestAsyncApprovalFlow:
         _post(core, "/v1/persona/lock", {"persona": "health"})
 
         # Send reason request
-        resp = _post(core, "/api/v1/reason",
+        resp = _post(core, "/api/v1/ask",
                      {"prompt": "Check my health records"},
                      timeout=60)
 
@@ -334,6 +334,6 @@ class TestAsyncApprovalFlow:
 
         # Poll — should be denied
         time.sleep(1)
-        status_resp = _get(core, f"/api/v1/reason/{request_id}/status")
+        status_resp = _get(core, f"/api/v1/ask/{request_id}/status")
         assert status_resp.status_code == 200
         assert status_resp.json().get("status") == "denied"

@@ -660,10 +660,10 @@ func TestStagingInbox_Phase4_DeviceVaultStoreLockdown(t *testing.T) {
 		checker.AllowedForTokenKind(kind, "/v1/staging/ingest", scope),
 		"device should be allowed on /v1/staging/ingest")
 
-	// Device SHOULD still access /api/v1/reason (Brain-mediated).
+	// Device SHOULD still access /api/v1/ask (Brain-mediated).
 	testutil.RequireTrue(t,
-		checker.AllowedForTokenKind(kind, "/api/v1/reason", scope),
-		"device should be allowed on /api/v1/reason")
+		checker.AllowedForTokenKind(kind, "/api/v1/ask", scope),
+		"device should be allowed on /api/v1/ask")
 }
 
 // --------------------------------------------------------------------------

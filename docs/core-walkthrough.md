@@ -497,7 +497,7 @@ Three handlers where Core accepts an HTTP request from a device/agent and re-iss
 
 - **AdminHandler** (`/admin/*`) — reverse-proxies the admin web UI via `httputil.ReverseProxy`.
 - **AgentHandler** (`/v1/agent/validate`) — not a generic proxy. Only accepts `agent_intent` events, overrides the caller-supplied `agent_did` with the authenticated identity from the auth middleware, and sets `trust_level` to `"verified"`. Then forwards the patched payload to Brain's guardian via `ProcessEvent`.
-- **ReasonHandler** (`/api/v1/reason`) — proxies LLM reasoning to Brain, re-signing with Core's service key. Forwards agent DID and session name for agent-scoped callers so Brain can attribute vault access to the originating agent.
+- **ReasonHandler** (`/api/v1/ask`) — proxies LLM reasoning to Brain, re-signing with Core's service key. Forwards agent DID and session name for agent-scoped callers so Brain can attribute vault access to the originating agent.
 
 In all three cases, the external caller authenticates to Core (device key or client token), and Core authenticates to Brain (service key). Brain is never directly exposed to the network.
 
