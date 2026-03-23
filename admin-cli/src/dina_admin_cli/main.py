@@ -127,6 +127,96 @@ def status(ctx: click.Context) -> None:
         ctx.exit(1)
 
 
+# ── vault ─────────────────────────────────────────────────────────────────────
+
+
+@cli.group()
+def vault() -> None:
+    """Search, list, and manage vault items.
+
+    \b
+    Examples:
+      dina-admin vault list --persona general              # latest 20 items
+      dina-admin vault list --persona health --offset 20   # next 20
+      dina-admin vault search --persona general "tea"      # keyword search
+      dina-admin vault delete <item-id> --persona general  # delete one item
+    """
+
+
+def _print_items(items: list, json_mode: bool) -> None:
+    """Format vault items for display."""
+    if json_mode:
+        print_result(items, json_mode)
+        return
+    if not items:
+        click.echo("No items found.")
+        return
+    for item in items:
+        iid = item.get("id", "?")
+        summary = item.get("summary", item.get("content_l0", ""))
+        itype = item.get("type", "")
+        if len(summary) > 100:
+            summary = summary[:100] + "..."
+        click.echo(f"  {iid}  [{itype}]  {summary}")
+    click.echo(f"  ({len(items)} items)")
+
+
+@vault.command("list")
+@click.option("--persona", default="general", help="Persona to list (default: general)")
+@click.option("--limit", default=20, help="Max results per page")
+@click.option("--offset", default=0, help="Skip this many items (pagination)")
+@click.pass_context
+def vault_list(ctx: click.Context, persona: str, limit: int, offset: int) -> None:
+    """List vault items (most recent first). Use --offset for pagination."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        items = client.vault_query(f"persona-{persona}", query="", limit=limit, offset=offset)
+        _print_items(items, json_mode)
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@vault.command("search")
+@click.argument("query")
+@click.option("--persona", default="general", help="Persona to search (default: general)")
+@click.option("--mode", default="fts5", type=click.Choice(["fts5", "semantic", "hybrid"]), help="Search mode")
+@click.option("--limit", default=20, help="Max results")
+@click.option("--offset", default=0, help="Skip this many items (pagination)")
+@click.pass_context
+def vault_search(ctx: click.Context, query: str, persona: str, mode: str, limit: int, offset: int) -> None:
+    """Search a persona vault for items matching a query."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        items = client.vault_query(f"persona-{persona}", query=query, mode=mode, limit=limit, offset=offset)
+        _print_items(items, json_mode)
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@vault.command("delete")
+@click.argument("item_id")
+@click.option("--persona", required=True, help="Persona the item belongs to")
+@click.confirmation_option(prompt="Are you sure you want to delete this vault item?")
+@click.pass_context
+def vault_delete(ctx: click.Context, item_id: str, persona: str) -> None:
+    """Delete a vault item by ID. Requires --persona."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        client.vault_delete(f"persona-{persona}", item_id)
+        if json_mode:
+            print_result({"status": "deleted", "id": item_id}, json_mode)
+        else:
+            click.echo(f"Deleted: {item_id} from {persona}")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
 # ── approvals ────────────────────────────────────────────────────────────────
 
 

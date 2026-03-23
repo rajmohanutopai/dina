@@ -1327,11 +1327,14 @@ type VaultItem struct {
 // VaultQueryRequest defines model for VaultQueryRequest.
 type VaultQueryRequest struct {
 	// Embedding 768-dim vector from Brain (enables semantic/hybrid).
-	Embedding       []float32                        `json:"embedding,omitempty"`
-	IncludeAll      bool                             `json:"include_all,omitempty"`
-	IncludeContent  bool                             `json:"include_content,omitempty"`
-	Limit           int                              `json:"limit,omitempty"`
-	Mode            VaultQueryRequestMode            `json:"mode,omitempty"`
+	Embedding      []float32             `json:"embedding,omitempty"`
+	IncludeAll     bool                  `json:"include_all,omitempty"`
+	IncludeContent bool                  `json:"include_content,omitempty"`
+	Limit          int                   `json:"limit,omitempty"`
+	Mode           VaultQueryRequestMode `json:"mode,omitempty"`
+
+	// Offset Skip this many results (for pagination).
+	Offset          int                              `json:"offset,omitempty"`
 	Persona         string                           `json:"persona"`
 	Query           string                           `json:"query"`
 	RetrievalPolicy VaultQueryRequestRetrievalPolicy `json:"retrieval_policy,omitempty"`

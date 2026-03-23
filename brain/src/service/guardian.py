@@ -457,6 +457,8 @@ from the AI. Return ONLY valid JSON.
 - Asking a factual question (even about emotions: "what is depression?")
 - Requesting task help ("help me write a message to my friend")
 - Asking about their own data ("what did Dr. Sharma say?")
+- Querying their own stored memories ("do I have any diseases?", "what are my medications?", "show me my health records")
+- Asking about their personal information, health, finances, or schedule
 - Making small talk as a greeting before a task ("hello, how are you?")
 - Asking the AI to help them connect with someone else
 
@@ -3002,18 +3004,13 @@ class GuardianLoop:
                 if vault:
                     llm_prompt = _PII_PRESERVE_INSTRUCTION + llm_prompt
 
-            # Step 1b: Anti-Her intent classification (Law 4).
-            # Classify the SCRUBBED prompt — raw PII must never reach cloud.
-            # If the user is seeking emotional companionship, redirect
-            # to humans immediately — never generate a companion response.
-            if await self._is_emotional_dependency(llm_prompt):
-                redirect = await self._build_anti_her_redirect()
-                log.info("guardian.anti_her_intent_redirect", prompt_len=len(prompt))
-                return {
-                    "content": redirect,
-                    "model": "anti-her-redirect",
-                    "vault_context_used": False,
-                }
+            # Step 1b: Anti-Her is enforced AFTER reasoning (Step 3-4),
+            # not before. Pre-flight intent classification was removed because
+            # legitimate vault queries ("do I have any diseases?") triggered
+            # false positives — the LLM saw a health question without vault
+            # context and misclassified it as emotional dependency. The
+            # post-response guard scan (Step 3-4) catches anti-her violations
+            # in the actual LLM response, which is the right place to check.
 
             # Step 2: Agentic reasoning with vault tools.
             if self._vault_context and not skip_vault:
@@ -3598,6 +3595,11 @@ class GuardianLoop:
         if the user is seeking the AI as an emotional companion/therapist.
         No keyword shortcuts — nuance matters. "I'm lonely, help me write
         to Sarah" is a task request, not emotional dependency.
+
+        NOTE: This is no longer called pre-flight (Step 1b was removed).
+        Anti-Her is enforced post-response via guard_scan (Step 3-4).
+        This method is retained for explicit anti-her checks in other
+        code paths (e.g., process_event).
         """
         try:
             classify_prompt = _ANTI_HER_CLASSIFY_PROMPT.format(prompt=prompt)

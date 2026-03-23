@@ -60,6 +60,10 @@ components:
           type: integer
           maximum: 100
           default: 50
+        offset:
+          type: integer
+          default: 0
+          description: Skip this many results (for pagination).
         embedding:
           type: array
           items:

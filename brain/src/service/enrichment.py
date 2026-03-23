@@ -115,15 +115,23 @@ class EnrichmentService:
         # Body, summary, and sender can all contain PII (e.g. email addresses).
         # Source is a system identifier (gmail, d2d) — not PII, safe to pass.
         # If scrubbing fails, enrichment fails (fail-closed).
+        #
+        # The scrubbed text is used ONLY for the LLM call. The vault stores
+        # original (unscrubbed) data — the vault IS the encrypted secure
+        # boundary. PII tokens like <<PII:...>> must never be persisted in
+        # vault items, otherwise query-time retrieval leaks scrub artifacts.
         llm_sender = sender
+        pii_vault: dict = {}
         if self._entity_vault is not None:
             try:
                 if llm_input:
-                    scrubbed_input, _ = await self._entity_vault.scrub(llm_input)
+                    scrubbed_input, vault_input = await self._entity_vault.scrub(llm_input)
                     llm_input = scrubbed_input
+                    pii_vault.update(vault_input)
                 if summary:
-                    scrubbed_summary, _ = await self._entity_vault.scrub(summary)
+                    scrubbed_summary, vault_summary = await self._entity_vault.scrub(summary)
                     llm_summary = scrubbed_summary
+                    pii_vault.update(vault_summary)
                 if sender:
                     scrubbed_sender, _ = await self._entity_vault.scrub(sender)
                     llm_sender = scrubbed_sender
@@ -147,7 +155,17 @@ class EnrichmentService:
                 f"body_len={len(body)}, summary_len={len(summary)})"
             )
 
+        # Rehydrate PII tokens in L0/L1 before storing in vault.
+        # The LLM generated these from scrubbed input, so they contain
+        # tokens like <<PII:West Kennethhaven>> or [PERSON_1]. Vault data
+        # must contain original values — the encrypted vault is the secure
+        # boundary, not PII scrub tokens.
+        if pii_vault and self._entity_vault is not None:
+            l0 = self._entity_vault.rehydrate(l0, pii_vault)
+            l1 = self._entity_vault.rehydrate(l1, pii_vault)
+
         # Embedding from L1 (not L2 — L1 is cleaner, better semantic quality).
+        # Use the rehydrated L1 so semantic search matches original terms.
         embedding = await self._llm.embed(l1[:2000])
 
         version = json.dumps({

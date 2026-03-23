@@ -177,3 +177,27 @@ class AdminClient:
             "POST", f"/v1/approvals/{approval_id}/deny",
         )
         return resp.json()
+
+    # -- vault ---------------------------------------------------------------
+
+    def vault_query(
+        self, persona: str, query: str = "", mode: str = "fts5",
+        limit: int = 20, offset: int = 0,
+    ) -> list:
+        """POST /v1/vault/query — search or list a persona vault."""
+        body: dict = {
+            "persona": persona,
+            "query": query,
+            "mode": mode,
+            "limit": limit,
+            "include_all": True,
+        }
+        if offset > 0:
+            body["offset"] = offset
+        resp = self._request("POST", "/v1/vault/query", json=body)
+        data = resp.json()
+        return data.get("items", data) if isinstance(data, dict) else data
+
+    def vault_delete(self, persona: str, item_id: str) -> None:
+        """DELETE /v1/vault/item/{id}?persona={persona} — delete a vault item."""
+        self._request("DELETE", f"/v1/vault/item/{item_id}", params={"persona": persona})

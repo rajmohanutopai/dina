@@ -138,6 +138,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		Query:           req.Query,
 		Types:           req.Types,
 		Limit:           limit,
+		Offset:          req.Offset,
 		Embedding:       req.Embedding,
 		IncludeAll:      req.IncludeAll,
 		IncludeContent:  req.IncludeContent,
