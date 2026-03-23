@@ -48,7 +48,7 @@ CLI connects to OpenClaw Gateway (WebSocket RPC)
   │  ├─ searches, browses, compiles
   │  ├─ dina ask "back pain?" --session task-<uuid>
   │  ├─ dina validate send_email "..." --session task-<uuid>
-  │  ├─ dina remember "finding..."  (staging, provenance auto-derived)
+  │  ├─ dina remember "finding..." --session task-<uuid>
   │  │
   │◄── terminal event (agent.wait resolves)
   ▼
@@ -254,23 +254,22 @@ Extract `SessionNameKey` from request context (already set by auth middleware) a
 
 `AgentIntentEvent` currently has no `session` field. Add `session: str | None = None` so the discriminated union accepts session from Core's forwarded payload.
 
-#### 4d. Remember `--session` with X-Session header
+#### 4d. Remember `--session` with POST /api/v1/remember
 
 **File:** `cli/src/dina_cli/main.py` (~line 142)
 
-Add `--session` option. Pass as `X-Session` header via `staging_ingest(item, session=session)`. Also put in metadata for traceability. Omit hardcoded `sender: "user"` — let Core/Brain derive sender from device role.
+`--session` is **required**. `remember` calls `client.remember(text, session=session, ...)` which posts to `POST /api/v1/remember`. Core wraps staging ingest + Brain drain + completion polling (up to 15s). Omit hardcoded `sender: "user"` — let Core/Brain derive sender from device role.
 
-#### 4e. DinaClient: Session-aware staging_ingest
+#### 4e. DinaClient: Session-aware remember
 
 **File:** `cli/src/dina_cli/client.py`
 
 ```python
-def staging_ingest(self, item: dict, session: str = "") -> dict:
-    headers = {}
-    if session:
-        headers["X-Session"] = session
-    resp = self._request(self._core, "POST", "/v1/staging/ingest",
-                         json=item, headers=headers)
+def remember(self, text: str, session: str = "", source_id: str = "", metadata: str = "") -> dict:
+    resp = self._request(self._core, "POST", "/api/v1/remember",
+                         json={"text": text, "session": session,
+                               "source": "dina-cli", "source_id": source_id,
+                               "metadata": metadata})
     return resp.json()
 ```
 

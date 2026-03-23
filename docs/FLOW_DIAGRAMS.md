@@ -145,7 +145,7 @@ sequenceDiagram
         CORE->>TG: send approval prompt
     end
 
-    CORE-->>AG: 403 approval_required
+    CORE-->>AG: 403 {"error": "approval_required", "approval_id": "apr-123"}
 
     USER->>TG: approve apr-123
     TG->>CORE: POST /v1/persona/approve
@@ -377,22 +377,48 @@ sequenceDiagram
 
 ## 12. Vault Write Path (dina remember)
 
-**Use case:** User saves a quick note via CLI. The item goes directly to the general vault (default tier, always open) with self/high/normal trust defaults. No Brain involvement needed.
+**Use case:** User saves a quick note via CLI. The item goes through Core's remember endpoint, which wraps staging ingest + Brain drain + completion polling into a single synchronous call. Brain classifies the content into the right persona, enriches it (L0/L1 summaries, embedding), and resolves it into the vault. Session is required.
 
-**Example:** You run `dina remember "Buy ergonomic chair with lumbar support"`. The CLI signs the request, Core stores it in the general vault with full trust, and it's immediately searchable.
+**Example:** You run `dina remember "Buy ergonomic chair with lumbar support" --session chair-research`. The CLI posts to `/api/v1/remember`, Core stages the item, triggers Brain drain, and polls for up to 15 seconds. Brain classifies it into the general persona, enriches it, and resolves it. Core returns `{"status": "stored"}`. If the target persona requires approval, Core returns 202 with `{"status": "needs_approval"}`.
 
 ```mermaid
 sequenceDiagram
     participant CLI as CLI
     participant CORE as Core
-    participant VAULT as Vault
+    participant STG as Staging Inbox
+    participant BRAIN as Brain
+    participant CLF as Classifier
+    participant VAULT as Persona Vault
 
-    CLI->>CORE: POST /v1/vault/store (device-signed)
-    Note over CORE: Defaults: self/high/normal
-    CORE->>CORE: AccessPersona general = allowed
-    CORE->>VAULT: Store item
-    VAULT-->>CORE: item_id
-    CORE-->>CLI: 201 created
+    CLI->>CORE: POST /api/v1/remember (device-signed, --session)
+    Note over CORE: Session required
+    CORE->>STG: Ingest (canonical provenance from auth context)
+    CORE->>BRAIN: Trigger staging drain
+
+    BRAIN->>STG: Claim item
+    BRAIN->>CLF: Classify persona + score trust
+    CLF-->>BRAIN: persona=general, confidence=high
+    BRAIN->>CLF: Enrich (L0/L1 summaries, embedding)
+    BRAIN->>CORE: POST /v1/staging/resolve
+    Note over CORE: AccessPersona check (session-scoped)
+
+    alt Persona open (default/standard)
+        CORE->>CORE: Auto-open vault
+        CORE->>VAULT: Store classified + enriched item
+        CORE-->>BRAIN: status=stored
+    else Persona needs approval (sensitive)
+        CORE-->>BRAIN: status=pending_unlock
+    end
+
+    Note over CORE: Poll staging status (up to 15s)
+
+    alt Stored
+        CORE-->>CLI: 200 {"status": "stored"}
+    else Needs approval
+        CORE-->>CLI: 202 {"status": "needs_approval", "id": "stg_xxx"}
+    else Still processing
+        CORE-->>CLI: 200 {"status": "processing", "id": "stg_xxx"}
+    end
 ```
 
 ---

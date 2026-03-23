@@ -35,7 +35,7 @@ All memory-producing ingress passes through one universal staging layer before i
 
 | Path | Where it goes | Should go |
 |------|--------------|-----------|
-| `dina remember` | Direct to vault (`/v1/vault/store`) | Staging |
+| `dina remember` | `POST /api/v1/remember` → staging ingest + Brain drain + poll (synchronous, up to 15s) | Staging (correct) |
 | Connector data | Staging (`/v1/staging/ingest`) | Staging (correct) |
 | D2D messages | Transport/dead-drop | Transport → then staging for memory content |
 | Telegram notes | Direct to vault | Staging |
@@ -159,12 +159,16 @@ This prevents the current bug where agent-produced memory inherits user-level tr
 #### Tier 5: CLI
 
 **`cli/src/dina_cli/client.py`**
-- Add `staging_ingest(item: dict) -> dict` method → POST `/v1/staging/ingest`
+- Add `remember(text, session, source_id, metadata) -> dict` method → `POST /api/v1/remember`
+- This endpoint wraps staging ingest + Brain drain + completion polling (up to 15s). It is NOT purely async — it blocks and returns a terminal status (`stored`, `needs_approval`, `processing`, `failed`) when possible.
+- Add `remember_check(item_id) -> dict` method → `GET /api/v1/remember/{id}` for polling items that returned `processing`
+- Session is **required** by both the CLI command and the Core endpoint (400 if missing)
 
 **`cli/src/dina_cli/main.py`**
-- Change `remember` command: `client.vault_store(...)` → `client.staging_ingest({...})`
-- Fields: `source: "dina-cli"`, `source_id: f"cli-{uuid}"`, `sender: "user"`, `ingress_channel: "cli"`, `type: "note"`, `summary: text`, `body: text`
-- Output: `{"staged": True, "id": "stg_xxx"}` instead of `{"stored": True}`
+- Change `remember` command: `client.vault_store(...)` → `client.remember(text, session=session, ...)`
+- `--session` is **required** (enforced by Click and by Core)
+- Fields: `source: "dina-cli"`, `source_id: f"cli-{uuid}"`, `type: "note"`, `summary: text`, `body: text`
+- Output: `{"status": "stored"}` on success, `{"status": "needs_approval", "id": "stg_xxx"}` if persona locked, `{"status": "processing", "id": "stg_xxx"}` if still in flight
 
 #### Tier 6: Brain
 
@@ -230,8 +234,9 @@ This prevents the current bug where agent-produced memory inherits user-level tr
 
 | Test | What it verifies |
 |------|-----------------|
-| `test_remember_stages` (update) | `remember` calls staging_ingest, not vault_store |
-| `test_remember_returns_staged` | Response has `{"staged": True, "id": "..."}` |
+| `test_remember_stages` (update) | `remember` calls `POST /api/v1/remember`, not vault_store |
+| `test_remember_returns_stored` | Response has `{"status": "stored"}` when Brain completes within 15s |
+| `test_remember_requires_session` | `remember` without `--session` exits with error |
 
 #### Existing Tests to Update
 
@@ -239,9 +244,9 @@ These tests currently encode direct vault-store behavior and must be updated:
 
 | File | Test | Current behavior | New behavior |
 |------|------|-----------------|-------------|
-| `cli/tests/test_commands.py` | `test_remember_json` (line 117) | Mocks `vault_store` | Mock `staging_ingest` |
-| `cli/tests/test_commands.py` | `test_remember_stores_to_general` (line 657) | Asserts persona=general in vault_store call | Assert staging_ingest called (no persona — Brain classifies) |
-| `tests/release/test_rel_023_cli_agent.py` | `test_rel_023_agent_can_store_data` (line 21) | Checks `{"stored": True}` | Check `{"staged": True}` |
+| `cli/tests/test_commands.py` | `test_remember_json` (line 117) | Mocks `vault_store` | Mock `remember` (POST /api/v1/remember) |
+| `cli/tests/test_commands.py` | `test_remember_stores_to_general` (line 657) | Asserts persona=general in vault_store call | Assert `remember` called with session (no persona — Brain classifies) |
+| `tests/release/test_rel_023_cli_agent.py` | `test_rel_023_agent_can_store_data` (line 21) | Checks `{"stored": True}` | Check `{"status": "stored"}` |
 | `tests/install/TEST_PLAN.md` | Vault round-trip description (line 99) | Describes `remember` as direct vault_store returning `stored: true` | Update to describe staging flow returning `staged: true` |
 | `cli/tests/TEST_PLAN.md` | CLI remember description (line 95) | Describes `remember` as direct vault_store | Update to describe staging ingest |
 | `tests/e2e/test_suite_15_cli_signing.py` | Signed vault store (line 190) | Device-signed `/v1/vault/store` succeeds | Device-signed `/v1/staging/ingest` succeeds (Phase 4: vault/store blocked) |
@@ -251,7 +256,7 @@ These tests currently encode direct vault-store behavior and must be updated:
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| CLI `remember` becomes async | `dina ask` immediately after `dina remember` may miss | Brain sweep runs every 5s; release test polls for item |
+| CLI `remember` polling window | `POST /api/v1/remember` polls for up to 15s. If Brain is slow, status may be `processing` — caller should poll `GET /api/v1/remember/{id}` | Core's remember endpoint triggers Brain drain immediately after ingest; 15s is typically sufficient |
 | Dedup index change | Schema includes new columns from the start | No migration — initial phase, no existing data |
 | Connector provenance | All connectors must go through staging | Server-override sets `ingress_channel=connector` from service key |
 | Brain Pydantic model | New fields needed | `make generate` after OpenAPI update; fields are optional |
@@ -493,7 +498,8 @@ NOT allowed (removed):
 
 ```
 Phase 1 (CLI):
-  dina remember → /v1/staging/ingest → staging_inbox → Brain sweep → vault
+  dina remember → POST /api/v1/remember → staging ingest → Brain drain → classify → enrich → resolve → vault
+  (synchronous: polls up to 15s, returns terminal status when possible)
 
 Phase 2 (Telegram/Admin):
   Telegram bot → Brain → /v1/staging/ingest → staging_inbox → Brain sweep → vault

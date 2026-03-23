@@ -174,6 +174,20 @@ Generated during device pairing (`crypto/rand.Read()`, 32 bytes). Two uses:
 
 Admin UI actions run on the admin app surface with CLIENT_TOKEN-backed session auth. Core remains the gatekeeper for privileged operations.
 
+6. Persona Approval Flow
+
+When a request targets a sensitive persona that is not currently open, the gatekeeper does not simply return a generic 403. Instead, it returns a structured denial that includes an `approval_id` — a unique identifier the caller can use to track and complete the approval process.
+
+Here is how the flow works:
+
+**Denial with approval_id:** When Brain or an agent requests access to a sensitive persona (e.g., `/health`), Core's gatekeeper checks the persona's access tier. If the persona requires approval, Core returns a 403 response that includes the `approval_id`. Any staging items that were part of the denied request are marked `pending_unlock` — the classified data (persona, type, metadata) is preserved so nothing is lost during the wait.
+
+**Approval:** Both `/v1/persona/approve` and `/v1/approvals/{id}/approve` resolve to the same approval path in Core. When the approval is granted, `completeApproval()` does two things: it opens the persona vault (derives the DEK, opens the database file) AND drains any pending staging items that were waiting on that persona. This means data that arrived while the persona was closed is not lost — it flows into the vault as soon as access is granted.
+
+**v1 auto-open for sensitive personas:** In v1, sensitive personas use policy-gated auto-open for authorized requests. Instead of requiring a passphrase from the user, Core checks the request against the persona's access policy. If the requester (Brain, agent with session grant, or user) is authorized by policy, Core auto-opens the persona — derives the DEK and opens the database transparently. This removes the friction of passphrase prompts for sensitive personas while maintaining the approval gate. Locked personas (e.g., `/financial`) still require explicit human action and remain fully closed (DEK not in RAM) until unlocked.
+
+**Session-scoped access control:** Staging resolve operations enforce `X-Session` and `X-Agent-DID` headers. This ensures that staging items created within a session can only be resolved by the same session and agent identity. An agent cannot access staging items from another agent's session, even if both target the same persona.
+
 
 >> Some normal questions and answers
 **What is BIP-39**

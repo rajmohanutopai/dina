@@ -226,18 +226,43 @@ components:
 
     StagingResolveRequest:
       type: object
-      required: [id, target_persona, classified_item]
+      required: [id]
+      description: |
+        Single-target: provide target_persona + classified_item.
+        Multi-target: provide targets array for cross-persona content.
+        At least one of target_persona or targets must be present.
       properties:
         id:
           type: string
         target_persona:
           type: string
+          description: Persona to store the item in (single-target mode).
         classified_item:
           type: object
           additionalProperties: true
+          description: Classified vault item (single-target mode).
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolveTarget'
+          description: |
+            Multi-target mode: array of persona + classified_item pairs.
+            Each target is resolved independently — accessible targets store
+            immediately, denied targets get approval requests.
         enrichment_status:
           type: string
           enum: [pending, processing, ready, failed]
+
+    ResolveTarget:
+      type: object
+      required: [persona, classified_item]
+      description: One persona target for multi-persona staging resolution.
+      properties:
+        persona:
+          type: string
+        classified_item:
+          type: object
+          additionalProperties: true
 
     StagingFailRequest:
       type: object
@@ -520,6 +545,75 @@ components:
         last_sync_at:
           type: integer
           format: int64
+
+    # ── Remember DTOs ──
+
+    RememberRequest:
+      type: object
+      required: [text, session]
+      properties:
+        text:
+          type: string
+          description: The content to remember.
+        category:
+          type: string
+          description: Optional category hint for classification.
+        session:
+          type: string
+          description: Active session name. Required for session-scoped access control.
+        source:
+          type: string
+          description: Origin system (e.g. "cli", "telegram").
+        source_id:
+          type: string
+          description: External ID for deduplication.
+        metadata:
+          type: string
+          description: JSON blob of additional metadata (merged with category/session).
+
+    RememberResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Staging item ID.
+        status:
+          type: string
+          enum: [stored, needs_approval, failed, processing]
+          description: |
+            Semantic status of the remember request:
+            - stored: successfully classified and stored in vault.
+            - needs_approval: classified into a sensitive persona; approve access to complete.
+            - failed: classification or storage failed.
+            - processing: still being classified by Brain.
+        message:
+          type: string
+          description: Human-readable status message.
+
+    # ── Staging Access Control DTOs ──
+
+    ApprovalRequiredError:
+      type: object
+      description: |
+        Returned as a 403 when staging resolve is blocked by persona access control.
+        An approval request has been created; approve it to unblock storage.
+      required: [error, persona, staging_id, message]
+      properties:
+        error:
+          type: string
+          enum: [approval_required]
+        approval_id:
+          type: string
+          description: ID of the created approval request (present for single-target resolve).
+        persona:
+          type: string
+          description: Persona that requires approval.
+        staging_id:
+          type: string
+          description: Staging item ID that is blocked.
+        message:
+          type: string
+          description: Human-readable explanation.
 
     # ── Health DTOs ──
 
@@ -816,6 +910,34 @@ paths:
   /v1/staging/resolve:
     post:
       summary: Brain publishes a classified item to vault
+      description: |
+        Brain calls this after classifying a staging item to route it to the
+        correct persona vault(s). Supports single-target (target_persona +
+        classified_item) and multi-target (targets array) for cross-persona
+        content.
+
+        Session-scoped access control: Brain forwards X-Session and
+        X-Agent-DID headers from the original request. Core's gatekeeper
+        checks session grants for sensitive/locked personas. If access is
+        denied, Core creates an approval request and marks the staging item
+        as pending_unlock.
+      parameters:
+        - name: X-Session
+          in: header
+          schema:
+            type: string
+          description: |
+            Session name for access control. Core uses this to look up
+            session grants when the target persona is sensitive or locked.
+            Forwarded by Brain from the originating request.
+        - name: X-Agent-DID
+          in: header
+          schema:
+            type: string
+          description: |
+            DID of the agent/device that initiated the request. Used for
+            approval request attribution and audit logging. Forwarded by
+            Brain from the originating request.
       requestBody:
         required: true
         content:
@@ -824,7 +946,18 @@ paths:
               $ref: '#/components/schemas/StagingResolveRequest'
       responses:
         "200":
-          description: Resolved.
+          description: Resolved (all targets stored successfully).
+        "403":
+          description: |
+            Persona access denied — approval required. An approval request
+            has been created and the staging item is marked pending_unlock.
+            Approve access via /v1/approvals/{id}/approve to unblock.
+            For multi-target resolve, returned when all targets are denied;
+            partial success (some accessible, some denied) returns 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalRequiredError'
 
   /v1/staging/fail:
     post:
@@ -1524,6 +1657,79 @@ paths:
           description: Caller doesn't match original requester.
         "404":
           description: Request not found.
+
+  # ── Remember (user-facing) ──
+
+  /api/v1/remember:
+    post:
+      summary: Store a memory (user-facing synchronous wrapper)
+      description: |
+        User-facing endpoint that ingests content via the staging pipeline,
+        triggers Brain classification, and polls for completion (up to 15s).
+        Returns a semantic status so callers don't need to understand staging
+        internals. Session is required for session-scoped access control —
+        Brain forwards X-Session on staging resolve, and Core checks session
+        grants for sensitive personas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RememberRequest'
+      responses:
+        "200":
+          description: |
+            Memory stored, failed, or still processing.
+            Status "stored" means vault write completed.
+            Status "failed" means classification/storage failed.
+            Status "processing" means Brain is still classifying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RememberResponse'
+        "202":
+          description: |
+            Classified into a sensitive persona that requires approval.
+            Status is "needs_approval". Approve access via Telegram or
+            dina-admin to complete storage.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RememberResponse'
+        "400":
+          description: Missing required fields (text, session).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/remember/{id}:
+    get:
+      summary: Check status of a remember request
+      description: |
+        Returns the current status of a previously submitted remember request.
+        Caller-bound: if the original request was made with a device key,
+        only the same device DID can poll status.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Staging item ID returned by POST /api/v1/remember.
+      responses:
+        "200":
+          description: Current status of the remember request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RememberResponse'
+        "404":
+          description: Item not found or caller doesn't own it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /v1/reason/{requestId}/result:
     post:

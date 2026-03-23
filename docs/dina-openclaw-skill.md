@@ -86,12 +86,13 @@ dina session end --name <task-name>      End session, revoke all grants
 dina session list                        List active sessions
 
 # Ask and remember (Brain-mediated, persona-blind)
-dina ask <query> [--session <name>]      Ask Dina (reasons across all personas)
-dina remember <text> [--category <cat>]  Store fact in encrypted vault
+dina ask <query> --session <name>        Ask Dina (reasons across all personas) [REQUIRED]
+dina remember <text> --session <name>    Store fact via staging pipeline [REQUIRED]
+  [--category <cat>]
 dina reason-status <request-id>          Poll async approval status
 
 # Action gating
-dina validate <action> <description>     Check if action is approved
+dina validate <action> <description> --session <name>  Check if action is approved [REQUIRED]
 dina validate-status <id>                Poll approval status
 
 # PII scrubbing
@@ -113,7 +114,7 @@ Agents must work within named sessions. Sessions scope access grants — when a 
 # Start a session for your task
 dina session start --name "chair-research"
 
-# Ask freely — Dina routes to the right persona
+# Ask freely — session is required for all queries
 dina ask "furniture preferences" --session chair-research
 # → results from general persona (free access)
 
@@ -145,13 +146,15 @@ dina status
 
 ### dina ask
 ```bash
-dina ask "daughter birthday"
+dina ask "daughter birthday" --session my-session
 # → "Your daughter turns 7 on March 15. She loves dinosaurs."
 
 dina ask "back pain history" --session chair-research
 # → 202 if health persona needs approval
 # → Poll with: dina reason-status <request_id>
 ```
+
+`--session` is **required** for all `dina ask` calls.
 
 ### dina session start
 ```bash
@@ -168,25 +171,32 @@ dina session end --name "chair-research"
 
 ### dina validate
 ```bash
-dina validate send_email "Send meeting invite to 5 people"
+dina validate send_email "Send meeting invite to 5 people" --session my-session
 # → {"status": "approved", "id": "val_x8k2"}
 
-dina validate delete_emails "Delete 247 emails"
+dina validate delete_emails "Delete 247 emails" --session my-session
 # → {"status": "pending_approval", "id": "val_a8f3"}
 ```
 
+`--session` is **required** for all `dina validate` calls.
+
 ### dina remember
 ```bash
-dina remember "Daughter birthday March 15, loves dinosaurs" --category relationship
-# → {"id": "stg_a1b2c3d4", "staged": true}
+dina remember "Daughter birthday March 15, loves dinosaurs" --session my-session --category relationship
+# → {"status": "stored"}
 
-# Session-scoped (for task callbacks):
 dina remember "Found 3 chairs under 20K" --session task-abc12345
-# → {"id": "stg_x9y8z7w6", "staged": true}
+# → {"status": "stored"}
+
+# If target persona needs approval:
+# → {"status": "needs_approval", "id": "stg_xxx"}
+# Poll with: dina remember-status <id>
 ```
 
-Content goes through the staging pipeline. Provenance (sender, trust level)
-is derived server-side from your device's auth context and role.
+`--session` is **required**. Content goes through `POST /api/v1/remember`, which
+wraps staging ingest + Brain drain + completion polling (up to 15s). Returns a
+terminal status when possible. Provenance (sender, trust level) is derived
+server-side from your device's auth context and role.
 
 ### dina scrub / rehydrate
 ```bash
@@ -223,7 +233,7 @@ dina draft "Hi Sancho, Thursday 3pm works." --to sancho@example.com --channel em
 dina session start --name "ergonomic-chair"
 
 # Check preferences (default persona — free access)
-dina ask "furniture preferences"
+dina ask "furniture preferences" --session ergonomic-chair
 
 # Check purchase history (Dina routes to consumer persona — auto-granted)
 dina ask "chair purchases" --session ergonomic-chair
@@ -235,7 +245,7 @@ dina ask "back problems" --session ergonomic-chair
 # → when complete: "You have L4-L5 disc herniation. Lumbar support is important."
 
 # Store recommendation
-dina remember "Recommended ErgoMax Elite based on L4-L5 support needs" --category decision
+dina remember "Recommended ErgoMax Elite based on L4-L5 support needs" --session ergonomic-chair --category decision
 
 # Done
 dina session end --name "ergonomic-chair"

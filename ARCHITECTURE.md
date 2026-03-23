@@ -813,6 +813,16 @@ Brain creates staging item  → POST core:8100/v1/vault/store {type: "payment_in
 Brain extracts relationship → POST core:8100/v1/vault/store {type: "relationship", ...}
 ```
 
+**2a. User-facing memory write (CLI `dina remember`)**
+```
+CLI → POST core:8100/api/v1/remember {text: "I like strong cardamom tea", session: "ses_xxx"}
+  → Core creates staging item → Brain classifies (persona, type, embedding)
+  → Core stores in classified persona vault → returns item ID
+  → If target persona is sensitive: staging item marked pending_unlock,
+    resolved after approval via completeApproval()
+GET /api/v1/remember/{id}   → poll status (pending / complete / failed)
+```
+
 **3. Embeddings (brain generates, core stores)**
 ```
 Brain ingests new item via MCP
@@ -1489,30 +1499,34 @@ Core's `gatekeeper.go` manages which databases are open. Brain makes separate AP
 **The model: personas have access tiers, enforced by which databases are open.** Configured in `config.json`, enforced by `gatekeeper.go` in core.
 
 ```
-Persona Access Tiers (configured by user, stored in config.json):
+Persona Access Tiers (4-tier gatekeeper, configured by user, stored in config.json):
 
-  "brain_access": {
-    "/personal":     "open",        ← general persona, always open by default
-    "/social":       "open",        ← database open, brain queries freely
-    "/consumer":     "open",        ← database open, brain queries freely
-    "/professional": "open",        ← database open, brain queries freely
-    "/health":       "restricted",  ← database open, but every access logged + user notified
-    "/financial":    "locked",      ← database CLOSED. DEK not in RAM. Brain gets 403.
+  "persona_tiers": {
+    "/general":      "default",     ← auto-open at boot, free access for all
+    "/consumer":     "standard",    ← auto-open at boot, agents need session grant
+    "/social":       "standard",    ← auto-open at boot, agents need session grant
+    "/work":         "standard",    ← auto-open at boot, agents need session grant
+    "/health":       "sensitive",   ← closed at boot, auto-open on authorized request (v1 policy-gated)
+    "/financial":    "locked",      ← CLOSED. DEK not in RAM. Brain gets 403. Human action required.
   }
 ```
 
-| Tier | Behavior | Use Case |
-|------|----------|----------|
-| **Open** | Database file is open. Brain queries freely. Core serves. Logged but no gate. | Social, consumer, professional — the personas brain needs constantly for nudges. |
-| **Restricted** | Database file is open. Brain can query, but core logs every access to `identity.sqlite` audit log AND pushes a silent notification to client device. User sees "Dina accessed your health data 3 times today" in daily briefing. | Health — brain sometimes needs it (e.g., "you have a doctor's appointment"), but user should know when. |
-| **Locked** | Database file is **CLOSED**. DEK not in RAM. Brain gets `403 Persona Locked` — must request unlock via client device: `POST /v1/persona/unlock {persona: "/financial", ttl: "15m"}`. Core derives the DEK, opens the file, auto-closes after TTL expires, zeroes DEK from RAM. | Financial — brain almost never needs this. When it does, it's high-stakes (tax filing, insurance claim). Worth the friction. |
+Legacy tiers (`open`/`restricted`) auto-migrate on load: `open` maps to `standard`, `restricted` maps to `sensitive`.
+
+| Tier | Boot State | Users | Brain | Agents | Use Case |
+|------|-----------|-------|-------|--------|----------|
+| **Default** | Auto-open | Free | Free | Free | `/general` — always available, no gates. |
+| **Standard** | Auto-open | Free | Free | Session grant | `/consumer`, `/social`, `/work` — the personas brain needs constantly for nudges. Agents require a session grant (`dina session start`). |
+| **Sensitive** | Closed | Confirm | Approval | Approval | `/health` — v1 auto-open: Core checks the request against persona access policy. If the requester is authorized (Brain with approval, agent with session grant), Core auto-opens the persona transparently (derives DEK, opens database). No passphrase prompt. The 403 response includes an `approval_id`; staging items are marked `pending_unlock` with classified data preserved. On approval, `completeApproval()` opens the vault AND drains pending staging items. |
+| **Locked** | Closed | Passphrase | Denied | Denied | `/financial` — database file is **CLOSED**. DEK not in RAM. Brain gets `403 Persona Locked`. Requires explicit human unlock: `POST /v1/persona/unlock {persona: "/financial", ttl: "15m"}`. Core derives the DEK, opens the file, auto-closes after TTL expires, zeroes DEK from RAM. High-stakes access only (tax filing, insurance claim). Worth the friction. |
 
 **What this fixes:**
 
 1. **Compromised brain can't touch locked personas at all.** The DEK isn't in memory. No amount of application-level bypass can decrypt the file. Math, not code, enforces this.
-2. **Restricted personas create a detection trail.** If a compromised brain starts scraping health data, the user sees it in the audit log.
-3. **Open personas stay fast.** The nudge flow works without friction for everyday contexts.
-4. **Cross-persona queries use parallel reads.** Brain requests data from `/social` + `/professional` + `/consumer`. Core queries each open database independently, merges results. Brain never sees SQLite handles — it gets JSON responses.
+2. **Sensitive personas gate access without friction.** v1 auto-open means authorized requests open the persona transparently — no passphrase prompt, but the approval gate and audit trail remain. Staging items marked `pending_unlock` preserve classified data so nothing is lost during the approval wait.
+3. **Default and standard personas stay fast.** The nudge flow works without friction for everyday contexts.
+4. **Cross-persona queries use parallel reads.** Brain requests data from `/social` + `/work` + `/consumer`. Core queries each open database independently, merges results. Brain never sees SQLite handles — it gets JSON responses.
+5. **Session-scoped staging isolation.** Staging resolve operations enforce `X-Session` and `X-Agent-DID` headers, preventing cross-session or cross-agent access to pending items.
 
 **"Which personas have data about Dr. Patel?"** — derived, never cached:
 

@@ -24,12 +24,14 @@
 | IV | [Persona Lifecycle — Lock, Unlock, and the Ticking Clock](#act-iv-persona-lifecycle--lock-unlock-and-the-ticking-clock) | COMPLETE |
 | | — Creating a Persona | COMPLETE |
 | | — Unlocking: The Moment of Truth | COMPLETE |
+| | — v1 Auto-Open | COMPLETE |
 | | — The Lock Timer | COMPLETE |
 | | — Approval Flow | COMPLETE |
 | V | [Dina-to-Dina — Sending Messages Across the Wire](#act-v-dina-to-dina--sending-messages-across-the-wire) | COMPLETE |
 | VI | [The Egress Guardian — Nothing Leaves Without Permission](#act-vi-the-egress-guardian--nothing-leaves-without-permission) | COMPLETE |
 | VII | [Device Pairing — Adding a Second Screen](#act-vii-device-pairing--adding-a-second-screen) | COMPLETE |
 | VIII | [The Connector Pipeline — From Ingestion to Vault](#act-viii-the-connector-pipeline--from-ingestion-to-vault) | COMPLETE |
+| | — The Remember Endpoint | COMPLETE |
 | IX | [Silence First — Notifications, Reminders, and the Daily Briefing](#act-ix-silence-first--notifications-reminders-and-the-daily-briefing) | COMPLETE |
 | | — The Three-Tier Priority System | COMPLETE |
 | | — Reminders: Deterministic Triggers, LLM-Free | COMPLETE |
@@ -662,7 +664,7 @@ Personas are Dina's compartmentalization mechanism. "personal" and "health" and 
 1. Requires a non-empty name, a **passphrase** (empty passphrase returns 400), and an optional **tier** (`default`, `standard`, `sensitive`, or `locked` — invalid tiers return 400).
 2. Generates a 16-byte random salt, hashes the passphrase with Argon2id (`auth.HashPassphrase`).
 3. Calls `personaMgr.Create()` with the name, tier, and hash. Inside the persona manager, two guards fire: the **duplicate check** (existing persona with same name → 409) and the **orphan guard** (a vault `.sqlite` file already exists for this persona name → 409, prevents accidentally reusing a DEK from a previous install). The persona's initial lock state depends on the tier — only `locked`-tier personas start locked; `default`, `standard`, and `sensitive` tiers start unlocked. DEK version is initialized to `1`.
-4. After creation, the handler **auto-opens the vault** for `default` and `standard` tiers — it derives a DEK from the master seed and calls `vaultMgr.Open()` so the persona is immediately usable without an explicit unlock call. `Sensitive` and `locked` tiers require explicit unlock.
+4. After creation, the handler **auto-opens the vault** for `default` and `standard` tiers — it derives a DEK from the master seed and calls `vaultMgr.Open()` so the persona is immediately usable without an explicit unlock call. `Locked` tiers require explicit manual unlock. `Sensitive` personas are auto-opened on demand (see below).
 
 <details>
 <summary><strong>Design Decision — Why Argon2id instead of bcrypt or scrypt?</strong></summary>
@@ -704,6 +706,14 @@ HKDF derivation was chosen because: (1) one seed backup recovers *all* persona v
 
 </details>
 
+### v1 Auto-Open: Sensitive Personas Without a Passphrase
+
+The explicit unlock flow described above is the passphrase-gated path. In v1, a simpler model applies to non-locked personas: `VaultService.ensureOpen()` auto-opens the vault on demand by deriving the DEK from the master seed and calling `vaultMgr.Open()`. This is safe because `ensureAuthorized()` calls `AccessPersona()` **first** — the caller has already passed tier-based access control before `ensureOpen` runs. The running node is trusted while up; the seed is in memory.
+
+The only tier that blocks auto-open is **locked** — the `AutoUnlockFunc` callback (wired in `main.go`) checks the persona tier and returns `ErrPersonaLocked` for locked personas. Sensitive personas auto-open for authorized requests — no passphrase prompt. The human controls access through session grants and approval flows, not by re-entering a passphrase on every request.
+
+This auto-open behavior bridges several subsystems. The staging pipeline's `HandleResolve` uses an `EnsureVaultOpenFunc` callback that runs after `AccessPersona` succeeds, ensuring the vault file is open before `StagingInbox.Resolve` checks `isPersonaOpen`. Without this bridge, `Resolve` would mark items `pending_unlock` even though the caller was authorized — the vault file simply hadn't been opened yet.
+
 ### The Lock Timer
 
 This is the invisible guardian. The Unlock method registers a `time.AfterFunc` callback that fires after the TTL expires (default 1 hour). When it fires, the callback acquires the `PersonaManager` mutex, sets `Locked = true`, deletes the timer from the `ttlTimers` map, and persists state. Then — critically — it releases the mutex *before* calling `OnLock`. This ordering prevents deadlocks: `OnLock` (wired in `main.go:304-317`) calls `vaultMgr.Close()`, which might acquire its own locks.
@@ -729,9 +739,17 @@ When an agent requests access to a **sensitive** or **standard** tier persona wi
 
 Note: **locked-tier** personas don't trigger approval — they flat-deny agents with `ErrPersonaLocked`, even when the vault is unlocked. The locked tier is the nuclear option: human-only access.
 
-The human approves via `POST /v1/persona/approve` (with optional `scope`: `"single"` or `"session"`, defaulting to `"session"`) or denies via `POST /v1/persona/deny`. Until approval, the requesting agent gets a 403 Forbidden with the `approval_id` for tracking. Pending approvals are listed at `GET /v1/persona/approvals`.
+Approvals are triggered from two paths: vault operations (when `VaultHandler.HandleStore` or `HandleQuery` hits `ErrApprovalRequired`) and **staging resolve** (when `StagingHandler.HandleResolve` is denied access to a target persona). In the staging case, the denial creates an approval request and marks the staging item `pending_unlock` with its classified data preserved — the raw body is cleared but the enriched item survives for later drain.
 
-When approved, HandleApprove doesn't just flip a flag — it actively **opens the vault** for the approved persona (deriving the DEK, calling `VaultManager.Open`) and calls `MarkGrantOpened` to track which vaults were opened via approval. This matters because grant-opened vaults are auto-closed when the session ends or a single-use grant is consumed — unlike manually unlocked vaults, which follow their TTL timer. Single-use grants (`scope: "single"`) are consumed on first access and the vault is re-locked if no other active grants remain.
+The human approves via `POST /v1/persona/approve` (with optional `scope`: `"single"` or `"session"`, defaulting to `"session"`) or denies via `POST /v1/persona/deny`. A second approve path — `POST /v1/approvals/{id}/approve` — provides ID-based approval for Telegram and admin UI workflows. Both paths call the same `completeApproval()` method, which performs three post-approval actions:
+
+1. **Opens the vault** for the approved persona (deriving the DEK, calling `VaultManager.Open`).
+2. **Drains pending staging items** — calls `StagingInbox.DrainPending` to promote all `pending_unlock` items for the approved persona into the vault. Without this, approved items would sit in `pending_unlock` until Sweep reverts them.
+3. **Resumes pending reason requests** — if any LLM reasoning requests were blocked waiting for this approval, they are re-dispatched to Brain.
+
+Until approval, the requesting agent gets a 403 Forbidden with the `approval_id` for tracking. Pending approvals are listed at `GET /v1/persona/approvals`.
+
+HandleApprove also calls `MarkGrantOpened` to track which vaults were opened via approval. This matters because grant-opened vaults are auto-closed when the session ends or a single-use grant is consumed — unlike manually unlocked vaults, which follow their TTL timer. Single-use grants (`scope: "single"`) are consumed on first access and the vault is re-locked if no other active grants remain.
 
 ---
 
@@ -871,6 +889,15 @@ Connector (OpenClaw)                Brain (Classifier)              Core (Vault)
 
 **Resolve** is the critical moment. Brain has classified the item — determined which persona(s) it belongs to, extracted metadata, scrubbed PII. It sends back the classified item with one or more target personas. The staging handler supports both single-target (`TargetPersona + ClassifiedItem`) and multi-target (`Targets` array) resolution — a single email might need to land in both "personal" and "work" personas.
 
+HandleResolve enforces **session-scoped access control** before writing to the vault. Brain's staging processor forwards `X-Session` and `X-Agent-DID` headers on the resolve call — these flow through Core's auth middleware into the request context. For each target persona, HandleResolve calls `AccessPersona`, which checks session grants, tier rules, and agent identity. The behavior differs by cardinality:
+
+- **Single-target:** If `AccessPersona` denies the target, HandleResolve aborts immediately — it creates an approval request (via `RequestApproval`) and marks the staging item `pending_unlock` with the classified data preserved (via `MarkPendingApproval`). The response is 403 with the `approval_id`.
+- **Multi-target:** HandleResolve partitions targets into accessible and denied sets. Accessible targets resolve immediately through `ResolveMulti`. Denied targets each get an approval request and a pending staging copy (via `CreatePendingCopy` with a deterministic ID `{staging_id}-{persona}`). If all targets are denied, the original staging row is marked `pending_unlock` for the first denied target and the response is 403.
+
+After access checks pass, HandleResolve calls `EnsureVaultOpen` to auto-open the vault file before `StagingInbox.Resolve` checks `isPersonaOpen`. This bridges the v1 auto-open model with the staging pipeline — without it, authorized requests would hit `pending_unlock` because the vault file wasn't open yet.
+
+The StagingInbox port interface includes two methods that support this access-denied path: `MarkPendingApproval` marks an existing staging item as `pending_unlock` with its classified data and target persona preserved so `DrainPending` can store it after approval. `CreatePendingCopy` creates a new staging row in `pending_unlock` state for multi-target resolves where individual targets are denied — the accessible targets go through `ResolveMulti` on the original row, while denied targets get their own pending rows for later drain.
+
 **Fail** marks an item as classification-failed. This is an explicit acknowledgment, not a silent drop — the item remains in staging for debugging or retry.
 
 <details>
@@ -888,6 +915,16 @@ Connectors operate outside Dina's trust boundary. They fetch data from external 
 The alternative — letting connectors write directly to vault personas — would require connectors to know about persona routing, PII rules, and classification logic. That violates the Thin Agent principle: connectors fetch, Core stores, Brain reasons.
 
 </details>
+
+### The Remember Endpoint
+
+`POST /api/v1/remember` is the user-facing wrapper around the staging pipeline (`core/internal/handler/remember.go`). When a user says "remember this" via Telegram, CLI, or the admin UI, the request hits `RememberHandler.HandleRemember`, which orchestrates three steps:
+
+1. **Ingest** — Builds a staging ingest request body (type `"note"`, with session and category merged into metadata) and delegates to `StagingHandler.HandleIngest` internally. The session name is injected into the request context and forwarded as an `X-Session` header, enabling session-scoped access control when Brain later calls resolve.
+2. **Brain drain** — HandleIngest already triggers an immediate Brain drain (staging_drain event), so Brain picks up the item, classifies it, and calls resolve.
+3. **Completion polling** — Polls `StagingInbox.GetStatus` every 500ms for up to 15 seconds, waiting for the item to reach a terminal state.
+
+The response maps staging statuses to user-friendly semantics: `stored` returns 200 with "Memory stored successfully." `pending_unlock` is returned as `needs_approval` (202 Accepted) with a message explaining that the item was classified into a sensitive persona and requires approval. `classifying` maps to `processing`. A companion `GET /api/v1/remember/{id}` endpoint allows polling for status after the initial request returns.
 
 ---
 

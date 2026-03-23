@@ -182,7 +182,7 @@ Dina can also act as a safety layer for autonomous agents. Malicious actors will
 
 If the autonomous agent integrates with Dina properly, Dina will be able to watch when the autonomous agent acts on your behalf. She will not interfere with safe tasks. But when the agent wants to send an email, move money, or share your data, it can send the request to Dina. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. By separating out the actual agent who does the work with the safety checker who holds the keys to the house, it provides one extra level of safety.
 
-Dina comes with `dina-cli` for this very purpose. Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node (similar to GitHub SSH Key method). Any agent can use `dina validate` to get Guardian oversight autoamtically.
+Dina comes with `dina-cli` for this very purpose. Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node (similar to GitHub SSH Key method). Any agent can use `dina validate --session <session-id>` to get Guardian oversight automatically.
 
 Currently, this is just a SKILL added to other agents. So, as of now, it can be overcome by a clever prompt - so it is a safety net, but not fully secure. But if an external agent fully integrates with Dina protocol, much higher safety could be achieved.
 
@@ -334,7 +334,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 
 **Identity**: Root key is Ed25519, generated from a BIP-39 24-word mnemonic. Persona keys derived via SLIP-0010 hardened paths under purpose code 9999'. Vault DEKs derived via HKDF-SHA256 with per-persona info strings. Master seed is key-wrapped with an Argon2id-derived KEK.
 
-**Persona isolation**: Cryptographic, not application-level - each persona is a separate encrypted .sqlite file with its own DEK. Locked personas have no DEK in RAM; they're mathematically inaccessible. The gatekeeper enforces three tiers: open (brain queries freely), restricted (logged + user notified), and locked (403, requires human unlock with TTL).
+**Persona isolation**: Cryptographic, not application-level - each persona is a separate encrypted .sqlite file with its own DEK. Locked personas have no DEK in RAM; they're mathematically inaccessible. The gatekeeper enforces four tiers: default (free access), standard (agents need session grant), sensitive (policy-gated auto-open with approval), and locked (403, requires human unlock with TTL).
 
 **Agent security**: Split-brain architecture for prompt injection defense - components that read possibly compromised content cannot send outbound messages. Multi-layer security for any data which passes through. Egress enforcement in compiled code with no LLM reasoning involved. The "Draft-Don't-Send" principle - no agent ever presses Send (based on your level of security requirements).
 
@@ -365,7 +365,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 - **Agents:** Intent validation, session-scoped grants, async approval-wait-resume flow
 - **PII:** 3-tier scrubbing (regex in Go + spaCy NER in Python + Entity Vault pattern for cloud LLM calls)
 - **D2D:** NaCl `crypto_box_seal` encrypted messaging between Home Nodes, dead-drop durability when vault is locked
-- **CLI:** `dina remember`, `ask`, `draft`, `validate`, `task`, `configure`, `session`, `status`
+- **CLI:** `dina remember`, `ask`, `draft`, `validate`, `task`, `configure`, `session`, `status` (`remember`, `ask`, and `validate` require `--session <session-id>`)
 - **Admin:** `dina-admin` CLI (Unix socket), web UI at `/admin/*` (dashboard, settings, contacts, devices, chat, history)
 - **Trust Network:** AT Protocol AppView in TypeScript (Jetstream ingester + 9 scorer jobs + 5 xRPC endpoints)
 
