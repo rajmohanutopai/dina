@@ -1,3 +1,9 @@
+1. OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
+
+
+2. Auth structure is not perfect
+
+
   Auth Vocabulary
 
   1. principal

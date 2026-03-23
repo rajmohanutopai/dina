@@ -420,6 +420,27 @@ func inboxHandler(w http.ResponseWriter, r *http.Request) {
 
 **Security:** The inbox spool (`./data/inbox/`) contains only encrypted blobs. An attacker with filesystem access sees the same thing they'd see in the vault — encrypted data they can't read. The blobs are cleaned up (deleted from spool) after successful processing. The spool cap (500MB) guarantees that even a sustained DoS attack against a locked vault cannot crash the Home Node by filling the disk.
 
+### Rate Limiting (Implementation Detail)
+
+The Dead Drop section above describes rate limiting as Valve 1 of the ingress system. In practice, rate limiting is a standalone subsystem applied to all Core HTTP endpoints — not just `/msg`. This section documents the implementation.
+
+**Two-layer design:**
+
+| Layer | Scope | Implementation | Purpose |
+|-------|-------|----------------|---------|
+| **Ingress rate limiter** | Per-IP + global spool | `ingress.RateLimiter` | Dead Drop valve — pre-decryption, physics-based |
+| **Middleware rate limiter** | Per-IP, all endpoints | `middleware.RateLimit` | General API protection — prevents any single IP from flooding Core |
+
+**Token bucket (`ingress.RateLimiter`):** Each IP address gets a token bucket: `ipRate` tokens per `ipWindow` duration. When the window elapses, the bucket refills. If `tokens <= 0`, the request is rejected. A second valve checks global spool capacity via `AllowGlobal()` — if the dead drop spool exceeds `spoolMaxBlobs`, new messages are rejected with 429.
+
+**Memory safety:** IP buckets are capped at 10,000 entries (`maxRateLimitEntries`). A background purge loop (`StartPurgeLoop`) runs every 5 minutes, removing buckets older than twice the window duration. If the cap is still exceeded after purge, the 10% least-recently-accessed buckets are evicted. This prevents unbounded memory growth from many unique source IPs during a distributed attack.
+
+**Middleware (`middleware.RateLimit`):** Wraps any `http.Handler`. Extracts the client IP via `clientIP()`, which implements SEC-MED-15 rightmost-trusted proxy parsing: walks `X-Forwarded-For` right-to-left, skipping IPs in configured `TrustedProxies` CIDR ranges, and returns the first non-trusted IP. If no trusted proxies are configured, `RemoteAddr` is used directly — safe default against IP spoofing. Returns HTTP 429 `{"error":"rate limit exceeded"}` when the bucket is empty.
+
+**Port interface (`port.RateLimiter`):** `Allow(ip string) bool` and `Reset(ip string)`. The middleware depends only on this interface — the ingress rate limiter and any test doubles implement it identically.
+
+**Test override:** The environment variable `DINA_RATE_LIMIT` sets a custom token count. Integration and E2E tests set `DINA_RATE_LIMIT=100000` to effectively disable rate limiting during test runs, preventing false 429 failures in rapid-fire test suites.
+
 ### Portability & Migration (The `.dina` Archive)
 
 A Dina node's state is a small directory tree: the encrypted vault, optional keyfile, inbox spool, and configuration. `dina export` compiles this into a single portable archive.
@@ -816,12 +837,19 @@ Brain extracts relationship → POST core:8100/v1/vault/store {type: "relationsh
 **2a. User-facing memory write (CLI `dina remember`)**
 ```
 CLI → POST core:8100/api/v1/remember {text: "I like strong cardamom tea", session: "ses_xxx"}
-  → Core creates staging item → Brain classifies (persona, type, embedding)
+  → Core creates staging item → triggers Brain drain → Brain classifies (persona, type, embedding)
   → Core stores in classified persona vault → returns item ID
   → If target persona is sensitive: staging item marked pending_unlock,
     resolved after approval via completeApproval()
-GET /api/v1/remember/{id}   → poll status (pending / complete / failed)
+  → RememberHandler polls staging status for up to 15 seconds, returns terminal status
 ```
+Status values returned by the remember endpoint:
+- `stored` — memory successfully stored in vault (HTTP 200)
+- `needs_approval` — classified into a sensitive persona, awaiting approval (HTTP 202)
+- `failed` — classification or enrichment failed (HTTP 200)
+- `processing` — still classifying after 15-second poll window (HTTP 200)
+
+`GET /api/v1/remember/{id}` polls the same status. Caller ownership enforced via `origin_did`.
 
 **3. Embeddings (brain generates, core stores)**
 ```
@@ -950,14 +978,34 @@ The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never in
 
 #### Core ↔ Brain API Contract
 
-The internal API between core and brain uses Ed25519 signed requests (`X-DID`, `X-Timestamp`, `X-Signature`). All requests/responses are JSON. Core enforces gatekeeper access tiers before any query executes.
+The internal API between core and brain is defined by OpenAPI specs and code-generated types. The specs are the source of truth for the HTTP boundary — hand-edit the spec, run `make generate`, commit the output.
+
+```
+api/
+  components/schemas.yaml     Shared enums (17) + domain types (15+)
+  core-api.yaml               Core's ~50 endpoints (hand-authored, source of truth)
+  brain-api.yaml              Brain's 3 endpoints (extracted from FastAPI)
+```
+
+**Codegen outputs** (committed, regenerated via `make generate`):
+- `core/internal/gen/core_types.gen.go` — Go types for Core API (oapi-codegen)
+- `core/internal/gen/brainapi/brain_types.gen.go` — Go types for Brain client (oapi-codegen)
+- `brain/src/gen/core_types.py` — Python Pydantic models for Core client (datamodel-code-generator)
+
+**Ownership rule:** Core spec is hand-authored → generates Python client types. Brain spec is extracted from FastAPI/Pydantic → generates Go client types. Never feed generated types back into the owning service.
+
+**CI drift gate:** `make check-generate` runs `make generate` then checks `git diff` on the gen directories. If generated code doesn't match the committed spec, CI fails. This prevents spec-code drift.
+
+**Wire format:** All JSON uses `snake_case`. All domain types that cross HTTP have `json:"snake_case"` tags.
+
+The API uses Ed25519 signed requests (`X-DID`, `X-Timestamp`, `X-Signature`). All requests/responses are JSON. Core enforces persona access tiers before any query executes.
 
 **`POST /v1/vault/query` — Search the vault**
 
 ```json
 // Request
 {
-  "persona": "/social",                // required — gatekeeper checks access tier
+  "persona": "persona-general",         // required — access tier checked
   "q": "meeting with Sancho",          // search query (FTS5 and/or embedding)
   "mode": "hybrid",                    // "fts5" | "semantic" | "hybrid" (default)
   "filters": {
@@ -1140,6 +1188,43 @@ async def assemble_nudge(task_id: str, event: dict):
 Scratchpad entries are stored in identity.sqlite (Tier 4 staging tables) and auto-expire after 24 hours — stale reasoning from yesterday's crash is not useful today.
 
 **External memory services:** If the scratchpad pattern proves insufficient for complex multi-agent reasoning, Mem0 or SuperMemory can be evaluated as a managed memory layer. For Phase 1, the vault-backed scratchpad keeps things simple.
+
+### Task Queue (Implementation Detail)
+
+The outbox pattern described above is implemented in `core/internal/adapter/taskqueue/TaskQueue`. This section documents the full lifecycle, retry mechanics, and watchdog recovery.
+
+**Task lifecycle:**
+
+```
+Enqueue()         Dequeue()          Acknowledge() / Complete()
+    │                 │                       │
+    ▼                 ▼                       ▼
+[pending] ──────► [running] ──────────────► [completed]
+    ▲                 │
+    │                 ├── Fail() ──► [failed]
+    │                 │                  │
+    │                 │                  ├── Retry() (retries ≤ 5) ──► [pending] (with backoff)
+    │                 │                  │
+    │                 │                  └── Retry() (retries > 5) ──► [dead_letter]
+    │                 │
+    │                 └── Cancel() ──► [cancelled]
+    │
+    └── Watchdog.ResetTask() (timed-out running tasks)
+```
+
+**Task domain type (`domain.Task`):** ID (ULID-style), Type (one of `process`, `reason`, `embed`, `sync_gmail`, `urgent_sync`, `first`, `second`), Priority (int, higher = dequeued first), Payload (JSON bytes), Status, Retries, Error, TimeoutAt, NextRetry, MaxRetries.
+
+**Dequeue semantics:** Returns the single highest-priority pending task (FIFO for equal priority). The task moves to an in-flight map with `status=running` and `timeout_at = now + 300` (5 minutes). Tasks whose `NextRetry` timestamp is in the future (backoff window) are skipped.
+
+**Retry with exponential backoff:** Failed tasks are retried with `1s × 2^(retry-1)` backoff: 1s, 2s, 4s, 8s, 16s. The `NextRetry` field prevents premature re-dequeue. After 5 retries (configurable via `SetMaxRetries`), the task moves to the `dead_letter` map and is never retried.
+
+**ACK protocol:** Brain acknowledges completed tasks via `POST /v1/task/ack {task_id}`. Core's `TaskHandler` calls `Acknowledge()`, which marks the task completed and removes it from in-flight. If brain crashes and never ACKs, the watchdog catches it.
+
+**Watchdog (`taskqueue.Watchdog`):** A background goroutine that periodically scans for tasks with `status=running` and `timeout_at < now()`. Timed-out tasks are reset to `pending` with `retries++` via `ResetTask()`. This is the safety net for brain crashes — no human intervention needed.
+
+**Crash recovery (`RecoverRunning`):** On Core startup, bulk-resets all running tasks back to pending. This handles the case where Core itself crashed while tasks were in-flight.
+
+**Dead letter:** Tasks that exhaust retries are moved to `dead_letter` status. Core raises a Tier 2 notification. Dead-lettered tasks remain queryable via `GetByID()` for debugging but are never re-enqueued automatically.
 
 ### Observability & Self-Healing
 
@@ -1492,40 +1577,36 @@ Persona isolation is enforced by **cryptographic separation** — each persona i
 - **Selective unlock.** User opens `/financial` for 15 minutes → core derives the DEK, opens the file, serves queries, then closes and zeroes the DEK from RAM. The other persona files are unaffected.
 - **Breach containment.** Compromise of one persona file exposes only that persona's data. Attacker still needs the master seed (or that persona's specific DEK) to read other files.
 
-**Cross-persona queries and the Gatekeeper:** The brain needs data from multiple personas constantly (see [Security Model: The Brain is a Guest](#security-model-the-brain-is-a-guest) above). The Sancho Moment nudge at 3 AM needs `/social` (relationship with Sancho, his mother's illness), `/professional` (calendar — is user free?), and `/consumer` (tea preference). That's three persona crosses for one nudge — dozens of times daily.
+**Cross-persona queries:** The brain needs data from multiple personas constantly (see [Security Model: The Brain is a Guest](#security-model-the-brain-is-a-guest) above). The Sancho Moment nudge at 3 AM needs `general` (relationship with Sancho, his mother's illness), `work` (calendar — is user free?), and `general` again (tea preference). That's multiple persona crosses for one nudge — dozens of times daily.
 
-Core's `gatekeeper.go` manages which databases are open. Brain makes separate API calls per persona: `POST /v1/vault/query {persona: "/social", ...}`. Core routes the query to the correct open database. If the persona is locked, core returns `403 Persona Locked`.
+Brain makes separate API calls per persona: `POST /v1/vault/query {persona: "persona-general", ...}`. Core routes the query to the correct open database. If the persona is locked, core returns `403 Persona Locked`.
 
-**The model: personas have access tiers, enforced by which databases are open.** Configured in `config.json`, enforced by `gatekeeper.go` in core.
+**The model: personas have access tiers, enforced by which databases are open.** Each persona is created with a tier at bootstrap time (`core/cmd/dina-core/main.go`). The tier determines boot behavior and access control. Brain discovers available personas dynamically via `PersonaRegistry` (see [PersonaRegistry](#personaregistry-dynamic-persona-metadata-cache)).
 
 ```
-Persona Access Tiers (4-tier gatekeeper, configured by user, stored in config.json):
+Bootstrap Personas (created on first run, canonical names from Core):
 
-  "persona_tiers": {
-    "/general":      "default",     ← auto-open at boot, free access for all
-    "/consumer":     "standard",    ← auto-open at boot, agents need session grant
-    "/social":       "standard",    ← auto-open at boot, agents need session grant
-    "/work":         "standard",    ← auto-open at boot, agents need session grant
-    "/health":       "sensitive",   ← closed at boot, auto-open on authorized request (v1 policy-gated)
-    "/financial":    "locked",      ← CLOSED. DEK not in RAM. Brain gets 403. Human action required.
-  }
+  general   → default     ← auto-open at boot, free access for all
+  work      → standard    ← auto-open at boot, agents need session grant
+  health    → sensitive   ← closed at boot, auto-open on authorized request (v1 policy-gated)
+  finance   → sensitive   ← closed at boot, auto-open on authorized request (v1 policy-gated)
 ```
 
-Legacy tiers (`open`/`restricted`) auto-migrate on load: `open` maps to `standard`, `restricted` maps to `sensitive`.
+Brain never invents persona names. The `PersonaRegistry` queries Core's `GET /v1/personas` at startup and caches the canonical names, tiers, and lock states. Aliases (e.g., `financial` → `finance`, `medical` → `health`) are resolved by the `PersonaSelector` during classification.
 
 | Tier | Boot State | Users | Brain | Agents | Use Case |
 |------|-----------|-------|-------|--------|----------|
-| **Default** | Auto-open | Free | Free | Free | `/general` — always available, no gates. |
-| **Standard** | Auto-open | Free | Free | Session grant | `/consumer`, `/social`, `/work` — the personas brain needs constantly for nudges. Agents require a session grant (`dina session start`). |
-| **Sensitive** | Closed | Confirm | Approval | Approval | `/health` — v1 auto-open: Core checks the request against persona access policy. If the requester is authorized (Brain with approval, agent with session grant), Core auto-opens the persona transparently (derives DEK, opens database). No passphrase prompt. The 403 response includes an `approval_id`; staging items are marked `pending_unlock` with classified data preserved. On approval, `completeApproval()` opens the vault AND drains pending staging items. |
-| **Locked** | Closed | Passphrase | Denied | Denied | `/financial` — database file is **CLOSED**. DEK not in RAM. Brain gets `403 Persona Locked`. Requires explicit human unlock: `POST /v1/persona/unlock {persona: "/financial", ttl: "15m"}`. Core derives the DEK, opens the file, auto-closes after TTL expires, zeroes DEK from RAM. High-stakes access only (tax filing, insurance claim). Worth the friction. |
+| **Default** | Auto-open | Free | Free | Free | `general` — always available, no gates. |
+| **Standard** | Auto-open | Free | Free | Session grant | `work` — the persona brain needs constantly for nudges. Agents require a session grant (`dina session start`). |
+| **Sensitive** | Closed | Confirm | Approval | Approval | `health`, `finance` — v1 auto-open: Core checks the request against persona access policy. If the requester is authorized (Brain with approval, agent with session grant), Core auto-opens the persona transparently (derives DEK, opens database). No passphrase prompt. The 403 response includes an `approval_id`; staging items are marked `pending_unlock` with classified data preserved. On approval, `completeApproval()` opens the vault AND drains pending staging items. |
+| **Locked** | Closed | Passphrase | Denied | Denied | Reserved for future high-stakes personas. Database file is **CLOSED**. DEK not in RAM. Brain gets `403 Persona Locked`. Requires explicit human unlock: `POST /v1/persona/unlock`. Core derives the DEK, opens the file, auto-closes after TTL expires, zeroes DEK from RAM. |
 
 **What this fixes:**
 
 1. **Compromised brain can't touch locked personas at all.** The DEK isn't in memory. No amount of application-level bypass can decrypt the file. Math, not code, enforces this.
 2. **Sensitive personas gate access without friction.** v1 auto-open means authorized requests open the persona transparently — no passphrase prompt, but the approval gate and audit trail remain. Staging items marked `pending_unlock` preserve classified data so nothing is lost during the approval wait.
 3. **Default and standard personas stay fast.** The nudge flow works without friction for everyday contexts.
-4. **Cross-persona queries use parallel reads.** Brain requests data from `/social` + `/work` + `/consumer`. Core queries each open database independently, merges results. Brain never sees SQLite handles — it gets JSON responses.
+4. **Cross-persona queries use parallel reads.** Brain requests data from `general` + `work`. Core queries each open database independently, merges results. Brain never sees SQLite handles — it gets JSON responses.
 5. **Session-scoped staging isolation.** Staging resolve operations enforce `X-Session` and `X-Agent-DID` headers, preventing cross-session or cross-agent access to pending items.
 
 **"Which personas have data about Dr. Patel?"** — derived, never cached:
@@ -1557,6 +1638,207 @@ func (v *VaultManager) GetPersonasForContact(contactDID string) []string {
 ```
 
 **Audit log retention:** Rolling 90-day window (configurable via `config.json`: `"audit": {"retention_days": 90}`). Core's watchdog runs `DELETE FROM audit_log WHERE timestamp < datetime('now', '-90 days')` daily. At ~100 entries/day × 200 bytes, this is ~1.8MB for 90 days — trivial, but unbounded growth is still a bug. Raw entries are kept for forensics (not summarized — "brain accessed /financial 847 times" is useless vs. timestamped entries showing when a suspicious pattern started).
+
+### Session-Scoped Access Control
+
+Persona tiers determine _who_ can access data. Sessions determine _when_ and _under what scope_ that access is valid. The CLI enforces `--session` on `dina remember`, `dina ask`, and `dina validate` — the commands that read or write vault data through Brain. Sessions bind grants to a specific agent on a specific device, for a bounded duration. When the session ends, all grants are revoked and any sensitive persona vaults opened via approval are closed.
+
+**Why sessions exist:** Without sessions, an agent that receives a one-time approval would retain that access indefinitely. Sessions make access ephemeral — the grant lives only as long as the task that justified it.
+
+#### Session Lifecycle
+
+A session is a named workspace for an agent's interaction with Dina. Sessions are unique per agent — one agent cannot have two active sessions with the same name, but different agents can.
+
+**Start a session:**
+
+```bash
+dina session start --name "chair-research"
+#   Session: ses_a3kx7m2pw4qr (chair-research) active
+```
+
+The CLI calls `POST /v1/session/start` with the agent's Ed25519-signed request. Core creates an `AgentSession` record (`core/internal/domain/session.go`) with status `active`, an empty grants list, and a generated session ID.
+
+**Session ID format:** `ses_<12 chars>` — 12 characters from the lowercase base32 alphabet (`a-z`, `2-7`), generated from 8 random bytes (`crypto/rand`). Each character is `alphabet[b[i%8] % 32]`, so the last 4 positions reuse the first 4 bytes' entropy. Example: `ses_a3kx7m2pw4qr`. URL-safe, human-readable, easy to copy-paste. Generated by `generateSessionID()` in `core/internal/adapter/identity/identity.go`.
+
+**End a session:**
+
+```bash
+dina session end ses_a3kx7m2pw4qr
+#   Session 'ses_a3kx7m2pw4qr' ended. All grants revoked.
+```
+
+`EndSession()` in `core/internal/adapter/identity/identity.go` sets the session status to `ended`, clears all grants, and closes any sensitive persona vaults that were opened via approval (not via manual user unlock). Vault closure only happens if no other active session holds a grant for the same persona — a safety check that prevents one session's cleanup from disrupting another session's work.
+
+**Reconnection:** If an agent calls `StartSession()` with a name that already has an active session for the same agent DID, Core returns the existing session rather than creating a duplicate. This handles agent restarts and network reconnects gracefully.
+
+**Persistence:** Sessions persist across Core process restarts. The `PersonaManager` serializes sessions (along with personas, contacts, and approvals) to a JSON state file via atomic `.tmp` → `os.Rename` writes (`core/internal/adapter/identity/identity.go`, `persistState()`). On boot, active sessions are reloaded. This means a Core crash does not orphan active sessions or lose granted approvals.
+
+#### Session Grants
+
+Grants are the mechanism by which sessions acquire persona access. A grant is a triple binding: **(persona, session, agent DID)**. All three must match for access to be permitted.
+
+**How grants are created:**
+
+1. Agent attempts to access a persona that requires approval (sensitive tier for agents/brain, standard tier for agents).
+2. Core's `AccessPersona()` checks for an active grant via `hasActiveGrant(personaID, sessionID, agentDID)`.
+3. If no grant exists, Core returns `ErrApprovalRequired` with the persona ID.
+4. An approval request is created (`RequestApproval()` in `core/internal/adapter/identity/identity.go`) and the user is notified (Telegram, admin UI).
+5. User approves via `POST /v1/persona/approve` with a scope (`session` or `single`).
+6. `ApproveRequest()` creates an `AccessGrant` record inside the session's grants list, binding `ClientDID + PersonaID + SessionID + Scope`.
+
+**Grant scopes:**
+
+| Scope | Lifetime | ExpiresAt | Use Case |
+|-------|----------|-----------|----------|
+| `session` | Until session ends | `0` (no expiry) | Agent needs repeated access for a task — e.g., researching health data for a medical appointment. |
+| `single` | Consumed on first access | `0` (no expiry, but removed after one use) | One-time read — e.g., agent checks a financial balance once. |
+| _(default for non-session grants)_ | 1 hour | `now + 3600` | Time-boxed fallback when scope is unspecified. |
+
+**Single-use grant consumption:** When `hasActiveGrant()` finds a matching grant with `scope == "single"`, it removes the grant from the session's grants list before returning `true`. If the consumed grant was the last active grant for a sensitive persona, and that persona's vault was opened via approval (tracked by `grantOpenedVaults`), Core closes the vault by calling `OnLock()`. This ensures sensitive data is not left open after a single-use access.
+
+**The triple binding — `hasActiveGrant(personaID, sessionID, agentDID)`:**
+
+```go
+// core/internal/adapter/identity/identity.go
+func (pm *PersonaManager) hasActiveGrant(personaID, sessionID, agentDID string) bool {
+    if sessionID == "" {
+        return false  // no session → no grant, period
+    }
+    for _, s := range pm.sessions {
+        if s.Status != domain.SessionActive { continue }
+        // Both session ID/name AND agent DID must match
+        if (s.Name == sessionID || s.ID == sessionID) && (agentDID == "" || s.AgentDID == agentDID) {
+            for _, g := range s.Grants {
+                if canonicalPersonaID(g.PersonaID) == personaID && !expired(g) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+```
+
+**Why both session ID and agent DID are required:** A stolen session ID alone is not enough. The grant check verifies that the requesting device's DID (`AgentDIDKey` from auth middleware) matches the DID that created the session. If an attacker intercepts a session ID but authenticates from a different device, the DID mismatch causes the grant check to fail. The session ID identifies the task scope; the agent DID identifies the device. Both are needed.
+
+#### Header Flow (CLI → Brain → Core)
+
+Session identity flows from the CLI through Brain to Core via HTTP headers and staging metadata. The path is:
+
+```
+CLI (dina remember --session ses_abc123 "My doctor is Dr. Patel")
+  │
+  │  1. CLI embeds session ID in staging metadata:
+  │     metadata: {"category": "note", "session": "ses_abc123"}
+  │
+  │  2. CLI calls POST /v1/staging/ingest with Ed25519-signed request
+  │     Core extracts X-DID (agent DID) from auth headers
+  │     Core stores item with origin_did = agent DID, metadata.session = ses_abc123
+  │
+  ▼
+Brain (StagingProcessor.process_pending)
+  │
+  │  3. Brain claims staged items via POST /v1/staging/claim
+  │     Each item carries origin_did and metadata.session from step 2
+  │
+  │  4. Brain extracts session + agent DID from item provenance:
+  │     item_session = json.loads(item.metadata).get("session", "")
+  │     item_agent_did = item.origin_did
+  │     (brain/src/service/staging_processor.py)
+  │
+  │  5. Brain forwards both as HTTP headers on staging_resolve:
+  │     X-Session: ses_abc123
+  │     X-Agent-DID: did:key:z6Mk...
+  │     (brain/src/adapter/core_http.py, staging_resolve method)
+  │
+  ▼
+Core (Auth Middleware → PersonaManager.AccessPersona)
+  │
+  │  6. Auth middleware extracts headers into context:
+  │     ctx = context.WithValue(ctx, SessionNameKey, "ses_abc123")
+  │     ctx = context.WithValue(ctx, AgentDIDKey, "did:key:z6Mk...")
+  │     (core/internal/middleware/auth.go)
+  │
+  │  7. When Brain's request touches a standard/sensitive persona,
+  │     Core reads session + agent DID from context:
+  │     sessionID = ctx.Value(middleware.SessionNameKey)
+  │     agentDID = ctx.Value(middleware.AgentDIDKey)
+  │
+  │  8. AccessPersona calls hasActiveGrant(personaID, sessionID, agentDID)
+  │     Grant found → access permitted → vault operation proceeds
+  │     No grant → ErrApprovalRequired → approval flow triggered
+  │     (core/internal/adapter/identity/identity.go)
+```
+
+The same header flow applies to `dina ask --session <id>` (vault queries) and `dina validate --session <id>` (action gating). Brain's `core_http.py` attaches `X-Session` and `X-Agent-DID` headers on every `staging_resolve`, `staging_resolve_multi`, and `vault_query` call that originates from a session-bearing request.
+
+#### Commands Requiring Sessions
+
+Three CLI commands require `--session` (`required=True` in their Click definitions):
+
+| Command | Session Usage | What Happens |
+|---------|--------------|--------------|
+| `dina remember --session <id> "text"` | Required | Session ID embedded in staging metadata; enforced at persona access time. |
+| `dina ask --session <id> "query"` | Required | Session forwarded to Brain, then to Core via `X-Session` on vault queries. |
+| `dina validate --session <id> action desc` | Required | Session scopes the action approval; ensures agent intent is bound to a task. |
+| `dina session start [--name <desc>]` | Creates one | Returns session ID for use with `--session` flag. |
+| `dina session end <session-id>` | Ends one | Revokes all grants, closes grant-opened vaults. |
+| `dina session list` | Lists active | Shows ID, name, status, and granted personas per session. |
+
+The `--session` flag is `required=True` on `remember`, `ask`, and `validate` in `cli/src/dina_cli/main.py`. Running these commands without a session produces a CLI usage error before any network call is made.
+
+#### Grant-Opened Vault Tracking
+
+Core distinguishes between vaults opened by user action (manual unlock via passphrase) and vaults opened via the approval path (grant-opened). This distinction matters at session end:
+
+- **User-unlocked vaults** are never auto-closed by session lifecycle. The user explicitly opened them and controls when they close (via `POST /v1/persona/lock` or TTL expiry).
+- **Grant-opened vaults** are closed when the session that triggered their opening ends, provided no other active session holds a grant for the same persona.
+
+`MarkGrantOpened()` in `core/internal/adapter/identity/identity.go` records which persona vaults were opened via the approval path. `EndSession()` iterates the session's grants, identifies sensitive personas, and calls `OnLock()` (which closes the vault and zeroes the DEK from memory) for each grant-opened persona that has no remaining active grants across any session.
+
+This prevents a common security footgun: an agent session opens `/health` for a legitimate query, the session ends, but the health vault stays open because nobody remembered to lock it. With grant-opened tracking, the vault closes automatically.
+
+#### Approval-to-Grant Bridge
+
+When a user approves an access request, `ApproveRequest()` in `core/internal/adapter/identity/identity.go` does not just mark the approval as approved — it creates a concrete `AccessGrant` inside the requesting session:
+
+```go
+// Simplified from ApproveRequest()
+if a.SessionID != "" {
+    for j, s := range pm.sessions {
+        if (s.ID == a.SessionID || s.Name == a.SessionID) && s.Status == domain.SessionActive {
+            grant := domain.AccessGrant{
+                ClientDID: a.ClientDID,
+                PersonaID: a.PersonaID,
+                SessionID: a.SessionID,
+                Scope:     scope,       // "session" or "single"
+                GrantedBy: grantedBy,   // "admin", "telegram", etc.
+            }
+            pm.sessions[j].Grants = append(pm.sessions[j].Grants, grant)
+            break
+        }
+    }
+}
+```
+
+After the grant is created, `completeApproval()` in `core/internal/handler/persona.go` opens the persona vault (if not already open), drains any staging items that were marked `pending_unlock` while waiting for approval, and triggers resume for any pending reason requests linked to the approval. This ensures the agent's workflow continues seamlessly after the user grants access.
+
+#### Approval API Surface
+
+Two sets of endpoints expose approval management. Both call the same `completeApproval()` path:
+
+| Endpoint | Handler | Caller |
+|----------|---------|--------|
+| `POST /v1/approvals/{id}/approve` | `ApprovalHandler.HandleApprove` | Admin CLI (`dina-admin approve`) |
+| `POST /v1/approvals/{id}/deny` | `ApprovalHandler.HandleDeny` | Admin CLI (`dina-admin deny`) |
+| `GET /v1/approvals` | `ApprovalHandler.HandleList` | Admin CLI, admin UI |
+| `POST /v1/persona/approve` | `PersonaHandler.HandleApprove` | Telegram bot, admin UI (legacy) |
+| `POST /v1/persona/deny` | `PersonaHandler.HandleDeny` | Telegram bot, admin UI (legacy) |
+| `GET /v1/persona/approvals` | `PersonaHandler.HandleListApprovals` | Telegram bot, admin UI (legacy) |
+
+The `/v1/approvals/` routes (`core/internal/handler/approval.go`) are the canonical API. The `/v1/persona/{approve,deny,approvals}` routes remain as aliases for backward compatibility. Both delegate to `PersonaHandler` for the actual approve/deny/list logic, and both call `completeApproval()` after approval — so staging drain and vault open happen identically regardless of which path is used.
+
+**Device callers are blocked from approval mutations.** `ApprovalHandler.HandleApprove` and `HandleDeny` check `CallerTypeKey` and reject `agent`-type callers with 403. A paired device cannot approve its own access requests — only admin-scoped callers (CLIENT_TOKEN or admin service key) can mutate approvals. This prevents a compromised agent from self-granting access to sensitive personas.
 
 ### Zero-Knowledge Proof Credentials (Trust Rings)
 
@@ -2372,11 +2654,132 @@ OFFLINE ─(MCP call succeeds)───────► HEALTHY    (resume sync, 
 2. **Tier 2 notification on degradation.** Missing emails is an inconvenience, not a harm. Not Tier 1 (fiduciary).
 3. **User can see sync status.** Last successful sync, current state, reason for current state — all visible in admin UI.
 
+#### Connector Lifecycle (Implementation Detail)
+
+The health monitoring above describes the observable state machine. This section documents how connectors integrate with Brain's sync engine and MCP transport layer.
+
+**Connector integration via MCP:** Connectors are not code inside Brain. They are external MCP servers that Brain communicates with via two transport adapters:
+
+| Transport | Adapter | Session Model | Use Case |
+|-----------|---------|---------------|----------|
+| **stdio** | `MCPStdioClient` | Child process per server, JSON-RPC 2.0 over stdin/stdout | Local connectors (OpenClaw, review bots) |
+| **HTTP** | `MCPHTTPClient` | Stateless REST calls (`POST /tools/{tool}`) | Remote/containerized connectors |
+
+Both implement the `MCPClient` protocol: `call_tool(server, tool, args)`, `list_tools(server)`, `disconnect(server)`. Brain's sync engine and guardian are transport-agnostic.
+
+**Sync engine (`brain/src/service/sync_engine.py`):** Orchestrates periodic ingestion for each registered source. A sync cycle runs six steps: (1) read cursor from Core KV, (2) fetch new items via `mcp.call_tool(source, f"{source}_fetch", {since: cursor})`, (3) triage each item (Pass 1 category filter, Pass 2a regex, fiduciary override), (4) push PRIMARY items to Core's staging inbox in batches of 100, (5) update the cursor in Core KV, (6) return stats `{fetched, stored, skipped, cursor}`.
+
+**Deduplication:** Two-tier. Fast path: in-memory `OrderedDict` per source (bounded at 10,000 IDs with 10% LRU eviction). Cold path: FTS5 search by `source_id` against Core vault. If the item exists in either tier, it is skipped.
+
+**MCP error handling:**
+
+| Failure | Behavior |
+|---------|----------|
+| Server command not found | `MCPError` — source cannot start |
+| Process dies mid-session (stdio) | Detected on next `call_tool` via `returncode` check, session recreated |
+| Timeout (30s per call) | `asyncio.wait_for` raises `MCPError` — sync cycle aborts, cursor preserved |
+| Invalid JSON response | `MCPError` with first 200 bytes of response for debugging |
+| HTTP error (HTTP transport) | `MCPError` with status code and truncated body (500 chars) |
+
+**MCP payload validation (MED-17):** Every fetch result is validated before processing: must be a dict with an `items` list, each item must be a dict under 256KB serialized, and batches are capped at 1,000 items. Oversized or unserializable items are logged and skipped — they never reach the triage pipeline.
+
+**OAuth and token refresh:** Dina never manages OAuth tokens. OpenClaw (or whichever MCP connector) owns the OAuth flow, token storage, and refresh logic. Brain delegates fetch operations; the connector handles authentication with the upstream API. If the connector's token expires and it cannot refresh, the MCP call fails, Brain records the failure in the health state machine, and the user sees a Tier 2 notification. The sync cursor is preserved — when the connector recovers (token refreshed, user re-authorizes), sync resumes from the last successful position.
+
+**Environment safety (stdio transport):** Child processes inherit only a safe subset of environment variables (`PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `USER`, `SHELL`, `TMPDIR`, `XDG_RUNTIME_DIR`). Vault keys, service keys, and API tokens are never leaked to MCP server processes.
+
 ### Telegram Connector
 - **Method:** Telegram Bot API (official, server-side)
 - **How:** User creates a Telegram bot via @BotFather, configures the bot token in Dina. Home Node runs the connector which receives messages via webhook or long polling. Full message content, media, group context, reply chains.
 - **Cross-platform:** Works on Android, iOS, web, and desktop — no device-specific code needed.
 - **Persona routing:** Messages default to `/social` persona. User can configure per-chat or per-group routing.
+
+### Telegram Bot as Admin Channel
+
+Telegram is not just a data connector — it is a full admin channel. A paired Telegram user can converse with Dina, approve or deny agent persona-access requests, and receive nudges, briefings, and approval prompts — all from the same Telegram chat. This makes Telegram the primary mobile admin surface before a dedicated Dina client app exists.
+
+#### Architecture
+
+Three files implement the Telegram admin channel, following the hexagonal pattern:
+
+| File | Role |
+|------|------|
+| `brain/src/port/telegram.py` | Port protocol — `TelegramBot` with `send_message`, `start`, `stop`, `bot_username` |
+| `brain/src/adapter/telegram_bot.py` | Adapter — wraps `python-telegram-bot` v22.x, owns transport lifecycle (polling, sending), zero business logic |
+| `brain/src/service/telegram.py` | Service — access control, Guardian routing, vault storage, approval workflow |
+
+The composition root (`brain/src/main.py`) wires these together when `DINA_TELEGRAM_TOKEN` is set. If the `python-telegram-bot` package is missing, the import fails gracefully and Telegram is disabled — no crash, no degraded startup.
+
+#### Setup and Configuration
+
+| Env Var | Purpose |
+|---------|---------|
+| `DINA_TELEGRAM_TOKEN` | Bot API token from @BotFather (required to enable) |
+| `DINA_TELEGRAM_TOKEN_FILE` | Alternative: path to a file containing the token (Docker secrets) |
+| `DINA_TELEGRAM_ALLOWED_USERS` | Comma-separated Telegram user IDs allowed to pair via `/start` |
+| `DINA_TELEGRAM_ALLOWED_GROUPS` | Comma-separated group chat IDs where the bot responds to @mentions |
+
+Transport uses long polling (not webhooks) — no inbound port exposure required. The adapter calls `start_polling(drop_pending_updates=True)` at startup, so stale messages from a previous run are discarded.
+
+#### Access Control and Pairing
+
+Access is two-gated:
+
+1. **Allowlist gate.** Only Telegram user IDs listed in `DINA_TELEGRAM_ALLOWED_USERS` can initiate pairing. This is set at install time.
+2. **Pairing gate.** An allowed user sends `/start` to the bot. The service persists their user ID to Core's KV store (`telegram_paired_users` key) via `POST /v1/kv`. Paired users survive Brain restarts — `load_paired_users()` hydrates the set from KV on startup.
+
+DM messages from unpaired users receive a rejection. Group messages are only processed if (a) the group's chat ID is in `DINA_TELEGRAM_ALLOWED_GROUPS` and (b) the message @-mentions the bot. The @mention is stripped before processing.
+
+#### Command Syntax
+
+| Command | Effect |
+|---------|--------|
+| `/start` | Pairing flow — registers the user's Telegram ID with Dina |
+| Free-text message (DM) | Forwarded to Guardian as a `reason` event, response returned inline |
+| `approve <id>` | Approves a pending persona-access request (session scope) |
+| `approve-single <id>` | Approves a pending request (single-use scope) |
+| `deny <id>` | Denies a pending persona-access request |
+
+The approval commands are intercepted before Guardian processing. `handle_approval_response()` checks if the message starts with `approve`, `approve-single`, or `deny`, and if so routes it directly to Core's approval endpoints (`POST /v1/persona/approve` or `POST /v1/persona/deny`) via the `CoreClient` adapter. This means a user can approve an agent's access request by tapping a reply on their phone — no admin dashboard needed.
+
+#### Approval Workflow
+
+The full approval-via-Telegram flow:
+
+```
+Agent requests sensitive persona access
+  → Core creates pending approval
+  → Core notifies Brain (via process event or WebSocket)
+  → Guardian._handle_approval_needed() fires
+  → TelegramService.send_approval_prompt() sends Markdown-formatted message
+    to ALL paired Telegram users with approval ID, agent DID, persona, session, reason
+  → User replies "approve abc123" in Telegram
+  → TelegramService.handle_approval_response() intercepts
+  → CoreClient.approve_request(id, scope="session", granted_by="telegram")
+  → Core's ApproveRequest() creates AccessGrant in the session
+  → Core's completeApproval() opens the persona vault + drains pending staging
+  → Agent's workflow resumes
+```
+
+The `granted_by` field is set to `"telegram"`, creating an audit trail distinguishing Telegram approvals from admin-UI or CLI approvals. Approval prompt text escapes Markdown V1 special characters (`_*\`[`) in user-supplied fields to prevent formatting injection.
+
+#### Notification Types
+
+| Type | Direction | Method |
+|------|-----------|--------|
+| **Approval prompts** | Brain → Telegram | `send_approval_prompt()` — Markdown-formatted with agent DID, persona, session, reason, and reply syntax |
+| **Nudges** | Brain → Telegram | `send_nudge(chat_id, text)` — used by reminder system and other services to push messages to paired users |
+| **Guardian responses** | Brain → Telegram | Inline reply to any free-text DM — the result of Guardian `reason` processing |
+
+#### Vault Storage
+
+Every message exchange is stored in the vault for memory and context. After Guardian processes a DM, the service calls `CoreClient.staging_ingest()` with `ingress_channel=telegram` and `origin_kind=user`. Brain's staging pipeline then classifies and enriches the item before it reaches the vault. This means Telegram conversations become part of Dina's context — she remembers what you asked her via Telegram.
+
+#### Security Properties
+
+- **No secrets in Telegram messages.** Approval prompts show agent DID and persona name, not vault contents or keys. Error messages to Telegram are generic ("Approval failed. Check the admin dashboard for details.") — detailed errors are logged server-side only.
+- **Owner-only.** The allowlist + pairing model ensures only the Dina owner (and their configured user IDs) can interact with the bot.
+- **Core validates all mutations.** The Telegram service calls Core's approval API like any other client — Core enforces its own authorization checks. A bug in the Telegram service cannot bypass Core's approval logic.
+- **Graceful degradation.** If `python-telegram-bot` is not installed or the token is invalid, Brain starts normally with Telegram disabled. Approvals fall back to the admin dashboard or CLI.
 
 ### Calendar (via OpenClaw MCP)
 
@@ -2497,6 +2900,215 @@ PASS-THROUGH SEARCH PROTOCOL:
 5. **User can see sync status.** Last successful sync, items ingested, current state — all visible in admin UI.
 6. **Phone-based connectors (SMS) authenticate to Home Node with device-specific Ed25519 keys** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket.
 7. **OAuth tokens live in OpenClaw, not in Dina.** Dina never touches Gmail/Calendar credentials. If OpenClaw is compromised, revoke its tokens — Dina's vault and identity are unaffected.
+
+### Staging Pipeline (Universal Staging Inbox)
+
+Every memory-producing flow — CLI, connectors, Telegram, Dina-to-Dina, admin imports — enters the vault through one subsystem: the **staging inbox**. Nothing bypasses it. This gives Dina a single place for deduplication, provenance tracking, lease-based concurrency control, persona routing, and access-gated storage.
+
+The staging inbox lives in `identity.sqlite` (Tier 0), not inside any persona vault. Items arrive as raw content, get claimed and classified by Brain, then resolve into the correct persona vault or pend for unlock/approval. The raw body is cleared after classification — the staging table holds only metadata and routing state long-term.
+
+**Source files:**
+- Domain types and constants: `core/internal/domain/staging.go`
+- Port interface (12 methods): `core/internal/port/staging.go`
+- SQLite implementation: `core/internal/adapter/sqlite/staging_inbox.go`
+- HTTP handlers: `core/internal/handler/staging.go`
+- Remember wrapper: `core/internal/handler/remember.go`
+- Brain-side processor: `brain/src/service/staging_processor.py`
+- Guardian drain handler: `brain/src/service/guardian.py`
+
+#### Table Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS staging_inbox (
+    id                TEXT PRIMARY KEY,
+    connector_id      TEXT NOT NULL DEFAULT '',       -- legacy, kept for connector items
+    source            TEXT NOT NULL DEFAULT '',       -- gmail, calendar, dina-cli, etc.
+    source_id         TEXT NOT NULL DEFAULT '',       -- external ID for dedup
+    source_hash       TEXT NOT NULL DEFAULT '',       -- SHA-256 of raw content
+    type              TEXT NOT NULL DEFAULT '',       -- email, event, note
+    summary           TEXT NOT NULL DEFAULT '',       -- subject / headline
+    body              TEXT NOT NULL DEFAULT '',       -- raw content (cleared after classification)
+    sender            TEXT NOT NULL DEFAULT '',       -- who sent it
+    metadata          TEXT NOT NULL DEFAULT '{}',     -- JSON: labels, attachments, etc.
+    status            TEXT NOT NULL DEFAULT 'received'
+        CHECK (status IN ('received','classifying','stored','pending_unlock','failed')),
+    target_persona    TEXT NOT NULL DEFAULT '',       -- set by Brain classification
+    classified_item   TEXT NOT NULL DEFAULT '{}',     -- JSON VaultItem ready for storage
+    error             TEXT NOT NULL DEFAULT '',       -- error message on failure
+    retry_count       INTEGER NOT NULL DEFAULT 0,     -- for exponential backoff
+    claimed_at        INTEGER NOT NULL DEFAULT 0,     -- when Brain claimed it
+    lease_until       INTEGER NOT NULL DEFAULT 0,     -- lease expiry (auto-revert after)
+    expires_at        INTEGER NOT NULL,               -- 7-day TTL
+    created_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    updated_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    -- Ingress provenance (server-derived, never caller-supplied for external callers)
+    ingress_channel   TEXT NOT NULL DEFAULT '',       -- cli, connector, telegram, d2d, brain, admin
+    origin_did        TEXT NOT NULL DEFAULT '',       -- device DID, remote DID, connector ID
+    origin_kind       TEXT NOT NULL DEFAULT '',       -- user, agent, remote_dina, service
+    producer_id       TEXT NOT NULL DEFAULT ''        -- dedup namespace: "cli:<did>", etc.
+);
+
+CREATE UNIQUE INDEX idx_staging_inbox_dedup   ON staging_inbox(producer_id, source, source_id);
+CREATE INDEX        idx_staging_inbox_status  ON staging_inbox(status);
+CREATE INDEX        idx_staging_inbox_expires ON staging_inbox(expires_at);
+```
+
+**Key constraints:** The `status` column has a `CHECK` constraint limiting it to the five valid status strings. The dedup index on `(producer_id, source, source_id)` prevents the same content from being ingested twice from the same producer. `expires_at` is `NOT NULL` — every item has a TTL.
+
+#### Status Lifecycle
+
+```
+                                 ┌─────────────────────────────┐
+                                 │                             │
+  Ingest ──► received ──► classifying ──┬──► stored           │
+                 ▲            │         │                      │
+                 │            │         ├──► pending_unlock    │
+                 │            │         │       │              │
+                 │            │         │       │  (persona    │
+                 │            │         │       │   unlocked   │
+                 │            │         │       │   or         │
+                 │            │         │       │   approved)  │
+                 │            │         │       ▼              │
+                 │            │         │    stored            │
+                 │            │         │                      │
+                 │            │         └──► failed            │
+                 │            │                │               │
+                 │            │   (retry_count │               │
+                 │            │    <= 3)       │               │
+                 │            │                ▼               │
+                 └────────────┼────── requeued by Sweep        │
+                              │                                │
+                              │   (lease expires)              │
+                              └─── reverted by Sweep ──────────┘
+```
+
+**Status strings** (from `domain/staging.go`):
+
+| Status | Meaning |
+|--------|---------|
+| `received` | Raw item ingested, awaiting Brain classification |
+| `classifying` | Brain has claimed the item and holds a lease |
+| `stored` | Classified item written to persona vault, raw body cleared |
+| `pending_unlock` | Persona is locked or access denied; classified item preserved for later drain |
+| `failed` | Classification failed; error recorded, retry_count incremented |
+
+#### Constants
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `DefaultStagingTTL` | 7 days (604,800 s) | Items expire and are deleted by Sweep after this |
+| `DefaultLeaseDuration` | 15 minutes (900 s) | Lease window for Brain classification. Increased from 5 min (VT6) to prevent Sweep from reverting items during slow LLM calls or network issues |
+| `MaxRetryCount` | 3 | Failed items with `retry_count <= 3` are requeued to `received` by Sweep. Items beyond this stay `failed` for operator review |
+
+#### Lifecycle Operations
+
+**Ingest** (`POST /v1/staging/ingest`). Accepts raw content from any authenticated source. Deduplicates on `(producer_id, source, source_id)` via `INSERT ... ON CONFLICT DO NOTHING`. If the dedup constraint fires, returns the existing staging ID — the caller sees idempotent behavior. Computes `source_hash` (SHA-256 of body) if not provided. Sets `expires_at` to `now + DefaultStagingTTL`.
+
+Provenance is server-derived from auth context — external callers cannot spoof it. Three caller types produce different provenance:
+
+| Caller Type | `ingress_channel` | `origin_kind` | `producer_id` |
+|-------------|-------------------|---------------|----------------|
+| Device (CLI, OpenClaw agent) | `cli` | `user` or `agent` (from device role lookup) | `cli:<agent_did>` |
+| Service key (Brain relay, connector) | `connector`, `brain`, or relayed (`telegram`, `d2d`) | `service` | `connector:<id>` or `brain:system` |
+| Admin (CLIENT_TOKEN) | `admin` | `user` | `admin:system` |
+
+Only Brain (trusted service key) can relay provenance for Telegram and D2D flows in Phase 2+. Connectors must always supply `connector_id`.
+
+**Claim** (`POST /v1/staging/claim`). Brain calls this to claim up to `limit` items (default 10) with status `received`. The claim is atomic within a transaction: items are selected, then each is updated to `classifying` with `claimed_at` and `lease_until` set. The `WHERE status='received'` guard on the UPDATE prevents double-claim — if two Brain instances race, only one succeeds per item.
+
+**Resolve** (`POST /v1/staging/resolve`). Brain calls this after classifying an item. Core decides the outcome based on persona state:
+
+- **Persona open** → store classified item to vault, mark `stored`, clear raw body.
+- **Persona locked** → mark `pending_unlock`, preserve classified item JSON, clear raw body.
+
+Vault item IDs are deterministic (`stg-{staging_id}`) for idempotent writes — if resolve runs twice, the vault upsert overwrites rather than duplicating.
+
+Before resolve, the handler validates enrichment: items must arrive fully enriched with `enrichment_status=ready`, `content_l0`, `content_l1`, and `embedding`. Incomplete items are hard-rejected — no partial records in the vault.
+
+The handler also runs session-scoped access control via `AccessPersona()`. If access is granted, `EnsureVaultOpen` auto-opens the persona vault so `isPersonaOpen()` returns true and the item stores immediately (v1 auto-open behavior). If access is denied and an `ErrApprovalRequired` is returned, the handler creates an approval request via `ApprovalManager` and marks the item `pending_unlock` via `MarkPendingApproval`.
+
+**Auto-open failure semantics.** `EnsureVaultOpen` (`staging.go:ensureOpen`) distinguishes two failure modes:
+- `ErrPersonaLocked` — expected for locked-tier personas. Returns nil so `Resolve()` proceeds and marks the item `pending_unlock`. The user must explicitly unlock.
+- Any other error (DEK derivation failure, vault I/O error) — infrastructure failure. Returns the error, and the handler aborts with HTTP 500. This prevents DEK bugs or disk errors from being silently misreported as "please approve access."
+
+**Multi-Target Resolve.** For cross-persona content (e.g., a health-related email that also affects financial planning), the resolve request carries a `targets` array instead of a single `target_persona`. The handler partitions targets by access:
+
+```
+targets ──► AccessPersona() for each
+              │
+              ├─ accessible ──► ResolveMulti (original staging row)
+              │                   ├─ primary target: full Resolve on original row
+              │                   └─ additional targets: per-persona copy rows
+              │                        ID: stg-{staging_id}-{persona}
+              │
+              └─ denied ──────► CreatePendingCopy + RequestApproval
+                                  ID: {staging_id}-{persona}
+```
+
+Each persona's outcome (stored vs. pending_unlock) is independent. Errors on secondary targets are collected but do not prevent other targets from being processed.
+
+**MarkPendingApproval.** Used when `HandleResolve` detects access denial and creates an approval request. Updates the staging row to `pending_unlock` with the classified item JSON preserved, so `DrainPending` can store it after the approval is granted.
+
+**CreatePendingCopy.** Used for multi-target resolve when individual targets are denied. The accessible targets use the original staging row via `ResolveMulti`; denied targets get their own pending rows with deterministic IDs (`{staging_id}-{persona}`) so they can be drained independently after approval.
+
+**DrainPending.** Called by Core when a persona is unlocked or an approval is granted. Selects all `pending_unlock` items for that persona, deserializes each `classified_item` JSON, stores to vault via `storeToVault`, and marks `stored`. Uses `stg-{staging_id}` as the vault item ID for idempotent writes — if drain runs twice, upserts overwrite. After each successful drain, fires the `OnDrain` callback for post-publication work (e.g., event extraction via Brain). No Brain dependency — Core handles this entirely.
+
+**MarkFailed** (`POST /v1/staging/fail`). Brain calls this when classification fails. Records the error message and increments `retry_count`. Items with `retry_count <= MaxRetryCount` (3) will be requeued to `received` by Sweep.
+
+**ExtendLease** (`POST /v1/staging/extend-lease`). Brain calls this as a heartbeat during long-running enrichment (VT6). Without it, Sweep would revert items that exceed `DefaultLeaseDuration` back to `received`, causing double-processing. The extension is additive from `max(current lease, now)` — computed atomically in SQL to avoid TOCTOU races.
+
+**Sweep.** Runs periodically (background goroutine in Core). Three cleanup operations in order:
+1. **Delete expired items** — any item where `expires_at < now`, regardless of status.
+2. **Revert expired leases** — items in `classifying` where `lease_until < now` are reset to `received` (available for re-claim).
+3. **Requeue retryable failures** — items in `failed` with `retry_count <= MaxRetryCount` are reset to `received`. Items beyond MaxRetryCount stay `failed` for operator review.
+
+**GetStatus.** Returns the current status of a staging item. If `callerDID` is non-empty, enforces ownership — only the originating caller (matched by `origin_did`) can query status. This prevents cross-agent status disclosure.
+
+#### Immediate Staging Drain
+
+Core fires a `staging_drain` event to Brain as a **non-blocking goroutine** immediately after every successful ingest:
+
+```go
+// In HandleIngest, after successful ingest:
+go func() {
+    _ = h.Brain.Process(r.Context(), domain.TaskEvent{
+        Type:    "staging_drain",
+        Payload: map[string]interface{}{
+            "trigger": "ingest",
+            "item_id": id,
+        },
+    })
+}()
+```
+
+Brain's Guardian handles this event by calling `staging_processor.process_pending(limit=5)`. The processor claims items, classifies them (persona routing, enrichment with L0+L1+embedding), and resolves via Core. This ensures items are processed within seconds of ingest — no 5-minute wait for the next sync cycle.
+
+The goroutine is fire-and-forget. If Brain is down or the call fails, the item remains `received` in staging and will be picked up by the next scheduled processing cycle or a future ingest trigger.
+
+#### The Remember Wrapper
+
+`POST /api/v1/remember` is the user-facing solicited memory endpoint (CLI `dina remember "..."` command). It delegates to the staging pipeline rather than writing directly to the vault:
+
+1. Translates the user's text into a staging ingest request (type `note`, source from auth context).
+2. Delegates to `StagingHandler.HandleIngest` for canonical provenance derivation.
+3. HandleIngest triggers the immediate Brain drain (non-blocking goroutine).
+4. Polls `GetStatus` for up to 15 seconds (500ms intervals) waiting for a terminal state.
+5. Returns a semantic response: `stored`, `needs_approval` (for sensitive personas), `failed`, or `processing` (timeout).
+
+This ensures every memory — whether from a connector sync or a direct user command — follows the same classification, enrichment, and access-control path.
+
+#### Ingress Provenance
+
+Every staging item carries four server-derived provenance fields that form an audit trail:
+
+| Field | Purpose | Example values |
+|-------|---------|----------------|
+| `ingress_channel` | How content arrived at the Home Node | `cli`, `connector`, `telegram`, `d2d`, `brain`, `admin` |
+| `origin_did` | Which entity produced the content | Device DID, remote Dina DID, connector ID |
+| `origin_kind` | What kind of entity | `user`, `agent`, `remote_dina`, `service` |
+| `producer_id` | Dedup namespace combining channel and identity | `cli:did:plc:abc...`, `connector:gmail-01`, `admin:system` |
+
+These fields are **never accepted from external callers**. The staging handler derives them from the authenticated request context (caller type, agent DID, token kind, device role). Only Brain — authenticated via its service key — can relay provenance for Telegram and D2D flows (Phase 2+), because those messages arrive at Brain first and are forwarded to Core's staging inbox on behalf of the original sender.
 
 ---
 
@@ -2781,6 +3393,272 @@ Incoming signal (email, notification, calendar alert, etc.)
 ```
 
 The daily briefing summarizes queued Priority 3 items. Optional — user can disable.
+
+### Staging Processor (Ingestion Classification Pipeline)
+
+After data lands in Core's staging inbox (via connectors or Brain's MCP sync), the **Staging Processor** (`brain/src/service/staging_processor.py`) claims pending items, classifies them into personas, enriches them, and resolves them into the vault. This is Brain's half of the staging handshake — Core owns the staging table and atomically decides stored vs. pending\_unlock; Brain owns the classification and enrichment intelligence.
+
+```
+                         STAGING PROCESSOR PIPELINE
+                         ==========================
+
+  Core staging_inbox          Brain StagingProcessor          Core vault
+  (identity.sqlite)           (Python, stateless)             (persona.sqlite)
+  ─────────────────           ──────────────────              ──────────────
+
+  ┌─────────────┐
+  │received item│ ──────────► 1. CLAIM
+  │received item│             POST /v1/staging/claim?limit=N
+  │received item│             Core marks claimed items as
+  └─────────────┘             "classifying" with a 15-min lease
+                                    │
+                                    ▼
+                              2. CLASSIFY PERSONA
+                              ┌─────────────────────────────────┐
+                              │ Resolution order:                │
+                              │  a. DomainClassifier (keywords)  │
+                              │  b. PersonaSelector (LLM pick)   │
+                              │  c. Deterministic type fallback   │
+                              │  d. Default → "general"           │
+                              │                                   │
+                              │ Multi-persona: primary +          │
+                              │ secondary signals detected →      │
+                              │ sorted by sensitivity rank:       │
+                              │   health(5) > finance(4) >        │
+                              │   work(3) > general(0)            │
+                              └────────────┬────────────────────┘
+                                           │
+                                           ▼
+                              3. SCORE TRUST
+                              TrustScorer assigns provenance:
+                              sender_trust, source_type,
+                              confidence, retrieval_policy,
+                              contact_did (for D2D items)
+                                           │
+                                           ▼
+                              4. BUILD CLASSIFIED VAULTITEM
+                              Merge: item fields + provenance
+                              + routing metadata + original
+                              timestamp from metadata JSON
+                                           │
+                                           ▼
+                              5. ENRICH (L0 + L1 + embedding)
+                              ┌─────────────────────────────────┐
+                              │ EnrichmentService.enrich_raw()   │
+                              │  - L0: summary extraction        │
+                              │  - L1: entity + topic tagging    │
+                              │  - Embedding: 768-dim vector     │
+                              │                                   │
+                              │ VT6 HEARTBEAT: async task extends │
+                              │ staging lease every 5 min by 15   │
+                              │ min — deadline keeps moving       │
+                              │ forward during slow LLM work.     │
+                              └────────────┬────────────────────┘
+                                           │
+                                           ▼
+                              6. RESOLVE VIA CORE ─────────────► Core decides:
+                              POST /v1/staging/resolve           ├─ stored
+                              {staging_id, persona, item}        ├─ pending_unlock
+                              + X-Session, X-Agent-DID           └─ (error)
+                              headers for session-scoped
+                              access control
+                                           │
+                                           ▼
+                              7. POST-RESOLVE (best-effort)
+                              - EventExtractor: create reminders
+                              - Update contact last_contact
+                              - Surface ambiguous routing for
+                                daily briefing via Core KV
+```
+
+**Claim semantics.** `staging_claim(limit)` atomically moves up to N items from `received` to `classifying` with a 15-minute lease (`DefaultLeaseDuration`). If Brain crashes mid-processing, Core's sweep goroutine resets expired leases back to `received` — the item is retried, never lost.
+
+**Lease heartbeat (VT6).** Enrichment is the slow step — an LLM call can take 10+ seconds, and a batch of items can take minutes. The processor starts an async heartbeat task per item that calls `staging_extend_lease(id, 900)` every 5 minutes. This prevents Core's sweep from reclaiming items that are actively being enriched. The heartbeat is cancelled on completion or failure.
+
+**Error handling.** Two distinct error paths:
+- `ApprovalRequiredError` — Core already marked the item as `pending_unlock` and created an approval request. The staging processor does nothing further; the item drains automatically when the persona is approved/unlocked.
+- All other errors — the processor calls `staging_fail(id, reason)`, which marks the item as failed in Core's staging table. Core's sweep requeues failed items up to 3 retries, then dead-letters.
+
+**Multi-persona routing.** When content contains signals for multiple domains (e.g., a work email discussing medical insurance), the classifier returns multiple personas sorted by sensitivity rank. The processor resolves each via `staging_resolve_multi()` — Core creates a vault item copy per persona atomically.
+
+**Ambiguous routing.** When the domain classifier produces a non-general hint but no single installed persona matches unambiguously (e.g., two personas both start with "financ"), the item routes to `general` and routing metadata is stored in Core KV as two records:
+- `brief:routing_ambiguous:<item_id>` — the ambiguous item details (summary, candidates, reason)
+- `brief:routing_ambiguous_index` — JSON array of all pending ambiguous item IDs
+
+The Guardian loop (`guardian.py`) scans `brief:routing_ambiguous_index` before assembling the daily briefing. Cleanup is retry-safe: the index and individual KV records are only deleted after the briefing text is successfully generated — if briefing generation fails, the ambiguous items remain queued for the next attempt.
+
+**Session forwarding.** Items ingested by agents carry `session` and `origin_did` in their metadata JSON. The staging processor extracts these and forwards them as `X-Session` and `X-Agent-DID` headers on the resolve call, so Core's `AccessPersona()` enforces the correct session grant check. This prevents cross-session and cross-agent access to pending items.
+
+### PersonaRegistry (Dynamic Persona Metadata Cache)
+
+The **PersonaRegistry** (`brain/src/service/persona_registry.py`) is Brain's cached view of what personas exist in Core, what tier each has, and whether it is currently locked. It answers "what personas are installed?" — it does not answer "where should this content go?" (that is PersonaSelector's job).
+
+```
+Startup                     Runtime
+───────                     ───────
+PersonaRegistry.load()      PersonaRegistry.refresh()
+  │                           │
+  ▼                           ▼
+GET core:8100/v1/personas   GET core:8100/v1/personas
+(persona_details)            (persona_details)
+  │                           │
+  ├── Success:                ├── Success:
+  │   Parse → cache           │   Parse → replace cache
+  │   PersonaInfo per persona │
+  │                           ├── Failure + existing cache:
+  └── Failure + no cache:     │   Keep last known good
+      Use fallback set:       │   (conservative — don't
+      general, work,          │    clear on transient error)
+      health, finance         │
+                              └── Failure + no cache:
+                                  Use fallback set
+```
+
+**PersonaInfo fields:** `id` (e.g., `"persona-general"`), `name` (canonical, e.g., `"general"`), `tier` (`"default"`, `"standard"`, `"sensitive"`, `"locked"`), `locked` (boolean — current vault state).
+
+**Query methods (synchronous, read from cache):**
+- `exists(name)` — is this persona installed in Core?
+- `tier(name)` — what access tier? Returns `None` if unknown.
+- `locked(name)` — is the vault currently closed?
+- `normalize(name)` — strips the `persona-` prefix Core adds to IDs.
+- `all_names()` — list all known canonical persona names.
+- `update_locked(name, locked)` — event-driven update when a persona is unlocked/locked (avoids full refresh round-trip).
+
+**Refresh strategy:**
+1. **At startup** — `persona_registry.load(core)` in the FastAPI lifespan, before any request handling.
+2. **Every 5 minutes** — `persona_registry.refresh(core)` runs inside the background sync loop.
+3. **On persona events** — `update_locked()` called when Core notifies Brain of unlock/lock transitions.
+
+**Conservative fallback.** If Core is unreachable during a refresh and the registry already has cached data, it keeps the last known good cache rather than clearing it. This prevents transient network blips from breaking persona routing. Only when there is no prior cache (first startup) does it fall back to the hardcoded default set: `general`, `work`, `health`, `finance` — matching Core's bootstrap personas.
+
+**Thread safety.** The registry uses an `asyncio.Lock` for load/refresh operations. Query methods are synchronous reads against an immutable `dict[str, PersonaInfo]` cache — no lock contention on the hot path.
+
+### PersonaSelector (Constrained LLM Persona Selection)
+
+The **PersonaSelector** (`brain/src/service/persona_selector.py`) uses an LLM to choose which persona an incoming item belongs to — but only from the set of actually installed personas. It never invents persona names.
+
+**Resolution order:**
+1. **Explicit valid hint** — if the domain classifier already produced a valid persona name, use it (confidence 1.0). No LLM call needed.
+2. **Constrained LLM selection** — prompt the LLM with the list of installed personas (from PersonaRegistry) plus a scrubbed item summary. The LLM returns a JSON object with `primary`, `secondary`, `confidence`, and `reason`.
+3. **Validate** — drop any persona name the LLM returned that is not in the registry. If the primary is invalid, the entire result is rejected.
+4. **Return `None`** — if no confident selection, the caller (StagingProcessor) falls back to deterministic type-based routing and ultimately to `"general"`.
+
+**Design principle: AI suggests, never authoritative.** PersonaSelector returns `SelectionResult | None`. A `None` return is a first-class outcome — it means "I don't know, use deterministic fallback." The staging processor always has a fallback path that does not depend on LLM availability. If the LLM is down, all items route via keyword heuristics and type mapping. No item is ever lost because the LLM failed.
+
+**Prompt design.** The system prompt constrains the LLM to a closed set:
+
+```
+"You MUST choose ONLY from the available personas listed below.
+ Do NOT invent new persona names."
+```
+
+The user message includes the full persona list with tiers plus a scrubbed item context (type, source, sender, truncated summary and body). The expected JSON response:
+
+```json
+{
+  "primary": "<persona_name>",
+  "secondary": [],
+  "confidence": 0.0-1.0,
+  "reason": "short explanation"
+}
+```
+
+**Wiring.** Constructed once in `brain/src/main.py` with the shared PersonaRegistry and LLMRouter, then injected into the StagingProcessor:
+
+```python
+persona_registry = PersonaRegistry()
+persona_selector = PersonaSelector(registry=persona_registry, llm=llm_router)
+staging_processor = StagingProcessor(
+    ...,
+    persona_selector=persona_selector,
+)
+```
+
+### Domain Classifier (4-Layer Sensitivity Classification)
+
+The **DomainClassifier** (`brain/src/service/domain_classifier.py`) determines the sensitivity domain of text through a 4-layer pipeline. It serves two purposes: (1) hint for PersonaSelector, and (2) PII scrub intensity control. Higher sensitivity means more aggressive scrubbing.
+
+**Pipeline (short-circuits on SENSITIVE/LOCAL\_ONLY):**
+
+```
+Input text + optional persona + vault context
+                    │
+                    ▼
+Layer 1: PERSONA OVERRIDE
+  Active persona → tier-based sensitivity.
+  /health → SENSITIVE (short-circuit).
+  /work   → ELEVATED (continue to check keywords).
+                    │
+                    ▼
+Layer 2: KEYWORD SIGNALS
+  Regex patterns score each domain:
+    health_strong (diagnosis, prescription, MRI...)  × 0.3
+    health_weak   (doctor, diet, sleep...)           × 0.1
+    finance_strong (bank account, credit card...)     × 0.3
+    finance_weak  (money, payment, budget...)         × 0.1
+    legal_strong  (lawsuit, subpoena, custody...)     × 0.3
+  Best domain with score > 0.1 wins.
+                    │
+                    ▼
+Layer 3: VAULT CONTEXT
+  Source metadata overrides:
+    source=health_system → SENSITIVE, domain=health
+    source=bank         → SENSITIVE, domain=financial
+    type=medical_record → SENSITIVE, domain=health
+                    │
+                    ▼
+Layer 4: LLM FALLBACK (placeholder — not yet active)
+  Only if confidence < 0.5 and LLM available.
+  Reserved for Phase 2.
+                    │
+                    ▼
+SELECT: highest confidence wins.
+  Ties broken by sensitivity rank (higher wins).
+  No signals → GENERAL, confidence 0.3.
+```
+
+**Registry integration.** `_resolve_persona_sensitivity()` checks the PersonaRegistry first (dynamic tier lookup), falling back to a static persona-to-sensitivity map. This means custom personas with non-standard names (e.g., `"my-health-stuff"`) get correct sensitivity if their tier is set to `"sensitive"` in Core.
+
+**Role in the pipeline.** DomainClassifier is a heuristic first pass — fast, deterministic, no LLM call. It produces a domain string (`"health"`, `"financial"`, `"work"`, `"general"`, etc.) that the StagingProcessor passes as a hint to PersonaSelector. If PersonaSelector is unavailable or returns `None`, the domain hint feeds into the deterministic `_resolve_fallback()` path. The classifier is also called independently by the PII scrubber to decide scrub intensity per request.
+
+### Guardian Loop — Staging Drain Handler
+
+The **Guardian loop** (`brain/src/service/guardian.py`) is Brain's central event processor. Among its ~15 event handlers, `_handle_staging_drain` connects the staging pipeline to the real-time event flow.
+
+**Trigger mechanism.** When Core receives a staging ingest (connector push or MCP sync), it fires a `staging_drain` event to Brain as a background goroutine. This is non-blocking — Core does not wait for the drain to complete. The event includes a `trigger` field indicating the source (e.g., `"connector"`, `"sync"`).
+
+```
+Connector/MCP ──► Core staging_ingest() ──► Core fires goroutine:
+                  (writes to staging_inbox)    POST brain:8200/api/v1/process
+                                                {type: "staging_drain", trigger: "..."}
+                                                        │
+                                                        ▼
+                                                Guardian.process_event()
+                                                  dispatch → _handle_staging_drain()
+                                                        │
+                                                        ▼
+                                                staging_processor.process_pending(limit=5)
+                                                        │
+                                                  ┌─────┴─────┐
+                                                  │ claim     │
+                                                  │ classify  │
+                                                  │ enrich    │
+                                                  │ resolve   │
+                                                  └───────────┘
+```
+
+**Two activation paths:**
+
+| Path | Trigger | Latency | Limit |
+|------|---------|---------|-------|
+| **Event-driven** | Core fires `staging_drain` after every ingest | Sub-second (immediate) | 5 items per drain |
+| **Periodic safety net** | Background sync loop in `main.py` (`_sync_loop`) | Every 5 minutes | 20 items per cycle |
+
+The event-driven path ensures items are classified immediately after ingestion — the user does not wait for the next 5-minute sync cycle. The periodic path is a safety net that catches any items missed due to transient failures, race conditions, or Brain restarts. Both paths call the same `staging_processor.process_pending()` method.
+
+**Sync loop integration.** The background `_sync_loop` in `brain/src/main.py` runs every 300 seconds and performs, in order: (1) refresh contacts for trust scoring, (2) refresh PersonaRegistry, (3) run MCP sync cycles per registered source, (4) legacy enrichment sweep, (5) `staging_processor.process_pending(limit=20)`. The staging drain at step 5 is the safety net — most items will already have been processed by the event-driven path.
+
+**Failure isolation.** If `_staging_processor` is `None` (no enrichment service configured), the handler returns `{"action": "staging_drain", "skipped": true}` — a no-op, not an error. If `process_pending()` raises, the handler catches and logs the error without propagating it — one failed drain does not crash the Guardian loop or block other event processing.
 
 ---
 
@@ -3902,6 +4780,46 @@ On reboot, the loop starts, finds the next reminder, sleeps until it's due. If t
 
 **For recurring schedules:** Brain tells the user "I've noted this. Want me to create a recurring calendar event?" Then delegates to the calendar service via OpenClaw. Don't rebuild Google Calendar inside Dina.
 
+### Reminder Service (Implementation Detail)
+
+The reminder loop outlined above is implemented in `core/internal/reminder/Loop` with persistence in `core/internal/adapter/sqlite/reminders.go`. This section documents the concrete design.
+
+**Reminder domain model:**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `id` | `rem-{hex}` | 16-byte random ID (`crypto/rand`) |
+| `kind` | string | Event type: `payment_due`, `appointment`, `birthday`, etc. |
+| `type` | string | Recurrence pattern: `""` (one-shot), `daily`, `weekly`, `monthly` |
+| `trigger_at` | int64 | Unix timestamp when the reminder fires |
+| `source_item_id` | string | Vault item that created this reminder (lineage) |
+| `source` | string | Origin connector: `gmail`, `calendar`, etc. |
+| `persona` | string | Which persona vault the source lives in |
+| `status` | string | `pending` → `done` / `dismissed` |
+
+**The loop (`reminder.Loop`):**
+
+1. Query `NextPending()` — returns the earliest unfired reminder (`ORDER BY due_at ASC LIMIT 1`).
+2. If nothing pending: sleep 60 seconds or until the wake channel fires, then re-query.
+3. If `trigger_at` is in the past (missed during downtime): fire immediately — no missed reminders.
+4. Otherwise: `time.Sleep(time.Until(triggerAt))`, interruptible by the wake channel.
+5. On fire: `MarkFired()` first (prevents re-firing on crash), then invoke `onFire` callback.
+6. On error: back off 10 seconds, then retry the query.
+
+**Wake-signal interruption:** When brain stores a new reminder via `POST /v1/reminder`, the handler calls `Loop.Wake()`. This sends a non-blocking signal on a buffered channel (`cap=1`), interrupting any in-progress sleep so the loop recomputes whether the new reminder fires sooner than the current one.
+
+**Deduplication:** The SQLite schema enforces a unique index on `(source_item_id, kind, due_at, persona)`. `INSERT ... ON CONFLICT DO NOTHING` prevents duplicate reminders when connectors re-sync the same calendar event. `StoreReminder` returns an empty ID when deduped.
+
+**HTTP surface:**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/v1/reminder` | POST | Store a reminder and wake the loop |
+| `/v1/reminders/pending` | GET | List all unfired reminders |
+| `/v1/reminder/fire` | POST | Test-only: manually fire a reminder by ID |
+
+**Persistence:** Production uses `SQLiteReminderScheduler` backed by the `reminders` table in `identity.sqlite`. The in-memory `ReminderScheduler` in the taskqueue package serves unit tests. Both implement the same `port.ReminderScheduler` interface — the loop does not know which backend it talks to.
+
 ### Design Notes: Future Action Layer Features
 
 **Emotional state awareness (Phase 2+).** Before approving large purchases or high-stakes communications, a lightweight classifier assesses user state (time of day, communication tone, spending pattern deviation). Flags "user may be impulsive" and adds cooling-off suggestion.
@@ -4344,6 +5262,92 @@ Pre-configured instructions in the estate plan guide the executor:
 - Access types: `full_decrypt` (permanent) or `read_only_90_days` (time-limited)
 - Default action for unassigned data: `destroy` or `archive`
 - Notification list: who to inform when estate mode activates
+
+### Current Implementation (Phase 1)
+
+The estate planning subsystem is implemented today as a three-layer stack: domain type, port interface, adapter, and service — following Core's hexagonal architecture. HTTP handler routing is wired but not yet exposed (the service is constructed in `main.go` with a `_ = estateSvc` suppression, pending endpoint finalization).
+
+#### Domain Type
+
+`core/internal/domain/config.go` defines `EstatePlan`:
+
+```go
+type EstatePlan struct {
+    Trigger       string              // "custodian_threshold" (only valid value)
+    Custodians    []string            // DIDs of custodian contacts
+    Threshold     int                 // k-of-n threshold for activation
+    Beneficiaries map[string][]string // beneficiary DID -> list of persona names
+    DefaultAction string              // "destroy" or "archive"
+    Notifications []string            // DIDs to notify on activation
+    AccessTypes   map[string]string   // beneficiary DID -> access type
+    CreatedAt     int64
+    UpdatedAt     int64
+}
+```
+
+The `Beneficiaries` map uses DID strings as keys, mapping each beneficiary to the persona names they should receive. `AccessTypes` is a parallel map from beneficiary DID to access level (`full_decrypt` or `read_only_90_days`).
+
+#### Port Interface
+
+`core/internal/port/estate.go` defines the `EstateManager` interface:
+
+| Method | Purpose |
+|--------|---------|
+| `StorePlan(ctx, plan)` | Persist an estate plan |
+| `GetPlan(ctx)` | Retrieve the current plan |
+| `Activate(ctx, trigger, custodianShares)` | Trigger estate recovery |
+| `DeliverKeys(ctx, beneficiaryDID)` | Send DEKs to a beneficiary via D2D |
+| `NotifyContacts(ctx)` | Notify all contacts on the notification list |
+
+#### Adapter — In-Memory Estate Manager
+
+`core/internal/adapter/estate/estate.go` provides two implementations:
+
+1. **`PortEstateManager`** — satisfies `port.EstateManager` (context-accepting methods). Used by the service layer in production. Stores the plan in a mutex-protected in-memory struct. The current implementation is in-memory only; persisting to Tier 0 (`identity.sqlite`) is deferred to when HTTP endpoints are exposed.
+
+2. **`EstateManager`** — satisfies `testutil.EstateManager` (no context, extra test methods). Used by the test suite. Adds `IsActivated()`, `EnforceDefaultAction()`, `CheckExpiry()`, and `ResetForTest()` methods that the production interface does not expose.
+
+Both implementations enforce the same validation: only `custodian_threshold` is accepted as a trigger value. The adapter validates trigger values and returns typed errors (`ErrNoPlan`, `ErrInvalidTrigger`, `ErrMissingTrigger`, `ErrInvalidAction`, `ErrNotActivated`).
+
+#### Service Layer
+
+`core/internal/service/estate.go` implements `EstateService` with five port dependencies:
+
+| Dependency | Role |
+|------------|------|
+| `port.EstateManager` | Plan storage and activation |
+| `port.VaultManager` | Vault access for key derivation (future) |
+| `port.RecoveryManager` | Shamir share combination — `Combine(shares)` reconstructs the master seed |
+| `port.ClientNotifier` | Broadcasts activation notifications |
+| `port.Clock` | Deterministic time (testable) |
+
+The service layer enforces business rules that the adapter does not:
+
+- **Plan validation.** `validatePlan()` checks: trigger must be `custodian_threshold`, at least one custodian required, threshold must be between 1 and the number of custodians, and `default_action` must be `destroy` or `archive`.
+- **Activation threshold.** `Activate()` verifies the number of Shamir shares meets the plan's threshold before attempting to reconstruct the master seed via `RecoveryManager.Combine()`.
+- **Beneficiary verification.** `DeliverKeys()` checks that the requested DID appears in the plan's beneficiary list before proceeding.
+- **Time-limited access.** `ReadOnlyExpiry()` computes the 90-day expiry from activation time. The test adapter's `CheckExpiry()` implements the same 90-day window check.
+- **Activation notification.** On successful activation, the service broadcasts an `estate_activation` event via `ClientNotifier.Broadcast()`. Notification failures are logged but do not fail the activation.
+
+#### Wiring in main.go
+
+The composition root constructs the estate adapter and service:
+
+```go
+estateMgr := estate.NewPortEstateManager()
+// ...
+estateSvc := service.NewEstateService(estateMgr, vaultMgr, recoveryMgr, notifier, clk)
+_ = estateSvc  // Not yet routed to HTTP handlers
+```
+
+The service is fully constructed and dependency-injected, ready for handler wiring. The `_ = estateSvc` suppression is the only gap between the implementation and exposure — no missing logic, only missing routes.
+
+#### What Remains for HTTP Exposure
+
+The implementation is complete at the service layer. Exposing it requires:
+1. An `EstateHandler` in `core/internal/handler/` with routes for `GET/POST /v1/estate/plan`, `POST /v1/estate/activate`, `POST /v1/estate/deliver-keys`
+2. Admin-only auth scoping (estate plan mutations are owner-only operations)
+3. Persistence migration from in-memory to Tier 0 (`identity.sqlite`)
 
 ---
 
@@ -5094,6 +6098,55 @@ For browser-admin sessions:
   Validate:   dina-admin checks session, then signs core requests with its admin service key
   Revoke:     logout / session expiry / admin backend restart
 ```
+
+### Device Pairing Ceremony (Implementation Detail)
+
+The pairing ceremony described above is implemented as a two-phase state machine in `core/internal/adapter/pairing/PairingManager`. This section documents the internal mechanics.
+
+**State machine:**
+
+```
+GenerateCode()                  CompletePairingWithKey()
+     │                                │
+     ▼                                ▼
+  [pending]  ──── code + secret ───► [validating]
+     │               in memory            │
+     │                                    ├── code valid, not expired, not used
+     │                                    │   → register device, delete code
+     │                                    │   → return (device_id, node_did)
+     │                                    │
+     │                                    └── invalid/expired/used → error
+     │
+     └── TTL expires (5 min) → PurgeExpiredCodes() removes entry
+```
+
+**Code generation:** Core generates a 32-byte cryptographic secret (`crypto/rand`), derives a 6-digit numeric code via `SHA-256(secret) → BigEndian uint32 → mod 900000 + 100000`. The code space is 100000–999999. Collision detection retries up to 5 times against live (non-expired, non-used) pending codes. A hard cap of 100 pending codes prevents memory exhaustion (SEC-MED-13).
+
+**Two completion paths:**
+
+| Method | Auth Type | Token? | Use Case |
+|--------|-----------|--------|----------|
+| `CompletePairingFull()` | CLIENT_TOKEN (SHA-256 hashed) | Yes — 32 bytes, returned as hex | Legacy browser-admin pairing |
+| `CompletePairingWithKey()` | Ed25519 public key | No — signature-based auth only | CLI, phone, paired devices, agents |
+
+For key-based pairing, the client sends `public_key_multibase` (z-prefix base58btc with 0xed01 multicodec prefix). Core decodes and stores the raw Ed25519 public key. The device DID is derived as `did:key:{multibase}`. An optional `role` field distinguishes `"user"` (default) from `"agent"` devices.
+
+**Persistence:** Device records are serialized to a JSON file (`persist.go`) and reloaded on startup, surviving restarts without requiring SQLite access during boot. Token hashes (SHA-256) and public keys are stored as hex. Validation uses constant-time comparison (`crypto/subtle`).
+
+**HTTP surface:**
+
+| Endpoint | Method | Handler |
+|----------|--------|---------|
+| `/v1/pair/initiate` | POST | Generates code, returns `{code, expires_in: 300}` |
+| `/v1/pair/complete` | POST | Validates code + registers device, returns `{device_id, node_did}` |
+| `/v1/devices` | GET | Lists all paired devices (including revoked) |
+| `/v1/devices/{id}` | DELETE | Revokes a device — next request from that device returns 401 |
+
+**Security invariants:**
+- Codes are single-use and deleted immediately on completion (not just marked used).
+- Expired codes are purged periodically and on access.
+- `ValidateToken()` iterates all non-revoked devices with constant-time hash comparison — no timing oracle.
+- `UpdateLastSeen()` tracks device activity for the admin "last seen" display.
 
 ### Client ↔ Home Node WebSocket Protocol
 

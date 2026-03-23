@@ -77,6 +77,21 @@ func (e ApprovalRequestType) Valid() bool {
 	}
 }
 
+// Defines values for ApprovalRequiredErrorError.
+const (
+	ApprovalRequired ApprovalRequiredErrorError = "approval_required"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalRequiredErrorError enum.
+func (e ApprovalRequiredErrorError) Valid() bool {
+	switch e {
+	case ApprovalRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApprovalStatus.
 const (
 	ApprovalStatusApproved ApprovalStatus = "approved"
@@ -287,6 +302,30 @@ func (e ReasonStatusResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for RememberResponseStatus.
+const (
+	RememberResponseStatusFailed        RememberResponseStatus = "failed"
+	RememberResponseStatusNeedsApproval RememberResponseStatus = "needs_approval"
+	RememberResponseStatusProcessing    RememberResponseStatus = "processing"
+	RememberResponseStatusStored        RememberResponseStatus = "stored"
+)
+
+// Valid indicates whether the value is a known member of the RememberResponseStatus enum.
+func (e RememberResponseStatus) Valid() bool {
+	switch e {
+	case RememberResponseStatusFailed:
+		return true
+	case RememberResponseStatusNeedsApproval:
+		return true
+	case RememberResponseStatusProcessing:
+		return true
+	case RememberResponseStatusStored:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReminderKind.
 const (
 	ReminderKindAppointment ReminderKind = "appointment"
@@ -355,25 +394,25 @@ func (e StagingResolveRequestEnrichmentStatus) Valid() bool {
 
 // Defines values for StagingStatus.
 const (
-	StagingStatusClassifying   StagingStatus = "classifying"
-	StagingStatusFailed        StagingStatus = "failed"
-	StagingStatusPendingUnlock StagingStatus = "pending_unlock"
-	StagingStatusReceived      StagingStatus = "received"
-	StagingStatusStored        StagingStatus = "stored"
+	Classifying   StagingStatus = "classifying"
+	Failed        StagingStatus = "failed"
+	PendingUnlock StagingStatus = "pending_unlock"
+	Received      StagingStatus = "received"
+	Stored        StagingStatus = "stored"
 )
 
 // Valid indicates whether the value is a known member of the StagingStatus enum.
 func (e StagingStatus) Valid() bool {
 	switch e {
-	case StagingStatusClassifying:
+	case Classifying:
 		return true
-	case StagingStatusFailed:
+	case Failed:
 		return true
-	case StagingStatusPendingUnlock:
+	case PendingUnlock:
 		return true
-	case StagingStatusReceived:
+	case Received:
 		return true
-	case StagingStatusStored:
+	case Stored:
 		return true
 	default:
 		return false
@@ -680,6 +719,26 @@ type ApprovalRequestScope string
 // ApprovalRequestType Approval type — routes internally to persona manager or gatekeeper
 type ApprovalRequestType string
 
+// ApprovalRequiredError Returned as a 403 when staging resolve is blocked by persona access control.
+// An approval request has been created; approve it to unblock storage.
+type ApprovalRequiredError struct {
+	// ApprovalId ID of the created approval request (present for single-target resolve).
+	ApprovalId string                     `json:"approval_id,omitempty"`
+	Error      ApprovalRequiredErrorError `json:"error"`
+
+	// Message Human-readable explanation.
+	Message string `json:"message"`
+
+	// Persona Persona that requires approval.
+	Persona string `json:"persona"`
+
+	// StagingId Staging item ID that is blocked.
+	StagingId string `json:"staging_id"`
+}
+
+// ApprovalRequiredErrorError defines model for ApprovalRequiredError.Error.
+type ApprovalRequiredErrorError string
+
 // ApprovalStatus Persona access approval request state.
 type ApprovalStatus string
 
@@ -764,6 +823,11 @@ type CreatePersonaResponseVault string
 // DeviceListResponse defines model for DeviceListResponse.
 type DeviceListResponse struct {
 	Devices []PairedDevice `json:"devices,omitempty"`
+}
+
+// ErrorResponse defines model for ErrorResponse.
+type ErrorResponse struct {
+	Error string `json:"error"`
 }
 
 // ExportRequest defines model for ExportRequest.
@@ -923,6 +987,50 @@ type ReasonStatusResponse struct {
 // ReasonStatusResponseStatus defines model for ReasonStatusResponse.Status.
 type ReasonStatusResponseStatus string
 
+// RememberRequest defines model for RememberRequest.
+type RememberRequest struct {
+	// Category Optional category hint for classification.
+	Category string `json:"category,omitempty"`
+
+	// Metadata JSON blob of additional metadata (merged with category/session).
+	Metadata string `json:"metadata,omitempty"`
+
+	// Session Active session name. Required for session-scoped access control.
+	Session string `json:"session"`
+
+	// Source Origin system (e.g. "cli", "telegram").
+	Source string `json:"source,omitempty"`
+
+	// SourceId External ID for deduplication.
+	SourceId string `json:"source_id,omitempty"`
+
+	// Text The content to remember.
+	Text string `json:"text"`
+}
+
+// RememberResponse defines model for RememberResponse.
+type RememberResponse struct {
+	// Id Staging item ID.
+	Id string `json:"id,omitempty"`
+
+	// Message Human-readable status message.
+	Message string `json:"message,omitempty"`
+
+	// Status Semantic status of the remember request:
+	// - stored: successfully classified and stored in vault.
+	// - needs_approval: classified into a sensitive persona; approve access to complete.
+	// - failed: classification or storage failed.
+	// - processing: still being classified by Brain.
+	Status RememberResponseStatus `json:"status,omitempty"`
+}
+
+// RememberResponseStatus Semantic status of the remember request:
+// - stored: successfully classified and stored in vault.
+// - needs_approval: classified into a sensitive persona; approve access to complete.
+// - failed: classification or storage failed.
+// - processing: still being classified by Brain.
+type RememberResponseStatus string
+
 // Reminder defines model for Reminder.
 type Reminder struct {
 	Fired bool   `json:"fired,omitempty"`
@@ -953,6 +1061,12 @@ type ReminderListResponse struct {
 
 // ReminderStatus Scheduled reminder lifecycle state.
 type ReminderStatus string
+
+// ResolveTarget One persona target for multi-persona staging resolution.
+type ResolveTarget struct {
+	ClassifiedItem map[string]interface{} `json:"classified_item"`
+	Persona        string                 `json:"persona"`
+}
 
 // ScrubResult defines model for ScrubResult.
 type ScrubResult struct {
@@ -1063,12 +1177,22 @@ type StagingItem struct {
 	UpdatedAt     int64         `json:"updated_at,omitempty"`
 }
 
-// StagingResolveRequest defines model for StagingResolveRequest.
+// StagingResolveRequest Single-target: provide target_persona + classified_item.
+// Multi-target: provide targets array for cross-persona content.
+// At least one of target_persona or targets must be present.
 type StagingResolveRequest struct {
-	ClassifiedItem   map[string]interface{}                `json:"classified_item"`
+	// ClassifiedItem Classified vault item (single-target mode).
+	ClassifiedItem   map[string]interface{}                `json:"classified_item,omitempty"`
 	EnrichmentStatus StagingResolveRequestEnrichmentStatus `json:"enrichment_status,omitempty"`
 	Id               string                                `json:"id"`
-	TargetPersona    string                                `json:"target_persona"`
+
+	// TargetPersona Persona to store the item in (single-target mode).
+	TargetPersona string `json:"target_persona,omitempty"`
+
+	// Targets Multi-target mode: array of persona + classified_item pairs.
+	// Each target is resolved independently — accessible targets store
+	// immediately, denied targets get approval requests.
+	Targets []ResolveTarget `json:"targets,omitempty"`
 }
 
 // StagingResolveRequestEnrichmentStatus defines model for StagingResolveRequest.EnrichmentStatus.
@@ -1349,6 +1473,19 @@ type PostV1SessionStartJSONBody struct {
 	Name string `json:"name"`
 }
 
+// PostV1StagingResolveParams defines parameters for PostV1StagingResolve.
+type PostV1StagingResolveParams struct {
+	// XSession Session name for access control. Core uses this to look up
+	// session grants when the target persona is sensitive or locked.
+	// Forwarded by Brain from the originating request.
+	XSession string `json:"X-Session,omitempty"`
+
+	// XAgentDID DID of the agent/device that initiated the request. Used for
+	// approval request attribution and audit logging. Forwarded by
+	// Brain from the originating request.
+	XAgentDID string `json:"X-Agent-DID,omitempty"`
+}
+
 // PostV1TaskAckJSONBody defines parameters for PostV1TaskAck.
 type PostV1TaskAckJSONBody struct {
 	TaskId string `json:"task_id"`
@@ -1377,6 +1514,9 @@ type PatchV1VaultItemIdEnrichParams struct {
 
 // PostApiV1ReasonJSONRequestBody defines body for PostApiV1Reason for application/json ContentType.
 type PostApiV1ReasonJSONRequestBody PostApiV1ReasonJSONBody
+
+// PostApiV1RememberJSONRequestBody defines body for PostApiV1Remember for application/json ContentType.
+type PostApiV1RememberJSONRequestBody = RememberRequest
 
 // PostV1AgentValidateJSONRequestBody defines body for PostV1AgentValidate for application/json ContentType.
 type PostV1AgentValidateJSONRequestBody PostV1AgentValidateJSONBody
