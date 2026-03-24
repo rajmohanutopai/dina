@@ -187,8 +187,8 @@ volumes:
 
 secrets:
   wrapped_seed:
-    file: ${DINA_WRAPPED_SEED_FILE:-./secrets/wrapped_seed.bin}
+    file: ${DINA_SECRETS_DIR:-./secrets}/wrapped_seed.bin
   identity_salt:
-    file: ${DINA_IDENTITY_SALT_FILE:-./secrets/master_seed.salt}
+    file: ${DINA_SECRETS_DIR:-./secrets}/master_seed.salt
   seed_password:
-    file: ${DINA_SEED_PASSWORD_SECRET_FILE:-./secrets/seed_password}
+    file: ${DINA_SECRETS_DIR:-./secrets}/seed_password

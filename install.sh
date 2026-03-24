@@ -37,6 +37,7 @@ cd "$(dirname "$0")"
 DINA_DIR="${DINA_DIR:-$(pwd)}"
 SECRETS_DIR="${DINA_DIR}/secrets"
 ENV_FILE="${DINA_DIR}/.env"
+# DINA_DATA_DIR is set after instance parsing; defaults to DINA_DIR.
 HEALTH_TIMEOUT=90
 HEALTH_INTERVAL=3
 SKIP_BUILD=false
@@ -71,19 +72,20 @@ for _a in "$@"; do
 done
 
 # Instance isolation: separate project name, data dir, secrets, CLI config.
+# DINA_DIR stays as the project root (scripts, Dockerfiles, compose).
+# DINA_DATA_DIR is where instance-specific data lives.
+DINA_DATA_DIR="${DINA_DIR}"
 if [ -n "${INSTANCE_NAME}" ]; then
     export COMPOSE_PROJECT_NAME="dina-${INSTANCE_NAME}"
-    # Use instance-specific data/secrets subdirectories
-    DINA_DIR="${DINA_DIR}/instances/${INSTANCE_NAME}"
-    mkdir -p "${DINA_DIR}"
-    SECRETS_DIR="${DINA_DIR}/secrets"
-    ENV_FILE="${DINA_DIR}/.env"
-    # CLI config isolation — each instance gets its own keypair + config
-    export DINA_CONFIG_DIR="${DINA_DIR}/cli"
+    DINA_DATA_DIR="${DINA_DIR}/instances/${INSTANCE_NAME}"
+    mkdir -p "${DINA_DATA_DIR}"
+    SECRETS_DIR="${DINA_DATA_DIR}/secrets"
+    ENV_FILE="${DINA_DATA_DIR}/.env"
+    # Tell docker-compose where secrets are (relative to project root)
+    export DINA_SECRETS_DIR="./instances/${INSTANCE_NAME}/secrets"
     echo ""
     echo "  Instance: ${INSTANCE_NAME}"
-    echo "  Data:     ${DINA_DIR}"
-    echo "  CLI:      export DINA_CONFIG_DIR=${DINA_CONFIG_DIR}"
+    echo "  Data:     ${DINA_DATA_DIR}"
     echo ""
 fi
 
@@ -118,11 +120,18 @@ step_end() {
 # ---------------------------------------------------------------------------
 
 if docker compose version >/dev/null 2>&1; then
-    COMPOSE="docker compose"
+    _COMPOSE_BIN="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE="docker-compose"
+    _COMPOSE_BIN="docker-compose"
 else
     fail "Docker Compose not found. Install: ${CYAN}https://docs.docker.com/compose/install/${RESET}"
+fi
+
+# For instances, pass --env-file so compose reads the instance .env.
+if [ -n "${INSTANCE_NAME}" ]; then
+    COMPOSE="${_COMPOSE_BIN} --env-file ${ENV_FILE}"
+else
+    COMPOSE="${_COMPOSE_BIN}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -173,7 +182,7 @@ build_crypto_image() {
 echo ""
 echo -e "  ${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo -e "  ${BOLD}  Setting up Dina${RESET}"
-echo -e "  ${DIM}  ${DINA_DIR}${RESET}"
+echo -e "  ${DIM}  ${DINA_DATA_DIR}${RESET}"
 echo -e "  ${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
@@ -241,7 +250,7 @@ if [ -n "${CONFIG_FILE}" ]; then
     [ -f "${_ABS_CONFIG}" ] || fail "Config file not found: ${CONFIG_FILE}"
     info "Applying config from ${CONFIG_FILE}..."
     _RESULT=$(docker run --rm --user "$(id -u):$(id -g)" \
-        -v "${DINA_DIR}:/work" \
+        -v "${DINA_DATA_DIR}:/work" \
         -v "${DINA_DIR}/scripts:/work/scripts:ro" \
         -v "${DINA_DIR}/cli:/work/cli:ro" \
         -v "${_ABS_CONFIG}:/tmp/install-config.json:ro" \
@@ -281,7 +290,7 @@ elif [ -t 0 ]; then
     trap _wizard_cleanup INT TERM EXIT
 
     docker run --rm -i --user "$(id -u):$(id -g)" \
-        -v "${DINA_DIR}:/work" \
+        -v "${DINA_DATA_DIR}:/work" \
         -v "${DINA_DIR}/scripts:/work/scripts:ro" \
         -v "${DINA_DIR}/cli:/work/cli:ro" \
         -e PYTHONPATH=/work \
@@ -292,7 +301,7 @@ elif [ -t 0 ]; then
         -e DINA_SKIP_MNEMONIC_VERIFY="$([ "${QUICK}" = true ] && echo 1 || echo 0)" \
         "${CRYPTO_IMAGE}" \
         python3 -m scripts.installer wizard \
-        < "${_WIZARD_IN}" > "${_WIZARD_OUT}" 2>"${DINA_DIR}/.wizard-stderr.log" &
+        < "${_WIZARD_IN}" > "${_WIZARD_OUT}" 2>"${DINA_DATA_DIR}/.wizard-stderr.log" &
     _WIZARD_PID=$!
 
     # Open write FD to wizard stdin (must happen after docker starts reading)
@@ -560,7 +569,7 @@ else
 AUTOJSON
     )
     _RESULT=$(echo "${_AUTO_CONFIG}" | docker run --rm -i --user "$(id -u):$(id -g)" \
-        -v "${DINA_DIR}:/work" \
+        -v "${DINA_DATA_DIR}:/work" \
         -v "${DINA_DIR}/scripts:/work/scripts:ro" \
         -v "${DINA_DIR}/cli:/work/cli:ro" \
         -e PYTHONPATH=/work \
@@ -600,6 +609,17 @@ if [ -f "${ENV_FILE}" ]; then
     [ -n "${_pp}" ] && PDS_PORT="${_pp}"
     _ss=$(sed -n 's/^DINA_SESSION=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
     [ -n "${_ss}" ] && DINA_SESSION="${_ss}"
+fi
+
+# For instances: fix DINA_SECRETS_DIR in .env (installer writes ./secrets,
+# but compose needs the path relative to the project root).
+if [ -n "${INSTANCE_NAME}" ] && [ -f "${ENV_FILE}" ]; then
+    # macOS sed requires -i '' (no backup suffix); Linux requires -i (no space).
+    if sed --version 2>/dev/null | grep -q GNU; then
+        sed -i "s|^DINA_SECRETS_DIR=.*|DINA_SECRETS_DIR=./instances/${INSTANCE_NAME}/secrets|" "${ENV_FILE}"
+    else
+        sed -i '' "s|^DINA_SECRETS_DIR=.*|DINA_SECRETS_DIR=./instances/${INSTANCE_NAME}/secrets|" "${ENV_FILE}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
