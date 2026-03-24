@@ -55,6 +55,12 @@ func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
 		msgType = domain.MessageTypeQuery
 	}
 
+	// D2D v1: Strict type enforcement — reject non-v1 message types.
+	if !domain.V1MessageFamilies[msgType] {
+		http.Error(w, `{"error":"unknown message type","detail":"type must be a v1 D2D family"}`, http.StatusBadRequest)
+		return
+	}
+
 	// SEC-HIGH-08: Generate stable message ID and timestamp for replay protection.
 	msgID := generateMsgID()
 	msg := domain.DinaMessage{
@@ -68,6 +74,12 @@ func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
 	if err := h.Transport.SendMessage(r.Context(), to, msg); err != nil {
 		errStr := err.Error()
 		switch {
+		case errors.Is(err, domain.ErrNotAContact):
+			http.Error(w, `{"error":"recipient is not a contact"}`, http.StatusBadRequest)
+		case errors.Is(err, domain.ErrEgressBlocked):
+			http.Error(w, `{"error":"egress blocked by policy","detail":"`+errStr+`"}`, http.StatusForbidden)
+		case errors.Is(err, domain.ErrUnknownMessageType):
+			http.Error(w, `{"error":"unknown message type"}`, http.StatusBadRequest)
 		case strings.Contains(errStr, "no endpoint") ||
 			strings.Contains(errStr, "peer not found") ||
 			strings.Contains(errStr, "unknown peer") ||
@@ -158,7 +170,12 @@ func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request
 	// Fallback: direct path (no ingress Router wired).
 	msg, err := h.Transport.ProcessInbound(r.Context(), body)
 	if err != nil {
-		slog.Warn("D2D ingest: could not decrypt", "error", err)
+		if errors.Is(err, domain.ErrUnknownMessageType) {
+			// Benign drop: non-v1 message type silently accepted (202).
+			slog.Info("D2D ingest: non-v1 message type dropped", "error", err)
+		} else {
+			slog.Warn("D2D ingest: could not decrypt", "error", err)
+		}
 	} else {
 		slog.Info("D2D message received and decrypted", "type", msg.Type, "to", msg.To)
 		h.Transport.StoreInbound(msg)

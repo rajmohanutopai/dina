@@ -228,7 +228,7 @@ func TestTransport_7_IngestNaClIngressRouterNoDuplicate(t *testing.T) {
 	// Build a valid DinaMessage JSON. With the stub encryptor (passthrough),
 	// if ProcessInbound were called it would succeed and store a message.
 	msgJSON, _ := json.Marshal(domain.DinaMessage{
-		Type: domain.MessageTypeQuery,
+		Type: domain.MsgTypeSocialUpdate,
 		To:   []string{"did:key:z6MkTest"},
 		Body: []byte("hello"),
 	})
@@ -269,13 +269,13 @@ func TestTransport_7_IngestNaClNoIngressRouterDirectPath(t *testing.T) {
 		IngressRouter: nil, // no ingress router
 	}
 
-	// Build a valid signed-envelope payload.
+	// Build a valid signed-envelope payload using a v1 message type.
 	env := wrapEnvelope(t, domain.DinaMessage{
 		ID:   "msg-1",
 		From: testSenderDID,
-		Type: domain.MessageTypeQuery,
+		Type: domain.MsgTypeSocialUpdate,
 		To:   []string{"did:key:z6MkTest"},
-		Body: []byte("hello"),
+		Body: []byte(`{"text":"hello"}`),
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/msg", bytes.NewReader(env))
@@ -400,7 +400,7 @@ func TestTransport_7_ProcessPendingSweepsDeadDrop(t *testing.T) {
 		env := wrapEnvelope(t, domain.DinaMessage{
 			ID:   fmt.Sprintf("msg-%d", i),
 			From: testSenderDID,
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			To:   []string{"did:key:z6MkTest"},
 			Body: []byte("hello"),
 		})

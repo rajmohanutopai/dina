@@ -30,43 +30,42 @@ func NewTrustService(cache port.TrustCache, resolver port.TrustResolver, contact
 // for an incoming D2D message. This is the hot-path call used by the
 // ingress pipeline — must be fast (microseconds, no network calls).
 //
-// Decision logic:
-//  1. Blocked contact → drop
-//  2. Trusted/verified contact → accept
-//  3. Trust cache score ≥ 0.3 → accept
-//  4. Trust cache score < 0.3 → quarantine
-//  5. Unknown (not in contacts or cache) → quarantine
+// D2D v1 decision logic (strict contacts-only):
+//  1. Empty sender DID → quarantine
+//  2. Blocked contact → drop
+//  3. Explicit contact (trusted/verified/unknown trust level) → accept
+//  4. Not in contacts at all → quarantine (trust cache ignored in v1)
+//
+// The trust cache (AppView sync) is no longer used for the accept/quarantine
+// decision in v1. Only explicit contacts (user-managed) pass. This prevents
+// unknown senders from being accepted solely because they have a high
+// AppView trust score.
 func (s *TrustService) EvaluateIngress(senderDID string) domain.IngressDecision {
 	if senderDID == "" {
 		return domain.IngressQuarantine
 	}
 
-	// Check contacts first (highest authority — user manually manages these).
+	// Check contacts (highest authority — user manually manages these).
+	// D2D v1: only explicit contacts pass. Unknown senders → quarantine.
 	trustLevel := s.contacts.GetTrustLevel(senderDID)
 	switch trustLevel {
 	case "blocked":
 		return domain.IngressDrop
-	case "trusted":
+	case "trusted", "verified", "unknown":
+		// Any explicit contact (even "unknown" trust level) is accepted.
+		// The scenario policy layer (applied after trust check) handles
+		// per-family allow/deny for known contacts.
 		return domain.IngressAccept
-	case "verified":
+	}
+
+	// Not in the contact directory at all — quarantine (don't drop, might
+	// be a new contact attempting first contact).
+	if s.contacts.IsContact(senderDID) {
+		// IsContact is the authoritative check; GetTrustLevel returned ""
+		// only when trust_level field is empty — still a contact.
 		return domain.IngressAccept
 	}
 
-	// Check trust cache (synced from AppView).
-	entry, err := s.cache.Lookup(senderDID)
-	if err != nil {
-		slog.Warn("trust.evaluate: cache lookup error", "did", senderDID, "error", err)
-		return domain.IngressQuarantine
-	}
-
-	if entry != nil {
-		if entry.TrustScore >= 0.3 {
-			return domain.IngressAccept
-		}
-		return domain.IngressQuarantine
-	}
-
-	// Unknown sender — quarantine (don't drop, might be legitimate).
 	return domain.IngressQuarantine
 }
 

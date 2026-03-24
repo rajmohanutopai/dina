@@ -197,6 +197,23 @@ func (d *SQLiteContactDirectory) List(ctx context.Context) ([]domain.Contact, er
 	return contacts, rows.Err()
 }
 
+// IsContact returns true if the DID exists in the local contact directory.
+// Implements port.ContactLookup. Used by D2D v1 ingress: only explicit contacts
+// pass; unknown senders are quarantined regardless of trust cache score.
+func (d *SQLiteContactDirectory) IsContact(did string) bool {
+	db := d.db()
+	if db == nil {
+		return false
+	}
+
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM contacts WHERE did = ?`, did).Scan(&count)
+	if err != nil {
+		return false
+	}
+	return count > 0
+}
+
 // UpdateLastContact sets the last_contact timestamp for a contact.
 // This is called automatically during ingestion to track interaction recency.
 func (d *SQLiteContactDirectory) UpdateLastContact(ctx context.Context, did string, timestamp int64) error {

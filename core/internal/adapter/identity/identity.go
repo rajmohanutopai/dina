@@ -1847,6 +1847,16 @@ func (cd *ContactDirectory) GetTrustLevel(did string) string {
 	return c.TrustLevel
 }
 
+// IsContact returns true if the DID exists in the local contact directory.
+// Implements port.ContactLookup. Used by D2D v1 ingress: only explicit contacts
+// pass; unknown senders are quarantined regardless of trust cache score.
+func (cd *ContactDirectory) IsContact(did string) bool {
+	cd.mu.RLock()
+	defer cd.mu.RUnlock()
+	_, ok := cd.contacts[did]
+	return ok
+}
+
 // Add adds a contact with a DID, display name, and trust level.
 func (cd *ContactDirectory) Add(_ context.Context, did, name, trustLevel string) error {
 	cd.mu.Lock()

@@ -3,6 +3,7 @@ package ingress
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -199,6 +200,14 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if s.transport != nil {
 			msg, tErr := s.transport.ProcessInbound(ctx, blob)
 			if tErr != nil {
+				// D2D v1: ErrUnknownMessageType is a benign drop — ack the blob,
+				// don't count as failure. The sender used a non-v1 type.
+				if errors.Is(tErr, domain.ErrUnknownMessageType) {
+					slog.Info("sweeper: non-v1 message type dropped", "name", name, "error", tErr.Error())
+					s.clearFailure(name)
+					s.ackBlob(name)
+					continue
+				}
 				slog.Warn("sweeper: ProcessInbound failed", "name", name, "error", tErr.Error())
 				// HIGH-04: Track failure; evict after maxRetries.
 				s.recordFailure(name)
@@ -310,6 +319,14 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		if s.transport != nil {
 			msg, tErr := s.transport.ProcessInbound(ctx, blob)
 			if tErr != nil {
+				// D2D v1: ErrUnknownMessageType is a benign drop.
+				if errors.Is(tErr, domain.ErrUnknownMessageType) {
+					slog.Info("sweeper: non-v1 message type dropped", "name", name, "error", tErr.Error())
+					s.clearFailure(name)
+					s.ackBlob(name)
+					result.Processed++ // counted as processed but not delivered
+					continue
+				}
 				s.recordFailure(name)
 				result.Failed++
 				continue

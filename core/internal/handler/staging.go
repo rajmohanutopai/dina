@@ -352,6 +352,14 @@ func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 	// This bypasses persona access approval — the user IS the owner.
 	r = injectUserOrigin(r, req.UserOrigin)
 
+	// Phase 5: Scenario-driven staging — for D2D ingress, use scenario_tier
+	// from metadata to decide auto-store vs. approval required.
+	if len(req.Targets) == 0 && req.TargetPersona != "" {
+		if autoStored := h.tryD2DAutoStore(w, r, req); autoStored {
+			return
+		}
+	}
+
 	// Session-scoped access check + resolve.
 	// Single-target: check access, return 403 or resolve.
 	// Multi-target: check each target independently. Accessible targets
@@ -642,4 +650,84 @@ func (h *StagingHandler) HandleExtendLease(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": "lease_extended"})
+}
+
+// tryD2DAutoStore checks if a D2D-ingested staging item should be auto-stored
+// based on scenario_tier from metadata. Returns true if auto-store was handled
+// (either succeeded or returned an error to the client), false to fall through
+// to the normal persona access check flow.
+//
+// Phase 5 rules:
+//   - standing_policy + default/standard persona → auto-store (skip approval)
+//   - standing_policy + sensitive/locked persona → fall through (approval required)
+//   - explicit_once → fall through (always approval required)
+//   - deny_by_default → should never reach here (blocked at inbound)
+func (h *StagingHandler) tryD2DAutoStore(w http.ResponseWriter, r *http.Request, req resolveRequest) bool {
+	// Parse scenario_tier from classified_item metadata. This field is set
+	// by stageD2DMemory in main.go and should be preserved by Brain through
+	// the classification pipeline.
+	scenarioTier := extractMetadataField(req.ClassifiedItem.Metadata, "scenario_tier")
+	if scenarioTier == "" {
+		return false // no scenario_tier in metadata — not a D2D item or no policy data
+	}
+
+	// explicit_once always requires approval.
+	if scenarioTier == string(domain.ScenarioExplicitOnce) {
+		return false // fall through to normal flow
+	}
+
+	// standing_policy: check persona tier.
+	if scenarioTier == string(domain.ScenarioStandingPolicy) {
+		personaTier := ""
+		if h.Personas != nil {
+			pid := "persona-" + req.TargetPersona
+			tier, err := h.Personas.GetTier(r.Context(), pid)
+			if err == nil {
+				personaTier = tier
+			}
+		}
+		// Default and standard personas auto-store.
+		if personaTier == string(domain.TierDefault) || personaTier == string(domain.TierStandard) || personaTier == "" {
+			// Auto-open vault if needed.
+			if err := h.ensureOpen(r.Context(), req.TargetPersona); err != nil {
+				clientError(w, "vault open failed", http.StatusInternalServerError, err)
+				return true
+			}
+			if err := h.Staging.Resolve(r.Context(), req.ID, req.TargetPersona, req.ClassifiedItem); err != nil {
+				clientError(w, "resolve failed", http.StatusInternalServerError, err)
+				return true
+			}
+			slog.Info("staging.resolve: D2D auto-store (standing_policy + default/standard)",
+				"id", req.ID, "persona", req.TargetPersona)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": "resolved"})
+			return true
+		}
+		// Sensitive/locked: fall through to approval flow.
+		return false
+	}
+
+	// All other tiers: fall through.
+	return false
+}
+
+// extractMetadataField extracts a string field from a JSON metadata blob.
+// Returns "" on any parse error or if the field is missing.
+func extractMetadataField(metadata, field string) string {
+	if metadata == "" {
+		return ""
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil {
+		return ""
+	}
+	v, ok := m[field]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
 }

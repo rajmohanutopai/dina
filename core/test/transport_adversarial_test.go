@@ -284,7 +284,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-sig-001",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"hello"}`),
@@ -314,7 +314,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-sig-size",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"size check"}`),
@@ -336,7 +336,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:          "msg-sig-verify",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: 1700000000,
@@ -375,7 +375,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-wire-format",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"wire format test"}`),
@@ -421,14 +421,14 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 
 		msg1 := domain.DinaMessage{
 			ID:   "msg-diff-1",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"message one"}`),
 		}
 		msg2 := domain.DinaMessage{
 			ID:   "msg-diff-2",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"message two"}`),
@@ -461,7 +461,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:          "msg-sig-002",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -558,7 +558,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:          "msg-sig-verify-check",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -595,7 +595,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 		ctx := context.Background()
 
 		messageTypes := []domain.MessageType{
-			domain.MessageTypeQuery,
+			domain.MsgTypeSocialUpdate,
 			"dina/social/arrival",
 			"dina/task/complete",
 			"dina/nudge/response",
@@ -642,7 +642,7 @@ func TestAdv_29_1_WrongSignatureRejected(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:          "msg-sig-003",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -685,7 +685,7 @@ func TestAdv_29_1_TamperedCiphertextRejected(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:          "msg-sig-004",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -724,7 +724,7 @@ func TestAdv_29_1_EmptySigRejected(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:          "msg-sig-005",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -761,7 +761,7 @@ func TestAdv_29_2_OutboxDeliverSuccess(t *testing.T) {
 	// Send a message — this enqueues it and attempts immediate delivery.
 	msg := domain.DinaMessage{
 		ID:   "msg-outbox-001",
-		Type: domain.MessageTypeQuery,
+		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
 		Body: []byte(`{"q":"outbox test"}`),
@@ -791,7 +791,7 @@ func TestAdv_29_2_OutboxDeliveryFailure(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:   "msg-outbox-002",
-		Type: domain.MessageTypeQuery,
+		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
 		Body: []byte(`{"q":"fail delivery test"}`),
@@ -835,7 +835,7 @@ func TestAdv_29_2_OutboxRetryTransient(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:   "msg-outbox-003",
-		Type: domain.MessageTypeQuery,
+		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
 		Body: []byte(`{"q":"retry test"}`),
@@ -1529,7 +1529,7 @@ func TestAdv_29_4_ReplayDuplicateID(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:          "msg-replay-001",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -1605,7 +1605,7 @@ func TestAdv_29_4_DIDSpoofingFromKID(t *testing.T) {
 	// but signs with recipient's key (attacker controls recipient key).
 	msg := domain.DinaMessage{
 		ID:          "msg-spoof-001",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest", // claims to be sender
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -1655,7 +1655,7 @@ func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		msg := domain.DinaMessage{
 			ID:   fmt.Sprintf("msg-queue-%d", i),
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"queue test"}`),
@@ -1669,7 +1669,7 @@ func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 	// 6th message should fail because outbox is full.
 	msg6 := domain.DinaMessage{
 		ID:   "msg-queue-overflow",
-		Type: domain.MessageTypeQuery,
+		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
 		Body: []byte(`{"q":"overflow"}`),
@@ -1696,7 +1696,7 @@ func TestAdv_29_2_OutboxRetryCount(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:   "msg-retry-count",
-		Type: domain.MessageTypeQuery,
+		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
 		Body: []byte(`{"q":"retry count test"}`),
@@ -1748,7 +1748,7 @@ func TestAdv_29_5_PromptInjectionBodySafe(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := domain.DinaMessage{
 				ID:          "msg-inject-" + tc.name,
-				Type:        domain.MessageTypeQuery,
+				Type:        domain.MsgTypeSocialUpdate,
 				From:        "did:key:z6MkSenderTest",
 				To:          []string{"did:key:z6MkRecipientTest"},
 				CreatedTime: time.Now().Unix(),
@@ -1866,7 +1866,7 @@ func TestAdv_29_5_HTMLXSSBodySafe(t *testing.T) {
 			bodyBytes := []byte(tc.body)
 			msg := domain.DinaMessage{
 				ID:          "msg-xss-" + tc.name,
-				Type:        domain.MessageTypeQuery,
+				Type:        domain.MsgTypeSocialUpdate,
 				From:        "did:key:z6MkSenderTest",
 				To:          []string{"did:key:z6MkRecipientTest"},
 				CreatedTime: time.Now().Unix(),
@@ -1919,7 +1919,7 @@ func TestAdv_29_5_HTMLXSSBodySafe(t *testing.T) {
 		bodyWithScript := []byte(`<script>alert("xss")</script>`)
 		msg := domain.DinaMessage{
 			ID:   "msg-json-safety",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: bodyWithScript,
@@ -1981,7 +1981,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 			calls = append(calls, transportCall{sealed: sealed})
 			return &domain.DinaMessage{
 				ID:          fmt.Sprintf("msg-%d", len(calls)),
-				Type:        domain.MessageTypeQuery,
+				Type:        domain.MsgTypeSocialUpdate,
 				From:        "did:key:z6MkSenderDeadDrop",
 				To:          []string{"did:key:z6MkRecipient"},
 				CreatedTime: clk.Now().Unix(), // fresh — within TTL
@@ -2046,7 +2046,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		sweeper.SetTransport(transportProcessorFunc(func(ctx context.Context, sealed []byte) (*domain.DinaMessage, error) {
 			return &domain.DinaMessage{
 				ID:          "msg-old",
-				Type:        domain.MessageTypeQuery,
+				Type:        domain.MsgTypeSocialUpdate,
 				From:        "did:key:z6MkOldSender",
 				To:          []string{"did:key:z6MkRecipient"},
 				CreatedTime: clk.Now().Add(-25 * time.Hour).Unix(), // 25h ago — expired
@@ -2189,7 +2189,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 			}
 			return &domain.DinaMessage{
 				ID:          fmt.Sprintf("msg-%d", callIdx),
-				Type:        domain.MessageTypeQuery,
+				Type:        domain.MsgTypeSocialUpdate,
 				From:        "did:key:z6MkMixedSender",
 				To:          []string{"did:key:z6MkRecipient"},
 				CreatedTime: created,
@@ -2535,7 +2535,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:          "msg-replay-956-001",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -2573,7 +2573,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		// Two messages with different IDs from the same sender.
 		msg1 := domain.DinaMessage{
 			ID:          "msg-unique-A",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -2581,7 +2581,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		}
 		msg2 := domain.DinaMessage{
 			ID:          "msg-unique-B",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -2609,7 +2609,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		// Message from the standard sender.
 		msg1 := domain.DinaMessage{
 			ID:          "msg-shared-id",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -2646,7 +2646,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		// Message from sender2 with same ID.
 		msg2 := domain.DinaMessage{
 			ID:          "msg-shared-id", // same ID as msg1
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        sender2DID,
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -2681,7 +2681,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:          "msg-purge-test",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -2730,7 +2730,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			msg := domain.DinaMessage{
 				ID:          fmt.Sprintf("msg-fresh-%d", i),
-				Type:        domain.MessageTypeQuery,
+				Type:        domain.MsgTypeSocialUpdate,
 				From:        "did:key:z6MkSenderTest",
 				To:          []string{"did:key:z6MkRecipientTest"},
 				CreatedTime: time.Now().Unix(),
@@ -2768,7 +2768,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-process-001",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"pending test"}`),
 		}
@@ -2819,7 +2819,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 		env.deliverer.err = errors.New("first attempt fails")
 		msg := domain.DinaMessage{
 			ID:   "msg-payload-check",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"payload test"}`),
 		}
@@ -2866,7 +2866,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			msg := domain.DinaMessage{
 				ID:   fmt.Sprintf("msg-batch-%d", i),
-				Type: domain.MessageTypeQuery,
+				Type: domain.MsgTypeSocialUpdate,
 				To:   []string{"did:key:z6MkRecipientTest"},
 				Body: []byte(fmt.Sprintf(`{"q":"batch %d"}`, i)),
 			}
@@ -2978,7 +2978,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-from-empty",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			// From intentionally empty — simulates the handler path.
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"from test"}`),
@@ -3021,7 +3021,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-forged-from",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: forgedDID, // Attempted impersonation
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"forged sender"}`),
@@ -3089,7 +3089,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-forged-key",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: forgedDID, // Claims to be from forged DID
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"impersonation attempt"}`),
@@ -3148,7 +3148,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 
 		msg := domain.DinaMessage{
 			ID:   "msg-legit",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			// From left empty — SendMessage fills in senderDID correctly.
 			To:   []string{"did:key:z6MkRecipientTest"},
 			Body: []byte(`{"q":"legitimate message"}`),

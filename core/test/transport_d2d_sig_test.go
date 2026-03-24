@@ -148,7 +148,7 @@ func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T)
 
 	msg := domain.DinaMessage{
 		ID:          "msg-fix11-001",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -226,7 +226,7 @@ func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.
 	// Construct a message, sign it, encrypt it, and wrap it in the JSON format.
 	msg := domain.DinaMessage{
 		ID:          "msg-fix11-002",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -275,7 +275,7 @@ func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing
 
 	msg := domain.DinaMessage{
 		ID:          "msg-fix11-003",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -326,7 +326,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	t.Run("encrypted_raw_nacl_rejected", func(t *testing.T) {
 		msg := domain.DinaMessage{
 			ID:          "msg-fix11-004",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -396,7 +396,7 @@ func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:          "msg-fix11-005",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -470,7 +470,7 @@ func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 
 	msg := domain.DinaMessage{
 		ID:          "msg-fix11-006",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -519,7 +519,7 @@ func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing
 
 	msg := domain.DinaMessage{
 		ID:          "msg-fix11-007",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -557,7 +557,7 @@ func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *tes
 	// Message claims to be from sender, but signed with a completely different key.
 	msg := domain.DinaMessage{
 		ID:          "msg-fix11-008",
-		Type:        domain.MessageTypeQuery,
+		Type:        domain.MsgTypeSocialUpdate,
 		From:        "did:key:z6MkSenderTest", // claims sender
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
@@ -612,7 +612,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 
 		msg := domain.DinaMessage{
 			ID:          "msg-legacy-001",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -647,7 +647,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 
 		msg := domain.DinaMessage{
 			ID:          "msg-legacy-002",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -675,7 +675,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 
 		msg := domain.DinaMessage{
 			ID:          "msg-signed-with-override",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -739,7 +739,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 
 		msg := domain.DinaMessage{
 			ID:          "msg-body-check",
-			Type:        domain.MessageTypeQuery,
+			Type:        domain.MsgTypeSocialUpdate,
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
@@ -765,7 +765,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 
 		msg := domain.DinaMessage{
 			ID:   "msg-toggle",
-			Type: domain.MessageTypeQuery,
+			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
 		}

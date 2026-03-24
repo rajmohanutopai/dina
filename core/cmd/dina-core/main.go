@@ -9,6 +9,7 @@ import (
 	crypto_rand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -737,6 +738,12 @@ func main() {
 	transportSvc.SetDeliverer(transporter)
 	transportSvc.SetVerifier(signer)
 	transportSvc.SetEgress(gkSvc) // SEC-HIGH-04: enforce egress policy on outbound D2D
+	// D2D v1: 4-gate egress — contact check + scenario policy + audit trail.
+	if scenarioPolicyMgr != nil {
+		transportSvc.SetScenarioPolicy(scenarioPolicyMgr)
+	}
+	transportSvc.SetContacts(contactDir)
+	transportSvc.SetAuditor(auditLogger)
 	transportSvc.SetRecipientKeys(
 		signingPrivKey.Public().(ed25519.PublicKey),
 		[]byte(signingPrivKey),
@@ -779,13 +786,28 @@ func main() {
 			switch decision {
 			case domain.IngressDrop:
 				slog.Info("sweeper: dropped message from blocked DID", "did", msg.From)
+				auditD2DIngress(auditLogger, "d2d_ingress_drop", msg.From, string(msg.Type), "blocked_contact")
 				return
 			case domain.IngressQuarantine:
 				msg.Quarantined = true
 				slog.Info("sweeper: quarantined message from unknown DID", "did", msg.From)
+				auditD2DIngress(auditLogger, "d2d_ingress_quarantine", msg.From, string(msg.Type), "unknown_sender")
+			}
+		}
+		// D2D v1: Inbound scenario policy — only for accepted contacts (not quarantined).
+		if !msg.Quarantined && scenarioPolicyMgr != nil {
+			scenario := domain.MsgTypeToScenario(msg.Type)
+			if scenario != "" {
+				tier, _ := scenarioPolicyMgr.GetScenarioTier(context.Background(), msg.From, scenario)
+				if tier == domain.ScenarioDenyByDefault && scenario != "safety" {
+					slog.Info("sweeper: D2D scenario denied", "from", msg.From, "scenario", scenario)
+					auditD2DIngress(auditLogger, "d2d_inbound_policy_denied", msg.From, string(msg.Type), "deny_by_default")
+					return
+				}
 			}
 		}
 		transportSvc.StoreInbound(msg)
+		auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "stored")
 		// Stage memory-producing D2D content for vault persistence.
 		if stageD2DMemory != nil {
 			stageD2DMemory(context.Background(), msg)
@@ -796,6 +818,12 @@ func main() {
 	ingressRouter.SetOnEnvelope(func(ctx context.Context, envelope []byte) error {
 		msg, err := transportSvc.ProcessInbound(ctx, envelope)
 		if err != nil {
+			// D2D v1: ErrUnknownMessageType is a benign drop — not an error,
+			// prevents dead-drop fallback.
+			if errors.Is(err, domain.ErrUnknownMessageType) {
+				slog.Info("ingress: non-v1 message type dropped", "error", err)
+				return nil
+			}
 			slog.Warn("ingress: fast-path decrypt failed", "error", err)
 			return err
 		}
@@ -810,13 +838,28 @@ func main() {
 			switch decision {
 			case domain.IngressDrop:
 				slog.Info("ingress: dropped message from blocked DID", "did", msg.From)
+				auditD2DIngress(auditLogger, "d2d_ingress_drop", msg.From, string(msg.Type), "blocked_contact")
 				return nil // Not an error — intentionally discarded
 			case domain.IngressQuarantine:
 				msg.Quarantined = true
 				slog.Info("ingress: quarantined message from unknown DID", "did", msg.From)
+				auditD2DIngress(auditLogger, "d2d_ingress_quarantine", msg.From, string(msg.Type), "unknown_sender")
+			}
+		}
+		// D2D v1: Inbound scenario policy — only for accepted contacts (not quarantined).
+		if !msg.Quarantined && scenarioPolicyMgr != nil {
+			scenario := domain.MsgTypeToScenario(msg.Type)
+			if scenario != "" {
+				tier, _ := scenarioPolicyMgr.GetScenarioTier(ctx, msg.From, scenario)
+				if tier == domain.ScenarioDenyByDefault && scenario != "safety" {
+					slog.Info("ingress: D2D scenario denied", "from", msg.From, "scenario", scenario)
+					auditD2DIngress(auditLogger, "d2d_inbound_policy_denied", msg.From, string(msg.Type), "deny_by_default")
+					return nil // Not an error — intentionally discarded
+				}
 			}
 		}
 		transportSvc.StoreInbound(msg)
+		auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "stored")
 		// Stage memory-producing D2D content for vault persistence.
 		if stageD2DMemory != nil {
 			stageD2DMemory(ctx, msg)
@@ -1041,17 +1084,35 @@ func main() {
 		if !isMemory {
 			return
 		}
+
+		// Phase 5: Scenario-driven staging — only stage if scenario is not denied.
+		// Carry scenario_tier + origin_contact in metadata for resolve decisions.
+		scenarioTier := string(domain.ScenarioStandingPolicy) // default if no policy mgr
+		if scenarioPolicyMgr != nil {
+			scenario := domain.MsgTypeToScenario(msg.Type)
+			if scenario != "" {
+				tier, tierErr := scenarioPolicyMgr.GetScenarioTier(ctx, msg.From, scenario)
+				if tierErr == nil && tier == domain.ScenarioDenyByDefault {
+					slog.Info("ingress: D2D staging skipped — scenario denied",
+						"type", string(msg.Type), "from", msg.From, "scenario", scenario)
+					return
+				}
+				if tierErr == nil {
+					scenarioTier = string(tier)
+				}
+			}
+		}
+
 		body := string(msg.Body)
 		summary := body
 		if len(summary) > 200 {
 			summary = summary[:200]
 		}
-		// Preserve original DIDComm type and timestamp in metadata so
-		// Brain's staging processor can restore chronology and the raw
-		// message semantics survive type collapsing (e.g. context_share
-		// and note both become relationship_note in the vault type).
-		meta := fmt.Sprintf(`{"didcomm_type":%q,"timestamp":%d}`,
-			string(msg.Type), msg.CreatedTime)
+		// Preserve original DIDComm type, timestamp, scenario_tier, and
+		// origin_contact in metadata so Brain's staging processor and
+		// resolve logic can use them.
+		meta := fmt.Sprintf(`{"didcomm_type":%q,"timestamp":%d,"scenario_tier":%q,"origin_contact":%q}`,
+			string(msg.Type), msg.CreatedTime, scenarioTier, msg.From)
 		item := domain.StagingItem{
 			Source:         "d2d",
 			SourceID:       msg.ID,
@@ -1576,4 +1637,23 @@ func routeByMethod(getHandler, mutateHandler http.HandlerFunc) http.HandlerFunc 
 			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// auditD2DIngress writes a D2D ingress event to the audit log.
+// Best-effort: audit failure never blocks the ingress pipeline.
+func auditD2DIngress(auditor port.VaultAuditLogger, action, fromDID, msgType, reason string) {
+	if auditor == nil {
+		return
+	}
+	metadata := fmt.Sprintf(`{"from":%q,"msg_type":%q,"reason":%q}`,
+		fromDID, msgType, reason)
+	entry := domain.VaultAuditEntry{
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		Action:    action,
+		Requester: fromDID,
+		QueryType: msgType,
+		Reason:    reason,
+		Metadata:  metadata,
+	}
+	_, _ = auditor.Append(context.Background(), entry)
 }

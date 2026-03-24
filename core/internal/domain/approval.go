@@ -4,20 +4,21 @@ package domain
 // Created when an agent needs persona access, wants to perform a risky action,
 // or triggers any other approval-required operation.
 type ApprovalRequest struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"`        // "persona_access", "action_intent", etc.
-	ClientDID string `json:"client_did"`  // requesting agent's DID
-	PersonaID string `json:"persona_id"`  // which persona (for persona_access)
-	SessionID string `json:"session_id"`  // agent session (if any)
-	Action    string `json:"action"`      // what action triggered the request
-	Scope     string `json:"scope"`       // requested scope: "single", "session"
-	Status    string `json:"status"`      // "pending", "approved", "denied", "expired"
-	Reason    string `json:"reason"`      // why approval is needed ("Store memory in finance")
-	Preview   string `json:"preview"`    // owner-visible trigger text/query/summary
-	GrantedBy string `json:"granted_by"`  // who approved (DID or "telegram")
-	ExpiresAt int64  `json:"expires_at"`  // Unix timestamp
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID              string `json:"id"`
+	Type            string `json:"type"`             // "persona_access", "action_intent", etc.
+	ClientDID       string `json:"client_did"`       // requesting agent's DID
+	PersonaID       string `json:"persona_id"`       // which persona (for persona_access)
+	SessionID       string `json:"session_id"`       // agent session (if any)
+	Action          string `json:"action"`           // what action triggered the request
+	Scope           string `json:"scope"`            // requested scope: "single", "session"
+	Status          string `json:"status"`           // "pending", "approved", "denied", "expired"
+	Reason          string `json:"reason"`           // why approval is needed ("Store memory in finance")
+	Preview         string `json:"preview"`          // owner-visible trigger text/query/summary
+	GrantedBy       string `json:"granted_by"`       // who approved (DID or "telegram")
+	ExpiresAt       int64  `json:"expires_at"`       // Unix timestamp
+	CreatedAt       int64  `json:"created_at"`
+	UpdatedAt       int64  `json:"updated_at"`
+	OutboxMessageID string `json:"outbox_message_id,omitempty"` // links to d2d_outbox row (d2d_send action)
 }
 
 // Approval type constants.

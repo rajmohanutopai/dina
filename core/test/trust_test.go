@@ -116,6 +116,11 @@ func (m *mockContactLookup) GetTrustLevel(did string) string {
 	return m.contacts[did]
 }
 
+func (m *mockContactLookup) IsContact(did string) bool {
+	_, ok := m.contacts[did]
+	return ok
+}
+
 func TestGatekeeper_6_IngressBlockedContactDrop(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
@@ -149,7 +154,9 @@ func TestGatekeeper_6_IngressVerifiedContactAccept(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "verified contact should be accepted")
 }
 
-func TestGatekeeper_6_IngressHighScoreCacheAccept(t *testing.T) {
+func TestGatekeeper_6_IngressHighScoreCacheQuarantineV1(t *testing.T) {
+	// D2D v1: trust cache no longer grants acceptance — only explicit contacts pass.
+	// A high-score non-contact is quarantined.
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:cached_good", TrustScore: 0.7, TrustRing: 2,
@@ -159,7 +166,7 @@ func TestGatekeeper_6_IngressHighScoreCacheAccept(t *testing.T) {
 	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
 
 	decision := svc.EvaluateIngress("did:plc:cached_good")
-	testutil.RequireTrue(t, decision == domain.IngressAccept, "high-score cached DID should be accepted")
+	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "v1: high-score non-contact should be quarantined")
 }
 
 func TestGatekeeper_6_IngressLowScoreCacheQuarantine(t *testing.T) {
@@ -193,7 +200,9 @@ func TestGatekeeper_6_IngressEmptyDIDQuarantine(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "empty DID should be quarantined")
 }
 
-func TestGatekeeper_6_IngressBoundaryScoreAccept(t *testing.T) {
+func TestGatekeeper_6_IngressBoundaryScoreQuarantineV1(t *testing.T) {
+	// D2D v1: trust cache no longer grants acceptance — only explicit contacts pass.
+	// A boundary-score non-contact is quarantined.
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:boundary", TrustScore: 0.3, TrustRing: 1,
@@ -203,10 +212,11 @@ func TestGatekeeper_6_IngressBoundaryScoreAccept(t *testing.T) {
 	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
 
 	decision := svc.EvaluateIngress("did:plc:boundary")
-	testutil.RequireTrue(t, decision == domain.IngressAccept, "score exactly 0.3 should be accepted")
+	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "v1: boundary-score non-contact should be quarantined")
 }
 
-func TestGatekeeper_6_IngressJustBelowBoundaryQuarantine(t *testing.T) {
+func TestGatekeeper_6_IngressJustBelowBoundaryQuarantineV1(t *testing.T) {
+	// D2D v1: trust cache no longer grants acceptance — only explicit contacts pass.
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:just_below", TrustScore: 0.29, TrustRing: 1,

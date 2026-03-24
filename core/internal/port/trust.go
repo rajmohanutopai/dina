@@ -48,4 +48,8 @@ type ContactLookup interface {
 	// GetTrustLevel returns the trust_level for a DID from the contacts table.
 	// Returns empty string if the DID is not a contact.
 	GetTrustLevel(did string) string
+
+	// IsContact returns true if the DID exists in the local contact directory.
+	// Used by ingress pipeline (D2D v1: only explicit contacts pass; unknown senders quarantine).
+	IsContact(did string) bool
 }

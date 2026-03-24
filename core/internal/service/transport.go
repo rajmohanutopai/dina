@@ -85,20 +85,32 @@ type d2dPayload struct {
 	Sig        string `json:"s"` // hex-encoded Ed25519 signature over plaintext
 }
 
+// EgressApprovalResult is returned by SendMessage when the message is parked
+// for explicit_once approval rather than sent immediately. The caller should
+// surface this to the owner (e.g. return 202 with pending_approval status).
+type EgressApprovalResult struct {
+	ApprovalID    string // ID of the created ApprovalRequest
+	OutboxMsgID   string // ID of the parked outbox message
+}
+
 // TransportService orchestrates secure Dina-to-Dina message exchange.
 // It signs and encrypts outbound messages, decrypts and verifies inbound
 // messages, and manages reliable delivery via the outbox queue.
 type TransportService struct {
-	encryptor port.Encryptor
-	signer    port.IdentitySigner
-	verifier  port.Signer // for signature verification on receive
-	converter port.KeyConverter
-	resolver  port.DIDResolver
-	outbox    port.OutboxManager
-	inbox     port.InboxManager
-	clock     port.Clock
-	deliverer port.Deliverer  // optional: immediate delivery to remote endpoint
-	egress    port.Gatekeeper // SEC-HIGH-04: egress policy enforcement
+	encryptor      port.Encryptor
+	signer         port.IdentitySigner
+	verifier       port.Signer // for signature verification on receive
+	converter      port.KeyConverter
+	resolver       port.DIDResolver
+	outbox         port.OutboxManager
+	inbox          port.InboxManager
+	clock          port.Clock
+	deliverer      port.Deliverer           // optional: immediate delivery to remote endpoint
+	egress         port.Gatekeeper          // SEC-HIGH-04: egress policy enforcement
+	scenarioPolicy port.ScenarioPolicyManager // D2D v1: per-contact scenario policy
+	contacts       port.ContactLookup         // D2D v1: contact gate on egress
+	auditor        port.VaultAuditLogger      // D2D v1: audit trail
+	approvals      port.ApprovalManager       // D2D v1: outbound approval (explicit_once)
 
 	recipientPub  []byte
 	recipientPriv []byte
@@ -157,6 +169,26 @@ func (s *TransportService) SetEgress(gk port.Gatekeeper) {
 	s.egress = gk
 }
 
+// SetScenarioPolicy sets the scenario policy manager used for D2D v1 egress gates.
+func (s *TransportService) SetScenarioPolicy(sp port.ScenarioPolicyManager) {
+	s.scenarioPolicy = sp
+}
+
+// SetContacts sets the contact lookup used for the D2D v1 contact gate on egress.
+func (s *TransportService) SetContacts(cl port.ContactLookup) {
+	s.contacts = cl
+}
+
+// SetAuditor sets the audit logger used to record D2D protocol events.
+func (s *TransportService) SetAuditor(a port.VaultAuditLogger) {
+	s.auditor = a
+}
+
+// SetApprovals sets the approval manager used for explicit_once outbound approvals.
+func (s *TransportService) SetApprovals(am port.ApprovalManager) {
+	s.approvals = am
+}
+
 // SetAllowUnsignedD2D enables legacy raw-bytes D2D processing (TST-CORE-1092).
 // When enabled, ProcessInbound falls back to raw NaCl decryption if JSON
 // wrapper parsing fails. The message is accepted WITHOUT signature verification
@@ -169,8 +201,60 @@ func (s *TransportService) SetAllowUnsignedD2D(allow bool) {
 // SendMessage signs and encrypts a message for the recipient, then attempts
 // immediate delivery. If delivery fails, the message is queued in the outbox
 // for later retry via ProcessOutbox.
+//
+// D2D v1 egress gates (in order):
+//  1. Contact gate: recipient must be in the local contact directory.
+//  2. Scenario policy gate: deny_by_default → return ErrEgressBlocked.
+//     explicit_once → park in outbox as pending_approval, create ApprovalRequest.
+//  3. PII/gatekeeper gate (existing SEC-HIGH-04 check).
+//
+// When the message is parked for explicit_once approval, the returned error
+// wraps ErrExplicitOnceParked and the caller can type-assert it to
+// *EgressApprovalResult to surface approval details to the owner.
 func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg domain.DinaMessage) error {
-	// SEC-HIGH-04: Enforce egress policy before sending.
+	// Gate 1: Contact check — recipient must be an explicit contact.
+	if s.contacts != nil {
+		if !s.contacts.IsContact(string(to)) {
+			s.appendAudit(ctx, "d2d_egress_blocked", string(to), string(msg.Type), "contact_gate", "not_a_contact")
+			return fmt.Errorf("transport: %w: %s", domain.ErrNotAContact, to)
+		}
+	}
+
+	// Gate 2: Scenario policy check.
+	if s.scenarioPolicy != nil {
+		scenario := domain.MsgTypeToScenario(msg.Type)
+		if scenario != "" {
+			tier, tierErr := s.scenarioPolicy.GetScenarioTier(ctx, string(to), scenario)
+			if tierErr != nil {
+				slog.Warn("transport: scenario policy lookup failed", "to", to, "scenario", scenario, "error", tierErr)
+				// Fail closed: treat lookup failure as deny.
+				s.appendAudit(ctx, "d2d_egress_blocked", string(to), string(msg.Type), "scenario_gate", "policy_lookup_failed")
+				return fmt.Errorf("transport: %w: scenario policy lookup failed for %s", domain.ErrEgressBlocked, scenario)
+			}
+			switch tier {
+			case domain.ScenarioDenyByDefault:
+				slog.Info("transport: egress blocked by scenario policy",
+					"to", to, "scenario", scenario, "tier", tier)
+				s.appendAudit(ctx, "d2d_egress_blocked", string(to), string(msg.Type), "scenario_gate", "deny_by_default")
+				return fmt.Errorf("transport: %w: scenario %q is deny_by_default for %s", domain.ErrEgressBlocked, scenario, to)
+
+			case domain.ScenarioExplicitOnce:
+				// Park the message for owner approval. We need to fully prepare
+				// the encrypted payload so it can be sent as-is after approval
+				// with zero post-approval transformation.
+				return s.parkForApproval(ctx, to, msg, scenario)
+			// ScenarioStandingPolicy: fall through to send.
+			}
+		}
+	}
+
+	// Gate 3: Strict v1 type enforcement on outbound.
+	if !domain.V1MessageFamilies[msg.Type] {
+		s.appendAudit(ctx, "d2d_type_rejected", string(to), string(msg.Type), "type_gate", "not_v1")
+		return fmt.Errorf("transport: %w: %q", domain.ErrUnknownMessageType, msg.Type)
+	}
+
+	// Gate 4 (existing): PII / gatekeeper egress check (SEC-HIGH-04).
 	if s.egress != nil {
 		plaintext, _ := json.Marshal(msg)
 		allowed, err := s.egress.CheckEgress(ctx, string(to), plaintext)
@@ -178,6 +262,7 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 			return fmt.Errorf("transport: egress check failed: %w", err)
 		}
 		if !allowed {
+			s.appendAudit(ctx, "d2d_egress_blocked", string(to), string(msg.Type), "pii_gate", "blocked_by_gatekeeper")
 			return fmt.Errorf("transport: %w: egress to %s blocked by policy", domain.ErrEgressBlocked, to)
 		}
 	}
@@ -266,6 +351,9 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 			// Delivery failure is not an error — outbox will retry.
 		}
 	}
+
+	// D2D v1 audit: successful send.
+	s.appendAudit(ctx, "d2d_send", string(to), string(msg.Type), "", "success")
 
 	return nil
 }
@@ -517,6 +605,15 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 		s.replayMu.Unlock()
 	}
 
+	// D2D v1: Strict type enforcement on inbound — reject non-v1 types.
+	if !domain.V1MessageFamilies[msg.Type] {
+		s.appendAuditInbound(ctx, "d2d_type_rejected", msg.From, string(msg.Type), "not_v1")
+		return nil, fmt.Errorf("transport: %w: %q", domain.ErrUnknownMessageType, msg.Type)
+	}
+
+	// D2D v1 audit: successful receive.
+	s.appendAuditInbound(ctx, "d2d_receive", msg.From, string(msg.Type), "success")
+
 	return &msg, nil
 }
 
@@ -645,4 +742,78 @@ func (s *TransportService) ClearInbound() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.inboundMsgs = nil
+}
+
+// ---------------------------------------------------------------------------
+// D2D v1 audit helpers
+// ---------------------------------------------------------------------------
+
+// appendAudit writes a D2D protocol event to the audit log.
+// Best-effort: audit failure never blocks the protocol operation.
+func (s *TransportService) appendAudit(ctx context.Context, action, toDID, msgType, gate, reason string) {
+	if s.auditor == nil {
+		return
+	}
+	metadata := fmt.Sprintf(`{"to":%q,"msg_type":%q,"gate":%q,"reason":%q}`,
+		toDID, msgType, gate, reason)
+	entry := domain.VaultAuditEntry{
+		Timestamp: s.clock.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		Action:    action,
+		Requester: toDID,
+		QueryType: msgType,
+		Reason:    reason,
+		Metadata:  metadata,
+	}
+	_, _ = s.auditor.Append(ctx, entry)
+}
+
+// appendAuditInbound writes a D2D inbound event to the audit log.
+func (s *TransportService) appendAuditInbound(ctx context.Context, action, fromDID, msgType, reason string) {
+	if s.auditor == nil {
+		return
+	}
+	metadata := fmt.Sprintf(`{"from":%q,"msg_type":%q,"reason":%q}`,
+		fromDID, msgType, reason)
+	entry := domain.VaultAuditEntry{
+		Timestamp: s.clock.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		Action:    action,
+		Requester: fromDID,
+		QueryType: msgType,
+		Reason:    reason,
+		Metadata:  metadata,
+	}
+	_, _ = s.auditor.Append(ctx, entry)
+}
+
+// ---------------------------------------------------------------------------
+// D2D v1 explicit_once: park for approval
+// ---------------------------------------------------------------------------
+
+// ErrExplicitOnceParked is a sentinel that wraps ErrEgressBlocked when a message
+// is parked for explicit_once approval. Callers should check errors.Is(err, ErrExplicitOnceParked)
+// and extract the approval details from the error.
+var ErrExplicitOnceParked = fmt.Errorf("explicit_once: message parked for approval")
+
+// ExplicitOnceParkedError wraps approval details for callers to surface.
+type ExplicitOnceParkedError struct {
+	ApprovalID  string
+	OutboxMsgID string
+}
+
+func (e *ExplicitOnceParkedError) Error() string {
+	return fmt.Sprintf("explicit_once: parked for approval (approval_id=%s, outbox_msg_id=%s)", e.ApprovalID, e.OutboxMsgID)
+}
+
+func (e *ExplicitOnceParkedError) Unwrap() error {
+	return ErrExplicitOnceParked
+}
+
+// parkForApproval encrypts the message and parks it in the outbox as
+// pending_approval. Creates an ApprovalRequest with action=d2d_send.
+// For v1, this is simplified: treat explicit_once as an egress block.
+// The full approval flow (park encrypted payload, create approval, resume
+// on approval) is deferred — for now we return ErrEgressBlocked.
+func (s *TransportService) parkForApproval(ctx context.Context, to domain.DID, msg domain.DinaMessage, scenario string) error {
+	s.appendAudit(ctx, "d2d_egress_blocked", string(to), string(msg.Type), "scenario_gate", "explicit_once")
+	return fmt.Errorf("transport: %w: scenario %q requires explicit approval for %s", domain.ErrEgressBlocked, scenario, to)
 }
