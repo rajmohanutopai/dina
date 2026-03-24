@@ -199,6 +199,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if s.transport != nil {
 			msg, tErr := s.transport.ProcessInbound(ctx, blob)
 			if tErr != nil {
+				slog.Warn("sweeper: ProcessInbound failed", "name", name, "error", tErr.Error())
 				// HIGH-04: Track failure; evict after maxRetries.
 				s.recordFailure(name)
 				continue

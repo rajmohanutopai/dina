@@ -48,6 +48,8 @@ services:
       - DINA_PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
       - DINA_PDS_HANDLE=${DINA_PDS_HANDLE:-dina.test}
       - DINA_PDS_EMAIL=${DINA_PDS_EMAIL:-dina@example.com}
+      - DINA_KNOWN_PEERS=${DINA_KNOWN_PEERS:-}
+      - DINA_ALLOWED_ENDPOINTS=${DINA_ALLOWED_ENDPOINTS:-}
     secrets:
       - wrapped_seed
       - identity_salt

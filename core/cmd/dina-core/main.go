@@ -298,6 +298,7 @@ func main() {
 	// Restore DID from persisted metadata so the node keeps its identity
 	// across restarts. Without this, the DID is only created on first
 	// /v1/did request, and restarts would generate a new one.
+	var ownDID string // used later for D2D sender identification
 	if meta != nil && meta.DID != "" {
 		pubKey := identitySigner.PublicKey()
 		restoredDID, restoreErr := didMgr.RestoreDID(context.Background(), meta, pubKey)
@@ -308,6 +309,7 @@ func main() {
 			)
 		} else {
 			slog.Info("DID restored from metadata", "did", restoredDID)
+			ownDID = string(restoredDID)
 		}
 	}
 
@@ -735,9 +737,14 @@ func main() {
 		signingPrivKey.Public().(ed25519.PublicKey),
 		[]byte(signingPrivKey),
 	)
+	// Set sender DID for outbound D2D messages — use config override or
+	// the DID restored from identity metadata (the normal path).
 	if cfg.OwnDID != "" {
-		transportSvc.SetSenderDID(cfg.OwnDID)
-		slog.Info("D2D sender DID configured", "did", cfg.OwnDID)
+		ownDID = cfg.OwnDID
+	}
+	if ownDID != "" {
+		transportSvc.SetSenderDID(ownDID)
+		slog.Info("D2D sender DID configured", "did", ownDID)
 	}
 
 	// Ingress: dead-drop + rate limiter + sweeper + router (§7 3-valve pipeline)
