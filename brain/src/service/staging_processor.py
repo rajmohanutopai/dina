@@ -15,9 +15,11 @@ import json
 import logging
 from typing import Any
 
+import structlog
+
 from ..domain.errors import ApprovalRequiredError
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 # Sensitivity ranking for "highest sensitivity wins" persona routing.
 # When domain_classifier is uncertain, default to the most protective persona.
@@ -75,7 +77,7 @@ class StagingProcessor:
         try:
             items = await self._core.staging_claim(limit)
         except Exception as exc:
-            log.warning("staging.claim_failed", extra={"error": str(exc)})
+            log.warning("staging.claim_failed", error=str(exc))
             return 0
 
         if not items:
@@ -117,6 +119,14 @@ class StagingProcessor:
 
                 # Classify persona.
                 personas, routing_meta = await self._classify_personas(item_dict)
+                log.info(
+                    "staging.classified",
+                    id=item.id,
+                    personas=personas,
+                    domain=(routing_meta or {}).get("domain", ""),
+                    sensitivity=(routing_meta or {}).get("sensitivity", ""),
+                    summary=(item.summary or "")[:80],
+                )
 
                 # Score trust.
                 provenance = {}
@@ -192,7 +202,7 @@ class StagingProcessor:
                 except Exception as enrich_exc:
                     if heartbeat_task:
                         heartbeat_task.cancel()
-                    log.warning("staging.enrichment_failed", extra={"id": item_id, "error": str(enrich_exc)})
+                    log.warning("staging.enrichment_failed", id=item_id, error=str(enrich_exc))
                     try:
                         await self._core.staging_fail(
                             item_id, f"enrichment failed: {enrich_exc}",
@@ -260,15 +270,15 @@ class StagingProcessor:
                         except Exception:
                             pass  # best-effort
 
-                log.info("staging.resolved", extra={"id": item_id, "personas": personas})
+                log.info("staging.resolved", id=item_id, personas=personas)
 
                 # Surface ambiguous routing for daily brief.
                 if routing_meta and routing_meta.get("status") == "ambiguous":
-                    log.info("staging.routing_ambiguous", extra={
-                        "id": item_id,
-                        "candidates": routing_meta.get("candidates", []),
-                        "reason": routing_meta.get("reason", ""),
-                    })
+                    log.info("staging.routing_ambiguous",
+                        id=item_id,
+                        candidates=routing_meta.get("candidates", []),
+                        reason=routing_meta.get("reason", ""),
+                    )
                     # Store as a brief-surfaceable event via Core KV
                     try:
                         brief_item = json.dumps({
@@ -296,14 +306,14 @@ class StagingProcessor:
                 # Core already marked the item as pending_unlock and created
                 # an approval request. Nothing to do here — GetStatus will
                 # return pending_unlock so RememberHandler reports needs_approval.
-                log.info("staging.needs_approval", extra={
-                    "id": item_id,
-                    "persona": exc.persona,
-                    "approval_id": exc.approval_id,
-                })
+                log.info("staging.needs_approval",
+                    id=item_id,
+                    persona=exc.persona,
+                    approval_id=exc.approval_id,
+                )
             except Exception as exc:
                 err_str = str(exc)
-                log.warning("staging.classify_failed", extra={"id": item_id, "error": err_str})
+                log.warning("staging.classify_failed", id=item_id, error=err_str)
                 try:
                     await self._core.staging_fail(item_id, err_str)
                 except Exception:

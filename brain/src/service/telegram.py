@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Any
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from ..port.core_client import CoreClient
@@ -196,6 +196,11 @@ class TelegramService:
                     "I don't recognise you yet. Send /start to pair."
                 )
                 return
+            # Auto-pair allowed users on first DM so they receive
+            # outbound notifications (approvals, nudges) without
+            # needing an explicit /start.
+            if user_id not in self._paired_users:
+                await self._pair_user(user_id, chat_id)
 
         # --- Check for approval response (approve/deny commands) ---
         approval_response = await self.handle_approval_response(text)
@@ -249,7 +254,13 @@ class TelegramService:
         The approval dict should contain: id, persona, client_did, session, reason.
         Users reply with the approval ID to approve, or 'deny <id>' to deny.
         """
-        if not self._bot or not self._paired_users:
+        if not self._bot:
+            return
+        # Lazy retry: if paired users failed to load at startup (race
+        # condition — Brain starts before Core is ready), try again now.
+        if not self._paired_users:
+            await self.load_paired_users()
+        if not self._paired_users:
             return
 
         # Escape Markdown special chars in user-supplied fields to prevent
@@ -257,35 +268,43 @@ class TelegramService:
         aid = approval.get("id", "")
         persona = approval.get("persona", "")
         agent = approval.get("client_did", "")
-        session = approval.get("session", "")
-        reason = _escape_markdown(approval.get("reason", ""))
+        reason = approval.get("reason", "")
         preview = _escape_markdown(approval.get("preview", ""))
 
         # Skip empty/bogus approvals (e.g. Brain's own vault queries)
         if not aid or not persona:
             return
 
-        lines = ["🔐 *Persona Access Request*\n"]
+        # Build a concise, human-readable notification.
+        # e.g. "🔐 config-test-primary wants to store in health"
+        #       "My HbA1c is 5.8 percent..."
+        verb = "store in" if "Store" in reason else "access"
         if agent:
-            lines.append(f"Agent: `{agent}`")
-        lines.append(f"Persona: `{persona}`")
-        if session:
-            lines.append(f"Session: `{session}`")
-        if reason:
-            lines.append(f"Reason: {reason}")
+            title = f"{_escape_markdown(agent)} wants to {verb} *{persona}*"
+        else:
+            title = f"Request to {verb} *{persona}*"
+
+        lines = [f"🔐 {title}\n"]
         if preview:
-            lines.append(f"Content: _{preview}_")
-        lines.append("")
-        lines.append("Reply:")
-        lines.append(f"`approve {aid}` — grant for session")
-        lines.append(f"`approve-single {aid}` — grant once")
-        lines.append(f"`deny {aid}` — deny access")
+            lines.append(f"_{preview}_")
         msg = "\n".join(lines)
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Approve", callback_data=f"approve {aid}"),
+                InlineKeyboardButton("🚫 Deny", callback_data=f"deny {aid}"),
+            ],
+            [
+                InlineKeyboardButton("✅ Approve (once)", callback_data=f"approve-single {aid}"),
+            ],
+        ])
 
         # For DMs, chat_id == user_id
         for chat_id in self._paired_users:
             try:
-                await self._bot.send_message(chat_id, msg, parse_mode="Markdown")
+                await self._bot.send_message(
+                    chat_id, msg, parse_mode="Markdown", reply_markup=keyboard,
+                )
             except Exception:
                 log.warning("telegram.approval_send_failed chat_id=%s", chat_id)
 
@@ -324,6 +343,32 @@ class TelegramService:
                     log.warning("telegram.deny_failed", extra={"id": approval_id, "error": str(exc)})
                     return "❌ Denial failed. Check the admin dashboard for details."
         return None
+
+    # ------------------------------------------------------------------
+    # Inline keyboard callback handler
+    # ------------------------------------------------------------------
+
+    async def handle_callback_query(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle inline keyboard button presses (approve/deny)."""
+        query = update.callback_query
+        if not query or not query.data:
+            return
+        await query.answer()  # Acknowledge the button press
+
+        response = await self.handle_approval_response(query.data)
+        if response and query.message:
+            # Edit the original message to show the result instead of buttons.
+            try:
+                original_text = query.message.text or ""
+                await query.message.edit_text(
+                    f"{original_text}\n\n{response}",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                # Fallback: send as a new message.
+                await query.message.reply_text(response, parse_mode="Markdown")
 
     # ------------------------------------------------------------------
     # Access control

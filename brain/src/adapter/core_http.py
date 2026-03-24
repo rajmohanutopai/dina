@@ -555,20 +555,20 @@ class CoreHTTPClient:
     # -- Persona Approvals ---------------------------------------------------
 
     async def list_pending_approvals(self) -> list[dict]:
-        """GET /v1/persona/approvals — list pending approval requests."""
-        resp = await self._request("GET", "/v1/persona/approvals")
+        """GET /v1/approvals — list pending approval requests."""
+        resp = await self._request("GET", "/v1/approvals")
         return resp.json().get("approvals", [])
 
     async def approve_request(self, approval_id: str, scope: str = "session", granted_by: str = "telegram") -> dict:
-        """POST /v1/persona/approve — approve a pending request."""
-        resp = await self._request("POST", "/v1/persona/approve", json={
-            "id": approval_id, "scope": scope, "granted_by": granted_by,
+        """POST /v1/approvals/{id}/approve — approve a pending request."""
+        resp = await self._request("POST", f"/v1/approvals/{approval_id}/approve", json={
+            "scope": scope, "granted_by": granted_by,
         })
         return resp.json()
 
     async def deny_request(self, approval_id: str) -> dict:
-        """POST /v1/persona/deny — deny a pending request."""
-        resp = await self._request("POST", "/v1/persona/deny", json={"id": approval_id})
+        """POST /v1/approvals/{id}/deny — deny a pending request."""
+        resp = await self._request("POST", f"/v1/approvals/{approval_id}/deny")
         return resp.json()
 
     # -- Health --------------------------------------------------------------

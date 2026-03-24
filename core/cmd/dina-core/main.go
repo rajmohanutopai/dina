@@ -631,13 +631,23 @@ func main() {
 		if origOnApproval != nil {
 			origOnApproval(req)
 		}
+		// Resolve device name from token ID for human-readable notifications.
+		agentName := req.ClientDID
+		if devices, err := pairer.ListDevices(context.Background()); err == nil {
+			for _, d := range devices {
+				if d.TokenID == req.ClientDID {
+					agentName = d.Name
+					break
+				}
+			}
+		}
 		go func() {
 			_ = brain.Process(context.Background(), domain.TaskEvent{
 				Type: "approval_needed",
 				Payload: map[string]interface{}{
 					"id":         req.ID,
 					"persona":    req.PersonaID,
-					"client_did": req.ClientDID,
+					"client_did": agentName,
 					"session":    req.SessionID,
 					"reason":     req.Reason,
 					"preview":    req.Preview,

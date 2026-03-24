@@ -578,6 +578,7 @@ def create_app() -> FastAPI:
                 bot_token=cfg.telegram_token,
                 message_callback=telegram_service.handle_message,
                 command_callbacks={"start": telegram_service.handle_start},
+                callback_query_handler=telegram_service.handle_callback_query,
             )
             telegram_service.set_bot(telegram_bot)
             guardian._telegram = telegram_service  # wire for approval prompts

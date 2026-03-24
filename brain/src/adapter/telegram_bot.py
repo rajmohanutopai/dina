@@ -20,6 +20,7 @@ from typing import Any, Callable, Coroutine
 from telegram import Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -58,6 +59,7 @@ class TelegramBotAdapter:
         bot_token: str,
         message_callback: HandlerCallback,
         command_callbacks: dict[str, HandlerCallback] | None = None,
+        callback_query_handler: HandlerCallback | None = None,
     ) -> None:
         self._app: Application = (  # type: ignore[type-arg]
             Application.builder().token(bot_token).build()
@@ -67,6 +69,10 @@ class TelegramBotAdapter:
         # Register command handlers (e.g. /start, /help).
         for cmd, cb in (command_callbacks or {}).items():
             self._app.add_handler(CommandHandler(cmd, cb))
+
+        # Inline keyboard button callback handler.
+        if callback_query_handler:
+            self._app.add_handler(CallbackQueryHandler(callback_query_handler))
 
         # Catch-all text message handler (after commands).
         self._app.add_handler(

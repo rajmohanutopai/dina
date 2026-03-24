@@ -1206,6 +1206,7 @@ func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 		"/v1/vault",
 		"/v1/staging",
 		"/v1/personas",
+		"/v1/approvals",
 		"/v1/msg",
 		"/v1/task",
 		"/v1/pii",
