@@ -611,15 +611,18 @@ if [ -f "${ENV_FILE}" ]; then
     [ -n "${_ss}" ] && DINA_SESSION="${_ss}"
 fi
 
-# For instances: fix DINA_SECRETS_DIR in .env (installer writes ./secrets,
-# but compose needs the path relative to the project root).
+# For instances: fix paths in .env that the installer writes relative to /work
+# but compose needs relative to the project root.
 if [ -n "${INSTANCE_NAME}" ] && [ -f "${ENV_FILE}" ]; then
-    # macOS sed requires -i '' (no backup suffix); Linux requires -i (no space).
-    if sed --version 2>/dev/null | grep -q GNU; then
-        sed -i "s|^DINA_SECRETS_DIR=.*|DINA_SECRETS_DIR=./instances/${INSTANCE_NAME}/secrets|" "${ENV_FILE}"
-    else
-        sed -i '' "s|^DINA_SECRETS_DIR=.*|DINA_SECRETS_DIR=./instances/${INSTANCE_NAME}/secrets|" "${ENV_FILE}"
-    fi
+    _sed_inplace() {
+        if sed --version 2>/dev/null | grep -q GNU; then
+            sed -i "$@"
+        else
+            sed -i '' "$@"
+        fi
+    }
+    _sed_inplace "s|^DINA_SECRETS_DIR=.*|DINA_SECRETS_DIR=./instances/${INSTANCE_NAME}/secrets|" "${ENV_FILE}"
+    _sed_inplace "s|^COMPOSE_PROJECT_NAME=.*|COMPOSE_PROJECT_NAME=dina-${INSTANCE_NAME}|" "${ENV_FILE}"
 fi
 
 # ---------------------------------------------------------------------------

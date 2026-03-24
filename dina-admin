@@ -26,12 +26,52 @@ else
 fi
 
 if docker compose version >/dev/null 2>&1; then
-    COMPOSE="docker compose"
+    _COMPOSE_BIN="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE="docker-compose"
+    _COMPOSE_BIN="docker-compose"
 else
     echo "Error: docker compose not found" >&2
     exit 1
+fi
+
+# Instance detection: look for instance .env via --instance flag or
+# by finding a single instances/*/. env in the project directory.
+_INSTANCE=""
+_ENV_FILE=""
+for _a in "$@"; do
+    if [ "${_prev_arg:-}" = "--instance" ]; then
+        _INSTANCE="${_a}"
+        break
+    fi
+    _prev_arg="${_a}"
+done
+
+if [ -n "${_INSTANCE}" ]; then
+    _ENV_FILE="${COMPOSE_DIR}/instances/${_INSTANCE}/.env"
+    # Remove --instance <name> from args so it doesn't get passed to dina-admin
+    _ARGS=()
+    _skip_next=false
+    for _a in "$@"; do
+        if [ "$_skip_next" = true ]; then _skip_next=false; continue; fi
+        if [ "$_a" = "--instance" ]; then _skip_next=true; continue; fi
+        _ARGS+=("$_a")
+    done
+    set -- "${_ARGS[@]}"
+elif ls "${COMPOSE_DIR}"/instances/*/.env >/dev/null 2>&1; then
+    # Auto-detect: if exactly one instance exists, use it
+    _count=$(ls -d "${COMPOSE_DIR}"/instances/*/.env 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$_count" = "1" ]; then
+        _ENV_FILE=$(ls "${COMPOSE_DIR}"/instances/*/.env)
+        _INSTANCE=$(basename "$(dirname "$_ENV_FILE")")
+    fi
+fi
+
+if [ -n "${_ENV_FILE}" ] && [ -f "${_ENV_FILE}" ]; then
+    COMPOSE="${_COMPOSE_BIN} --env-file ${_ENV_FILE}"
+    SECRETS_DIR="${COMPOSE_DIR}/instances/${_INSTANCE}/secrets"
+    SEED_PASSWORD_FILE="${SECRETS_DIR}/seed_password"
+else
+    COMPOSE="${_COMPOSE_BIN}"
 fi
 
 # ---------------------------------------------------------------------------
