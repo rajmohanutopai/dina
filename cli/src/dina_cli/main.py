@@ -19,7 +19,8 @@ import click
 import httpx
 
 from .client import DinaClient, DinaClientError
-from .config import CONFIG_FILE, IDENTITY_DIR, load_config, save_config, _load_saved
+from .config import CONFIG_FILE, load_config, save_config, _load_saved
+from . import config as _config_mod
 from .output import print_error, print_error_with_trace, print_result, print_result_with_trace
 from .session import SessionStore
 from .signing import CLIIdentity
@@ -72,7 +73,7 @@ def status(ctx: click.Context) -> None:
     result: dict[str, Any] = {}
 
     # Check keypair
-    has_keypair = (IDENTITY_DIR / "ed25519_private.pem").exists()
+    has_keypair = (_config_mod.IDENTITY_DIR / "ed25519_private.pem").exists()
     result["keypair"] = "present" if has_keypair else "missing"
 
     # Load saved config
@@ -708,19 +709,25 @@ def configure(ctx: click.Context, role: str) -> None:
     click.echo("=" * 40)
     click.echo()
 
-    # Config directory — where keypair + config.json are stored.
-    # Default: ~/.dina/cli (global). For multi-instance, use ./.dina/cli (local).
-    from .config import CONFIG_DIR, _GLOBAL_CONFIG_DIR, set_config_dir
-    config_dir = click.prompt(
-        "Config directory",
-        default=str(CONFIG_DIR),
+    # Config location: local (this directory), global (~), or custom path.
+    from .config import _GLOBAL_CONFIG_DIR, _LOCAL_CONFIG_DIR, set_config_dir
+    cwd = Path.cwd()
+    home = Path.home()
+    choice = click.prompt(
+        "Config location",
+        type=click.Choice(["local", "global", "custom"]),
+        default="global",
     )
-    config_path = Path(config_dir)
-    if config_path != CONFIG_DIR:
-        set_config_dir(config_path)
-    if config_path != _GLOBAL_CONFIG_DIR:
-        click.echo(f"  Using local config: {config_path}")
-        click.echo(f"  Run dina commands from this directory to use this config.")
+    if choice == "local":
+        set_config_dir(_LOCAL_CONFIG_DIR)
+        click.echo(f"  Config stored in: {cwd}")
+    elif choice == "global":
+        set_config_dir(_GLOBAL_CONFIG_DIR)
+        click.echo(f"  Config stored in: {home}")
+    else:
+        custom_parent = Path(click.prompt("Parent directory", default=str(cwd)))
+        set_config_dir(custom_parent / ".dina" / "cli")
+        click.echo(f"  Config stored in: {custom_parent}")
 
     # Load existing saved config for defaults
     from .config import _load_saved
@@ -772,7 +779,9 @@ def configure(ctx: click.Context, role: str) -> None:
         except DinaClientError as exc:
             click.echo(f"  Core ({core_url}): {exc}", err=True)
         click.echo()
-        click.echo("Ready. Try: dina ask \"hello\"")
+        click.echo("Ready. Try:")
+        click.echo("  dina session start --name \"my first session\"")
+        click.echo("  dina ask --session <session-id> \"hello\"")
 
 
 @cli.command()
@@ -796,7 +805,7 @@ def unpair(ctx: click.Context) -> None:
             click.echo(f"  {msg}")
         return
 
-    has_keypair = (IDENTITY_DIR / "ed25519_private.pem").exists()
+    has_keypair = (_config_mod.IDENTITY_DIR / "ed25519_private.pem").exists()
     if not has_keypair:
         # Can't sign the revoke request — just clear local state
         saved.pop("device_id", None)

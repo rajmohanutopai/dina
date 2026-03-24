@@ -385,17 +385,20 @@ func main() {
 			}
 
 			bootstrapPersonas := []struct {
-				name, tier string
+				name, tier, description string
 			}{
-				{"general", "default"},
-				{"work", "standard"},
-				{"health", "sensitive"},
-				{"finance", "sensitive"},
+				{"general", "default", "Personal facts, preferences, family, relationships, hobbies, recipes, pets, birthdays, daily life, opinions"},
+				{"work", "standard", "Professional context, meetings, colleagues, deadlines, projects, office logistics, career"},
+				{"health", "sensitive", "Medical records, diagnoses, prescriptions, lab results, doctor visits, symptoms, allergies, medications, vital signs"},
+				{"finance", "sensitive", "Bank accounts, investments, bills, rent, salary, tax, loans, insurance, financial planning"},
 			}
 			for _, p := range bootstrapPersonas {
-				if _, err := personaMgr.Create(context.Background(), p.name, p.tier, bootstrapPassHash); err != nil {
+				id, err := personaMgr.Create(context.Background(), p.name, p.tier, bootstrapPassHash)
+				if err != nil {
 					slog.Warn("bootstrap: could not create persona", "name", p.name, "error", err)
+					continue
 				}
+				_ = personaMgr.SetDescription(context.Background(), id, p.description)
 			}
 			slog.Info("bootstrap: created default personas (first run)",
 				"personas", "general, work, health, finance")
@@ -1217,6 +1220,7 @@ func main() {
 
 	// Persona API
 	mux.HandleFunc("/v1/personas", routeByMethod(personaH.HandleListPersonas, personaH.HandleCreatePersona))
+	mux.HandleFunc("/v1/persona/edit", personaH.HandleEditPersona)
 	mux.HandleFunc("/v1/persona/unlock", personaH.HandleUnlockPersona)
 	mux.HandleFunc("/v1/persona/lock", personaH.HandleLockPersona)
 	mux.HandleFunc("/v1/persona/approve", personaH.HandleApprove)

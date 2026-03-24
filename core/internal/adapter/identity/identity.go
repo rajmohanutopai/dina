@@ -796,11 +796,12 @@ func (dm *DIDManager) RestoreDID(_ context.Context, meta *DIDMetadata, publicKey
 type Persona struct {
 	ID             string
 	Name           string
-	Tier           string // "open", "restricted", "locked"
+	Tier           string
 	Locked         bool
+	Description    string // classification hint for PersonaSelector
 	PassphraseHash string
 	Salt           []byte
-	DEKVersion     int // 1=SHA-256(legacy), 2=Argon2id
+	DEKVersion     int
 }
 
 // IdentityAuditEntry records a persona access audit event.
@@ -1380,6 +1381,20 @@ func (pm *PersonaManager) RequestApproval(_ context.Context, req domain.Approval
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
+	// Dedup: if a pending approval already exists for the same
+	// (persona, session, agent, action), return its ID instead of
+	// creating a duplicate. This prevents 30+ approvals from a
+	// single ask query that makes multiple tool calls.
+	for _, existing := range pm.approvals {
+		if existing.Status == domain.ApprovalPending &&
+			existing.PersonaID == req.PersonaID &&
+			existing.SessionID == req.SessionID &&
+			existing.ClientDID == req.ClientDID &&
+			existing.Action == req.Action {
+			return existing.ID, nil
+		}
+	}
+
 	req.ID = fmt.Sprintf("apr-%d", time.Now().UnixNano())
 	if req.Type == "" {
 		req.Type = domain.ApprovalTypePersonaAccess
@@ -1538,13 +1553,27 @@ func (pm *PersonaManager) ListDetailed(_ context.Context) ([]domain.PersonaDetai
 	details := make([]domain.PersonaDetail, 0, len(pm.personas))
 	for id, p := range pm.personas {
 		details = append(details, domain.PersonaDetail{
-			ID:     id,
-			Name:   p.Name,
-			Tier:   p.Tier,
-			Locked: p.Locked,
+			ID:          id,
+			Name:        p.Name,
+			Tier:        p.Tier,
+			Locked:      p.Locked,
+			Description: p.Description,
 		})
 	}
 	return details, nil
+}
+
+// SetDescription sets the classification hint for a persona.
+func (pm *PersonaManager) SetDescription(_ context.Context, personaID, description string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	p, ok := pm.personas[personaID]
+	if !ok {
+		return ErrPersonaNotFound
+	}
+	p.Description = description
+	pm.persistState()
+	return nil
 }
 
 // GetDEKVersion returns the DEK derivation version for a persona.

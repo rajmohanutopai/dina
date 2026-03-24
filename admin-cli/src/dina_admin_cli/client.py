@@ -119,12 +119,20 @@ class AdminClient:
             return [{"id": p, "name": p.replace("persona-", ""), "tier": "?"} for p in data.get("personas", [])]
         return data
 
-    def create_persona(self, name: str, tier: str, passphrase: str) -> dict:
+    def create_persona(self, name: str, tier: str, passphrase: str, description: str = "") -> dict:
         """POST /v1/personas."""
-        resp = self._request(
-            "POST", "/v1/personas",
-            json={"name": name, "tier": tier, "passphrase": passphrase},
-        )
+        body: dict = {"name": name, "tier": tier, "passphrase": passphrase}
+        if description:
+            body["description"] = description
+        resp = self._request("POST", "/v1/personas", json=body)
+        return resp.json()
+
+    def edit_persona(self, persona: str, description: str = "") -> dict:
+        """POST /v1/persona/edit — update persona metadata."""
+        body: dict = {"persona": persona}
+        if description:
+            body["description"] = description
+        resp = self._request("POST", "/v1/persona/edit", json=body)
         return resp.json()
 
     def unlock_persona(self, persona: str, passphrase: str) -> dict:

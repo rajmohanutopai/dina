@@ -499,8 +499,12 @@ def persona_list(ctx: click.Context) -> None:
                     name = p.get("name", p.get("id", "?"))
                     tier = p.get("tier", "?")
                     locked = p.get("locked", False)
+                    desc = p.get("description", "")
                     state = "locked" if locked else "open"
-                    click.echo(f"  {name}  (tier: {tier}, {state})")
+                    line = f"  {name}  (tier: {tier}, {state})"
+                    if desc:
+                        line += f"  — {desc}"
+                    click.echo(line)
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)
@@ -516,6 +520,11 @@ def persona_list(ctx: click.Context) -> None:
     help="Persona tier",
 )
 @click.option(
+    "--description",
+    default="",
+    help="What data belongs here (helps AI classify correctly)",
+)
+@click.option(
     "--passphrase",
     prompt=True,
     hide_input=True,
@@ -524,14 +533,36 @@ def persona_list(ctx: click.Context) -> None:
 )
 @click.pass_context
 def persona_create(
-    ctx: click.Context, name: str, tier: str, passphrase: str
+    ctx: click.Context, name: str, tier: str, description: str, passphrase: str
 ) -> None:
     """Create a new persona."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        data = client.create_persona(name, tier, passphrase)
+        data = client.create_persona(name, tier, passphrase, description)
         print_result(data, json_mode)
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@persona.command("edit")
+@click.option("--name", required=True, help="Persona to edit")
+@click.option("--description", default="", help="New description (classification hint)")
+@click.pass_context
+def persona_edit(ctx: click.Context, name: str, description: str) -> None:
+    """Edit a persona's metadata (description, etc.)."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    if not description:
+        click.echo("Nothing to change. Use --description to set a classification hint.")
+        return
+    try:
+        data = client.edit_persona(name, description=description)
+        if json_mode:
+            print_result(data, json_mode)
+        else:
+            click.echo(f"Updated: {name}")
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)

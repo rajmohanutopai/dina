@@ -57,6 +57,8 @@ type PersonaManager interface {
 	GetTier(ctx context.Context, personaID string) (string, error)
 	// GetDEKVersion returns the DEK derivation version for a persona (1=legacy, 2=Argon2id).
 	GetDEKVersion(ctx context.Context, personaID string) (int, error)
+	// SetDescription sets the classification hint for a persona.
+	SetDescription(ctx context.Context, personaID, description string) error
 }
 
 // ContactDirectory manages the contact registry in identity.sqlite.

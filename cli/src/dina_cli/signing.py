@@ -21,7 +21,13 @@ from cryptography.hazmat.primitives.serialization import (
 
 import base58
 
-_DEFAULT_IDENTITY_DIR = Path.home() / ".dina" / "cli" / "identity"
+from . import config as _config_mod
+
+def _default_identity_dir() -> Path:
+    """Return the current identity directory from config (supports local config)."""
+    return _config_mod.IDENTITY_DIR
+
+_DEFAULT_IDENTITY_DIR = None  # Unused — kept for backward compat
 _ED25519_MULTICODEC = b"\xed\x01"
 _EMPTY_BODY_HASH = hashlib.sha256(b"").hexdigest()
 
@@ -34,7 +40,7 @@ class CLIIdentity:
     """
 
     def __init__(self, identity_dir: Path | None = None) -> None:
-        self._dir = identity_dir or _DEFAULT_IDENTITY_DIR
+        self._dir = identity_dir or _default_identity_dir()
         self._priv_path = self._dir / "ed25519_private.pem"
         self._pub_path = self._dir / "ed25519_public.pem"
         self._private_key: Ed25519PrivateKey | None = None

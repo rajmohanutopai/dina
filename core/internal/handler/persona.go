@@ -32,9 +32,10 @@ type PersonaHandler struct {
 
 // createPersonaRequest is the JSON body for POST /v1/personas.
 type createPersonaRequest struct {
-	Name       string `json:"name"`
-	Tier       string `json:"tier"`
-	Passphrase string `json:"passphrase"`
+	Name        string `json:"name"`
+	Tier        string `json:"tier"`
+	Passphrase  string `json:"passphrase"`
+	Description string `json:"description"`
 }
 
 // unlockPersonaRequest is the JSON body for POST /v1/persona/unlock.
@@ -117,6 +118,10 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 	}
 
 	personaID, err := h.Personas.Create(r.Context(), req.Name, req.Tier, passphraseHash)
+	// Set description if provided (after create, before error check for "already exists").
+	if err == nil && req.Description != "" {
+		_ = h.Personas.SetDescription(r.Context(), personaID, req.Description)
+	}
 	alreadyExists := errors.Is(err, identity.ErrPersonaExists)
 	if err != nil && !alreadyExists {
 		switch {
@@ -170,6 +175,41 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"id": personaID, "status": "created", "vault": vaultStatus})
 	}
+}
+
+// editPersonaRequest is the JSON body for POST /v1/persona/edit.
+type editPersonaRequest struct {
+	Persona     string `json:"persona"`
+	Description string `json:"description"`
+}
+
+// HandleEditPersona handles POST /v1/persona/edit.
+func (h *PersonaHandler) HandleEditPersona(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req editPersonaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Persona == "" {
+		http.Error(w, `{"error":"persona is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	personaID := "persona-" + req.Persona
+	if req.Description != "" {
+		if err := h.Personas.SetDescription(r.Context(), personaID, req.Description); err != nil {
+			http.Error(w, `{"error":"persona not found"}`, http.StatusNotFound)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "updated", "persona": req.Persona})
 }
 
 // HandleUnlockPersona handles POST /v1/persona/unlock.

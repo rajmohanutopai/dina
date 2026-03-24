@@ -93,10 +93,11 @@ const (
 
 // PersonaDetail holds enriched persona metadata for the API response.
 type PersonaDetail struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Tier   string `json:"tier"`
-	Locked bool   `json:"locked"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Tier        string `json:"tier"`
+	Locked      bool   `json:"locked"`
+	Description string `json:"description,omitempty"`
 }
 
 // ValidTier returns true if the tier name is valid.

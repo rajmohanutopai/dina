@@ -35,10 +35,11 @@ _FALLBACK_PERSONAS = [
 class PersonaInfo:
     """Immutable snapshot of a persona's metadata."""
 
-    id: str       # "persona-general"
-    name: str     # "general"
-    tier: str     # "default", "standard", "sensitive", "locked"
-    locked: bool  # whether the vault is currently locked
+    id: str            # "persona-general"
+    name: str          # "general"
+    tier: str          # "default", "standard", "sensitive", "locked"
+    locked: bool       # whether the vault is currently locked
+    description: str = ""  # classification hint for PersonaSelector
 
 
 class PersonaRegistry:
@@ -114,6 +115,11 @@ class PersonaRegistry:
         info = self._personas.get(self.normalize(name))
         return info.locked if info else None
 
+    def description(self, name: str) -> str:
+        """Return the classification hint for a persona."""
+        info = self._personas.get(self.normalize(name))
+        return info.description if info else ""
+
     def all_names(self) -> list[str]:
         """Return all known canonical persona names."""
         return list(self._personas.keys())
@@ -150,4 +156,5 @@ class PersonaRegistry:
                     name=name,
                     tier=d.get("tier", "default"),
                     locked=d.get("locked", False),
+                    description=d.get("description", ""),
                 )

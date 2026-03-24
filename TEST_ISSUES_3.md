@@ -90,3 +90,32 @@ Deleted: nonexistent-id from general
 ```
 Core returns 204 for any DELETE regardless of whether the item exists.
 Should return 404 for unknown IDs.
+
+---
+
+## Backlog (fix as we encounter)
+
+### Issue 17: LLM over-shares internal state on casual greetings
+"hello" → dumps vault names, lock status, approval commands. Should be a simple greeting.
+Root cause: system prompt gives LLM full tool context, LLM over-reports.
+Fix: prompt tuning — instruct LLM to not volunteer system status unless asked.
+
+### Issue 18: Approval request dedup
+Each ask query creates 2-4 approval requests per sensitive persona per tool turn.
+30+ approvals accumulate from a few queries. Need dedup on (persona, session, agent).
+
+### Issue 19: Guard scan fabrication false positive
+Guard scan flags vault-sourced answers as "fabricated" — it doesn't know the data
+came from the vault. Partially mitigated by vault_enriched context note, but the
+underlying issue remains for edge cases.
+
+### Issue 20: Daughter classified to health persona
+"My daughter Riya turns 7" gets staging_resolve for health persona. Classifier
+sees "daughter" as health-related. Classification quality issue.
+
+### Issue 21: Persona descriptions for classification (FEATURE)
+Custom personas need a description field so PersonaSelector can classify
+correctly. dina-admin persona create --description "travel plans, bookings,
+itineraries" → stored in Core → returned in GET /v1/personas →
+PersonaRegistry caches → PersonaSelector includes in LLM prompt.
+Without this, custom personas will always fall to "general" (the safe default).

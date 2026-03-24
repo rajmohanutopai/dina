@@ -35,11 +35,17 @@ class SelectionResult:
 
 _SYSTEM_PROMPT = """\
 You are a data classifier for a personal AI system.
-The user has the following encrypted vaults (personas).
+The user has encrypted vaults (personas). Each persona has a name, tier, \
+and description explaining what data belongs there.
+
 Your job is to decide which vault an incoming item belongs to.
 
 You MUST choose ONLY from the available personas listed below.
 Do NOT invent new persona names.
+Use each persona's description to decide where the item fits best.
+
+When uncertain, prefer the default-tier persona — it is better to store \
+there than to misclassify into a sensitive persona that requires approval.
 
 Respond with a JSON object:
 {
@@ -114,11 +120,16 @@ class PersonaSelector:
         if not personas:
             return None
 
-        # Build persona descriptions for the prompt
+        # Build persona descriptions for the prompt — include description
+        # from the registry so the LLM knows what each persona is for.
         persona_list = []
         for name in personas:
             tier = self._registry.tier(name) or "default"
-            persona_list.append({"name": name, "tier": tier})
+            desc = self._registry.description(name)
+            entry: dict = {"name": name, "tier": tier}
+            if desc:
+                entry["description"] = desc
+            persona_list.append(entry)
 
         # Build item context (scrub to essentials)
         item_context = {
