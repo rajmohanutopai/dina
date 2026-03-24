@@ -234,3 +234,23 @@ class AdminClient:
     def set_kv(self, key: str, value: str) -> None:
         """PUT /v1/vault/kv/{key} — store a KV value."""
         self._request("PUT", f"/v1/vault/kv/{key}", json={"value": value})
+
+    # -- ask / remember (same path as CLI — Core proxies to Brain) ----------
+
+    def ask(self, text: str, session: str = "admin") -> dict:
+        """POST /api/v1/ask — vault-enriched reasoning via Brain."""
+        resp = self._request("POST", "/api/v1/ask", json={
+            "prompt": text,
+            "session": session,
+            "source": "admin",
+        }, timeout=60.0)
+        return resp.json()
+
+    def remember(self, text: str, session: str = "admin") -> dict:
+        """POST /api/v1/remember — store a memory via staging pipeline."""
+        resp = self._request("POST", "/api/v1/remember", json={
+            "text": text,
+            "session": session,
+            "source": "admin",
+        }, timeout=30.0)
+        return resp.json()

@@ -1003,3 +1003,104 @@ func TestVT6_ExtendLeaseAdditive(t *testing.T) {
 	testutil.RequireTrue(t, delta <= 901,
 		fmt.Sprintf("VT6: ExtendLease should add ~900s — delta=%ds", delta))
 }
+
+// ==========================================================================
+// GetStatusDetailed — SQLite adapter (sqlite.StagingInbox)
+//
+// 3 scenarios: stored item returns status+persona, received item returns
+// empty persona, unknown ID returns error.
+//
+// These tests exercise the SQLite-backed StagingInbox.GetStatusDetailed
+// directly — the method only exists on the sqlite adapter, not the in-memory
+// vault.StagingInbox. Build tag: cgo (requires SQLite FTS5 build).
+// ==========================================================================
+
+// newSQLiteStagingInbox creates a sqlite.StagingInbox backed by a temporary
+// identity.sqlite file. Equivalent pattern to newSQLitePendingReasonStore.
+func newSQLiteStagingInbox(t *testing.T) *sqlite.StagingInbox {
+	t.Helper()
+	dir := t.TempDir()
+	adapter := sqlite.NewVaultAdapter(dir)
+	identityPersona, _ := domain.NewPersonaName("identity")
+	dek := testutil.TestDEK[:]
+	if err := adapter.Open(context.Background(), identityPersona, dek); err != nil {
+		t.Fatalf("open identity: %v", err)
+	}
+	openPersonas := map[string]bool{"general": true, "consumer": true}
+	return sqlite.NewStagingInbox(
+		adapter.Pool(),
+		func(persona string) bool { return openPersonas[persona] },
+		func(_ context.Context, _ string, item domain.VaultItem) (string, error) {
+			return item.ID, nil
+		},
+	)
+}
+
+// --------------------------------------------------------------------------
+// TST-CORE-1222: GetStatusDetailed — stored item returns status and persona.
+// --------------------------------------------------------------------------
+
+func TestGetStatusDetailed_StoredItemReturnsPersona(t *testing.T) {
+	inbox := newSQLiteStagingInbox(t)
+	ctx := context.Background()
+
+	// Ingest an item.
+	item := newStagingItem("conn-1", "gmail", "gsd-stored-001", "Stored item with persona")
+	id, err := inbox.Ingest(ctx, item)
+	testutil.RequireNoError(t, err)
+
+	// Claim and resolve to an open persona so status becomes "stored".
+	_, err = inbox.Claim(ctx, 1, 5*time.Minute)
+	testutil.RequireNoError(t, err)
+
+	classifiedItem := domain.VaultItem{
+		Type:             "email",
+		Summary:          "Classified email",
+		ContentL0:        "L0 summary",
+		ContentL1:        "L1 detail",
+		Embedding:        []float32{0.1, 0.2, 0.3},
+		EnrichmentStatus: "ready",
+	}
+	err = inbox.Resolve(ctx, id, "general", classifiedItem)
+	testutil.RequireNoError(t, err)
+
+	// GetStatusDetailed must return status=stored and persona=general.
+	status, persona, err := inbox.GetStatusDetailed(ctx, id)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, status, domain.StagingStored)
+	testutil.RequireEqual(t, persona, "general")
+}
+
+// --------------------------------------------------------------------------
+// TST-CORE-1223: GetStatusDetailed — received item returns empty persona.
+// --------------------------------------------------------------------------
+
+func TestGetStatusDetailed_ReceivedItemHasEmptyPersona(t *testing.T) {
+	inbox := newSQLiteStagingInbox(t)
+	ctx := context.Background()
+
+	// Ingest only — do not claim or resolve. target_persona is NULL.
+	item := newStagingItem("conn-1", "gmail", "gsd-recv-001", "Received item, not yet resolved")
+	id, err := inbox.Ingest(ctx, item)
+	testutil.RequireNoError(t, err)
+
+	// GetStatusDetailed must return status=received and persona="" (not yet set).
+	status, persona, err := inbox.GetStatusDetailed(ctx, id)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, status, domain.StagingReceived)
+	testutil.RequireEqual(t, persona, "")
+}
+
+// --------------------------------------------------------------------------
+// TST-CORE-1224: GetStatusDetailed — non-existent ID returns error.
+// --------------------------------------------------------------------------
+
+func TestGetStatusDetailed_UnknownIDReturnsError(t *testing.T) {
+	inbox := newSQLiteStagingInbox(t)
+	ctx := context.Background()
+
+	_, _, err := inbox.GetStatusDetailed(ctx, "does-not-exist")
+	if err == nil {
+		t.Fatal("expected error for non-existent staging ID, got nil")
+	}
+}

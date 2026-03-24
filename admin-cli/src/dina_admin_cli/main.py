@@ -137,6 +137,81 @@ def status(ctx: click.Context) -> None:
         ctx.exit(1)
 
 
+# ── ask ──────────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.argument("text", nargs=-1, required=True)
+@click.pass_context
+def ask(ctx: click.Context, text: tuple[str, ...]) -> None:
+    """Query your vault — same as /ask on Telegram or dina ask on CLI.
+
+    \b
+    Examples:
+      dina-admin ask What kind of tea do I like?
+      dina-admin ask What is my FD status?
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    query = " ".join(text)
+    try:
+        result = client.ask(query)
+        if json_mode:
+            print_result(result, json_mode)
+        else:
+            content = (
+                result.get("content", "")
+                or result.get("response", "")
+                or "No response."
+            )
+            if isinstance(content, dict):
+                content = content.get("text", content.get("answer", str(content)))
+            click.echo(content)
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+# ── remember ─────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.argument("text", nargs=-1, required=True)
+@click.pass_context
+def remember(ctx: click.Context, text: tuple[str, ...]) -> None:
+    """Store a memory — same as /remember on Telegram or dina remember on CLI.
+
+    \b
+    Examples:
+      dina-admin remember My FD interest rate is now 7.8%
+      dina-admin remember Team standup moved to Tuesday 10am
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    memory = " ".join(text)
+    try:
+        result = client.remember(memory)
+        if json_mode:
+            print_result(result, json_mode)
+        else:
+            status = result.get("status", "unknown")
+            msg = result.get("message", "")
+            if status == "stored":
+                click.echo(f"Stored. {msg}")
+            elif status == "needs_approval":
+                click.echo(f"Needs approval. {msg}")
+                item_id = result.get("id", "")
+                if item_id:
+                    click.echo(f"  Check: dina-admin approvals")
+            elif status == "failed":
+                click.echo(f"Failed. {msg}")
+            else:
+                click.echo(f"{status}: {msg}")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
 # ── vault ─────────────────────────────────────────────────────────────────────
 
 

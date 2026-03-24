@@ -572,3 +572,140 @@ def test_vault_delete_error():
         mock_client=mc,
     )
     assert result.exit_code != 0
+
+
+# ── ask ──────────────────────────────────────────────────────────────────────
+
+
+def test_ask_returns_content():
+    """dina-admin ask should display the LLM response."""
+    mc = MagicMock()
+    mc.ask.return_value = {"content": "You like cardamom tea with ginger."}
+    result = _invoke(["ask", "What tea do I like"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "cardamom tea" in result.output
+    mc.ask.assert_called_once_with("What tea do I like")
+
+
+def test_ask_json_mode():
+    """--json returns full response dict."""
+    mc = MagicMock()
+    mc.ask.return_value = {"content": "answer", "model": "gemini"}
+    result = _invoke(["--json", "ask", "hello"], mock_client=mc)
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["content"] == "answer"
+
+
+def test_ask_response_field_fallback():
+    """Falls back to response field when content is empty."""
+    mc = MagicMock()
+    mc.ask.return_value = {"response": "fallback answer"}
+    result = _invoke(["ask", "test query"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "fallback answer" in result.output
+
+
+def test_ask_dict_response():
+    """Extracts text from dict-typed response."""
+    mc = MagicMock()
+    mc.ask.return_value = {"response": {"text": "structured response"}}
+    result = _invoke(["ask", "test"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "structured response" in result.output
+
+
+def test_ask_no_text_shows_error():
+    """Missing text argument should fail."""
+    mc = MagicMock()
+    result = _invoke(["ask"], mock_client=mc)
+    assert result.exit_code != 0
+
+
+def test_ask_error_shows_message():
+    """API error should display error message."""
+    mc = MagicMock()
+    mc.ask.side_effect = AdminClientError("Brain unreachable")
+    result = _invoke(["ask", "hello"], mock_client=mc)
+    assert result.exit_code != 0
+    assert "Brain unreachable" in result.output
+
+
+def test_ask_multi_word_query():
+    """Multiple arguments are joined into one query."""
+    mc = MagicMock()
+    mc.ask.return_value = {"content": "ok"}
+    result = _invoke(["ask", "What", "is", "my", "FD", "status"], mock_client=mc)
+    assert result.exit_code == 0
+    mc.ask.assert_called_once_with("What is my FD status")
+
+
+# ── remember ─────────────────────────────────────────────────────────────────
+
+
+def test_remember_stored():
+    """dina-admin remember should display stored status."""
+    mc = MagicMock()
+    mc.remember.return_value = {"status": "stored", "message": "Memory stored successfully."}
+    result = _invoke(["remember", "Team lunch Friday 1pm"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "Stored" in result.output
+    mc.remember.assert_called_once_with("Team lunch Friday 1pm")
+
+
+def test_remember_needs_approval():
+    """Sensitive data triggers approval prompt."""
+    mc = MagicMock()
+    mc.remember.return_value = {
+        "status": "needs_approval",
+        "message": "Classified into a sensitive persona.",
+        "id": "stg-123",
+    }
+    result = _invoke(["remember", "My cholesterol is 220"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "approval" in result.output.lower()
+
+
+def test_remember_failed():
+    """Failed remember shows error."""
+    mc = MagicMock()
+    mc.remember.return_value = {"status": "failed", "message": "Classification error."}
+    result = _invoke(["remember", "broken input"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "Failed" in result.output
+
+
+def test_remember_json_mode():
+    """--json returns full result dict."""
+    mc = MagicMock()
+    mc.remember.return_value = {"status": "stored", "id": "stg-abc", "message": "ok"}
+    result = _invoke(["--json", "remember", "test memory"], mock_client=mc)
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "stored"
+    assert data["id"] == "stg-abc"
+
+
+def test_remember_no_text_shows_error():
+    """Missing text argument should fail."""
+    mc = MagicMock()
+    result = _invoke(["remember"], mock_client=mc)
+    assert result.exit_code != 0
+
+
+def test_remember_error_shows_message():
+    """API error should display error message."""
+    mc = MagicMock()
+    mc.remember.side_effect = AdminClientError("staging failed")
+    result = _invoke(["remember", "test"], mock_client=mc)
+    assert result.exit_code != 0
+    assert "staging failed" in result.output
+
+
+def test_remember_multi_word_text():
+    """Multiple arguments are joined into one text."""
+    mc = MagicMock()
+    mc.remember.return_value = {"status": "stored", "message": "ok"}
+    result = _invoke(["remember", "FD", "rate", "is", "7.8%"], mock_client=mc)
+    assert result.exit_code == 0
+    mc.remember.assert_called_once_with("FD rate is 7.8%")

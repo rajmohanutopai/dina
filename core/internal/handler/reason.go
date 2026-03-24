@@ -58,7 +58,7 @@ func (h *ReasonHandler) HandleReason(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	case "user":
+	case "user", "admin":
 		source = "admin"
 	}
 

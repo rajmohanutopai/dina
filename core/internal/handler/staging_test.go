@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pairing"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -478,5 +480,383 @@ func TestHandleFail_MethodNotAllowed(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+// ==========================================================================
+// HandleStatus Tests
+// Verifies GET /v1/staging/status/{id}: 200 with persona, 200 without
+// persona, 404 for unknown ID, 405 for non-GET, 400 for empty ID.
+// Also verifies that resolveRequest.UserOrigin injects UserOriginatedKey
+// into context via injectUserOrigin.
+// ==========================================================================
+
+// stubDetailedStagingInbox is a minimal port.StagingInbox implementation
+// that also satisfies the detailedGetter interface used by HandleStatus.
+// Controls GetStatus and GetStatusDetailed independently.
+type stubDetailedStagingInbox struct {
+	// GetStatusDetailed results, keyed by id.
+	detailedStatus  map[string]string
+	detailedPersona map[string]string
+	// ids that should return error from GetStatusDetailed.
+	notFound map[string]bool
+}
+
+func newStubDetailedInbox() *stubDetailedStagingInbox {
+	return &stubDetailedStagingInbox{
+		detailedStatus:  make(map[string]string),
+		detailedPersona: make(map[string]string),
+		notFound:        make(map[string]bool),
+	}
+}
+
+// Satisfy port.StagingInbox (only GetStatus needs a real body for this stub;
+// the rest panic if called — the tests covered here never call them).
+func (s *stubDetailedStagingInbox) Ingest(_ context.Context, _ domain.StagingItem) (string, error) {
+	panic("stub: Ingest not implemented")
+}
+func (s *stubDetailedStagingInbox) GetStatus(_ context.Context, id, _ string) (string, error) {
+	if s.notFound[id] {
+		return "", fmt.Errorf("staging: item %s not found", id)
+	}
+	status, ok := s.detailedStatus[id]
+	if !ok {
+		return "", fmt.Errorf("staging: item %s not found", id)
+	}
+	return status, nil
+}
+func (s *stubDetailedStagingInbox) Claim(_ context.Context, _ int, _ time.Duration) ([]domain.StagingItem, error) {
+	panic("stub: Claim not implemented")
+}
+func (s *stubDetailedStagingInbox) Resolve(_ context.Context, _, _ string, _ domain.VaultItem) error {
+	panic("stub: Resolve not implemented")
+}
+func (s *stubDetailedStagingInbox) ResolveMulti(_ context.Context, _ string, _ []domain.ResolveTarget) error {
+	panic("stub: ResolveMulti not implemented")
+}
+func (s *stubDetailedStagingInbox) ExtendLease(_ context.Context, _ string, _ time.Duration) error {
+	panic("stub: ExtendLease not implemented")
+}
+func (s *stubDetailedStagingInbox) MarkFailed(_ context.Context, _, _ string) error {
+	panic("stub: MarkFailed not implemented")
+}
+func (s *stubDetailedStagingInbox) MarkPendingApproval(_ context.Context, _, _ string, _ domain.VaultItem) error {
+	panic("stub: MarkPendingApproval not implemented")
+}
+func (s *stubDetailedStagingInbox) CreatePendingCopy(_ context.Context, _, _ string, _ domain.VaultItem) error {
+	panic("stub: CreatePendingCopy not implemented")
+}
+func (s *stubDetailedStagingInbox) DrainPending(_ context.Context, _ string) (int, error) {
+	panic("stub: DrainPending not implemented")
+}
+func (s *stubDetailedStagingInbox) Sweep(_ context.Context) (int, error) {
+	panic("stub: Sweep not implemented")
+}
+func (s *stubDetailedStagingInbox) ListByStatus(_ context.Context, _ string, _ int) ([]domain.StagingItem, error) {
+	panic("stub: ListByStatus not implemented")
+}
+
+// GetStatusDetailed satisfies the detailedGetter interface used by HandleStatus.
+func (s *stubDetailedStagingInbox) GetStatusDetailed(_ context.Context, id string) (string, string, error) {
+	if s.notFound[id] {
+		return "", "", fmt.Errorf("staging: item %s not found", id)
+	}
+	status, ok := s.detailedStatus[id]
+	if !ok {
+		return "", "", fmt.Errorf("staging: item %s not found", id)
+	}
+	return status, s.detailedPersona[id], nil
+}
+
+// --------------------------------------------------------------------------
+// 16. TestHandleStatus_ReturnsStatusAndPersona — stored item returns status
+//     + persona in the response body.
+// --------------------------------------------------------------------------
+
+func TestHandleStatus_ReturnsStatusAndPersona(t *testing.T) {
+	stub := newStubDetailedInbox()
+	stub.detailedStatus["item-abc"] = domain.StagingStored
+	stub.detailedPersona["item-abc"] = "general"
+
+	h := &StagingHandler{Staging: stub}
+
+	r := httptest.NewRequest(http.MethodGet, "/v1/staging/status/item-abc", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleStatus(rec, r)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if resp["id"] != "item-abc" {
+		t.Errorf("id: got %v, want item-abc", resp["id"])
+	}
+	if resp["status"] != domain.StagingStored {
+		t.Errorf("status: got %v, want %s", resp["status"], domain.StagingStored)
+	}
+	if resp["persona"] != "general" {
+		t.Errorf("persona: got %v, want general", resp["persona"])
+	}
+}
+
+// --------------------------------------------------------------------------
+// 17. TestHandleStatus_ReturnsStatusWithoutPersona — received item has no
+//     target_persona yet; response must not include "persona" key.
+// --------------------------------------------------------------------------
+
+func TestHandleStatus_ReturnsStatusWithoutPersona(t *testing.T) {
+	stub := newStubDetailedInbox()
+	stub.detailedStatus["item-xyz"] = domain.StagingReceived
+	// No persona entry → GetStatusDetailed returns empty string for persona.
+
+	h := &StagingHandler{Staging: stub}
+
+	r := httptest.NewRequest(http.MethodGet, "/v1/staging/status/item-xyz", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleStatus(rec, r)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if resp["status"] != domain.StagingReceived {
+		t.Errorf("status: got %v, want %s", resp["status"], domain.StagingReceived)
+	}
+	if _, hasPersona := resp["persona"]; hasPersona {
+		t.Errorf("persona key must be absent for unresolved items, got %v", resp["persona"])
+	}
+}
+
+// --------------------------------------------------------------------------
+// 18. TestHandleStatus_NotFound — unknown ID returns 404.
+// --------------------------------------------------------------------------
+
+func TestHandleStatus_NotFound(t *testing.T) {
+	stub := newStubDetailedInbox()
+	stub.notFound["missing-id"] = true
+
+	h := &StagingHandler{Staging: stub}
+
+	r := httptest.NewRequest(http.MethodGet, "/v1/staging/status/missing-id", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleStatus(rec, r)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp["error"] != "item not found" {
+		t.Errorf("error: got %q, want \"item not found\"", resp["error"])
+	}
+}
+
+// --------------------------------------------------------------------------
+// 19. TestHandleStatus_MethodNotAllowed — non-GET method returns 405.
+// --------------------------------------------------------------------------
+
+func TestHandleStatus_MethodNotAllowed(t *testing.T) {
+	h := &StagingHandler{Staging: nil}
+
+	r := httptest.NewRequest(http.MethodPost, "/v1/staging/status/item-abc", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleStatus(rec, r)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+// --------------------------------------------------------------------------
+// 20. TestHandleStatus_EmptyID — request with no trailing ID returns 400.
+// --------------------------------------------------------------------------
+
+func TestHandleStatus_EmptyID(t *testing.T) {
+	h := &StagingHandler{Staging: nil}
+
+	// Path ends exactly at the prefix with no id segment.
+	r := httptest.NewRequest(http.MethodGet, "/v1/staging/status/", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleStatus(rec, r)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp["error"] != "id is required" {
+		t.Errorf("error: got %q, want \"id is required\"", resp["error"])
+	}
+}
+
+// --------------------------------------------------------------------------
+// 21. TestHandleStatus_FallbackToGetStatus — inbox without GetStatusDetailed
+//     falls back to the base GetStatus method.
+// --------------------------------------------------------------------------
+
+// stubBasicStagingInbox implements port.StagingInbox WITHOUT GetStatusDetailed.
+// HandleStatus must fall back to GetStatus in this case.
+type stubBasicStagingInbox struct {
+	statuses map[string]string
+	notFound map[string]bool
+}
+
+func newStubBasicInbox() *stubBasicStagingInbox {
+	return &stubBasicStagingInbox{
+		statuses: make(map[string]string),
+		notFound: make(map[string]bool),
+	}
+}
+
+func (s *stubBasicStagingInbox) Ingest(_ context.Context, _ domain.StagingItem) (string, error) {
+	panic("stub: Ingest not implemented")
+}
+func (s *stubBasicStagingInbox) GetStatus(_ context.Context, id, _ string) (string, error) {
+	if s.notFound[id] {
+		return "", fmt.Errorf("staging: item %s not found", id)
+	}
+	status, ok := s.statuses[id]
+	if !ok {
+		return "", fmt.Errorf("staging: item %s not found", id)
+	}
+	return status, nil
+}
+func (s *stubBasicStagingInbox) Claim(_ context.Context, _ int, _ time.Duration) ([]domain.StagingItem, error) {
+	panic("stub: Claim not implemented")
+}
+func (s *stubBasicStagingInbox) Resolve(_ context.Context, _, _ string, _ domain.VaultItem) error {
+	panic("stub: Resolve not implemented")
+}
+func (s *stubBasicStagingInbox) ResolveMulti(_ context.Context, _ string, _ []domain.ResolveTarget) error {
+	panic("stub: ResolveMulti not implemented")
+}
+func (s *stubBasicStagingInbox) ExtendLease(_ context.Context, _ string, _ time.Duration) error {
+	panic("stub: ExtendLease not implemented")
+}
+func (s *stubBasicStagingInbox) MarkFailed(_ context.Context, _, _ string) error {
+	panic("stub: MarkFailed not implemented")
+}
+func (s *stubBasicStagingInbox) MarkPendingApproval(_ context.Context, _, _ string, _ domain.VaultItem) error {
+	panic("stub: MarkPendingApproval not implemented")
+}
+func (s *stubBasicStagingInbox) CreatePendingCopy(_ context.Context, _, _ string, _ domain.VaultItem) error {
+	panic("stub: CreatePendingCopy not implemented")
+}
+func (s *stubBasicStagingInbox) DrainPending(_ context.Context, _ string) (int, error) {
+	panic("stub: DrainPending not implemented")
+}
+func (s *stubBasicStagingInbox) Sweep(_ context.Context) (int, error) {
+	panic("stub: Sweep not implemented")
+}
+func (s *stubBasicStagingInbox) ListByStatus(_ context.Context, _ string, _ int) ([]domain.StagingItem, error) {
+	panic("stub: ListByStatus not implemented")
+}
+
+func TestHandleStatus_FallbackToGetStatus(t *testing.T) {
+	stub := newStubBasicInbox()
+	stub.statuses["item-fallback"] = domain.StagingClassifying
+
+	h := &StagingHandler{Staging: stub}
+
+	r := httptest.NewRequest(http.MethodGet, "/v1/staging/status/item-fallback", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleStatus(rec, r)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp["status"] != domain.StagingClassifying {
+		t.Errorf("status: got %v, want %s", resp["status"], domain.StagingClassifying)
+	}
+	// No persona key expected from fallback path.
+	if _, hasPersona := resp["persona"]; hasPersona {
+		t.Errorf("persona key must be absent when using fallback GetStatus path")
+	}
+}
+
+// ==========================================================================
+// UserOrigin on resolveRequest — verifies that injectUserOrigin is called
+// with req.UserOrigin during HandleResolve, producing the expected context
+// values (UserOriginatedKey and UserOriginKey).
+//
+// These tests exercise injectUserOrigin directly (already covered in
+// vault_test.go) and confirm that HandleResolve passes UserOrigin through.
+// The resolve handler integration is tested via the context propagation path.
+// ==========================================================================
+
+// --------------------------------------------------------------------------
+// 22. TestResolveRequest_UserOriginTelegram — resolveRequest with
+//     UserOrigin="telegram" and brain caller type injects UserOriginatedKey.
+// --------------------------------------------------------------------------
+
+func TestResolveRequest_UserOriginTelegram(t *testing.T) {
+	// injectUserOrigin requires CallerType=brain.
+	r := httptest.NewRequest("POST", "/v1/staging/resolve", nil)
+	ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "brain")
+	r = r.WithContext(ctx)
+
+	// Simulate what HandleResolve does: call injectUserOrigin with UserOrigin.
+	r = injectUserOrigin(r, "telegram")
+
+	gotOriginated, _ := r.Context().Value(middleware.UserOriginatedKey).(bool)
+	if !gotOriginated {
+		t.Error("UserOriginatedKey must be true when user_origin=telegram from brain caller")
+	}
+	gotOrigin, _ := r.Context().Value(middleware.UserOriginKey).(string)
+	if gotOrigin != "telegram" {
+		t.Errorf("UserOriginKey: got %q, want \"telegram\"", gotOrigin)
+	}
+}
+
+// --------------------------------------------------------------------------
+// 23. TestResolveRequest_UserOriginEmpty — resolveRequest without UserOrigin
+//     must NOT inject UserOriginatedKey into context.
+// --------------------------------------------------------------------------
+
+func TestResolveRequest_UserOriginEmpty(t *testing.T) {
+	r := httptest.NewRequest("POST", "/v1/staging/resolve", nil)
+	ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "brain")
+	r = r.WithContext(ctx)
+
+	// Empty UserOrigin → no injection.
+	r = injectUserOrigin(r, "")
+
+	gotOriginated, _ := r.Context().Value(middleware.UserOriginatedKey).(bool)
+	if gotOriginated {
+		t.Error("UserOriginatedKey must NOT be set when user_origin is empty")
+	}
+}
+
+// --------------------------------------------------------------------------
+// 24. TestResolveRequest_UserOriginNonBrainIgnored — non-brain caller with
+//     UserOrigin must NOT inject UserOriginatedKey (security boundary).
+// --------------------------------------------------------------------------
+
+func TestResolveRequest_UserOriginNonBrainIgnored(t *testing.T) {
+	for _, caller := range []string{"agent", "connector", "admin"} {
+		r := httptest.NewRequest("POST", "/v1/staging/resolve", nil)
+		ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, caller)
+		r = r.WithContext(ctx)
+
+		r = injectUserOrigin(r, "telegram")
+
+		gotOriginated, _ := r.Context().Value(middleware.UserOriginatedKey).(bool)
+		if gotOriginated {
+			t.Errorf("caller=%q: UserOriginatedKey must NOT be set for non-brain callers", caller)
+		}
 	}
 }
