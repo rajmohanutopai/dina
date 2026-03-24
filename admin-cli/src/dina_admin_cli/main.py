@@ -137,6 +137,59 @@ def status(ctx: click.Context) -> None:
         ctx.exit(1)
 
 
+# ── inbox ─────────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.pass_context
+def inbox(ctx: click.Context) -> None:
+    """Show received D2D messages.
+
+    \b
+    Examples:
+      dina-admin inbox
+    """
+    import base64
+
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        data = client.inbox()
+        messages = data.get("messages", [])
+        if json_mode:
+            print_result(messages, json_mode)
+        elif not messages:
+            click.echo("No messages.")
+        else:
+            # Resolve DIDs to contact names.
+            did_names: dict[str, str] = {}
+            try:
+                contacts_resp = client._request("GET", "/v1/contacts")
+                for c in contacts_resp.json().get("contacts", []):
+                    did_names[c.get("did", "")] = c.get("name", "")
+            except Exception:
+                pass
+
+            click.echo(f"  {len(messages)} message(s)\n")
+            for m in messages:
+                msg_type = m.get("type", "?")
+                from_did = m.get("from", "?")
+                sender = did_names.get(from_did, from_did[:30] + "...")
+                quarantined = m.get("quarantined", False)
+                raw_body = m.get("body", "")
+                try:
+                    body = base64.b64decode(raw_body).decode("utf-8", errors="replace")
+                except Exception:
+                    body = str(raw_body)
+                q_flag = " [QUARANTINED]" if quarantined else ""
+                click.echo(f"  {msg_type:25s} from {sender}{q_flag}")
+                click.echo(f"    {body[:120]}")
+                click.echo()
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
 # ── ask ──────────────────────────────────────────────────────────────────────
 
 

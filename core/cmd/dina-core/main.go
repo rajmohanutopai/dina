@@ -812,6 +812,20 @@ func main() {
 		if stageD2DMemory != nil {
 			stageD2DMemory(context.Background(), msg)
 		}
+		// Push to Brain for nudge assembly / handler routing.
+		go func() {
+			bodyStr := string(msg.Body)
+			_ = brain.Process(context.Background(), domain.TaskEvent{
+				Type: string(msg.Type),
+				Payload: map[string]interface{}{
+					"from":         msg.From,
+					"body":         bodyStr,
+					"id":           msg.ID,
+					"created_time": msg.CreatedTime,
+					"type":         string(msg.Type),
+				},
+			})
+		}()
 	})
 	ingressSweeper.SetTransport(transportSvc)
 	ingressRouter := ingress.NewRouter(vaultMgr, inboxMgr, deadDrop, ingressSweeper, ingressLimiter)
@@ -864,6 +878,20 @@ func main() {
 		if stageD2DMemory != nil {
 			stageD2DMemory(ctx, msg)
 		}
+		// Push to Brain for nudge assembly / handler routing.
+		go func() {
+			bodyStr := string(msg.Body)
+			_ = brain.Process(context.Background(), domain.TaskEvent{
+				Type: string(msg.Type),
+				Payload: map[string]interface{}{
+					"from":         msg.From,
+					"body":         bodyStr,
+					"id":           msg.ID,
+					"created_time": msg.CreatedTime,
+					"type":         string(msg.Type),
+				},
+			})
+		}()
 		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)
 		return nil
 	})

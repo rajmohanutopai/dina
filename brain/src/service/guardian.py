@@ -390,12 +390,11 @@ class ActionRiskPolicy:
 # D2D v1 message type prefixes and their handlers.
 # v1 families use flat dotted names (e.g. "social.update") not path prefixes.
 _DIDCOMM_HANDLERS: dict[str, str] = {
-    "social.":   "nudge_assembly",
-    "commerce.": "commerce_handler",
-    "trust.":    "trust_handler",
-    "presence.": "presence_handler",
-    "safety.":   "safety_handler",
-    "estate.":   "estate_handler",
+    "presence.":     "nudge_assembly",     # Sancho arriving → nudge with vault context
+    "coordination.": "nudge_assembly",     # Dinner proposal → nudge to user
+    "social.":       "nudge_assembly",     # Life event → nudge + vault storage
+    "trust.":        "trust_handler",      # Vouch request/response
+    "safety.":       "safety_handler",     # Urgent alerts → always notify
 }
 
 # D2D v1 memory-producing message types → vault item type.
@@ -4422,7 +4421,24 @@ class GuardianLoop:
         signals (arrival, typing) are processed immediately, not staged.
         """
         msg_type = event.get("type", "")
-        from_did = event.get("from", "")
+        # D2D events arrive via Core's brain.Process() with fields in "payload".
+        payload = event.get("payload") or event
+        from_did = payload.get("from", "") or event.get("from", "")
+        # Set contact_did so nudge assembler can find vault context.
+        if from_did and "contact_did" not in event:
+            event["contact_did"] = from_did
+
+        # Resolve sender DID to human-readable contact name.
+        sender_name = from_did[:25] + "..." if from_did else "Unknown"
+        try:
+            # Use raw HTTP to avoid Pydantic validation issues with Contact model.
+            resp = await self._core._request("GET", "/v1/contacts")
+            for c in resp.json().get("contacts", []):
+                if c.get("did") == from_did:
+                    sender_name = c.get("name") or sender_name
+                    break
+        except Exception:
+            pass  # best-effort
 
         # Stage memory-producing D2D content before handling.
         # Only types in _D2D_VAULT_TYPE_MAP are persisted; real-time
@@ -4430,7 +4446,7 @@ class GuardianLoop:
         staged = False
         vault_type = _D2D_VAULT_TYPE_MAP.get(msg_type)
         if vault_type is not None:
-            body = event.get("body", "")
+            body = payload.get("body", "") or event.get("body", "")
             if isinstance(body, dict):
                 body = json.dumps(body)
             try:
@@ -4467,12 +4483,88 @@ class GuardianLoop:
                 # For social messages, run through nudge assembly.
                 if handler == "nudge_assembly":
                     nudge = await self._nudge.assemble_nudge(event, from_did)
+                    # Push to Telegram: nudge if available, else raw D2D notification.
+                    if hasattr(self, "_telegram") and self._telegram:
+                        if not self._telegram._paired_users:
+                            await self._telegram.load_paired_users()
+                        notify_text = None
+                        if nudge and nudge.get("text"):
+                            notify_text = f"💬 {nudge['text']}"
+                        else:
+                            # No vault context — send basic D2D notification.
+                            raw_body = payload.get("body", "") or event.get("body", "")
+                            try:
+                                body_dict = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+                            except Exception:
+                                body_dict = {}
+                            if isinstance(body_dict, dict):
+                                action = body_dict.get("action", body_dict.get("status", ""))
+                                context = body_dict.get("context", body_dict.get("location_label", body_dict.get("text", "")))
+                                if action:
+                                    notify_text = f"📬 {sender_name} — {action}"
+                                    if context:
+                                        notify_text += f": {context}"
+                        if notify_text:
+                            try:
+                                for chat_id in self._telegram._paired_users:
+                                    await self._telegram._bot.send_message(chat_id, notify_text)
+                                log.info("guardian.didcomm.nudge_sent", handler=handler)
+                            except Exception:
+                                log.warning("guardian.didcomm.nudge_send_failed")
                     return {
                         "action": "nudge_assembled",
                         "handler": handler,
                         "nudge": nudge,
                         "staged": staged,
                     }
+                # Push safety alerts and coordination to Telegram immediately.
+                if hasattr(self, "_telegram") and self._telegram:
+                    # Body is in the payload dict from Core's brain.Process().
+                    raw_body = payload.get("body", "") or event.get("body", "")
+                    body = raw_body
+                    if isinstance(body, (bytes, bytearray)):
+                        try:
+                            body = json.loads(body)
+                        except Exception:
+                            body = body.decode("utf-8", errors="replace")
+                    elif isinstance(body, str):
+                        try:
+                            body = json.loads(body)
+                        except Exception:
+                            pass
+
+                    notify_text = None
+                    if handler == "safety_handler" and isinstance(body, dict):
+                        severity = body.get("severity", "")
+                        msg = body.get("message", str(body))
+                        notify_text = f"🚨 Safety Alert ({severity}): {msg}"
+                    elif handler == "nudge_assembly" and isinstance(body, dict):
+                        # Coordination/presence — if nudge was empty, send raw info
+                        action = body.get("action", body.get("status", ""))
+                        context = body.get("context", body.get("location_label", ""))
+                        if action:
+                            notify_text = f"📬 {sender_name} — {action}"
+                            if context:
+                                notify_text += f": {context}"
+                    elif handler == "trust_handler" and isinstance(body, dict):
+                        vouch = body.get("vouch", "")
+                        subject = body.get("subject_did", "")[:25]
+                        if vouch:
+                            notify_text = f"🤝 Vouch response for {subject}...: {vouch}"
+
+                    if notify_text:
+                        # Lazy retry: load paired users if empty (startup race).
+                        if not self._telegram._paired_users:
+                            await self._telegram.load_paired_users()
+                        try:
+                            for chat_id in self._telegram._paired_users:
+                                await self._telegram._bot.send_message(
+                                    chat_id, notify_text,
+                                )
+                            log.info("guardian.didcomm.notify_sent", handler=handler)
+                        except Exception:
+                            log.warning("guardian.didcomm.notify_send_failed", handler=handler)
+
                 return {"action": "routed", "handler": handler, "staged": staged}
 
         log.warning("guardian.didcomm.unknown_type", msg_type=msg_type)

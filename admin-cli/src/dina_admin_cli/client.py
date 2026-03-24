@@ -254,3 +254,10 @@ class AdminClient:
             "source": "admin",
         }, timeout=30.0)
         return resp.json()
+
+    # -- D2D inbox --------------------------------------------------------
+
+    def inbox(self) -> dict:
+        """GET /v1/msg/inbox — list received D2D messages."""
+        resp = self._request("GET", "/v1/msg/inbox")
+        return resp.json()
