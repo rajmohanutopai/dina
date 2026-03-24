@@ -133,6 +133,59 @@ func (h *StagingHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleStatus handles GET /v1/staging/status/{id} — check staging item status.
+// Returns the current status (received, classifying, stored, pending_unlock, failed)
+// and the target persona when known. Brain uses this to report results to channels.
+func (h *StagingHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract ID from path: /v1/staging/status/{id}
+	prefix := "/v1/staging/status/"
+	id := ""
+	if len(r.URL.Path) > len(prefix) {
+		id = r.URL.Path[len(prefix):]
+	}
+	if id == "" {
+		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Use the concrete type's GetStatusDetailed for persona info.
+	type detailedGetter interface {
+		GetStatusDetailed(ctx context.Context, id string) (string, string, error)
+	}
+	var status, persona string
+	if dg, ok := h.Staging.(detailedGetter); ok {
+		var err error
+		status, persona, err = dg.GetStatusDetailed(r.Context(), id)
+		if err != nil {
+			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+			return
+		}
+	} else {
+		var err error
+		status, err = h.Staging.GetStatus(r.Context(), id, "")
+		if err != nil {
+			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+			return
+		}
+	}
+
+	resp := map[string]interface{}{
+		"id":     id,
+		"status": status,
+	}
+	if persona != "" {
+		resp["persona"] = persona
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // deriveProvenance sets ingress provenance from auth context.
 // Device/connector callers get server-overridden values.
 // Brain (service key) can set them explicitly for relay (Telegram/D2D in Phase 2+).
@@ -254,6 +307,7 @@ type resolveRequest struct {
 	TargetPersona  string                 `json:"target_persona"`
 	ClassifiedItem domain.VaultItem       `json:"classified_item"`
 	Targets        []domain.ResolveTarget `json:"targets"`
+	UserOrigin     string                 `json:"user_origin"`
 }
 
 // HandleResolve handles POST /v1/staging/resolve. Brain calls this after
@@ -293,6 +347,10 @@ func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Inject user-origin context for user-originated content (Telegram, admin).
+	// This bypasses persona access approval — the user IS the owner.
+	r = injectUserOrigin(r, req.UserOrigin)
 
 	// Session-scoped access check + resolve.
 	// Single-target: check access, return 403 or resolve.

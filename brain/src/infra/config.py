@@ -59,8 +59,9 @@ class BrainConfig:
     llm_routing_enabled: bool
     owner_name: str
     telegram_token: str | None
-    telegram_allowed_users: frozenset[int]
-    telegram_allowed_groups: frozenset[int]
+    telegram_api_base_url: str | None = None
+    telegram_allowed_users: frozenset[int] = frozenset()
+    telegram_allowed_groups: frozenset[int] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +141,8 @@ def load_brain_config() -> BrainConfig:
         telegram_token = _read_secret_from_file(
             telegram_token_file, secret_name="TELEGRAM_TOKEN",
         )
+
+    telegram_api_base_url = os.environ.get("DINA_TELEGRAM_API_BASE_URL", "").strip() or None
 
     telegram_allowed_users: frozenset[int] = frozenset()
     raw_tg_users = os.environ.get("DINA_TELEGRAM_ALLOWED_USERS", "").strip()

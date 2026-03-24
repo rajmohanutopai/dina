@@ -225,11 +225,18 @@ class StagingProcessor:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
+                # User-originated items (Telegram, admin) bypass persona
+                # access approval — the user IS the owner, consent is implicit.
+                _user_origin = ""
+                if ingress_channel in ("telegram", "admin"):
+                    _user_origin = ingress_channel
+
                 resolve_status = "stored"
                 if len(personas) == 1:
                     result = await self._core.staging_resolve(
                         item_id, personas[0], base_classified,
                         session=item_session, agent_did=item_agent_did,
+                        user_origin=_user_origin,
                     )
                     resolve_status = result.get("status", "stored") if isinstance(result, dict) else "stored"
                 else:
@@ -241,6 +248,7 @@ class StagingProcessor:
                     result = await self._core.staging_resolve_multi(
                         item_id, targets,
                         session=item_session, agent_did=item_agent_did,
+                        user_origin=_user_origin,
                     )
                     resolve_status = result.get("status", "stored") if isinstance(result, dict) else "stored"
 

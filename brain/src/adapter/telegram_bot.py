@@ -60,10 +60,12 @@ class TelegramBotAdapter:
         message_callback: HandlerCallback,
         command_callbacks: dict[str, HandlerCallback] | None = None,
         callback_query_handler: HandlerCallback | None = None,
+        base_url: str | None = None,
     ) -> None:
-        self._app: Application = (  # type: ignore[type-arg]
-            Application.builder().token(bot_token).build()
-        )
+        builder = Application.builder().token(bot_token)
+        if base_url:
+            builder = builder.base_url(base_url).base_file_url(base_url + "/file")
+        self._app: Application = builder.build()  # type: ignore[type-arg]
         self._bot_username: str = ""
 
         # Register command handlers (e.g. /start, /help).

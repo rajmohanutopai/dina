@@ -22,6 +22,7 @@ No imports from adapter/ — only port protocols and domain types.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -158,7 +159,153 @@ class TelegramService:
         )
 
     # ------------------------------------------------------------------
-    # Message handler
+    # /remember command
+    # ------------------------------------------------------------------
+
+    async def handle_remember(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /remember <text> — store a memory via staging pipeline.
+
+        Mirrors ``dina remember``. The text is ingested into staging,
+        classified by Brain, and stored in the appropriate persona vault.
+        Sensitive personas will trigger an approval notification.
+        """
+        if not update.effective_user or not update.effective_chat:
+            return
+        if not update.message:
+            return
+
+        user_id = update.effective_user.id
+        if not self._is_allowed_user(user_id):
+            await update.message.reply_text(
+                "I don't recognise you yet. Send /start to pair."
+            )
+            return
+
+        # Auto-pair on first interaction.
+        if user_id not in self._paired_users:
+            await self._pair_user(user_id, update.effective_chat.id)
+
+        # Extract text after /remember command.
+        text = (update.message.text or "").strip()
+        # Remove the /remember prefix.
+        if text.lower().startswith("/remember"):
+            text = text[len("/remember"):].strip()
+        if not text:
+            await update.message.reply_text(
+                "Usage: /remember <text>\n"
+                "Example: /remember My FD interest rate is now 7.8%"
+            )
+            return
+
+        try:
+            staging_id = await self._core.staging_ingest({
+                "type": "note",
+                "source": "telegram",
+                "source_id": f"tg_{update.update_id}",
+                "summary": text[:200],
+                "body": text,
+                "sender": str(user_id),
+                "metadata": json.dumps({"timestamp": int(time.time())}),
+                "ingress_channel": "telegram",
+                "origin_kind": "user",
+            })
+
+            # Poll staging status by ID (same contract as CLI's remember-status).
+            # Core triggers Brain drain after ingest; we wait for terminal state.
+            result_msg = "Noted."
+            for _ in range(15):  # up to ~15 seconds
+                await asyncio.sleep(1)
+                try:
+                    status = await self._core.staging_status(staging_id)
+                    s = status.get("status", "")
+                    persona = status.get("persona", "")
+                    vault_label = f" *{persona}*" if persona else ""
+                    if s == "stored":
+                        result_msg = f"Stored in{vault_label} vault."
+                        break
+                    elif s in ("needs_approval", "pending_unlock"):
+                        result_msg = f"Needs approval for{vault_label} vault."
+                        break
+                    elif s == "failed":
+                        result_msg = "Failed to store."
+                        break
+                    # received, classifying — still processing, continue polling
+                except Exception:
+                    break
+
+            await update.message.reply_text(result_msg, parse_mode="Markdown")
+        except Exception as exc:
+            log.error(
+                "telegram.remember_failed",
+                extra={"error": type(exc).__name__},
+            )
+            await update.message.reply_text(
+                "Sorry, I couldn't save that. Please try again."
+            )
+
+    # ------------------------------------------------------------------
+    # /ask command
+    # ------------------------------------------------------------------
+
+    async def handle_ask(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /ask <text> — vault query via Guardian.
+
+        Mirrors ``dina ask``. Read-only — never stores data.
+        """
+        if not update.effective_user or not update.effective_chat:
+            return
+        if not update.message:
+            return
+
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        if not self._is_allowed_user(user_id):
+            await update.message.reply_text(
+                "I don't recognise you yet. Send /start to pair."
+            )
+            return
+
+        if user_id not in self._paired_users:
+            await self._pair_user(user_id, chat_id)
+
+        text = (update.message.text or "").strip()
+        if text.lower().startswith("/ask"):
+            text = text[len("/ask"):].strip()
+        if not text:
+            await update.message.reply_text(
+                "Usage: /ask <question>\n"
+                "Example: /ask What is my FD status?"
+            )
+            return
+
+        try:
+            result = await self._guardian.process_event({
+                "type": "reason",
+                "prompt": text,
+                "persona_id": "default",
+                "source": "telegram",
+                "chat_id": chat_id,
+                "user_id": user_id,
+            })
+            response_text = self._extract_response(result)
+            if response_text:
+                await update.message.reply_text(response_text)
+        except Exception as exc:
+            log.error(
+                "telegram.ask_failed",
+                extra={"error": type(exc).__name__, "chat_id": chat_id},
+            )
+            await update.message.reply_text(
+                "Something went wrong. Please try again."
+            )
+
+    # ------------------------------------------------------------------
+    # Message handler (default = ask)
     # ------------------------------------------------------------------
 
     async def handle_message(
@@ -166,6 +313,7 @@ class TelegramService:
     ) -> None:
         """Handle incoming text messages (non-command).
 
+        Default behavior is read-only vault query (same as /ask).
         DM messages from paired users are forwarded to Guardian.
         Group messages are only processed if the group is in the
         allowlist and the message @-mentions the bot.
@@ -202,38 +350,18 @@ class TelegramService:
             if user_id not in self._paired_users:
                 await self._pair_user(user_id, chat_id)
 
-        # --- Check for approval response (approve/deny commands) ---
+        # --- Check for approval response (approve/deny via text) ---
         approval_response = await self.handle_approval_response(text)
         if approval_response:
             await update.message.reply_text(approval_response, parse_mode="Markdown")
             return
 
-        # --- Process via Guardian ---
-        try:
-            result = await self._guardian.process_event({
-                "type": "reason",
-                "prompt": text,
-                "persona_id": "default",
-                "source": "telegram",
-                "chat_id": chat_id,
-                "user_id": user_id,
-            })
-
-            response_text = self._extract_response(result)
-            if response_text:
-                await update.message.reply_text(response_text)
-
-        except Exception as exc:
-            log.error(
-                "telegram.process_failed",
-                extra={"error": type(exc).__name__, "chat_id": chat_id},
-            )
-            await update.message.reply_text(
-                "Something went wrong processing your message. Please try again."
-            )
-
-        # --- Store in vault for memory ---
-        await self._store_message(update, text)
+        # --- No default action — guide the user ---
+        await update.message.reply_text(
+            "Currently I support these commands:\n\n"
+            "/ask <question> — query your vault\n"
+            "/remember <text> — store a memory"
+        )
 
     # ------------------------------------------------------------------
     # Outbound nudge

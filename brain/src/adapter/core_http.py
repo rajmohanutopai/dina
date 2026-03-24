@@ -384,7 +384,7 @@ class CoreHTTPClient:
 
     async def staging_resolve(
         self, staging_id: str, target_persona: str, classified_item: dict,
-        session: str = "", agent_did: str = "",
+        session: str = "", agent_did: str = "", user_origin: str = "",
     ) -> dict:
         """POST /v1/staging/resolve — Brain sends classification, Core decides."""
         extra_headers = {}
@@ -392,11 +392,15 @@ class CoreHTTPClient:
             extra_headers["X-Session"] = session
         if agent_did:
             extra_headers["X-Agent-DID"] = agent_did
-        resp = await self._request("POST", "/v1/staging/resolve", json={
+        body: dict = {
             "id": staging_id,
             "target_persona": target_persona,
             "classified_item": classified_item,
-        }, headers=extra_headers or None)
+        }
+        if user_origin:
+            body["user_origin"] = user_origin
+        resp = await self._request("POST", "/v1/staging/resolve", json=body,
+                                   headers=extra_headers or None)
         return resp.json()
 
     async def staging_extend_lease(self, staging_id: str, extension_seconds: int = 900) -> dict:
@@ -405,6 +409,11 @@ class CoreHTTPClient:
             "id": staging_id,
             "extension_seconds": extension_seconds,
         })
+        return resp.json()
+
+    async def staging_status(self, staging_id: str) -> dict:
+        """GET /v1/staging/status/{id} — check staging item status."""
+        resp = await self._request("GET", f"/v1/staging/status/{staging_id}")
         return resp.json()
 
     async def staging_fail(self, staging_id: str, error: str) -> dict:
@@ -417,7 +426,7 @@ class CoreHTTPClient:
 
     async def staging_resolve_multi(
         self, staging_id: str, targets: list[dict],
-        session: str = "", agent_did: str = "",
+        session: str = "", agent_did: str = "", user_origin: str = "",
     ) -> dict:
         """POST /v1/staging/resolve — multi-persona resolve."""
         extra_headers = {}
@@ -425,10 +434,11 @@ class CoreHTTPClient:
             extra_headers["X-Session"] = session
         if agent_did:
             extra_headers["X-Agent-DID"] = agent_did
-        resp = await self._request("POST", "/v1/staging/resolve", json={
-            "id": staging_id,
-            "targets": targets,
-        }, headers=extra_headers or None)
+        body: dict = {"id": staging_id, "targets": targets}
+        if user_origin:
+            body["user_origin"] = user_origin
+        resp = await self._request("POST", "/v1/staging/resolve", json=body,
+                                   headers=extra_headers or None)
         return resp.json()
 
     async def update_contact_last_seen(self, did: str, timestamp: int) -> None:

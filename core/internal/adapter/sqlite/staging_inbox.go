@@ -140,6 +140,21 @@ func (s *StagingInbox) GetStatus(ctx context.Context, id, callerDID string) (str
 	return status, nil
 }
 
+// GetStatusDetailed returns the status and target persona for a staging item.
+func (s *StagingInbox) GetStatusDetailed(ctx context.Context, id string) (status, persona string, err error) {
+	db := s.db()
+	if db == nil {
+		return "", "", fmt.Errorf("staging: identity database not open")
+	}
+	err = db.QueryRowContext(ctx,
+		`SELECT status, COALESCE(target_persona, '') FROM staging_inbox WHERE id=?`, id,
+	).Scan(&status, &persona)
+	if err != nil {
+		return "", "", fmt.Errorf("staging: item %s not found", id)
+	}
+	return status, persona, nil
+}
+
 func (s *StagingInbox) Claim(ctx context.Context, limit int, leaseDuration time.Duration) ([]domain.StagingItem, error) {
 	db := s.db()
 	if db == nil {

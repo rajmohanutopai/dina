@@ -1205,6 +1205,7 @@ func main() {
 	mux.HandleFunc("/v1/staging/resolve", stagingH.HandleResolve)
 	mux.HandleFunc("/v1/staging/fail", stagingH.HandleFail)
 	mux.HandleFunc("/v1/staging/extend-lease", stagingH.HandleExtendLease)
+	mux.HandleFunc("/v1/staging/status/", stagingH.HandleStatus)
 
 	// Identity API
 	mux.HandleFunc("/v1/did", identityH.HandleGetDID)
