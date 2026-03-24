@@ -115,11 +115,14 @@ class ReminderFiredEvent(_EventBase):
 
 class ApprovalNeededEvent(_EventBase):
     type: Literal["approval_needed"]
+    payload: dict | None = None
+    # Top-level fields (for direct calls); payload takes precedence.
     id: str | None = Field(None, description="Approval request ID")
     persona: str | None = None
     client_did: str | None = None
     session: str | None = None
     reason: str | None = None
+    preview: str | None = None
 
 
 # ── Pull Economy ─────────────────────────────────────────────────────────

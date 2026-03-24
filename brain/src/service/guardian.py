@@ -1931,12 +1931,15 @@ class GuardianLoop:
         Sends the approval prompt to Telegram (if configured) so the user
         can approve or deny from their phone.
         """
+        # Core sends fields inside "payload" dict; extract them.
+        p = event.get("payload") or event
         approval = {
-            "id": event.get("id", ""),
-            "persona": event.get("persona", ""),
-            "client_did": event.get("client_did", ""),
-            "session": event.get("session", ""),
-            "reason": event.get("reason", ""),
+            "id": p.get("id", ""),
+            "persona": p.get("persona", ""),
+            "client_did": p.get("client_did", ""),
+            "session": p.get("session", ""),
+            "reason": p.get("reason", ""),
+            "preview": p.get("preview", ""),
         }
 
         # Send to Telegram if available

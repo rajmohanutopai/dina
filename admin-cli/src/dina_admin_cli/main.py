@@ -750,6 +750,142 @@ def trace(ctx: click.Context, req_id: str) -> None:
 
 # ── policy (action risk policy) ──────────────────────────────────────────
 
+# ── channel (notification channels) ──────────────────────────────────────
+
+
+@cli.group()
+def channel() -> None:
+    """Manage notification channels (Telegram, WhatsApp, etc.).
+
+    \b
+    Examples:
+      dina-admin channel add telegram --token <bot-token> --user-id <id>
+      dina-admin channel list
+      dina-admin channel remove telegram
+    """
+
+
+@channel.command("add")
+@click.argument("channel_type", type=click.Choice(["telegram"]))
+@click.option("--token", required=True, help="Bot token (from @BotFather for Telegram)")
+@click.option("--user-id", default="", help="Owner's user ID (Telegram numeric ID)")
+@click.option("--group-id", default="", help="Group chat ID (optional)")
+@click.pass_context
+def channel_add(ctx: click.Context, channel_type: str, token: str, user_id: str, group_id: str) -> None:
+    """Add a notification channel. Requires container restart to take effect."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        # Store in KV for Brain to read
+        channel_config = {
+            "type": channel_type,
+            "token": token,
+            "user_id": user_id,
+            "group_id": group_id,
+            "enabled": True,
+        }
+        client.set_kv(f"admin:channel:{channel_type}", json.dumps(channel_config))
+
+        # Also write to .env so it survives Docker restarts.
+        # The dina-admin wrapper runs inside the container, so we write
+        # to a KV key that the host-side script can read.
+        env_vars = {}
+        if channel_type == "telegram":
+            env_vars["DINA_TELEGRAM_TOKEN"] = token
+            if user_id:
+                env_vars["DINA_TELEGRAM_ALLOWED_USERS"] = user_id
+            if group_id:
+                env_vars["DINA_TELEGRAM_ALLOWED_GROUPS"] = group_id
+
+        # Store env vars in KV so the host-side dina-admin wrapper can
+        # read them and update .env.
+        client.set_kv("admin:channel_env_pending", json.dumps(env_vars))
+
+        if json_mode:
+            print_result({"status": "added", "channel": channel_type, "restart_required": True}, json_mode)
+        else:
+            click.echo(f"  Channel added: {channel_type}")
+            click.echo(f"  Token: {token[:8]}...{token[-4:]}")
+            if user_id:
+                click.echo(f"  User ID: {user_id}")
+            click.echo()
+            click.echo("  Restart required to activate:")
+            click.echo("    docker compose restart brain")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@channel.command("list")
+@click.pass_context
+def channel_list(ctx: click.Context) -> None:
+    """List configured notification channels."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        channels = []
+        for ch_type in ["telegram"]:
+            raw = client.get_kv(f"admin:channel:{ch_type}")
+            if raw:
+                cfg = json.loads(raw)
+                cfg["channel"] = ch_type
+                # Mask token for display
+                token = cfg.get("token", "")
+                if len(token) > 12:
+                    cfg["token_masked"] = f"{token[:8]}...{token[-4:]}"
+                else:
+                    cfg["token_masked"] = "***"
+                del cfg["token"]
+                channels.append(cfg)
+
+        if json_mode:
+            print_result(channels, json_mode)
+        elif not channels:
+            click.echo("  No channels configured.")
+            click.echo("  Add one: dina-admin channel add telegram --token <token> --user-id <id>")
+        else:
+            for ch in channels:
+                status = "enabled" if ch.get("enabled") else "disabled"
+                click.echo(f"  {ch['channel']}  ({status})")
+                click.echo(f"    token: {ch['token_masked']}")
+                if ch.get("user_id"):
+                    click.echo(f"    user_id: {ch['user_id']}")
+                if ch.get("group_id"):
+                    click.echo(f"    group_id: {ch['group_id']}")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@channel.command("remove")
+@click.argument("channel_type", type=click.Choice(["telegram"]))
+@click.confirmation_option(prompt="Remove this channel?")
+@click.pass_context
+def channel_remove(ctx: click.Context, channel_type: str) -> None:
+    """Remove a notification channel. Requires container restart."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        # Clear KV
+        client.set_kv(f"admin:channel:{channel_type}", "")
+        # Queue env removal
+        client.set_kv("admin:channel_env_pending", json.dumps({
+            f"DINA_TELEGRAM_TOKEN": "",
+            f"DINA_TELEGRAM_ALLOWED_USERS": "",
+            f"DINA_TELEGRAM_ALLOWED_GROUPS": "",
+        }))
+        if json_mode:
+            print_result({"status": "removed", "channel": channel_type}, json_mode)
+        else:
+            click.echo(f"  Channel removed: {channel_type}")
+            click.echo("  Restart required: docker compose restart brain")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+# ── policy (action risk policy) ──────────────────────────────────────────
+
 _POLICY_KV_KEY = "admin:action_risk_policy"
 _VALID_RISK_LEVELS = ("safe", "moderate", "high", "blocked")
 

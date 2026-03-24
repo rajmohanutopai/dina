@@ -648,3 +648,381 @@ curl -s http://localhost:8100/healthz
 $ADMIN --version
 ```
 **Expected:** `dina-admin, version X.Y.Z`
+
+---
+
+## Coverage Summary
+
+### Tested Areas (9)
+
+| # | Area | Phases | Tests | Gaps |
+|---|------|--------|-------|------|
+| 1 | **Setup** | 1 | T-001–003 | Re-install idempotency, `--skip-build` |
+| 2 | **Remember & Recall** | 2–5 | T-010–041 | `--category` flag, async polling loop, concurrent writes |
+| 3 | **Persona Access Control** | 3, 6–7 | T-020–064 | `--scope single` (one-shot grant), deny + re-approve, approval expiry |
+| 4 | **Session Management** | 1, 11 | T-001–003, T-100–103 | Session reconnect (same name = same session), expired grant cleanup |
+| 5 | **PII Protection** | 8 | T-070–074 | Scrub→API→rehydrate chain, IFSC/UPI/passport IDs |
+| 6 | **Agent Safety** | 9 | T-080–081 | `--count`/`--reversible` flags, validate-status polling, draft flow |
+| 7 | **Security Boundaries** | 14–16 | N-001–074, SEC-001–106 | Rate limiting (429), replay attacks, concurrent same-session |
+| 8 | **Administration** | 10 | T-090–096 | Device revoke, persona create custom, model set, security mode |
+| 9 | **Observability** | 10 | trace, audit, logs | Audit `--action` filter, logs `--since`, logs `-f` |
+
+### Not Tested (needs infrastructure)
+
+| Area | Reason | Infrastructure Needed |
+|------|--------|----------------------|
+| OpenClaw Integration | No OpenClaw Gateway running | DINA_OPENCLAW_URL + token |
+| Telegram Bot | Configured on Default instance | Phases 1–7 via Telegram chat (manual) |
+| D2D Messaging | No second Dina for Dina-to-Dina | Two Home Nodes with DID exchange |
+| Trust Network / AppView | No trust data seeded | AppView + Postgres + PDS with records |
+| Daily Briefing | Guardian briefing cycle not triggered | Scheduled event or manual trigger |
+| Reminders | No reminders stored/fired | Store reminder + wait for trigger time |
+| Connectors (Gmail, Calendar) | No OAuth tokens | Gmail/Calendar OAuth + MCP config |
+| Backup/Restore | Export tested in user stories only | Full export → import → verify cycle |
+| WebSocket Push | No WebSocket client | Browser or WS client connected |
+| Estate Planning | No API endpoints exposed | Handler + routes needed |
+
+### Test Counts
+
+| Category | Count |
+|----------|-------|
+| Phase 1–13 (positive tests) | ~45 |
+| Phase 14 (negative tests) | ~15 |
+| Phase 15 (cross-session security) | 4 |
+| Phase 16 (cross-device security) | 6 |
+| Phase 17 (version verification) | 3 |
+| **Total** | **~73** |
+
+---
+
+## Live Test Environment Guide
+
+This section documents how the multi-instance test environment is set up, how code
+flows from development to testing, and how an AI agent (or human) runs live tests.
+It is written so a future Claude session can pick up exactly where the previous one
+left off.
+
+### Directory Layout
+
+There are **two conceptually different directories** on this machine:
+
+```
+/Users/rajmohan/OpenSource/dina/     ← DEVELOPMENT (git repo, all edits happen here)
+/Users/rajmohan/TestEnv/             ← TESTING (3 independent Home Node instances)
+  dina/                               "Default" instance — standard install
+  Sancho/dina/                        "Sancho" instance — --instance install
+  Alonso/dina/                        "Alonso" instance — --instance install
+```
+
+**Golden rule:** All code changes happen in `OpenSource/dina/`. TestEnv directories
+receive code via `rsync` sync script. Never edit code directly in TestEnv.
+
+### The Three Instances
+
+Each instance is a fully independent Dina Home Node with its own identity (DID),
+secrets, vault data, and Docker containers.
+
+| Instance | Path | Core Port | PDS Port | Compose Project | Owner | Install Method |
+|----------|------|-----------|----------|-----------------|-------|----------------|
+| **Default** | `TestEnv/dina/` | 8100 | 2583 | `dina-159` | raju | `./install.sh` (standard) |
+| **Sancho** | `TestEnv/Sancho/dina/` | 9100 | 9101 | `dina-sancho` | sancho | `./install.sh --instance sancho --port 9100` |
+| **Alonso** | `TestEnv/Alonso/dina/` | 9150 | 9151 | `dina-alonso` | alonso | `./install.sh --instance alonso --port 9150` |
+
+### Install Differences: Standard vs --instance
+
+**Standard install** (Default):
+```
+TestEnv/dina/
+  .env                         ← config at repo root
+  secrets/                     ← secrets at repo root
+    wrapped_seed.bin
+    service_keys/{core,brain,public}/
+  docker-compose.yml
+  .venv/bin/dina               ← CLI
+  .dina/cli/config.json        ← local CLI config
+  dina-admin                   ← admin wrapper script
+```
+
+**Instance install** (Sancho, Alonso):
+```
+TestEnv/Sancho/dina/
+  instances/sancho/
+    .env                       ← config INSIDE instances/<name>/
+    secrets/                   ← secrets INSIDE instances/<name>/
+  docker-compose.yml           ← shared (reads env from instances/<name>/.env)
+  .venv/bin/dina               ← CLI
+  .dina/cli/config.json        ← local CLI config
+  dina-admin                   ← admin wrapper script
+```
+
+Key difference: `--instance` puts `.env` and `secrets/` under `instances/<name>/`
+and uses `DINA_SECRETS_DIR=./instances/<name>/secrets` in docker-compose bind mounts.
+Docker compose must be invoked with `--env-file instances/<name>/.env`.
+
+### Docker Container Naming
+
+Each instance runs 3 containers with project-scoped names:
+
+| Instance | Core | Brain | PDS |
+|----------|------|-------|-----|
+| Default | `core-159` | `brain-159` | `pds-159` |
+| Sancho | `core-6jp` | `brain-6jp` | `pds-6jp` |
+| Alonso | `core-xpr` | `brain-xpr` | `pds-xpr` |
+
+The suffix (159, 6jp, xpr) is `DINA_SESSION` — a random token generated at install
+time that scopes Docker resources. `COMPOSE_PROJECT_NAME` is human-readable
+(`dina-159`, `dina-sancho`, `dina-alonso`).
+
+All 9 containers run simultaneously on the same Mac. Each Core binds to a different
+host port; Brain and PDS are only reachable via Docker networking (or mapped PDS port).
+
+### CLI Configuration (Local Config Discovery)
+
+Each TestEnv has a local `.dina/cli/config.json` that the CLI auto-discovers when
+invoked from that directory. This is how the same `dina` binary talks to different
+Core instances:
+
+```json
+// TestEnv/dina/.dina/cli/config.json — Default
+{"core_url": "http://localhost:8100", "device_name": "raju-device", "role": "agent"}
+
+// TestEnv/Sancho/dina/.dina/cli/config.json — Sancho
+{"core_url": "http://localhost:9100", "device_name": "sancho-test-device", "role": "agent"}
+
+// TestEnv/Alonso/dina/.dina/cli/config.json — Alonso
+{"core_url": "http://localhost:9150", "device_name": "MacBook-Pro.local-cli", "role": "user"}
+```
+
+The CLI walks up from `cwd` looking for `.dina/cli/config.json`. So:
+```bash
+cd /Users/rajmohan/TestEnv/dina && .venv/bin/dina status       # talks to Default (8100)
+cd /Users/rajmohan/TestEnv/Sancho/dina && .venv/bin/dina status # talks to Sancho (9100)
+cd /Users/rajmohan/TestEnv/Alonso/dina && .venv/bin/dina status # talks to Alonso (9150)
+```
+
+### How Code Gets from Dev → TestEnv
+
+#### Step 1: Edit code in OpenSource/dina
+
+All changes happen in the git repo at `/Users/rajmohan/OpenSource/dina/`.
+
+#### Step 2: Build Go binary (if Core changed)
+
+```bash
+cd /Users/rajmohan/OpenSource/dina/core && go build -tags fts5 ./cmd/dina-core/
+```
+
+This validates the Go code compiles. The actual production binary is built inside
+Docker during `docker compose build`.
+
+#### Step 3: Sync code to TestEnv
+
+```bash
+/Users/rajmohan/OpenSource/dina/scripts/sync-to-testenv.sh
+```
+
+This `rsync`s code from `OpenSource/dina/` → `TestEnv/dina/`, excluding:
+- `.git`, `.venv`, `node_modules`, `__pycache__`
+- `.env`, `docker-compose.override.yml`
+- `secrets/`, `data/`, `keyfile`, `wrapped_seed.bin`
+- `core/dina-core` (local binary), `run.sh`
+
+**Important:** The sync script only syncs to `TestEnv/dina/` (Default). For Sancho
+and Alonso, either:
+- Modify the script's `DST` variable, or
+- Run rsync manually with the same excludes, or
+- The code was already synced if all 3 dirs were set up from the same source
+
+Since all three TestEnvs were installed from synced copies of the same code, and
+Docker builds from the local source on `docker compose build`, syncing to one and
+rebuilding propagates changes.
+
+#### Step 4: Rebuild Docker images
+
+```bash
+# Default instance
+cd /Users/rajmohan/TestEnv/dina
+docker compose build core brain
+
+# Sancho instance
+cd /Users/rajmohan/TestEnv/Sancho/dina
+docker compose --env-file instances/sancho/.env build core brain
+
+# Alonso instance
+cd /Users/rajmohan/TestEnv/Alonso/dina
+docker compose --env-file instances/alonso/.env build core brain
+```
+
+#### Step 5: Restart containers
+
+```bash
+# Default
+cd /Users/rajmohan/TestEnv/dina && docker compose up -d core brain
+
+# Sancho
+cd /Users/rajmohan/TestEnv/Sancho/dina && docker compose --env-file instances/sancho/.env up -d core brain
+
+# Alonso
+cd /Users/rajmohan/TestEnv/Alonso/dina && docker compose --env-file instances/alonso/.env up -d core brain
+```
+
+#### Step 6: Verify health
+
+```bash
+/Users/rajmohan/OpenSource/dina/scripts/validate-testenvs.sh
+```
+
+This checks:
+- Core `/healthz` version matches `VERSION` file + git hash
+- CLI is installed
+- Device is paired
+
+### How to Run Live Tests
+
+#### Quick single-instance test (Default)
+
+```bash
+cd /Users/rajmohan/TestEnv/dina
+DINA=".venv/bin/dina"
+ADMIN="./dina-admin"
+
+$DINA session start --name "Live Test"    # capture session ID
+$DINA remember --session <S> "I like strong cardamom tea"
+$DINA ask --session <S> "What tea do I like?"
+```
+
+#### Cross-device security test (Default + Sancho as two agents)
+
+```bash
+# Agent 1 (Default) creates session and stores data
+cd /Users/rajmohan/TestEnv/dina
+.venv/bin/dina session start --name "Agent1-Session"
+.venv/bin/dina remember --session <S1> "Credit card limit is 500000"
+# ... approve via dina-admin ...
+.venv/bin/dina ask --session <S1> "What is my credit card limit?"  # → works
+
+# Agent 2 (Sancho, different DID) tries to steal session
+cd /Users/rajmohan/TestEnv/Sancho/dina
+.venv/bin/dina ask --session <S1> "What is my credit card limit?"  # → 403 rejected
+```
+
+**Note:** Cross-device tests require both agents paired to the **same** Core. The
+current setup has each instance as its own independent Home Node (different DIDs,
+different vaults). For true cross-device security testing on the same Home Node,
+pair a second CLI (from Sancho's .venv) to Default's Core URL (port 8100).
+
+#### Telegram bot testing (Default instance only)
+
+The Default instance has Telegram configured:
+- `DINA_TELEGRAM_TOKEN` in `.env`
+- `DINA_TELEGRAM_ALLOWED_USERS=149547426`
+
+Test flow:
+1. Send message to bot in Telegram → verify response comes back
+2. `dina remember --session <S> "health data"` → verify approval notification in Telegram
+3. Reply `approve <id>` in Telegram → verify approval completes
+4. `dina ask --session <S> "health question"` → verify data retrieved
+
+#### Admin CLI testing
+
+```bash
+cd /Users/rajmohan/TestEnv/dina
+./dina-admin status
+./dina-admin persona list
+./dina-admin vault list --persona general
+./dina-admin vault search "tea" --persona general
+./dina-admin approvals
+./dina-admin approvals approve <id>
+```
+
+### Viewing Logs
+
+```bash
+# Default instance
+cd /Users/rajmohan/TestEnv/dina
+docker compose logs -f brain         # Brain logs (Guardian, classifier, staging)
+docker compose logs -f core          # Core logs (vault, auth, sessions)
+docker compose logs -f --tail 50     # Both, last 50 lines
+
+# Sancho instance
+cd /Users/rajmohan/TestEnv/Sancho/dina
+docker compose --env-file instances/sancho/.env logs -f brain
+```
+
+Common log patterns to watch:
+- `telegram.process_failed` — Telegram message handling error
+- `approval_prompt_sent` — Approval notification dispatched to Telegram
+- `staging.resolve` — Staging pipeline processing
+- `vault.store` / `vault.query` — Vault operations
+- `guardian.classify` — Silence classification
+- `pii.scrub` — PII detection (patterns only in V1)
+
+### Syncing Across All Three Environments
+
+To update all three TestEnvs with the latest code:
+
+```bash
+SRC=/Users/rajmohan/OpenSource/dina
+
+# Sync excludes (same as sync-to-testenv.sh)
+EXCLUDES="--exclude=.git --exclude=.venv --exclude=node_modules --exclude=__pycache__ \
+  --exclude=*.pyc --exclude=dist/ --exclude=build/ --exclude=*.egg-info \
+  --exclude=.test-stack-keys --exclude=.env --exclude=docker-compose.override.yml \
+  --exclude=secrets/ --exclude=data/ --exclude=config.json --exclude=keyfile \
+  --exclude=wrapped_seed.bin --exclude=*.sqlite --exclude=*.sqlite-wal \
+  --exclude=*.sqlite-shm --exclude=core/dina-core --exclude=run.sh \
+  --exclude=instances/"
+
+rsync -a $EXCLUDES "$SRC/" /Users/rajmohan/TestEnv/dina/
+rsync -a $EXCLUDES "$SRC/" /Users/rajmohan/TestEnv/Sancho/dina/
+rsync -a $EXCLUDES "$SRC/" /Users/rajmohan/TestEnv/Alonso/dina/
+```
+
+**Note:** Add `--exclude=instances/` to avoid overwriting instance-specific config
+in Sancho and Alonso.
+
+Then rebuild all three:
+
+```bash
+cd /Users/rajmohan/TestEnv/dina && docker compose build core brain && docker compose up -d core brain
+cd /Users/rajmohan/TestEnv/Sancho/dina && docker compose --env-file instances/sancho/.env build core brain && docker compose --env-file instances/sancho/.env up -d core brain
+cd /Users/rajmohan/TestEnv/Alonso/dina && docker compose --env-file instances/alonso/.env build core brain && docker compose --env-file instances/alonso/.env up -d core brain
+```
+
+### Relationship Between Test Tiers
+
+```
+Unit tests (pytest, go test)     ← Pure logic, no Docker, run from OpenSource/dina/
+        ↓
+Integration tests (714)          ← Docker or mock, run from OpenSource/dina/
+        ↓
+E2E tests (110)                  ← Multi-node Docker, run from OpenSource/dina/
+        ↓
+User story tests (10)            ← Full stack compose, run from OpenSource/dina/
+        ↓
+Release tests (23)               ← Docker + dummy-agent, run from OpenSource/dina/
+        ↓
+LIVE TESTS (this plan, ~73)      ← Run against TestEnv/ instances, real LLM, real data
+```
+
+Live tests are the only tier that uses **real LLM calls** (Gemini API) and
+**real persistent data**. All other tiers use mocks or ephemeral state.
+Live tests validate the full user experience: did the LLM understand the
+question, did PII scrubbing preserve meaning, does the approval UX feel right.
+
+### Quick Reference: Common Operations
+
+| Task | Command |
+|------|---------|
+| Build Core | `cd core && go build -tags fts5 ./cmd/dina-core/` |
+| Sync to Default | `scripts/sync-to-testenv.sh` |
+| Rebuild Default | `cd TestEnv/dina && docker compose build core brain && docker compose up -d` |
+| Rebuild Sancho | `cd TestEnv/Sancho/dina && docker compose --env-file instances/sancho/.env build core brain && docker compose --env-file instances/sancho/.env up -d` |
+| Rebuild Alonso | `cd TestEnv/Alonso/dina && docker compose --env-file instances/alonso/.env build core brain && docker compose --env-file instances/alonso/.env up -d` |
+| Validate all | `scripts/validate-testenvs.sh` |
+| Default CLI | `cd TestEnv/dina && .venv/bin/dina <cmd>` |
+| Sancho CLI | `cd TestEnv/Sancho/dina && .venv/bin/dina <cmd>` |
+| Alonso CLI | `cd TestEnv/Alonso/dina && .venv/bin/dina <cmd>` |
+| Default logs | `cd TestEnv/dina && docker compose logs -f brain` |
+| Default admin | `cd TestEnv/dina && ./dina-admin <cmd>` |
+| All containers | `docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"` |

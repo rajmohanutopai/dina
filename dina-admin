@@ -532,5 +532,74 @@ if [ "${1:-}" = "logs" ]; then
     exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Host-side "channel" subcommand — updates .env after container command
+# ---------------------------------------------------------------------------
+
+if [ "${1:-}" = "channel" ] && [ "${2:-}" = "add" ]; then
+    # Forward to container first
+    $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"
+    _exit_code=$?
+
+    if [ $_exit_code -eq 0 ]; then
+        # Parse args to extract env vars for .env
+        _ch_type="${3:-}"
+        _token="" _user_id="" _group_id=""
+        shift 3 || true
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --token)    _token="$2"; shift 2 ;;
+                --user-id)  _user_id="$2"; shift 2 ;;
+                --group-id) _group_id="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+
+        _env_file="${COMPOSE_DIR}/.env"
+        [ -n "${_INSTANCE}" ] && _env_file="${COMPOSE_DIR}/instances/${_INSTANCE}/.env"
+
+        _update_env() {
+            local key="$1" val="$2" file="$3"
+            if grep -q "^${key}=" "$file" 2>/dev/null; then
+                if [ "$(uname)" = "Darwin" ]; then
+                    sed -i '' "s|^${key}=.*|${key}=${val}|" "$file"
+                else
+                    sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+                fi
+            else
+                echo "${key}=${val}" >> "$file"
+            fi
+        }
+
+        if [ "$_ch_type" = "telegram" ] && [ -n "$_token" ]; then
+            _update_env "DINA_TELEGRAM_TOKEN" "$_token" "$_env_file"
+            [ -n "$_user_id" ] && _update_env "DINA_TELEGRAM_ALLOWED_USERS" "$_user_id" "$_env_file"
+            [ -n "$_group_id" ] && _update_env "DINA_TELEGRAM_ALLOWED_GROUPS" "$_group_id" "$_env_file"
+            echo "  .env updated with Telegram config."
+        fi
+    fi
+    exit $_exit_code
+
+elif [ "${1:-}" = "channel" ] && [ "${2:-}" = "remove" ]; then
+    $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"
+    _exit_code=$?
+
+    if [ $_exit_code -eq 0 ]; then
+        _env_file="${COMPOSE_DIR}/.env"
+        [ -n "${_INSTANCE}" ] && _env_file="${COMPOSE_DIR}/instances/${_INSTANCE}/.env"
+
+        # Remove Telegram env vars
+        for _key in DINA_TELEGRAM_TOKEN DINA_TELEGRAM_ALLOWED_USERS DINA_TELEGRAM_ALLOWED_GROUPS; do
+            if [ "$(uname)" = "Darwin" ]; then
+                sed -i '' "/^${_key}=/d" "$_env_file" 2>/dev/null
+            else
+                sed -i "/^${_key}=/d" "$_env_file" 2>/dev/null
+            fi
+        done
+        echo "  .env updated (Telegram config removed)."
+    fi
+    exit $_exit_code
+fi
+
 # All other commands: forward to the container
 exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"

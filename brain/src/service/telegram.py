@@ -254,18 +254,33 @@ class TelegramService:
 
         # Escape Markdown special chars in user-supplied fields to prevent
         # broken formatting or injection via query text.
-        reason = _escape_markdown(approval.get("reason", "not specified"))
-        msg = (
-            f"🔐 *Persona Access Request*\n\n"
-            f"Agent: `{approval.get('client_did', '?')}`\n"
-            f"Persona: `{approval.get('persona', '?')}`\n"
-            f"Session: `{approval.get('session', '?')}`\n"
-            f"Reason: {reason}\n\n"
-            f"Reply:\n"
-            f"`approve {approval.get('id', '?')}` — grant for session\n"
-            f"`approve-single {approval.get('id', '?')}` — grant once\n"
-            f"`deny {approval.get('id', '?')}` — deny access"
-        )
+        aid = approval.get("id", "")
+        persona = approval.get("persona", "")
+        agent = approval.get("client_did", "")
+        session = approval.get("session", "")
+        reason = _escape_markdown(approval.get("reason", ""))
+        preview = _escape_markdown(approval.get("preview", ""))
+
+        # Skip empty/bogus approvals (e.g. Brain's own vault queries)
+        if not aid or not persona:
+            return
+
+        lines = ["🔐 *Persona Access Request*\n"]
+        if agent:
+            lines.append(f"Agent: `{agent}`")
+        lines.append(f"Persona: `{persona}`")
+        if session:
+            lines.append(f"Session: `{session}`")
+        if reason:
+            lines.append(f"Reason: {reason}")
+        if preview:
+            lines.append(f"Content: _{preview}_")
+        lines.append("")
+        lines.append("Reply:")
+        lines.append(f"`approve {aid}` — grant for session")
+        lines.append(f"`approve-single {aid}` — grant once")
+        lines.append(f"`deny {aid}` — deny access")
+        msg = "\n".join(lines)
 
         # For DMs, chat_id == user_id
         for chat_id in self._paired_users:
@@ -363,7 +378,11 @@ class TelegramService:
     def _extract_response(result: dict) -> str:
         """Extract the human-readable response from a Guardian result."""
         # Guardian returns different shapes depending on event type.
-        # For "reason" events: {"action": ..., "response": str | dict}
+        # For "reason" events: {"content": "...", "model": "..."}
+        # For other events: {"action": ..., "response": str | dict}
+        content = result.get("content", "")
+        if content:
+            return str(content)
         response = result.get("response", "")
         if isinstance(response, dict):
             return response.get("text", response.get("answer", str(response)))

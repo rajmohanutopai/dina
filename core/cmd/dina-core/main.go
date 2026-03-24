@@ -640,6 +640,7 @@ func main() {
 					"client_did": req.ClientDID,
 					"session":    req.SessionID,
 					"reason":     req.Reason,
+					"preview":    req.Preview,
 				},
 			})
 		}()
