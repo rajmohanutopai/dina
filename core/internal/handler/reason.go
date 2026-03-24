@@ -18,9 +18,13 @@ import (
 // ReasonHandler proxies reasoning requests to Brain with proper service-key auth.
 // Supports async approval-wait-resume: when Brain needs persona approval, Core
 // creates a PendingReasonRecord, returns 202, and resumes after approval.
+// SessionValidator validates that an agent session is real and active.
+type SessionValidator func(sessionID, agentDID string) bool
+
 type ReasonHandler struct {
-	Brain          port.BrainClient
-	PendingReasons port.PendingReasonStore // optional — nil disables async approval
+	Brain            port.BrainClient
+	PendingReasons   port.PendingReasonStore // optional — nil disables async approval
+	ValidateSession  SessionValidator        // optional — nil skips validation
 }
 
 type reasonRequest struct {
@@ -47,6 +51,13 @@ func (h *ReasonHandler) HandleReason(w http.ResponseWriter, r *http.Request) {
 	case "agent":
 		agentDID, _ = r.Context().Value(middleware.AgentDIDKey).(string)
 		sessionName, _ = r.Context().Value(middleware.SessionNameKey).(string)
+		// Validate session is real and active. Reject fake/ended sessions.
+		if h.ValidateSession != nil && sessionName != "" {
+			if !h.ValidateSession(sessionName, agentDID) {
+				http.Error(w, `{"error":"session not found or not active"}`, http.StatusForbidden)
+				return
+			}
+		}
 	case "user":
 		source = "admin"
 	}

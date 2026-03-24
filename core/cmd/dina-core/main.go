@@ -1307,12 +1307,18 @@ func main() {
 
 	// Brain reasoning proxy — agents interact with Brain via Core.
 	// Core re-signs the request with its own service key (agents have device keys).
-	reasonH := &handler.ReasonHandler{Brain: brain, PendingReasons: pendingReasonStore}
+	// Session validator — checks session is real and active for agent callers.
+	validateSession := handler.SessionValidator(func(sessionID, agentDID string) bool {
+		s, err := personaMgr.GetSession(context.Background(), agentDID, sessionID)
+		return err == nil && s != nil
+	})
+
+	reasonH := &handler.ReasonHandler{Brain: brain, PendingReasons: pendingReasonStore, ValidateSession: validateSession}
 	mux.HandleFunc("/api/v1/ask", reasonH.HandleReason)        // POST /api/v1/ask
 	mux.HandleFunc("/api/v1/ask/", reasonH.HandleReasonStatus) // GET /api/v1/ask/{id}/status
 
 	// User-facing solicited memory write — wraps staging with synchronous completion.
-	rememberH := &handler.RememberHandler{StagingHandler: stagingH, Staging: stagingInbox, Brain: brain}
+	rememberH := &handler.RememberHandler{StagingHandler: stagingH, Staging: stagingInbox, Brain: brain, ValidateSession: validateSession}
 	mux.HandleFunc("/api/v1/remember", rememberH.HandleRemember)
 	mux.HandleFunc("/api/v1/remember/", rememberH.HandleRememberStatus) // GET /api/v1/remember/{id}
 	mux.HandleFunc("/v1/reason/", reasonH.HandleReasonResult)     // POST /v1/reason/{id}/result (Brain callback)

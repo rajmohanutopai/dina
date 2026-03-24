@@ -222,10 +222,16 @@ func TestTelegram_AccessPersona_DefaultTierAlwaysAllowed(t *testing.T) {
 	_, err := pm.Create(context.Background(), "general", "default")
 	testutil.RequireNoError(t, err)
 
+	// Agent needs an active session — even for default tier.
+	_, err = pm.StartSession(context.Background(), "did:key:z6MkTestAgent", "tel-default-test")
+	testutil.RequireNoError(t, err)
+	agentWithSession := telAgentCtx()
+	agentWithSession = context.WithValue(agentWithSession, middleware.SessionNameKey, "tel-default-test")
+
 	for _, ctx := range []context.Context{
 		telBrainCtx(),
 		telBrainUserOriginCtx("telegram"),
-		telAgentCtx(),
+		agentWithSession,
 		telUserCtx(),
 	} {
 		err = pm.AccessPersona(ctx, "general")

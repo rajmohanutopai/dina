@@ -17,9 +17,10 @@ import (
 // memory writes. Delegates to StagingHandler for canonical provenance
 // derivation, then polls for semantic completion.
 type RememberHandler struct {
-	StagingHandler *StagingHandler // reuses provenance derivation + ingest
-	Staging        port.StagingInbox
-	Brain          port.BrainClient
+	StagingHandler  *StagingHandler // reuses provenance derivation + ingest
+	Staging         port.StagingInbox
+	Brain           port.BrainClient
+	ValidateSession SessionValidator // optional — nil skips validation
 }
 
 type rememberRequest struct {
@@ -53,6 +54,16 @@ func (h *RememberHandler) HandleRemember(w http.ResponseWriter, r *http.Request)
 	if req.Session == "" {
 		http.Error(w, `{"error":"session is required"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Validate session is real and active for agent callers.
+	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
+	if callerType == "agent" && h.ValidateSession != nil {
+		agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
+		if !h.ValidateSession(req.Session, agentDID) {
+			http.Error(w, `{"error":"session not found or not active"}`, http.StatusForbidden)
+			return
+		}
 	}
 
 	// Session is required for:

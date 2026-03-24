@@ -1578,13 +1578,33 @@ func TestIdentity_3_3_18_AccessPersonaDefaultTier(t *testing.T) {
 	_, err := pm.Create(idCtx, "gen", "default")
 	testutil.RequireNoError(t, err)
 
-	// All caller types should succeed on default tier
-	for _, ct := range []string{"user", "brain", "agent"} {
+	// Create a session for the agent test case.
+	_, err = pm.StartSession(idCtx, "did:key:agent-test", "default-test")
+	testutil.RequireNoError(t, err)
+
+	// User and brain succeed without session.
+	for _, ct := range []string{"user", "brain"} {
 		ctx := context.WithValue(idCtx, middleware.CallerTypeKey, ct)
 		err := pm.AccessPersona(ctx, "gen")
 		if err != nil {
 			t.Errorf("default tier should allow %s access, got: %v", ct, err)
 		}
+	}
+
+	// Agent succeeds WITH an active session.
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "default-test")
+	agentCtx = context.WithValue(agentCtx, middleware.AgentDIDKey, "did:key:agent-test")
+	err = pm.AccessPersona(agentCtx, "gen")
+	if err != nil {
+		t.Errorf("default tier should allow agent with session, got: %v", err)
+	}
+
+	// Agent WITHOUT session is rejected.
+	noSessCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	err = pm.AccessPersona(noSessCtx, "gen")
+	if err == nil {
+		t.Fatal("default tier should deny agent without session")
 	}
 }
 

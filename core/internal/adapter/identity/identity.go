@@ -1067,6 +1067,21 @@ func (pm *PersonaManager) AccessPersona(ctx context.Context, personaID string) e
 		effectiveCaller = "user"
 	}
 
+	// Agent callers must provide a session. Session validation happens at the
+	// entry-point handlers (HandleReason, HandleRemember) where the original
+	// agent's auth context is available — not here, because Brain re-signs
+	// requests and Core sees "brain" as the caller type.
+	if effectiveCaller == "agent" {
+		sessionID := ""
+		if sid, ok := ctx.Value(middleware.SessionNameKey).(string); ok {
+			sessionID = sid
+		}
+		if sessionID == "" {
+			pm.addAuditEntry(cid, "access_denied", "agent must provide session")
+			return &ErrApprovalRequired{PersonaID: cid, CallerType: callerType}
+		}
+	}
+
 	switch p.Tier {
 	case "locked":
 		if p.Locked {
@@ -1129,6 +1144,20 @@ func (pm *PersonaManager) AccessPersona(ctx context.Context, personaID string) e
 	}
 
 	return nil
+}
+
+// sessionExists checks if an active session exists for the given agent.
+// Must be called with pm.mu held (at least RLock).
+func (pm *PersonaManager) sessionExists(sessionID, agentDID string) bool {
+	for _, s := range pm.sessions {
+		if s.Status != domain.SessionActive {
+			continue
+		}
+		if (s.Name == sessionID || s.ID == sessionID) && (agentDID == "" || s.AgentDID == agentDID) {
+			return true
+		}
+	}
+	return false
 }
 
 // hasActiveGrant checks if there's an active (non-expired) grant for the persona
@@ -1291,17 +1320,17 @@ func (pm *PersonaManager) EndSession(_ context.Context, agentDID, nameOrID strin
 	return fmt.Errorf("no active session named %q for agent %s", nameOrID, agentDID)
 }
 
-// GetSession returns an active session by agent DID and name.
-func (pm *PersonaManager) GetSession(_ context.Context, agentDID, name string) (*domain.AgentSession, error) {
+// GetSession returns an active session by agent DID and name or ID.
+func (pm *PersonaManager) GetSession(_ context.Context, agentDID, nameOrID string) (*domain.AgentSession, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	for _, s := range pm.sessions {
-		if s.AgentDID == agentDID && s.Name == name && s.Status == domain.SessionActive {
+		if s.AgentDID == agentDID && (s.Name == nameOrID || s.ID == nameOrID) && s.Status == domain.SessionActive {
 			return &s, nil
 		}
 	}
-	return nil, fmt.Errorf("no active session named %q for agent %s", name, agentDID)
+	return nil, fmt.Errorf("no active session %q for agent %s", nameOrID, agentDID)
 }
 
 // ListSessions returns all sessions (active only). If agentDID is non-empty, filters by agent.

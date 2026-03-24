@@ -3443,9 +3443,14 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 
 	q := domain.SearchQuery{Query: "office chairs", Mode: "fts5"}
 
+	// Start a session for the agent — required for all tier access.
+	_, err = pm.StartSession(ctx, agentDID, "approval-e2e")
+	testutil.RequireNoError(t, err)
+
 	// ---------- Phase 1: Default persona — always allowed ----------
 	t.Run("default_persona_always_allowed_for_agent", func(t *testing.T) {
-		aCtx := agentCtx(agentDID, "")
+		// Agent must provide a valid session — even for default tier.
+		aCtx := agentCtx(agentDID, "approval-e2e")
 		_, err := vaultSvc.Query(aCtx, agentDID, "general", q)
 		testutil.RequireNoError(t, err)
 	})

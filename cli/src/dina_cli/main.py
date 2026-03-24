@@ -696,15 +696,41 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     "--role", default="user", type=click.Choice(["user", "agent"]),
     help="Device role: 'user' (personal CLI) or 'agent' (OpenClaw/bot)",
 )
+@click.option(
+    "--config", "config_file", default=None, type=click.Path(exists=True),
+    help="Non-interactive: JSON config file with keys: core_url, device_name, config_location, pairing_code",
+)
 @click.pass_context
-def configure(ctx: click.Context, role: str) -> None:
+def configure(ctx: click.Context, role: str, config_file: str | None) -> None:
     """Set up connection to a Dina Home Node.
 
-    Saves configuration to ~/.dina/cli/config.json.
-    Environment variables override saved values.
+    \b
+    Interactive (default):
+      dina configure
+      dina configure --role agent
 
-    Use --role agent when pairing an OpenClaw or bot device.
+    \b
+    Non-interactive (for testing/automation):
+      dina configure --config setup.json
+
+    \b
+    JSON config file format:
+      {
+        "core_url": "http://localhost:9100",
+        "device_name": "my-device",
+        "config_location": "local",       // "local", "global", or "/custom/path"
+        "pairing_code": "123456",          // from dina-admin device pair
+        "generate_keypair": true           // true = always generate new keypair
+      }
     """
+    # Load non-interactive config if provided.
+    cfg_input: dict = {}
+    if config_file:
+        cfg_input = json.loads(Path(config_file).read_text())
+
+    if cfg_input:
+        role = cfg_input.get("role", role)
+
     click.echo("Dina CLI Configuration")
     click.echo("=" * 40)
     click.echo()
@@ -713,37 +739,56 @@ def configure(ctx: click.Context, role: str) -> None:
     from .config import _GLOBAL_CONFIG_DIR, _LOCAL_CONFIG_DIR, set_config_dir
     cwd = Path.cwd()
     home = Path.home()
-    choice = click.prompt(
-        "Config location",
-        type=click.Choice(["local", "global", "custom"]),
-        default="global",
-    )
-    if choice == "local":
-        set_config_dir(_LOCAL_CONFIG_DIR)
-        click.echo(f"  Config stored in: {cwd}")
-    elif choice == "global":
-        set_config_dir(_GLOBAL_CONFIG_DIR)
-        click.echo(f"  Config stored in: {home}")
+
+    if cfg_input:
+        loc = cfg_input.get("config_location", "global")
+        if loc == "local":
+            set_config_dir(_LOCAL_CONFIG_DIR)
+        elif loc == "global":
+            set_config_dir(_GLOBAL_CONFIG_DIR)
+        else:
+            set_config_dir(Path(loc) / ".dina" / "cli")
+        click.echo(f"  Config: {loc}")
     else:
-        custom_parent = Path(click.prompt("Parent directory", default=str(cwd)))
-        set_config_dir(custom_parent / ".dina" / "cli")
-        click.echo(f"  Config stored in: {custom_parent}")
+        choice = click.prompt(
+            "Config location",
+            type=click.Choice(["local", "global", "custom"]),
+            default="global",
+        )
+        if choice == "local":
+            set_config_dir(_LOCAL_CONFIG_DIR)
+            click.echo(f"  Config stored in: {cwd}")
+        elif choice == "global":
+            set_config_dir(_GLOBAL_CONFIG_DIR)
+            click.echo(f"  Config stored in: {home}")
+        else:
+            custom_parent = Path(click.prompt("Parent directory", default=str(cwd)))
+            set_config_dir(custom_parent / ".dina" / "cli")
+            click.echo(f"  Config stored in: {custom_parent}")
 
     # Load existing saved config for defaults
     from .config import _load_saved
     existing = _load_saved()
 
-    core_url = click.prompt(
-        "Core URL",
-        default=existing.get("core_url", "http://localhost:8100"),
-    )
-
-    device_name = click.prompt(
-        "Device name",
-        default=existing.get("device_name") or _default_device_name(),
-    )
+    if cfg_input:
+        core_url = cfg_input.get("core_url", existing.get("core_url", "http://localhost:8100"))
+        device_name = cfg_input.get("device_name", existing.get("device_name") or _default_device_name())
+        click.echo(f"  Core URL: {core_url}")
+        click.echo(f"  Device: {device_name}")
+    else:
+        core_url = click.prompt(
+            "Core URL",
+            default=existing.get("core_url", "http://localhost:8100"),
+        )
+        device_name = click.prompt(
+            "Device name",
+            default=existing.get("device_name") or _default_device_name(),
+        )
     click.echo()
-    _configure_signature(core_url, device_name, role)
+    if cfg_input:
+        _configure_signature_noninteractive(core_url, device_name, role, cfg_input)
+    else:
+        _configure_signature(core_url, device_name, role)
 
     values: dict[str, Any] = {
         "core_url": core_url,
@@ -756,8 +801,9 @@ def configure(ctx: click.Context, role: str) -> None:
     click.echo(f"Configuration saved to {path}")
 
     # Test the connection
-    click.echo()
-    if click.confirm("Test connection now?", default=True):
+    test_connection = cfg_input.get("test_connection", True) if cfg_input else click.confirm("Test connection now?", default=True)
+    if test_connection:
+        click.echo()
         from .config import Config
         cfg = Config(
             core_url=core_url,
@@ -890,6 +936,28 @@ def _try_unpair(core_url: str, identity: Any) -> None:
     save_config(saved)
 
 
+def _configure_signature_noninteractive(
+    core_url: str, device_name: str, role: str, cfg: dict,
+) -> None:
+    """Non-interactive keypair generation and pairing from config file."""
+    from .signing import CLIIdentity
+
+    identity = CLIIdentity()
+
+    if cfg.get("generate_keypair", True) or not identity.exists:
+        if identity.exists:
+            _try_unpair(core_url, identity)
+        click.echo("  Generating Ed25519 keypair...")
+        identity.generate()
+        click.echo(f"  DID: {identity.did()}")
+
+    pairing_code = cfg.get("pairing_code", "")
+    if pairing_code:
+        _pair_with_key(core_url, identity, device_name, role, pairing_code=pairing_code)
+    else:
+        click.echo("  No pairing_code in config — skipping pairing.")
+
+
 def _configure_signature(core_url: str, device_name: str, role: str = "user") -> None:
     """Generate keypair and pair with Core using Ed25519 public key."""
     from .signing import CLIIdentity
@@ -914,13 +982,17 @@ def _configure_signature(core_url: str, device_name: str, role: str = "user") ->
     _pair_with_key(core_url, identity, device_name, role)
 
 
-def _pair_with_key(core_url: str, identity: Any, device_name: str, role: str = "user") -> None:
+def _pair_with_key(
+    core_url: str, identity: Any, device_name: str,
+    role: str = "user", pairing_code: str = "",
+) -> None:
     """Register the public key with Core using a pairing code."""
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
-        click.echo("  Enter the pairing code from your Home Node.")
-        click.echo("  (Generate one by running: ./dina-admin device pair)")
-        pairing_code = click.prompt("  Pairing code")
+        if not pairing_code:
+            click.echo("  Enter the pairing code from your Home Node.")
+            click.echo("  (Generate one by running: ./dina-admin device pair)")
+            pairing_code = click.prompt("  Pairing code")
 
         click.echo("  Registering device...")
         try:

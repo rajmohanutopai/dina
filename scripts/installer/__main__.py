@@ -60,8 +60,12 @@ def _cmd_apply() -> int:
             return 1
 
     # Override from env vars (security: passphrase never in JSON/argv;
-    # ports must be allocated on host, not inside container).
+    # ports must be allocated on host, not inside container;
+    # dina_dir is always /work inside the container).
     data = json.loads(config_json)
+    dina_dir_env = os.environ.get("DINA_DIR", "")
+    if dina_dir_env and "dina_dir" not in data:
+        data["dina_dir"] = dina_dir_env
     passphrase_env = os.environ.get("DINA_SEED_PASSPHRASE", "")
     if passphrase_env:
         data["passphrase"] = passphrase_env
