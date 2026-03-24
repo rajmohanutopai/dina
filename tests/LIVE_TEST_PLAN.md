@@ -540,3 +540,111 @@ $DINA validate search "desc"
 $ADMIN vault search '"; DROP TABLE; --' --persona general
 ```
 **Expected:** "No items found" (FTS5 sanitized, no injection)
+
+---
+
+## Phase 15: Cross-Session Security
+
+Tests that grants don't leak between sessions on the same device.
+
+### SEC-001: Approved session can access sensitive data
+```
+$DINA session start --name "Session Alpha"
+$DINA remember --session <S1> "Blood pressure 140/90"
+$ADMIN approvals approve <health-approval-id>
+$DINA ask --session <S1> "What is my blood pressure?"
+```
+**Expected:** Returns "140/90"
+
+### SEC-002: Different session CANNOT access another session's grant
+```
+$DINA session start --name "Session Beta"
+$DINA ask --session <S2> "What is my blood pressure?"
+```
+**Expected:** "don't have access" or approval request — NOT the data
+
+### SEC-003: Ended session is rejected
+```
+$DINA session end <S1>
+$DINA ask --session <S1> "What is my blood pressure?"
+```
+**Expected:** Error 403 "session not found or not active"
+
+### SEC-007: Mixed grants per session
+```
+# Session has finance=YES, health=NO
+$DINA ask --session <S2> "How much is my rent?"      # → works (finance granted)
+$DINA ask --session <S2> "What is my blood pressure?" # → denied (no health grant)
+```
+**Expected:** Finance answers, health denied
+
+---
+
+## Phase 16: Cross-Device Security (Same Home Node)
+
+Two devices (different keypairs, different DIDs) paired to the SAME Home Node.
+Tests that one device cannot steal another device's session or grants.
+
+**Setup:**
+- Agent1: primary CLI (tok-3)
+- Agent2: second CLI in separate venv (tok-4), different keypair, same Core URL
+
+### SEC-101: Agent1 own session + own grant works
+```
+# Agent1 creates session, stores finance data, gets approval
+$AGENT1 ask --session <S1> "What is my credit card limit?"
+```
+**Expected:** Returns the data
+
+### SEC-102: Agent2 tries to use Agent1's session ID
+```
+$AGENT2 ask --session <S1> "What is my credit card limit?"
+```
+**Expected:** Error 403 "session not found or not active"
+**Fail if:** Returns any data — session theft vulnerability
+
+### SEC-103: Agent2 own session, no finance grant
+```
+$AGENT2 ask --session <S2> "What is my credit card limit?"
+```
+**Expected:** "don't have access to financial records"
+
+### SEC-104: Agent2 stores general data (own session works)
+```
+$AGENT2 remember --session <S2> "favorite color is blue"
+```
+**Expected:** `status: stored`
+
+### SEC-105: Both agents see shared general data
+```
+$AGENT1 ask --session <S1> "What is my favorite color?"
+```
+**Expected:** "blue" — general vault is shared across devices
+
+### SEC-106: Agent2 cannot remember via Agent1's session
+```
+$AGENT2 remember --session <S1> "hijack attempt"
+```
+**Expected:** Error 403 "session not found or not active"
+
+---
+
+## Phase 17: Version Verification
+
+### V-001: CLI version
+```
+$DINA --version
+```
+**Expected:** `dina-agent, version X.Y.Z+<git-hash>`
+
+### V-002: Core version in healthz
+```
+curl -s http://localhost:8100/healthz
+```
+**Expected:** `{"status":"ok","version":"X.Y.Z+<git-hash>"}`
+
+### V-003: Admin CLI version
+```
+$ADMIN --version
+```
+**Expected:** `dina-admin, version X.Y.Z`
