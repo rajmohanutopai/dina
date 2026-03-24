@@ -387,28 +387,25 @@ class ActionRiskPolicy:
         )
 
 
-# DIDComm message type prefixes and their handlers.
+# D2D v1 message type prefixes and their handlers.
+# v1 families use flat dotted names (e.g. "social.update") not path prefixes.
 _DIDCOMM_HANDLERS: dict[str, str] = {
-    "dina/social/": "nudge_assembly",
-    "dina/commerce/": "commerce_handler",
-    "dina/identity/": "identity_handler",
-    "dina/trust/": "trust_handler",
+    "social.":   "nudge_assembly",
+    "commerce.": "commerce_handler",
+    "trust.":    "trust_handler",
+    "presence.": "presence_handler",
+    "safety.":   "safety_handler",
+    "estate.":   "estate_handler",
 }
 
-# DIDComm message types whose content is memory-producing → staged to vault.
-# Maps DIDComm type → valid vault item type (from domain.ValidVaultItemTypes).
-# Real-time signals (arrival, greeting, typing, ping) are NOT staged.
+# D2D v1 memory-producing message types → vault item type.
+# Only social.update and trust.vouch.response produce vault items.
+# Real-time signals (presence.signal, safety.alert) are NOT staged.
 _D2D_VAULT_TYPE_MAP: dict[str, str] = {
     # Social — relationship memory
-    "dina/social/note":          "relationship_note",
-    "dina/social/context_share": "relationship_note",
-    "dina/social/update":        "relationship_note",
-    "dina/social/message":       "message",
-    # Commerce — purchase/review memory
-    "dina/commerce/review":      "trust_review",
+    "social.update":          "relationship_note",
     # Trust — attestation records
-    "dina/trust/attestation":    "trust_attestation",
-    "dina/trust/outcome":        "trust_attestation",
+    "trust.vouch.response":   "trust_attestation",
 }
 
 # Promise patterns for proactive briefing scanning (SS17.1).
@@ -1014,8 +1011,14 @@ class GuardianLoop:
             if handler is not None:
                 return await handler(event)
 
-            # ---- DIDComm message routing (SS2.8) ----
-            if event_type and event_type.startswith("dina/"):
+            # ---- D2D v1 + legacy DIDComm message routing (SS2.8) ----
+            # v1 types use flat dotted names (e.g. "social.update").
+            # Legacy types use "dina/" path prefix (kept for backward compat).
+            _is_d2d = event_type and (
+                event_type.startswith("dina/")
+                or any(event_type.startswith(p) for p in _DIDCOMM_HANDLERS)
+            )
+            if _is_d2d:
                 return await self._handle_didcomm(event)
 
             # ---- Standard event processing ----

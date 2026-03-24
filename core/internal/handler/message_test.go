@@ -94,6 +94,8 @@ func (s *stubOutboxManager) PendingCount(_ context.Context) (int, error)     { r
 func (s *stubOutboxManager) ListPending(_ context.Context) ([]domain.OutboxMessage, error) {
 	return nil, nil
 }
+func (s *stubOutboxManager) DeleteExpired(_ context.Context, _ int64) (int, error) { return 0, nil }
+func (s *stubOutboxManager) ResumeAfterApproval(_ context.Context, _ string) error { return nil }
 
 var _ port.OutboxManager = (*stubOutboxManager)(nil)
 

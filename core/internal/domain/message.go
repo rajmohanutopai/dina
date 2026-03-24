@@ -1,34 +1,285 @@
 package domain
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // MessageType classifies a Dina-to-Dina message.
 type MessageType string
 
+// v1 message families — the fixed set accepted by the D2D v1 protocol.
+// Estate and commerce are v2+ and excluded from the v1 handler surface.
 const (
-	MessageTypeSocial     MessageType = "dina/social/arrival"
-	MessageTypeQuery      MessageType = "dina/query"
-	MessageTypeResponse   MessageType = "dina/response"
-	MessageTypeAck        MessageType = "dina/ack"
-	MessageTypeHeartbeat  MessageType = "dina/heartbeat"
+	// presence.signal — ephemeral location/status ping, never stored.
+	MsgTypePresenceSignal MessageType = "presence.signal"
+
+	// coordination.request — scheduling coordination (propose time, ask availability).
+	MsgTypeCoordinationRequest MessageType = "coordination.request"
+
+	// coordination.response — answer to a coordination request (accept, decline, counter).
+	MsgTypeCoordinationResponse MessageType = "coordination.response"
+
+	// social.update — relationship memory (profile, life event, context).
+	MsgTypeSocialUpdate MessageType = "social.update"
+
+	// safety.alert — urgent safety notification; always passes inbound.
+	MsgTypeSafetyAlert MessageType = "safety.alert"
+
+	// trust.vouch.request — ask a peer to vouch for a third party.
+	MsgTypeTrustVouchRequest MessageType = "trust.vouch.request"
+
+	// trust.vouch.response — answer to a vouch request; stored as attestation.
+	MsgTypeTrustVouchResponse MessageType = "trust.vouch.response"
+
+	// Legacy estate constants — kept for domain model; excluded from v1 D2D surface.
 	MessageTypeEstate     MessageType = "dina/estate/notify"
 	MessageTypeKeyDeliver MessageType = "dina/estate/key_deliver"
+
+	// Legacy v0 constants — retained for backward compatibility with existing
+	// tests and handler code. NOT part of v1 — rejected by ValidateV1Body.
+	MessageTypeSocial    MessageType = "dina/social/arrival"
+	MessageTypeQuery     MessageType = "dina/query"
+	MessageTypeResponse  MessageType = "dina/response"
+	MessageTypeAck       MessageType = "dina/ack"
+	MessageTypeHeartbeat MessageType = "dina/heartbeat"
 )
 
-// D2DMemoryTypes maps DIDComm message types that produce memory content
-// to valid vault item types. Real-time signals (arrival, greeting, typing,
-// ping, departure) are NOT staged — only relationship/commerce/trust memory.
+// V1MessageFamilies is the authoritative set of message types accepted by the
+// D2D v1 protocol.  Any type not in this set is rejected on inbound and
+// returns ErrUnknownMessageType; outbound sends with an unknown type receive
+// a 400.
+var V1MessageFamilies = map[MessageType]bool{
+	MsgTypePresenceSignal:       true,
+	MsgTypeCoordinationRequest:  true,
+	MsgTypeCoordinationResponse: true,
+	MsgTypeSocialUpdate:         true,
+	MsgTypeSafetyAlert:          true,
+	MsgTypeTrustVouchRequest:    true,
+	MsgTypeTrustVouchResponse:   true,
+}
+
+// MsgTypeToScenario maps a v1 message type to its D2D scenario name.
+// The scenario name is used for per-contact policy lookups.
+func MsgTypeToScenario(t MessageType) string {
+	switch t {
+	case MsgTypePresenceSignal:
+		return "presence"
+	case MsgTypeCoordinationRequest, MsgTypeCoordinationResponse:
+		return "coordination"
+	case MsgTypeSocialUpdate:
+		return "social"
+	case MsgTypeSafetyAlert:
+		return "safety"
+	case MsgTypeTrustVouchRequest, MsgTypeTrustVouchResponse:
+		return "trust"
+	default:
+		return ""
+	}
+}
+
+// D2DMemoryTypes maps D2D v1 message types that produce memory content
+// to valid vault item types. Real-time signals (presence.signal, safety.alert)
+// are NOT staged — only relationship and trust memory.
+//
+// v1 mapping (greenfield — no backward-compat required):
+//
+//	social.update           → relationship_note
+//	trust.vouch.response    → trust_attestation
 var D2DMemoryTypes = map[MessageType]string{
-	// Social — relationship memory
-	"dina/social/note":          "relationship_note",
-	"dina/social/context_share": "relationship_note",
-	"dina/social/update":        "relationship_note",
-	"dina/social/message":       "message",
-	// Commerce — purchase/review memory
-	"dina/commerce/review": "trust_review",
-	// Trust — attestation records
-	"dina/trust/attestation": "trust_attestation",
-	"dina/trust/outcome":     "trust_attestation",
+	MsgTypeSocialUpdate:       "relationship_note",
+	MsgTypeTrustVouchResponse: "trust_attestation",
+}
+
+// ---------------------------------------------------------------------------
+// Per-family body schema structs
+// ---------------------------------------------------------------------------
+
+// PresenceSignalBody is the body of a presence.signal message.
+// Ephemeral — never stored in the vault.
+type PresenceSignalBody struct {
+	// Status is a short free-form presence description (e.g. "online", "busy").
+	Status string `json:"status"`
+	// ETAMinutes is an optional ETA in minutes (e.g. "I'm 10 min away").
+	ETAMinutes *int `json:"eta_minutes,omitempty"`
+	// LocationLabel is a coarse location label (e.g. "home", "office").
+	// Never contains GPS coordinates in v1.
+	LocationLabel string `json:"location_label,omitempty"`
+}
+
+// SocialUpdateBody is the body of a social.update message.
+// Produces relationship_note vault items.
+type SocialUpdateBody struct {
+	// Text is the free-form update text.
+	Text string `json:"text"`
+	// Category classifies the update (e.g. "life_event", "context", "profile").
+	Category string `json:"category,omitempty"`
+}
+
+// SafetyAlertBody is the body of a safety.alert message.
+// Always passes inbound regardless of scenario policy.
+type SafetyAlertBody struct {
+	// Message is the alert description.
+	Message string `json:"message"`
+	// Severity is one of "low", "medium", "high", "critical".
+	Severity string `json:"severity"`
+}
+
+// TrustVouchRequestBody is the body of a trust.vouch.request message.
+type TrustVouchRequestBody struct {
+	// SubjectDID is the DID of the entity being vouched for.
+	SubjectDID string `json:"subject_did"`
+	// Context explains why the vouch is being requested.
+	Context string `json:"context,omitempty"`
+}
+
+// TrustVouchResponseBody is the body of a trust.vouch.response message.
+// Produces trust_attestation vault items.
+type TrustVouchResponseBody struct {
+	// SubjectDID is the DID of the vouched entity.
+	SubjectDID string `json:"subject_did"`
+	// Vouch is "yes", "no", or "partial".
+	Vouch string `json:"vouch"`
+	// Note is an optional free-form justification.
+	Note string `json:"note,omitempty"`
+	// RequestID links back to the originating trust.vouch.request.
+	RequestID string `json:"request_id,omitempty"`
+}
+
+// CoordinationRequestBody is the body of a coordination.request message.
+// Ephemeral — never stored.
+type CoordinationRequestBody struct {
+	// Action: propose_time, ask_availability, ask_confirmation.
+	Action string `json:"action"`
+	// ProposedTime is a Unix timestamp (optional, for propose_time).
+	ProposedTime int64 `json:"proposed_time,omitempty"`
+	// Context is a brief description of the coordination request.
+	Context string `json:"context"`
+}
+
+// CoordinationResponseBody is the body of a coordination.response message.
+// Ephemeral — never stored.
+type CoordinationResponseBody struct {
+	// Action: accept, decline, counter_propose.
+	Action string `json:"action"`
+	// CounterTime is a Unix timestamp (optional, for counter_propose).
+	CounterTime int64 `json:"counter_time,omitempty"`
+	// Note is an optional explanation.
+	Note string `json:"note,omitempty"`
+	// RequestID links back to the originating coordination.request.
+	RequestID string `json:"request_id,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// ValidateV1Body
+// ---------------------------------------------------------------------------
+
+// ValidateV1Body validates that a message's type is a known v1 family and
+// that the body is well-formed JSON with the required fields for that type.
+//
+// Returns ErrUnknownMessageType if the type is not in V1MessageFamilies.
+// Returns ErrInvalidD2DBody if the body fails per-type validation.
+func ValidateV1Body(t MessageType, body []byte) error {
+	if !V1MessageFamilies[t] {
+		return fmt.Errorf("%w: %q", ErrUnknownMessageType, t)
+	}
+
+	switch t {
+	case MsgTypePresenceSignal:
+		var b PresenceSignalBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: presence.signal: %v", ErrInvalidD2DBody, err)
+		}
+		if b.Status == "" {
+			return fmt.Errorf("%w: presence.signal: status is required", ErrInvalidD2DBody)
+		}
+
+	case MsgTypeCoordinationRequest:
+		var b CoordinationRequestBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: coordination.request: %v", ErrInvalidD2DBody, err)
+		}
+		switch b.Action {
+		case "propose_time", "ask_availability", "ask_confirmation":
+			// valid
+		case "":
+			return fmt.Errorf("%w: coordination.request: action is required", ErrInvalidD2DBody)
+		default:
+			return fmt.Errorf("%w: coordination.request: action must be propose_time|ask_availability|ask_confirmation, got %q", ErrInvalidD2DBody, b.Action)
+		}
+		if b.Context == "" {
+			return fmt.Errorf("%w: coordination.request: context is required", ErrInvalidD2DBody)
+		}
+
+	case MsgTypeCoordinationResponse:
+		var b CoordinationResponseBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: coordination.response: %v", ErrInvalidD2DBody, err)
+		}
+		switch b.Action {
+		case "accept", "decline", "counter_propose":
+			// valid
+		case "":
+			return fmt.Errorf("%w: coordination.response: action is required", ErrInvalidD2DBody)
+		default:
+			return fmt.Errorf("%w: coordination.response: action must be accept|decline|counter_propose, got %q", ErrInvalidD2DBody, b.Action)
+		}
+
+	case MsgTypeSocialUpdate:
+		var b SocialUpdateBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: social.update: %v", ErrInvalidD2DBody, err)
+		}
+		if b.Text == "" {
+			return fmt.Errorf("%w: social.update: text is required", ErrInvalidD2DBody)
+		}
+
+	case MsgTypeSafetyAlert:
+		var b SafetyAlertBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: safety.alert: %v", ErrInvalidD2DBody, err)
+		}
+		if b.Message == "" {
+			return fmt.Errorf("%w: safety.alert: message is required", ErrInvalidD2DBody)
+		}
+		switch b.Severity {
+		case "low", "medium", "high", "critical":
+			// valid
+		case "":
+			return fmt.Errorf("%w: safety.alert: severity is required", ErrInvalidD2DBody)
+		default:
+			return fmt.Errorf("%w: safety.alert: severity must be low|medium|high|critical, got %q", ErrInvalidD2DBody, b.Severity)
+		}
+
+	case MsgTypeTrustVouchRequest:
+		var b TrustVouchRequestBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: trust.vouch.request: %v", ErrInvalidD2DBody, err)
+		}
+		if b.SubjectDID == "" {
+			return fmt.Errorf("%w: trust.vouch.request: subject_did is required", ErrInvalidD2DBody)
+		}
+
+	case MsgTypeTrustVouchResponse:
+		var b TrustVouchResponseBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: trust.vouch.response: %v", ErrInvalidD2DBody, err)
+		}
+		if b.SubjectDID == "" {
+			return fmt.Errorf("%w: trust.vouch.response: subject_did is required", ErrInvalidD2DBody)
+		}
+		switch b.Vouch {
+		case "yes", "no", "partial":
+			// valid
+		case "":
+			return fmt.Errorf("%w: trust.vouch.response: vouch is required", ErrInvalidD2DBody)
+		default:
+			return fmt.Errorf("%w: trust.vouch.response: vouch must be yes|no|partial, got %q", ErrInvalidD2DBody, b.Vouch)
+		}
+
+	}
+
+	return nil
 }
 
 // MaxMessageBodySize is the maximum size for a D2D message body (256 KB).
@@ -66,25 +317,27 @@ type DinaEnvelope struct {
 
 // OutboxMessage represents a message queued for delivery.
 type OutboxMessage struct {
-	ID        string `json:"id"`
-	ToDID     string `json:"to_did"`
-	Payload   []byte `json:"payload"`
-	Sig       []byte `json:"sig"`        // Ed25519 signature over plaintext (before encryption)
-	CreatedAt int64  `json:"created_at"`
-	NextRetry int64  `json:"next_retry"`
-	Retries   int    `json:"retries"`
-	Status    string `json:"status"`   // pending, sending, delivered, failed
-	Priority  int    `json:"priority"` // higher = more important (fiduciary > normal)
+	ID         string `json:"id"`
+	ToDID      string `json:"to_did"`
+	Payload    []byte `json:"payload"`
+	Sig        []byte `json:"sig"`         // Ed25519 signature over plaintext (before encryption)
+	CreatedAt  int64  `json:"created_at"`
+	NextRetry  int64  `json:"next_retry"`
+	Retries    int    `json:"retries"`
+	Status     string `json:"status"`      // pending, pending_approval, sending, delivered, failed
+	Priority   int    `json:"priority"`    // higher = more important (fiduciary > normal)
+	ApprovalID string `json:"approval_id"` // links to unified ApprovalRequest (set when status=pending_approval)
 }
 
 // OutboxStatus enumerates outbox message states.
 type OutboxStatus string
 
 const (
-	OutboxPending   OutboxStatus = "pending"
-	OutboxSending   OutboxStatus = "sending"
-	OutboxDelivered OutboxStatus = "delivered"
-	OutboxFailed    OutboxStatus = "failed"
+	OutboxPending         OutboxStatus = "pending"
+	OutboxPendingApproval OutboxStatus = "pending_approval" // blocked by explicit_once, awaiting owner
+	OutboxSending         OutboxStatus = "sending"
+	OutboxDelivered       OutboxStatus = "delivered"
+	OutboxFailed          OutboxStatus = "failed"
 )
 
 // PriorityLevel defines message urgency following the Four Laws.

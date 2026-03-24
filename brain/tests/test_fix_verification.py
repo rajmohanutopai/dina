@@ -52,16 +52,17 @@ async def test_fix_19_1_1_send_d2d_base64_json():
 
     client._request = _capture_request
 
-    payload = {"type": "dina/social/arrival", "body": {"summary": "Hello"}}
-    await client.send_d2d("did:plc:receiver123", payload)
+    payload = {"text": "Hello", "category": "context"}
+    await client.send_d2d("did:plc:receiver123", payload, msg_type="social.update")
 
     assert captured["json"]["to"] == "did:plc:receiver123"
+    assert captured["json"]["type"] == "social.update"
     # Verify the body field is valid base64.
     body_b64 = captured["json"]["body"]
     decoded = base64.b64decode(body_b64)
     parsed = json.loads(decoded)
-    assert parsed["type"] == "dina/social/arrival"
-    assert parsed["body"]["summary"] == "Hello"
+    assert parsed["text"] == "Hello"
+    assert parsed["category"] == "context"
 
 
 # TST-BRAIN-468
@@ -82,7 +83,7 @@ async def test_fix_19_1_2_send_d2d_valid_wire_json():
 
     client._request = _capture_request
 
-    await client.send_d2d("did:plc:bob", {"msg": "test"})
+    await client.send_d2d("did:plc:bob", {"msg": "test"}, msg_type="presence.signal")
 
     wire = captured["json"]
     # The wire payload must be a plain dict serialisable to JSON.
@@ -90,7 +91,7 @@ async def test_fix_19_1_2_send_d2d_valid_wire_json():
     assert isinstance(wire_str, str)
     reparsed = json.loads(wire_str)
     assert reparsed["to"] == "did:plc:bob"
-    assert reparsed["type"] == "dina/d2d"
+    assert reparsed["type"] == "presence.signal"
     # body field must be a string (base64), not bytes
     assert isinstance(reparsed["body"], str)
 

@@ -201,14 +201,14 @@ async def test_core_client_7_1_6_send_message(core_client) -> None:
         mock_resp = _make_response(200, json_data={})
         mock_req.return_value = mock_resp
 
-        await core_client.send_d2d("did:key:z6MkFriendNode", payload)
+        await core_client.send_d2d("did:key:z6MkFriendNode", payload, msg_type="social.update")
 
     import base64
     expected_body = base64.b64encode(json.dumps(payload).encode()).decode()
     mock_req.assert_awaited_once_with(
         "POST",
         "/v1/msg/send",
-        json={"to": "did:key:z6MkFriendNode", "body": expected_body, "type": "dina/d2d"},
+        json={"to": "did:key:z6MkFriendNode", "body": expected_body, "type": "social.update"},
     )
 
 

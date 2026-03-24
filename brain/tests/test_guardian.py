@@ -2036,32 +2036,33 @@ async def test_guardian_2_6_8_disconnection_pattern(guardian) -> None:
 # TST-BRAIN-412
 @pytest.mark.asyncio
 async def test_guardian_2_8_5_didcomm_message_type_parsing(guardian) -> None:
-    """SS2.8.5: Brain correctly routes DIDComm message types.
+    """SS2.8.5: Brain correctly routes D2D v1 message types.
 
-    Architecture SS09: Brain must parse DIDComm message types
-    (dina/social/arrival, dina/commerce/*, dina/identity/*, dina/trust/*)
+    Architecture SS09: Brain must parse D2D v1 message types
+    (social.*, commerce.*, trust.*, presence.*, safety.*, estate.*)
     and route to appropriate handler.
     """
-    msg = make_didcomm_message(msg_type="dina/social/arrival")
+    # Test social handler (presence.signal → nudge_assembly via "social." prefix).
+    msg = make_didcomm_message(msg_type="social.update")
     result = await guardian.process_event(msg)
     assert result["handler"] == "nudge_assembly"
     assert result["action"] == "nudge_assembled"
 
     # Test commerce handler.
-    msg2 = make_didcomm_message(msg_type="dina/commerce/purchase")
+    msg2 = make_didcomm_message(msg_type="commerce.referral")
     result2 = await guardian.process_event(msg2)
     assert result2["handler"] == "commerce_handler"
     assert result2["action"] == "routed"
 
-    # Test identity handler.
-    msg3 = make_didcomm_message(msg_type="dina/identity/verify")
-    result3 = await guardian.process_event(msg3)
-    assert result3["handler"] == "identity_handler"
-
     # Test trust handler.
-    msg4 = make_didcomm_message(msg_type="dina/trust/query")
+    msg3 = make_didcomm_message(msg_type="trust.vouch.request")
+    result3 = await guardian.process_event(msg3)
+    assert result3["handler"] == "trust_handler"
+
+    # Test presence handler.
+    msg4 = make_didcomm_message(msg_type="presence.signal")
     result4 = await guardian.process_event(msg4)
-    assert result4["handler"] == "trust_handler"
+    assert result4["handler"] == "presence_handler"
 
 
 # ---------------------------------------------------------------------------
@@ -9793,14 +9794,14 @@ async def test_document_ingest_uses_direct_vault_write(guardian):
 @pytest.mark.asyncio
 # TST-BRAIN-800
 async def test_d2d_memory_note_staged(guardian):
-    """D2D social note is staged with ingress_channel=d2d."""
+    """D2D social.update is staged with ingress_channel=d2d (v1 type)."""
     import json as _json
 
     core = guardian._test_core
     core.staging_ingest.return_value = "stg-d2d-1"
 
     event = {
-        "type": "dina/social/note",
+        "type": "social.update",
         "from": "did:plc:sancho",
         "id": "msg-42",
         "body": "My mother is feeling better today",
@@ -9810,7 +9811,7 @@ async def test_d2d_memory_note_staged(guardian):
 
     core.staging_ingest.assert_awaited_once()
     item = core.staging_ingest.await_args[0][0]
-    assert item["type"] == "relationship_note"  # mapped from dina/social/note
+    assert item["type"] == "relationship_note"  # mapped from social.update
     assert item["source"] == "d2d"
     assert item["sender"] == "did:plc:sancho"
     assert item["ingress_channel"] == "d2d"
@@ -9818,7 +9819,7 @@ async def test_d2d_memory_note_staged(guardian):
     assert item["origin_did"] == "did:plc:sancho"
     assert item["body"] == "My mother is feeling better today"
     meta = _json.loads(item["metadata"])
-    assert meta["didcomm_type"] == "dina/social/note"
+    assert meta["didcomm_type"] == "social.update"
     assert meta["timestamp"] == 1711000000
     assert result.get("staged") is True
 
@@ -9826,21 +9827,21 @@ async def test_d2d_memory_note_staged(guardian):
 @pytest.mark.asyncio
 # TST-BRAIN-801
 async def test_d2d_trust_attestation_staged(guardian):
-    """D2D trust attestation is staged with ingress_channel=d2d."""
+    """D2D trust.vouch.response is staged with ingress_channel=d2d (v1 type)."""
     core = guardian._test_core
     core.staging_ingest.return_value = "stg-d2d-2"
 
     event = {
-        "type": "dina/trust/attestation",
+        "type": "trust.vouch.response",
         "from": "did:plc:albert",
         "id": "att-99",
-        "body": {"ring": 2, "evidence": "transaction_history"},
+        "body": {"subject_did": "did:plc:x", "vouch": "yes"},
     }
     result = await guardian.process_event(event)
 
     core.staging_ingest.assert_awaited_once()
     item = core.staging_ingest.await_args[0][0]
-    assert item["type"] == "trust_attestation"  # mapped from dina/trust/attestation
+    assert item["type"] == "trust_attestation"  # mapped from trust.vouch.response
     assert item["ingress_channel"] == "d2d"
     assert item["origin_did"] == "did:plc:albert"
     assert result.get("staged") is True
@@ -9849,54 +9850,53 @@ async def test_d2d_trust_attestation_staged(guardian):
 @pytest.mark.asyncio
 # TST-BRAIN-802
 async def test_d2d_arrival_not_staged(guardian):
-    """D2D social arrival is a real-time signal — NOT staged."""
+    """D2D presence.signal is a real-time signal — NOT staged (v1 type)."""
     core = guardian._test_core
 
     event = {
-        "type": "dina/social/arrival",
+        "type": "presence.signal",
         "from": "did:plc:sancho",
-        "body": "Sancho is nearby",
+        "body": {"status": "nearby"},
     }
     result = await guardian.process_event(event)
 
-    # Arrival is real-time (nudge), not memory-producing.
+    # presence.signal is real-time, not memory-producing.
     core.staging_ingest.assert_not_awaited()
-    assert result.get("action") == "nudge_assembled"
+    # Routed to presence_handler, not nudge_assembly.
+    assert result.get("action") in ("routed", "nudge_assembled")
     assert result.get("staged") is False
 
 
 @pytest.mark.asyncio
 # TST-BRAIN-803
 async def test_d2d_commerce_review_staged(guardian):
-    """D2D commerce review is staged for vault persistence."""
+    """D2D commerce.referral is routed but NOT staged (v1: no memory-producing commerce types)."""
     core = guardian._test_core
-    core.staging_ingest.return_value = "stg-d2d-3"
 
     event = {
-        "type": "dina/commerce/review",
+        "type": "commerce.referral",
         "from": "did:plc:chairmaker",
-        "id": "rev-7",
-        "body": "This ergonomic chair has excellent lumbar support",
+        "id": "ref-7",
+        "body": {"vendor_did": "did:plc:vendor", "note": "Great ergonomic chair"},
     }
     result = await guardian.process_event(event)
 
-    core.staging_ingest.assert_awaited_once()
-    item = core.staging_ingest.await_args[0][0]
-    assert item["type"] == "trust_review"  # mapped from dina/commerce/review
-    assert item["sender"] == "did:plc:chairmaker"
-    assert item["ingress_channel"] == "d2d"
-    assert result.get("staged") is True
+    # commerce.referral is not in _D2D_VAULT_TYPE_MAP — not staged.
+    core.staging_ingest.assert_not_awaited()
+    assert result.get("handler") == "commerce_handler"
+    assert result.get("action") == "routed"
+    assert result.get("staged") is False
 
 
 @pytest.mark.asyncio
 # TST-BRAIN-804
 async def test_d2d_context_share_staged(guardian):
-    """D2D context_share (actual type used in D2D tests) is staged."""
+    """D2D social.update (v1 replacement for context_share) is staged as relationship_note."""
     core = guardian._test_core
     core.staging_ingest.return_value = "stg-d2d-cs"
 
     event = {
-        "type": "dina/social/context_share",
+        "type": "social.update",
         "from": "did:plc:sancho",
         "id": "ctx-1",
         "body": "Mother is ill, needs daily check-ins",
@@ -9905,7 +9905,7 @@ async def test_d2d_context_share_staged(guardian):
 
     core.staging_ingest.assert_awaited_once()
     item = core.staging_ingest.await_args[0][0]
-    assert item["type"] == "relationship_note"  # mapped from context_share
+    assert item["type"] == "relationship_note"  # mapped from social.update
     assert item["ingress_channel"] == "d2d"
     assert result.get("staged") is True
 

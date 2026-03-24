@@ -775,15 +775,23 @@ class CoreHTTPClient:
 
     # -- Dina-to-Dina messaging ----------------------------------------------
 
-    async def send_d2d(self, to_did: str, payload: dict) -> None:
-        """POST /v1/msg/send — outbound DIDComm message through core."""
+    async def send_d2d(self, to_did: str, payload: dict, msg_type: str) -> None:
+        """POST /v1/msg/send — outbound D2D v1 message through core.
+
+        Args:
+            to_did:   Recipient DID.
+            payload:  Message body dict (will be base64-encoded).
+            msg_type: D2D v1 message type (e.g. "social.update",
+                      "trust.vouch.request").  Must be one of the v1 families
+                      accepted by Core — unknown types are rejected with 400.
+        """
         import base64
 
         body_b64 = base64.b64encode(json.dumps(payload).encode()).decode()
         await self._request(
             "POST",
             "/v1/msg/send",
-            json={"to": to_did, "body": body_b64, "type": "dina/d2d"},
+            json={"to": to_did, "body": body_b64, "type": msg_type},
         )
 
     # -- Reminder endpoints ----------------------------------------------------

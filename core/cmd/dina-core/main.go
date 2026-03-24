@@ -573,7 +573,11 @@ func main() {
 	}
 
 	didResolverPort := transport.NewDIDResolverPort(didResolver)
-	outboxMgr := transport.NewOutboxManager(100)
+	// SQLite-backed durable outbox (survives restarts). Falls back to in-memory
+	// when CGO is unavailable.
+	outboxMgr := newD2DOutboxManager(vaultMgr)
+	// SQLite-backed scenario policy manager (survives restarts). nil in no-CGO mode.
+	scenarioPolicyMgr := newScenarioPolicyManager(vaultMgr)
 	inboxMgr := transport.NewInboxManager(transport.DefaultInboxConfig())
 	transporter := transport.NewTransporter(didResolver)
 
@@ -864,7 +868,7 @@ func main() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			if n, err := outboxMgr.DeleteExpired(86400); err == nil && n > 0 {
+			if n, err := outboxMgr.DeleteExpired(context.Background(), 86400); err == nil && n > 0 {
 				slog.Info("outbox retention cleanup", "deleted", n)
 			}
 		}
@@ -1142,6 +1146,7 @@ func main() {
 		}
 	}()
 
+
 	pendingReasonStore := newPendingReasonStore(vaultMgr)
 
 	// Pending reason sweep: expire old entries.
@@ -1160,7 +1165,7 @@ func main() {
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed, StagingInbox: stagingInbox, PendingReasons: pendingReasonStore, Brain: brain}
 	sessionH := &handler.SessionHandler{Sessions: personaMgr}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
-	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
+	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr, ScenarioPolicies: scenarioPolicyMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber, Brain: brain}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
 	exportH := &handler.ExportHandler{Migration: migrationSvc}
@@ -1273,6 +1278,9 @@ func main() {
 		if strings.HasSuffix(r.URL.Path, "/policy") {
 			// /v1/contacts/{did}/policy → policy handlers
 			routeByMethod(contactH.HandleGetPolicy, contactH.HandleSetPolicy)(w, r)
+		} else if strings.HasSuffix(r.URL.Path, "/scenarios") {
+			// /v1/contacts/{did}/scenarios → scenario policy handlers
+			routeByMethod(contactH.HandleListScenarios, contactH.HandleSetScenarios)(w, r)
 		} else {
 			// /v1/contacts/{did} → update/delete handlers
 			switch r.Method {

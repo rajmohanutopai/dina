@@ -9,6 +9,7 @@ import (
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
@@ -70,4 +71,14 @@ func newReminderScheduler(_ vaultBackend) port.ReminderScheduler {
 // newTraceStore returns nil in no-CGO mode (tracing disabled).
 func newTraceStore(_ vaultBackend) port.TraceStore {
 	return nil
+}
+
+// newScenarioPolicyManager returns nil in no-CGO mode (scenario policies disabled).
+func newScenarioPolicyManager(_ vaultBackend) port.ScenarioPolicyManager {
+	return nil
+}
+
+// newD2DOutboxManager returns the in-memory outbox manager in no-CGO mode.
+func newD2DOutboxManager(_ vaultBackend) port.OutboxManager {
+	return transport.NewOutboxManager(100)
 }

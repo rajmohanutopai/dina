@@ -820,13 +820,14 @@ func (m *MockOutboxManager) GetByID(msgID string) (*OutboxMessage, error) {
 	return nil, ErrNotFound
 }
 
-func (m *MockOutboxManager) DeleteExpired(ttlSeconds int64) (int, error) {
+func (m *MockOutboxManager) DeleteExpired(_ context.Context, ttlSeconds int64) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	cutoff := time.Now().Unix() - ttlSeconds
 	var kept []OutboxMessage
 	deleted := 0
 	for _, msg := range m.messages {
-		if msg.CreatedAt > 0 && msg.CreatedAt < ttlSeconds {
+		if msg.CreatedAt > 0 && msg.CreatedAt < cutoff {
 			deleted++
 		} else {
 			kept = append(kept, msg)
@@ -834,6 +835,19 @@ func (m *MockOutboxManager) DeleteExpired(ttlSeconds int64) (int, error) {
 	}
 	m.messages = kept
 	return deleted, nil
+}
+
+func (m *MockOutboxManager) ResumeAfterApproval(_ context.Context, msgID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.messages {
+		if m.messages[i].ID == msgID && m.messages[i].Status == "pending_approval" {
+			m.messages[i].Status = "pending"
+			m.messages[i].NextRetry = 0
+			return nil
+		}
+	}
+	return ErrNotFound
 }
 
 // ---------- Mock Inbox Manager ----------

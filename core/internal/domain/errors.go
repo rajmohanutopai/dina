@@ -25,4 +25,7 @@ var (
 	ErrReplayDetected    = errors.New("replay detected")
 	ErrPersonaExists        = errors.New("persona already exists")
 	ErrAppViewNotConfigured = errors.New("appview not configured")
+	ErrUnknownMessageType   = errors.New("unknown D2D message type")
+	ErrInvalidD2DBody       = errors.New("invalid D2D message body")
+	ErrNotAContact          = errors.New("recipient is not a contact")
 )

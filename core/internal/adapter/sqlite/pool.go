@@ -404,6 +404,62 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v5 complete")
 	}
 
+	// --- Identity migration v6: scenario_policies, d2d_outbox, contacts.sharing_rules ---
+	if !hasTable(db, "scenario_policies") {
+		slog.Info("sqlite: applying identity migration v6 (D2D v1 scenario policies + outbox)")
+
+		stmts := []string{
+			// Per-contact, per-scenario send/receive policy.
+			`CREATE TABLE IF NOT EXISTS scenario_policies (
+				contact_did TEXT NOT NULL,
+				scenario    TEXT NOT NULL,
+				tier        TEXT NOT NULL DEFAULT 'deny_by_default'
+					CHECK (tier IN ('standing_policy','explicit_once','deny_by_default')),
+				updated_at  INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+				PRIMARY KEY (contact_did, scenario)
+			)`,
+			// Durable outbox for D2D v1 messages.
+			`CREATE TABLE IF NOT EXISTS d2d_outbox (
+				id          TEXT PRIMARY KEY,
+				to_did      TEXT NOT NULL,
+				msg_type    TEXT NOT NULL,
+				payload     BLOB NOT NULL,
+				sig         BLOB NOT NULL DEFAULT '',
+				status      TEXT NOT NULL DEFAULT 'pending'
+					CHECK (status IN ('pending','pending_approval','sending','delivered','failed')),
+				approval_id TEXT NOT NULL DEFAULT '',
+				priority    INTEGER NOT NULL DEFAULT 5,
+				retries     INTEGER NOT NULL DEFAULT 0,
+				next_retry  INTEGER NOT NULL DEFAULT 0,
+				created_at  INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+				updated_at  INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_d2d_outbox_status ON d2d_outbox(status, next_retry)`,
+			`CREATE INDEX IF NOT EXISTS idx_d2d_outbox_to_did ON d2d_outbox(to_did)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("identity v6: %w", err)
+			}
+		}
+
+		// Add sharing_rules column to contacts if missing.
+		// (contacts table is created by identity_001.sql which predates this column)
+		if !hasColumn(db, "contacts", "sharing_rules") {
+			if _, err := db.ExecContext(ctx,
+				`ALTER TABLE contacts ADD COLUMN sharing_rules TEXT NOT NULL DEFAULT '{}'`); err != nil {
+				if !isAlterColumnExists(err) {
+					return fmt.Errorf("identity v6: add sharing_rules: %w", err)
+				}
+			}
+		}
+
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (6, 'D2D v1: scenario_policies, d2d_outbox, contacts.sharing_rules')`)
+
+		slog.Info("sqlite: identity migration v6 complete")
+	}
+
 	// --- Identity migration v4: staging provenance columns ---
 	if !hasColumn(db, "staging_inbox", "ingress_channel") {
 		slog.Info("sqlite: applying identity migration v4 (staging provenance)")
@@ -459,12 +515,14 @@ func hasTable(db *sql.DB, table string) bool {
 // VT1: PRAGMA table_info() cannot be parameterised, so the table name is
 // interpolated into SQL. Restricting to known tables prevents injection.
 var validMigrationTables = map[string]bool{
-	"vault_items":   true,
-	"contacts":      true,
-	"staging_inbox": true,
-	"reminders":     true,
-	"audit_log":     true,
-	"pending_reason": true,
+	"vault_items":       true,
+	"contacts":          true,
+	"staging_inbox":     true,
+	"reminders":         true,
+	"audit_log":         true,
+	"pending_reason":    true,
+	"scenario_policies": true,
+	"d2d_outbox":        true,
 }
 
 // hasColumn checks whether a table has a specific column.

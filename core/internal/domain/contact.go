@@ -1,5 +1,22 @@
 package domain
 
+// ScenarioTier controls how a D2D message family is handled for a given contact.
+// Applied symmetrically on inbound and outbound.
+type ScenarioTier string
+
+const (
+	// ScenarioStandingPolicy — allowed in both directions without per-send approval.
+	ScenarioStandingPolicy ScenarioTier = "standing_policy"
+
+	// ScenarioExplicitOnce — owner must approve each outbound send.
+	// Inbound is accepted; outbound is parked until approved.
+	ScenarioExplicitOnce ScenarioTier = "explicit_once"
+
+	// ScenarioDenyByDefault — message family is blocked in both directions.
+	// The only exception is safety.alert, which always passes inbound.
+	ScenarioDenyByDefault ScenarioTier = "deny_by_default"
+)
+
 // Contact holds contact directory data stored in identity.sqlite.
 type Contact struct {
 	DID              string `json:"did"`

@@ -185,7 +185,9 @@ type OutboxManager interface {
 	// GetByID retrieves a message by ID.
 	GetByID(msgID string) (*OutboxMessage, error)
 	// DeleteExpired removes messages older than TTL.
-	DeleteExpired(ttlSeconds int64) (int, error)
+	DeleteExpired(ctx context.Context, ttlSeconds int64) (int, error)
+	// ResumeAfterApproval transitions a pending_approval message to pending.
+	ResumeAfterApproval(ctx context.Context, msgID string) error
 	// GetRetryCount returns the retry count for a message.
 	GetRetryCount(msgID string) int
 }

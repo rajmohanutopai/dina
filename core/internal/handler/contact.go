@@ -12,8 +12,9 @@ import (
 
 // ContactHandler serves the /v1/contacts endpoints.
 type ContactHandler struct {
-	Contacts port.ContactDirectory
-	Sharing  port.SharingPolicyManager
+	Contacts        port.ContactDirectory
+	Sharing         port.SharingPolicyManager
+	ScenarioPolicies port.ScenarioPolicyManager
 }
 
 // addContactRequest is the JSON body for POST /v1/contacts.
@@ -70,6 +71,16 @@ func (h *ContactHandler) HandleAddContact(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Auto-install v1 default scenario policies for the new contact.
+	if h.ScenarioPolicies != nil {
+		if err := h.ScenarioPolicies.SetDefaultPolicies(r.Context(), req.DID); err != nil {
+			// Non-fatal: log and continue — the contact is created; policies can
+			// be set manually if this fails.
+			slog.Warn("contact: failed to set default scenario policies",
+				"did", req.DID, "error", err)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"status": "created"})
@@ -122,6 +133,101 @@ func (h *ContactHandler) HandleSetPolicy(w http.ResponseWriter, r *http.Request)
 	if err := h.Sharing.SetPolicy(r.Context(), did, req.Categories); err != nil {
 		http.Error(w, `{"error":"failed to set policy"}`, http.StatusInternalServerError)
 		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+// setScenariosRequest is the JSON body for PUT /v1/contacts/{did}/scenarios.
+type setScenariosRequest struct {
+	Scenarios map[string]domain.ScenarioTier `json:"scenarios"`
+}
+
+// HandleListScenarios handles GET /v1/contacts/{did}/scenarios.
+// Returns the scenario→tier map for the given contact DID.
+func (h *ContactHandler) HandleListScenarios(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.ScenarioPolicies == nil {
+		http.Error(w, `{"error":"scenario policies not configured"}`, http.StatusNotImplemented)
+		return
+	}
+
+	did := extractDIDFromPath(r.URL.Path, "/v1/contacts/", "/scenarios")
+	if did == "" {
+		http.Error(w, `{"error":"missing DID in path"}`, http.StatusBadRequest)
+		return
+	}
+
+	policies, err := h.ScenarioPolicies.ListPolicies(r.Context(), did)
+	if err != nil {
+		http.Error(w, `{"error":"failed to list scenarios"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"scenarios": policies}); err != nil {
+		http.Error(w, `{"error":"failed to encode response"}`, http.StatusInternalServerError)
+	}
+}
+
+// HandleSetScenarios handles PUT /v1/contacts/{did}/scenarios.
+// Accepts JSON {"scenarios": {"scenario": "tier", ...}} and sets each policy.
+func (h *ContactHandler) HandleSetScenarios(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.ScenarioPolicies == nil {
+		http.Error(w, `{"error":"scenario policies not configured"}`, http.StatusNotImplemented)
+		return
+	}
+
+	did := extractDIDFromPath(r.URL.Path, "/v1/contacts/", "/scenarios")
+	if did == "" {
+		http.Error(w, `{"error":"missing DID in path"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req setScenariosRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Scenarios) == 0 {
+		http.Error(w, `{"error":"scenarios map must not be empty"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate all tiers before writing any.
+	validTiers := map[domain.ScenarioTier]bool{
+		domain.ScenarioStandingPolicy: true,
+		domain.ScenarioExplicitOnce:   true,
+		domain.ScenarioDenyByDefault:  true,
+	}
+	for scenario, tier := range req.Scenarios {
+		if !validTiers[tier] {
+			http.Error(w, `{"error":"invalid scenario tier: `+string(tier)+`"}`, http.StatusBadRequest)
+			_ = scenario
+			return
+		}
+	}
+
+	ctx := r.Context()
+	for scenario, tier := range req.Scenarios {
+		if err := h.ScenarioPolicies.SetScenarioPolicy(ctx, did, scenario, tier); err != nil {
+			slog.Warn("contact: failed to set scenario policy",
+				"did", did, "scenario", scenario, "error", err)
+			http.Error(w, `{"error":"failed to set scenario policy"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

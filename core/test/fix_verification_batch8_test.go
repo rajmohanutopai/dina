@@ -285,7 +285,7 @@ func TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs(t *testing.T) {
 	}
 
 	// Expire it (TTL = 3600s = 1 hour; message is 7200s old).
-	n, err := outbox.DeleteExpired(3600)
+	n, err := outbox.DeleteExpired(ctx, 3600)
 	if err != nil {
 		t.Fatalf("delete expired: %v", err)
 	}

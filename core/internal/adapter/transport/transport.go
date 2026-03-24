@@ -566,7 +566,10 @@ func (o *OutboxManager) GetRetryCount(msgID string) int {
 }
 
 // DeleteExpired removes messages older than TTL.
-func (o *OutboxManager) DeleteExpired(ttlSeconds int64) (int, error) {
+// In the in-memory implementation, all old messages (any status) are pruned to
+// prevent unbounded memory growth.
+// Satisfies port.OutboxManager.
+func (o *OutboxManager) DeleteExpired(_ context.Context, ttlSeconds int64) (int, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	cutoff := time.Now().Unix() - ttlSeconds
@@ -582,6 +585,21 @@ func (o *OutboxManager) DeleteExpired(ttlSeconds int64) (int, error) {
 	}
 	o.messages = kept
 	return deleted, nil
+}
+
+// ResumeAfterApproval transitions a pending_approval message to pending.
+// Satisfies port.OutboxManager.
+func (o *OutboxManager) ResumeAfterApproval(_ context.Context, msgID string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for i := range o.messages {
+		if o.messages[i].ID == msgID && o.messages[i].Status == "pending_approval" {
+			o.messages[i].Status = "pending"
+			o.messages[i].NextRetry = 0
+			return nil
+		}
+	}
+	return ErrNotFound
 }
 
 // ResetForTest clears all outbox state for test isolation.

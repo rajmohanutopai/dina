@@ -938,7 +938,7 @@ func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// DeleteExpired with 24h TTL should remove exactly 1.
-	deleted, err := impl.DeleteExpired(86400) // 24 hours in seconds
+	deleted, err := impl.DeleteExpired(ctx, 86400) // 24 hours in seconds
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, deleted, 1)
 
@@ -952,7 +952,7 @@ func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
 	testutil.RequireEqual(t, retrieved.ID, freshID)
 
 	// Negative: calling DeleteExpired again with nothing expired deletes 0.
-	deleted2, err := impl.DeleteExpired(86400)
+	deleted2, err := impl.DeleteExpired(ctx, 86400)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, deleted2, 0)
 }
@@ -1197,7 +1197,7 @@ func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// TTL cleanup with 24h TTL — only old message should be removed.
-	deleted, err := impl.DeleteExpired(86400)
+	deleted, err := impl.DeleteExpired(ctx, 86400)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, deleted, 1)
 
@@ -2412,13 +2412,13 @@ func TestTransport_7_1_20_DeliveredMessagesCleanup(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// Delete expired (1 hour TTL) — only the old message should be cleaned.
-	deleted, err := impl.DeleteExpired(3600) // 1 hour
+	deleted, err := impl.DeleteExpired(ctx, 3600) // 1 hour
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, deleted, 1)
 
 	// Positive control: recent message must still be retrievable (pending count
 	// won't help since it's delivered, but verify old one is gone by re-deleting).
-	deleted2, err := impl.DeleteExpired(3600)
+	deleted2, err := impl.DeleteExpired(ctx, 3600)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, deleted2, 0) // nothing left to delete with 1h TTL
 }
@@ -2457,7 +2457,7 @@ func TestTransport_7_1_21_FailedMessagesCleanup(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// DeleteExpired with 24h TTL should remove only the old one.
-	deleted, err := impl.DeleteExpired(86400)
+	deleted, err := impl.DeleteExpired(ctx, 86400)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, deleted, 1)
 

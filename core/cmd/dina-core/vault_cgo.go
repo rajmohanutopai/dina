@@ -59,3 +59,15 @@ func newTraceStore(backend vaultBackend) port.TraceStore {
 	pool := backend.(*sqlite.VaultAdapter).Pool()
 	return sqlite.NewTraceStore(pool.DB("identity"))
 }
+
+// newScenarioPolicyManager returns a SQLite-backed scenario policy manager.
+func newScenarioPolicyManager(backend vaultBackend) port.ScenarioPolicyManager {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewScenarioPolicyManager(pool)
+}
+
+// newD2DOutboxManager returns a SQLite-backed D2D outbox manager.
+func newD2DOutboxManager(backend vaultBackend) port.OutboxManager {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewD2DOutboxManager(pool)
+}

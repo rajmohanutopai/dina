@@ -107,6 +107,23 @@ func (m *mockOutboxManager) ListPending(_ context.Context) ([]domain.OutboxMessa
 	return pending, nil
 }
 
+func (m *mockOutboxManager) DeleteExpired(_ context.Context, _ int64) (int, error) {
+	return 0, nil
+}
+
+func (m *mockOutboxManager) ResumeAfterApproval(_ context.Context, msgID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.messages {
+		if m.messages[i].ID == msgID && m.messages[i].Status == "pending_approval" {
+			m.messages[i].Status = "pending"
+			m.messages[i].NextRetry = 0
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
 func (m *mockOutboxManager) getByID(msgID string) *domain.OutboxMessage {
 	m.mu.Lock()
 	defer m.mu.Unlock()

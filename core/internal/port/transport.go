@@ -30,6 +30,12 @@ type OutboxManager interface {
 	Requeue(ctx context.Context, msgID string) error
 	PendingCount(ctx context.Context) (int, error)
 	ListPending(ctx context.Context) ([]domain.OutboxMessage, error)
+	// DeleteExpired removes delivered/failed messages older than ttlSeconds.
+	// Returns the count of deleted rows.
+	DeleteExpired(ctx context.Context, ttlSeconds int64) (int, error)
+	// ResumeAfterApproval transitions a pending_approval message to pending
+	// so the outbox scheduler picks it up on the next tick.
+	ResumeAfterApproval(ctx context.Context, msgID string) error
 }
 
 // InboxManager provides inbound message processing with rate limiting.
