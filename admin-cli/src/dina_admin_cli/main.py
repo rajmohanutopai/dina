@@ -44,7 +44,17 @@ def _make_client(ctx: click.Context) -> AdminClient:
     return ctx.obj["client"]
 
 
+def _admin_version() -> str:
+    """Read version from importlib metadata."""
+    try:
+        from importlib.metadata import version as pkg_version
+        return pkg_version("dina-admin-cli")
+    except Exception:
+        return "dev"
+
+
 @click.group()
+@click.version_option(version=_admin_version(), prog_name="dina-admin")
 @click.option("--json", "json_mode", is_flag=True, help="Machine-readable JSON output")
 @click.pass_context
 def cli(ctx: click.Context, json_mode: bool) -> None:

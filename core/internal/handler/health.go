@@ -8,6 +8,9 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
+// Version is set at build time via -ldflags.
+var Version = "dev"
+
 // HealthHandler exposes liveness and readiness probes.
 type HealthHandler struct {
 	Health port.HealthChecker
@@ -21,7 +24,7 @@ func (h *HealthHandler) HandleLiveness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": Version})
 }
 
 // HandleReadiness responds to GET /readyz. Returns 200 if the vault is queryable,

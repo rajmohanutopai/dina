@@ -24,6 +24,29 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+
+def _read_version() -> str:
+    """Read version from VERSION file + git hash. Falls back to 'dev'."""
+    version = "dev"
+    for candidate in [Path("/app/VERSION"), Path(__file__).parent.parent.parent / "VERSION"]:
+        if candidate.exists():
+            version = candidate.read_text().strip()
+            break
+    # Append short git hash if available
+    try:
+        import subprocess
+        h = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                     stderr=subprocess.DEVNULL, timeout=2).decode().strip()
+        if h:
+            version = f"{version}+{h}"
+    except Exception:
+        pass
+    return version
+
+
+BRAIN_VERSION = _read_version()
 
 from fastapi import FastAPI
 
@@ -734,6 +757,7 @@ def create_app() -> FastAPI:
             status = "degraded"
         result: dict = {
             "status": status,
+            "version": BRAIN_VERSION,
             "telegram": "active" if telegram_bot else "disabled",
         }
         if llm_router:

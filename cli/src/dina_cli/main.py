@@ -50,7 +50,26 @@ def _make_client(ctx: click.Context) -> DinaClient:
     return ctx.obj["client"]
 
 
+def _cli_version() -> str:
+    """Read version from importlib metadata + git hash."""
+    try:
+        from importlib.metadata import version as pkg_version
+        v = pkg_version("dina-agent")
+    except Exception:
+        v = "dev"
+    try:
+        import subprocess
+        h = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                     stderr=subprocess.DEVNULL, timeout=2).decode().strip()
+        if h:
+            v = f"{v}+{h}"
+    except Exception:
+        pass
+    return v
+
+
 @click.group()
+@click.version_option(version=_cli_version(), prog_name="dina-agent")
 @click.option("--json", "json_mode", is_flag=True, help="Machine-readable JSON output")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed request/response info")
 @click.pass_context

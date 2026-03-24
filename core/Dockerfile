@@ -15,10 +15,12 @@ RUN go mod download
 # Copy source code.
 COPY . .
 
+# Read version from VERSION file (project root passed via additional_contexts).
+ARG DINA_VERSION=dev
 # Build with CGO enabled for SQLCipher.
 RUN CGO_ENABLED=1 go build \
     -tags fts5 \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X github.com/rajmohanutopai/dina/core/internal/handler.Version=${DINA_VERSION}" \
     -o /dina-core \
     ./cmd/dina-core/
 

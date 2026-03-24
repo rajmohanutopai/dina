@@ -625,6 +625,24 @@ if [ -n "${INSTANCE_NAME}" ] && [ -f "${ENV_FILE}" ]; then
     _sed_inplace "s|^COMPOSE_PROJECT_NAME=.*|COMPOSE_PROJECT_NAME=dina-${INSTANCE_NAME}|" "${ENV_FILE}"
 fi
 
+# Inject DINA_VERSION from VERSION file + git hash into .env for Docker builds.
+if [ -f "${ENV_FILE}" ]; then
+    _DINA_VERSION=$(cat "${DINA_DIR}/VERSION" 2>/dev/null || echo "dev")
+    _GIT_HASH=$(git -C "${DINA_DIR}" rev-parse --short HEAD 2>/dev/null || true)
+    [ -n "${_GIT_HASH}" ] && _DINA_VERSION="${_DINA_VERSION}+${_GIT_HASH}"
+    if grep -q "^DINA_VERSION=" "${ENV_FILE}" 2>/dev/null; then
+        _sed_inplace() {
+            if sed --version 2>/dev/null | grep -q GNU; then sed -i "$@"; else sed -i '' "$@"; fi
+        }
+        _sed_inplace "s|^DINA_VERSION=.*|DINA_VERSION=${_DINA_VERSION}|" "${ENV_FILE}"
+    else
+        echo "" >> "${ENV_FILE}"
+        echo "# Build version" >> "${ENV_FILE}"
+        echo "DINA_VERSION=${_DINA_VERSION}" >> "${ENV_FILE}"
+    fi
+    verbose_ok "Version: ${_DINA_VERSION}"
+fi
+
 # ---------------------------------------------------------------------------
 # Step 5: Build Docker images
 # ---------------------------------------------------------------------------

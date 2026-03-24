@@ -23,6 +23,8 @@ services:
     build:
       context: ./core
       dockerfile: Dockerfile
+      args:
+        DINA_VERSION: "${DINA_VERSION:-dev}"
       additional_contexts:
         admin-cli: ./admin-cli
     ports:
@@ -71,6 +73,8 @@ services:
     build:
       context: ./brain
       dockerfile: Dockerfile
+      args:
+        DINA_VERSION: "${DINA_VERSION:-dev}"
     # No host port exposure — brain is internal-only, reachable via Docker network
     networks:
       - dina-brain-net
