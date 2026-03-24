@@ -2102,6 +2102,19 @@ class GuardianLoop:
         except Exception:
             log.warning("guardian.reminder.notify_failed")
 
+        # Push to Telegram so the user gets it on their phone.
+        if hasattr(self, "_telegram") and self._telegram:
+            if not self._telegram._paired_users:
+                await self._telegram.load_paired_users()
+            try:
+                emoji = {"birthday": "🎂", "appointment": "📅", "payment_due": "💳"}.get(kind, "🔔")
+                for chat_id in self._telegram._paired_users:
+                    await self._telegram._bot.send_message(
+                        chat_id, f"{emoji} {notification_text}",
+                    )
+            except Exception:
+                log.warning("guardian.reminder.telegram_failed")
+
         return {
             "status": "ok",
             "action": "reminder_notification_sent",
