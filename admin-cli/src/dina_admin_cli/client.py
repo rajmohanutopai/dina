@@ -248,10 +248,12 @@ class AdminClient:
 
     def remember(self, text: str, session: str = "admin") -> dict:
         """POST /api/v1/remember — store a memory via staging pipeline."""
+        import time as _time
         resp = self._request("POST", "/api/v1/remember", json={
             "text": text,
             "session": session,
             "source": "admin",
+            "source_id": f"admin-{int(_time.time() * 1000)}",
         }, timeout=30.0)
         return resp.json()
 

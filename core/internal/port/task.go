@@ -38,4 +38,5 @@ type ReminderScheduler interface {
 	MarkFired(ctx context.Context, reminderID string) error
 	ListPending(ctx context.Context) ([]domain.Reminder, error)
 	GetByID(ctx context.Context, id string) (*domain.Reminder, error)
+	DeleteReminder(ctx context.Context, id string) error
 }

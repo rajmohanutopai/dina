@@ -86,6 +86,33 @@ func (h *ReminderHandler) HandleStoreReminder(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// HandleDelete handles DELETE /v1/reminder/{id}.
+func (h *ReminderHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	// Extract ID from path: /v1/reminder/{id}
+	prefix := "/v1/reminder/"
+	id := ""
+	if len(r.URL.Path) > len(prefix) {
+		id = r.URL.Path[len(prefix):]
+	}
+	if id == "" {
+		http.Error(w, `{"error":"id required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.Scheduler.DeleteReminder(r.Context(), id); err != nil {
+		http.Error(w, `{"error":"reminder not found"}`, http.StatusNotFound)
+		return
+	}
+	if h.Loop != nil {
+		h.Loop.Wake()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+}
+
 // HandleListPending handles GET /v1/reminders/pending.
 // It returns all unfired reminders.
 func (h *ReminderHandler) HandleListPending(w http.ResponseWriter, r *http.Request) {

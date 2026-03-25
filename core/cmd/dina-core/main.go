@@ -1419,6 +1419,7 @@ func main() {
 
 	// Reminder API
 	mux.HandleFunc("/v1/reminder", reminderH.HandleStoreReminder)
+	mux.HandleFunc("/v1/reminder/", reminderH.HandleDelete)
 	mux.HandleFunc("/v1/reminders/pending", reminderH.HandleListPending)
 
 	// Brain reasoning proxy — agents interact with Brain via Core.

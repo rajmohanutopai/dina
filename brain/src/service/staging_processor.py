@@ -61,6 +61,7 @@ class StagingProcessor:
         domain_classifier: Any = None,
         event_extractor: Any = None,
         persona_selector: Any = None,
+        reminder_planner: Any = None,
     ) -> None:
         self._core = core
         self._enrichment = enrichment
@@ -68,6 +69,7 @@ class StagingProcessor:
         self._classify = domain_classifier
         self._event_extractor = event_extractor
         self._selector = persona_selector
+        self._reminder_planner = reminder_planner
 
     async def process_pending(self, limit: int = 10) -> int:
         """Claim and classify pending staging items.
@@ -225,6 +227,36 @@ class StagingProcessor:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
+                # Plan reminders BEFORE resolve — the KV must be written
+                # before staging status becomes "stored", so callers polling
+                # staging_status can read the plan immediately after seeing "stored".
+                event_hint = getattr(self, "_last_event_hint", "")
+                self._last_event_hint = ""  # reset
+                if event_hint and self._reminder_planner:
+                    try:
+                        content = item.body or item.summary or ""
+                        plan_result = await self._reminder_planner.plan_and_create(
+                            content=content,
+                            event_hint=event_hint,
+                            persona=personas[0],
+                            vault_item_id=f"stg-{item_id}",
+                            source=item_dict.get("source", ""),
+                        )
+                        n = len(plan_result.get("reminders", []))
+                        if n > 0:
+                            log.info("staging.reminders_planned",
+                                     id=item_id, count=n,
+                                     summary=plan_result.get("summary", ""))
+                            try:
+                                await self._core.set_kv(
+                                    f"reminder_plan:{item_id}",
+                                    json.dumps(plan_result),
+                                )
+                            except Exception:
+                                pass  # best-effort
+                    except Exception as exc:
+                        log.warning("staging.reminder_plan_failed",
+                                    id=item_id, error=str(exc))
                 # User-originated items (Telegram, admin) bypass persona
                 # access approval — the user IS the owner, consent is implicit.
                 _user_origin = ""
@@ -254,48 +286,15 @@ class StagingProcessor:
 
                 resolved += 1
 
-                # Only extract reminders when content was actually stored.
-                # pending_unlock means the persona is locked — no vault item exists yet.
-                # "resolved" is the GH10 status (O(n) scan removed); treat as stored.
+                # Legacy regex extractor — only for stored items without planner.
                 if resolve_status in ("stored", "resolved"):
-                    # Create reminders from LLM-extracted events (replaces regex extractor).
-                    extracted = getattr(self, "_last_extracted_events", [])
-                    self._last_extracted_events = []  # reset
-                    if extracted:
-                        import datetime as _dt
-                        for ev in extracted:
-                            try:
-                                dt = _dt.datetime.strptime(ev.date, "%Y-%m-%d")
-                                dt = dt.replace(hour=9, tzinfo=_dt.timezone.utc)
-                                trigger_at = int(dt.timestamp())
-                                recurrence = {"yearly": "yearly", "monthly": "monthly",
-                                              "weekly": "weekly"}.get(ev.recurring, "")
-                                await self._core.store_reminder({
-                                    "type": recurrence,
-                                    "message": ev.message,
-                                    "trigger_at": trigger_at,
-                                    "metadata": "{}",
-                                    "source_item_id": f"stg-{item_id}",
-                                    "source": item_dict.get("source", ""),
-                                    "persona": personas[0],
-                                    "kind": ev.kind,
-                                })
-                                log.info("staging.reminder_created",
-                                         id=item_id, kind=ev.kind, date=ev.date,
-                                         message=ev.message)
-                            except Exception as exc:
-                                log.warning("staging.reminder_create_failed",
-                                            id=item_id, error=str(exc))
-                    # Legacy regex extractor fallback (if no LLM events and extractor exists).
-                    elif self._event_extractor is not None:
+                    if not (event_hint and self._reminder_planner) and self._event_extractor is not None:
                         try:
-                            n = await self._event_extractor.extract_and_create(
+                            await self._event_extractor.extract_and_create(
                                 item_dict, personas[0], vault_item_id=f"stg-{item_id}",
                             )
-                            if n > 0:
-                                log.info("staging.reminders_created", id=item_id, count=n)
-                        except Exception as exc:
-                            log.warning("staging.reminder_extract_failed", id=item_id, error=str(exc))
+                        except Exception:
+                            pass
 
                 # Update contact last_contact if sender is known.
                 sender = item.sender or ""
@@ -472,12 +471,10 @@ class StagingProcessor:
             try:
                 result = await self._selector.select(item, persona_hint=effective_hint)
                 if result is not None and result.primary:
-                    # Capture extracted events for reminder creation after resolve.
-                    if result.events:
-                        self._last_extracted_events = result.events
-                        log.info("staging.events_extracted",
-                                 count=len(result.events),
-                                 kinds=[e.kind for e in result.events])
+                    # Capture event flag for reminder planning after resolve.
+                    if result.has_event:
+                        self._last_event_hint = result.event_hint
+                        log.info("staging.event_detected", hint=result.event_hint)
                     return result.primary
             except Exception:
                 pass

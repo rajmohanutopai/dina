@@ -522,6 +522,19 @@ func (s *ReminderScheduler) GetByID(_ context.Context, id string) (*Reminder, er
 	return nil, ErrNotFound
 }
 
+// DeleteReminder removes a reminder by ID.
+func (s *ReminderScheduler) DeleteReminder(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.reminders {
+		if s.reminders[i].ID == id {
+			s.reminders = append(s.reminders[:i], s.reminders[i+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
 // ResetForTest clears all reminder state for test isolation.
 func (s *ReminderScheduler) ResetForTest() {
 	s.mu.Lock()

@@ -507,7 +507,9 @@ def create_app() -> FastAPI:
     from .service.domain_classifier import DomainClassifier
     domain_clf = DomainClassifier(llm=llm_router, registry=persona_registry)
     from .service.event_extractor import EventExtractor
+    from .service.reminder_planner import ReminderPlanner
     event_extractor = EventExtractor(core=brain_core_client)
+    reminder_planner = ReminderPlanner(core=brain_core_client, llm=llm_router)
     staging_processor = StagingProcessor(
         core=brain_core_client,
         enrichment=enrichment_svc,
@@ -518,6 +520,7 @@ def create_app() -> FastAPI:
         ).domain,
         event_extractor=event_extractor,
         persona_selector=persona_selector,
+        reminder_planner=reminder_planner,
     )
     sync_engine = SyncEngine(
         core=brain_core_client, mcp=mcp_client, llm=llm_router,
@@ -581,6 +584,7 @@ def create_app() -> FastAPI:
                     "start": telegram_service.handle_start,
                     "ask": telegram_service.handle_ask,
                     "remember": telegram_service.handle_remember,
+                    "edit": telegram_service.handle_edit,
                 },
                 callback_query_handler=telegram_service.handle_callback_query,
                 base_url=cfg.telegram_api_base_url,

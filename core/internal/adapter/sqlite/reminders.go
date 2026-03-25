@@ -132,6 +132,23 @@ func (s *SQLiteReminderScheduler) MarkFired(ctx context.Context, reminderID stri
 	return nil
 }
 
+// DeleteReminder removes a reminder by ID.
+func (s *SQLiteReminderScheduler) DeleteReminder(ctx context.Context, id string) error {
+	db := s.db()
+	if db == nil {
+		return fmt.Errorf("sqlite reminders: identity database not open")
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM reminders WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("sqlite reminders: delete: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("sqlite reminders: reminder %q not found", id)
+	}
+	return nil
+}
+
 // ListPending returns all unfired reminders with status='pending', ordered by due_at.
 func (s *SQLiteReminderScheduler) ListPending(ctx context.Context) ([]domain.Reminder, error) {
 	db := s.db()

@@ -235,7 +235,75 @@ class TelegramService:
                 except Exception:
                     break
 
-            await update.message.reply_text(result_msg, parse_mode="Markdown")
+            # Check staging status for reminder plan (set during processing).
+            # The plan is stored in Core KV by the staging processor so any
+            # caller (Telegram, dina-admin, CLI) can retrieve it.
+            reminder_lines = []
+            if result_msg.startswith("Stored"):
+                # Small delay — KV write completes before resolve, but
+                # allow propagation time.
+                await asyncio.sleep(1)
+                try:
+                    kv_key = f"reminder_plan:{staging_id}"
+                    plan_raw = await self._core.get_kv(kv_key)
+                    log.info("telegram.remember.kv_read key=%s found=%s", kv_key, plan_raw is not None)
+                    if plan_raw:
+                        import json as _json
+                        plan = _json.loads(plan_raw)
+                        for r in plan.get("reminders", []):
+                            fire = r.get("fire_at", "")
+                            msg = r.get("message", "")
+                            try:
+                                import datetime as _dt
+                                dt = _dt.datetime.fromisoformat(fire.replace("Z", "+00:00"))
+                                time_str = dt.strftime("%b %d, %I:%M %p")
+                            except Exception:
+                                time_str = fire
+                            emoji = {"birthday": "🎂", "appointment": "📅",
+                                     "payment_due": "💳", "deadline": "⏰"}.get(
+                                         r.get("kind", ""), "🔔")
+                            reminder_lines.append(f"{emoji} {time_str} — {msg}")
+                except Exception:
+                    pass  # best-effort
+
+            if reminder_lines:
+                # Numbered list with Edit/Delete buttons per reminder.
+                numbered = []
+                buttons = []
+                reminders = plan.get("reminders", []) if plan else []
+                for idx, (line, r) in enumerate(zip(reminder_lines, reminders), 1):
+                    short = r.get("short_id", "?")
+                    numbered.append(f"\\[{short}] {line}")
+                    rem_id = r.get("id", "")
+                    short_id = r.get("short_id", rem_id[:6])
+                    fire = r.get("fire_at", "")
+                    msg = r.get("message", "")
+                    try:
+                        import datetime as _dt2
+                        dt2 = _dt2.datetime.fromisoformat(fire.replace("Z", "+00:00"))
+                        edit_time = dt2.strftime("%b %d, %I:%M %p")
+                    except Exception:
+                        edit_time = fire
+                    if rem_id:
+                        edit_text = f"/edit {short_id} {edit_time} — {msg}"
+                        buttons.append([
+                            InlineKeyboardButton(
+                                f"🗑 Delete [{short_id}]",
+                                callback_data=f"reminder_delete:{rem_id}",
+                            ),
+                            InlineKeyboardButton(
+                                f"✏️ Edit [{short_id}]",
+                                switch_inline_query_current_chat=edit_text,
+                            ),
+                        ])
+                keyboard = InlineKeyboardMarkup(buttons) if buttons else None
+                await update.message.reply_text(
+                    result_msg + "\n\n*Reminders set:*\n" + "\n".join(numbered),
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+            else:
+                await update.message.reply_text(result_msg, parse_mode="Markdown")
         except Exception as exc:
             log.error(
                 "telegram.remember_failed",
@@ -243,6 +311,115 @@ class TelegramService:
             )
             await update.message.reply_text(
                 "Sorry, I couldn't save that. Please try again."
+            )
+
+    # ------------------------------------------------------------------
+    # /edit command (reminder editing)
+    # ------------------------------------------------------------------
+
+    async def handle_edit(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /edit command from Telegram command handler."""
+        if not update.effective_user or not update.message:
+            return
+        text = (update.message.text or "").strip()
+        if text.lower().startswith("/edit"):
+            text = text[len("/edit"):].strip()
+        await self._process_edit(update, f"/edit {text}" if text else "/edit")
+
+    async def _process_edit(self, update: Update, raw_text: str) -> None:
+        """Process an edit command — accepts raw text including /edit prefix."""
+        if not update.message:
+            return
+        text = raw_text.strip()
+        if text.lower().startswith("/edit"):
+            text = text[len("/edit"):].strip()
+        if not text:
+            await update.message.reply_text(
+                "Usage: /edit <reminder_id> <new time — new message>"
+            )
+            return
+
+        # Parse: first token is short reminder ID, rest is the edited text.
+        parts = text.split(None, 1)
+        if len(parts) < 2:
+            await update.message.reply_text(
+                "Usage: /edit <id> <new time — new message>"
+            )
+            return
+        short_id = parts[0]
+        edited_text = parts[1]
+
+        # Resolve short ID to full reminder ID.
+        import hashlib
+        rem_id = None
+        try:
+            resp = await self._core._request("GET", "/v1/reminders/pending")
+            for r in resp.json().get("reminders", []):
+                rid = r.get("id", "")
+                if hashlib.md5(rid.encode()).hexdigest()[:4] == short_id or rid == short_id:
+                    rem_id = rid
+                    break
+        except Exception:
+            pass
+        if not rem_id:
+            await update.message.reply_text(f"Reminder `{short_id}` not found.")
+            return
+
+        # Ask LLM to parse the new time and message.
+        try:
+            import datetime as _dt
+            now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            prompt = (
+                f"Today is {now}. The user wants to update a reminder.\n"
+                f"New text: \"{edited_text}\"\n\n"
+                f"Extract the date/time and message. Respond with JSON only:\n"
+                f'{{"fire_at": "YYYY-MM-DDTHH:MM:SSZ", "message": "the reminder text"}}'
+            )
+            resp = await self._guardian._llm.route(
+                task_type="classification",
+                prompt=prompt,
+                messages=[
+                    {"role": "system", "content": "Parse reminder time and message. JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            import json as _json
+            raw = resp.get("content", "").strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            parsed = _json.loads(raw)
+
+            fire_at = parsed.get("fire_at", "")
+            message = parsed.get("message", edited_text)
+            dt = _dt.datetime.fromisoformat(fire_at.replace("Z", "+00:00"))
+            trigger_ts = int(dt.timestamp())
+
+            # Delete old + create new (Core doesn't have an update endpoint).
+            try:
+                await self._core._request("DELETE", f"/v1/reminder/{rem_id}")
+            except Exception:
+                pass
+            await self._core.store_reminder({
+                "type": "",
+                "message": message,
+                "trigger_at": trigger_ts,
+                "metadata": "{}",
+                "source_item_id": "",
+                "source": "telegram",
+                "persona": "general",
+                "kind": "reminder",
+            })
+
+            time_str = dt.strftime("%b %d, %I:%M %p")
+            await update.message.reply_text(
+                f"✏️ Reminder updated:\n{time_str} — {message}"
+            )
+        except Exception as exc:
+            log.warning("telegram.edit_failed", extra={"error": str(exc)})
+            await update.message.reply_text(
+                "Could not parse the edit. Try: /edit <id> Apr 5, 3:00 PM — New message"
             )
 
     # ------------------------------------------------------------------
@@ -354,6 +531,16 @@ class TelegramService:
         approval_response = await self.handle_approval_response(text)
         if approval_response:
             await update.message.reply_text(approval_response, parse_mode="Markdown")
+            return
+
+        # --- Handle inline edit from switch_inline_query_current_chat ---
+        # The text arrives as "@botname /edit <id> <time> — <msg>"
+        stripped = text
+        if self._bot and self._bot.bot_username:
+            stripped = stripped.replace(f"@{self._bot.bot_username}", "").strip()
+        if stripped.startswith("/edit"):
+            # Can't modify update.message.text (immutable) — call edit directly.
+            await self._process_edit(update, stripped)
             return
 
         # --- No default action — guide the user ---
@@ -479,15 +666,31 @@ class TelegramService:
     async def handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle inline keyboard button presses (approve/deny)."""
+        """Handle inline keyboard button presses (approve/deny/reminders)."""
         query = update.callback_query
         if not query or not query.data:
             return
         await query.answer()  # Acknowledge the button press
 
-        response = await self.handle_approval_response(query.data)
+        data = query.data
+
+        # Handle reminder buttons.
+        if data.startswith("reminder_delete:"):
+            rem_id = data[len("reminder_delete:"):]
+            try:
+                await self._core._request("DELETE", f"/v1/reminder/{rem_id}")
+                if query.message:
+                    await query.message.reply_text("🗑 Reminder deleted.")
+            except Exception:
+                if query.message:
+                    await query.message.reply_text("Failed to delete reminder.")
+            return
+
+        # Edit button uses switch_inline_query_current_chat — no callback needed.
+
+        # Handle approval buttons.
+        response = await self.handle_approval_response(data)
         if response and query.message:
-            # Edit the original message to show the result instead of buttons.
             try:
                 original_text = query.message.text or ""
                 await query.message.edit_text(
@@ -495,7 +698,6 @@ class TelegramService:
                     parse_mode="Markdown",
                 )
             except Exception:
-                # Fallback: send as a new message.
                 await query.message.reply_text(response, parse_mode="Markdown")
 
     # ------------------------------------------------------------------
