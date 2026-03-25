@@ -56,6 +56,14 @@ Use [`docs/dina-openclaw-skill.md`](./docs/dina-openclaw-skill.md) - any AI agen
 # This is currently at Technical Preview stage. It is not fully polished for daily use. The architecture is ready, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
 ```
 ---
+
+## See Dina in Action
+
+Seeing how Dina works will give a really good picture of what Dina is.
+
+ [`📖 Read the Full Capabilities & Usage Guide`](./CAPABILITIES.md)
+
+---
 <br/>
 
 ![User Story Tests](./docs/images/UserStories.png)
@@ -79,7 +87,7 @@ Now imagine the same thing, everywhere in your life:
 
 - You're buying a laptop. Ads try to point you to some direction. But your Dina checks the Trust Network which gives you verified outcomes from real buyers (not anonymous reviews), and tells you: *"The battery on this one dies in three months. Here's a better option - 847 users with similar needs to yours are still using it after a year"*
 - Dead internet theory becomes real. You can't differentiate between what is made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina checks against the Trust Network, and only items with verified provenance are shown to you.
-- You promised your daughter you'd read her a book. You forgot which one. *"It was 'The Little Prince'. Last Tuesday."*
+- You promised your daughter you'd read her a book next sunday. Dina reminds you Sunday morning. *"Read 'The Little Prince' to Emma. She said it is her favourite book."*
 - Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.

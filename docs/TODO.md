@@ -1862,3 +1862,61 @@ For launch you have scenarios 1, 2, 5, and 10 covered by the existing D2D implem
 
   That is the functional core.
 
+
+
+### Coordinating plans
+
+James proposes dinner.
+
+```
+📬 James — propose_time: Curry at The Bengal tonight?
+```
+
+You see this on your phone. You tap to accept, decline, or counter-propose. Neither of you had to open a chat app, negotiate times, or deal with group messages. Dina-to-Dina coordination. Done.
+
+These are ephemeral — not stored. Just real-time coordination between two people.
+
+### Sharing life updates
+
+You tell James's Dina that Emma's birthday is coming up.
+
+His Dina stores it. Next time James asks *"What should I get for Tom's daughter?"*, his Dina answers: *"Emma turns 7. She loves dinosaurs and painting."*
+
+James walks in with a dinosaur art kit. Emma is thrilled. Neither of you had to remember to tell the other. The Dinas handled it.
+
+### Trust and vouching
+
+You're buying a chair from Marcus online. You don't know Marcus. But James does.
+
+Your Dina asks James's Dina: *"Is Marcus trustworthy?"*
+
+But this is sensitive — your Dina won't send it without your approval. You get a notification: *"Dina wants to ask James about Marcus. Approve?"* You tap approve. The question goes.
+
+James's Dina responds: *"Known him 10 years. Excellent craftsman."* Your Dina stores this as a trust attestation. Now you know Marcus is real, verified by someone you trust.
+
+### Safety alerts
+
+James discovers a scam. His Dina immediately warns yours:
+
+```
+🚨 Safety Alert (critical): did:plc:xyz is compromised — phishing scam
+```
+
+Safety alerts always get through. Even if you've turned off every other notification from James, safety alerts bypass all filters. They're too important to block.
+
+### You control what each person can send you
+
+For every contact, you decide what's allowed:
+
+- **Presence** — let them signal when they're nearby. Or don't.
+- **Coordination** — let them propose plans. Or don't.
+- **Social updates** — let them share life events. Or don't.
+- **Trust vouching** — requires your explicit approval each time.
+- **Safety alerts** — always on. Cannot be turned off.
+
+A noisy colleague keeps sending you social updates? Turn off social for that contact. Their meeting proposals still come through. You're in control, per person, per interaction type.
+
+### Unknown people
+
+Someone not in your contacts sends your Dina a message? It's quarantined — flagged but not deleted. You can review it later and decide whether to add them as a contact. Nobody gets through to your inbox without being either a contact or explicitly reviewed.
+

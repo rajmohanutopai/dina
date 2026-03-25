@@ -73,12 +73,14 @@ func (s *MigrationService) Export(ctx context.Context, opts domain.ExportOptions
 		return "", fmt.Errorf("migration: %w: close all personas before export (%d open)", domain.ErrPersonaLocked, lockableOpen)
 	}
 
-	// Checkpoint identity WAL before reading raw .sqlite bytes.
-	// identity.sqlite is always open (infrastructure DB) and uses WAL
-	// mode, so recent writes may still be in the -wal file. Without
-	// checkpointing, os.ReadFile(identity.sqlite) misses that data.
-	if err := s.vault.Checkpoint("identity"); err != nil {
-		return "", fmt.Errorf("migration: checkpoint identity: %w", err)
+	// Checkpoint ALL open persona WALs before reading raw .sqlite bytes.
+	// SQLite WAL mode keeps recent writes in the -wal file. Without
+	// checkpointing, os.ReadFile(*.sqlite) misses that data.
+	// Identity is always open; default/standard personas are always open too.
+	for _, p := range s.vault.OpenPersonas() {
+		if err := s.vault.Checkpoint(p); err != nil {
+			return "", fmt.Errorf("migration: checkpoint %s: %w", p, err)
+		}
 	}
 
 	archivePath, err := s.export.Export(ctx, opts)
