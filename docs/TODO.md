@@ -1,6 +1,12 @@
 # OpenAPI Issue
 OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
 
+# Security
+
+Ensure that Brain cannot act as Telegram to send messages
+Ensure that Brain cannot act as a supported session
+Even with a compromised brain, we should not be able to get anything else unless approved
+
 # Auth Issue 1
 also, if I get a grant to read from finance vault, does it mean i can write also in finance vault for that session                                                                                                 
 
@@ -918,3 +924,920 @@ The EU/UK extension is activated through deployment configuration flags:
 **National ID recognizer selection.** Not all country-specific recognizers need to be active for every EU/UK deployment. The configuration exposes a `eu_uk_countries` list (default: ["UK", "DE", "FR", "NL", "ES", "IT"]) that controls which national ID patterns are loaded. Operators serving users in specific countries can narrow or expand this list.
 
 **GDPR compliance mode.** For EU/EEA deployments. When enabled, activates: granular erasure operations on the vault (Article 17), right-of-access export functionality (Article 15), extended audit logging that records lawful basis for each processing operation, and data retention limits on the quarantine queue and audit logs. UK deployments should enable this mode as well — the UK GDPR imposes substantially equivalent requirements.
+
+
+# Misc
+
+  - Persona Registry + Routing Policy — the big architectural piece. Fixes hardcoded persona names, adds deterministic routing, eliminates the "creatinine classified as general" class of bugs
+
+  Tech debt from this session:
+  - OpenAPI spec drift — user_origin on staging resolve not in core-api.yaml
+
+# Dina2Dina
+
+  1. Presence And Coordination
+  Low-risk, high-frequency signals.
+
+  Scenarios:
+
+  - I’m leaving now
+  - I’ll reach in 18 min
+  - I’m delayed
+  - I’ve arrived
+  - I’m free/busy
+  - Can we meet today?
+  - What time windows overlap?
+  - I’m on my way to Sancho’s place
+  - Sancho is coming to you
+
+  Data shape:
+
+  - ETA
+  - coarse availability
+  - destination label
+  - no raw personal vault dump
+
+  2. Event Handoffs
+  One Dina tells another about a real-world event affecting both people.
+
+  Scenarios:
+
+  - visit/arrival notifications
+  - dinner plan confirmed
+  - flight/train delayed
+  - school pickup changed
+  - doctor appointment shifted
+  - package handed off
+  - “I’ve dropped the keys with X”
+
+  This is where your “Sancho moment” sits.
+
+  3. Request/Response Between Households
+  One Dina asks another for constrained information.
+
+  Scenarios:
+
+  - “Is Sancho free this weekend?”
+  - “Can Don’s Dina ask Sancho’s Dina if he prefers tea or coffee?”
+  - “What gift categories does this person like?”
+  - “What dates should we avoid for planning?”
+
+  Important:
+
+  - response should be policy-shaped
+  - not raw vault access
+
+  4. Relationship Maintenance
+  Social coordination without becoming companionship theater.
+
+  Scenarios:
+
+  - remind me to call X because their mom is unwell
+  - suggest checking in because it’s been 3 weeks
+  - ask if they reached home safely
+  - coordinate birthdays/anniversaries
+  - suggest a low-pressure meet-up
+
+  This is useful, but should remain:
+
+  - human-to-human connection support
+  - not Dina-to-human emotional replacement
+
+  5. Delegated Scheduling
+  Dinas negotiate calendars at a constrained level.
+
+  Scenarios:
+
+  - find overlap between two people
+  - reschedule dinner
+  - book a call window
+  - suggest 3 options next week
+  - confirm accepted slot
+
+  Data shared:
+
+  - free/busy
+  - meeting preferences
+  - maybe travel buffer
+  - not full calendar contents by default
+
+  6. Task Coordination
+  One Dina coordinates concrete actions with another Dina.
+
+  Scenarios:
+
+  - “I’ll bring tea, you bring snacks”
+  - “Who is picking up the package?”
+  - “Can you remind Raj to send the contract?”
+  - “I’ll do the booking if they confirm”
+
+  This is the natural future /do area.
+
+  7. Trust / Recommendation Exchange
+  Dina-to-Dina about products/services, not intimate life.
+
+  Scenarios:
+
+  - “Do you know a good dentist/plumber/lawyer?”
+  - “What was your outcome with this product?”
+  - “Was that insurance provider reliable?”
+  - “Which hospital did you use for this?”
+
+  This connects to your Trust Network / verified-truth direction.
+
+  8. Explicit Data Sharing
+  User-approved transfer of actual data from one Dina to another.
+
+  Scenarios:
+
+  - share a contact card
+  - share an address
+  - share travel itinerary
+  - share a document summary
+  - share a medication list with caregiver
+  - share child pickup instructions
+
+  This should always be explicit and policy-governed.
+
+  9. Late-Bound Placeholder Sharing
+  The safest advanced mode.
+
+  Scenarios:
+
+  - “Send my daughter’s email” without exposing it to the remote agent
+  - “Use my office address for delivery”
+  - “Share only the field needed for this action”
+
+  This is your zero-knowledge / placeholder model.
+
+  10. Emergency / High-Priority Escalation
+  Rare but important.
+
+  Scenarios:
+
+  - missed check-in
+  - crash/fall/emergency flag
+  - hospital admission notice
+  - elder-care escalation
+  - child pickup failure
+  - travel safety escalation
+
+  These need:
+
+  - special policy
+  - trusted-ring restrictions
+  - clear audit
+
+  11. Consent And Approval Workflows
+  D2D may trigger approvals, not just data transfer.
+
+  Scenarios:
+
+  - one Dina asks another for health/finance access summary
+  - cross-household caregiver access
+  - ask-before-share policy
+  - one-time approval for a sensitive disclosure
+  - session-scoped approval between Dinas
+
+  12. Commerce / Transaction Coordination
+  Useful but easy to abuse.
+
+  Scenarios:
+
+  - split payment coordination
+  - subscription reminder
+  - rent/maintenance coordination
+  - purchase confirmation
+  - reimbursement tracking
+  - budget-related household coordination
+
+  Must avoid becoming:
+
+  - silent financial surveillance
+  - autonomous commitment engine
+
+  13. Family / Care Network
+  Probably one of the strongest real use cases.
+
+  Scenarios:
+
+  - parent-child coordination
+  - caregiver-medical coordination
+  - spouse household planning
+  - elder-care status sharing
+  - school logistics
+  - medicine refill reminders between trusted parties
+
+  14. Group / Multi-Dina Coordination
+  Not just 1:1.
+
+  Scenarios:
+
+  - family dinner planning
+  - trip coordination
+  - event RSVP collection
+  - household rota / chores
+  - sports/carpool planning
+  - one Dina broadcasting a constrained update to a trusted group
+
+  15. Cross-Border / Asymmetric Connectivity
+  Operational scenarios, not product-facing ones.
+
+  Scenarios:
+
+  - remote Dina offline
+  - queued message delivery
+  - eventual consistency
+  - duplicate message retries
+  - revoked trust mid-flow
+  - one Dina upgraded, another old version
+  - CGNAT / indirect relay
+  - delayed approval response
+
+  These matter a lot for actual system design.
+
+  16. Recovery / Portability / Succession
+  Rare but important.
+
+  Scenarios:
+
+  - backup Dina handoff
+  - estate / succession notice
+  - guardian transfer
+  - delegated access after incapacity
+  - trusted recovery contact coordination
+
+  17. What Dina-to-Dina Should Not Become
+  Important to define the negative space.
+
+  Should not do:
+
+  - freeform autonomous friendship simulation
+  - Dina chatting with Dina “for engagement”
+  - hidden long-term profiling between households
+  - automatic full-vault sharing
+  - autonomous commitments on behalf of users
+  - emotional dependency loops
+  - manipulative nudging between social graphs
+
+  Useful way to model every scenario
+  Each D2D interaction can be classified on 5 axes:
+
+  1. intent
+
+  - signal
+  - request
+  - disclosure
+  - approval
+  - task
+  - emergency
+
+  2. sensitivity
+
+  - public
+  - social
+  - operational
+  - sensitive
+  - locked
+
+  3. authority
+
+  - user-initiated
+  - user-approved
+  - fiduciary auto-allowed
+  - agent-proposed only
+
+  4. recipient scope
+
+  - one Dina
+  - trusted ring
+  - household
+  - group
+
+  5. delivery mode
+
+  - sync
+  - async
+  - queued
+  - retryable
+  - expiring
+
+  If I had to prioritize for product sequencing
+
+  1. presence / ETA / arrival
+  2. scheduling overlap
+  3. constrained preference sharing
+  4. trust/recommendation exchange
+  5. explicit document/data sharing
+  6. emergency escalation
+  7. multi-Dina coordination
+  8. task execution
+
+  Your Sancho moment specifically
+  That one has at least 5 variants:
+
+  1. informative signal
+      - “Sancho is coming”
+  2. ETA update
+      - “Sancho arriving in 18 min”
+  3. contextual reminder
+      - “He prefers tea”
+  4. scheduling conflict
+      - “He is coming, but you are not free”
+  5. approval-gated disclosure
+      - “He is coming because of a sensitive reason” -> needs constrained reveal
+
+  If you want, I can turn this into a proper Dina-to-Dina scenario matrix with:
+
+  - scenario
+  - initiator
+  - data shared
+  - approval needed
+  - allowed/disallowed
+  - v1/v2 priority.
+
+
+› this is afunctional question - not based on what we have now - but what is required fundamentally
+
+
+• Yes. From first principles, Dina-to-Dina is not “agent chat.” It is a human relationship protocol mediated by software.
+
+  So the right question is:
+
+  - what kinds of human-to-human interactions need structured, policy-governed assistance?
+
+  That gives you the fundamental scenario set.
+
+  Core definition
+  A Dina-to-Dina interaction should only exist for one of these purposes:
+
+  1. coordinate people
+  2. share bounded information
+  3. negotiate consent
+  4. hand off tasks
+  5. escalate when needed
+
+  Everything else is secondary.
+
+  Fundamental scenario families
+
+  1. Identity and Trust Establishment
+     Before anything else:
+
+  - who is this other Dina?
+  - whose Dina is it?
+  - what trust level exists?
+  - direct trust vs friend-of-friend vs stranger
+  - temporary vs persistent relationship
+
+  Without this, nothing else is safe.
+
+  2. Presence and Reachability
+     Basic human coordination signals:
+
+  - available / busy
+  - at home / traveling / offline
+  - on the way / arrived / delayed
+  - safe / not yet checked in
+
+  This is one of the most natural D2D functions.
+
+  3. Scheduling and Time Negotiation
+     Two people trying to align:
+
+  - find overlapping free time
+  - propose slots
+  - confirm / decline / reschedule
+  - coordinate travel buffers
+  - manage recurring meetings
+
+  This is fundamental because it is common and structured.
+
+  4. Event and Status Handoffs
+     One Dina informs another of something relevant:
+
+  - “Sancho is coming”
+  - “Dinner moved to 8pm”
+  - “The child has been picked up”
+  - “Train delayed by 40 min”
+  - “Package delivered”
+
+  This is probably one of the most important categories.
+
+  5. Question / Answer Between People
+     One person, via Dina, asks another person, via Dina:
+
+  - is this person free this weekend?
+  - what gift category do they like?
+  - did they reach safely?
+  - are there travel constraints?
+  - do they prefer tea or coffee?
+
+  The response should be:
+
+  - policy-shaped
+  - minimal
+  - not raw vault dumping
+
+  6. Preference and Context Sharing
+     Useful standing information, shared with consent:
+
+  - favorite foods
+  - gift preferences
+  - dietary restrictions
+  - planning preferences
+  - communication preferences
+  - household constraints
+
+  This supports connection without over-sharing.
+
+  7. Explicit Data Disclosure
+     Structured sharing of actual information:
+
+  - address
+  - contact card
+  - itinerary
+  - document summary
+  - school instructions
+  - medicine schedule
+  - care instructions
+
+  This must always be explicit, scoped, and auditable.
+
+  8. Consent and Approval Flows
+     D2D is not only about data transfer. It is also about asking:
+
+  - may I share this?
+  - may I access this once?
+  - may I continue this session?
+  - may I disclose health/finance/legal context?
+  - may I act on your behalf?
+
+  This is a first-class scenario, not a side effect.
+
+  9. Task Delegation and Coordination
+     One Dina coordinating action with another:
+
+  - remind them
+  - ask for confirmation
+  - arrange pickup/dropoff
+  - split responsibilities
+  - execute a constrained action after approval
+  - coordinate logistics
+
+  This is where /do or /task fits.
+
+  10. Fiduciary / Caregiver Scenarios
+     A distinct class, not just “more trust”:
+
+  - parent-child
+  - spouse/partner
+  - caregiver-elder
+  - medical proxy
+  - emergency contact
+  - household admin
+
+  These require different defaults and stronger policy language.
+
+  11. Emergency and Escalation
+     Rare but fundamental:
+
+  - missed check-in
+  - accident / hospitalization
+  - school pickup failure
+  - elder-care alert
+  - travel safety issue
+  - urgent caregiver notification
+
+  This is one of the few areas where automated escalation is justified.
+
+  12. Multi-Party Coordination
+     Not all interactions are 1:1:
+
+  - family dinner
+  - carpool
+  - trip planning
+  - care rota
+  - event RSVP
+  - household coordination
+  - group alerts
+
+  D2D must eventually support small trusted groups.
+
+  13. Trust / Recommendation Exchange
+     Between Dinas on behalf of people:
+
+  - was this doctor/service/provider useful?
+  - did this product work out?
+  - would you recommend this?
+  - what was the outcome?
+
+  This is less intimate than personal disclosure and can become a major network effect.
+
+  14. Recovery, Continuity, Succession
+     Hard but fundamental:
+
+  - transfer trusted access
+  - recovery contact coordination
+  - incapacity flows
+  - estate / succession handling
+  - device loss / household handoff
+
+Let me think through every scenario where two sovereign Dinas would communicate.
+
+**1. Presence & Coordination**
+
+```
+Sancho is leaving home → your Dina gets notified
+  "Sancho is 15 minutes away"
+  → prepare tea, clear calendar
+
+You're running late → Sancho's Dina gets notified
+  "Raj will be 20 minutes late"
+  → Sancho adjusts his plans
+
+Meeting coordination
+  "Raj's Dina and Sancho's Dina negotiate a lunch time"
+  → both check calendars, propose slots, agree
+```
+
+**2. Social Context Sharing**
+
+```
+Life event updates (opt-in sharing policies)
+  Sancho's Dina → your Dina: "mother recovering well"
+  → next time you meet, you know without asking awkwardly
+
+Relationship maintenance nudges
+  Your Dina notices Sancho's birthday is tomorrow
+  (from Sancho's Dina sharing calendar event)
+  → "Sancho's birthday is tomorrow"
+
+Mood/availability signals
+  Sancho's Dina: "Sancho is having a rough week"
+  → your Dina: "Maybe check in on Sancho"
+  (only if Sancho's sharing policy allows this)
+```
+
+**3. Commerce (Buyer ↔ Seller)**
+
+```
+Product inquiry
+  Your Dina → Seller's Dina: "Is this desk available in oak?"
+  Seller's Dina: "Yes, ₹25K, ships in 3 days"
+  → your Dina only reveals: verified buyer, payment capable
+  → seller never sees health, income, family data
+
+Price negotiation
+  Your Dina → Seller's Dina: "Can you do ₹22K?"
+  Seller's Dina: "₹23K final, free delivery"
+  → automated negotiation within user-set bounds
+
+Cart handover
+  Your Dina: "Here's the payment link. Ready when you are."
+  → Dina never touches money, hands control back to you
+
+Post-purchase outcome reporting
+  6 months later, your Dina → Trust Network:
+  "Still using the desk. No issues."
+  → anonymized, signed attestation
+```
+
+**4. Service Provider Interactions**
+
+```
+Doctor's Dina
+  Your Dina → Doctor's Dina: "Requesting appointment"
+  Doctor's Dina: "Available Thursday 3PM"
+  → your Dina shares: health persona (with your approval)
+  → doctor gets relevant medical history
+  → doctor never sees your financial data
+
+Lawyer's Dina
+  Your Dina → Lawyer's Dina: "Need contract review"
+  → shares only the document + legal persona
+  → lawyer never sees health or personal data
+
+Plumber/Electrician
+  Your Dina → Service Dina: "Need plumbing repair"
+  → shares: address, availability, issue description
+  → nothing else
+```
+
+**5. Trust & Verification**
+
+```
+Vouch request
+  New contact's Dina → your Dina: "Can Sancho vouch for me?"
+  Your Dina → Sancho's Dina: "Do you know did:plc:xyz?"
+  Sancho's Dina: "Yes, Ring 2 contact, known for 3 years"
+  → transitive trust verification
+
+Reference check
+  Seller's Dina → your Dina: "Request reference from buyer did:plc:abc"
+  Your Dina: "I purchased from this seller. Product was good."
+  → signed attestation, only if you approve
+
+Content authenticity
+  "Did did:plc:elena actually publish this video?"
+  Your Dina → Elena's Dina: "Verify content signature"
+  Elena's Dina: "Yes, signed by me on March 15"
+```
+
+**6. Emergency & Safety**
+
+```
+Emergency contact activation
+  Your Dina detects no activity for 48 hours
+  → contacts designated emergency Dinas
+  → "Raj hasn't responded. Please check on him."
+
+Safety alert propagation
+  Sancho's Dina → your Dina: "Scam alert — did:plc:xyz 
+  is impersonating a bank"
+  → your Dina adds to local blocklist
+
+Location sharing (emergency only)
+  Your Dina → family Dinas: "Raj is at [location]"
+  → only in emergency mode, never passive tracking
+```
+
+**7. Group Coordination**
+
+```
+Event planning
+  Your Dina → multiple Dinas: "Dinner Saturday?"
+  → each Dina checks owner's calendar
+  → responses aggregated: "4 of 6 available Saturday 7PM"
+  → no central server coordinating
+
+Group purchase
+  5 Dinas coordinate bulk order for better price
+  → each Dina contributes to the order independently
+  → seller's Dina sees: 5 verified buyers, combined quantity
+
+Shared experience
+  After a group trip, all Dinas exchange photos/memories
+  → each stores in their own vault
+  → sharing policies control what each person gets
+```
+
+**8. Professional & Work**
+
+```
+Job reference
+  Recruiter's Dina → your Dina: "Requesting work history"
+  → your Dina shares work persona only
+  → verified employment attestations from Trust Network
+  → recruiter never sees health or personal data
+
+Collaboration
+  Colleague's Dina → your Dina: "Sharing project doc v3"
+  → stored in work persona
+  → colleague's edits are tracked with provenance
+
+Freelancer reputation
+  Client's Dina → freelancer's Dina: "Requesting portfolio"
+  → freelancer's Trust Network shows: 47 completed projects,
+    4.8/5 satisfaction, Ring 3 verified
+```
+
+**9. Digital Estate**
+
+```
+Death/incapacitation protocol
+  Your Dina detects extended inactivity + custodian trigger
+  → Shamir shares sent to designated Dinas
+  → 3 of 5 custodians reconstruct master seed
+  → designated heir's Dina receives vault access
+
+Legacy messages
+  Pre-written messages delivered to specific Dinas
+  after estate activation
+  → "Tell Sancho I always valued his friendship"
+```
+
+**10. Adversarial Scenarios (must handle)**
+
+```
+Spam Dina
+  Unknown Dina sends unsolicited messages
+  → IP rate limiting (valve 1)
+  → unknown DID, Ring 1, treated cautiously
+  → if persistent, blocklist
+
+Impersonation attempt
+  Dina claims to be Sancho's Dina but wrong DID
+  → cryptographic verification fails
+  → rejected immediately
+
+Social engineering
+  "I'm Sancho's new Dina, old one was compromised"
+  → requires Sancho to verify through a trusted channel
+  → DID rotation must be signed by recovery key
+
+Man-in-the-middle
+  Attacker intercepts D2D message
+  → NaCl crypto_box_seal: only recipient can decrypt
+  → no key exchange to intercept
+
+Replay attack
+  Attacker resends old valid message
+  → nonce/timestamp checking rejects replays
+```
+
+**The sharing policy matrix that governs all of this:**
+
+```
+Each contact has a sharing policy per category:
+
+Contact: Sancho
+  presence:    share (notify when arriving/leaving)
+  calendar:    summary (free/busy only, not details)
+  health:      none (never share)
+  finance:     none (never share)
+  social:      full (share updates, events)
+  location:    emergency_only
+
+Contact: Doctor
+  health:      full (share medical history)
+  everything else: none
+
+Contact: Seller
+  consumer:    minimal (verified buyer, payment capable)
+  everything else: none
+```
+
+These policies are enforced by Core's Gatekeeper at egress. Brain decides what to send. Core checks if the sharing policy allows it. If not, blocked.
+
+Between both lists, the coverage is comprehensive. I'd add only three scenarios that neither fully captured:
+
+**1. Reputation Dispute Resolution**
+
+```
+Your Dina receives a negative attestation in Trust Network
+Seller's Dina claims "buyer never paid"
+Your Dina has proof of payment in finance vault
+    → D2D dispute: your Dina sends signed proof to seller's Dina
+    → If resolved: both publish resolution attestation
+    → If not: escalate to mutual trusted third-party Dina
+```
+
+This is what happens when trust breaks down, not just when it works.
+
+**2. Capability Discovery**
+
+```
+Your Dina → Sancho's Dina: "What can you share with me?"
+Sancho's Dina: "Presence: yes. Calendar: free/busy only. 
+    Health: none. Preferences: food and gifts."
+    
+Your Dina stores Sancho's sharing policy locally.
+No guessing, no trial-and-error.
+```
+
+Before any interaction, Dinas should be able to ask each other what's possible. Like an API capability handshake.
+
+**3. Proxy/Forwarding**
+
+```
+Your Dina can't reach Priya's Dina (offline/NAT)
+Your Dina → Sancho's Dina: "Can you relay this to Priya?"
+Sancho's Dina → Priya's Dina: forwards sealed message
+    → Sancho's Dina cannot read it (NaCl sealed for Priya)
+    → Just transport relay through a trusted intermediary
+```
+
+This solves connectivity without a central relay server.
+
+Everything else is covered between the two lists. This is a complete D2D functional spec. Save it as `docs/D2D_SPEC.md`. Don't build any of it now — your v1 D2D already handles the basics. Ship.
+
+For launch you have scenarios 1, 2, 5, and 10 covered by the existing D2D implementation. The rest are Phase 2+. But this is the full map of what Dina-to-Dina means long term.
+
+  These are low-frequency, high-stakes scenarios.
+
+  The correct abstraction
+  Almost every D2D interaction reduces to one of these primitives:
+
+  1. signal
+
+  - notify another Dina of a state/event
+
+  2. request
+
+  - ask for information, consent, or action
+
+  3. response
+
+  - allow / deny / answer / defer
+
+  4. disclosure
+
+  - share a bounded piece of data
+
+  5. proposal
+
+  - suggest a meeting, action, or plan
+
+  6. commitment
+
+  - confirm responsibility / acceptance
+
+  7. escalation
+
+  - raise priority due to risk or urgency
+
+  If your protocol handles those well, most scenarios fit naturally.
+
+  What is required fundamentally across all scenarios
+  Every D2D scenario needs these controls:
+
+  1. who is speaking
+
+  - identity
+  - trust level
+  - relationship type
+
+  2. who is the human principal
+
+  - not just which service sent the packet
+
+  3. what is being asked
+
+  - signal / query / disclosure / action / escalation
+
+  4. minimum necessary disclosure
+
+  - only the least data required for that scenario
+
+  5. consent model
+
+  - implicit
+  - explicit
+  - fiduciary
+  - emergency override
+
+  6. time scope
+
+  - one-time
+  - session
+  - standing permission
+  - expiring
+
+  7. auditability
+
+  - what was requested
+  - what was shared
+  - why
+  - under whose approval
+
+  8. revocation
+
+  - relationship changed
+  - trust revoked
+  - consent withdrawn
+
+  9. delivery semantics
+
+  - immediate
+  - queued
+  - retryable
+  - expiring
+  - acknowledged
+
+  10. failure behavior
+
+  - if the other Dina is offline
+  - if consent is missing
+  - if policy conflicts
+  - if partial information is available
+
+  Negative space: what should not be fundamental
+  These should not be core D2D goals:
+
+  - Dina chatting with Dina for its own sake
+  - emotional companionship loops
+  - hidden cross-household profiling
+  - silent full-context sharing
+  - autonomous commitments without bounded authority
+
+
+
+  That is not coordination. That is drift.
+
+  If I compress it to the real essentials
+  Fundamentally, Dina-to-Dina needs to support:
+
+  1. relationship formation
+  2. presence/status signaling
+  3. scheduling negotiation
+  4. constrained Q&A
+  5. explicit data sharing
+  6. approvals/consent
+  7. task handoff
+  8. emergency escalation
+  9. group coordination
+  10. trust/recommendation exchange
+
+  That is the functional core.
+

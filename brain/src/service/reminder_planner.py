@@ -190,30 +190,46 @@ class ReminderPlanner:
         """Query vault for relevant context about people/topics in the content."""
         context_items: list[str] = []
 
-        # Extract potential search terms from the content.
-        # Use the event_hint + key nouns from content.
+        # Extract search terms — names, nouns, anything that might find
+        # related vault items. Only exclude true grammatical stop words.
+        _STOP = {
+            "the", "a", "an", "is", "are", "was", "were", "be", "been",
+            "am", "do", "does", "did", "has", "have", "had", "will",
+            "would", "could", "should", "may", "might", "shall", "can",
+            "and", "but", "or", "nor", "not", "no", "so", "if", "then",
+            "than", "that", "this", "these", "those", "it", "its",
+            "of", "in", "on", "at", "to", "for", "by", "with", "from",
+            "up", "out", "off", "over", "into", "onto", "upon",
+            "he", "she", "they", "we", "you", "i", "me", "my", "mine",
+            "your", "yours", "his", "her", "our", "their", "them",
+            "who", "what", "when", "where", "how", "which", "whom",
+            "about", "after", "before", "between", "through", "during",
+        }
         search_terms = set()
         for word in (event_hint + " " + content).split():
-            cleaned = word.strip(".,!?;:'\"").lower()
-            if len(cleaned) > 3 and cleaned not in (
-                "birthday", "tomorrow", "today", "next", "this",
-                "date", "have", "that", "with", "from", "will",
-                "should", "about", "their", "they", "your", "mine",
-            ):
+            cleaned = word.strip(".,!?;:'\"()[]{}#@")
+            # Strip possessives: Emma's → Emma
+            if cleaned.endswith("'s") or cleaned.endswith("\u2019s"):
+                cleaned = cleaned[:-2]
+            if len(cleaned) > 2 and cleaned.lower() not in _STOP:
                 search_terms.add(cleaned)
 
         # Search vault for each term (best-effort, limited).
+        log.info("reminder_planner.vault_search", terms=list(search_terms)[:3])
         for term in list(search_terms)[:3]:
             try:
                 items = await self._core.search_vault(
-                    "general", term, mode="fts5", limit=3,
+                    "general", term, mode="fts5",
+                    user_origin="admin",
                 )
                 for item in items:
                     summary = getattr(item, "summary", "") or ""
                     if summary and summary not in context_items:
                         context_items.append(summary[:150])
-            except Exception:
-                pass
+                if items:
+                    log.info("reminder_planner.vault_found", term=term, count=len(items))
+            except Exception as exc:
+                log.warning("reminder_planner.vault_search_failed", term=term, error=str(exc))
 
         return context_items[:5]  # cap at 5 items
 

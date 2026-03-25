@@ -1,41 +1,92 @@
 # What Dina Does For You
 
-> *What works today. Not the roadmap. What you can do right now if you install Dina.*
+> *Current Status. What you can do right now if you install Dina.*
 
 ---
 
 ## She Remembers Everything
 
-Tell Dina anything. She stores it, classifies it, and recalls it when you need it.
+Tell Dina anything (in telegram). She stores it, classifies it, and recalls it when you need it.
 
 ```
-You:  My daughter Emma turns 7 on March 25. She loves dinosaurs and painting.
-You:  Dr. Chen said my B12 is low. Supplements for 3 months. Next checkup June 15.
-You:  Barclays savings has 12000 pounds. Rent 1500 due on the 5th.
-You:  Grandma's roast recipe: season overnight, 180C for 3 hours, rest 30 minutes.
+You:
+/remember My daughters name is Emma
+Dina:
+Stored in General Vault
+/remember My daughter loves dinosaurs
+Dina:
+Stored in General Vault
 ```
 
-Later:
-
+You can ask questions
 ```
-You:   What would be a good birthday gift for my daughter?
-Dina:  Emma turns 7. She loves dinosaurs and painting. A dinosaur art kit would be perfect.
-
-You:   When is my next checkup?
-Dina:  June 15, with Dr. Chen. Your B12 was 180 — supplements for 3 months.
-
-You:   How much is in my savings?
-Dina:  Your Barclays savings has £12,000. Rent of £1,500 is due on the 5th.
+You:
+/ask What does Emma like?
+Dina:
+Emma loves dinosaurs
 ```
 
-Dina doesn't just store text. She understands what kind of information it is and puts it in the right place:
+Dina sets reminders for you automatically based on your messages
+```
+You:
+/remember Emma's birthday is on Nov 7th
+
+Dina:
+Stored in general vault.
+Reminders set:
+[87b5] 🎂 Nov 06, 10:00 AM — Emma's birthday is tomorrow, you may want to buy a dinosaur-themed gift.
+[2c9d] 🎂 Nov 07, 09:00 AM — It is Emma's birthday today, you may wish to contact her.
+```
+
+## She is secure
 
 - **General** — recipes, hobbies, family, preferences. Open.
 - **Work** — meetings, colleagues, projects. Open.
 - **Health** — medical records, allergies, test results. Locked until you approve.
 - **Finance** — bank accounts, savings, investments. Locked until you approve.
 
-Each of these is a separate encrypted vault. Health data cannot leak into your general profile. Finance data stays in its own compartment. Not by policy — by cryptography.
+Each of these is a separate encrypted vault. Health data cannot leak into your general profile. Finance data stays in its own compartment. Dina's query system (LLM Brain) does not have access across different vaults. Core has to provide access.
+```
+You:
+/remember My friend James loves craft beer
+Stored in general vault.
+
+You:
+/remember My bank account is in Barclay's and ends with 0102
+Dina:
+Stored in finance vault.
+
+You:
+/remember My HbA1c is 9%, very high
+Dina:
+Stored in health vault.
+```
+You are able to access these vaults without authorisation because you are the owner (telegram channel) is considered safe.
+
+But, when your agent wants to use/update this data, it requires approval depending on the vault.
+Agent uses dina cli tool (pip install dina-agent) to extract / remember data (agents have to create sessions).
+
+```
+(.venv) ~/dina % dina session start
+  Session: ses_55s3khhq55s3 (SName-25Mar0728:22) active
+(.venv) ~/dina % dina ask --session ses_55s3khhq55s3  "Which bank has my account" 
+I don't have access to your bank account details.
+```
+
+Approval comes to telegram and user approves
+```
+🔐 claw-agent wants to access health
+[Approve] [Deny] [Approve Once]
+✅ Approved: apr-1774423823840426930
+```
+
+Agent can query that questions status to get the answer. Also, further questions in that session related to finance will be allowed
+```
+(.venv) ~/dina % dina ask --session ses_55s3khhq55s3  "Which bank has my account"
+Your account is with Barclay's (ending in 0102).
+  req_id: 55e828fcf816
+```
+
 
 ---
 

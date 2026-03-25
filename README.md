@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests: 4500+ passing](https://img.shields.io/badge/Tests-4%2C500+%20passing-brightgreen)]()
-[![Status: Developer Alpha](https://img.shields.io/badge/Status-Developer%20Alpha-orange)]()
+[![Status: Technical Preview](https://img.shields.io/badge/Status-Technical%20Preview-orange)]()
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
 
@@ -52,6 +52,9 @@ dina session end <session-id>
 Use [`docs/dina-openclaw-skill.md`](./docs/dina-openclaw-skill.md) - any AI agent (OpenClaw, and other agents) can use Dina for Unique ID, encrypted memory, PII scrubbing, and action gating. Please download and update the file for your specific use cases.
 <br/>
 
+```bash
+# This is currently at Technical Preview stage. It is not fully polished for daily use. The architecture is ready, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
+```
 ---
 <br/>
 
