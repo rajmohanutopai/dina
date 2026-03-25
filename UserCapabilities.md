@@ -92,119 +92,77 @@ Your account is with Barclay's (ending in 0102).
 
 ## She Talks to Other Dinas
 
-This is where it gets interesting. Your Dina talks to the Dinas of people you know — directly, encrypted, with no platform in the middle. Not free-form chat. Specific, structured interactions that make daily life smoother.
+Dina can talk to other Dinas. On its own, or at the behest at the owner. Currently, owner based communication is supported.
 
-### Your friend is on the way
-
-James is coming over. As he leaves his house, his Dina quietly tells your Dina.
-
-Your Dina checks what she knows about James — his mother was unwell last time you met, and he likes his tea strong. She sends you a notification:
-
-> *"James is 5 minutes away at The Corner Cafe. His mother was unwell last week — you might want to ask how she's doing. He likes Earl Grey, strong."*
-
-You didn't ask for this. She just knew it was the right thing to surface. That's the Sancho Moment from the novel — the reason Dina exists.
-
-### Coordinating plans
-
-James proposes dinner.
+Here, Sancho tells his Dina to inform Alono's Dina. Alonso's Dina notifies, and then creates reminder containing pertinent information.
 
 ```
-📬 James — propose_time: Curry at The Bengal tonight?
+Sancho:
+/send Alonso: I will be reaching your home in 30 minutes
+Sancho's Dina:
+Sent to Alonso: 📬 Presence I will be reaching home in 30 minutes
+
+Alonso gets notification:
+Alonso's Dina (message 1):
+📬 Sancho — arriving: home
+
+(message 2)
+Reminders set:
+[d444] 📅 Mar 25, 11:14 AM — Sancho is arriving at home in 30 minutes. He enjoys cardamom tea and his mother has been unwell, so you may wish to ask how she is doing.
+[Delete] [Edit]
 ```
 
-You see this on your phone. You tap to accept, decline, or counter-propose. Neither of you had to open a chat app, negotiate times, or deal with group messages. Dina-to-Dina coordination. Done.
+### Seven message types
 
-These are ephemeral — not stored. Just real-time coordination between two people.
+Dina-to-Dina uses typed messages. Not free-form chat. Each type has a purpose.
 
-### Sharing life updates
-
-You tell James's Dina that Emma's birthday is coming up.
-
-His Dina stores it. Next time James asks *"What should I get for Tom's daughter?"*, his Dina answers: *"Emma turns 7. She loves dinosaurs and painting."*
-
-James walks in with a dinosaur art kit. Emma is thrilled. Neither of you had to remember to tell the other. The Dinas handled it.
-
-### Trust and vouching
-
-You're buying a chair from Marcus online. You don't know Marcus. But James does.
-
-Your Dina asks James's Dina: *"Is Marcus trustworthy?"*
-
-But this is sensitive — your Dina won't send it without your approval. You get a notification: *"Dina wants to ask James about Marcus. Approve?"* You tap approve. The question goes.
-
-James's Dina responds: *"Known him 10 years. Excellent craftsman."* Your Dina stores this as a trust attestation. Now you know Marcus is real, verified by someone you trust.
-
-### Safety alerts
-
-James discovers a scam. His Dina immediately warns yours:
-
-```
-🚨 Safety Alert (critical): did:plc:xyz is compromised — phishing scam
-```
-
-Safety alerts always get through. Even if you've turned off every other notification from James, safety alerts bypass all filters. They're too important to block.
+- **Presence signal** — "I'm arriving in 10 minutes." Ephemeral. Never stored.
+- **Coordination request/response** — "Lunch Saturday at 2pm?" / "Sounds good." Ephemeral.
+- **Social update** — "My daughter turns 7 next week." Stored in recipient's vault as a relationship note. Next time they ask "What should I get?", their Dina knows.
+- **Trust vouch request/response** — "Is Marcus trustworthy?" Requires your approval before sending.
+- **Safety alert** — "did:plc:xyz is a scam." Always passes. Cannot be blocked.
 
 ### You control what each person can send you
 
-For every contact, you decide what's allowed:
+For every contact, you decide what's allowed.
 
-- **Presence** — let them signal when they're nearby. Or don't.
-- **Coordination** — let them propose plans. Or don't.
-- **Social updates** — let them share life events. Or don't.
-- **Trust vouching** — requires your explicit approval each time.
-- **Safety alerts** — always on. Cannot be turned off.
+```
+Presence:     allowed / blocked
+Coordination: allowed / blocked
+Social:       allowed / blocked
+Trust vouch:  requires your approval each time
+Safety:       always on (cannot be turned off)
+```
 
-A noisy colleague keeps sending you social updates? Turn off social for that contact. Their meeting proposals still come through. You're in control, per person, per interaction type.
+Example: A noisy colleague keeps sending social updates you don't care about. Block social for that contact. Their meeting proposals still come through.
 
-### Unknown people
+If someone not in your contacts sends you a message, it's quarantined — flagged but not deleted. You review it later.
 
-Someone not in your contacts sends your Dina a message? It's quarantined — flagged but not deleted. You can review it later and decide whether to add them as a contact. Nobody gets through to your inbox without being either a contact or explicitly reviewed.
+### Reminders fire to Telegram
 
----
+When a reminder's time arrives, Dina sends it to your Telegram.
 
-## She Guards Your Agents
+```
+🎂 Emma's birthday is tomorrow — you may want to buy a dinosaur-themed gift.
+```
 
-AI agents are becoming part of daily life — fetching emails, booking appointments, researching purchases. These agents are powerful, but they act on your behalf with access to your data. Who watches them?
-
-Dina does.
-
-Any AI agent that integrates with Dina submits its intent before acting. Safe things — like searching for a chair — go through silently. But when an agent wants to send an email, access your health records, or share data with an external service, Dina flags it.
-
-You get a notification on your phone: *"Your agent wants to access your health records. Approve?"*
-
-You tap approve or deny. The agent never holds your keys. It never sees your full history. It only gets what you explicitly allow, for that specific task, in that specific session.
-
-When the session ends, all access is revoked. A compromised agent in one session cannot touch data from another.
+You can edit or delete any reminder using the buttons that came with it.
 
 ---
 
 ## She Scrubs Your Privacy
 
-Every time your data needs to pass through a cloud AI (for reasoning, summarisation, or analysis), Dina scrubs personally identifiable information before it leaves your Home Node.
-
-Phone numbers become `[PHONE_1]`. Email addresses become `[EMAIL_1]`. Government IDs are replaced with opaque tokens. The cloud AI never sees your real data — it works with anonymised tokens.
-
-After the AI responds, Dina rehydrates the original values. You see the real answer. The cloud saw nothing real.
-
----
-
-## She Lives on Your Machine
-
-Dina runs on a Home Node — a small, always-on server that you own. It could be a cheap VPS, a Raspberry Pi, or a managed service. Your data never leaves this machine unless you explicitly allow it.
-
-Every persona is a separate encrypted database. Your keys are derived from a recovery phrase that only you have. If you lose your machine, you can restore everything from that phrase on a new one.
-
-You can run multiple Dinas on different machines under the same identity. You can export your data completely. You can delete it — and it's truly gone, because nobody else has the keys.
-
----
-
-## How You Interact With Her
-
-Dina speaks through whatever channel you connect. Today, that's Telegram — the same app every AI agent already uses. You send her commands, she responds. She sends you notifications, you tap to act.
+All internal LLM calls go with scrubbed information. Agents can also use Dina to get scrubbed information. 
 
 ```
-/ask     — ask Dina anything. She searches your vaults and reasons over the answer.
-/remember — tell Dina something to store. She classifies it and puts it in the right vault.
+(.venv) ~/dina % dina scrub "Call me at 9876543210 or email tom@example.com. My SSN is 123-45-6789"                                     
+scrubbed: Call me at [PHONE_1] or email [EMAIL_1]. My SSN is [SSN_1]
+pii_id: pii_1bc95fcc
+req_id: c5584fa642cb
+(.venv) ~/dina % dina rehydrate --session pii_1bc95fcc "Important to call [PHONE_1] or email [EMAIL_1] about [SSN_1]"
+restored: Important to call 9876543210 or email tom@example.com about 123-45-6789
 ```
 
-That's it. Two commands. Everything else — the encryption, the persona classification, the D2D messaging, the agent safety checks, the PII scrubbing — happens invisibly behind those two words.
+After the AI responds, Dina rehydrates the original values to memorise the results.
+
+---
