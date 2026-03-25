@@ -24,8 +24,10 @@ _DATE_PATTERNS = [
     re.compile(r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{4})\b"),
     # "2026-03-21"
     re.compile(r"\b(\d{4}-\d{2}-\d{2})\b"),
-    # Note: weekday patterns ("by Friday") are NOT included because the
-    # parser cannot convert them to timestamps. Only explicit dates work.
+    # "27th March" or "March 27th" (ordinal, no year — assumes current year)
+    re.compile(r"\b(\d{1,2}(?:st|nd|rd|th)\s+\w+)\b", re.IGNORECASE),
+    # "March 27th" or "March 27"
+    re.compile(r"\b(\w+\s+\d{1,2}(?:st|nd|rd|th)?)\b", re.IGNORECASE),
 ]
 
 # Event type patterns.
@@ -35,7 +37,7 @@ _PAYMENT_PATTERNS = re.compile(
 )
 
 _APPOINTMENT_PATTERNS = re.compile(
-    r"\b(?:appointment|meeting|consultation|visit|check-?up|session|call|interview)\b",
+    r"\b(?:appointment|meeting|consultation|visit|check-?up|session|call|interview|vaccination|vaccine|jab)\b",
     re.IGNORECASE,
 )
 
@@ -69,6 +71,12 @@ class EventExtractor:
             return 0
 
         events = self._extract_events(text, item)
+        log.info("event_extractor.scan", extra={
+            "text_len": len(text),
+            "events_found": len(events),
+            "kinds": [e["kind"] for e in events],
+            "text_preview": text[:80],
+        })
         created = 0
 
         for event in events:
@@ -137,12 +145,14 @@ def _parse_date_from_text(text: str) -> int:
     """Try to parse an explicit date from text. Returns Unix timestamp or 0."""
     import datetime as _dt
 
+    current_year = _dt.datetime.now(_dt.timezone.utc).year
+
     # Try ISO format: 2026-03-21
     m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
     if m:
         try:
             dt = _dt.datetime.strptime(m.group(1), "%Y-%m-%d")
-            dt = dt.replace(hour=9, tzinfo=_dt.timezone.utc)  # default 9am UTC
+            dt = dt.replace(hour=9, tzinfo=_dt.timezone.utc)
             return int(dt.timestamp())
         except ValueError:
             pass
@@ -168,6 +178,26 @@ def _parse_date_from_text(text: str) -> int:
                 return int(dt.timestamp())
             except ValueError:
                 continue
+
+    # Try "27th March" or "27 March" (ordinal day + month, no year)
+    m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\b", text, re.IGNORECASE)
+    if m:
+        try:
+            dt = _dt.datetime.strptime(f"{m.group(1)} {m.group(2)} {current_year}", "%d %B %Y")
+            dt = dt.replace(hour=9, tzinfo=_dt.timezone.utc)
+            return int(dt.timestamp())
+        except ValueError:
+            pass
+
+    # Try "March 27th" or "March 27" (month + ordinal day, no year)
+    m = re.search(r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?\b", text, re.IGNORECASE)
+    if m:
+        try:
+            dt = _dt.datetime.strptime(f"{m.group(2)} {m.group(1)} {current_year}", "%d %B %Y")
+            dt = dt.replace(hour=9, tzinfo=_dt.timezone.utc)
+            return int(dt.timestamp())
+        except ValueError:
+            pass
 
     return 0
 

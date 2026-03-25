@@ -24,6 +24,16 @@ log = structlog.get_logger(__name__)
 
 
 @dataclass
+class ExtractedEvent:
+    """A temporal event extracted by the LLM during classification."""
+
+    kind: str = ""          # birthday, appointment, payment_due, deadline, reminder
+    date: str = ""          # ISO format YYYY-MM-DD
+    message: str = ""       # brief description
+    recurring: str = "none" # none, yearly, monthly, weekly
+
+
+@dataclass
 class SelectionResult:
     """Result of persona selection."""
 
@@ -31,6 +41,7 @@ class SelectionResult:
     secondary: list[str] = field(default_factory=list)
     confidence: float = 0.0
     reason: str = ""
+    events: list[ExtractedEvent] = field(default_factory=list)
 
 
 _SYSTEM_PROMPT = """\
@@ -38,22 +49,41 @@ You are a data classifier for a personal AI system.
 The user has encrypted vaults (personas). Each persona has a name, tier, \
 and description explaining what data belongs there.
 
-Your job is to decide which vault an incoming item belongs to.
+You have TWO jobs:
 
-You MUST choose ONLY from the available personas listed below.
-Do NOT invent new persona names.
-Use each persona's description to decide where the item fits best.
+1. **Classify** which vault an incoming item belongs to.
+   Choose ONLY from the available personas listed below.
+   Do NOT invent new persona names.
+   When uncertain, prefer the default-tier persona.
 
-When uncertain, prefer the default-tier persona — it is better to store \
-there than to misclassify into a sensitive persona that requires approval.
+2. **Extract temporal events** — if the content mentions a date, deadline, \
+   appointment, birthday, payment due, or any time-bound event, extract it. \
+   Convert relative dates ("next Friday", "in 3 months", "tomorrow") to \
+   ISO format (YYYY-MM-DD) using today's date provided below. \
+   If no temporal event exists, return an empty events array.
 
 Respond with a JSON object:
 {
   "primary": "<persona_name>",
   "secondary": [],
   "confidence": 0.0-1.0,
-  "reason": "short explanation"
+  "reason": "short explanation",
+  "events": [
+    {
+      "kind": "birthday|appointment|payment_due|deadline|reminder",
+      "date": "YYYY-MM-DD",
+      "message": "brief description of what happens on this date",
+      "recurring": "none|yearly|monthly|weekly"
+    }
+  ]
 }
+
+Event examples:
+- "dog vaccination on 27th March" → {"kind":"appointment","date":"2026-03-27","message":"Dog vaccination","recurring":"none"}
+- "Emma's birthday March 25" → {"kind":"birthday","date":"2026-03-25","message":"Emma's birthday","recurring":"yearly"}
+- "rent due on the 5th" → {"kind":"payment_due","date":"2026-04-05","message":"Rent payment due","recurring":"monthly"}
+- "team standup every Monday" → {"kind":"reminder","date":"2026-03-31","message":"Team standup","recurring":"weekly"}
+- "I like strong tea" → no events (no date mentioned)
 """
 
 
@@ -140,7 +170,11 @@ class PersonaSelector:
             "body_preview": (item.get("body", "") or "")[:300],
         }
 
+        import datetime as _dt
+        today = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+
         prompt = json.dumps({
+            "today": today,
             "available_personas": persona_list,
             **item_context,
         }, indent=2)
@@ -189,11 +223,23 @@ class PersonaSelector:
                 if s != primary and self._registry.exists(s)
             ]
 
+            # Parse extracted events.
+            events: list[ExtractedEvent] = []
+            for ev in data.get("events", []):
+                if isinstance(ev, dict) and ev.get("date"):
+                    events.append(ExtractedEvent(
+                        kind=ev.get("kind", "reminder"),
+                        date=ev.get("date", ""),
+                        message=ev.get("message", ""),
+                        recurring=ev.get("recurring", "none"),
+                    ))
+
             return SelectionResult(
                 primary=primary or None,
                 secondary=valid_secondary,
                 confidence=confidence,
                 reason=reason,
+                events=events,
             )
         except (json.JSONDecodeError, ValueError, KeyError) as exc:
             log.warning("persona_selector.parse_failed", error=str(exc))

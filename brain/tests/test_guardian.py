@@ -2042,27 +2042,26 @@ async def test_guardian_2_8_5_didcomm_message_type_parsing(guardian) -> None:
     (social.*, commerce.*, trust.*, presence.*, safety.*, estate.*)
     and route to appropriate handler.
     """
-    # Test social handler (presence.signal → nudge_assembly via "social." prefix).
+    # Test social handler → nudge_assembly.
     msg = make_didcomm_message(msg_type="social.update")
     result = await guardian.process_event(msg)
     assert result["handler"] == "nudge_assembly"
     assert result["action"] == "nudge_assembled"
-
-    # Test commerce handler.
-    msg2 = make_didcomm_message(msg_type="commerce.referral")
-    result2 = await guardian.process_event(msg2)
-    assert result2["handler"] == "commerce_handler"
-    assert result2["action"] == "routed"
 
     # Test trust handler.
     msg3 = make_didcomm_message(msg_type="trust.vouch.request")
     result3 = await guardian.process_event(msg3)
     assert result3["handler"] == "trust_handler"
 
-    # Test presence handler.
+    # Test presence → nudge_assembly (v1: presence routes to nudge).
     msg4 = make_didcomm_message(msg_type="presence.signal")
     result4 = await guardian.process_event(msg4)
-    assert result4["handler"] == "presence_handler"
+    assert result4["handler"] == "nudge_assembly"
+
+    # Test coordination → nudge_assembly.
+    msg5 = make_didcomm_message(msg_type="coordination.request")
+    result5 = await guardian.process_event(msg5)
+    assert result5["handler"] == "nudge_assembly"
 
 
 # ---------------------------------------------------------------------------
@@ -9870,21 +9869,21 @@ async def test_d2d_arrival_not_staged(guardian):
 @pytest.mark.asyncio
 # TST-BRAIN-803
 async def test_d2d_commerce_review_staged(guardian):
-    """D2D commerce.referral is routed but NOT staged (v1: no memory-producing commerce types)."""
+    """D2D coordination.request is routed via nudge_assembly but NOT staged (ephemeral)."""
     core = guardian._test_core
 
     event = {
-        "type": "commerce.referral",
-        "from": "did:plc:chairmaker",
-        "id": "ref-7",
-        "body": {"vendor_did": "did:plc:vendor", "note": "Great ergonomic chair"},
+        "type": "coordination.request",
+        "from": "did:plc:james",
+        "id": "coord-7",
+        "body": {"action": "propose_time", "context": "Dinner tonight?"},
     }
     result = await guardian.process_event(event)
 
-    # commerce.referral is not in _D2D_VAULT_TYPE_MAP — not staged.
+    # coordination.request is not in _D2D_VAULT_TYPE_MAP — not staged.
     core.staging_ingest.assert_not_awaited()
-    assert result.get("handler") == "commerce_handler"
-    assert result.get("action") == "routed"
+    assert result.get("handler") == "nudge_assembly"
+    assert result.get("action") == "nudge_assembled"
     assert result.get("staged") is False
 
 
