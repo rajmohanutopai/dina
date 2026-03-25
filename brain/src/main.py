@@ -585,6 +585,7 @@ def create_app() -> FastAPI:
                     "ask": telegram_service.handle_ask,
                     "remember": telegram_service.handle_remember,
                     "edit": telegram_service.handle_edit,
+                    "send": telegram_service.handle_send,
                 },
                 callback_query_handler=telegram_service.handle_callback_query,
                 base_url=cfg.telegram_api_base_url,

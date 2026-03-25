@@ -232,13 +232,15 @@ class TelegramService:
                         result_msg = "Failed to store."
                         break
                     # received, classifying — still processing, continue polling
-                except Exception:
+                except Exception as _exc:
+                    log.debug("telegram.suppressed_error", exc_info=_exc)
                     break
 
             # Check staging status for reminder plan (set during processing).
             # The plan is stored in Core KV by the staging processor so any
             # caller (Telegram, dina-admin, CLI) can retrieve it.
             reminder_lines = []
+            plan = None
             if result_msg.startswith("Stored"):
                 # Small delay — KV write completes before resolve, but
                 # allow propagation time.
@@ -263,8 +265,8 @@ class TelegramService:
                                      "payment_due": "💳", "deadline": "⏰"}.get(
                                          r.get("kind", ""), "🔔")
                             reminder_lines.append(f"{emoji} {time_str} — {msg}")
-                except Exception:
-                    pass  # best-effort
+                except Exception as _exc:
+                    log.debug("telegram.suppressed_error", exc_info=_exc)
 
             if plan and plan.get("reminders"):
                 await update.message.reply_text(result_msg, parse_mode="Markdown")
@@ -274,7 +276,7 @@ class TelegramService:
         except Exception as exc:
             log.error(
                 "telegram.remember_failed",
-                extra={"error": type(exc).__name__},
+                extra={"error": f"{type(exc).__name__}: {exc}"},
             )
             await update.message.reply_text(
                 "Sorry, I couldn't save that. Please try again."
@@ -328,8 +330,8 @@ class TelegramService:
                 if hashlib.md5(rid.encode()).hexdigest()[:4] == short_id or rid == short_id:
                     rem_id = rid
                     break
-        except Exception:
-            pass
+        except Exception as _exc:
+            log.debug("telegram.suppressed_error", exc_info=_exc)
         if not rem_id:
             await update.message.reply_text(f"Reminder `{short_id}` not found.")
             return
@@ -366,8 +368,8 @@ class TelegramService:
             # Delete old + create new (Core doesn't have an update endpoint).
             try:
                 await self._core._request("DELETE", f"/v1/reminder/{rem_id}")
-            except Exception:
-                pass
+            except Exception as _exc:
+                log.debug("telegram.suppressed_error", exc_info=_exc)
             await self._core.store_reminder({
                 "type": "",
                 "message": message,
@@ -388,6 +390,141 @@ class TelegramService:
             await update.message.reply_text(
                 "Could not parse the edit. Try: /edit <id> Apr 5, 3:00 PM — New message"
             )
+
+    # ------------------------------------------------------------------
+    # /send command (D2D messaging)
+    # ------------------------------------------------------------------
+
+    async def handle_send(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /send <contact> <message> — send a D2D message.
+
+        Resolves the contact name to a DID, asks the LLM to classify
+        the message type and structure the body, then sends via Core.
+        """
+        if not update.effective_user or not update.message:
+            return
+
+        user_id = update.effective_user.id
+        if not self._is_allowed_user(user_id):
+            await update.message.reply_text(
+                "I don't recognise you yet. Send /start to pair."
+            )
+            return
+
+        text = (update.message.text or "").strip()
+        if text.lower().startswith("/send"):
+            text = text[len("/send"):].strip()
+        if ":" not in text:
+            await update.message.reply_text(
+                "Usage: /send Name: message\n"
+                "Example: /send Sancho: I'll be there in 30 minutes"
+            )
+            return
+
+        # Parse: everything before colon is contact name, after is message.
+        colon_pos = text.index(":")
+        contact_name = text[:colon_pos].strip()
+        message_text = text[colon_pos + 1:].strip()
+        if not contact_name or not message_text:
+            await update.message.reply_text(
+                "Usage: /send Name: message\n"
+                "Example: /send Sancho: I'll be there in 30 minutes"
+            )
+            return
+
+        # 1. Resolve contact name → DID.
+        contact_did = None
+        try:
+            resp = await self._core._request("GET", "/v1/contacts")
+            for c in resp.json().get("contacts", []):
+                if c.get("name", "").lower() == contact_name.lower():
+                    contact_did = c.get("did")
+                    contact_name = c.get("name")  # use canonical case
+                    break
+        except Exception as _exc:
+            log.debug("telegram.suppressed_error", exc_info=_exc)
+
+        if not contact_did:
+            await update.message.reply_text(
+                f"Contact '{contact_name}' not found. Check your contacts."
+            )
+            return
+
+        # 2. Ask LLM to classify the message type and structure the body.
+        try:
+            import datetime as _dt
+            now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            classify_prompt = (
+                f"You are classifying a Dina-to-Dina message.\n"
+                f"Today: {now}\n"
+                f"Sender wants to tell {contact_name}: \"{message_text}\"\n\n"
+                f"Classify into one of these v1 message types and structure the body:\n"
+                f"- presence.signal: status updates, arriving, leaving, ETA\n"
+                f"  Body: {{\"status\": \"arriving|leaving|delayed\", \"eta_minutes\": N, \"location_label\": \"...\"}}\n"
+                f"- coordination.request: proposing plans, asking availability\n"
+                f"  Body: {{\"action\": \"propose_time|ask_availability|ask_confirmation\", \"context\": \"...\"}}\n"
+                f"- coordination.response: accepting, declining plans\n"
+                f"  Body: {{\"action\": \"accept|decline|counter_propose\", \"note\": \"...\"}}\n"
+                f"- social.update: sharing life events, personal news\n"
+                f"  Body: {{\"text\": \"...\", \"category\": \"life_event|context|profile\"}}\n"
+                f"- safety.alert: warnings about scams, compromised accounts\n"
+                f"  Body: {{\"message\": \"...\", \"severity\": \"low|medium|high|critical\"}}\n\n"
+                f"Respond with JSON only:\n"
+                f"{{\"type\": \"<message_type>\", \"body\": {{...}}}}"
+            )
+            resp = await self._guardian._llm.route(
+                task_type="classification",
+                prompt=classify_prompt,
+                messages=[
+                    {"role": "system", "content": "Classify D2D message type. JSON only."},
+                    {"role": "user", "content": classify_prompt},
+                ],
+            )
+            import json as _json
+            raw = resp.get("content", "").strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            classified = _json.loads(raw)
+            msg_type = classified.get("type", "social.update")
+            body = classified.get("body", {"text": message_text})
+        except Exception:
+            # Fallback: send as social.update.
+            msg_type = "social.update"
+            body = {"text": message_text, "category": "context"}
+
+        # 3. Send via Core.
+        try:
+            import base64
+            body_b64 = base64.b64encode(
+                json.dumps(body).encode()
+            ).decode()
+            await self._core._request("POST", "/v1/msg/send", json={
+                "to": contact_did,
+                "body": body_b64,
+                "type": msg_type,
+            })
+            # Confirm to user.
+            type_label = {
+                "presence.signal": "📬 Presence",
+                "coordination.request": "📅 Coordination",
+                "coordination.response": "📅 Response",
+                "social.update": "💬 Social update",
+                "safety.alert": "🚨 Safety alert",
+                "trust.vouch.request": "🤝 Trust request",
+            }.get(msg_type, msg_type)
+            await update.message.reply_text(
+                f"Sent to {contact_name}: {type_label}\n{message_text}"
+            )
+        except Exception as exc:
+            error_msg = str(exc)
+            if "not a contact" in error_msg:
+                await update.message.reply_text(f"{contact_name} is not in your contacts.")
+            elif "egress blocked" in error_msg:
+                await update.message.reply_text(f"Sending to {contact_name} is blocked by your policy.")
+            else:
+                await update.message.reply_text(f"Failed to send to {contact_name}.")
 
     # ------------------------------------------------------------------
     # /ask command
@@ -514,7 +651,8 @@ class TelegramService:
         await update.message.reply_text(
             "Currently I support these commands:\n\n"
             "/ask <question> — query your vault\n"
-            "/remember <text> — store a memory"
+            "/remember <text> — store a memory\n"
+            "/send Name: message — send to another Dina"
         )
 
     # ------------------------------------------------------------------
