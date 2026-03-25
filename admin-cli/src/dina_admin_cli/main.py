@@ -1141,3 +1141,77 @@ def policy_reset(ctx: click.Context) -> None:
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)
+
+
+# ── export / import ──────────────────────────────────────────────────────────
+
+
+@cli.command("export")
+@click.option("--passphrase", required=True, help="Passphrase to encrypt the archive")
+@click.option("--dest", default="default", help="Export destination name (default: 'default')")
+@click.pass_context
+def export_cmd(ctx: click.Context, passphrase: str, dest: str) -> None:
+    """Export all vault data to an encrypted .dina archive.
+
+    \b
+    Examples:
+      dina-admin export --passphrase "my-secret"
+      dina-admin export --passphrase "my-secret" --dest backup-2026
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        resp = client._request(
+            "POST",
+            "/v1/export",
+            json={"passphrase": passphrase, "dest_path": dest},
+        )
+        data = resp.json()
+        if json_mode:
+            print_result(data, json_mode)
+        else:
+            archive = data.get("archive_path", "?")
+            click.echo(f"Exported: {archive}")
+            click.echo("Archive encrypted (AES-256-GCM + Argon2id).")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@cli.command("import")
+@click.argument("archive_path")
+@click.option("--passphrase", required=True, help="Passphrase used during export")
+@click.option("--force", is_flag=True, help="Overwrite existing data without confirmation")
+@click.pass_context
+def import_cmd(ctx: click.Context, archive_path: str, passphrase: str, force: bool) -> None:
+    """Import vault data from a .dina archive.
+
+    \b
+    Examples:
+      dina-admin import dina-export.dina --passphrase "my-secret"
+      dina-admin import /backups/dina-export.dina --passphrase "my-secret" --force
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        resp = client._request(
+            "POST",
+            "/v1/import",
+            json={
+                "archive_path": archive_path,
+                "passphrase": passphrase,
+                "force": force,
+            },
+        )
+        data = resp.json()
+        if json_mode:
+            print_result(data, json_mode)
+        else:
+            personas = data.get("persona_count", "?")
+            files = data.get("files_restored", "?")
+            click.echo(f"Imported: {files} files, {personas} personas.")
+            if data.get("requires_restart"):
+                click.echo("Restart required to load imported data.")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
