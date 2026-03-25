@@ -7,6 +7,27 @@ Ensure that Brain cannot act as Telegram to send messages
 Ensure that Brain cannot act as a supported session
 Even with a compromised brain, we should not be able to get anything else unless approved
 
+# Contact DB
+
+Every contact, relation etc should be a proper Database entry
+So, when information comes like Sanchos mother is sick, that should get filed under Sancho's information
+Obviously security of others also has to be maintained, so, Idenity.sqlite contains sanchos basic information - but in the finance vaulet etc, we store against sancho as ID
+
+# Internal Reminder
+
+Brain notices:
+  - You have a meeting with Sancho at 3pm
+  - It's 2:15pm and you haven't left
+  - Traffic shows 40 minutes
+
+Brain → Telegram:
+  "You might be late for Sancho. Want me to let him know?"
+  [Yes] [No]
+
+You tap Yes → Brain → Core → D2D to Sancho's Dina
+
+For this, there has to be an internal reminder for the Brain to work with
+
 # Auth Issue 1
 also, if I get a grant to read from finance vault, does it mean i can write also in finance vault for that session                                                                                                 
 

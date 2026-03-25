@@ -64,6 +64,13 @@ Rules:
   Bad: "Pack bag tonight."
 - If the event is today or tomorrow, still create useful reminders for \
   remaining time slots that haven't passed.
+- When someone is arriving or you are meeting someone, create ONE reminder \
+  that includes ALL relevant context about that person from the vault. \
+  Do not split facts across multiple reminders — combine them into one \
+  message so the user gets a single, complete briefing. \
+  Good: "Sancho is arriving in 10 minutes. He likes strong cardamom tea. \
+  His mother was unwell last week — you may want to ask how she is doing." \
+  Bad: two separate reminders, one about tea and one about his mother.
 
 Respond with JSON:
 {{
@@ -214,9 +221,12 @@ class ReminderPlanner:
             if len(cleaned) > 2 and cleaned.lower() not in _STOP:
                 search_terms.add(cleaned)
 
+        # Prioritize proper nouns (capitalized words = likely names).
+        prioritized = sorted(search_terms, key=lambda t: (0 if t[0].isupper() else 1, t))
+
         # Search vault for each term (best-effort, limited).
-        log.info("reminder_planner.vault_search", terms=list(search_terms)[:3])
-        for term in list(search_terms)[:3]:
+        log.info("reminder_planner.vault_search", terms=prioritized[:5])
+        for term in prioritized[:5]:
             try:
                 items = await self._core.search_vault(
                     "general", term, mode="fts5",

@@ -2112,8 +2112,9 @@ class GuardianLoop:
                     await self._telegram._bot.send_message(
                         chat_id, f"{emoji} {notification_text}",
                     )
-            except Exception:
-                log.warning("guardian.reminder.telegram_failed")
+                log.info("guardian.reminder.telegram_sent")
+            except Exception as exc:
+                log.warning("guardian.reminder.telegram_failed", error=str(exc))
 
         return {
             "status": "ok",
@@ -4524,6 +4525,46 @@ class GuardianLoop:
                                 log.info("guardian.didcomm.nudge_sent", handler=handler)
                             except Exception:
                                 log.warning("guardian.didcomm.nudge_send_failed")
+                    # Create reminders for D2D messages with temporal content.
+                    plan = None
+                    if hasattr(self, "_staging_processor") and self._staging_processor:
+                        planner = getattr(self._staging_processor, "_reminder_planner", None)
+                        if planner:
+                            raw_body = payload.get("body", "") or event.get("body", "")
+                            try:
+                                body_dict = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+                            except Exception:
+                                body_dict = {}
+                            if isinstance(body_dict, dict):
+                                parts = []
+                                for k, v in body_dict.items():
+                                    if v and k not in ("type",):
+                                        parts.append(f"{k}: {v}")
+                                body_text = ", ".join(parts)
+                            else:
+                                body_text = str(raw_body)
+                            content = f"{sender_name} — {body_text}"
+                            try:
+                                plan = await planner.plan_and_create(
+                                    content=content,
+                                    event_hint=f"{sender_name} {msg_type}",
+                                    persona="general",
+                                    source="d2d",
+                                )
+                            except Exception:
+                                pass
+
+                    # Send reminder plan with Edit/Delete buttons — same UX
+                    # as /remember (shared method on TelegramService).
+                    if plan and plan.get("reminders") and hasattr(self, "_telegram") and self._telegram:
+                        if not self._telegram._paired_users:
+                            await self._telegram.load_paired_users()
+                        for chat_id in self._telegram._paired_users:
+                            try:
+                                await self._telegram.send_reminder_plan(chat_id, plan)
+                            except Exception:
+                                pass
+
                     return {
                         "action": "nudge_assembled",
                         "handler": handler,

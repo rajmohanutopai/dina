@@ -266,42 +266,9 @@ class TelegramService:
                 except Exception:
                     pass  # best-effort
 
-            if reminder_lines:
-                # Numbered list with Edit/Delete buttons per reminder.
-                numbered = []
-                buttons = []
-                reminders = plan.get("reminders", []) if plan else []
-                for idx, (line, r) in enumerate(zip(reminder_lines, reminders), 1):
-                    short = r.get("short_id", "?")
-                    numbered.append(f"\\[{short}] {line}")
-                    rem_id = r.get("id", "")
-                    short_id = r.get("short_id", rem_id[:6])
-                    fire = r.get("fire_at", "")
-                    msg = r.get("message", "")
-                    try:
-                        import datetime as _dt2
-                        dt2 = _dt2.datetime.fromisoformat(fire.replace("Z", "+00:00"))
-                        edit_time = dt2.strftime("%b %d, %I:%M %p")
-                    except Exception:
-                        edit_time = fire
-                    if rem_id:
-                        edit_text = f"/edit {short_id} {edit_time} — {msg}"
-                        buttons.append([
-                            InlineKeyboardButton(
-                                f"🗑 Delete [{short_id}]",
-                                callback_data=f"reminder_delete:{rem_id}",
-                            ),
-                            InlineKeyboardButton(
-                                f"✏️ Edit [{short_id}]",
-                                switch_inline_query_current_chat=edit_text,
-                            ),
-                        ])
-                keyboard = InlineKeyboardMarkup(buttons) if buttons else None
-                await update.message.reply_text(
-                    result_msg + "\n\n*Reminders set:*\n" + "\n".join(numbered),
-                    parse_mode="Markdown",
-                    reply_markup=keyboard,
-                )
+            if plan and plan.get("reminders"):
+                await update.message.reply_text(result_msg, parse_mode="Markdown")
+                await self.send_reminder_plan(update.effective_chat.id, plan)
             else:
                 await update.message.reply_text(result_msg, parse_mode="Markdown")
         except Exception as exc:
@@ -748,6 +715,51 @@ class TelegramService:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    async def send_reminder_plan(self, chat_id: int, plan: dict) -> None:
+        """Send a formatted reminder plan with Edit/Delete buttons to a chat.
+
+        Shared by /remember (Telegram) and D2D handler — same UX everywhere.
+        """
+        if not plan or not plan.get("reminders") or not self._bot:
+            return
+
+        import datetime as _dt
+        import urllib.parse
+
+        lines = []
+        buttons = []
+        for idx, r in enumerate(plan["reminders"], 1):
+            fire = r.get("fire_at", "")
+            msg = r.get("message", "")
+            short_id = r.get("short_id", "?")
+            rem_id = r.get("id", "")
+            try:
+                dt = _dt.datetime.fromisoformat(fire.replace("Z", "+00:00"))
+                time_str = dt.strftime("%b %d, %I:%M %p")
+            except Exception:
+                time_str = fire
+            emoji = {"birthday": "🎂", "appointment": "📅",
+                     "payment_due": "💳", "deadline": "⏰"}.get(
+                         r.get("kind", ""), "🔔")
+            lines.append(f"\\[{short_id}] {emoji} {time_str} — {msg}")
+            if rem_id:
+                edit_text = f"/edit {short_id} {time_str} — {msg}"
+                buttons.append([
+                    InlineKeyboardButton(
+                        f"🗑 Delete [{short_id}]",
+                        callback_data=f"reminder_delete:{rem_id}",
+                    ),
+                    InlineKeyboardButton(
+                        f"✏️ Edit [{short_id}]",
+                        switch_inline_query_current_chat=edit_text,
+                    ),
+                ])
+
+        keyboard = InlineKeyboardMarkup(buttons) if buttons else None
+        text = "*Reminders set:*\n" + "\n".join(lines)
+        await self._bot.send_message(chat_id, text, parse_mode="Markdown",
+                                     reply_markup=keyboard)
 
     @staticmethod
     def _extract_response(result: dict) -> str:
