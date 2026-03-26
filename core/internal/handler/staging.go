@@ -188,7 +188,7 @@ func (h *StagingHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 // deriveProvenance sets ingress provenance from auth context.
 // Device/connector callers get server-overridden values.
-// Brain (service key) can set them explicitly for relay (Telegram/D2D in Phase 2+).
+// Brain (service key) can set them explicitly for forwarding (Telegram/D2D in Phase 2+).
 func (h *StagingHandler) deriveProvenance(r *http.Request, req ingestRequest) (channel, did, kind, producer, errMsg string) {
 	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
 	agentDID, _ := r.Context().Value(middleware.AgentDIDKey).(string)
@@ -214,7 +214,7 @@ func (h *StagingHandler) deriveProvenance(r *http.Request, req ingestRequest) (c
 		serviceID, _ := r.Context().Value(middleware.ServiceIDKey).(string)
 		isBrain := serviceID == "brain" || serviceID == "core"
 		if isBrain && req.IngressChannel != "" {
-			// Only Brain can relay provenance (Telegram/D2D in Phase 2+).
+			// Only Brain can forward provenance (Telegram/D2D in Phase 2+).
 			// Connectors cannot claim to be telegram.
 			channel = req.IngressChannel
 			did = req.OriginDID
@@ -231,7 +231,7 @@ func (h *StagingHandler) deriveProvenance(r *http.Request, req ingestRequest) (c
 			kind = domain.OriginService
 			producer = "connector:" + req.ConnectorID
 		} else if isBrain {
-			// Brain internal (no connector_id, no relay channel)
+			// Brain internal (no connector_id, no forwarded channel)
 			channel = domain.IngressBrain
 			did = "brain"
 			kind = domain.OriginService

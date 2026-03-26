@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/service"
@@ -87,6 +88,38 @@ func (h *TrustHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(profile)
+}
+
+// HandleSearch proxies search queries to AppView's trust search endpoint.
+// GET /v1/trust/search?q={query}&category={category}&subjectType={type}&limit={n}
+func (h *TrustHandler) HandleSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	category := r.URL.Query().Get("category")
+	subjectType := r.URL.Query().Get("subjectType")
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 25 {
+			limit = n
+		}
+	}
+
+	results, err := h.Trust.SearchTrust(query, category, subjectType, limit)
+	if err != nil {
+		if errors.Is(err, domain.ErrAppViewNotConfigured) {
+			http.Error(w, `{"error":"appview not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, `{"error":"appview search failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(results)
 }
 
 // HandleSync triggers a manual trust neighborhood sync.

@@ -76,8 +76,8 @@ type Transporter struct {
 	sent        []sentRecord
 	endpoints   map[string]string // DID -> endpoint URL
 	resolver    *DIDResolver
-	relayURL    string // this node's own relay URL (for registration)
-	relayClient *RelayClient
+	msgboxURL    string // this node's own msgbox URL (for registration)
+	msgboxClient *MsgBoxClient
 }
 
 type sentRecord struct {
@@ -120,25 +120,25 @@ func (t *Transporter) Send(recipientDID string, envelope []byte) error {
 	// Resolve recipient service endpoint and type from DID document.
 	svcType, endpoint, err := t.ResolveServiceEndpoint(recipientDID)
 	if err != nil {
-		// DID resolution failed. If we have a relay configured, use it as
-		// last-resort fallback — the relay may know the recipient or buffer
+		// DID resolution failed. If we have a msgbox configured, use it as
+		// last-resort fallback — the msgbox may know the recipient or buffer
 		// the message until they connect.
 		t.mu.Lock()
-		relay := t.relayURL
-		rc := t.relayClient
+		mbox := t.msgboxURL
+		rc := t.msgboxClient
 		t.mu.Unlock()
-		if relay != "" {
+		if mbox != "" {
 			if rc != nil {
-				forwardURL := relayWSToForwardURL(relay)
-				if fwdErr := rc.ForwardToRelay(context.Background(), forwardURL, recipientDID, envelope); fwdErr != nil {
-					// Record for test introspection, but relay forward failed.
+				forwardURL := msgboxWSToForwardURL(mbox)
+				if fwdErr := rc.ForwardToMsgBox(context.Background(), forwardURL, recipientDID, envelope); fwdErr != nil {
+					// Record for test introspection, but msgbox forward failed.
 					t.mu.Lock()
 					t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
 					t.mu.Unlock()
-					return fmt.Errorf("transport: relay fallback failed: %w", fwdErr)
+					return fmt.Errorf("transport: msgbox fallback failed: %w", fwdErr)
 				}
 			}
-			// Record as sent (relay accepted).
+			// Record as sent (msgbox accepted).
 			t.mu.Lock()
 			t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
 			t.mu.Unlock()
@@ -153,15 +153,15 @@ func (t *Transporter) Send(recipientDID string, envelope []byte) error {
 	case "DinaDirectHTTPS":
 		deliverErr = t.httpDeliver(endpoint, envelope)
 	case "DinaMsgBox":
-		// POST to the recipient's relay's /forward endpoint.
+		// POST to the recipient's msgbox /forward endpoint.
 		t.mu.Lock()
-		rc := t.relayClient
+		rc := t.msgboxClient
 		t.mu.Unlock()
 		if rc != nil {
-			forwardURL := relayWSToForwardURL(endpoint)
-			deliverErr = rc.ForwardToRelay(context.Background(), forwardURL, recipientDID, envelope)
+			forwardURL := msgboxWSToForwardURL(endpoint)
+			deliverErr = rc.ForwardToMsgBox(context.Background(), forwardURL, recipientDID, envelope)
 		} else {
-			deliverErr = fmt.Errorf("relay client not configured")
+			deliverErr = fmt.Errorf("msgbox client not configured")
 		}
 	default:
 		deliverErr = t.httpDeliver(endpoint, envelope)
@@ -369,32 +369,32 @@ func (t *Transporter) EnqueueInbox(msg []byte) {
 	t.inbox = append(t.inbox, msg)
 }
 
-// SetRelayURL configures the relay fallback URL.
-func (t *Transporter) SetRelayURL(url string) {
+// SetMsgBoxURL configures the msgbox fallback URL.
+func (t *Transporter) SetMsgBoxURL(url string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.relayURL = url
+	t.msgboxURL = url
 }
 
-// GetRelayURL returns the current relay URL.
-func (t *Transporter) GetRelayURL() string {
+// GetMsgBoxURL returns the current msgbox URL.
+func (t *Transporter) GetMsgBoxURL() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.relayURL
+	return t.msgboxURL
 }
 
-// SetRelayClient configures the relay client for outbound forwarding.
-func (t *Transporter) SetRelayClient(rc *RelayClient) {
+// SetMsgBoxClient configures the msgbox client for outbound forwarding.
+func (t *Transporter) SetMsgBoxClient(rc *MsgBoxClient) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.relayClient = rc
+	t.msgboxClient = rc
 }
 
-// GetRelayClient returns the relay client (nil if not configured).
-func (t *Transporter) GetRelayClient() *RelayClient {
+// GetMsgBoxClient returns the msgbox client (nil if not configured).
+func (t *Transporter) GetMsgBoxClient() *MsgBoxClient {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.relayClient
+	return t.msgboxClient
 }
 
 // ResolveServiceEndpoint resolves a DID to its service type and endpoint URL.
@@ -459,10 +459,10 @@ func (t *Transporter) ResolveServiceEndpoint(did string) (string, string, error)
 	return svcType, endpoint, nil
 }
 
-// relayWSToForwardURL converts a relay WebSocket URL to its HTTP /forward URL.
-// e.g., "wss://relay.dina.dev/ws" → "https://relay.dina.dev/forward"
-//       "ws://localhost:7700/ws"  → "http://localhost:7700/forward"
-func relayWSToForwardURL(wsURL string) string {
+// msgboxWSToForwardURL converts a msgbox WebSocket URL to its HTTP /forward URL.
+// e.g., "wss://msgbox.dina.dev/ws" → "https://msgbox.dina.dev/forward"
+//       "ws://msgbox:7700/ws"  → "http://localhost:7700/forward"
+func msgboxWSToForwardURL(wsURL string) string {
 	u := wsURL
 	u = strings.TrimSuffix(u, "/ws")
 	u = strings.TrimSuffix(u, "/")
@@ -495,7 +495,7 @@ func (t *Transporter) ResetForTest() {
 	t.inbox = nil
 	t.sent = nil
 	t.endpoints = make(map[string]string)
-	t.relayURL = ""
+	t.msgboxURL = ""
 }
 
 // validateDID performs basic DID format validation.

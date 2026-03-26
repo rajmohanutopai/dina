@@ -155,10 +155,10 @@ type Transporter interface {
 	Receive() ([]byte, error)
 	// ResolveEndpoint resolves a DID to its service endpoint URL.
 	ResolveEndpoint(did string) (string, error)
-	// SetRelayURL configures the relay fallback URL.
-	SetRelayURL(url string)
-	// GetRelayURL returns the current relay URL.
-	GetRelayURL() string
+	// SetMsgBoxURL configures the msgbox fallback URL.
+	SetMsgBoxURL(url string)
+	// GetMsgBoxURL returns the current msgbox URL.
+	GetMsgBoxURL() string
 	// AddEndpoint registers a known DID -> endpoint mapping.
 	AddEndpoint(did, endpoint string)
 	// SentCount returns the number of sent messages (for testing).

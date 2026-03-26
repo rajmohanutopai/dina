@@ -194,7 +194,7 @@ func (p *PDSPublisher) DeleteRecord(_ context.Context, tombstone Tombstone) erro
 	if exists {
 		p.tombstones[tombstone.Target] = record.AuthorDID
 	} else if _, alreadyTombstoned := p.tombstones[tombstone.Target]; !alreadyTombstoned {
-		// New tombstone from relay propagation — trust the signature.
+		// New tombstone from network propagation — trust the signature.
 		p.tombstones[tombstone.Target] = tombstone.AuthorDID
 	}
 

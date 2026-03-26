@@ -41,6 +41,9 @@ type TrustResolver interface {
 	// ResolveFullProfile fetches the raw AppView profile JSON for a DID.
 	// Returns nil if AppView is not configured or the DID is unknown.
 	ResolveFullProfile(did string) (json.RawMessage, error)
+
+	// SearchTrust queries AppView for product/entity trust attestations.
+	SearchTrust(query, category, subjectType string, limit int) (json.RawMessage, error)
 }
 
 // ContactLookup provides read-only access to the contact directory for trust decisions.

@@ -129,6 +129,11 @@ func (s *TrustService) ResolveProfile(did string) (json.RawMessage, error) {
 	return s.resolver.ResolveFullProfile(did)
 }
 
+// SearchTrust queries AppView for product/entity trust attestations.
+func (s *TrustService) SearchTrust(query, category, subjectType string, limit int) (json.RawMessage, error) {
+	return s.resolver.SearchTrust(query, category, subjectType, limit)
+}
+
 // GetCacheEntries returns all entries in the trust cache (for admin UI).
 func (s *TrustService) GetCacheEntries() ([]domain.TrustEntry, error) {
 	return s.cache.List()

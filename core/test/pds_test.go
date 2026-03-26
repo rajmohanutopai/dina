@@ -587,7 +587,7 @@ func TestPDS_22_2_2_NonAuthorDeletionRejected(t *testing.T) {
 
 // TST-CORE-722
 func TestPDS_22_2_3_TombstonePropagation(t *testing.T) {
-	// Tombstone published to PDS must be distributed by relay to federated AppViews.
+	// Tombstone published to PDS must be distributed to federated AppViews.
 	authorDID := "did:key:z6MkPropagationAuthor"
 	pub := pds.NewPDSPublisher(authorDID)
 	testutil.RequireImplementation(t, pub, "PDSPublisher")

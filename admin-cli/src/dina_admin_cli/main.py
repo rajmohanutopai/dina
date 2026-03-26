@@ -1225,7 +1225,7 @@ _APPVIEW_KV_KEY = "admin:appview_url"
 
 @cli.group()
 def msgbox() -> None:
-    """Configure the D2D message relay/mailbox endpoint."""
+    """Configure the D2D message mailbox (msgbox) endpoint."""
 
 
 @msgbox.command("set")

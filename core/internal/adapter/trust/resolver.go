@@ -197,6 +197,54 @@ func (r *Resolver) ResolveNeighborhood(centerDID string, hops int, limit int) ([
 	return entries, nil
 }
 
+// SearchTrust queries AppView's search endpoint for product/entity trust data.
+// Returns the raw JSON response (attestation results).
+func (r *Resolver) SearchTrust(query, category, subjectType string, limit int) (json.RawMessage, error) {
+	if r.baseURL == "" {
+		return nil, domain.ErrAppViewNotConfigured
+	}
+	if limit <= 0 || limit > 25 {
+		limit = 10
+	}
+
+	params := url.Values{}
+	if query != "" {
+		params.Set("q", query)
+	}
+	if category != "" {
+		params.Set("category", category)
+	}
+	if subjectType != "" {
+		params.Set("subjectType", subjectType)
+	}
+	params.Set("limit", fmt.Sprintf("%d", limit))
+	params.Set("sort", "relevant")
+
+	u := fmt.Sprintf("%s/xrpc/com.dina.trust.search?%s", r.baseURL, params.Encode())
+	resp, err := r.client.Get(u)
+	if err != nil {
+		slog.Warn("trust_resolver: search request failed", "query", query, "error", err)
+		return nil, fmt.Errorf("appview unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Warn("trust_resolver: search non-200", "query", query, "status", resp.StatusCode)
+		return nil, fmt.Errorf("appview returned HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return nil, fmt.Errorf("appview search read failed: %w", err)
+	}
+
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("appview returned invalid JSON")
+	}
+
+	return json.RawMessage(body), nil
+}
+
 // scoreToRing maps a trust score and vouch count to a trust ring.
 func scoreToRing(score float64, vouches int) int {
 	if score >= 0.7 && vouches >= 3 {

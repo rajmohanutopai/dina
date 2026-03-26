@@ -135,9 +135,9 @@ type TransportService struct {
 	msgboxForwarder MsgBoxForwarder
 }
 
-// MsgBoxForwarder sends messages via a D2D msgbox relay with authenticated requests.
+// MsgBoxForwarder sends messages via a D2D msgbox with authenticated requests.
 type MsgBoxForwarder interface {
-	ForwardToRelay(ctx context.Context, forwardURL, recipientDID string, payload []byte) error
+	ForwardToMsgBox(ctx context.Context, forwardURL, recipientDID string, payload []byte) error
 }
 
 // NewTransportService constructs a TransportService with all required dependencies.
@@ -372,7 +372,7 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 				forwardURL = strings.TrimSuffix(forwardURL, "/ws")
 				forwardURL = strings.TrimSuffix(forwardURL, "/")
 				forwardURL += "/forward"
-				deliverErr = s.msgboxForwarder.ForwardToRelay(ctx, forwardURL, string(to), deliveryPayload)
+				deliverErr = s.msgboxForwarder.ForwardToMsgBox(ctx, forwardURL, string(to), deliveryPayload)
 			} else {
 				deliverErr = s.deliverer.Deliver(ctx, svc.ServiceEndpoint, deliveryPayload)
 			}
@@ -390,7 +390,7 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 }
 
 // findMessagingService returns the #dina_messaging service from a DID document,
-// or falls back to the first service. This determines routing: DinaRelay vs DinaDirectHTTPS.
+// or falls back to the first service. This determines routing: DinaMsgBox vs DinaDirectHTTPS.
 func findMessagingService(services []domain.ServiceEndpoint) domain.ServiceEndpoint {
 	for _, svc := range services {
 		if svc.ID == "#dina_messaging" || svc.Type == "DinaMsgBox" || svc.Type == "DinaDirectHTTPS" {
@@ -536,7 +536,7 @@ func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, er
 			forwardURL = strings.TrimSuffix(forwardURL, "/ws")
 			forwardURL = strings.TrimSuffix(forwardURL, "/")
 			forwardURL += "/forward"
-			deliverErr = s.msgboxForwarder.ForwardToRelay(ctx, forwardURL, msg.ToDID, deliveryPayload)
+			deliverErr = s.msgboxForwarder.ForwardToMsgBox(ctx, forwardURL, msg.ToDID, deliveryPayload)
 		} else if s.deliverer != nil {
 			deliverErr = s.deliverer.Deliver(ctx, svc.ServiceEndpoint, deliveryPayload)
 		}

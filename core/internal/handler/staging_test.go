@@ -22,7 +22,7 @@ import (
 // ==========================================================================
 // Staging Handler Tests — Provenance Derivation
 // 8 scenarios verifying that server-derived provenance is correct for each
-// caller type: CLI user, CLI agent, Brain relay, connector, Brain internal,
+// caller type: CLI user, CLI agent, Brain forwarding, connector, Brain internal,
 // non-Brain service (rejected), admin, and full HandleIngest 202 flow.
 // ==========================================================================
 
@@ -117,11 +117,11 @@ func TestDeriveProvenance_DeviceAgent(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// 3. TestDeriveProvenance_BrainRelay — Brain (service key, serviceID=brain)
-//    with explicit ingress_channel. Expect relay passthrough.
+// 3. TestDeriveProvenance_BrainForward — Brain (service key, serviceID=brain)
+//    with explicit ingress_channel. Expect forward passthrough.
 // --------------------------------------------------------------------------
 
-func TestDeriveProvenance_BrainRelay(t *testing.T) {
+func TestDeriveProvenance_BrainForward(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
 	r := httptest.NewRequest("POST", "/v1/staging/ingest", nil)
@@ -155,11 +155,11 @@ func TestDeriveProvenance_BrainRelay(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// 4. TestDeriveProvenance_BrainRelayWithConnectorID — Brain relay but with
+// 4. TestDeriveProvenance_BrainForwardWithConnectorID — Brain forwarding but with
 //    connector_id set. Producer should use connector prefix.
 // --------------------------------------------------------------------------
 
-func TestDeriveProvenance_BrainRelayWithConnectorID(t *testing.T) {
+func TestDeriveProvenance_BrainForwardWithConnectorID(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
 	r := httptest.NewRequest("POST", "/v1/staging/ingest", nil)
@@ -254,7 +254,7 @@ func TestDeriveProvenance_NonBrainServiceNoConnectorID(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// 7. TestDeriveProvenance_BrainInternal — Brain service key without relay
+// 7. TestDeriveProvenance_BrainInternal — Brain service key without forwarding
 //    or connector. Expect channel=brain, producer=brain:system.
 // --------------------------------------------------------------------------
 
@@ -323,7 +323,7 @@ func TestDeriveProvenance_Admin(t *testing.T) {
 // --------------------------------------------------------------------------
 // 9. TestDeriveProvenance_ConnectorSpoofTelegram — Non-Brain service key
 //    trying to set ingress_channel=telegram. Must NOT pass through —
-//    only Brain can relay provenance.
+//    only Brain can forward provenance.
 // --------------------------------------------------------------------------
 
 func TestDeriveProvenance_ConnectorSpoofTelegram(t *testing.T) {
@@ -348,7 +348,7 @@ func TestDeriveProvenance_ConnectorSpoofTelegram(t *testing.T) {
 	// Non-Brain service with connector_id → forced to "connector" channel,
 	// NOT the spoofed "telegram".
 	if channel != domain.IngressConnector {
-		t.Errorf("channel: got %q, want %q — non-Brain cannot relay telegram provenance",
+		t.Errorf("channel: got %q, want %q — non-Brain cannot forward telegram provenance",
 			channel, domain.IngressConnector)
 	}
 }
@@ -389,11 +389,11 @@ func TestHandleIngest_InvalidJSON(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// 12. TestDeriveProvenance_CoreServiceRelays — serviceID="core" can also
-//     relay provenance (same as brain).
+// 12. TestDeriveProvenance_CoreServiceForwards — serviceID="core" can also
+//     forward provenance (same as brain).
 // --------------------------------------------------------------------------
 
-func TestDeriveProvenance_CoreServiceRelays(t *testing.T) {
+func TestDeriveProvenance_CoreServiceForwards(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
 	r := httptest.NewRequest("POST", "/v1/staging/ingest", nil)

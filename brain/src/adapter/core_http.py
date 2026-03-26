@@ -773,6 +773,33 @@ class CoreHTTPClient:
             logger.warning("trust_profile_query_failed", did=did)
             return None
 
+    async def search_trust_network(
+        self, query: str = "", category: str = "", subject_type: str = "", limit: int = 10
+    ) -> dict | None:
+        """GET /v1/trust/search — search AppView Trust Network for attestations.
+
+        Used by the reasoning agent to find product reviews, merchant ratings,
+        and trust evidence when the user asks about purchases or trust.
+        """
+        import urllib.parse
+
+        params = {}
+        if query:
+            params["q"] = query
+        if category:
+            params["category"] = category
+        if subject_type:
+            params["subjectType"] = subject_type
+        params["limit"] = str(limit)
+
+        qs = urllib.parse.urlencode(params)
+        try:
+            resp = await self._request("GET", f"/v1/trust/search?{qs}")
+            return resp.json()
+        except Exception:
+            logger.warning("trust_search_failed", query=query)
+            return None
+
     # -- Dina-to-Dina messaging ----------------------------------------------
 
     async def send_d2d(self, to_did: str, payload: dict, msg_type: str) -> None:

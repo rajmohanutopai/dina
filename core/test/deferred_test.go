@@ -462,7 +462,7 @@ func TestDeferred_24_5_2_LaptopConfigurableCacheSize(t *testing.T) {
 
 // TST-CORE-774
 func TestDeferred_24_5_3_ThinClientNoLocalCache(t *testing.T) {
-	// Thin client: zero vault data stored locally — WS relay only.
+	// Thin client: zero vault data stored locally — WS msgbox only.
 	var impl testutil.CacheSyncer
 	testutil.RequireImplementation(t, impl, "CacheSyncer")
 

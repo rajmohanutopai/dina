@@ -145,6 +145,37 @@ VAULT_TOOLS: list[dict[str, Any]] = [
             "required": ["persona", "item_id"],
         },
     },
+    {
+        "name": "search_trust_network",
+        "description": (
+            "Search the Dina Trust Network for product reviews, merchant ratings, "
+            "and trust evidence from verified peers. Use this when the user asks about "
+            "buying a product, evaluating a vendor, or checking if something is trustworthy. "
+            "Returns attestations from the decentralised trust network — real reviews "
+            "from verified identities, not anonymous ratings. "
+            "Results include sentiment (positive/neutral/negative), confidence level, "
+            "and the reviewer's identity."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "What to search for — product name, merchant, brand, or "
+                        "category (e.g., 'ergonomic chair', 'ChairMaker', 'laptop')."
+                    ),
+                },
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "Optional category filter (e.g., 'product-review', 'quality', 'e-commerce')."
+                    ),
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -211,6 +242,7 @@ class ToolExecutor:
             "get_full_content": self._get_full_content,
             "browse_vault": self._browse_vault,
             "search_vault": self._search_vault,
+            "search_trust_network": self._search_trust_network,
         }.get(name)
 
         if handler is None:
@@ -456,6 +488,51 @@ class ToolExecutor:
             "confidence": item.confidence or "",
         }
 
+    async def _search_trust_network(self, args: dict) -> dict:
+        """Search the Trust Network for product/merchant trust attestations."""
+        query = args.get("query", "")
+        category = args.get("category", "")
+        if not query:
+            return {"error": "query is required"}
+
+        result = None
+        try:
+            # Try category-based search first (more reliable than FTS)
+            result = await self._core.search_trust_network(
+                query="", category=category or "product-review", subject_type="", limit=10,
+            )
+            # If no results with category, try text search
+            if result and not result.get("results"):
+                result = await self._core.search_trust_network(
+                    query=query, category="", subject_type="", limit=10,
+                )
+        except Exception as exc:
+            return {"error": str(exc)}
+
+        if result is None:
+            return {"items": [], "message": f"Trust Network not available or no data for '{query}'."}
+
+        results = result.get("results", [])
+        if not results:
+            return {"items": [], "message": f"No trust attestations found for '{query}'."}
+
+        # Format results for the LLM — include sentiment, text, author, confidence.
+        items = []
+        for r in results[:10]:
+            items.append({
+                "sentiment": r.get("sentiment", "unknown"),
+                "confidence": r.get("confidence", ""),
+                "text": r.get("searchContent", r.get("text", ""))[:200],
+                "author": r.get("authorDid", "")[:30],
+                "category": r.get("category", ""),
+            })
+
+        return {
+            "items": items,
+            "count": len(items),
+            "message": f"Found {len(items)} trust attestation(s) for '{query}'.",
+        }
+
 
 # ---------------------------------------------------------------------------
 # ReasoningAgent — agentic tool-calling loop
@@ -479,7 +556,13 @@ matches (e.g. searching "back pain" finds items about "lumbar disc herniation").
 3. If you need a broader view of a persona, call browse_vault to see recent \
 items without requiring a specific search term.
 
-4. Synthesize all gathered context with the user's query into a personalized answer.
+4. If the user asks about buying a product, evaluating a vendor, or checking \
+trust/reputation, call search_trust_network with the product or merchant name. \
+This searches the Dina Trust Network — a decentralised network of verified peer \
+reviews and attestations. Trust Network results come from real identities, not \
+anonymous ratings.
+
+5. Synthesize all gathered context with the user's query into a personalized answer.
 
 Rules:
 - Explore personas whose previews suggest relevant context.

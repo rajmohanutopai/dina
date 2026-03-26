@@ -18,7 +18,7 @@ import (
 // ==========================================================================
 // TEST_PLAN §7 — Transport (Dina-to-Dina Messaging)
 // 24 scenarios across 6 subsections: Outbox, Inbox 3-Valve, DID Resolution,
-// Message Format, NaCl Encryption, Relay Fallback.
+// Message Format, NaCl Encryption, MsgBox Fallback.
 // ==========================================================================
 
 // --------------------------------------------------------------------------
@@ -682,7 +682,7 @@ func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// §7.6 Relay Fallback (3 scenarios)
+// §7.6 MsgBox Fallback (3 scenarios)
 // --------------------------------------------------------------------------
 
 // TST-CORE-825
@@ -690,21 +690,21 @@ func TestTransport_7_6_1_DirectDeliveryPreferred(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
-	// When the recipient has a direct endpoint registered, no relay is needed.
+	// When the recipient has a direct endpoint registered, no msgbox.is needed.
 	// "did:key:z6MkRecipient" is pre-registered in the DID resolver.
 	envelope := testutil.TestEnvelope()
 	err := impl.Send("did:key:z6MkRecipient", envelope)
 	testutil.RequireNoError(t, err)
 
-	// Verify relay URL is not set (direct delivery used).
-	relayURL := impl.GetRelayURL()
-	testutil.RequireEqual(t, relayURL, "")
+	// Verify msgbox URL is not set (direct delivery used).
+	msgboxURL := impl.GetMsgBoxURL()
+	testutil.RequireEqual(t, msgboxURL, "")
 }
 
 // TST-CORE-826
-func TestTransport_7_6_2_RelayUsedWhenDirectFails(t *testing.T) {
+func TestTransport_7_6_2_MsgBoxUsedWhenDirectFails(t *testing.T) {
 	// §7.6.2: When direct delivery fails (DID has no resolvable endpoint),
-	// the transport must fall back to the configured relay. Without a relay,
+	// the transport must fall back to the configured msgbox. Without a msgbox,
 	// the send must fail.
 	resolver := transport.NewDIDResolver()
 	tr := transport.NewTransporter(resolver)
@@ -713,25 +713,25 @@ func TestTransport_7_6_2_RelayUsedWhenDirectFails(t *testing.T) {
 	unresolvableDID := "did:key:z6MkNoDirectEndpoint"
 	envelope := testutil.TestEnvelope()
 
-	// Negative: without relay, send to unresolvable DID must fail.
+	// Negative: without msgbox, send to unresolvable DID must fail.
 	err := tr.Send(unresolvableDID, envelope)
 	testutil.RequireError(t, err)
 
-	// Positive: configure relay, same send should now succeed via relay fallback.
-	tr.SetRelayURL("https://relay.dina-network.org/forward")
+	// Positive: configure msgbox, same send should now succeed via msgbox fallback.
+	tr.SetMsgBoxURL("https://msgbox.dina-network.org/forward")
 	err = tr.Send(unresolvableDID, envelope)
 	testutil.RequireNoError(t, err)
 
-	// Verify the message was sent (via relay path).
+	// Verify the message was sent (via msgbox path).
 	testutil.RequireTrue(t, tr.SentCount() >= 1,
-		fmt.Sprintf("expected at least 1 sent message via relay, got %d", tr.SentCount()))
+		fmt.Sprintf("expected at least 1 sent message via msgbox, got %d", tr.SentCount()))
 	testutil.RequireEqual(t, tr.LastSentDID(), unresolvableDID)
 
-	// Verify relay URL is set correctly.
-	testutil.RequireEqual(t, tr.GetRelayURL(), "https://relay.dina-network.org/forward")
+	// Verify msgbox URL is set correctly.
+	testutil.RequireEqual(t, tr.GetMsgBoxURL(), "https://msgbox.dina-network.org/forward")
 
 	// Positive control: a directly resolvable DID should still work
-	// (relay is only a fallback, not a forced path).
+	// (msgbox.is only a fallback, not a forced path).
 	resolver.AddDocument("did:key:z6MkDirectPeer", []byte(
 		`{"id":"did:key:z6MkDirectPeer","service":[{"id":"#didcomm","type":"DIDCommMessaging","serviceEndpoint":"https://direct-peer.dina.local/didcomm"}]}`))
 	err = tr.Send("did:key:z6MkDirectPeer", envelope)
@@ -2064,7 +2064,7 @@ func TestTransport_7_5_4_FullConnectionFlow(t *testing.T) {
 	_ = tr.Send(recipientDID, envelope2)
 	testutil.RequireEqual(t, tr.SentCount(), 2)
 
-	// Negative: send to unregistered DID fails (no relay configured).
+	// Negative: send to unregistered DID fails (no msgbox.configured).
 	err = tr.Send("did:key:z6MkUnknownPeer", envelope)
 	testutil.RequireError(t, err)
 
@@ -2193,48 +2193,48 @@ func TestTransport_7_5_7_EndpointFromDIDDocument(t *testing.T) {
 }
 
 // ==========================================================================
-// TEST_PLAN §7.6 — Relay Fallback (additional scenarios)
+// TEST_PLAN §7.6 — MsgBox Fallback (additional scenarios)
 // ==========================================================================
 
 // TST-CORE-452
-func TestTransport_7_6_4_RelayForwardEnvelope(t *testing.T) {
+func TestTransport_7_6_4_MsgBoxForwardEnvelope(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Use an unresolvable DID (not in test resolver's well-known list).
-	unresolvableDID := "did:key:z6MkRelayForwardTarget"
+	unresolvableDID := "did:key:z6MkMsgBoxForwardTarget"
 
-	// Step 1: Without relay, sending to an unresolvable DID must fail.
-	impl.SetRelayURL("")
+	// Step 1: Without msgbox, sending to an unresolvable DID must fail.
+	impl.SetMsgBoxURL("")
 	envelope := testutil.TestEnvelope()
 	err := impl.Send(unresolvableDID, envelope)
 	if err == nil {
-		t.Fatal("Send to unresolvable DID without relay should fail, but got nil error")
+		t.Fatal("Send to unresolvable DID without msgbox should fail, but got nil error")
 	}
 
-	// Step 2: Configure relay and verify same Send now succeeds via relay fallback.
-	impl.SetRelayURL("https://relay.dina-network.org/forward")
-	defer impl.SetRelayURL("")
+	// Step 2: Configure msgbox.and verify same Send now succeeds via msgbox fallback.
+	impl.SetMsgBoxURL("https://msgbox.dina-network.org/forward")
+	defer impl.SetMsgBoxURL("")
 
 	sentBefore := impl.SentCount()
 	err = impl.Send(unresolvableDID, envelope)
 	testutil.RequireNoError(t, err)
 
-	// Verify the message was actually recorded (relay path appends to sent list).
+	// Verify the message was actually recorded (msgbox.path appends to sent list).
 	sentAfter := impl.SentCount()
 	if sentAfter != sentBefore+1 {
-		t.Fatalf("expected SentCount to increase by 1 (relay forwarding), got before=%d after=%d", sentBefore, sentAfter)
+		t.Fatalf("expected SentCount to increase by 1 (msgbox forwarding), got before=%d after=%d", sentBefore, sentAfter)
 	}
 
-	impl.SetRelayURL("")
+	impl.SetMsgBoxURL("")
 }
 
 // TST-CORE-453
-func TestTransport_7_6_5_RelayCannotReadContent(t *testing.T) {
-	// Requirement: relay forwards encrypted envelopes without reading content.
-	// The relay sees only recipient DID + opaque ciphertext — never plaintext.
-	// Test: seal a message with NaCl, send via relay, verify the envelope
-	// going through the relay is encrypted (no plaintext visible).
+func TestTransport_7_6_5_MsgBoxCannotReadContent(t *testing.T) {
+	// Requirement: msgbox.forwards encrypted envelopes without reading content.
+	// The msgbox.sees only recipient DID + opaque ciphertext — never plaintext.
+	// Test: seal a message with NaCl, send via msgbox, verify the envelope
+	// going through the msgbox.is encrypted (no plaintext visible).
 
 	sealer := dinacrypto.NewNaClBoxSealer()
 	converter := dinacrypto.NewKeyConverter()
@@ -2252,25 +2252,25 @@ func TestTransport_7_6_5_RelayCannotReadContent(t *testing.T) {
 	privX, err := converter.Ed25519ToX25519Private(privEd)
 	testutil.RequireNoError(t, err)
 
-	// Seal a plaintext message — this is what would be sent via relay.
+	// Seal a plaintext message — this is what would be sent via msgbox.
 	secretPayload := "CONFIDENTIAL: bank account 1234567890"
 	plaintext := []byte(fmt.Sprintf(`{"from":"did:key:z6MkSender","body":"%s"}`, secretPayload))
 	ciphertext, err := sealer.SealAnonymous(plaintext, pubX)
 	testutil.RequireNoError(t, err)
 
-	// The relay only sees the ciphertext — verify plaintext is NOT visible.
+	// The msgbox.only sees the ciphertext — verify plaintext is NOT visible.
 	testutil.RequireTrue(t, !strings.Contains(string(ciphertext), secretPayload),
-		"relay must not be able to read plaintext content in ciphertext")
+		"msgbox must not be able to read plaintext content in ciphertext")
 	testutil.RequireTrue(t, !strings.Contains(string(ciphertext), "bank account"),
-		"relay must not see any plaintext fragment")
+		"msgbox must not see any plaintext fragment")
 
-	// Send the sealed envelope via relay using real Transporter.
+	// Send the sealed envelope via msgbox using real Transporter.
 	tr := transport.NewTransporter(nil)
-	tr.SetRelayURL("https://relay.example.com")
+	tr.SetMsgBoxURL("https://msgbox.example.com")
 
-	// Recipient DID is unresolvable directly → relay fallback.
+	// Recipient DID is unresolvable directly → msgbox.fallback.
 	// Wrap ciphertext in a valid JSON envelope (Send validates JSON).
-	recipientDID := "did:key:z6MkRelayRecipient"
+	recipientDID := "did:key:z6MkMsgBoxRecipient"
 	ciphertextHex := fmt.Sprintf(`{"type":"dina/encrypted","ciphertext":"%x","to":"%s"}`, ciphertext, recipientDID)
 	err = tr.Send(recipientDID, []byte(ciphertextHex))
 	testutil.RequireNoError(t, err)
@@ -2283,32 +2283,32 @@ func TestTransport_7_6_5_RelayCannotReadContent(t *testing.T) {
 }
 
 // TST-CORE-454
-func TestTransport_7_6_6_DIDDocumentPointsToRelay(t *testing.T) {
+func TestTransport_7_6_6_DIDDocumentPointsToMsgBox(t *testing.T) {
 	// Fresh Transporter + DIDResolver — no shared state.
 	resolver := transport.NewDIDResolver()
 	tr := transport.NewTransporter(resolver)
 
 	// Requirement: Recipient behind NAT uses DID Document with
-	// serviceEndpoint pointing to relay. Resolve must return the relay URL.
+	// serviceEndpoint pointing to msgbox. Resolve must return the msgbox URL.
 
-	relayURL := "https://relay.dina-network.org/forward"
+	msgboxURL := "https://msgbox.dina-network.org/forward"
 	behindNatDID := "did:plc:behind_nat_user"
 
-	// Register DID document with relay as the service endpoint.
+	// Register DID document with msgbox.as the service endpoint.
 	didDoc := fmt.Sprintf(`{
 		"id": "%s",
 		"service": [{"type": "DIDComm", "serviceEndpoint": "%s"}]
-	}`, behindNatDID, relayURL)
+	}`, behindNatDID, msgboxURL)
 	resolver.AddDocument(behindNatDID, []byte(didDoc))
 
-	// Positive: ResolveEndpoint returns the relay URL from DID doc.
+	// Positive: ResolveEndpoint returns the msgbox URL from DID doc.
 	endpoint, err := tr.ResolveEndpoint(behindNatDID)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, endpoint, relayURL)
-	testutil.RequireContains(t, endpoint, "relay")
+	testutil.RequireEqual(t, endpoint, msgboxURL)
+	testutil.RequireContains(t, endpoint, "msgbox.")
 
-	// Send via the resolved relay endpoint should succeed at envelope level.
-	envelope := []byte(`{"from":"did:key:z6MkSender","to":"` + behindNatDID + `","type":"message","body":"hello via relay"}`)
+	// Send via the resolved msgbox.endpoint should succeed at envelope level.
+	envelope := []byte(`{"from":"did:key:z6MkSender","to":"` + behindNatDID + `","type":"message","body":"hello via msgbox"}`)
 	err = tr.Send(behindNatDID, envelope)
 	// May fail at HTTP delivery, but should pass envelope validation + DID resolution.
 	if err != nil {
@@ -2323,36 +2323,36 @@ func TestTransport_7_6_6_DIDDocumentPointsToRelay(t *testing.T) {
 }
 
 // TST-CORE-455
-func TestTransport_7_6_7_UserCanSwitchRelays(t *testing.T) {
+func TestTransport_7_6_7_UserCanSwitchMsgBox(t *testing.T) {
 	// Fresh Transporter — no shared state.
 	tr := transport.NewTransporter(nil)
 
 	unreachableDID := "did:key:z6MkUnreachablePeer"
 	envelope := []byte(`{"from":"did:key:z6MkSender","to":"did:key:z6MkUnreachablePeer","type":"message","body":"test"}`)
 
-	// Negative baseline: no relay configured, send to unknown DID fails.
-	testutil.RequireEqual(t, tr.GetRelayURL(), "")
+	// Negative baseline: no msgbox.configured, send to unknown DID fails.
+	testutil.RequireEqual(t, tr.GetMsgBoxURL(), "")
 	err := tr.Send(unreachableDID, envelope)
 	testutil.RequireError(t, err)
 	testutil.RequireEqual(t, tr.SentCount(), 0)
 
-	// Set relay A — send succeeds via relay fallback.
-	tr.SetRelayURL("https://relay-A.dina.org/forward")
-	testutil.RequireEqual(t, tr.GetRelayURL(), "https://relay-A.dina.org/forward")
+	// Set msgbox.A — send succeeds via msgbox fallback.
+	tr.SetMsgBoxURL("https://msgbox.A.dina.org/forward")
+	testutil.RequireEqual(t, tr.GetMsgBoxURL(), "https://msgbox.A.dina.org/forward")
 	err = tr.Send(unreachableDID, envelope)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, tr.SentCount(), 1)
 
-	// Switch to relay B — must take effect immediately.
-	tr.SetRelayURL("https://relay-B.dina.org/forward")
-	testutil.RequireEqual(t, tr.GetRelayURL(), "https://relay-B.dina.org/forward")
+	// Switch to msgbox.B — must take effect immediately.
+	tr.SetMsgBoxURL("https://msgbox.B.dina.org/forward")
+	testutil.RequireEqual(t, tr.GetMsgBoxURL(), "https://msgbox.B.dina.org/forward")
 	err = tr.Send(unreachableDID, envelope)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, tr.SentCount(), 2)
 
-	// Remove relay — send should fail again (no fallback).
-	tr.SetRelayURL("")
-	testutil.RequireEqual(t, tr.GetRelayURL(), "")
+	// Remove msgbox.— send should fail again (no fallback).
+	tr.SetMsgBoxURL("")
+	testutil.RequireEqual(t, tr.GetMsgBoxURL(), "")
 	err = tr.Send(unreachableDID, envelope)
 	testutil.RequireError(t, err)
 	testutil.RequireEqual(t, tr.SentCount(), 2) // no increment

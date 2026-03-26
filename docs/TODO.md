@@ -1,6 +1,10 @@
 # OpenAPI Issue
 OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
 
+# Health Summary vs Details
+
+There could be health summary which might be ok for brain to access if the reasons are there. For example - if I were to think about chairs, brain should know that I have back pain, so I should search for ergonomic chairs. But brain need not know that L4 vertebra has an issue etc - how to handle that is still pending. Same way, it should know that I will buy medium cost to maybe a bit high cost chair - but I will never buy extremely cheap or extremely costly chair. The idea being that brain does not need to know my bank details - but it should know my financial preferences.
+
 # Security
 
 Ensure that Brain cannot act as Telegram to send messages

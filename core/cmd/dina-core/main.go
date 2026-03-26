@@ -359,7 +359,7 @@ func main() {
 		slog.Info("Vault closed on persona lock", "persona", name)
 	}
 	// Wire approval notification callback.
-	// For Phase 1: log + notify via WebSocket. Telegram relay is Phase 2.
+	// For Phase 1: log + notify via WebSocket. Telegram forwarding is Phase 2.
 	// OnApprovalNeeded is wired after notifier creation (see below).
 
 	// CRITICAL-01: Wire orphan-guard callback. If vault DB files exist on disk for
@@ -608,7 +608,7 @@ func main() {
 
 	// 8b. MsgBox client — wire the resolved msgbox URL (env + KV override from Phase A/B).
 	if msgboxURL != "" {
-		transporter.SetRelayURL(msgboxURL)
+		transporter.SetMsgBoxURL(msgboxURL)
 	}
 
 	// 9. Task Queue
@@ -788,18 +788,14 @@ func main() {
 		slog.Info("D2D sender DID configured", "did", ownDID)
 	}
 
-	// Start relay client if configured. The relay client:
-	//   - Connects outbound WebSocket to the relay (this node's mailbox)
-	//   - Receives inbound D2D messages pushed by the relay
-	//   - Provides ForwardToRelay() for outbound DID-routed delivery
 	// Start MsgBox client if configured. The client:
 	//   - Connects outbound WebSocket to the msgbox (this node's mailbox)
 	//   - Receives inbound D2D messages pushed by the msgbox
-	//   - Provides ForwardToRelay() for outbound DID-routed delivery
-	if mboxURL := transporter.GetRelayURL(); mboxURL != "" && ownDID != "" {
-		relayClient := transport.NewRelayClient(mboxURL+"/ws", ownDID, signingPrivKey)
-		transporter.SetRelayClient(relayClient)
-		transportSvc.SetMsgBoxForwarder(relayClient) // DinaMsgBox routing in service layer
+	//   - Provides ForwardToMsgBox() for outbound DID-routed delivery
+	if mboxURL := transporter.GetMsgBoxURL(); mboxURL != "" && ownDID != "" {
+		msgboxClient := transport.NewMsgBoxClient(mboxURL+"/ws", ownDID, signingPrivKey)
+		transporter.SetMsgBoxClient(msgboxClient)
+		transportSvc.SetMsgBoxForwarder(msgboxClient) // DinaMsgBox routing in service layer
 		slog.Info("MsgBox client created", "url", mboxURL, "did", ownDID)
 	}
 
@@ -942,14 +938,14 @@ func main() {
 	})
 
 	// Wire MsgBox client inbound: messages from msgbox → ingress pipeline.
-	if rc := transporter.GetRelayClient(); rc != nil {
+	if rc := transporter.GetMsgBoxClient(); rc != nil {
 		rc.SetOnMessage(func(payload []byte) {
-			if err := ingressRouter.Ingest(context.Background(), "relay", payload); err != nil {
-				slog.Warn("relay_client.ingest_failed", "error", err)
+			if err := ingressRouter.Ingest(context.Background(), "msgbox", payload); err != nil {
+				slog.Warn("msgbox_client.ingest_failed", "error", err)
 			}
 		})
 		go rc.Start(context.Background())
-		slog.Info("MsgBox client started", "url", transporter.GetRelayURL())
+		slog.Info("MsgBox client started", "url", transporter.GetMsgBoxURL())
 	}
 
 	// Background sweep: periodically drain dead-drop and spool after vault unlock.
@@ -1444,6 +1440,7 @@ func main() {
 	mux.HandleFunc("/v1/trust/stats", trustH.HandleStats)
 	mux.HandleFunc("/v1/trust/sync", trustH.HandleSync)
 	mux.HandleFunc("/v1/trust/resolve", trustH.HandleResolve)
+	mux.HandleFunc("/v1/trust/search", trustH.HandleSearch)
 
 	// Device Pairing API
 	mux.HandleFunc("/v1/pair/initiate", deviceH.HandleInitiatePairing)
