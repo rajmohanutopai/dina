@@ -22,7 +22,7 @@ COPY drizzle/ drizzle/
 COPY src/ src/
 COPY --from=builder /app/dist dist/
 
-CMD ["npx", "drizzle-kit", "migrate"]
+CMD ["npx", "drizzle-kit", "push", "--force"]
 
 # Runtime stage: production dependencies only
 FROM node:22-alpine AS runner
@@ -34,4 +34,4 @@ RUN npm ci --omit=dev --ignore-scripts
 COPY --from=builder /app/dist dist/
 
 USER node
-CMD ["node", "dist/ingester/main.js"]
+CMD ["node", "dist/src/ingester/main.js"]

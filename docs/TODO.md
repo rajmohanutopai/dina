@@ -1920,3 +1920,415 @@ A noisy colleague keeps sending you social updates? Turn off social for that con
 
 Someone not in your contacts sends your Dina a message? It's quarantined — flagged but not deleted. You can review it later and decide whether to add them as a contact. Nobody gets through to your inbox without being either a contact or explicitly reviewed.
 
+
+
+# Trust Network / Pull Economy
+
+  Pull economy = discovery + trust + handoff + outcome loop.
+
+  To honestly say “AppView + Trust Network + New Pull Economy works,” these user scenarios should work end-to-end.
+
+  Trust Network Write Side
+
+  1. A user can publish a signed attestation about a seller, creator, bot, expert, or provider.
+  2. A user can publish a signed outcome after a real interaction.
+  3. A user can vouch for another Dina or subject.
+  4. A user can revoke/delete a trust record and it disappears from AppView results.
+  5. Public trust records never leak private vault data.
+
+  AppView Read Side
+
+  1. Dina can resolve a trust profile for a DID, seller, creator, bot, or subject.
+  2. Dina can search trust evidence by category or need.
+  3. Dina gets both aggregate scores and the underlying supporting records.
+  4. Dina can tell the difference between:
+      - no data
+      - sparse data
+      - conflicting data
+      - strong consensus
+      - stale data
+  5. If AppView is unavailable, Dina degrades gracefully instead of failing hard.
+
+  New Pull Economy Discovery
+
+  1. The user says “I need X.”
+  2. Dina pulls options based on user intent, not ads or push feeds.
+  3. Results are ranked by fit + trust + user context, not by sponsorship.
+  4. Dina explains why each result is shown.
+  5. Dina deep-links to the original seller/source/provider.
+  6. Dina hands off to a separate execution/payment agent when the user chooses.
+
+  Outcome Loop
+
+  1. After use/purchase, the user can record what happened.
+  2. That outcome updates local memory.
+  3. That outcome can also publish to the Trust Network.
+  4. Future recommendations change because of accumulated outcomes.
+
+  Bot / Provider Routing
+
+  1. Dina can choose which external bot/agent/provider to use based on trust.
+  2. Dina can avoid poor-performing bots/providers.
+  3. Dina can explain why one bot/provider was chosen over another.
+
+  Integrity / Sovereignty
+
+  1. Every trust claim is attributable to an author.
+  2. Every recommendation can show evidence.
+  3. Sponsorship, if present, is disclosed and has zero ranking power.
+  4. The user can choose which AppView provider(s) to trust.
+  5. AppView is query infrastructure, not a gatekeeper.
+
+  Concrete user scenarios that should work
+
+  1. “Should I buy this chair?”
+     Dina combines local context + web research + trust-network evidence, ranks options, explains tradeoffs, and hands off checkout.
+  2. “Is this creator authentic?”
+     Dina resolves the creator’s trust profile and distinguishes trusted creator vs bot farm / unknown entity.
+  3. “Find me a reliable plumber/lawyer/dentist.”
+     Dina ranks providers using trust signals and user constraints, then hands off booking/contact to another agent.
+  4. “Which bot should do this task?”
+     Dina chooses among external agents based on trust/outcomes, not static config.
+  5. “My last purchase was bad.”
+     The user records the outcome, it affects future trust-weighted ranking, and optionally contributes to the network.
+  6. “Delete my old review/attestation.”
+     The signed tombstone propagates and AppView stops surfacing it.
+  7. “There’s very little data on this item.”
+     Dina says so explicitly and falls back to ordinary web research instead of pretending the trust network knows more than it does.
+  8. “Trust data is conflicting.”
+     Dina surfaces the disagreement, not just a flattened score.
+  9. “AppView is down.”
+     Dina still works, but says trust-network data is unavailable right now.
+  10. “Why did you recommend this?”
+     Dina shows the evidence path: user context, trust signals, outcome history, and source links.
+
+  Minimum v1 bar
+  If these 5 work, you can credibly say the capability exists:
+
+  1. Trust profile resolution for a creator/seller/bot.
+  2. Trust-weighted product/provider recommendation with explanation.
+  3. Sparse/conflicting/no-data handling.
+  4. External handoff instead of internal payment/execution.
+  5. Outcome recording that changes future recommendations.
+
+  If you want, I can turn this into a proper capability matrix:
+
+  1. scenario
+  2. required components
+  3. user-visible behavior
+  4. fallback behavior
+  5. v1 vs v2+
+
+
+› dont look at our code at all ok -
+
+
+• Yes. Ignoring current code entirely, the functional picture is this:
+
+  To claim App View + Trust Network + New Pull Economy as a real capability, these user scenarios should work.
+
+  1. Trust Can Be Created
+  Users can contribute trustworthy public signals.
+
+  Scenarios:
+
+  1. I can publish a review of something I bought or used.
+  2. I can publish an outcome report after a real interaction.
+  3. I can vouch for a person, provider, seller, creator, or bot.
+  4. I can retract/delete something I published.
+  5. My contribution is attributable to me, not anonymous noise.
+
+  2. Trust Can Be Queried
+  Users can ask for trust information and get useful answers.
+
+  Scenarios:
+
+  1. “What is the trust profile of this seller?”
+  2. “Is this creator authentic?”
+  3. “What does the network know about this bot?”
+  4. “Show me evidence, not just a score.”
+  5. “How old is this trust data?”
+  6. “Is the network confident, sparse, or conflicted?”
+
+  3. Dina Can Support Purchase Discovery
+  The system can help a user find options without doing the payment itself.
+
+  Scenarios:
+
+  1. “I need a good chair under ₹50K.”
+  2. “Find me a reliable plumber nearby.”
+  3. “Which of these 3 options looks safest?”
+  4. “What do people like me tend to prefer?”
+  5. “Which option has the best long-term outcomes?”
+
+  4. Ranking Is Pull-Based, Not Push-Based
+  The user initiates the query; the system does not manipulate demand.
+
+  Scenarios:
+
+  1. No unsolicited product pushing.
+  2. No ranking boost because of ad spend.
+  3. Sponsored items, if shown, are clearly marked.
+  4. Ranking is based on fit, trust, evidence, and user context.
+  5. Dina can explain why something ranked above something else.
+
+  5. Result Explanations Exist
+  The user can inspect the basis of a recommendation.
+
+  Scenarios:
+
+  1. “Why are you recommending this?”
+  2. “What trust signals support this?”
+  3. “How much of this is network trust vs web research vs my own history?”
+  4. “Why are you warning me against this?”
+  5. “What is uncertain here?”
+
+  6. Sparse And Conflicting Data Are Handled Honestly
+  The system must work under real-world incomplete trust data.
+
+  Scenarios:
+
+  1. No trust data exists.
+  2. Very little trust data exists.
+  3. Trust data conflicts strongly.
+  4. Trust data is stale.
+  5. Network data looks manipulated or low-quality.
+
+  In all of these, Dina should still help, but should say what it knows and what it does not know.
+
+  7. Handoff Works
+  Dina can move from discovery to execution without becoming the payment rail.
+
+  Scenarios:
+
+  1. “I want this one.”
+  2. Dina opens the merchant/provider/source.
+  3. Dina hands off to a separate execution/payment agent.
+  4. Dina passes only the minimum required context.
+  5. The user stays in control at the commitment moment.
+
+  8. Outcomes Close The Loop
+  Recommendations improve because real outcomes are fed back.
+
+  Scenarios:
+
+  1. “This worked well.”
+  2. “This was a bad purchase.”
+  3. “This provider ghosted me.”
+  4. “This bot gave a poor result.”
+  5. “This recommendation turned out better than expected.”
+
+  That outcome should:
+
+  - update local memory
+  - optionally update the public trust layer
+  - affect future ranking
+
+  9. Bot / Agent Selection Works
+  The trust system should apply not only to merchants/providers, but to agents too.
+
+  Scenarios:
+
+  1. “Which travel agent/bot should handle this?”
+  2. “This coding bot is unreliable.”
+  3. “This review bot tends to hallucinate.”
+  4. “Choose the highest-trust agent for this task.”
+  5. “Avoid agents with weak recent outcomes.”
+
+  10. Creator / Information Authenticity Works
+  This is important for the dead-internet problem.
+
+  Scenarios:
+
+  1. “Is this account/creator real?”
+  2. “Has this creator built trust over time?”
+  3. “Is this content likely authentic or farmed?”
+  4. “Is this recommendation from a credible source?”
+  5. “What is this source’s track record?”
+
+  11. The User Retains Sovereignty
+  The system must remain user-aligned.
+
+  Scenarios:
+
+  1. I can choose which App View(s) I trust.
+  2. I can inspect evidence behind trust claims.
+  3. I can decide whether my outcomes become public.
+  4. I can remove my own contributions.
+  5. Dina never leaks private vault data into the trust layer.
+
+  12. Failure Modes Are Graceful
+  The system must still function when the public layer is weak or broken.
+
+  Scenarios:
+
+  1. App View unavailable.
+  2. Trust Network sparse.
+  3. Conflicting App Views.
+  4. No trusted providers found.
+  5. No trusted bot available.
+
+  In these cases Dina should:
+
+  - fall back to web research
+  - rely more on local memory/context
+  - communicate degraded confidence clearly
+
+  If you want the real minimum capability statement
+  You can say the capability exists only if these scenario groups work:
+
+  1. Ask for a recommendation
+
+  - “What should I buy/use/select?”
+
+  2. See trust-backed reasoning
+
+  - “Why this?”
+
+  3. Handle uncertainty honestly
+
+  - no data / sparse / conflicting / stale
+
+  4. Handoff to execution
+
+  - separate agent handles payment/commitment
+
+  5. Record outcomes
+
+  - results feed back into future trust
+
+  6. Evaluate bots/providers/creators
+
+  - not just products
+
+  That is the core functional picture.
+
+The list is thorough. A few gaps:
+
+**1. Reputation Gaming / Sybil Resistance**
+
+```
+Scenarios missing:
+- Fake positive reviews from colluding Dinas
+- Seller creates 50 Dinas to self-vouch
+- Bot farm publishing fake outcomes
+- "Review for discount" manipulation
+
+The system needs:
+- Detection of suspiciously correlated attestations
+- Weight by attestor's own trust history
+- Time-weighted trust (new accounts count less)
+- Diversity of attestors matters more than volume
+```
+
+**2. Contextual Trust (not just global score)**
+
+```
+Missing scenario:
+- "This seller is great for electronics but terrible 
+   for furniture"
+- "This bot is excellent at research but hallucates 
+   on medical questions"
+- "This plumber is fast but expensive"
+
+Trust should be category-scoped, not just one number.
+A seller's trust score for chairs ≠ trust score for laptops.
+```
+
+**3. Trust Decay Over Time**
+
+```
+Missing scenario:
+- Seller had great reviews 3 years ago, nothing recent
+- Creator was authentic in 2024, compromised since then
+- Bot performed well on GPT-4 but hasn't been updated
+
+Dina should weight recent outcomes more heavily.
+"847 verified buyers" means less if they're all from 2024.
+```
+
+**4. Negative Trust / Active Warnings**
+
+```
+Missing scenario:
+- "This seller scammed 3 people in my trust graph"
+- "This DID was flagged by 12 Dinas in the last week"
+- Active fraud propagation through the network
+- Distinguishing "no trust data" from "actively distrusted"
+
+Zero trust ≠ negative trust. The system needs both.
+```
+
+**5. Privacy of Trust Queries**
+
+```
+Missing scenario:
+- When I query "is this seller trustworthy?" does the 
+  seller know I asked?
+- When I query a medical provider's trust profile, does 
+  that reveal I have a health need?
+- AppView knows what everyone is searching for
+
+Trust queries themselves are sensitive data.
+AppView should not build a profile of what you're 
+interested in buying.
+```
+
+**6. Trust Portability / Import**
+
+```
+Missing scenario:
+- New user with zero Dina history but 500 eBay reviews
+- Seller has excellent Amazon rating, new to Dina network
+- Importing existing reputation as bootstrapping signal
+
+Without this, the cold-start problem is worse.
+External trust signals as Ring 1 (unverified) anchors.
+```
+
+**7. Comparative / Competitive Trust**
+
+```
+Missing scenario:
+- "Show me the 3 most trusted sellers for this product"
+- "How does seller A compare to seller B?"
+- "Rank these 5 options by trust-weighted value"
+
+Not just "is this trustworthy" but "which is MOST 
+trustworthy among alternatives"
+```
+
+**8. Trust Network Abuse Reporting**
+
+```
+Missing scenario:
+- "This attestation is fraudulent"
+- "This outcome report is fabricated"  
+- "This vouch was coerced"
+- Community-driven content moderation of trust data
+
+Who polices the trust layer itself?
+```
+
+**9. Seller/Provider Response**
+
+```
+Missing scenario:
+- Seller disputes a negative outcome
+- Provider explains context for a bad review
+- Two-sided trust (buyer trust matters to sellers too)
+
+Without this, the trust network is one-sided and 
+sellers have no recourse.
+```
+
+**10. Group Trust / Institutional Trust**
+
+```
+Missing scenario:
+- "Is this company trustworthy?" (not just one person)
+- "Is this hospital reliable?" (institutional, not individual)
+- Trust for organizations vs individuals
+- How do institutional attestations differ from personal ones?
+```
+

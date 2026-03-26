@@ -224,6 +224,30 @@ Your DID is permanent. If your machine dies, your recovery phrase restores every
 
 ---
 
+
+
+## Trust Network
+
+Every Dina is part of a decentralised trust network. Trust is earned, not claimed.
+
+```
+(.venv) ~/dina % dina-admin trust score did:plc:seller456
+Trust score: 0.87
+Attestations: 47
+Ring: 2 (verified contact of a verified contact)
+Recommendation: proceed
+
+(.venv) ~/dina % dina-admin trust score did:plc:unknown789
+Trust score: 0.12
+Attestations: 2
+Ring: none
+Recommendation: verify before transacting
+```
+
+When you vouch for someone, that attestation is signed with your DID and published to the AT Protocol network. Other Dinas can verify it. No central authority decides who is trustworthy — the network does.
+
+---
+
 ## Your Data is Yours
 
 You can export everything and read the data without dina. You can delete your folder and the data is truly gone.
@@ -284,23 +308,3 @@ Imported
 ```
 
 ---
-
-## Trust Network
-
-Every Dina is part of a decentralised trust network. Trust is earned, not claimed.
-
-```
-(.venv) ~/dina % dina-admin trust score did:plc:seller456
-Trust score: 0.87
-Attestations: 47
-Ring: 2 (verified contact of a verified contact)
-Recommendation: proceed
-
-(.venv) ~/dina % dina-admin trust score did:plc:unknown789
-Trust score: 0.12
-Attestations: 2
-Ring: none
-Recommendation: verify before transacting
-```
-
-When you vouch for someone, that attestation is signed with your DID and published to the AT Protocol network. Other Dinas can verify it. No central authority decides who is trustworthy — the network does.

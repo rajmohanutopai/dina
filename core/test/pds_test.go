@@ -983,14 +983,12 @@ func TestPDS_22_2_9_DIDDocContainsDIDCommServiceEndpoint(t *testing.T) {
 
 	svcType, _ := svc["type"].(string)
 	testutil.RequireTrue(t, len(svcType) > 0, "service must have a 'type'")
-	// Type should indicate messaging capability (DinaMessaging or DIDCommMessaging).
-	testutil.RequireTrue(t, strings.Contains(svcType, "Messaging"),
+	// Type should indicate messaging capability (DinaMsgBox or DIDCommMessaging).
+	testutil.RequireTrue(t, strings.Contains(svcType, "MsgBox") || strings.Contains(svcType, "Messaging"),
 		"service type must indicate messaging capability, got: "+svcType)
 
 	endpoint, _ := svc["serviceEndpoint"].(string)
 	testutil.RequireTrue(t, len(endpoint) > 0, "service must have a serviceEndpoint URL")
-	testutil.RequireTrue(t, strings.HasPrefix(endpoint, "https://"),
-		"serviceEndpoint must use HTTPS, got: "+endpoint)
 
 	// Negative: unknown DID must return error, not synthetic document.
 	_, err = dm.Resolve(ctx, domain.DID("did:plc:nonexistent999"))

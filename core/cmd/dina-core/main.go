@@ -296,6 +296,13 @@ func main() {
 	didMgr.SetSigningGeneration(int(signingGeneration))
 	didMgr.SetMasterSeed(masterSeed, keyDeriver)
 
+	// Phase A: MsgBox URL from env var (before RestoreDID so DID docs get the correct endpoint).
+	msgboxURL := os.Getenv("DINA_MSGBOX_URL")
+	if msgboxURL != "" {
+		didMgr.SetMessagingService("DinaMsgBox", msgboxURL)
+		slog.Info("MsgBox URL from env", "url", msgboxURL)
+	}
+
 	// Restore DID from persisted metadata so the node keeps its identity
 	// across restarts. Without this, the DID is only created on first
 	// /v1/did request, and restarts would generate a new one.
@@ -433,6 +440,23 @@ func main() {
 		}
 	}
 
+	// Phase B: KV-based admin config overrides (general persona now open).
+	// Takes precedence over env vars. If msgbox URL changed, re-persist DID doc.
+	if v := readAdminKV(vaultMgr, "msgbox_url"); v != "" {
+		slog.Info("MsgBox URL overridden from KV", "url", v)
+		if v != msgboxURL {
+			msgboxURL = v
+			didMgr.SetMessagingService("DinaMsgBox", v)
+			if err := didMgr.RePersistCurrentDID(); err != nil {
+				slog.Warn("Failed to re-persist DID doc with KV msgbox URL", "error", err)
+			}
+		}
+	}
+	if v := readAdminKV(vaultMgr, "appview_url"); v != "" {
+		slog.Info("AppView URL overridden from KV", "url", v)
+		cfg.AppViewURL = v
+	}
+
 	contactDir := newContactDirectory(vaultMgr)
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
@@ -567,7 +591,7 @@ func main() {
 			doc := fmt.Sprintf(`{`+
 				`"id":"%s",`+
 				`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"%s"}],`+
-				`"service":[{"id":"%s#msg","type":"DinaMessaging","serviceEndpoint":"%s"}]`+
+				`"service":[{"id":"%s#msg","type":"DinaMsgBox","serviceEndpoint":"%s"}]`+
 				`}`, did, did, did, pubKeyMultibase, did, endpoint)
 			didResolver.AddDocument(did, []byte(doc))
 		}
@@ -581,6 +605,11 @@ func main() {
 	scenarioPolicyMgr := newScenarioPolicyManager(vaultMgr)
 	inboxMgr := transport.NewInboxManager(transport.DefaultInboxConfig())
 	transporter := transport.NewTransporter(didResolver)
+
+	// 8b. MsgBox client — wire the resolved msgbox URL (env + KV override from Phase A/B).
+	if msgboxURL != "" {
+		transporter.SetRelayURL(msgboxURL)
+	}
 
 	// 9. Task Queue
 	taskQueue := taskqueue.NewTaskQueue()
@@ -709,6 +738,7 @@ func main() {
 
 	// 14. Portability
 	exportMgr := portability.NewExportManager(cfg.VaultPath)
+	exportMgr.SetVersion(handler.Version)
 	importMgr := portability.NewImportManager(cfg.VaultPath, false)
 
 	// 15. Estate
@@ -756,6 +786,21 @@ func main() {
 	if ownDID != "" {
 		transportSvc.SetSenderDID(ownDID)
 		slog.Info("D2D sender DID configured", "did", ownDID)
+	}
+
+	// Start relay client if configured. The relay client:
+	//   - Connects outbound WebSocket to the relay (this node's mailbox)
+	//   - Receives inbound D2D messages pushed by the relay
+	//   - Provides ForwardToRelay() for outbound DID-routed delivery
+	// Start MsgBox client if configured. The client:
+	//   - Connects outbound WebSocket to the msgbox (this node's mailbox)
+	//   - Receives inbound D2D messages pushed by the msgbox
+	//   - Provides ForwardToRelay() for outbound DID-routed delivery
+	if mboxURL := transporter.GetRelayURL(); mboxURL != "" && ownDID != "" {
+		relayClient := transport.NewRelayClient(mboxURL+"/ws", ownDID, signingPrivKey)
+		transporter.SetRelayClient(relayClient)
+		transportSvc.SetMsgBoxForwarder(relayClient) // DinaMsgBox routing in service layer
+		slog.Info("MsgBox client created", "url", mboxURL, "did", ownDID)
 	}
 
 	// Ingress: dead-drop + rate limiter + sweeper + router (§7 3-valve pipeline)
@@ -895,6 +940,17 @@ func main() {
 		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)
 		return nil
 	})
+
+	// Wire MsgBox client inbound: messages from msgbox → ingress pipeline.
+	if rc := transporter.GetRelayClient(); rc != nil {
+		rc.SetOnMessage(func(payload []byte) {
+			if err := ingressRouter.Ingest(context.Background(), "relay", payload); err != nil {
+				slog.Warn("relay_client.ingest_failed", "error", err)
+			}
+		})
+		go rc.Start(context.Background())
+		slog.Info("MsgBox client started", "url", transporter.GetRelayURL())
+	}
 
 	// Background sweep: periodically drain dead-drop and spool after vault unlock.
 	go func() {

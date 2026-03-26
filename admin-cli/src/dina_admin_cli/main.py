@@ -1215,3 +1215,107 @@ def import_cmd(ctx: click.Context, archive_path: str, passphrase: str, force: bo
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)
+
+
+# ── msgbox / appview config ──────────────────────────────────────────────────
+
+_MSGBOX_KV_KEY = "admin:msgbox_url"
+_APPVIEW_KV_KEY = "admin:appview_url"
+
+
+@cli.group()
+def msgbox() -> None:
+    """Configure the D2D message relay/mailbox endpoint."""
+
+
+@msgbox.command("set")
+@click.argument("url")
+@click.pass_context
+def msgbox_set(ctx: click.Context, url: str) -> None:
+    """Set the MsgBox URL (e.g., ws://msgbox.dina.dev:7700).
+
+    \b
+    Examples:
+      dina-admin msgbox set ws://msgbox.dina.dev:7700
+      dina-admin msgbox set ws://host.docker.internal:7700
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        client.set_kv(_MSGBOX_KV_KEY, url)
+        if json_mode:
+            print_result({"msgbox_url": url}, json_mode)
+        else:
+            click.echo(f"MsgBox URL set: {url}")
+            click.echo("Takes effect on next Core restart.")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@msgbox.command("show")
+@click.pass_context
+def msgbox_show(ctx: click.Context) -> None:
+    """Show the configured MsgBox URL."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        value = client.get_kv(_MSGBOX_KV_KEY)
+        if json_mode:
+            print_result({"msgbox_url": value or ""}, json_mode)
+        elif value:
+            click.echo(f"MsgBox URL: {value}")
+        else:
+            click.echo("MsgBox URL: not configured")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@cli.group()
+def appview() -> None:
+    """Configure the Trust Network AppView endpoint."""
+
+
+@appview.command("set")
+@click.argument("url")
+@click.pass_context
+def appview_set(ctx: click.Context, url: str) -> None:
+    """Set the AppView URL (e.g., https://appview.dina.dev).
+
+    \b
+    Examples:
+      dina-admin appview set https://appview.dina.dev
+      dina-admin appview set http://localhost:3000
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        client.set_kv(_APPVIEW_KV_KEY, url)
+        if json_mode:
+            print_result({"appview_url": url}, json_mode)
+        else:
+            click.echo(f"AppView URL set: {url}")
+            click.echo("Takes effect on next Core restart.")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@appview.command("show")
+@click.pass_context
+def appview_show(ctx: click.Context) -> None:
+    """Show the configured AppView URL."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        value = client.get_kv(_APPVIEW_KV_KEY)
+        if json_mode:
+            print_result({"appview_url": value or ""}, json_mode)
+        elif value:
+            click.echo(f"AppView URL: {value}")
+        else:
+            click.echo("AppView URL: not configured")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)

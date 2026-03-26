@@ -54,8 +54,9 @@ type archivePayload struct {
 
 // ExportManager implements port.ExportManager — dina export.
 type ExportManager struct {
-	mu        sync.Mutex
-	vaultPath string // root path containing identity.sqlite and <persona>.sqlite files
+	mu          sync.Mutex
+	vaultPath   string // root path containing identity.sqlite and <persona>.sqlite files
+	dinaVersion string // software version stamped into manifest
 }
 
 // NewExportManager returns a new ExportManager.
@@ -63,6 +64,11 @@ type ExportManager struct {
 // (flat layout — same directory, per sqlite.Pool convention).
 func NewExportManager(vaultPath string) *ExportManager {
 	return &ExportManager{vaultPath: vaultPath}
+}
+
+// SetVersion sets the Dina software version stamped into every export manifest.
+func (e *ExportManager) SetVersion(v string) {
+	e.dinaVersion = v
 }
 
 // Export creates an encrypted archive of the Home Node.
@@ -85,7 +91,7 @@ func (e *ExportManager) Export(_ context.Context, opts ExportOptions) (archivePa
 	archivePath = filepath.Join(opts.DestPath, "dina-export.dina")
 
 	// Collect data to export.
-	data, err := collectExportData(e.vaultPath)
+	data, err := collectExportData(e.vaultPath, e.dinaVersion)
 	if err != nil {
 		return "", fmt.Errorf("portability: collect data: %w", err)
 	}
@@ -430,7 +436,7 @@ func BuildTestArchive(files map[string][]byte, passphrase, destPath string) (str
 //	vaultPath/personal.sqlite          (persona vault)
 //	vaultPath/health.sqlite            (persona vault)
 //	vaultPath/config.json              (gatekeeper tiers, settings — optional)
-func collectExportData(vaultPath string) ([]byte, error) {
+func collectExportData(vaultPath string, dinaVersion string) ([]byte, error) {
 	if vaultPath == "" {
 		return nil, errors.New("vault path is required for export")
 	}
@@ -484,9 +490,10 @@ func collectExportData(vaultPath string) ([]byte, error) {
 
 	payload := archivePayload{
 		Manifest: ExportManifest{
-			Version:   "2",
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Checksums: checksums,
+			Version:     "2",
+			DinaVersion: dinaVersion,
+			Timestamp:   time.Now().UTC().Format(time.RFC3339),
+			Checksums:   checksums,
 		},
 		Files: files,
 	}

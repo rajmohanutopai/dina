@@ -166,7 +166,7 @@ func TestIdentity_3_1_5_DIDDocumentServiceEndpoint(t *testing.T) {
 
 	did, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
 	doc, _ := impl.Resolve(idCtx, did)
-	testutil.RequireContains(t, string(doc), `"DinaMessaging"`)
+	testutil.RequireContains(t, string(doc), `"DinaMsgBox"`)
 }
 
 // TST-CORE-135

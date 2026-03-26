@@ -82,3 +82,8 @@ func newScenarioPolicyManager(_ vaultBackend) port.ScenarioPolicyManager {
 func newD2DOutboxManager(_ vaultBackend) port.OutboxManager {
 	return transport.NewOutboxManager(100)
 }
+
+// readAdminKV is a no-op in no-CGO mode (in-memory vault has no persistence).
+func readAdminKV(_ vaultBackend, _ string) string {
+	return ""
+}

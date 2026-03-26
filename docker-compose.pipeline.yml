@@ -1,0 +1,126 @@
+# docker-compose.pipeline.yml — D2D Relay + Trust Network Pipeline
+#
+# Brings up the shared infrastructure for multiple Dina Home Nodes:
+#   - D2D msgbox/mailbox (encrypted message forwarding)
+#   - Community PDS firehose → Jetstream → AppView (trust network)
+#
+# Usage:
+#   docker compose -f docker-compose.pipeline.yml up -d
+#
+# Requires:
+#   - A community PDS running on the host (default: port 2583)
+#   - Home Nodes connect to the msgbox via DINA_MSGBOX_URL=ws://localhost:7700
+#
+# The msgbox never decrypts. The AppView is a read-only indexer.
+# If any of these goes down, Home Nodes still work for local memory,
+# Telegram, CLI, and agent validation.
+
+services:
+  # ── D2D Relay/Mailbox ──
+  msgbox:
+    build:
+      context: ./relay
+      dockerfile: Dockerfile
+    ports:
+      - "${RELAY_PORT:-7700}:7700"
+    environment:
+      RELAY_LISTEN_ADDR: ":7700"
+      RELAY_LOG_LEVEL: ${RELAY_LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7700/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux compat
+    restart: unless-stopped
+
+  # ── Jetstream (PDS firehose → JSON WebSocket) ──
+  jetstream:
+    image: ghcr.io/bluesky-social/jetstream:sha-e027425
+    platform: linux/amd64
+    environment:
+      # Points at the community PDS. All Dinas publish trust records here.
+      JETSTREAM_WS_URL: ws://host.docker.internal:${PDS_PORT:-2583}/xrpc/com.atproto.sync.subscribeRepos
+      JETSTREAM_LISTEN_ADDR: ":6008"
+      JETSTREAM_LIVENESS_TTL: "120s"
+    ports:
+      - "${JETSTREAM_PORT:-6008}:6008"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux compat
+    restart: unless-stopped
+
+  # ── AppView PostgreSQL ──
+  appview-postgres:
+    image: postgres:17
+    ports:
+      - "${APPVIEW_PG_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: dina_trust
+      POSTGRES_USER: dina
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dina}
+    volumes:
+      - appview-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── AppView Ingester (Jetstream → PostgreSQL) ──
+  appview-ingester:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/ingester/main.js"]  # rootDir: "." → dist/src/
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD:-dina}@appview-postgres:5432/dina_trust
+      DATABASE_POOL_MAX: "20"
+      JETSTREAM_URL: ws://jetstream:6008
+      NODE_ENV: development
+      LOG_LEVEL: ${APPVIEW_LOG_LEVEL:-info}
+    depends_on:
+      appview-postgres: { condition: service_healthy }
+      jetstream: { condition: service_started }
+    restart: unless-stopped
+
+  # ── AppView Scorer (background trust scoring jobs) ──
+  appview-scorer:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/scorer/main.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD:-dina}@appview-postgres:5432/dina_trust
+      NODE_ENV: development
+      LOG_LEVEL: ${APPVIEW_LOG_LEVEL:-info}
+    depends_on:
+      appview-postgres: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ── AppView Web (5 xRPC trust endpoints) ──
+  appview-web:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/web/server.js"]
+    ports:
+      - "${APPVIEW_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD:-dina}@appview-postgres:5432/dina_trust
+      PORT: "3000"
+      NODE_ENV: development
+      RATE_LIMIT_RPM: "100000"
+    depends_on:
+      appview-postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  appview-pgdata:

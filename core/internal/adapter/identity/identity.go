@@ -183,6 +183,10 @@ type DIDManager struct {
 	signingGeneration int    // current root key generation (0, 1, 2, ...)
 	masterSeed        []byte // master seed for deterministic rotation enforcement
 	keyDeriver        *crypto.KeyDeriver // derives next-generation keys for rotation verification
+
+	// Messaging service endpoint injected into DID documents.
+	messagingSvcType     string // e.g. "DinaMsgBox"
+	messagingSvcEndpoint string // e.g. "ws://msgbox.dina.dev:7700"
 }
 
 // NewDIDManager returns a new DIDManager that persists data at dataDir.
@@ -193,6 +197,55 @@ func NewDIDManager(dataDir string) *DIDManager {
 		pubKeys:       make(map[string][]byte),
 		createdInTest: make(map[string]bool),
 	}
+}
+
+// SetMessagingService configures the DID document messaging service type and endpoint.
+// Must be called before Create/RestoreDID so the correct endpoint is embedded.
+func (dm *DIDManager) SetMessagingService(svcType, endpoint string) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.messagingSvcType = svcType
+	dm.messagingSvcEndpoint = endpoint
+}
+
+// RePersistCurrentDID re-writes the current node's DID document with updated
+// service endpoints. Call after SetMessagingService() when the msgbox URL
+// changes via KV override (which happens after RestoreDID on startup).
+func (dm *DIDManager) RePersistCurrentDID() error {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	for did, doc := range dm.dids {
+		if dm.messagingSvcType != "" && dm.messagingSvcEndpoint != "" {
+			doc.Service = []serviceEndpoint{{
+				ID:              did + "#dina-messaging",
+				Type:            dm.messagingSvcType,
+				ServiceEndpoint: dm.messagingSvcEndpoint,
+			}}
+		}
+		if err := dm.persistDID(did, doc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// buildServiceEndpoints returns the service array for a DID document.
+// If a messaging service is configured, it uses that; otherwise falls back
+// to a default endpoint.
+func (dm *DIDManager) buildServiceEndpoints(did string) []serviceEndpoint {
+	svcType := dm.messagingSvcType
+	svcEndpoint := dm.messagingSvcEndpoint
+	if svcType == "" {
+		svcType = "DinaMsgBox"
+	}
+	if svcEndpoint == "" {
+		svcEndpoint = "https://localhost:8300"
+	}
+	return []serviceEndpoint{{
+		ID:              did + "#dina-messaging",
+		Type:            svcType,
+		ServiceEndpoint: svcEndpoint,
+	}}
 }
 
 // ResetForTest clears per-test tracking state without removing existing DIDs.
@@ -302,13 +355,7 @@ func (dm *DIDManager) Create(ctx context.Context, publicKey []byte) (domain.DID,
 			},
 		},
 		Authentication: []string{did + "#key-1"},
-		Service: []serviceEndpoint{
-			{
-				ID:              did + "#dina-messaging",
-				Type:            "DinaMessaging",
-				ServiceEndpoint: "https://localhost:8300",
-			},
-		},
+		Service: dm.buildServiceEndpoints(did),
 		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 		DeviceOrigin: hostname,
 	}
@@ -399,13 +446,7 @@ func (dm *DIDManager) createWithPLC(ctx context.Context, publicKey []byte) (doma
 			},
 		},
 		Authentication: []string{did + "#key-1"},
-		Service: []serviceEndpoint{
-			{
-				ID:              did + "#dina-messaging",
-				Type:            "DinaMessaging",
-				ServiceEndpoint: "https://localhost:8300",
-			},
-		},
+		Service:      dm.buildServiceEndpoints(did),
 		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 		DeviceOrigin: hostname,
 	}
@@ -750,13 +791,7 @@ func (dm *DIDManager) RestoreDID(_ context.Context, meta *DIDMetadata, publicKey
 			},
 		},
 		Authentication: []string{meta.DID + "#key-1"},
-		Service: []serviceEndpoint{
-			{
-				ID:              meta.DID + "#dina-messaging",
-				Type:            "DinaMessaging",
-				ServiceEndpoint: "https://localhost:8300",
-			},
-		},
+		Service:      dm.buildServiceEndpoints(meta.DID),
 		CreatedAt:    meta.CreatedAt,
 		DeviceOrigin: hostname,
 	}

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,6 +129,15 @@ type TransportService struct {
 	// raw NaCl sealed box bytes (no JSON wrapper, no signature) with a warning.
 	// Set via DINA_ALLOW_UNSIGNED_D2D=1. Must be removed after migration.
 	allowUnsignedD2D bool
+
+	// MsgBox forwarder for DinaMsgBox service type routing.
+	// Sends authenticated POST /forward to the recipient's msgbox.
+	msgboxForwarder MsgBoxForwarder
+}
+
+// MsgBoxForwarder sends messages via a D2D msgbox relay with authenticated requests.
+type MsgBoxForwarder interface {
+	ForwardToRelay(ctx context.Context, forwardURL, recipientDID string, payload []byte) error
 }
 
 // NewTransportService constructs a TransportService with all required dependencies.
@@ -157,6 +167,11 @@ func NewTransportService(
 // to the recipient's service endpoint after outbox enqueue.
 func (s *TransportService) SetDeliverer(d port.Deliverer) {
 	s.deliverer = d
+}
+
+// SetMsgBoxForwarder sets the authenticated forwarder for DinaMsgBox routing.
+func (s *TransportService) SetMsgBoxForwarder(f MsgBoxForwarder) {
+	s.msgboxForwarder = f
 }
 
 // SetVerifier sets the Ed25519 signer used to verify inbound message signatures.
@@ -341,11 +356,27 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 	}
 
 	// Attempt immediate delivery if a Deliverer is configured.
+	// Route based on recipient's DID document service type:
+	//   DinaMsgBox      → Authenticated POST to msgbox's /forward endpoint
+	//   DinaDirectHTTPS → Direct HTTP POST to recipient's /msg endpoint
 	// On failure, the message stays in the outbox for retry via ProcessOutbox.
 	if s.deliverer != nil && len(doc.Service) > 0 {
-		endpoint := doc.Service[0].ServiceEndpoint
-		if endpoint != "" {
-			if deliverErr := s.deliverer.Deliver(ctx, endpoint, deliveryPayload); deliverErr == nil {
+		svc := findMessagingService(doc.Service)
+		slog.Info("transport.send_route", "svc_type", svc.Type, "endpoint", svc.ServiceEndpoint, "has_forwarder", s.msgboxForwarder != nil, "to", to, "num_services", len(doc.Service))
+		if svc.ServiceEndpoint != "" {
+			var deliverErr error
+			if svc.Type == "DinaMsgBox" && s.msgboxForwarder != nil {
+				// Convert ws://host:port → http://host:port/forward
+				forwardURL := strings.Replace(svc.ServiceEndpoint, "wss://", "https://", 1)
+				forwardURL = strings.Replace(forwardURL, "ws://", "http://", 1)
+				forwardURL = strings.TrimSuffix(forwardURL, "/ws")
+				forwardURL = strings.TrimSuffix(forwardURL, "/")
+				forwardURL += "/forward"
+				deliverErr = s.msgboxForwarder.ForwardToRelay(ctx, forwardURL, string(to), deliveryPayload)
+			} else {
+				deliverErr = s.deliverer.Deliver(ctx, svc.ServiceEndpoint, deliveryPayload)
+			}
+			if deliverErr == nil {
 				_ = s.outbox.MarkDelivered(ctx, msgID)
 			}
 			// Delivery failure is not an error — outbox will retry.
@@ -356,6 +387,20 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 	s.appendAudit(ctx, "d2d_send", string(to), string(msg.Type), "", "success")
 
 	return nil
+}
+
+// findMessagingService returns the #dina_messaging service from a DID document,
+// or falls back to the first service. This determines routing: DinaRelay vs DinaDirectHTTPS.
+func findMessagingService(services []domain.ServiceEndpoint) domain.ServiceEndpoint {
+	for _, svc := range services {
+		if svc.ID == "#dina_messaging" || svc.Type == "DinaMsgBox" || svc.Type == "DinaDirectHTTPS" {
+			return svc
+		}
+	}
+	if len(services) > 0 {
+		return services[0]
+	}
+	return domain.ServiceEndpoint{}
 }
 
 // marshalD2DPayload creates a JSON delivery payload with base64-encoded ciphertext
@@ -468,8 +513,8 @@ func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, er
 			continue
 		}
 
-		endpoint := doc.Service[0].ServiceEndpoint
-		if endpoint == "" {
+		svc := findMessagingService(doc.Service)
+		if svc.ServiceEndpoint == "" {
 			_ = s.outbox.MarkFailed(ctx, msg.ID)
 			processed++
 			continue
@@ -483,15 +528,22 @@ func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, er
 			continue
 		}
 
-		// Attempt delivery.
-		if s.deliverer != nil {
-			if deliverErr := s.deliverer.Deliver(ctx, endpoint, deliveryPayload); deliverErr != nil {
-				_ = s.outbox.MarkFailed(ctx, msg.ID)
-			} else {
-				_ = s.outbox.MarkDelivered(ctx, msg.ID)
-			}
-		} else {
+		// Route by service type (same as SendMessage).
+		var deliverErr error
+		if svc.Type == "DinaMsgBox" && s.msgboxForwarder != nil {
+			forwardURL := strings.Replace(svc.ServiceEndpoint, "wss://", "https://", 1)
+			forwardURL = strings.Replace(forwardURL, "ws://", "http://", 1)
+			forwardURL = strings.TrimSuffix(forwardURL, "/ws")
+			forwardURL = strings.TrimSuffix(forwardURL, "/")
+			forwardURL += "/forward"
+			deliverErr = s.msgboxForwarder.ForwardToRelay(ctx, forwardURL, msg.ToDID, deliveryPayload)
+		} else if s.deliverer != nil {
+			deliverErr = s.deliverer.Deliver(ctx, svc.ServiceEndpoint, deliveryPayload)
+		}
+		if deliverErr != nil {
 			_ = s.outbox.MarkFailed(ctx, msg.ID)
+		} else {
+			_ = s.outbox.MarkDelivered(ctx, msg.ID)
 		}
 		processed++
 	}

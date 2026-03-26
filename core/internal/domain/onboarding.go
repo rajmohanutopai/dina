@@ -9,9 +9,10 @@ type OnboardingStep struct {
 
 // ExportManifest holds metadata for an exported archive.
 type ExportManifest struct {
-	Version   string            `json:"version"`
-	Timestamp string            `json:"timestamp"`
-	Checksums map[string]string `json:"checksums"`
+	Version     string            `json:"version"`
+	DinaVersion string            `json:"dina_version,omitempty"`
+	Timestamp   string            `json:"timestamp"`
+	Checksums   map[string]string `json:"checksums"`
 }
 
 // ExportOptions configures an archive export operation.

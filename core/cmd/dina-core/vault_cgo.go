@@ -71,3 +71,26 @@ func newD2DOutboxManager(backend vaultBackend) port.OutboxManager {
 	pool := backend.(*sqlite.VaultAdapter).Pool()
 	return sqlite.NewD2DOutboxManager(pool)
 }
+
+// readAdminKV reads an admin config value from the general persona's KV store.
+// Keys are stored as "kv:admin:<key>" in the vault_items table.
+// Returns "" if the key is not found or the general persona is not open.
+func readAdminKV(backend vaultBackend, key string) string {
+	va, ok := backend.(*sqlite.VaultAdapter)
+	if !ok {
+		return ""
+	}
+	db := va.Pool().DB("general")
+	if db == nil {
+		return ""
+	}
+	var body string
+	err := db.QueryRow(
+		"SELECT body FROM vault_items WHERE id = ? AND deleted = 0",
+		"kv:admin:"+key,
+	).Scan(&body)
+	if err != nil {
+		return ""
+	}
+	return body
+}

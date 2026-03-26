@@ -71,12 +71,13 @@ const SchedulerInterval = 30 * time.Second
 
 // Transporter implements Dina-to-Dina encrypted messaging.
 type Transporter struct {
-	mu        sync.Mutex
-	inbox     [][]byte
-	sent      []sentRecord
-	endpoints map[string]string // DID -> endpoint URL
-	resolver  *DIDResolver
-	relayURL  string // relay fallback URL
+	mu          sync.Mutex
+	inbox       [][]byte
+	sent        []sentRecord
+	endpoints   map[string]string // DID -> endpoint URL
+	resolver    *DIDResolver
+	relayURL    string // this node's own relay URL (for registration)
+	relayClient *RelayClient
 }
 
 type sentRecord struct {
@@ -116,14 +117,28 @@ func (t *Transporter) Send(recipientDID string, envelope []byte) error {
 		return ErrInvalidJSON
 	}
 
-	// Resolve recipient endpoint.
-	endpoint, err := t.ResolveEndpoint(recipientDID)
+	// Resolve recipient service endpoint and type from DID document.
+	svcType, endpoint, err := t.ResolveServiceEndpoint(recipientDID)
 	if err != nil {
-		// If direct delivery fails and relay is configured, use relay.
+		// DID resolution failed. If we have a relay configured, use it as
+		// last-resort fallback — the relay may know the recipient or buffer
+		// the message until they connect.
 		t.mu.Lock()
 		relay := t.relayURL
+		rc := t.relayClient
 		t.mu.Unlock()
 		if relay != "" {
+			if rc != nil {
+				forwardURL := relayWSToForwardURL(relay)
+				if fwdErr := rc.ForwardToRelay(context.Background(), forwardURL, recipientDID, envelope); fwdErr != nil {
+					// Record for test introspection, but relay forward failed.
+					t.mu.Lock()
+					t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
+					t.mu.Unlock()
+					return fmt.Errorf("transport: relay fallback failed: %w", fwdErr)
+				}
+			}
+			// Record as sent (relay accepted).
 			t.mu.Lock()
 			t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
 			t.mu.Unlock()
@@ -131,18 +146,34 @@ func (t *Transporter) Send(recipientDID string, envelope []byte) error {
 		}
 		return fmt.Errorf("transport: send failed: %w", err)
 	}
-	// Attempt real HTTP delivery to the recipient's /msg endpoint.
-	if err := t.httpDeliver(endpoint, envelope); err != nil {
-		// Still record for test introspection, but return the error.
+
+	// DID-routed delivery: branch on recipient's advertised service type.
+	var deliverErr error
+	switch svcType {
+	case "DinaDirectHTTPS":
+		deliverErr = t.httpDeliver(endpoint, envelope)
+	case "DinaMsgBox":
+		// POST to the recipient's relay's /forward endpoint.
 		t.mu.Lock()
-		t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
+		rc := t.relayClient
 		t.mu.Unlock()
-		return fmt.Errorf("transport: delivery failed: %w", err)
+		if rc != nil {
+			forwardURL := relayWSToForwardURL(endpoint)
+			deliverErr = rc.ForwardToRelay(context.Background(), forwardURL, recipientDID, envelope)
+		} else {
+			deliverErr = fmt.Errorf("relay client not configured")
+		}
+	default:
+		deliverErr = t.httpDeliver(endpoint, envelope)
 	}
 
 	t.mu.Lock()
 	t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
 	t.mu.Unlock()
+
+	if deliverErr != nil {
+		return fmt.Errorf("transport: delivery failed (%s): %w", svcType, deliverErr)
+	}
 	return nil
 }
 
@@ -350,6 +381,94 @@ func (t *Transporter) GetRelayURL() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.relayURL
+}
+
+// SetRelayClient configures the relay client for outbound forwarding.
+func (t *Transporter) SetRelayClient(rc *RelayClient) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.relayClient = rc
+}
+
+// GetRelayClient returns the relay client (nil if not configured).
+func (t *Transporter) GetRelayClient() *RelayClient {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.relayClient
+}
+
+// ResolveServiceEndpoint resolves a DID to its service type and endpoint URL.
+// It checks the DID document for a #dina_messaging service first, then falls
+// back to the first service endpoint. Returns (serviceType, endpoint, error).
+func (t *Transporter) ResolveServiceEndpoint(did string) (string, string, error) {
+	if err := validateDID(did); err != nil {
+		return "", "", err
+	}
+
+	// Check local endpoints first (direct mapping, type assumed DirectHTTPS).
+	t.mu.Lock()
+	ep, ok := t.endpoints[did]
+	t.mu.Unlock()
+	if ok {
+		return "DinaDirectHTTPS", ep, nil
+	}
+
+	// Delegate to DID resolver.
+	doc, err := t.resolver.Resolve(did)
+	if err != nil {
+		return "", "", err
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(doc, &parsed); err != nil {
+		return "", "", fmt.Errorf("transport: failed to parse DID document: %w", err)
+	}
+
+	services, ok := parsed["service"].([]interface{})
+	if !ok || len(services) == 0 {
+		return "", "", fmt.Errorf("transport: no service endpoints in DID document for %s", did)
+	}
+
+	// Prefer #dina_messaging service.
+	for _, s := range services {
+		svc, ok := s.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, _ := svc["id"].(string)
+		svcType, _ := svc["type"].(string)
+		endpoint, _ := svc["serviceEndpoint"].(string)
+		if (id == "#dina_messaging" || svcType == "DinaMsgBox" || svcType == "DinaDirectHTTPS") && endpoint != "" {
+			return svcType, endpoint, nil
+		}
+	}
+
+	// Fall back to first service endpoint.
+	svc, ok := services[0].(map[string]interface{})
+	if !ok {
+		return "", "", fmt.Errorf("transport: malformed service entry in DID document")
+	}
+	endpoint, _ := svc["serviceEndpoint"].(string)
+	svcType, _ := svc["type"].(string)
+	if endpoint == "" {
+		return "", "", fmt.Errorf("transport: missing serviceEndpoint in DID document")
+	}
+	if svcType == "" {
+		svcType = "DinaDirectHTTPS"
+	}
+	return svcType, endpoint, nil
+}
+
+// relayWSToForwardURL converts a relay WebSocket URL to its HTTP /forward URL.
+// e.g., "wss://relay.dina.dev/ws" → "https://relay.dina.dev/forward"
+//       "ws://localhost:7700/ws"  → "http://localhost:7700/forward"
+func relayWSToForwardURL(wsURL string) string {
+	u := wsURL
+	u = strings.TrimSuffix(u, "/ws")
+	u = strings.TrimSuffix(u, "/")
+	u = strings.Replace(u, "wss://", "https://", 1)
+	u = strings.Replace(u, "ws://", "http://", 1)
+	return u + "/forward"
 }
 
 // SentCount returns the number of sent messages (for testing).
