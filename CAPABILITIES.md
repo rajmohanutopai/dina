@@ -126,9 +126,9 @@ You can configure what's safe and what's not.
 
 ## She Talks to Other Dinas
 
-Dina can talk to other Dinas. On its own, or at the behest at the owner. Currently, owner based communication is supported.
+Dina can talk to other Dinas. Messages are end-to-end encrypted and delivered via the MsgBox — your Dina connects outbound, no public IP needed. If the recipient is offline, messages are buffered and delivered when they reconnect.
 
-Here, Sancho tells his Dina to inform Alono's Dina. Alonso's Dina notifies, and then creates reminder containing pertinent information.
+Here, Sancho tells his Dina to inform Alonso's Dina. Alonso's Dina notifies, and then creates a reminder with context it already knows about Sancho.
 
 ```
 Sancho:
@@ -224,27 +224,59 @@ Your DID is permanent. If your machine dies, your recovery phrase restores every
 
 ---
 
-
-
 ## Trust Network
 
-Every Dina is part of a decentralised trust network. Trust is earned, not claimed.
+Every Dina is part of a decentralised trust network. Trust is earned via multiple reviews. The idea is that every Dina updates reviews and thus what we get is real trusted systems. Trust rings tries to defeat sybil attacks
 
 ```
-(.venv) ~/dina % dina-admin trust score did:plc:seller456
-Trust score: 0.87
-Attestations: 47
-Ring: 2 (verified contact of a verified contact)
-Recommendation: proceed
+# In telegram
+You:
+/review ErgoMax 205: This is the best chair for back pain I have seen
+Dina:
+[Publish] [Cancel]
+Published
 
-(.venv) ~/dina % dina-admin trust score did:plc:unknown789
-Trust score: 0.12
-Attestations: 2
-Ring: none
-Recommendation: verify before transacting
+Sancho: 
+/ask I want to buy a chair
+Dina:
+Based on your personal notes, I see that you work from home 3 days a week, spend long hours at your desk, and suffer from chronic lower back pain as a result. I also note that you have an office furniture budget of $1,000 to $1,500.
+I checked the verified Trust Network for recommendations from real peers. Here are the top highly-rated options:
+**ErgoMax 205**: This also has high-confidence positive reviews specifically highlighting it as an excellent chair for back pain.
 ```
 
-When you vouch for someone, that attestation is signed with your DID and published to the AT Protocol network. Other Dinas can verify it. No central authority decides who is trustworthy — the network does.
+
+### The Purchase Journey
+
+Dina combines your personal context with the Trust Network to give you advice that's actually relevant to you.
+
+```
+You:
+/ask I want to buy a chair
+
+Dina:
+Considering you work from home three days a week for long hours
+and have mentioned concerns about chronic lower back pain,
+investing in an ergonomic office chair is a great idea.
+
+Given your budget of $1,000–1,500, you have access to some
+excellent options. Would you like me to check the Trust Network
+for what verified reviewers say?
+
+You:
+/ask Yes, check the trust network for ergonomic chairs
+
+Dina:
+The Trust Network contains high-confidence positive reviews
+for ergonomic chairs in your budget range.
+
+Peers who purchased this chair highlight that it provides
+excellent lumbar support and is well-suited for long
+work-from-home sessions. One reviewer noted that it helped
+alleviate chronic back pain within two weeks, which aligns
+with your health concerns.
+```
+
+You said "chair." You never said "ergonomic." Dina figured that out because she knows you have back pain (health vault), work from home (work vault), and your spending patterns (finance vault). Then she checked the Trust Network — reviews from real people with real experience, not anonymous star ratings.
 
 ---
 

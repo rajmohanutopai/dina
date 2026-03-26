@@ -438,18 +438,54 @@ Each of the 19 AT Protocol record types has a corresponding PostgreSQL table:
 
 ---
 
-## Act XI: Deployment — Six Docker Services
+## Act XI: Deployment — Shared Infrastructure
 
-The `docker-compose.yml` orchestrates six services:
+The AppView runs as shared infrastructure that multiple Home Nodes connect to. In the default deployment (`deploy/managed/infra/docker-compose.infra.yml`), it sits alongside the Community PDS and MsgBox behind a Caddy TLS reverse proxy.
 
-1. **postgres** — PostgreSQL 17 with persistent volume.
-2. **jetstream** — Bluesky Jetstream relay, subscribed to all 19 trust collections.
-3. **migrate** — One-shot migration runner (Drizzle ORM).
-4. **ingester** — Jetstream consumer daemon.
-5. **scorer** — Background scoring scheduler.
-6. **web** — xRPC API server on port 3000.
+### Services
 
-Services have health checks and dependency ordering: migrate depends on postgres, ingester/scorer/web depend on migrate. The Jetstream relay is external — it connects to the Bluesky network and feeds events to the ingester.
+| Service | Image | Role | Port |
+|---------|-------|------|------|
+| **Caddy** | `caddy:2-alpine` | TLS termination, reverse proxy for 3 subdomains | 80, 443 |
+| **PDS** | `ghcr.io/bluesky-social/pds:0.4` | Community PDS — hosts user AT Protocol repos | internal |
+| **MsgBox** | Built from `msgbox/` | D2D encrypted mailbox (WebSocket + HTTP) | internal |
+| **Jetstream** | `ghcr.io/bluesky-social/jetstream` | Converts PDS CBOR firehose → JSON WebSocket | internal |
+| **PostgreSQL** | `postgres:17` | AppView database (27 tables, 97 indexes) | internal |
+| **Ingester** | Built from `appview/` | Jetstream → PostgreSQL (19 record type handlers) | — |
+| **Scorer** | Built from `appview/` | 9 background cron jobs (trust scores, anomaly detection) | — |
+| **AppView Web** | Built from `appview/` | 5 xRPC endpoints for trust queries | internal |
+
+Only Caddy exposes ports to the internet. All other services communicate over the Docker network. The Ingester ensures the FTS `search_vector` tsvector column exists on startup (idempotent `ALTER TABLE IF NOT EXISTS`), so no separate migration step is needed.
+
+### Data Flow
+
+```
+Home Node → outbound HTTPS → PDS (createRecord)
+                              ↓ subscribeRepos (CBOR WebSocket)
+                           Jetstream
+                              ↓ JSON WebSocket
+                           Ingester → PostgreSQL
+                              ↓ (background)
+                           Scorer (9 jobs: profiles, trust scores, anomaly detection)
+                              ↓
+Home Node → outbound HTTPS → AppView Web (xRPC) → PostgreSQL
+```
+
+### Self-Hosting
+
+Operators who want sovereign infrastructure can deploy their own instance:
+
+```bash
+cd deploy/managed/infra
+cp infra.env.example infra.env   # fill in domain + SSH host
+./deploy_shared_infra.sh         # builds, deploys, provisions TLS
+```
+
+Home Nodes then point at the self-hosted infrastructure:
+```
+DINA_MSGBOX_URL=wss://mailbox.yourdomain.com
+dina-admin appview set https://appview.yourdomain.com
+```
 
 <details>
 <summary><strong>Design Decision — Why three separate daemons instead of one monolith?</strong></summary>
@@ -463,17 +499,20 @@ The ingester, scorer, and web server have fundamentally different scaling charac
 
 ## Epilogue: The Trust Network in Context
 
-The AppView is the third pillar of Dina's architecture:
+The AppView is part of Dina's four-layer architecture:
 
-| Component | Role | Technology |
-|-----------|------|------------|
-| **Core** | Sovereign identity + encrypted storage | Go |
-| **Brain** | LLM reasoning + PII protection | Python |
-| **AppView** | Decentralized trust network | TypeScript |
+| Component | Role | Technology | Runs |
+|-----------|------|------------|------|
+| **Core** | Sovereign identity + encrypted storage | Go | Home Node (local) |
+| **Brain** | LLM reasoning + PII protection | Python | Home Node (local) |
+| **MsgBox** | D2D encrypted mailbox | Go | Shared infrastructure |
+| **AppView** | Decentralized trust network | TypeScript | Shared infrastructure |
 
-Core gives Dina her identity. Brain gives her judgment. AppView gives her memory of who to trust.
+Core gives Dina her identity. Brain gives her judgment. MsgBox lets Dinas talk to each other. AppView gives her memory of who to trust.
 
-When Dina advises you before a purchase ("This seller has a trust score of 0.72 from 47 attestations, 3 of which are from people in your trust graph"), the data comes from the AppView. When an autonomous agent submits an intent to buy something, the Brain checks the seller's trust score via the AppView before approving the transaction. When Core receives a D2D message from an unknown Dina, it queries the AppView to determine whether to accept or quarantine it.
+Home Nodes make only outbound connections — no public IP required. The shared infrastructure (MsgBox, PDS, AppView) handles the public-facing networking. This is the default deployment. Operators who want full sovereignty can self-host the shared infrastructure on their own server with a single deployment script.
+
+When a user says "I want to buy a chair," the Brain searches the vault (finds back pain, WFH, budget), infers the user needs an ergonomic chair, calls `search_trust_network` to query the AppView, and synthesizes a recommendation from verified peer reviews. The user never asked for "ergonomic" — Dina figured that out from context. The trust data comes from real identities on the AT Protocol, not anonymous star ratings.
 
 The trust network replaces ad-funded ranking with trust-funded ranking. A product with 10 genuine reviews from trusted reviewers outranks a product with 1000 fake reviews from anonymous accounts. An expert's attestation (high reviewer quality, evidence included, co-signed) carries more weight than a drive-by rating. And because the data lives on the AT Protocol, no single company can suppress, manipulate, or delete it.
 

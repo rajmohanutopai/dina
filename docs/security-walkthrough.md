@@ -196,7 +196,7 @@ Here is how the flow works:
 
 Every memory-producing flow — CLI, connectors, Telegram, Dina-to-Dina, admin imports — enters the vault through the staging inbox. Nothing bypasses it.
 
-**Provenance derivation.** Ingress provenance fields (`ingress_channel`, `origin_did`, `origin_kind`, `producer_id`) are server-derived from the authenticated request context (caller type, agent DID, token kind, device role). External callers cannot spoof provenance. Only Brain — authenticated via its service key — can relay provenance for Telegram and D2D flows, because those messages arrive at Brain first and are forwarded to Core's staging inbox on behalf of the original sender. Connectors must always supply `connector_id`.
+**Provenance derivation.** Ingress provenance fields (`ingress_channel`, `origin_did`, `origin_kind`, `producer_id`) are server-derived from the authenticated request context (caller type, agent DID, token kind, device role). External callers cannot spoof provenance. Only Brain — authenticated via its service key — can forward provenance for Telegram and D2D flows, because those messages arrive at Brain first and are forwarded to Core's staging inbox on behalf of the original sender. Connectors must always supply `connector_id`.
 
 **Enrichment validation.** Before resolve, the handler validates that items arrive fully enriched with `enrichment_status=ready`, `content_l0`, `content_l1`, and `embedding`. Incomplete items are hard-rejected — no partial records reach the vault. This prevents Brain from storing classification stubs or corrupted entries.
 

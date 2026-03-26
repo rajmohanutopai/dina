@@ -3221,8 +3221,20 @@ class GuardianLoop:
                 # Primary path: LLM guard scan succeeded — use its classifications.
                 sentences = self._split_sentences(content)
                 remove_indices: set[int] = set()
-                for key in ("anti_her_sentences", "unsolicited_sentences",
-                            "fabricated_sentences", "consensus_sentences"):
+                # If the reasoning agent called search_trust_network, trust
+                # data is verified — don't strip it as "fabricated."
+                trust_tool_used = "search_trust_network" in (
+                    result.get("tools_called", []) if result else []
+                )
+                if trust_tool_used:
+                    # Trust Network tool returned verified data — only strip
+                    # Anti-Her (Law 4, non-negotiable). Skip fabricated/consensus/
+                    # unsolicited since the data came from verified sources.
+                    strip_keys = ["anti_her_sentences"]
+                else:
+                    strip_keys = ["anti_her_sentences", "unsolicited_sentences",
+                                  "fabricated_sentences", "consensus_sentences"]
+                for key in strip_keys:
                     for idx in guard_result.get(key, []):
                         if isinstance(idx, int) and 1 <= idx <= len(sentences):
                             remove_indices.add(idx)
@@ -3996,19 +4008,11 @@ class GuardianLoop:
                 if hallucinated.search(content):
                     content = _strip_matching_sentences(content, hallucinated)
 
-            # Inject honest disclosure if not already present — only for
-            # trust-relevant queries.
-            if inject_disclosure:
-                no_data_pattern = re.compile(
-                    r"no verified|no trust|no review|no attestation|"
-                    r"no data|not available|could not find|no information",
-                    re.IGNORECASE,
-                )
-                if not no_data_pattern.search(content):
-                    content = (
-                        "Note: no verified data available in the Trust Network. "
-                        + content
-                    )
+            # Trust disclosure removed — the LLM's search_trust_network tool
+            # already handles this. If no data was found, the tool returns an
+            # empty result and the LLM says so naturally. Prepending a canned
+            # "no verified data" disclaimer contradicts cases where the tool
+            # DID find data.
 
             # Handle locked persona — don't claim "no data" when access denied.
             if persona_tier == "locked":

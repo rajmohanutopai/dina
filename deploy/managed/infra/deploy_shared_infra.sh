@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
-# deploy.sh — Deploy Dina shared infrastructure
+# deploy_shared_infra.sh — Deploy Dina SHARED infrastructure (not a Home Node)
+#
+# This deploys the public services that multiple Home Nodes connect to:
+#   - Community PDS  (AT Protocol, hosts user trust repos)
+#   - MsgBox         (D2D encrypted mailbox, WebSocket + HTTP)
+#   - AppView        (Trust Network, 5 xRPC endpoints)
+#   - Jetstream      (PDS firehose consumer)
+#   - PostgreSQL     (AppView database)
+#
+# This does NOT deploy a Home Node (Core + Brain + vault).
+# Home Nodes run locally and connect to these services outbound.
 #
 # Configuration is read from infra.env (gitignored).
 # See infra.env.example for the template.
 #
 # Usage:
-#   ./deploy.sh              # full deploy (first time)
-#   ./deploy.sh update       # pull latest code and restart
-#   ./deploy.sh status       # check services
-#   ./deploy.sh logs [svc]   # tail logs
+#   ./deploy_shared_infra.sh              # full deploy (first time)
+#   ./deploy_shared_infra.sh update       # pull latest code and restart
+#   ./deploy_shared_infra.sh status       # check services
+#   ./deploy_shared_infra.sh logs [svc]   # tail logs
 
 set -euo pipefail
 
@@ -32,10 +42,44 @@ source "$SCRIPT_DIR/infra.env"
 # ── Colors ──
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 info()  { echo -e "${GREEN}▸${NC} $*"; }
 warn()  { echo -e "${YELLOW}▸${NC} $*"; }
+
+# ── Confirmation ──
+confirm_deploy() {
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  Dina Shared Infrastructure Deployment${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "  This will deploy the following to ${YELLOW}${REMOTE}${NC}:"
+    echo ""
+    echo "    PDS:     https://${PDS_HOST}"
+    echo "    MsgBox:  wss://${MSGBOX_HOST}"
+    echo "    AppView: https://${APPVIEW_HOST}"
+    echo ""
+    echo "  Services: Caddy (TLS), PDS, MsgBox, Jetstream,"
+    echo "            PostgreSQL, Ingester, Scorer, AppView Web"
+    echo ""
+    echo -e "  ${RED}This is NOT a Home Node deployment.${NC}"
+    echo "  Most users do not need this — Home Nodes connect to"
+    echo "  the default Dina infrastructure at dinakernel.com."
+    echo ""
+    echo "  This is for operators who want to run their own"
+    echo "  sovereign infrastructure (self-hosted PDS, MsgBox, AppView)."
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
+    echo ""
+    read -rp "  Type 'yes, deploy' to proceed: " answer
+    if [ "$answer" != "yes, deploy" ]; then
+        echo "  Aborted."
+        exit 0
+    fi
+    echo ""
+}
 
 # ── Step 1: Ensure remote has Docker ──
 setup_remote() {
@@ -186,6 +230,7 @@ health_check() {
 # ── Main ──
 case "${1:-deploy}" in
     deploy)
+        confirm_deploy
         setup_remote
         generate_caddyfile
         sync_files
@@ -196,6 +241,7 @@ case "${1:-deploy}" in
         health_check
         ;;
     update)
+        confirm_deploy
         generate_caddyfile
         sync_files
         prepare_compose

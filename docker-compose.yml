@@ -48,6 +48,8 @@ services:
       - DINA_PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
       - DINA_PDS_HANDLE=${DINA_PDS_HANDLE:-dina.test}
       - DINA_PDS_EMAIL=${DINA_PDS_EMAIL:-dina@example.com}
+      - DINA_MSGBOX_URL=${DINA_MSGBOX_URL:-wss://mailbox.dinakernel.com}
+      - DINA_APPVIEW_URL=${DINA_APPVIEW_URL:-https://appview.dinakernel.com}
       - DINA_KNOWN_PEERS=${DINA_KNOWN_PEERS:-}
       - DINA_ALLOWED_ENDPOINTS=${DINA_ALLOWED_ENDPOINTS:-}
     secrets:
@@ -103,6 +105,9 @@ services:
       - DINA_TELEGRAM_TOKEN=${DINA_TELEGRAM_TOKEN:-}
       - DINA_TELEGRAM_ALLOWED_USERS=${DINA_TELEGRAM_ALLOWED_USERS:-}
       - DINA_TELEGRAM_ALLOWED_GROUPS=${DINA_TELEGRAM_ALLOWED_GROUPS:-}
+      - DINA_PDS_URL=${DINA_PDS_PUBLIC_URL:-https://pds.dinakernel.com}
+      - DINA_PDS_HANDLE=${DINA_PDS_HANDLE:-dina.test}
+      - DINA_PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8200/healthz').raise_for_status()"]
       interval: 10s

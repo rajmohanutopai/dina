@@ -17,6 +17,10 @@ Every contact, relation etc should be a proper Database entry
 So, when information comes like Sanchos mother is sick, that should get filed under Sancho's information
 Obviously security of others also has to be maintained, so, Idenity.sqlite contains sanchos basic information - but in the finance vaulet etc, we store against sancho as ID
 
+# Dina Task
+
+To ask OpenClaw to do somethings - it is not just validate and ask and reminder. this is Dina telling OpenClaw to do things
+
 # Internal Reminder
 
 Brain notices:

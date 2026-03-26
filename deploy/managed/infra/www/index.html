@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dina — Your Personal AI, With an Identity | dinakernel.com</title>
+<meta name="description" content="Dina is a sovereign personal AI. She remembers your world, guards your agents, talks to other Dinas, and works for you - nobody else.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #FAF8F5;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #F0EDE8;
+  --border: rgba(0,0,0,0.07);
+  --text-primary: #1C1917;
+  --text-secondary: #57534E;
+  --text-muted: #A8A29E;
+  --accent: #1C1917;
+  --c-core: #2563EB;
+  --c-brain: #059669;
+  --c-trust: #7C3AED;
+  --c-msgbox: #D97706;
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Figtree', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 4px rgba(0,0,0,0.03), 0 10px 32px rgba(0,0,0,0.07);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+a { color: var(--text-primary); text-decoration: underline; text-decoration-color: rgba(0,0,0,0.2); text-underline-offset: 3px; transition: var(--transition); }
+a:hover { text-decoration-color: var(--text-primary); }
+
+/* === NAV === */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(250,248,245,0.85); backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 clamp(16px, 4vw, 48px); height: 60px;
+}
+.nav-left { display: flex; align-items: center; gap: 32px; }
+.nav-logo {
+  font-family: var(--font-heading); font-weight: 800; font-size: 1.15em;
+  letter-spacing: -0.3px; text-decoration: none; color: var(--text-primary);
+}
+.nav-links { display: flex; gap: 4px; }
+.nav-links a {
+  font-family: var(--font-heading); color: var(--text-muted);
+  font-size: 0.7em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 8px 12px; border-radius: 8px; text-decoration: none;
+}
+.nav-links a:hover { color: var(--text-primary); }
+.nav-cta {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.78em;
+  background: var(--text-primary); color: white; padding: 8px 20px;
+  border-radius: 8px; text-decoration: none; letter-spacing: 0.02em;
+}
+.nav-cta:hover { background: #44403C; color: white; }
+
+/* === HERO === */
+.hero {
+  max-width: 900px; margin: 0 auto;
+  padding: clamp(60px, 12vh, 140px) clamp(16px, 4vw, 48px) clamp(40px, 8vh, 80px);
+  text-align: center;
+}
+.hero-eyebrow {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.72em;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 20px;
+}
+.hero h1 {
+  font-family: var(--font-display); font-weight: 600; font-style: italic;
+  font-size: clamp(2.4em, 5vw, 4em); line-height: 1.15; letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+.hero p {
+  font-size: 1.15em; color: var(--text-secondary); max-width: 600px;
+  margin: 0 auto 36px;
+}
+.hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.btn-primary {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.88em;
+  background: var(--text-primary); color: white; padding: 13px 32px;
+  border-radius: 10px; text-decoration: none; letter-spacing: 0.02em;
+  border: 1px solid var(--text-primary);
+  transition: var(--transition);
+}
+.btn-primary:hover { background: #44403C; border-color: #44403C; color: white; transform: translateY(-1px); }
+.btn-secondary {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.88em;
+  background: var(--bg-secondary); color: var(--text-primary);
+  padding: 13px 32px; border-radius: 10px; text-decoration: none;
+  border: 1px solid var(--border); letter-spacing: 0.02em;
+  transition: var(--transition);
+}
+.btn-secondary:hover { border-color: var(--text-muted); transform: translateY(-1px); }
+
+/* === SECTION === */
+section { padding: clamp(32px, 5vh, 56px) clamp(16px, 4vw, 48px); }
+.section-inner { max-width: 1100px; margin: 0 auto; }
+.section-label {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.68em;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.section-title {
+  font-family: var(--font-display); font-weight: 600; font-style: italic;
+  font-size: clamp(1.8em, 3.5vw, 2.6em); line-height: 1.2;
+  margin-bottom: 16px; letter-spacing: -0.01em;
+}
+.section-desc {
+  font-size: 1.05em; color: var(--text-secondary); max-width: 640px;
+  margin-bottom: 28px;
+}
+
+/* === CAPABILITIES GRID === */
+.cap-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+.cap-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 32px;
+  transition: var(--transition);
+}
+.cap-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.cap-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3em; margin-bottom: 16px;
+}
+.cap-card h3 {
+  font-family: var(--font-heading); font-weight: 700; font-size: 1.05em;
+  margin-bottom: 8px;
+}
+.cap-card p { font-size: 0.92em; color: var(--text-secondary); line-height: 1.6; }
+
+/* === SCENARIO === */
+.scenario {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 32px;
+  margin-bottom: 16px;
+}
+.scenario-label {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.68em;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.scenario h3 {
+  font-family: var(--font-heading); font-weight: 700; font-size: 1.2em;
+  margin-bottom: 16px;
+}
+.scenario-step {
+  display: flex; gap: 16px; margin-bottom: 12px;
+  font-size: 0.92em; color: var(--text-secondary);
+}
+.scenario-step .step-num {
+  font-family: var(--font-mono); font-weight: 500; font-size: 0.8em;
+  color: var(--text-muted); min-width: 24px; padding-top: 2px;
+}
+
+/* === ARCHITECTURE === */
+.arch-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin-top: 32px;
+}
+.arch-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  border-left: 4px solid var(--card-accent, var(--border));
+}
+.arch-card h4 {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.92em;
+  margin-bottom: 4px;
+}
+.arch-card .arch-where {
+  font-family: var(--font-mono); font-size: 0.72em; color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.arch-card p { font-size: 0.84em; color: var(--text-secondary); line-height: 1.5; }
+
+/* === CODE BLOCK === */
+.code-block {
+  background: #1C1917; color: #E7E5E4; border-radius: var(--radius);
+  padding: 24px 28px; font-family: var(--font-mono); font-size: 0.84em;
+  line-height: 1.8; overflow-x: auto; margin: 24px 0;
+}
+.code-block .comment { color: #78716C; }
+.code-block .cmd { color: #A3E635; }
+
+/* === FOOTER === */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 48px clamp(16px, 4vw, 48px);
+  text-align: center; color: var(--text-muted); font-size: 0.88em;
+}
+footer a { color: var(--text-secondary); }
+footer .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; }
+
+/* === DIVIDER === */
+.divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+/* === RESPONSIVE === */
+@media (max-width: 640px) {
+  .nav-links { display: none; }
+  .cap-grid { grid-template-columns: 1fr; }
+  .arch-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-left">
+    <a href="#" class="nav-logo">Dina</a>
+    <div class="nav-links">
+      <a href="#capabilities">Capabilities</a>
+      <a href="#scenario">In Action</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#sovereignty">Sovereignty</a>
+    </div>
+  </div>
+  <a href="https://github.com/rajmohanutopai/dina" class="nav-cta">GitHub</a>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">Technical Preview</div>
+  <h1>Dina, your personal AI,<br>with an identity</h1>
+  <p>Dina remembers your world, guards your agents, talks to other Dinas, and works for you — nobody else. Your data stays encrypted on your machine. Your identity is yours forever.</p>
+  <div class="hero-actions">
+    <a href="https://github.com/rajmohanutopai/dina" class="btn-primary">Get Started</a>
+    <a href="https://rajmohanutopai.github.io/dina/dina.html" class="btn-secondary">Interactive Guide</a>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- THE IDEA -->
+<section>
+  <div class="section-inner">
+    <div class="section-label">The Idea</div>
+    <div class="section-title">What if your AI truly belonged to you?</div>
+    <div class="section-desc">
+      Your data, encrypted on your machine. An identity that stays with you forever — even if you switch providers. An AI that remembers your world, understands your context, and works quietly in the background for you and only you.
+    </div>
+    <div class="section-desc" style="margin-top:-20px">
+      That's Dina.
+    </div>
+    <div class="section-desc" style="margin-top:-20px">
+      She has a cryptographic identity, encrypted memory across separate vaults, and she talks to other Dinas to help you coordinate your life. She decides whether someone can be trusted — by asking you, her human. One simple rule: she belongs to the person who created her. Loyalty enforced by mathematics.
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- CAPABILITIES -->
+<section id="capabilities">
+  <div class="section-inner">
+    <div class="section-label">Capabilities</div>
+    <div class="section-title">What Dina does for you</div>
+    <div class="section-desc">Everything here works today. You can install Dina and try all of this right now.</div>
+
+    <div class="cap-grid">
+      <div class="cap-card">
+        <div class="cap-icon" style="background: #EFF6FF; color: var(--c-core);">🧠</div>
+        <h3>She Remembers Everything</h3>
+        <p>Tell Dina anything. She classifies it into encrypted persona vaults (general, work, health, finance), recalls it when you need it, and sets smart reminders — automatically.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-icon" style="background: #F0FDF4; color: var(--c-brain);">🔒</div>
+        <h3>She Guards Your Agents</h3>
+        <p>Any AI agent submits its intent to Dina before acting. Safe tasks pass silently. Risky actions (sending email, moving money) are flagged for your approval on Telegram.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-icon" style="background: #FDF4FF; color: var(--c-trust);">💬</div>
+        <h3>She Talks to Other Dinas</h3>
+        <p>Presence signals, coordination, social updates, safety alerts, trust vouching. End-to-end encrypted. Works from anywhere — no technical setup needed.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-icon" style="background: #FFFBEB; color: var(--c-msgbox);">🛡️</div>
+        <h3>She Scrubs Your Privacy</h3>
+        <p>All LLM calls go with scrubbed data. Names, emails, SSNs replaced with tokens. After the AI responds, Dina rehydrates the originals. Raw data never leaves your machine.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-icon" style="background: #FDF4FF; color: var(--c-trust);">🌐</div>
+        <h3>Trust Network</h3>
+        <p>Real reviews from real people with real experience — not anonymous star ratings that can be bought. When Dina advises a purchase, the recommendation comes from people your network actually trusts.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-icon" style="background: #EFF6FF; color: var(--c-core);">📦</div>
+        <h3>Your Data is Yours</h3>
+        <p>Export everything with one command. Decrypt with a standalone script — no Dina required. Move to a new machine. Your recovery phrase restores same DID, same data, same identity.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-icon" style="background: #FEF2F2; color: #DC2626;">❤️‍🩹</div>
+        <h3>She Never Replaces a Human</h3>
+        <p>Dina never simulates emotional intimacy. When you need connection, she connects you to other humans — never to herself. She's your assistant, not your companion.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- IN ACTION -->
+<section id="scenario" style="background: var(--bg-tertiary);">
+  <div class="section-inner">
+    <div class="section-label">In Action</div>
+    <div class="section-title">The Purchase Journey</div>
+    <div class="section-desc">You say "I want to buy a chair." Dina does the rest.</div>
+
+    <div class="scenario">
+      <div class="scenario-label">What happens</div>
+      <h3>She knows what you actually need</h3>
+      <div class="scenario-step"><span class="step-num">01</span><span>You say: <em>"I want to buy a chair."</em></span></div>
+      <div class="scenario-step"><span class="step-num">02</span><span>Dina already knows you have <strong>chronic back pain</strong>, that you <strong>work from home 3 days a week</strong>, and that your spending pattern suggests a <strong>budget around $1,000–1,500</strong>.</span></div>
+      <div class="scenario-step"><span class="step-num">03</span><span>Dina infers: you need an <strong>ergonomic chair</strong>, not just any chair. You never said "ergonomic" — she figured it out from your context.</span></div>
+      <div class="scenario-step"><span class="step-num">04</span><span>Dina checks the <strong>Trust Network</strong> — reviews from real people who actually bought ergonomic chairs in your budget range.</span></div>
+      <div class="scenario-step"><span class="step-num">05</span><span>Answer: <em>"People who bought this chair report excellent lumbar support and back pain relief within two weeks — which matches exactly what you need."</em></span></div>
+    </div>
+
+  </div>
+</section>
+
+<hr class="divider">
+
+<section style="background: var(--bg-tertiary);">
+  <div class="section-inner">
+    <div class="section-label">In Action</div>
+    <div class="section-title">The Sancho Moment</div>
+    <div class="section-desc" style="max-width: 800px;">Named after a scene in <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf"><em>UTOPAI</em></a> — when your AI knows just the right thing to remind you, at just the right time.</div>
+
+    <div class="scenario">
+      <div class="scenario-label">What happens</div>
+      <h3>She remembers what you forgot</h3>
+      <div class="scenario-step"><span class="step-num">01</span><span>Your friend Sancho's Dina sends a message: <em>"Arriving at your home in 10 minutes."</em></span></div>
+      <div class="scenario-step"><span class="step-num">02</span><span>The message arrives securely — encrypted end-to-end between your two Dinas.</span></div>
+      <div class="scenario-step"><span class="step-num">03</span><span>Your Dina recalls that Sancho likes <strong>cardamom tea</strong> and that his <strong>mother has been unwell</strong> recently.</span></div>
+      <div class="scenario-step"><span class="step-num">04</span><span>Reminder: <em>"Sancho is arriving in 10 minutes. You may want to prepare cardamom tea and ask about his mother."</em></span></div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <div class="section-inner">
+    <div class="section-label">Architecture</div>
+    <div class="section-title">How it works</div>
+    <div class="section-desc">Your Dina runs on your machine. The shared network handles messaging and trust. Nothing leaves your machine unencrypted.</div>
+
+    <div style="margin-bottom: 12px; margin-top: 32px;">
+      <div class="section-label" style="margin-bottom: 12px;">On your machine</div>
+    </div>
+    <div class="arch-grid" style="grid-template-columns: 1fr 1fr; margin-top: 0;">
+      <div class="arch-card" style="--card-accent: var(--c-core);">
+        <h4>Core</h4>
+        <div class="arch-where">Your machine</div>
+        <p>Your identity, your encrypted vault, your keys. The only thing that can read your data. Everything else asks permission.</p>
+      </div>
+      <div class="arch-card" style="--card-accent: var(--c-brain);">
+        <h4>Brain</h4>
+        <div class="arch-where">Your machine</div>
+        <p>The thinking layer. Reasons over your data, talks to LLMs, scrubs private information before anything leaves, assembles reminders and advice.</p>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 12px; margin-top: 28px;">
+      <div class="section-label" style="margin-bottom: 12px;">Shared network</div>
+    </div>
+    <div class="arch-grid" style="grid-template-columns: 1fr 1fr; margin-top: 0;">
+      <div class="arch-card" style="--card-accent: var(--c-msgbox);">
+        <h4>MsgBox</h4>
+        <div class="arch-where">Shared network</div>
+        <p>Encrypted mailbox for Dina-to-Dina messaging. Delivers messages between people. Cannot read the contents — ever.</p>
+      </div>
+      <div class="arch-card" style="--card-accent: var(--c-trust);">
+        <h4>Trust Network</h4>
+        <div class="arch-where">Shared network</div>
+        <p>Decentralised reviews and reputation built on AT Protocol. Real people, real experiences, verified by cryptography. Anyone can run their own.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- SOVEREIGNTY -->
+<section id="sovereignty">
+  <div class="section-inner">
+    <div class="section-label">Sovereignty</div>
+    <div class="section-title">Your upgrade path</div>
+    <div class="section-desc">Sovereignty is a given. Start with zero infrastructure. Take full control when you're ready.</div>
+
+    <div class="cap-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+      <div class="cap-card">
+        <h3>Level 0</h3>
+        <p><strong>Default.</strong> Home Node runs locally. Connects to hosted MsgBox + AppView + community PDS. Zero config. No public IP.</p>
+      </div>
+      <div class="cap-card">
+        <h3>Level 1</h3>
+        <p><strong>Own PDS.</strong> Run your own AT Protocol server. Trust records publish to your repo. One DID Document update.</p>
+      </div>
+      <div class="cap-card">
+        <h3>Level 2</h3>
+        <p><strong>Direct D2D.</strong> Expose a public endpoint. Other Dinas message you directly. No MsgBox needed.</p>
+      </div>
+      <div class="cap-card">
+        <h3>Level 3</h3>
+        <p><strong>Full sovereign.</strong> Own PDS + own MsgBox + direct D2D. Zero dependency on Dina project infrastructure.</p>
+      </div>
+    </div>
+
+    <div class="code-block" style="margin-top: 32px;">
+      <span class="comment"># Self-host the shared infrastructure on your own server</span><br>
+      <span class="cmd">cp</span> infra.env.example infra.env &nbsp;&nbsp;<span class="comment"># your domain, your server</span><br>
+      <span class="cmd">./deploy_shared_infra.sh</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># 5 minutes, fully sovereign</span><br>
+      <br>
+      <span class="comment"># Home Nodes connect with one line</span><br>
+      DINA_MSGBOX_URL=<span class="cmd">wss://mailbox.yourdomain.com</span>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- GET STARTED -->
+<section style="text-align: center; padding: clamp(60px, 10vh, 100px) clamp(16px, 4vw, 48px);">
+  <div class="section-inner">
+    <div class="section-title">Get started</div>
+    <div class="code-block" style="text-align: left; max-width: 520px; margin: 24px auto;">
+      <span class="cmd">git clone</span> https://github.com/rajmohanutopai/dina.git<br>
+      <span class="cmd">cd</span> dina<br>
+      <span class="cmd">./install.sh</span>
+    </div>
+    <div class="hero-actions" style="margin-top: 32px;">
+      <a href="https://github.com/rajmohanutopai/dina" class="btn-primary">View on GitHub</a>
+      <a href="https://discord.gg/gDRcrEwy" class="btn-secondary">Join Discord</a>
+      <a href="https://rajmohanutopai.github.io/dina/dina.html" class="btn-secondary">Interactive Guide</a>
+    </div>
+  </div>
+</section>
+
+<!-- ORIGIN -->
+<section style="background: var(--bg-tertiary); text-align: center; padding: clamp(48px, 8vh, 80px) clamp(16px, 4vw, 48px);">
+  <div class="section-inner" style="max-width: 680px;">
+    <div class="section-label">Origin</div>
+    <div class="section-title" style="font-size: clamp(1.5em, 2.8vw, 2em);">The Origin Story</div>
+    <p style="color: var(--text-secondary); font-size: 1.05em; margin-top: 16px;">
+      Dina was first described in <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf"><em>UTOPAI (2012-2017)</em></a>, a science fiction novel about a post-agi world, where everyone has a personal AI looking after their every need.
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-links">
+    <a href="https://github.com/rajmohanutopai/dina">GitHub</a>
+    <a href="https://discord.gg/gDRcrEwy">Discord</a>
+    <a href="https://rajmohanutopai.github.io/dina/dina.html">Architecture</a>
+    <a href="https://rajmohanutopai.github.io/dina/all_test_results.html">Test Results</a>
+  </div>
+  <p>Dina — The Architecture of Agency. MIT License.</p>
+</footer>
+
+</body>
+</html>

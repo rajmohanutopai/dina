@@ -521,6 +521,7 @@ def create_app() -> FastAPI:
         event_extractor=event_extractor,
         persona_selector=persona_selector,
         reminder_planner=reminder_planner,
+        # telegram is wired later (after TelegramService creation)
     )
     sync_engine = SyncEngine(
         core=brain_core_client, mcp=mcp_client, llm=llm_router,
@@ -586,12 +587,29 @@ def create_app() -> FastAPI:
                     "remember": telegram_service.handle_remember,
                     "edit": telegram_service.handle_edit,
                     "send": telegram_service.handle_send,
+                    "vouch": telegram_service.handle_vouch,
+                    "review": telegram_service.handle_review,
+                    "flag": telegram_service.handle_flag,
+                    "trust": telegram_service.handle_trust,
+                    "contact": telegram_service.handle_contact,
+                    "status": telegram_service.handle_status,
                 },
                 callback_query_handler=telegram_service.handle_callback_query,
                 base_url=cfg.telegram_api_base_url,
             )
             telegram_service.set_bot(telegram_bot)
             guardian._telegram = telegram_service  # wire for approval prompts
+            staging_processor._telegram = telegram_service  # wire for reminder push
+
+            # Wire PDS publisher for trust commands (/vouch, /review, /flag)
+            pds_url = os.environ.get("DINA_PDS_URL", "")
+            pds_handle = os.environ.get("DINA_PDS_HANDLE", "")
+            pds_password = os.environ.get("DINA_PDS_ADMIN_PASSWORD", "")
+            if pds_url and pds_handle and pds_password:
+                from .adapter.pds_publisher import PDSPublisher
+                telegram_service._pds_publisher = PDSPublisher(pds_url, pds_handle, pds_password)
+                log.info("brain.pds_publisher.configured", extra={"pds_url": pds_url})
+
             log.info("brain.telegram.configured")
         except ImportError:
             log.warning(

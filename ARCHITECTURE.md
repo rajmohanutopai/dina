@@ -1467,15 +1467,20 @@ This DID resolves to a DID Document — a small public record containing the pub
     "id": "did:plc:z72i7hdynmk6...",
     "service": [
         {
-            "type": "DinaMessaging",
-            "serviceEndpoint": "https://dina.alice.com/didcomm"
+            "id": "did:plc:z72i7hdynmk6...#dina-messaging",
+            "type": "DinaMsgBox",
+            "serviceEndpoint": "wss://mailbox.dinakernel.com"
         }
     ],
     "verificationMethod": [{ "type": "Multikey", "publicKeyMultibase": "z6Mk..." }]
 }
 ```
 
-The endpoint points to the user's Home Node (via tunnel). The PLC Directory only stores the signed operation log — it never holds keys, never reads messages, and can be exited via rotation op at any time.
+The service type `DinaMsgBox` tells senders to deliver messages via the MsgBox (D2D encrypted mailbox). The Home Node connects to the MsgBox via outbound WebSocket — no public IP required. Senders resolve the recipient's DID Document, find the `#dina-messaging` service endpoint, and POST the NaCl-encrypted blob to the MsgBox's `/forward` endpoint. The MsgBox routes it to the recipient's WebSocket connection, or buffers it durably (SQLite, 24h TTL) if the recipient is offline.
+
+For users who self-host with a public endpoint, the service type changes to `DinaDirectHTTPS` — senders POST directly to the Home Node. The transport layer branches on service type automatically. Upgrading from MsgBox to direct is a DID Document update — no data migration, no re-keying.
+
+The PLC Directory only stores the signed operation log — it never holds keys, never reads messages, and can be exited via rotation op at any time.
 
 ### Personas (Compartments)
 
@@ -3009,10 +3014,10 @@ Provenance is server-derived from auth context — external callers cannot spoof
 | Caller Type | `ingress_channel` | `origin_kind` | `producer_id` |
 |-------------|-------------------|---------------|----------------|
 | Device (CLI, OpenClaw agent) | `cli` | `user` or `agent` (from device role lookup) | `cli:<agent_did>` |
-| Service key (Brain relay, connector) | `connector`, `brain`, or relayed (`telegram`, `d2d`) | `service` | `connector:<id>` or `brain:system` |
+| Service key (Brain forwarding, connector) | `connector`, `brain`, or forwarded (`telegram`, `d2d`) | `service` | `connector:<id>` or `brain:system` |
 | Admin (CLIENT_TOKEN) | `admin` | `user` | `admin:system` |
 
-Only Brain (trusted service key) can relay provenance for Telegram and D2D flows in Phase 2+. Connectors must always supply `connector_id`.
+Only Brain (trusted service key) can forward provenance for Telegram and D2D flows in Phase 2+. Connectors must always supply `connector_id`.
 
 **Claim** (`POST /v1/staging/claim`). Brain calls this to claim up to `limit` items (default 10) with status `received`. The claim is atomic within a transaction: items are selected, then each is updated to `classifying` with `claimed_at` and `lease_until` set. The `WHERE status='received'` guard on the UPDATE prevents double-claim — if two Brain instances race, only one succeeds per item.
 
@@ -3108,7 +3113,7 @@ Every staging item carries four server-derived provenance fields that form an au
 | `origin_kind` | What kind of entity | `user`, `agent`, `remote_dina`, `service` |
 | `producer_id` | Dedup namespace combining channel and identity | `cli:did:plc:abc...`, `connector:gmail-01`, `admin:system` |
 
-These fields are **never accepted from external callers**. The staging handler derives them from the authenticated request context (caller type, agent DID, token kind, device role). Only Brain — authenticated via its service key — can relay provenance for Telegram and D2D flows (Phase 2+), because those messages arrive at Brain first and are forwarded to Core's staging inbox on behalf of the original sender.
+These fields are **never accepted from external callers**. The staging handler derives them from the authenticated request context (caller type, agent DID, token kind, device role). Only Brain — authenticated via its service key — can forward provenance for Telegram and D2D flows (Phase 2+), because those messages arrive at Brain first and are forwarded to Core's staging inbox on behalf of the original sender.
 
 ---
 
@@ -4131,12 +4136,23 @@ CREATE TABLE outbox (
 
 After 5 retries (~3 hours): nudge to user: *"I couldn't reach Sancho's Dina. His node may be offline. Want me to try again later?"* User can approve (requeue with fresh count), decline (archived), or ignore (expires at 24h TTL).
 
-**Phase 1 fallback: Relay for NAT/firewall situations**
-- Some home servers (Raspberry Pi behind a router) can't accept inbound connections
-- For these cases, the DID Document points to a relay endpoint instead
-- Relay receives a simple forward envelope: `{type: "dina/forward", to: "did:plc:...", payload: "<encrypted blob>"}`. Relay peels the outer layer, forwards the inner blob. ~100 lines of code.
-- Relay sees only: encrypted blob + recipient DID. Cannot read content.
-- Community-run or self-hosted relays. User chooses which — and can switch by updating their DID Document.
+**Default: MsgBox for outbound-only Home Nodes**
+
+Most Home Nodes (Raspberry Pi, laptop, VPS behind NAT) cannot accept inbound connections. The MsgBox (`msgbox/`) solves this:
+
+- Home Node opens an **outbound WebSocket** to the MsgBox at startup (e.g., `wss://mailbox.dinakernel.com`). Authenticated via Ed25519 challenge-response.
+- Senders resolve the recipient's DID Document → find `#dina-messaging` service with type `DinaMsgBox` → POST the NaCl-encrypted blob to the MsgBox's `/forward` endpoint (Ed25519 signed, rate-limited).
+- MsgBox looks up the recipient's WebSocket connection and pushes the blob. If offline, durably buffers in SQLite (100 msgs / 10 MiB / 24h TTL per DID). Buffer drains on reconnect.
+- MsgBox never decrypts content. Sees only: encrypted blob + recipient DID + sender DID.
+- Self-hosted or community-run. User chooses which by updating their DID Document.
+
+**Sovereignty upgrade: DinaDirectHTTPS**
+
+Users who expose a public endpoint (Cloudflare Tunnel, VPS, Tailscale Funnel) update their DID Document:
+```json
+{ "type": "DinaDirectHTTPS", "serviceEndpoint": "https://dina.yourname.com/msg" }
+```
+Senders POST directly — no MsgBox needed. Same crypto, same message format. The transport layer (`ResolveServiceEndpoint`) branches on service type automatically.
 
 **Phase 2: Full DIDComm v2 wire compatibility + direct peer-to-peer**
 - Encryption envelope upgraded to standard JWE (ECDH-1PU+A256KW). Plaintext messages unchanged.

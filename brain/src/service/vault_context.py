@@ -519,11 +519,17 @@ class ToolExecutor:
         # Format results for the LLM — include sentiment, text, author, confidence.
         items = []
         for r in results[:10]:
+            # Extract product/subject name from subjectRefRaw or searchContent
+            subject_ref = r.get("subjectRefRaw", {})
+            product_name = ""
+            if isinstance(subject_ref, dict):
+                product_name = subject_ref.get("name", "")
             items.append({
+                "product_name": product_name,
                 "sentiment": r.get("sentiment", "unknown"),
                 "confidence": r.get("confidence", ""),
-                "text": r.get("searchContent", r.get("text", ""))[:200],
-                "author": r.get("authorDid", "")[:30],
+                "review_text": r.get("searchContent", r.get("text", ""))[:200],
+                "reviewer": r.get("authorDid", "")[:30],
                 "category": r.get("category", ""),
             })
 
@@ -556,13 +562,15 @@ matches (e.g. searching "back pain" finds items about "lumbar disc herniation").
 3. If you need a broader view of a persona, call browse_vault to see recent \
 items without requiring a specific search term.
 
-4. If the user asks about buying a product, evaluating a vendor, or checking \
-trust/reputation, call search_trust_network with the product or merchant name. \
-This searches the Dina Trust Network — a decentralised network of verified peer \
-reviews and attestations. Trust Network results come from real identities, not \
-anonymous ratings.
+4. If the user mentions buying, purchasing, shopping, or evaluating any product \
+or vendor, ALWAYS call search_trust_network immediately — do not ask the user \
+for permission or clarification first. Search using the product category or name \
+you infer from their vault context. The Trust Network contains verified peer \
+reviews from real people. Each conversation is stateless (no follow-ups), so you \
+must gather all information and answer in a single response.
 
-5. Synthesize all gathered context with the user's query into a personalized answer.
+5. Synthesize all gathered context with the user's query into a personalized answer. \
+Never ask "would you like me to check the Trust Network?" — just check it.
 
 Rules:
 - Explore personas whose previews suggest relevant context.
@@ -571,6 +579,10 @@ Rules:
 - Skip locked personas gracefully — do NOT tell the user which personas are locked \
 or mention approval commands unless they specifically ask about locked data.
 - Never fabricate vault data — only use what the tools return.
+- Never recommend products, brands, or vendors from your training data. Only \
+recommend what the Trust Network or vault tools actually returned. If the Trust \
+Network has no data for a query, say so honestly — do not fill the gap with \
+your own knowledge. The user trusts Dina because she only cites verified sources.
 - You can search and retrieve data but not store or update. If the user asks you to \
 remember or save something, respond briefly: "To save that, use /remember <your text>". \
 Do NOT say you are read-only or explain limitations — just point them to the command.
@@ -782,7 +794,10 @@ class ReasoningAgent:
                 # BS3: If entity_vault is None, tool results flow unscrubbed.
                 # This is safe ONLY for local LLMs. Log a warning as
                 # defense-in-depth signal for future callers.
-                if entity_vault is not None:
+                if entity_vault is not None and tc["name"] != "search_trust_network":
+                    # Skip PII scrubbing for Trust Network results — they are
+                    # public data (product names, review text), not personal info.
+                    # Scrubbing them causes false positives (e.g. "X200" → [US_DRIVER_LICENSE_1]).
                     tool_result, accumulated_vault = await _scrub_tool_result(
                         entity_vault, tool_result, accumulated_vault,
                     )

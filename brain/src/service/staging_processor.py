@@ -62,6 +62,7 @@ class StagingProcessor:
         event_extractor: Any = None,
         persona_selector: Any = None,
         reminder_planner: Any = None,
+        telegram: Any = None,
     ) -> None:
         self._core = core
         self._enrichment = enrichment
@@ -70,6 +71,7 @@ class StagingProcessor:
         self._event_extractor = event_extractor
         self._selector = persona_selector
         self._reminder_planner = reminder_planner
+        self._telegram = telegram
 
     async def process_pending(self, limit: int = 10) -> int:
         """Claim and classify pending staging items.
@@ -254,6 +256,16 @@ class StagingProcessor:
                                 )
                             except Exception:
                                 pass  # best-effort
+
+                            # Push reminder plan to Telegram with Edit/Delete buttons.
+                            if self._telegram and hasattr(self._telegram, "send_reminder_plan"):
+                                try:
+                                    if not self._telegram._paired_users:
+                                        await self._telegram.load_paired_users()
+                                    for chat_id in self._telegram._paired_users:
+                                        await self._telegram.send_reminder_plan(chat_id, plan_result)
+                                except Exception:
+                                    pass  # best-effort
                     except Exception as exc:
                         log.warning("staging.reminder_plan_failed",
                                     id=item_id, error=str(exc))

@@ -78,6 +78,8 @@ class TelegramService:
         self._paired_users: set[int] = set()
         self._bot: Any = None  # Set via set_bot() after construction
 
+    _pds_publisher: Any = None  # Set externally after construction
+
     def set_bot(self, bot: Any) -> None:
         """Inject the bot adapter reference (for outbound nudges).
 
@@ -215,7 +217,7 @@ class TelegramService:
             # Poll staging status by ID (same contract as CLI's remember-status).
             # Core triggers Brain drain after ingest; we wait for terminal state.
             result_msg = "Noted."
-            for _ in range(15):  # up to ~15 seconds
+            for _ in range(30):  # up to ~30 seconds (pro model is slower)
                 await asyncio.sleep(1)
                 try:
                     status = await self._core.staging_status(staging_id)
@@ -524,7 +526,8 @@ class TelegramService:
             elif "egress blocked" in error_msg:
                 await update.message.reply_text(f"Sending to {contact_name} is blocked by your policy.")
             else:
-                await update.message.reply_text(f"Failed to send to {contact_name}.")
+                log.warning("telegram.send_failed", extra={"contact": contact_name, "error": error_msg})
+                await update.message.reply_text(f"Could not deliver message to {contact_name}. Please try again later.")
 
     # ------------------------------------------------------------------
     # /ask command
@@ -649,10 +652,22 @@ class TelegramService:
 
         # --- No default action — guide the user ---
         await update.message.reply_text(
-            "Currently I support these commands:\n\n"
-            "/ask <question> — query your vault\n"
-            "/remember <text> — store a memory\n"
-            "/send Name: message — send to another Dina"
+            "Here's what I can do:\n\n"
+            "*Memory*\n"
+            "/ask <question> — ask me anything\n"
+            "/remember <text> — store a memory\n\n"
+            "*Dina-to-Dina*\n"
+            "/send Name: message — message another Dina\n"
+            "/contact list — show your contacts\n"
+            "/contact add Name: did:plc:... — add a contact\n\n"
+            "*Trust Network*\n"
+            "/review Product: your review — publish a review\n"
+            "/vouch Name: reason — vouch for someone\n"
+            "/flag Name: reason — flag a bad actor\n"
+            "/trust Name — check trust score\n\n"
+            "*Info*\n"
+            "/status — your DID and node health",
+            parse_mode="Markdown",
         )
 
     # ------------------------------------------------------------------
@@ -789,6 +804,11 @@ class TelegramService:
             except Exception:
                 if query.message:
                     await query.message.reply_text("Failed to delete reminder.")
+            return
+
+        # Trust publish buttons (Publish / Cancel).
+        if data.startswith("trust_yes:") or data == "trust_no":
+            await self._handle_trust_callback(update)
             return
 
         # Edit button uses switch_inline_query_current_chat — no callback needed.
@@ -939,3 +959,367 @@ class TelegramService:
                 "telegram.store_failed",
                 extra={"error": str(exc)},
             )
+
+    # ── Trust Network Commands (/vouch, /review, /flag, /trust) ──────────
+
+    async def handle_status(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/status — show your Dina's identity and health."""
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        try:
+            resp = await self._core._request("GET", "/healthz")
+            health = resp.json()
+            # Get DID from /v1/did
+            try:
+                did_resp = await self._core._request("GET", "/v1/did")
+                did_doc = did_resp.json()
+                did = did_doc.get("id", "unknown")
+            except Exception:
+                did = "unknown"
+
+            lines = [
+                f"*Your Dina*",
+                f"DID: `{did}`",
+                f"Status: {health.get('status', '?')}",
+                f"Version: {health.get('version', '?')}",
+            ]
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        except Exception as exc:
+            await update.message.reply_text(f"Failed: {exc}")
+
+    async def handle_vouch(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/vouch Name: reason — vouch for a contact on the Trust Network."""
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        text = " ".join(context.args) if context.args else ""
+        if ":" not in text:
+            await update.message.reply_text(
+                "Usage: /vouch Name: reason\n"
+                "Example: /vouch Sancho: Known him for 10 years, trustworthy"
+            )
+            return
+
+        name, reason = text.split(":", 1)
+        name = name.strip()
+        reason = reason.strip()
+
+        # Resolve contact name → DID
+        did = await self._resolve_contact_did(name)
+        if not did:
+            await update.message.reply_text(f"Contact '{name}' not found.")
+            return
+
+        # Confirmation
+        cb_data = json.dumps({"act": "trust_publish", "cmd": "vouch", "did": did, "name": name, "text": reason})
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Publish", callback_data=f"trust_yes:{did[:20]}"),
+            InlineKeyboardButton("Cancel", callback_data="trust_no"),
+        ]])
+        # Store pending publish in memory for callback
+        self._pending_trust = {"cmd": "vouch", "did": did, "name": name, "text": reason}
+        await update.message.reply_text(
+            f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+
+    async def handle_review(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/review Product: review text — publish a product review to the Trust Network."""
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        text = " ".join(context.args) if context.args else ""
+        if ":" not in text:
+            await update.message.reply_text(
+                "Usage: /review Product: your review\n"
+                "Example: /review Aeron Chair: Fixed my back pain in 2 weeks"
+            )
+            return
+
+        product, review = text.split(":", 1)
+        product = product.strip()
+        review = review.strip()
+
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Publish", callback_data=f"trust_yes:review"),
+            InlineKeyboardButton("Cancel", callback_data="trust_no"),
+        ]])
+        self._pending_trust = {"cmd": "review", "product": product, "text": review}
+        await update.message.reply_text(
+            f"Review of *{_escape_markdown(product)}*:\n_{_escape_markdown(review)}_\n\nPublish to Trust Network?",
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+
+    async def handle_flag(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/flag DID_or_name: reason — flag a bad actor on the Trust Network."""
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        text = " ".join(context.args) if context.args else ""
+        if ":" not in text:
+            await update.message.reply_text(
+                "Usage: /flag Name: reason\n"
+                "Example: /flag ScamSeller: Sent counterfeit product"
+            )
+            return
+
+        target, reason = text.split(":", 1)
+        target = target.strip()
+        reason = reason.strip()
+
+        # Try to resolve as contact name, otherwise treat as DID
+        did = await self._resolve_contact_did(target)
+        if not did and target.startswith("did:"):
+            did = target
+
+        if not did:
+            await update.message.reply_text(f"Could not resolve '{target}'. Use a contact name or DID.")
+            return
+
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Publish", callback_data=f"trust_yes:flag"),
+            InlineKeyboardButton("Cancel", callback_data="trust_no"),
+        ]])
+        self._pending_trust = {"cmd": "flag", "did": did, "target": target, "text": reason}
+        await update.message.reply_text(
+            f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+
+    async def handle_trust(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/trust Name_or_DID — query trust score (read-only, no publish)."""
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        text = " ".join(context.args) if context.args else ""
+        if not text:
+            await update.message.reply_text(
+                "Usage: /trust Name or DID\n"
+                "Example: /trust Sancho"
+            )
+            return
+
+        # Resolve name → DID
+        did = await self._resolve_contact_did(text.strip())
+        if not did and text.strip().startswith("did:"):
+            did = text.strip()
+        if not did:
+            await update.message.reply_text(f"Could not resolve '{text.strip()}'.")
+            return
+
+        # Query trust profile from AppView via Core
+        try:
+            profile = await self._core.query_trust_profile(did)
+        except Exception:
+            profile = None
+
+        if not profile:
+            await update.message.reply_text(f"No trust data found for {text.strip()}.")
+            return
+
+        score = profile.get("overallTrustScore", "?")
+        atts = profile.get("attestationSummary", {})
+        total = atts.get("total", 0)
+        pos = atts.get("positive", 0)
+        vouches = profile.get("vouchCount", 0)
+
+        await update.message.reply_text(
+            f"Trust: *{_escape_markdown(text.strip())}*\n"
+            f"Score: {score}\n"
+            f"Attestations: {total} ({pos} positive)\n"
+            f"Vouches: {vouches}",
+            parse_mode="Markdown",
+        )
+
+    async def _handle_trust_callback(self, update: Update) -> None:
+        """Handle Publish/Cancel callback for trust commands."""
+        query = update.callback_query
+        await query.answer()
+        data = query.data or ""
+
+        if data == "trust_no":
+            await query.edit_message_text("Cancelled.")
+            self._pending_trust = None
+            return
+
+        if not data.startswith("trust_yes:"):
+            return
+
+        pending = getattr(self, "_pending_trust", None)
+        if not pending:
+            await query.edit_message_text("Nothing to publish (expired).")
+            return
+
+        if not self._pds_publisher:
+            await query.edit_message_text("Trust publishing not configured (no PDS connection).")
+            self._pending_trust = None
+            return
+
+        cmd = pending["cmd"]
+        try:
+            if cmd == "vouch":
+                result = await self._pds_publisher.publish_vouch(
+                    subject_did=pending["did"],
+                    text=pending["text"],
+                )
+                await query.edit_message_text(
+                    f"Published vouch for {pending['name']}.\n"
+                    f"URI: `{result.get('uri', '?')}`",
+                    parse_mode="Markdown",
+                )
+            elif cmd == "review":
+                result = await self._pds_publisher.publish_review(
+                    subject_name=pending["product"],
+                    text=pending["text"],
+                )
+                await query.edit_message_text(
+                    f"Published review of {pending['product']}.\n"
+                    f"URI: `{result.get('uri', '?')}`",
+                    parse_mode="Markdown",
+                )
+            elif cmd == "flag":
+                result = await self._pds_publisher.publish_flag(
+                    subject_did=pending["did"],
+                    text=pending["text"],
+                )
+                await query.edit_message_text(
+                    f"Flagged {pending['target']}.\n"
+                    f"URI: `{result.get('uri', '?')}`",
+                    parse_mode="Markdown",
+                )
+        except Exception as exc:
+            await query.edit_message_text(f"Publish failed: {exc}")
+            log.warning("trust_publish_failed", extra={"cmd": cmd, "error": str(exc)})
+        finally:
+            self._pending_trust = None
+
+    # ── Contact Management (/contact) ──────────────────────────────────
+
+    async def handle_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/contact add|delete|list — manage your contacts.
+
+        Usage:
+          /contact add Name did:plc:xyz
+          /contact delete Name
+          /contact list
+        """
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        args = context.args or []
+        if not args:
+            await update.message.reply_text(
+                "Usage:\n"
+                "  /contact add Name did:plc:...\n"
+                "  /contact delete Name\n"
+                "  /contact list"
+            )
+            return
+
+        action = args[0].lower()
+
+        if action == "list":
+            try:
+                resp = await self._core._request("GET", "/v1/contacts")
+                contacts = resp.json().get("contacts", [])
+                if not contacts:
+                    await update.message.reply_text("No contacts.")
+                    return
+                lines = []
+                for c in contacts:
+                    name = c.get("display_name", "") or c.get("name", "?")
+                    did = c.get("did", "?")
+                    trust = c.get("trust_level", "")
+                    lines.append(f"  {name} — `{did[:35]}...` {trust}")
+                await update.message.reply_text(
+                    f"*Contacts ({len(contacts)}):*\n" + "\n".join(lines),
+                    parse_mode="Markdown",
+                )
+            except Exception as exc:
+                await update.message.reply_text(f"Failed: {exc}")
+            return
+
+        if action == "add":
+            # Parse "add Name: did:plc:..." (colon separator, consistent with /send)
+            rest = " ".join(args[1:])
+            if ":" not in rest or not rest.split(":", 1)[1].strip().startswith("did:"):
+                await update.message.reply_text(
+                    "Usage: /contact add Name: did:plc:...\n"
+                    "Example: /contact add Sancho: did:plc:abc123"
+                )
+                return
+            name, did = rest.split(":", 1)
+            name = name.strip()
+            did = did.strip()
+            if not did.startswith("did:"):
+                await update.message.reply_text("DID must start with did:")
+                return
+            # Check if contact with this name already exists
+            existing = await self._resolve_contact_did(name)
+            if existing:
+                await update.message.reply_text(f"Contact '{name}' already exists. Use a different name or /contact delete {name} first.", parse_mode="Markdown")
+                return
+            try:
+                await self._core._request(
+                    "POST", "/v1/contacts",
+                    json={"did": did, "name": name, "trust_level": "verified"},
+                )
+                await update.message.reply_text(f"Contact added: *{_escape_markdown(name)}* (`{did[:30]}...`)", parse_mode="Markdown")
+            except Exception as exc:
+                await update.message.reply_text(f"Failed: {exc}")
+            return
+
+        if action == "delete" or action == "remove":
+            if len(args) < 2:
+                await update.message.reply_text("Usage: /contact delete Name")
+                return
+            name = args[1]
+            # Find DID by name — include broken entries (any DID format)
+            did = None
+            try:
+                resp = await self._core._request("GET", "/v1/contacts")
+                for c in resp.json().get("contacts", []):
+                    display = c.get("display_name", "") or c.get("name", "")
+                    if display.lower() == name.lower() and c.get("did"):
+                        did = c["did"]
+                        break
+            except Exception:
+                pass
+            if not did:
+                await update.message.reply_text(f"Contact '{name}' not found.")
+                return
+            try:
+                await self._core._request("DELETE", f"/v1/contacts/{did}")
+                await update.message.reply_text(f"Deleted: {name}")
+            except Exception as exc:
+                await update.message.reply_text(f"Failed: {exc}")
+            return
+
+        await update.message.reply_text(
+            "Unknown action. Use: add, delete, or list"
+        )
+
+    async def _resolve_contact_did(self, name: str) -> str | None:
+        """Resolve a contact display name to a DID."""
+        try:
+            resp = await self._core._request("GET", "/v1/contacts")
+            contacts = resp.json().get("contacts", [])
+            for c in contacts:
+                display = c.get("display_name", "") or c.get("name", "")
+                did = c.get("did", "")
+                # Skip invalid entries (must be a proper DID)
+                if display.lower() == name.lower() and did.startswith("did:plc:"):
+                    return did
+        except Exception:
+            pass
+        return None

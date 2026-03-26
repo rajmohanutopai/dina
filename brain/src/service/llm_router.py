@@ -44,7 +44,7 @@ _FTS_ONLY_TASKS = frozenset({"fts_lookup", "keyword_search"})
 _LIGHTWEIGHT_TASKS = frozenset({
     "intent_classification", "summarize", "summarization",
     "guard_scan", "silence_classify",
-    "complex_reasoning",  # agentic tool-calling loop — lite handles this well
+    # complex_reasoning removed — needs primary model for reliable tool calling
     "multi_step",
 })
 
