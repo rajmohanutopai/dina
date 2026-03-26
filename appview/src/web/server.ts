@@ -13,6 +13,21 @@ import { logger } from '@/shared/utils/logger.js'
 const db = createDb()
 const port = Number(process.env.PORT ?? 3000)
 
+// Ensure FTS search_vector column exists (idempotent, runs on every startup).
+// Drizzle push creates the table but cannot express GENERATED ALWAYS AS.
+;(async () => {
+  try {
+    await db.execute(sql`
+      ALTER TABLE attestations ADD COLUMN IF NOT EXISTS search_vector tsvector
+        GENERATED ALWAYS AS (to_tsvector('english', coalesce(search_content, ''))) STORED
+    `)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_attestations_search
+        ON attestations USING GIN (search_vector)
+    `)
+  } catch { /* table may not exist yet — ingester creates it first */ }
+})()
+
 // --- Per-IP rate limiting (HIGH-01: bounded LRU, proxy guard) ---
 const TRUST_PROXY = process.env.TRUST_PROXY === '1'
 const RATE_LIMIT_RPM = parseInt(process.env.RATE_LIMIT_RPM || '60', 10)

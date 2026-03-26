@@ -1,0 +1,160 @@
+# Dina Shared Infrastructure — Hetzner Deployment
+#
+# Services:
+#   pds.dinakernel.com      — Community PDS (AT Protocol, hosts user repos)
+#   mailbox.dinakernel.com   — D2D encrypted mailbox (WebSocket + HTTP)
+#   appview.dinakernel.com  — Trust Network (5 xRPC endpoints)
+#
+# Internal (not exposed):
+#   jetstream               — PDS firehose → JSON WebSocket
+#   postgres                — AppView database
+#   ingester                — Jetstream → Postgres
+#   scorer                  — Background trust scoring (9 jobs)
+#
+# TLS: Caddy reverse proxy with automatic Let's Encrypt.
+#
+# Usage:
+#   cp .env.example .env    # fill in secrets
+#   docker compose -f docker-compose.infra.yml up -d
+
+services:
+  # ── Caddy (TLS termination + reverse proxy) ──
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      msgbox: { condition: service_healthy }
+      appview-web: { condition: service_healthy }
+
+  # ── Community PDS (AT Protocol) ──
+  pds:
+    image: ghcr.io/bluesky-social/pds:0.4
+    restart: always
+    volumes:
+      - pds-data:/pds
+    environment:
+      PDS_HOSTNAME: ${PDS_HOSTNAME:-pds.dinakernel.com}
+      PDS_DATA_DIRECTORY: /pds
+      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
+      PDS_DID_PLC_URL: https://plc.directory
+      PDS_REPORT_SERVICE_URL: ""
+      PDS_ADMIN_PASSWORD: ${PDS_ADMIN_PASSWORD}
+      PDS_JWT_SECRET: ${PDS_JWT_SECRET}
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${PDS_ROTATION_KEY}
+      PDS_INVITE_REQUIRED: "true"
+      PDS_PORT: 3000
+      NODE_ENV: production
+      LOG_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/xrpc/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── D2D MsgBox (encrypted mailbox) ──
+  msgbox:
+    build:
+      context: ../../msgbox
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      MSGBOX_LISTEN_ADDR: ":7700"
+      MSGBOX_LOG_LEVEL: info
+      MSGBOX_DATA_DIR: /data
+    volumes:
+      - msgbox-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7700/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Jetstream (PDS firehose → JSON WebSocket) ──
+  jetstream:
+    image: ghcr.io/bluesky-social/jetstream:sha-e027425
+    platform: linux/amd64
+    restart: always
+    environment:
+      JETSTREAM_WS_URL: ws://pds:3000/xrpc/com.atproto.sync.subscribeRepos
+      JETSTREAM_LISTEN_ADDR: ":6008"
+      JETSTREAM_LIVENESS_TTL: "300s"
+    depends_on:
+      pds: { condition: service_healthy }
+
+  # ── AppView PostgreSQL ──
+  postgres:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_DB: dina_trust
+      POSTGRES_USER: dina
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── AppView Ingester (Jetstream → Postgres) ──
+  appview-ingester:
+    build:
+      context: ../../appview
+    command: ["node", "dist/src/ingester/main.js"]
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
+      DATABASE_POOL_MAX: "20"
+      JETSTREAM_URL: ws://jetstream:6008
+      NODE_ENV: production
+      LOG_LEVEL: info
+    depends_on:
+      postgres: { condition: service_healthy }
+      jetstream: { condition: service_started }
+
+  # ── AppView Scorer (background trust scoring) ──
+  appview-scorer:
+    build:
+      context: ../../appview
+    command: ["node", "dist/src/scorer/main.js"]
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
+      NODE_ENV: production
+      LOG_LEVEL: info
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # ── AppView Web (5 xRPC trust endpoints) ──
+  appview-web:
+    build:
+      context: ../../appview
+    command: ["node", "dist/src/web/server.js"]
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
+      PORT: "3000"
+      NODE_ENV: production
+      RATE_LIMIT_RPM: "60"
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  caddy-data:
+  caddy-config:
+  pds-data:
+  msgbox-data:
+  postgres-data:
