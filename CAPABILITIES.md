@@ -185,7 +185,7 @@ Sancho's Dina:
 Contact Alonso Added
 ```
 
-Now that both know each other, they can talk to each other. Currently one way communication is also possible (only one person knows the contact of the other)
+Now that both know each other, they can talk to each other. Please note that if A does not know about B, messages from B will be quarantined and will not be shown to A
 
 ```
 Sancho:
@@ -225,7 +225,10 @@ Publish to Trust Network?
 [Publish] [Cancel]
 Published review of ErgoMax 205.
 URI: at://did:plc:pmsxrxnraasohaqr3euwy6j/com.dina.trust.attestation/3mhsfgdcwqc2r
+```
 
+Now someone else, who wants to buy the chair gets this review as part of their recommendation
+```
 Sancho: 
 /ask I want to buy a chair
 Dina:
