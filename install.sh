@@ -873,9 +873,21 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
             echo "DINA_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
             echo "DINA_PDS_ADMIN_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
 
-            echo -e "  ${GREEN}✓${RESET} Trust Network identity created: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
-            _PDS_REGISTERED=true
-            break
+            # Verify the credentials work before declaring success.
+            _PDS_VERIFY=$(curl -sf -X POST "${_COMMUNITY_PDS}/xrpc/com.atproto.server.createSession" \
+                -H "Content-Type: application/json" \
+                -d "{\"identifier\":\"${_PDS_FULL_HANDLE}\",\"password\":\"${_PDS_PW}\"}" 2>&1 || true)
+            _PDS_VERIFY_DID=$(echo "${_PDS_VERIFY}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('did',''))" 2>/dev/null || true)
+            if [ -n "${_PDS_VERIFY_DID}" ]; then
+                echo -e "  ${GREEN}✓${RESET} Trust Network identity created: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
+                _PDS_REGISTERED=true
+                break
+            else
+                echo -e "  ${YELLOW}⚠${RESET} Account created but auth verification failed. Retrying..."
+                _PDS_SUFFIX=$(openssl rand -hex 2)
+                _PDS_HANDLE_INPUT="${_PDS_BASE}${_PDS_SUFFIX}"
+                continue
+            fi
         else
             # Name collision — regenerate suffix and retry
             _PDS_SUFFIX=$(openssl rand -hex 2)
