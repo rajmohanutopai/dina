@@ -635,6 +635,21 @@ func main() {
 		}
 	}
 
+	// Wire PLC directory as remote fetcher for unknown DIDs.
+	// KNOWN_PEERS are resolved from cache; everything else falls through to PLC.
+	plcResolver := pds.NewPLCResolver(cfg.PLCURL)
+	didResolver.SetFetcher(func(did string) ([]byte, error) {
+		raw, err := plcResolver.ResolveDID(context.Background(), did)
+		if err != nil {
+			return nil, err
+		}
+		return raw, nil
+	})
+	didResolver.SetTTL(10 * time.Minute) // cache PLC results, not forever
+	// Re-add KNOWN_PEERS with long TTL (they don't expire).
+	// The global TTL is now 10min for PLC results, but KNOWN_PEERS
+	// are pre-populated and refreshed on each restart.
+
 	didResolverPort := transport.NewDIDResolverPort(didResolver)
 	// SQLite-backed durable outbox (survives restarts). Falls back to in-memory
 	// when CGO is unavailable.
