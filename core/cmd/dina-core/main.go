@@ -498,16 +498,22 @@ func main() {
 			}
 		}
 
-		// Update PLC directory with MsgBox service so other nodes can
-		// discover this node's D2D endpoint. PDS creates the DID with
-		// only #atproto_pds — we add #dina_messaging here.
+		// Update PLC directory with MsgBox service and Ed25519 key so other
+		// nodes can discover this node's D2D endpoint and encrypt messages.
+		// PDS creates the DID with only #atproto (secp256k1) — we add
+		// #dina_messaging service and the Ed25519 verification method.
 		if ownDID != "" && msgboxURL != "" {
 			rotKey, rotErr := k256Mgr.GenerateOrLoad()
 			if rotErr != nil {
 				slog.Warn("PLC update: rotation key not available", "error", rotErr)
 			} else {
+				// Build Ed25519 did:key for the verification method.
+				ed25519PubKey := signingPrivKey.Public().(ed25519.PublicKey)
+				multicodecKey := append([]byte{0xed, 0x01}, ed25519PubKey...)
+				ed25519DIDKey := "did:key:z" + base58.Encode(multicodecKey)
+
 				go func() {
-					if err := pds.UpdatePLCServices(
+					if err := pds.UpdatePLCDocument(
 						context.Background(), plcURL, ownDID, rotKey,
 						map[string]pds.PLCService{
 							"dina_messaging": {
@@ -515,8 +521,11 @@ func main() {
 								Endpoint: msgboxURL,
 							},
 						},
+						map[string]string{
+							"dina_signing": ed25519DIDKey,
+						},
 					); err != nil {
-						slog.Warn("PLC update: failed to add messaging service", "error", err)
+						slog.Warn("PLC update: failed to update DID document", "error", err)
 					}
 				}()
 			}

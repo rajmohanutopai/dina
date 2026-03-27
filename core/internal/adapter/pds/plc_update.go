@@ -60,9 +60,10 @@ func init() {
 	}
 }
 
-// UpdatePLCServices fetches the current PLC document, adds the given
-// services, signs with the rotation key, and submits the update.
-func UpdatePLCServices(ctx context.Context, plcURL, did string, rotationKey *atcrypto.PrivateKeyK256, addServices map[string]PLCService) error {
+// UpdatePLCDocument fetches the current PLC document, adds the given
+// services and verification methods, signs with the rotation key, and
+// submits the update. Pass nil for addVerificationMethods to skip.
+func UpdatePLCDocument(ctx context.Context, plcURL, did string, rotationKey *atcrypto.PrivateKeyK256, addServices map[string]PLCService, addVerificationMethods map[string]string) error {
 	if plcURL == "" {
 		plcURL = defaultPLCURL
 	}
@@ -99,24 +100,30 @@ func UpdatePLCServices(ctx context.Context, plcURL, did string, rotationKey *atc
 		return fmt.Errorf("plc update: parse latest operation: %w", err)
 	}
 
-	// 2. Check if all services already exist.
-	allExist := true
+	// 2. Check if everything already exists.
+	needsUpdate := false
 	for key := range addServices {
 		if _, exists := latestOp.Services[key]; !exists {
-			allExist = false
+			needsUpdate = true
 			break
 		}
 	}
-	if allExist {
-		slog.Info("plc update: services already present, skipping", "did", did)
+	for key := range addVerificationMethods {
+		if _, exists := latestOp.VerificationMethods[key]; !exists {
+			needsUpdate = true
+			break
+		}
+	}
+	if !needsUpdate {
+		slog.Info("plc update: already up to date, skipping", "did", did)
 		return nil
 	}
 
-	// 3. Build the new operation — copy everything, add services.
+	// 3. Build the new operation — copy everything, add services + verification methods.
 	newOp := plcOperationJSON{
 		Type:                "plc_operation",
 		RotationKeys:        latestOp.RotationKeys,
-		VerificationMethods: latestOp.VerificationMethods,
+		VerificationMethods: make(map[string]string),
 		AlsoKnownAs:         latestOp.AlsoKnownAs,
 		Services:            make(map[string]PLCService),
 		Prev:                &latest.CID,
@@ -126,6 +133,12 @@ func UpdatePLCServices(ctx context.Context, plcURL, did string, rotationKey *atc
 	}
 	for k, v := range addServices {
 		newOp.Services[k] = v
+	}
+	for k, v := range latestOp.VerificationMethods {
+		newOp.VerificationMethods[k] = v
+	}
+	for k, v := range addVerificationMethods {
+		newOp.VerificationMethods[k] = v
 	}
 
 	// 4. Sign: encode unsigned op as DAG-CBOR → SHA-256 → sign with rotation key.

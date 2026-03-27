@@ -310,7 +310,18 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 	}
 
 	// HIGH-05: Decode the recipient's multibase-encoded Ed25519 public key.
-	multibaseKey := doc.VerificationMethod[0].PublicKeyMultibase
+	// Prefer #dina_signing (Ed25519) over #atproto (secp256k1).
+	multibaseKey := ""
+	for _, vm := range doc.VerificationMethod {
+		if strings.Contains(vm.ID, "dina_signing") || strings.Contains(vm.ID, "key-1") {
+			multibaseKey = vm.PublicKeyMultibase
+			break
+		}
+	}
+	if multibaseKey == "" {
+		// Fallback: first verification method (backward compat with KNOWN_PEERS).
+		multibaseKey = doc.VerificationMethod[0].PublicKeyMultibase
+	}
 	recipientEd25519Pub, err := decodeMultibase(multibaseKey)
 	if err != nil {
 		return fmt.Errorf("transport: decode recipient public key: %w", err)
