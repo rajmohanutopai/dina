@@ -105,9 +105,9 @@ services:
       - DINA_TELEGRAM_TOKEN=${DINA_TELEGRAM_TOKEN:-}
       - DINA_TELEGRAM_ALLOWED_USERS=${DINA_TELEGRAM_ALLOWED_USERS:-}
       - DINA_TELEGRAM_ALLOWED_GROUPS=${DINA_TELEGRAM_ALLOWED_GROUPS:-}
-      - DINA_PDS_URL=${DINA_PDS_PUBLIC_URL:-https://pds.dinakernel.com}
-      - DINA_PDS_HANDLE=${DINA_PDS_HANDLE:-dina.test}
-      - DINA_PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
+      - DINA_PDS_URL=${DINA_COMMUNITY_PDS_URL:-https://pds.dinakernel.com}
+      - DINA_PDS_HANDLE=${DINA_COMMUNITY_PDS_HANDLE:-}
+      - DINA_PDS_ADMIN_PASSWORD=${DINA_COMMUNITY_PDS_PASSWORD:-}
       - DINA_TIMEZONE=${DINA_TIMEZONE:-UTC}
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8200/healthz').raise_for_status()"]

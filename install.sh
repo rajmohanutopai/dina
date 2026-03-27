@@ -869,9 +869,9 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
 
             echo "" >> "${ENV_FILE}"
             echo "# Community PDS (Trust Network)" >> "${ENV_FILE}"
-            echo "DINA_PDS_PUBLIC_URL=${_COMMUNITY_PDS}" >> "${ENV_FILE}"
-            echo "DINA_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
-            echo "DINA_PDS_ADMIN_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
+            echo "DINA_COMMUNITY_PDS_URL=${_COMMUNITY_PDS}" >> "${ENV_FILE}"
+            echo "DINA_COMMUNITY_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
+            echo "DINA_COMMUNITY_PDS_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
 
             # Verify the credentials work before declaring success.
             _PDS_VERIFY=$(curl -sf -X POST "${_COMMUNITY_PDS}/xrpc/com.atproto.server.createSession" \
