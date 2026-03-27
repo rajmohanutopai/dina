@@ -808,6 +808,24 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
+# Step 8a: Shared infrastructure defaults (MsgBox, AppView, Timezone)
+# ---------------------------------------------------------------------------
+# Write production defaults so fresh installs connect to shared services.
+# Users can override later via dina-admin or docker-compose.override.yml.
+
+if ! grep -q '^DINA_MSGBOX_URL=' "${ENV_FILE}" 2>/dev/null; then
+    echo "" >> "${ENV_FILE}"
+    echo "# Shared infrastructure" >> "${ENV_FILE}"
+    echo "DINA_MSGBOX_URL=wss://mailbox.dinakernel.com" >> "${ENV_FILE}"
+    echo "DINA_APPVIEW_URL=https://appview.dinakernel.com" >> "${ENV_FILE}"
+fi
+if ! grep -q '^DINA_TIMEZONE=' "${ENV_FILE}" 2>/dev/null; then
+    # Default to UTC; users set their timezone in .env or override.
+    echo "DINA_TIMEZONE=${TZ:-UTC}" >> "${ENV_FILE}"
+fi
+verbose_ok "Infrastructure: MsgBox + AppView + PLC (dinakernel.com)"
+
+# ---------------------------------------------------------------------------
 # Step 8b: Community PDS account (for Trust Network publishing)
 # ---------------------------------------------------------------------------
 # Creates an account on the community PDS so /review, /vouch, /flag work.
