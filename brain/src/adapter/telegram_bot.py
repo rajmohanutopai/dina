@@ -14,9 +14,7 @@ Third-party imports:  python-telegram-bot (telegram, telegram.ext).
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import time
 from typing import Any, Callable, Coroutine
 
 from telegram import Update
@@ -41,32 +39,32 @@ HandlerCallback = Callable[
 
 
 def _wrap_with_req_id(handler: HandlerCallback) -> HandlerCallback:
-    """Middleware: bind request_id to structlog context and patch reply_text.
+    """Middleware: bind request_id to structlog context.
 
     Uses the same ``bind_request_id`` as the HTTP middleware so all logs
-    from a Telegram handler share one request_id.  Every outbound
-    reply_text gets a small ``[req_id]`` footer for log correlation.
+    from a Telegram handler share one request_id.  The req_id is sent
+    as a small follow-up message after the handler completes.
+
+    Phase 2 will introduce a BotReply class that handlers return instead
+    of calling reply_text directly, making cross-cutting concerns trivial.
     """
 
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         from ..infra.logging import bind_request_id
 
-        rid = bind_request_id()  # generates UUID, binds to structlog context
-
-        # Patch reply_text on the message object.
-        if update.message and hasattr(update.message, "reply_text"):
-            original = update.message.reply_text
-
-            async def reply_with_id(text: str, **kwargs: Any) -> Any:
-                if kwargs.get("parse_mode") == "Markdown":
-                    text = f"{text}\n`[{rid}]`"
-                else:
-                    text = f"{text}\n[{rid}]"
-                return await original(text, **kwargs)
-
-            update.message.reply_text = reply_with_id  # type: ignore[assignment]
+        rid = bind_request_id()
+        context.user_data["req_id"] = rid  # type: ignore[index]
 
         await handler(update, context)
+
+        # Append req_id as a quiet follow-up for log correlation.
+        if update.effective_chat:
+            try:
+                await update.effective_chat.send_message(
+                    f"_[{rid}]_", parse_mode="Markdown",
+                )
+            except Exception:
+                pass
 
     return wrapper
 
