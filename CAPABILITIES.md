@@ -26,7 +26,10 @@ Dina:
 Emma loves dinosaurs
 ```
 
-Dina sets reminders for you automatically based on your messages
+## She Creates Reminders
+
+Dina sets reminders for you automatically based on your messages - these reminders are enriched by what Dina knows about the people and situation
+
 ```
 You:
 /remember Emma's birthday is on Nov 7th
@@ -39,6 +42,19 @@ Reminders set:
 [87b5] 🎂 Nov 06, 10:00 AM — Emma's birthday is tomorrow, you may want to buy a dinosaur-themed gift.
 [2c9d] 🎂 Nov 07, 09:00 AM — It is Emma's birthday today, you may wish to contact her.
 ```
+
+On Nov 06 10:00 AM
+```
+Dina:
+🎂  Emma's birthday is tomorrow, you may want to buy a dinosaur-themed gift.
+```
+
+On Nov 07 09:00 AM
+```
+Dina:
+It is Emma's birthday today, you may wish to contact her.
+```
+
 
 ## She is secure
 
@@ -95,6 +111,8 @@ Your account is with Barclay's (ending in 0102).
 
 Any AI agent acting on your behalf submits its intent to Dina before acting. Dina decides.
 
+Here, safe actions like searching for a chair is approved automatically, while a more dangerous action like drafting a resignation letter or sending money to someone, is sent to user's telegram for approval.
+
 ```
 (.venv) ~/dina % dina validate --session $S search "best ergonomic chair"
 status: approved
@@ -113,7 +131,14 @@ status: denied
 risk: BLOCKED
 ```
 
-Safe things pass silently. Risky things get flagged — you approve or deny on Telegram.
+User can then approve or deny
+
+```
+🔐 claw-agent wants to send resignation email to HR 
+[Approve] [Deny] [Approve Once]
+✅ Approved: apr-1774423823840426930
+```
+
 
 You can configure what's safe and what's not.
 ```
@@ -126,9 +151,41 @@ You can configure what's safe and what's not.
 
 ## She Talks to Other Dinas
 
-Dina can talk to other Dinas. Messages are end-to-end encrypted and delivered via the MsgBox — your Dina connects outbound, no public IP needed. If the recipient is offline, messages are buffered and delivered when they reconnect.
+Dina can talk to other Dinas. You have to setup contact information first, and then use it to talk to other Dinas.
 
-Here, Sancho tells his Dina to inform Alonso's Dina. Alonso's Dina notifies, and then creates a reminder with context it already knows about Sancho.
+If the recipient is offline, messages are buffered and delivered when they reconnect.
+
+Here, Sancho tells his Dina to inform Alonso's Dina about his imminent arrival. 
+
+Alonso's Dina notifies, and then creates a reminder with context it already knows about Sancho. In the future, Sancho's Dina should be able to inform Alonso's Dina without being explicitly asked by Sancho.
+
+```
+Alonso:
+/status
+Alonso's Dina:
+DID: did:plc:4vxx6zmqadfmfmogcciow37n
+
+Sancho:
+/status
+Sancho's Dina:
+DID: did:plc:3vxxqewqadfmfmogcci48hdf
+```
+
+Sancho sends his DID (decentralized id) to Alonso through some channel. Alonso sends his DID to Sancho.
+
+```
+Alonso:
+/contact add Sancho: did:plc:3vxxqewqadfmfmogcci48hdf
+Alonso's Dina:
+Contact Sancho Added
+
+Sancho:
+/contact add Alonso: did:plc:4vxx6zmqadfmfmogcciow37n
+Sancho's Dina:
+Contact Alonso Added
+```
+
+Now that both know each other, they can talk to each other. Currently one way communication is also possible (only one person knows the contact of the other)
 
 ```
 Sancho:
@@ -142,9 +199,77 @@ Alonso's Dina (message 1):
 
 (message 2)
 Reminders set:
-[d444] 📅 Mar 25, 11:14 AM — Sancho is arriving at home in 30 minutes. He enjoys cardamom tea and his mother has been unwell, so you may wish to ask how she is doing.
+[d444] 📅 Mar 25, 11:14 AM — Sancho is arriving at home in 5 minutes. He enjoys cardamom tea and his mother has been unwell, so you may wish to ask how she is doing.
 [Delete] [Edit]
 ```
+
+At 11:14 AM, In telegram, 
+```
+Dina:
+Sancho is arriving at home in 5 minutes. He enjoys cardamom tea and his mother has been unwell, so you may wish to ask how she is doing.
+```
+
+---
+
+## Trust Network
+
+Every Dina is part of a decentralised trust network. Trust is earned via multiple reviews. The idea is that every Dina updates reviews and thus what we get is real trusted systems. Trust rings tries to defeat sybil attacks
+
+```
+# In telegram
+You:
+/review ErgoMax 205: This is the best chair for back pain I have seen
+
+Dina:
+Publish to Trust Network?
+[Publish] [Cancel]
+Published review of ErgoMax 205.
+URI: at://did:plc:pmsxrxnraasohaqr3euwy6j/com.dina.trust.attestation/3mhsfgdcwqc2r
+
+Sancho: 
+/ask I want to buy a chair
+Dina:
+Based on your personal notes, I see that you work from home 3 days a week, spend long hours at your desk, and suffer from chronic lower back pain as a result. I also note that you have an office furniture budget of $1,000 to $1,500.
+I checked the verified Trust Network for recommendations from real peers. Here are the top highly-rated options:
+**ErgoMax 205**: This also has high-confidence positive reviews specifically highlighting it as an excellent chair for back pain.
+```
+
+You also have /vouch, /trust and /
+
+### The Purchase Journey
+
+Dina combines your personal context with the Trust Network to give you advice that's actually relevant to you.
+
+```
+You:
+/ask I want to buy a chair
+
+Dina:
+Considering you work from home three days a week for long hours
+and have mentioned concerns about chronic lower back pain,
+investing in an ergonomic office chair is a great idea.
+
+Given your budget of $1,000–1,500, you have access to some
+excellent options. Would you like me to check the Trust Network
+for what verified reviewers say?
+
+You:
+/ask Yes, check the trust network for ergonomic chairs
+
+Dina:
+The Trust Network contains high-confidence positive reviews
+for ergonomic chairs in your budget range.
+
+Peers who purchased this chair highlight that it provides
+excellent lumbar support and is well-suited for long
+work-from-home sessions. One reviewer noted that it helped
+alleviate chronic back pain within two weeks, which aligns
+with your health concerns.
+```
+
+You said "chair." You never said "ergonomic." Dina figured that out because she knows you have back pain (health vault), work from home (work vault), and your spending patterns (finance vault). Then she checked the Trust Network — reviews from real people with real experience, not anonymous star ratings.
+
+---
 
 ### Seven message types
 
@@ -224,61 +349,7 @@ Your DID is permanent. If your machine dies, your recovery phrase restores every
 
 ---
 
-## Trust Network
 
-Every Dina is part of a decentralised trust network. Trust is earned via multiple reviews. The idea is that every Dina updates reviews and thus what we get is real trusted systems. Trust rings tries to defeat sybil attacks
-
-```
-# In telegram
-You:
-/review ErgoMax 205: This is the best chair for back pain I have seen
-Dina:
-[Publish] [Cancel]
-Published
-
-Sancho: 
-/ask I want to buy a chair
-Dina:
-Based on your personal notes, I see that you work from home 3 days a week, spend long hours at your desk, and suffer from chronic lower back pain as a result. I also note that you have an office furniture budget of $1,000 to $1,500.
-I checked the verified Trust Network for recommendations from real peers. Here are the top highly-rated options:
-**ErgoMax 205**: This also has high-confidence positive reviews specifically highlighting it as an excellent chair for back pain.
-```
-
-
-### The Purchase Journey
-
-Dina combines your personal context with the Trust Network to give you advice that's actually relevant to you.
-
-```
-You:
-/ask I want to buy a chair
-
-Dina:
-Considering you work from home three days a week for long hours
-and have mentioned concerns about chronic lower back pain,
-investing in an ergonomic office chair is a great idea.
-
-Given your budget of $1,000–1,500, you have access to some
-excellent options. Would you like me to check the Trust Network
-for what verified reviewers say?
-
-You:
-/ask Yes, check the trust network for ergonomic chairs
-
-Dina:
-The Trust Network contains high-confidence positive reviews
-for ergonomic chairs in your budget range.
-
-Peers who purchased this chair highlight that it provides
-excellent lumbar support and is well-suited for long
-work-from-home sessions. One reviewer noted that it helped
-alleviate chronic back pain within two weeks, which aligns
-with your health concerns.
-```
-
-You said "chair." You never said "ergonomic." Dina figured that out because she knows you have back pain (health vault), work from home (work vault), and your spending patterns (finance vault). Then she checked the Trust Network — reviews from real people with real experience, not anonymous star ratings.
-
----
 
 ## Your Data is Yours
 

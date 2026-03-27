@@ -222,7 +222,13 @@ class StagingProcessor:
                 # session-scoped access control. Both are required for
                 # AccessPersona() to enforce the correct grant check.
                 item_session = ""
-                item_agent_did = origin_did  # origin_did is the originating agent/device DID
+                # Only pass agent_did for actual agent callers.
+                # User-originated items (telegram, admin) should NOT set agent_did,
+                # otherwise Core's auth middleware treats Brain as an "agent" caller
+                # and requires session-based approval even for open personas.
+                item_agent_did = ""
+                if ingress_channel not in ("telegram", "admin", ""):
+                    item_agent_did = origin_did
                 try:
                     _meta = json.loads(item.metadata or "{}")
                     item_session = _meta.get("session", "")

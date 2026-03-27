@@ -495,25 +495,42 @@ class ToolExecutor:
         if not query:
             return {"error": "query is required"}
 
+        log.info("trust_search.request", extra={
+            "query": query, "category": category or "product-review",
+        })
+
         result = None
         try:
-            # Try category-based search first (more reliable than FTS)
+            # Search with both query text and category for best relevance
             result = await self._core.search_trust_network(
-                query="", category=category or "product-review", subject_type="", limit=10,
+                query=query, category=category or "product-review", subject_type="", limit=10,
             )
-            # If no results with category, try text search
+            raw_count = len(result.get("results", [])) if result else 0
+            log.info("trust_search.appview_response", extra={
+                "query": query, "category": category or "product-review",
+                "result_count": raw_count,
+            })
+            # If no results with category filter, try text-only search
             if result and not result.get("results"):
+                log.info("trust_search.fallback_text_only", extra={"query": query})
                 result = await self._core.search_trust_network(
                     query=query, category="", subject_type="", limit=10,
                 )
+                raw_count = len(result.get("results", [])) if result else 0
+                log.info("trust_search.fallback_response", extra={
+                    "query": query, "result_count": raw_count,
+                })
         except Exception as exc:
+            log.warning("trust_search.error", extra={"query": query, "error": str(exc)})
             return {"error": str(exc)}
 
         if result is None:
+            log.info("trust_search.no_result", extra={"query": query})
             return {"items": [], "message": f"Trust Network not available or no data for '{query}'."}
 
         results = result.get("results", [])
         if not results:
+            log.info("trust_search.empty", extra={"query": query})
             return {"items": [], "message": f"No trust attestations found for '{query}'."}
 
         # Format results for the LLM — include sentiment, text, author, confidence.
@@ -532,6 +549,11 @@ class ToolExecutor:
                 "reviewer": r.get("authorDid", "")[:30],
                 "category": r.get("category", ""),
             })
+
+        log.info("trust_search.formatted", extra={
+            "query": query, "item_count": len(items),
+            "products": [i["product_name"] for i in items if i["product_name"]],
+        })
 
         return {
             "items": items,

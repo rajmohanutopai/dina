@@ -31,7 +31,12 @@ from typing import Any
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+import datetime as _dt
+import os
+import zoneinfo
+
 from ..port.core_client import CoreClient
+from .user_commands import UserCommandService, validate_name, validate_did
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +45,22 @@ _KV_PAIRED_USERS = "telegram_paired_users"
 
 # Telegram Markdown V1 special characters that need escaping.
 _MD_ESCAPE_CHARS = r"_*`["
+
+# User timezone from env (e.g. "Asia/Kolkata"). Falls back to UTC.
+try:
+    _USER_TZ = zoneinfo.ZoneInfo(os.environ.get("DINA_TIMEZONE", "UTC"))
+except Exception:
+    _USER_TZ = _dt.timezone.utc
+
+
+def _format_local_time(iso_str: str) -> str:
+    """Convert an ISO datetime string (UTC) to the user's local time display."""
+    try:
+        dt = _dt.datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        local_dt = dt.astimezone(_USER_TZ)
+        return local_dt.strftime("%b %d, %I:%M %p")
+    except Exception:
+        return iso_str
 
 
 def _escape_markdown(text: str) -> str:
@@ -70,6 +91,7 @@ class TelegramService:
         core: CoreClient,
         allowed_user_ids: set[int] | None = None,
         allowed_group_ids: set[int] | None = None,
+        user_commands: UserCommandService | None = None,
     ) -> None:
         self._guardian = guardian
         self._core = core
@@ -77,8 +99,15 @@ class TelegramService:
         self._allowed_groups: set[int] = allowed_group_ids or set()
         self._paired_users: set[int] = set()
         self._bot: Any = None  # Set via set_bot() after construction
+        self._cmds = user_commands or UserCommandService(core)
 
-    _pds_publisher: Any = None  # Set externally after construction
+    @property
+    def _pds_publisher(self) -> Any:
+        return self._cmds.pds_publisher
+
+    @_pds_publisher.setter
+    def _pds_publisher(self, pub: Any) -> None:
+        self._cmds.pds_publisher = pub
 
     def set_bot(self, bot: Any) -> None:
         """Inject the bot adapter reference (for outbound nudges).
@@ -214,10 +243,9 @@ class TelegramService:
                 "origin_kind": "user",
             })
 
-            # Poll staging status by ID (same contract as CLI's remember-status).
-            # Core triggers Brain drain after ingest; we wait for terminal state.
-            result_msg = "Noted."
-            for _ in range(30):  # up to ~30 seconds (pro model is slower)
+            # Poll staging status — wait for Brain classification + Core resolve.
+            result_msg = "Stored."
+            for _ in range(30):
                 await asyncio.sleep(1)
                 try:
                     status = await self._core.staging_status(staging_id)
@@ -233,7 +261,6 @@ class TelegramService:
                     elif s == "failed":
                         result_msg = "Failed to store."
                         break
-                    # received, classifying — still processing, continue polling
                 except Exception as _exc:
                     log.debug("telegram.suppressed_error", exc_info=_exc)
                     break
@@ -257,12 +284,7 @@ class TelegramService:
                         for r in plan.get("reminders", []):
                             fire = r.get("fire_at", "")
                             msg = r.get("message", "")
-                            try:
-                                import datetime as _dt
-                                dt = _dt.datetime.fromisoformat(fire.replace("Z", "+00:00"))
-                                time_str = dt.strftime("%b %d, %I:%M %p")
-                            except Exception:
-                                time_str = fire
+                            time_str = _format_local_time(fire)
                             emoji = {"birthday": "🎂", "appointment": "📅",
                                      "payment_due": "💳", "deadline": "⏰"}.get(
                                          r.get("kind", ""), "🔔")
@@ -383,7 +405,7 @@ class TelegramService:
                 "kind": "reminder",
             })
 
-            time_str = dt.strftime("%b %d, %I:%M %p")
+            time_str = _format_local_time(fire_at)
             await update.message.reply_text(
                 f"✏️ Reminder updated:\n{time_str} — {message}"
             )
@@ -400,11 +422,7 @@ class TelegramService:
     async def handle_send(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle /send <contact> <message> — send a D2D message.
-
-        Resolves the contact name to a DID, asks the LLM to classify
-        the message type and structure the body, then sends via Core.
-        """
+        """Handle /send <contact>: <message> — send a D2D message."""
         if not update.effective_user or not update.message:
             return
 
@@ -425,7 +443,6 @@ class TelegramService:
             )
             return
 
-        # Parse: everything before colon is contact name, after is message.
         colon_pos = text.index(":")
         contact_name = text[:colon_pos].strip()
         message_text = text[colon_pos + 1:].strip()
@@ -436,98 +453,23 @@ class TelegramService:
             )
             return
 
-        # 1. Resolve contact name → DID.
-        contact_did = None
-        try:
-            resp = await self._core._request("GET", "/v1/contacts")
-            for c in resp.json().get("contacts", []):
-                if c.get("name", "").lower() == contact_name.lower():
-                    contact_did = c.get("did")
-                    contact_name = c.get("name")  # use canonical case
-                    break
-        except Exception as _exc:
-            log.debug("telegram.suppressed_error", exc_info=_exc)
-
-        if not contact_did:
-            await update.message.reply_text(
-                f"Contact '{contact_name}' not found. Check your contacts."
-            )
-            return
-
-        # 2. Ask LLM to classify the message type and structure the body.
-        try:
-            import datetime as _dt
-            now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            classify_prompt = (
-                f"You are classifying a Dina-to-Dina message.\n"
-                f"Today: {now}\n"
-                f"Sender wants to tell {contact_name}: \"{message_text}\"\n\n"
-                f"Classify into one of these v1 message types and structure the body:\n"
-                f"- presence.signal: status updates, arriving, leaving, ETA\n"
-                f"  Body: {{\"status\": \"arriving|leaving|delayed\", \"eta_minutes\": N, \"location_label\": \"...\"}}\n"
-                f"- coordination.request: proposing plans, asking availability\n"
-                f"  Body: {{\"action\": \"propose_time|ask_availability|ask_confirmation\", \"context\": \"...\"}}\n"
-                f"- coordination.response: accepting, declining plans\n"
-                f"  Body: {{\"action\": \"accept|decline|counter_propose\", \"note\": \"...\"}}\n"
-                f"- social.update: sharing life events, personal news\n"
-                f"  Body: {{\"text\": \"...\", \"category\": \"life_event|context|profile\"}}\n"
-                f"- safety.alert: warnings about scams, compromised accounts\n"
-                f"  Body: {{\"message\": \"...\", \"severity\": \"low|medium|high|critical\"}}\n\n"
-                f"Respond with JSON only:\n"
-                f"{{\"type\": \"<message_type>\", \"body\": {{...}}}}"
-            )
-            resp = await self._guardian._llm.route(
-                task_type="classification",
-                prompt=classify_prompt,
-                messages=[
-                    {"role": "system", "content": "Classify D2D message type. JSON only."},
-                    {"role": "user", "content": classify_prompt},
-                ],
-            )
-            import json as _json
-            raw = resp.get("content", "").strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            classified = _json.loads(raw)
-            msg_type = classified.get("type", "social.update")
-            body = classified.get("body", {"text": message_text})
-        except Exception:
-            # Fallback: send as social.update.
-            msg_type = "social.update"
-            body = {"text": message_text, "category": "context"}
-
-        # 3. Send via Core.
-        try:
-            import base64
-            body_b64 = base64.b64encode(
-                json.dumps(body).encode()
-            ).decode()
-            await self._core._request("POST", "/v1/msg/send", json={
-                "to": contact_did,
-                "body": body_b64,
-                "type": msg_type,
-            })
-            # Confirm to user.
+        result = await self._cmds.send_d2d(
+            contact_name, message_text, self._guardian._llm,
+        )
+        if result.ok:
             type_label = {
-                "presence.signal": "📬 Presence",
-                "coordination.request": "📅 Coordination",
-                "coordination.response": "📅 Response",
-                "social.update": "💬 Social update",
-                "safety.alert": "🚨 Safety alert",
-                "trust.vouch.request": "🤝 Trust request",
-            }.get(msg_type, msg_type)
+                "presence.signal": "Presence",
+                "coordination.request": "Coordination",
+                "coordination.response": "Response",
+                "social.update": "Social update",
+                "safety.alert": "Safety alert",
+                "trust.vouch.request": "Trust request",
+            }.get(result.data.get("type", ""), result.data.get("type", ""))
             await update.message.reply_text(
                 f"Sent to {contact_name}: {type_label}\n{message_text}"
             )
-        except Exception as exc:
-            error_msg = str(exc)
-            if "not a contact" in error_msg:
-                await update.message.reply_text(f"{contact_name} is not in your contacts.")
-            elif "egress blocked" in error_msg:
-                await update.message.reply_text(f"Sending to {contact_name} is blocked by your policy.")
-            else:
-                log.warning("telegram.send_failed", extra={"contact": contact_name, "error": error_msg})
-                await update.message.reply_text(f"Could not deliver message to {contact_name}. Please try again later.")
+        else:
+            await update.message.reply_text(result.message)
 
     # ------------------------------------------------------------------
     # /ask command
@@ -567,6 +509,9 @@ class TelegramService:
             )
             return
 
+        import hashlib
+        req_id = hashlib.md5(f"{chat_id}:{time.time()}".encode()).hexdigest()[:6]
+        log.info("telegram.ask", extra={"req_id": req_id, "prompt": text[:80]})
         try:
             result = await self._guardian.process_event({
                 "type": "reason",
@@ -575,17 +520,22 @@ class TelegramService:
                 "source": "telegram",
                 "chat_id": chat_id,
                 "user_id": user_id,
+                "request_id": req_id,
             })
             response_text = self._extract_response(result)
             if response_text:
-                await update.message.reply_text(response_text)
+                await update.message.reply_text(
+                    f"{response_text}\n\n`[{req_id}]`",
+                    parse_mode="Markdown",
+                )
         except Exception as exc:
             log.error(
                 "telegram.ask_failed",
-                extra={"error": type(exc).__name__, "chat_id": chat_id},
+                extra={"error": type(exc).__name__, "chat_id": chat_id, "req_id": req_id},
             )
             await update.message.reply_text(
-                "Something went wrong. Please try again."
+                f"Something went wrong. Please try again.\n\n`[{req_id}]`",
+                parse_mode="Markdown",
             )
 
     # ------------------------------------------------------------------
@@ -892,11 +842,7 @@ class TelegramService:
             msg = r.get("message", "")
             short_id = r.get("short_id", "?")
             rem_id = r.get("id", "")
-            try:
-                dt = _dt.datetime.fromisoformat(fire.replace("Z", "+00:00"))
-                time_str = dt.strftime("%b %d, %I:%M %p")
-            except Exception:
-                time_str = fire
+            time_str = _format_local_time(fire)
             emoji = {"birthday": "🎂", "appointment": "📅",
                      "payment_due": "💳", "deadline": "⏰"}.get(
                          r.get("kind", ""), "🔔")
@@ -968,26 +914,18 @@ class TelegramService:
         """/status — show your Dina's identity and health."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
-        try:
-            resp = await self._core._request("GET", "/healthz")
-            health = resp.json()
-            # Get DID from /v1/did
-            try:
-                did_resp = await self._core._request("GET", "/v1/did")
-                did_doc = did_resp.json()
-                did = did_doc.get("id", "unknown")
-            except Exception:
-                did = "unknown"
-
-            lines = [
-                f"*Your Dina*",
-                f"DID: `{did}`",
-                f"Status: {health.get('status', '?')}",
-                f"Version: {health.get('version', '?')}",
-            ]
-            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-        except Exception as exc:
-            await update.message.reply_text(f"Failed: {exc}")
+        result = await self._cmds.get_status()
+        if not result.ok:
+            await update.message.reply_text(result.message)
+            return
+        d = result.data
+        lines = [
+            "*Your Dina*",
+            f"DID: `{d['did']}`",
+            f"Status: {d['status']}",
+            f"Version: {d['version']}",
+        ]
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     async def handle_vouch(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -1007,20 +945,24 @@ class TelegramService:
         name = name.strip()
         reason = reason.strip()
 
+        # Validate inputs
+        err = validate_name(name)
+        if err:
+            await update.message.reply_text(err)
+            return
+
         # Resolve contact name → DID
-        did = await self._resolve_contact_did(name)
+        did = await self._cmds.resolve_contact_did(name)
         if not did:
             await update.message.reply_text(f"Contact '{name}' not found.")
             return
 
         # Confirmation
-        cb_data = json.dumps({"act": "trust_publish", "cmd": "vouch", "did": did, "name": name, "text": reason})
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("Publish", callback_data=f"trust_yes:{did[:20]}"),
             InlineKeyboardButton("Cancel", callback_data="trust_no"),
         ]])
-        # Store pending publish in memory for callback
-        self._pending_trust = {"cmd": "vouch", "did": did, "name": name, "text": reason}
+        self._pending_trust = {"cmd": "vouch", "name": name, "text": reason}
         await update.message.reply_text(
             f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
             parse_mode="Markdown",
@@ -1044,6 +986,12 @@ class TelegramService:
         product, review = text.split(":", 1)
         product = product.strip()
         review = review.strip()
+
+        # Validate product name
+        err = validate_name(product)
+        if err:
+            await update.message.reply_text(err)
+            return
 
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("Publish", callback_data=f"trust_yes:review"),
@@ -1074,8 +1022,17 @@ class TelegramService:
         target = target.strip()
         reason = reason.strip()
 
+        # Validate target — either a name or a DID
+        if target.startswith("did:"):
+            err = validate_did(target)
+        else:
+            err = validate_name(target)
+        if err:
+            await update.message.reply_text(err)
+            return
+
         # Try to resolve as contact name, otherwise treat as DID
-        did = await self._resolve_contact_did(target)
+        did = await self._cmds.resolve_contact_did(target)
         if not did and target.startswith("did:"):
             did = target
 
@@ -1087,7 +1044,7 @@ class TelegramService:
             InlineKeyboardButton("Publish", callback_data=f"trust_yes:flag"),
             InlineKeyboardButton("Cancel", callback_data="trust_no"),
         ]])
-        self._pending_trust = {"cmd": "flag", "did": did, "target": target, "text": reason}
+        self._pending_trust = {"cmd": "flag", "target": target, "text": reason}
         await update.message.reply_text(
             f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
             parse_mode="Markdown",
@@ -1108,35 +1065,17 @@ class TelegramService:
             )
             return
 
-        # Resolve name → DID
-        did = await self._resolve_contact_did(text.strip())
-        if not did and text.strip().startswith("did:"):
-            did = text.strip()
-        if not did:
-            await update.message.reply_text(f"Could not resolve '{text.strip()}'.")
+        result = await self._cmds.query_trust(text)
+        if not result.ok:
+            await update.message.reply_text(result.message)
             return
 
-        # Query trust profile from AppView via Core
-        try:
-            profile = await self._core.query_trust_profile(did)
-        except Exception:
-            profile = None
-
-        if not profile:
-            await update.message.reply_text(f"No trust data found for {text.strip()}.")
-            return
-
-        score = profile.get("overallTrustScore", "?")
-        atts = profile.get("attestationSummary", {})
-        total = atts.get("total", 0)
-        pos = atts.get("positive", 0)
-        vouches = profile.get("vouchCount", 0)
-
+        d = result.data
         await update.message.reply_text(
-            f"Trust: *{_escape_markdown(text.strip())}*\n"
-            f"Score: {score}\n"
-            f"Attestations: {total} ({pos} positive)\n"
-            f"Vouches: {vouches}",
+            f"Trust: *{_escape_markdown(d['display_name'])}*\n"
+            f"Score: {d['score']}\n"
+            f"Attestations: {d['total_attestations']} ({d['positive_attestations']} positive)\n"
+            f"Vouches: {d['vouch_count']}",
             parse_mode="Markdown",
         )
 
@@ -1159,43 +1098,33 @@ class TelegramService:
             await query.edit_message_text("Nothing to publish (expired).")
             return
 
-        if not self._pds_publisher:
-            await query.edit_message_text("Trust publishing not configured (no PDS connection).")
-            self._pending_trust = None
-            return
-
         cmd = pending["cmd"]
         try:
             if cmd == "vouch":
-                result = await self._pds_publisher.publish_vouch(
-                    subject_did=pending["did"],
-                    text=pending["text"],
-                )
-                await query.edit_message_text(
-                    f"Published vouch for {pending['name']}.\n"
-                    f"URI: `{result.get('uri', '?')}`",
-                    parse_mode="Markdown",
+                result = await self._cmds.publish_vouch(
+                    name=pending["name"], reason=pending["text"],
                 )
             elif cmd == "review":
-                result = await self._pds_publisher.publish_review(
-                    subject_name=pending["product"],
-                    text=pending["text"],
-                )
-                await query.edit_message_text(
-                    f"Published review of {pending['product']}.\n"
-                    f"URI: `{result.get('uri', '?')}`",
-                    parse_mode="Markdown",
+                result = await self._cmds.publish_review(
+                    product=pending["product"], review_text=pending["text"],
                 )
             elif cmd == "flag":
-                result = await self._pds_publisher.publish_flag(
-                    subject_did=pending["did"],
-                    text=pending["text"],
+                result = await self._cmds.publish_flag(
+                    target=pending["target"], reason=pending["text"],
                 )
+            else:
+                await query.edit_message_text("Unknown command.")
+                self._pending_trust = None
+                return
+
+            if result.ok:
+                uri = result.data.get("uri", "?") if result.data else "?"
                 await query.edit_message_text(
-                    f"Flagged {pending['target']}.\n"
-                    f"URI: `{result.get('uri', '?')}`",
+                    f"{result.message}\nURI: `{uri}`",
                     parse_mode="Markdown",
                 )
+            else:
+                await query.edit_message_text(result.message)
         except Exception as exc:
             await query.edit_message_text(f"Publish failed: {exc}")
             log.warning("trust_publish_failed", extra={"cmd": cmd, "error": str(exc)})
@@ -1207,50 +1136,44 @@ class TelegramService:
     async def handle_contact(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/contact add|delete|list — manage your contacts.
-
-        Usage:
-          /contact add Name did:plc:xyz
-          /contact delete Name
-          /contact list
-        """
+        """/contact add|delete|list — manage your contacts."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         args = context.args or []
         if not args:
             await update.message.reply_text(
-                "Usage:\n"
-                "  /contact add Name did:plc:...\n"
+                "Supported actions:\n"
+                "  /contact add Name: did:plc:...\n"
                 "  /contact delete Name\n"
-                "  /contact list"
+                "  /contact list\n"
+                "  /contact cleanup"
             )
             return
 
         action = args[0].lower()
 
         if action == "list":
-            try:
-                resp = await self._core._request("GET", "/v1/contacts")
-                contacts = resp.json().get("contacts", [])
-                if not contacts:
-                    await update.message.reply_text("No contacts.")
-                    return
-                lines = []
-                for c in contacts:
-                    name = c.get("display_name", "") or c.get("name", "?")
-                    did = c.get("did", "?")
-                    trust = c.get("trust_level", "")
-                    lines.append(f"  {name} — `{did[:35]}...` {trust}")
-                await update.message.reply_text(
-                    f"*Contacts ({len(contacts)}):*\n" + "\n".join(lines),
-                    parse_mode="Markdown",
-                )
-            except Exception as exc:
-                await update.message.reply_text(f"Failed: {exc}")
+            result = await self._cmds.list_contacts()
+            if not result.ok:
+                await update.message.reply_text(result.message)
+                return
+            contacts = result.data["contacts"]
+            if not contacts:
+                await update.message.reply_text("No contacts.")
+                return
+            lines = []
+            for c in contacts:
+                name = c.get("display_name", "") or c.get("name", "?")
+                did = c.get("did", "?")
+                trust = c.get("trust_level", "")
+                lines.append(f"  {name} — `{did[:35]}...` {trust}")
+            await update.message.reply_text(
+                f"*Contacts ({len(contacts)}):*\n" + "\n".join(lines),
+                parse_mode="Markdown",
+            )
             return
 
         if action == "add":
-            # Parse "add Name: did:plc:..." (colon separator, consistent with /send)
             rest = " ".join(args[1:])
             if ":" not in rest or not rest.split(":", 1)[1].strip().startswith("did:"):
                 await update.message.reply_text(
@@ -1261,65 +1184,34 @@ class TelegramService:
             name, did = rest.split(":", 1)
             name = name.strip()
             did = did.strip()
-            if not did.startswith("did:"):
-                await update.message.reply_text("DID must start with did:")
-                return
-            # Check if contact with this name already exists
-            existing = await self._resolve_contact_did(name)
-            if existing:
-                await update.message.reply_text(f"Contact '{name}' already exists. Use a different name or /contact delete {name} first.", parse_mode="Markdown")
-                return
-            try:
-                await self._core._request(
-                    "POST", "/v1/contacts",
-                    json={"did": did, "name": name, "trust_level": "verified"},
+            result = await self._cmds.add_contact(name, did)
+            if result.ok:
+                await update.message.reply_text(
+                    f"Contact added: *{_escape_markdown(name)}* (`{did[:30]}...`)",
+                    parse_mode="Markdown",
                 )
-                await update.message.reply_text(f"Contact added: *{_escape_markdown(name)}* (`{did[:30]}...`)", parse_mode="Markdown")
-            except Exception as exc:
-                await update.message.reply_text(f"Failed: {exc}")
+            else:
+                await update.message.reply_text(result.message)
             return
 
-        if action == "delete" or action == "remove":
+        if action in ("delete", "remove"):
             if len(args) < 2:
                 await update.message.reply_text("Usage: /contact delete Name")
                 return
-            name = args[1]
-            # Find DID by name — include broken entries (any DID format)
-            did = None
-            try:
-                resp = await self._core._request("GET", "/v1/contacts")
-                for c in resp.json().get("contacts", []):
-                    display = c.get("display_name", "") or c.get("name", "")
-                    if display.lower() == name.lower() and c.get("did"):
-                        did = c["did"]
-                        break
-            except Exception:
-                pass
-            if not did:
-                await update.message.reply_text(f"Contact '{name}' not found.")
-                return
-            try:
-                await self._core._request("DELETE", f"/v1/contacts/{did}")
-                await update.message.reply_text(f"Deleted: {name}")
-            except Exception as exc:
-                await update.message.reply_text(f"Failed: {exc}")
+            name = " ".join(args[1:])
+            result = await self._cmds.delete_contact(name)
+            await update.message.reply_text(result.message)
+            return
+
+        if action == "cleanup":
+            result = await self._cmds.cleanup_contacts()
+            await update.message.reply_text(result.message)
             return
 
         await update.message.reply_text(
-            "Unknown action. Use: add, delete, or list"
+            "Supported actions:\n"
+            "  /contact add Name: did:plc:...\n"
+            "  /contact delete Name\n"
+            "  /contact list\n"
+            "  /contact cleanup"
         )
-
-    async def _resolve_contact_did(self, name: str) -> str | None:
-        """Resolve a contact display name to a DID."""
-        try:
-            resp = await self._core._request("GET", "/v1/contacts")
-            contacts = resp.json().get("contacts", [])
-            for c in contacts:
-                display = c.get("display_name", "") or c.get("name", "")
-                did = c.get("did", "")
-                # Skip invalid entries (must be a proper DID)
-                if display.lower() == name.lower() and did.startswith("did:plc:"):
-                    return did
-        except Exception:
-            pass
-        return None

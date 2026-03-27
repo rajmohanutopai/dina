@@ -109,6 +109,7 @@ class DocumentIngestEvent(_EventBase):
 class ReminderFiredEvent(_EventBase):
     type: Literal["reminder_fired"]
     body: str | dict | None = None
+    payload: dict | None = None
 
 
 # ── Persona access control ───────────────────────────────────────────────

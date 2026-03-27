@@ -44,8 +44,9 @@ _FTS_ONLY_TASKS = frozenset({"fts_lookup", "keyword_search"})
 _LIGHTWEIGHT_TASKS = frozenset({
     "intent_classification", "summarize", "summarization",
     "guard_scan", "silence_classify",
-    # complex_reasoning removed — needs primary model for reliable tool calling
+    "classification",  # persona classification — lite is fine
     "multi_step",
+    # complex_reasoning stays on primary model — needed for tool calling (/ask)
 })
 
 # Heavy model: only for tasks that genuinely need max capability.

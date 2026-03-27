@@ -1959,15 +1959,11 @@ class GuardianLoop:
         }
 
     async def _handle_reminder_fired(self, event: dict) -> dict:
-        """Compose a contextual notification when a reminder fires.
+        """Send the reminder notification as-is when it fires.
 
-        Pipeline (the Deterministic Sandwich — notification boundary):
-            1. Parse reminder metadata (vault_item_id, persona).
-            2. Retrieve the original document from vault.
-            3. Query vault for related personal context.
-            4. PII-scrub the assembled prompt before cloud LLM call.
-            5. Call LLM to compose a contextual notification.
-            6. Rehydrate the notification, then send via Core /v1/notify.
+        The reminder message was already composed by the ReminderPlanner
+        at creation time (with vault context baked in).  No LLM rewrite
+        needed — just deliver the stored message to the user.
         """
         body = event.get("body") or event.get("payload", {})
         if isinstance(body, str):
@@ -1976,18 +1972,13 @@ class GuardianLoop:
             except json.JSONDecodeError:
                 body = {}
 
-        reminder_type = body.get("reminder_type", "")
         kind = body.get("kind", "")
+        reminder_type = body.get("reminder_type", "")
         message = body.get("message", "")
-
-        # Read lineage from direct fields first (set by the enriched fire path).
-        # Fall back to legacy metadata JSON for backward compat.
-        vault_item_id = body.get("source_item_id", "")
-        persona = body.get("persona", "")
         source = body.get("source", "")
+        persona = body.get("persona", "")
 
-        if not vault_item_id or not persona:
-            # Legacy path: parse from metadata JSON.
+        if not persona:
             metadata_str = body.get("metadata", "{}")
             if isinstance(metadata_str, str):
                 try:
@@ -1996,97 +1987,9 @@ class GuardianLoop:
                     metadata = {}
             else:
                 metadata = metadata_str
-            vault_item_id = vault_item_id or metadata.get("vault_item_id", "")
-            persona = persona or metadata.get("persona", "general")
+            persona = metadata.get("persona", "general")
 
-        expiry_date = ""
-
-        # Retrieve the original document from vault.
-        doc_context = ""
-        if vault_item_id:
-            try:
-                doc = await self._core.get_vault_item(persona, vault_item_id)
-                if doc:
-                    doc_context = (
-                        f"Document: {doc.summary or ''}\n"
-                        f"Details: {doc.metadata or ''}\n"
-                    )
-            except Exception as exc:
-                log.warning("guardian.reminder.doc_fetch_failed", error=str(exc))
-
-        # Query vault for personal context (address, insurance, previous renewals).
-        personal_context = ""
-        try:
-            results = await self._core.query_vault(
-                persona, "RTO renewal insurance address driving", mode="fts5", limit=10
-            )
-            for item in results:
-                personal_context += f"- {item.summary or ''}: {item.body_text or ''}\n"
-        except Exception as exc:
-            log.warning("guardian.reminder.context_fetch_failed", error=str(exc))
-
-        # Compose contextual notification via LLM.
-        notification_prompt = (
-            "You are Dina, a sovereign personal AI assistant. A reminder has fired "
-            "and you need to compose a brief, helpful notification for your human.\n\n"
-            f"Reminder: {message}\n"
-            f"Expiry date: {expiry_date}\n\n"
-        )
-        if doc_context:
-            notification_prompt += f"Original document:\n{doc_context}\n"
-        if personal_context:
-            notification_prompt += f"Related personal context:\n{personal_context}\n"
-        notification_prompt += (
-            "\nCompose a concise notification (2-4 sentences) that:\n"
-            "1. States the specific deadline and days remaining\n"
-            "2. References relevant personal context (RTO location, insurance, previous experience)\n"
-            "3. Offers a concrete next step\n"
-            "Be warm but concise. No emojis. No fluff."
-        )
-
-        # PII-scrub the assembled prompt before sending to cloud LLM.
-        # The prompt may contain vault metadata (extracted fields, license
-        # identifiers) — these must not leave the Home Node.
-        # FAIL-CLOSED: if scrub fails, use the generic reminder message
-        # instead of sending raw PII to the cloud LLM.
-        pii_vault: dict | None = None
-        scrubbed_prompt = None
-        if self._entity_vault:
-            try:
-                scrubbed_prompt, pii_vault = await self._entity_vault.scrub(
-                    notification_prompt,
-                )
-            except Exception as exc:
-                log.error("guardian.reminder.scrub_failed", error=str(exc))
-
-        if scrubbed_prompt is not None:
-            try:
-                result = await self._llm.route(
-                    task_type="complex_reasoning",
-                    prompt=scrubbed_prompt,
-                    persona_tier="open",
-                )
-                notification_text = result.get("content", message)
-            except Exception as exc:
-                log.warning("guardian.reminder.llm_failed", error=str(exc))
-                notification_text = message
-        else:
-            # Scrub failed or no entity vault — use the generic reminder
-            # message.  Never send raw PII to the cloud LLM.
-            log.warning("guardian.reminder.skipping_llm", reason="PII scrub unavailable")
-            notification_text = message
-
-        # Rehydrate PII tokens in the LLM response so the human sees
-        # real names, addresses, dates — not anonymised placeholders.
-        if pii_vault and self._entity_vault:
-            notification_text = self._entity_vault.rehydrate(
-                notification_text, pii_vault,
-            )
-            pii_vault.clear()
-
-        # Send notification via Core.
-        # Use kind as the effective category (payment_due, appointment, birthday).
-        # Fall back to reminder_type for legacy reminders.
+        notification_text = message
         effective_type = kind or reminder_type
 
         try:
@@ -3075,6 +2978,7 @@ class GuardianLoop:
             persona_tier = "default"
         provider = event.get("provider")
         skip_vault = event.get("skip_vault_enrichment", False)
+        req_id = event.get("request_id", "")
         # Agent context — forwarded from Core for proper access attribution
         agent_did = event.get("agent_did", "")
         agent_session = event.get("session", "")
@@ -3082,6 +2986,9 @@ class GuardianLoop:
         # propagated to Core so sensitive personas auto-unlock.
         source = event.get("source", "")
         user_origin = source if source in ("telegram", "admin") else ""
+        log.info("guardian.reason.start", extra={
+            "req_id": req_id, "prompt": prompt[:80], "source": source,
+        })
 
         try:
             vault = None
@@ -3179,6 +3086,12 @@ class GuardianLoop:
                 vault = {**(vault or {}), **tool_vault}
 
             pre_rehydrated_content = result.get("content", "")
+            log.info("guardian.reason.llm_response", extra={
+                "req_id": req_id,
+                "content_len": len(pre_rehydrated_content),
+                "content_preview": pre_rehydrated_content[:200],
+                "tools_called": [tc.get("name") for tc in result.get("tools_called", [])],
+            })
             guard_result = None
             vault_items: list = []
 
@@ -3223,9 +3136,19 @@ class GuardianLoop:
                 remove_indices: set[int] = set()
                 # If the reasoning agent called search_trust_network, trust
                 # data is verified — don't strip it as "fabricated."
-                trust_tool_used = "search_trust_network" in (
-                    result.get("tools_called", []) if result else []
+                tools_list = result.get("tools_called", []) if result else []
+                trust_tool_used = any(
+                    tc.get("name") == "search_trust_network"
+                    for tc in tools_list
                 )
+                log.info("guardian.guard_scan_decision", extra={
+                    "req_id": req_id,
+                    "trust_tool_used": trust_tool_used,
+                    "tools_list": [tc.get("name") for tc in tools_list],
+                    "sentence_count": len(sentences),
+                    "consensus_flagged": guard_result.get("consensus_sentences", []),
+                    "fabricated_flagged": guard_result.get("fabricated_sentences", []),
+                })
                 if trust_tool_used:
                     # Trust Network tool returned verified data — only strip
                     # Anti-Her (Law 4, non-negotiable). Skip fabricated/consensus/
@@ -3234,12 +3157,19 @@ class GuardianLoop:
                 else:
                     strip_keys = ["anti_her_sentences", "unsolicited_sentences",
                                   "fabricated_sentences", "consensus_sentences"]
+                log.info("guardian.guard_scan_strip_keys", extra={
+                    "strip_keys": strip_keys,
+                })
                 for key in strip_keys:
                     for idx in guard_result.get(key, []):
                         if isinstance(idx, int) and 1 <= idx <= len(sentences):
                             remove_indices.add(idx)
 
                 if remove_indices:
+                    log.info("guardian.guard_scan_removing", extra={
+                        "remove_indices": sorted(remove_indices),
+                        "sentences_before": len(sentences),
+                    })
                     content = self._remove_sentences(sentences, remove_indices)
                     # If guard_scan removed everything, check WHY:
                     # - anti_her_sentences → redirect to humans (Law 4)

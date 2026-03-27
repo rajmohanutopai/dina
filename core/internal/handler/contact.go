@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -295,10 +296,20 @@ func (h *ContactHandler) HandleDeleteContact(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	did := strings.TrimPrefix(r.URL.Path, "/v1/contacts/")
-	if did == "" || did == r.URL.Path {
+	// Use RawPath when available to preserve percent-encoded segments
+	// (e.g. DIDs with colons: did%3Aplc%3Axyz).  Fall back to Path.
+	path := r.URL.Path
+	if r.URL.RawPath != "" {
+		path = r.URL.RawPath
+	}
+	raw := strings.TrimPrefix(path, "/v1/contacts/")
+	if raw == "" || raw == path {
 		http.Error(w, `{"error":"missing DID in path"}`, http.StatusBadRequest)
 		return
+	}
+	did, err := url.PathUnescape(raw)
+	if err != nil {
+		did = raw
 	}
 
 	if err := h.Contacts.Delete(r.Context(), did); err != nil {
@@ -309,6 +320,42 @@ func (h *ContactHandler) HandleDeleteContact(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
+// HandleDeleteContactByName handles DELETE /v1/contacts/by-name/{name}.
+// Resolves the name to a DID, then deletes.  Used when the stored DID
+// contains path-unsafe characters that break URL routing.
+func (h *ContactHandler) HandleDeleteContactByName(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/v1/contacts/by-name/")
+	if name == "" || name == r.URL.Path {
+		http.Error(w, `{"error":"missing name in path"}`, http.StatusBadRequest)
+		return
+	}
+	decoded, err := url.PathUnescape(name)
+	if err == nil {
+		name = decoded
+	}
+
+	// Resolve name → DID, then delete by DID.
+	did, err := h.Contacts.Resolve(r.Context(), name)
+	if err != nil {
+		http.Error(w, `{"error":"contact not found"}`, http.StatusNotFound)
+		return
+	}
+
+	if err := h.Contacts.Delete(r.Context(), did); err != nil {
+		slog.Warn("failed to delete contact by name", "name", name, "did", did, "error", err)
+		http.Error(w, `{"error":"failed to delete contact"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "name": name})
 }
 
 // extractDIDFromPath extracts a DID segment from a URL path between a prefix and suffix.

@@ -571,12 +571,16 @@ def create_app() -> FastAPI:
         try:
             from .adapter.telegram_bot import TelegramBotAdapter
             from .service.telegram import TelegramService
+            from .service.user_commands import UserCommandService
+
+            user_commands = UserCommandService(core=brain_core_client)
 
             telegram_service = TelegramService(
                 guardian=guardian,
                 core=brain_core_client,
                 allowed_user_ids=set(cfg.telegram_allowed_users),
                 allowed_group_ids=set(cfg.telegram_allowed_groups),
+                user_commands=user_commands,
             )
             telegram_bot = TelegramBotAdapter(
                 bot_token=cfg.telegram_token,
@@ -607,7 +611,7 @@ def create_app() -> FastAPI:
             pds_password = os.environ.get("DINA_PDS_ADMIN_PASSWORD", "")
             if pds_url and pds_handle and pds_password:
                 from .adapter.pds_publisher import PDSPublisher
-                telegram_service._pds_publisher = PDSPublisher(pds_url, pds_handle, pds_password)
+                user_commands.pds_publisher = PDSPublisher(pds_url, pds_handle, pds_password)
                 log.info("brain.pds_publisher.configured", extra={"pds_url": pds_url})
 
             log.info("brain.telegram.configured")
@@ -697,20 +701,40 @@ def create_app() -> FastAPI:
         sync_task = asyncio.create_task(_sync_loop(sync_engine))
 
         # Start Telegram polling if configured.
+        # Runs as a background task with retries so that a slow Core
+        # startup (common on low-power hardware) doesn't permanently
+        # kill the Telegram bot.
+        telegram_task: asyncio.Task | None = None
         if telegram_bot and telegram_service:
-            try:
-                await telegram_service.load_paired_users()
-                await telegram_bot.start()
-                log.info("brain.telegram.polling_started")
-            except Exception as exc:
-                log.error(
-                    "brain.telegram.start_failed",
-                    extra={"error": str(exc)},
-                )
+            async def _start_telegram_with_retry() -> None:
+                backoff = 2
+                max_backoff = 60
+                for attempt in range(1, 31):  # up to 30 attempts (~10 min)
+                    try:
+                        await telegram_service.load_paired_users()
+                        await telegram_bot.start()
+                        log.info("brain.telegram.polling_started")
+                        return
+                    except Exception as exc:
+                        log.warning(
+                            "brain.telegram.start_retry",
+                            extra={
+                                "attempt": attempt,
+                                "backoff": backoff,
+                                "error": str(exc),
+                            },
+                        )
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, max_backoff)
+                log.error("brain.telegram.start_gave_up")
+
+            telegram_task = asyncio.create_task(_start_telegram_with_retry())
 
         yield
 
         # Stop Telegram polling.
+        if telegram_task and not telegram_task.done():
+            telegram_task.cancel()
         if telegram_bot:
             try:
                 await telegram_bot.stop()

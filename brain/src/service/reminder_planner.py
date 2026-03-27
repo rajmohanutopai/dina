@@ -34,15 +34,19 @@ Think about what a thoughtful personal assistant would set up:
   on the due date.
 - For a meeting: a reminder 1 hour before.
 
-Use the vault context provided to make reminders personal and specific. \
-If you know the person likes dinosaurs, mention it in the gift reminder. \
-If you know the dog's name, use it.
-
 Today's date and time: {today}
 
-The user stored: "{content}"
+THE EVENT (this is what the user stored — your reminders MUST be about THIS):
+"{content}"
 
 {vault_context}
+
+CRITICAL: Create reminders ONLY about the event above. \
+The vault context is supplementary — use it to enrich the reminder \
+(e.g. mention what someone likes), but NEVER create reminders about \
+vault items that are unrelated to the event. If the event says \
+"Alonso is arriving", your reminder must be about Alonso arriving, \
+not about vehicle insurance or anything else from the vault.
 
 Create reminders. Each reminder has:
 - fire_at: ISO datetime with timezone (when to notify the user)
@@ -51,7 +55,7 @@ Create reminders. Each reminder has:
 
 Rules:
 - Don't create reminders for dates in the past.
-- Use the user's likely timezone (default UTC if unknown).
+- Use the user's timezone: {timezone}.
 - Tone: polite and informative, never emotional or commanding. \
   State what's happening, when, and any useful context. \
   No cheerleading, no exclamation marks, no motivational language. \
@@ -121,8 +125,15 @@ class ReminderPlanner:
         vault_context = await self._gather_vault_context(content, event_hint)
 
         # 2. Ask LLM to plan reminders.
-        now = _dt.datetime.now(_dt.timezone.utc)
-        today = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        import os as _os
+        tz_name = _os.environ.get("DINA_TIMEZONE", "UTC")
+        try:
+            import zoneinfo as _zi
+            user_tz = _zi.ZoneInfo(tz_name)
+        except Exception:
+            user_tz = _dt.timezone.utc
+        now = _dt.datetime.now(user_tz)
+        today = now.strftime("%Y-%m-%dT%H:%M:%S%z")
 
         context_text = ""
         if vault_context:
@@ -136,11 +147,12 @@ class ReminderPlanner:
             today=today,
             content=content,
             vault_context=context_text,
+            timezone=tz_name,
         )
 
         try:
             resp = await self._llm.route(
-                task_type="complex_reasoning",
+                task_type="summarization",  # lite model: fast, consistent JSON output
                 prompt=prompt,
                 messages=[
                     {"role": "system", "content": "You are a personal reminder planner. Respond with JSON only."},

@@ -805,6 +805,62 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
+# Step 8b: Community PDS account (for Trust Network publishing)
+# ---------------------------------------------------------------------------
+# Creates an account on the community PDS so /review, /vouch, /flag work.
+# The PDS URL defaults to pds.dinakernel.com (set in docker-compose.yml).
+
+_COMMUNITY_PDS="${DINA_COMMUNITY_PDS_URL:-https://pds.dinakernel.com}"
+_PDS_HANDLE_FILE="${SECRETS_DIR}/pds_community_handle"
+
+if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
+    echo -e "  ${BOLD}Trust Network Setup${RESET}"
+    echo ""
+    echo "  To publish reviews, vouches, and flags on the Trust Network,"
+    echo "  Dina needs an account on the community PDS (${_COMMUNITY_PDS})."
+    echo ""
+    read -rp "  Choose a handle (e.g., your name): " _PDS_HANDLE_INPUT
+    if [ -n "${_PDS_HANDLE_INPUT}" ]; then
+        _PDS_FULL_HANDLE="${_PDS_HANDLE_INPUT}.pds.dinakernel.com"
+        _PDS_EMAIL="${_PDS_HANDLE_INPUT}@dina.local"
+        _PDS_PW=$(openssl rand -hex 12)
+
+        _PDS_RESULT=$(curl -sf -X POST "${_COMMUNITY_PDS}/xrpc/com.atproto.server.createAccount" \
+            -H "Content-Type: application/json" \
+            -d "{\"handle\":\"${_PDS_FULL_HANDLE}\",\"email\":\"${_PDS_EMAIL}\",\"password\":\"${_PDS_PW}\"}" 2>&1 || true)
+
+        _PDS_DID=$(echo "${_PDS_RESULT}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('did',''))" 2>/dev/null || true)
+
+        if [ -n "${_PDS_DID}" ] && [ "${_PDS_DID}" != "" ]; then
+            # Save credentials for Brain's PDS publisher
+            echo "${_PDS_FULL_HANDLE}" > "${_PDS_HANDLE_FILE}"
+            echo "${_PDS_PW}" > "${SECRETS_DIR}/pds_community_password"
+            chmod 600 "${SECRETS_DIR}/pds_community_password"
+
+            # Write to .env for Brain container
+            echo "" >> "${ENV_FILE}"
+            echo "# Community PDS (Trust Network)" >> "${ENV_FILE}"
+            echo "DINA_PDS_PUBLIC_URL=${_COMMUNITY_PDS}" >> "${ENV_FILE}"
+            echo "DINA_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
+            echo "DINA_PDS_ADMIN_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
+
+            echo -e "  ${GREEN}✓${RESET} Account created: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
+            echo -e "  ${DIM}DID: ${_PDS_DID}${RESET}"
+            echo -e "  ${DIM}Password saved to ${SECRETS_DIR}/pds_community_password${RESET}"
+        else
+            _PDS_ERROR=$(echo "${_PDS_RESULT}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('message','unknown error'))" 2>/dev/null || echo "unknown error")
+            echo -e "  ${YELLOW}⚠${RESET} PDS account creation failed: ${_PDS_ERROR}"
+            echo -e "  ${DIM}You can create one later with: dina-admin pds register${RESET}"
+        fi
+    else
+        echo -e "  ${DIM}Skipped. You can register later with: dina-admin pds register${RESET}"
+    fi
+    echo ""
+else
+    verbose_ok "Community PDS account: $(cat "${_PDS_HANDLE_FILE}")"
+fi
+
+# ---------------------------------------------------------------------------
 # Step 9: Final banner
 # ---------------------------------------------------------------------------
 
