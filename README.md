@@ -15,11 +15,11 @@
 * **The Vision** - This README is the Vision Document. For you to understand Dina.
 * **Start Here:** [**Open dina.html**](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
-* **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
-* **Advanced Setup:** [Local LLM / Networking / Yggdrasil](./docs/ADVANCED-SETUP.md)
+* **What Works Now:** [Usage Guide](./CAPABILITIES.md))
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **Discussion:** [Join the Discord](https://discord.gg/gDRcrEwy)
+* **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
 
 ---
 

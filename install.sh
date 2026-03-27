@@ -643,6 +643,9 @@ if [ -f "${ENV_FILE}" ]; then
     verbose_ok "Version: ${_DINA_VERSION}"
 fi
 
+# Read owner name (set by wizard in Step 3) for PDS handle derivation.
+_OWNER_NAME=$(sed -n 's/^DINA_OWNER_NAME=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || echo "dina")
+
 # ---------------------------------------------------------------------------
 # Step 5: Build Docker images
 # ---------------------------------------------------------------------------
@@ -816,11 +819,21 @@ _PDS_HANDLE_FILE="${SECRETS_DIR}/pds_community_handle"
 if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
     echo -e "  ${BOLD}Trust Network Setup${RESET}"
     echo ""
-    echo "  To publish reviews, vouches, and flags on the Trust Network,"
-    echo "  Dina needs an account on the community PDS (${_COMMUNITY_PDS})."
-    echo ""
-    read -rp "  Choose a handle (e.g., your name): " _PDS_HANDLE_INPUT
-    if [ -n "${_PDS_HANDLE_INPUT}" ]; then
+
+    # Derive PDS handle from owner name (asked in Step 4b)
+    # Sanitize: lowercase, strip non-alphanumeric, limit to 12 chars
+    _PDS_BASE=$(echo "${_OWNER_NAME}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g' | cut -c1-12)
+    # Fallback if empty or too short
+    if [ ${#_PDS_BASE} -lt 3 ]; then
+        _PDS_BASE="dina"
+    fi
+
+    # Add a short random suffix for uniqueness
+    _PDS_SUFFIX=$(openssl rand -hex 2)
+    _PDS_HANDLE_INPUT="${_PDS_BASE}${_PDS_SUFFIX}"
+
+    _PDS_REGISTERED=false
+    for _PDS_ATTEMPT in 1 2 3; do
         _PDS_FULL_HANDLE="${_PDS_HANDLE_INPUT}.pds.dinakernel.com"
         _PDS_EMAIL="${_PDS_HANDLE_INPUT}@dina.local"
         _PDS_PW=$(openssl rand -hex 12)
@@ -832,28 +845,28 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
         _PDS_DID=$(echo "${_PDS_RESULT}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('did',''))" 2>/dev/null || true)
 
         if [ -n "${_PDS_DID}" ] && [ "${_PDS_DID}" != "" ]; then
-            # Save credentials for Brain's PDS publisher
             echo "${_PDS_FULL_HANDLE}" > "${_PDS_HANDLE_FILE}"
             echo "${_PDS_PW}" > "${SECRETS_DIR}/pds_community_password"
             chmod 600 "${SECRETS_DIR}/pds_community_password"
 
-            # Write to .env for Brain container
             echo "" >> "${ENV_FILE}"
             echo "# Community PDS (Trust Network)" >> "${ENV_FILE}"
             echo "DINA_PDS_PUBLIC_URL=${_COMMUNITY_PDS}" >> "${ENV_FILE}"
             echo "DINA_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
             echo "DINA_PDS_ADMIN_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
 
-            echo -e "  ${GREEN}✓${RESET} Account created: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
-            echo -e "  ${DIM}DID: ${_PDS_DID}${RESET}"
-            echo -e "  ${DIM}Password saved to ${SECRETS_DIR}/pds_community_password${RESET}"
+            echo -e "  ${GREEN}✓${RESET} Trust Network identity created: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
+            _PDS_REGISTERED=true
+            break
         else
-            _PDS_ERROR=$(echo "${_PDS_RESULT}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('message','unknown error'))" 2>/dev/null || echo "unknown error")
-            echo -e "  ${YELLOW}⚠${RESET} PDS account creation failed: ${_PDS_ERROR}"
-            echo -e "  ${DIM}You can create one later with: dina-admin pds register${RESET}"
+            # Name collision — regenerate suffix and retry
+            _PDS_SUFFIX=$(openssl rand -hex 2)
+            _PDS_HANDLE_INPUT="${_PDS_BASE}${_PDS_SUFFIX}"
         fi
-    else
-        echo -e "  ${DIM}Skipped. You can register later with: dina-admin pds register${RESET}"
+    done
+
+    if [ "${_PDS_REGISTERED}" != "true" ]; then
+        echo -e "  ${YELLOW}⚠${RESET} Could not reach community PDS. Trust Network will be configured on next restart."
     fi
     echo ""
 else

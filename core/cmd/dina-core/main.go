@@ -483,6 +483,30 @@ func main() {
 		didMgr.SetPLCClient(plcClient, k256Mgr)
 		didMgr.SetPDSCredentials(cfg.PDSHandle, cfg.PDSAdminPassword, cfg.PDSEmail)
 		slog.Info("AT Protocol PDS configured", "pds_url", cfg.PDSURL, "plc_url", plcURL)
+
+		// Update PLC directory with MsgBox service so other nodes can
+		// discover this node's D2D endpoint. PDS creates the DID with
+		// only #atproto_pds — we add #dina_messaging here.
+		if ownDID != "" && msgboxURL != "" {
+			rotKey, rotErr := k256Mgr.GenerateOrLoad()
+			if rotErr != nil {
+				slog.Warn("PLC update: rotation key not available", "error", rotErr)
+			} else {
+				go func() {
+					if err := pds.UpdatePLCServices(
+						context.Background(), plcURL, ownDID, rotKey,
+						map[string]pds.PLCService{
+							"dina_messaging": {
+								Type:     "DinaMsgBox",
+								Endpoint: msgboxURL,
+							},
+						},
+					); err != nil {
+						slog.Warn("PLC update: failed to add messaging service", "error", err)
+					}
+				}()
+			}
+		}
 	} else {
 		pdsPublisher = pds.NewPDSPublisher("")
 		slog.Info("AT Protocol PDS not configured — using local-only identity")
