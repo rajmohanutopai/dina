@@ -320,19 +320,7 @@ func main() {
 			ownDID = string(restoredDID)
 		}
 	}
-	// Eager DID creation: on first install, no persisted DID exists yet.
-	// Create it now so the PLC update and D2D sender identification work
-	// without waiting for the first /v1/did request.
-	if ownDID == "" {
-		pubKey := identitySigner.PublicKey()
-		createdDID, createErr := didMgr.Create(context.Background(), pubKey)
-		if createErr != nil {
-			slog.Warn("Eager DID creation failed — will retry on first request", "error", createErr)
-		} else {
-			slog.Info("DID created on first boot", "did", createdDID)
-			ownDID = string(createdDID)
-		}
-	}
+
 
 	personaMgr := identity.NewPersonaManager()
 	// CRITICAL-01/02: Enable file-based persona persistence.
@@ -496,6 +484,19 @@ func main() {
 		didMgr.SetPLCClient(plcClient, k256Mgr)
 		didMgr.SetPDSCredentials(cfg.PDSHandle, cfg.PDSAdminPassword, cfg.PDSEmail)
 		slog.Info("AT Protocol PDS configured", "pds_url", cfg.PDSURL, "plc_url", plcURL)
+
+		// Eager DID creation: on first install, no persisted DID exists yet.
+		// Must happen after SetPLCClient so the DID registers on global PLC.
+		if ownDID == "" {
+			pubKey := identitySigner.PublicKey()
+			createdDID, createErr := didMgr.Create(context.Background(), pubKey)
+			if createErr != nil {
+				slog.Warn("Eager DID creation failed — will retry on first request", "error", createErr)
+			} else {
+				slog.Info("DID created on first boot", "did", createdDID)
+				ownDID = string(createdDID)
+			}
+		}
 
 		// Update PLC directory with MsgBox service so other nodes can
 		// discover this node's D2D endpoint. PDS creates the DID with
