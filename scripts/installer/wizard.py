@@ -278,27 +278,22 @@ def _step_llm_providers() -> list[LLMProviderConfig]:
     while True:
         val = _prompt(
             "llm_selection", "choice",
-            "Which LLM providers would you like to configure?",
+            "Choose your AI provider (required)",
             choices=[
-                {"key": "1", "label": "Google Gemini"},
+                {"key": "1", "label": "Google Gemini", "help": "recommended"},
                 {"key": "2", "label": "OpenAI GPT"},
                 {"key": "3", "label": "Anthropic Claude"},
-                {"key": "4", "label": "OpenRouter"},
-                {"key": "5", "label": "Ollama (local)"},
-                {"key": "6", "label": "Skip"},
             ],
             multi_select=True,
             help_text="Enter one or more numbers separated by spaces (e.g. 1 3)",
         )
         tokens = val.strip().split()
         if not tokens:
-            _error("llm_selection", "Please enter at least one number 1-6.")
+            _error("llm_selection", "Dina needs an AI provider to work. Please choose at least one.")
             continue
-        if not all(t in "123456" and len(t) == 1 for t in tokens):
-            _error("llm_selection", "Please enter numbers 1-6 only.")
+        if not all(t in "123" and len(t) == 1 for t in tokens):
+            _error("llm_selection", "Please enter numbers 1-3 only.")
             continue
-        if "6" in tokens:
-            return []
         break
 
     providers: list[LLMProviderConfig] = []
@@ -306,19 +301,9 @@ def _step_llm_providers() -> list[LLMProviderConfig]:
         "1": ("Google Gemini", "GEMINI_API_KEY"),
         "2": ("OpenAI GPT", "OPENAI_API_KEY"),
         "3": ("Anthropic Claude", "ANTHROPIC_API_KEY"),
-        "4": ("OpenRouter", "OPENROUTER_API_KEY"),
     }
 
     for token in tokens:
-        if token == "5":
-            # Ollama — no key needed
-            providers.append(LLMProviderConfig(
-                env_key="OLLAMA_BASE_URL",
-                env_value="http://localhost:11434",
-            ))
-            _event("info", message="Using local Ollama at http://localhost:11434")
-            continue
-
         if token not in provider_map:
             continue
 
@@ -328,12 +313,12 @@ def _step_llm_providers() -> list[LLMProviderConfig]:
                 f"api_key_{env_key}", "text",
                 f"{label} API key",
                 secret=True,
-                allow_blank=True,
-                help_text="Press Enter to skip this provider",
+                allow_blank=False,
+                help_text="Get your API key from the provider's dashboard",
             )
             if not key_val.strip():
-                _event("info", message=f"Skipped {label}")
-                break
+                _error(f"api_key_{env_key}", f"{label} API key is required.")
+                continue
             # Validate the API key with a real completion test
             _event("info", message=f"Validating {label} API key...")
             valid, err_msg = _validate_api_key(env_key, key_val.strip())
@@ -342,12 +327,6 @@ def _step_llm_providers() -> list[LLMProviderConfig]:
                 continue
             _event("ok", message=f"{label} API key validated")
             providers.append(LLMProviderConfig(env_key=env_key, env_value=key_val.strip()))
-            if token == "4":
-                # OpenRouter auto-adds default model
-                providers.append(LLMProviderConfig(
-                    env_key="OPENROUTER_MODEL",
-                    env_value="google/gemini-3-flash",
-                ))
             break
 
     return providers
