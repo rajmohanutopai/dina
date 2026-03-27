@@ -594,53 +594,53 @@ func main() {
 
 	// 8. Transport
 	didResolver := transport.NewDIDResolver()
-	// KNOWN_PEERS are configured at startup and should not expire during process lifetime.
-	didResolver.SetTTL(365 * 24 * time.Hour)
+	// KNOWN_PEERS: legacy dev/test-only mechanism. Disabled by default.
+	// Production uses PLC directory for DID resolution.
+	// Enable with DINA_KNOWN_PEERS_MODE=legacy for internal testing only.
+	if os.Getenv("DINA_KNOWN_PEERS_MODE") == "legacy" {
+		didResolver.SetTTL(365 * 24 * time.Hour)
+		if peers := os.Getenv("DINA_KNOWN_PEERS"); peers != "" {
+			slog.Warn("KNOWN_PEERS: legacy mode enabled (dev/test only)")
+			for i, entry := range strings.Split(peers, ",") {
+				parts := strings.SplitN(entry, "=", 3)
+				if len(parts) != 3 {
+					slog.Error("KNOWN_PEERS: invalid entry format (expected did=endpoint=seedhex)", "index", i, "entry", entry)
+					os.Exit(1)
+				}
+				did := strings.TrimSpace(parts[0])
+				endpoint := strings.TrimSpace(parts[1])
+				peerSeedHex := strings.TrimSpace(parts[2])
+				peerSeedBytes, seedErr := hex.DecodeString(peerSeedHex)
+				if seedErr != nil {
+					slog.Error("KNOWN_PEERS: invalid seed hex", "index", i, "did", did, "error", seedErr)
+					os.Exit(1)
+				}
+				if len(peerSeedBytes) != 32 {
+					slog.Error("KNOWN_PEERS: invalid seed length", "index", i, "did", did, "got", len(peerSeedBytes), "expected", 32)
+					os.Exit(1)
+				}
+				_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'/0'")
+				if deriveErr != nil {
+					slog.Error("KNOWN_PEERS: key derivation failure", "index", i, "did", did, "error", deriveErr)
+					os.Exit(1)
+				}
+				var peerPrivKey ed25519.PrivateKey
+				if len(peerKeyBytes) == ed25519.SeedSize {
+					peerPrivKey = ed25519.NewKeyFromSeed(peerKeyBytes)
+				} else {
+					peerPrivKey = ed25519.PrivateKey(peerKeyBytes)
+				}
+				peerPubKey := peerPrivKey.Public().(ed25519.PublicKey)
+				multicodecKey := append([]byte{0xed, 0x01}, peerPubKey...)
+				pubKeyMultibase := "z" + base58.Encode(multicodecKey)
 
-	// Pre-populate DID resolver with known peer endpoints for D2D.
-	// Each peer gets a full DID document with a verificationMethod so that
-	// TransportService.SendMessage can resolve the key for encryption.
-	// Format: did=endpoint=seedhex (strict, no legacy 2-part format).
-	if peers := os.Getenv("DINA_KNOWN_PEERS"); peers != "" {
-		for i, entry := range strings.Split(peers, ",") {
-			parts := strings.SplitN(entry, "=", 3)
-			if len(parts) != 3 {
-				slog.Error("KNOWN_PEERS: invalid entry format (expected did=endpoint=seedhex)", "index", i, "entry", entry)
-				os.Exit(1)
+				doc := fmt.Sprintf(`{`+
+					`"id":"%s",`+
+					`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"%s"}],`+
+					`"service":[{"id":"%s#msg","type":"DinaMsgBox","serviceEndpoint":"%s"}]`+
+					`}`, did, did, did, pubKeyMultibase, did, endpoint)
+				didResolver.AddDocument(did, []byte(doc))
 			}
-			did := strings.TrimSpace(parts[0])
-			endpoint := strings.TrimSpace(parts[1])
-			peerSeedHex := strings.TrimSpace(parts[2])
-			peerSeedBytes, seedErr := hex.DecodeString(peerSeedHex)
-			if seedErr != nil {
-				slog.Error("KNOWN_PEERS: invalid seed hex", "index", i, "did", did, "error", seedErr)
-				os.Exit(1)
-			}
-			if len(peerSeedBytes) != 32 {
-				slog.Error("KNOWN_PEERS: invalid seed length", "index", i, "did", did, "got", len(peerSeedBytes), "expected", 32)
-				os.Exit(1)
-			}
-			_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'/0'")
-			if deriveErr != nil {
-				slog.Error("KNOWN_PEERS: key derivation failure", "index", i, "did", did, "error", deriveErr)
-				os.Exit(1)
-			}
-			var peerPrivKey ed25519.PrivateKey
-			if len(peerKeyBytes) == ed25519.SeedSize {
-				peerPrivKey = ed25519.NewKeyFromSeed(peerKeyBytes)
-			} else {
-				peerPrivKey = ed25519.PrivateKey(peerKeyBytes)
-			}
-			peerPubKey := peerPrivKey.Public().(ed25519.PublicKey)
-			multicodecKey := append([]byte{0xed, 0x01}, peerPubKey...)
-			pubKeyMultibase := "z" + base58.Encode(multicodecKey)
-
-			doc := fmt.Sprintf(`{`+
-				`"id":"%s",`+
-				`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"%s"}],`+
-				`"service":[{"id":"%s#msg","type":"DinaMsgBox","serviceEndpoint":"%s"}]`+
-				`}`, did, did, did, pubKeyMultibase, did, endpoint)
-			didResolver.AddDocument(did, []byte(doc))
 		}
 	}
 
