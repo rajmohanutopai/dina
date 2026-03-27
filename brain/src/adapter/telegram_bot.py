@@ -14,7 +14,9 @@ Third-party imports:  python-telegram-bot (telegram, telegram.ext).
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import time
 from typing import Any, Callable, Coroutine
 
 from telegram import Update
@@ -36,6 +38,36 @@ HandlerCallback = Callable[
     [Update, ContextTypes.DEFAULT_TYPE],
     Coroutine[Any, Any, None],
 ]
+
+
+def _wrap_with_req_id(handler: HandlerCallback) -> HandlerCallback:
+    """Middleware: generate req_id and patch reply_text to auto-append it.
+
+    Every outbound reply_text from any handler gets a small ``[req_id]``
+    footer for log correlation — no handler code needs to change.
+    """
+
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        rid = hashlib.md5(f"{time.time()}".encode()).hexdigest()[:6]
+        # Store in context for handlers that log explicitly.
+        context.user_data["req_id"] = rid  # type: ignore[index]
+
+        # Patch reply_text on the message object.
+        if update.message and hasattr(update.message, "reply_text"):
+            original = update.message.reply_text
+
+            async def reply_with_id(text: str, **kwargs: Any) -> Any:
+                if kwargs.get("parse_mode") == "Markdown":
+                    text = f"{text}\n`[{rid}]`"
+                else:
+                    text = f"{text}\n[{rid}]"
+                return await original(text, **kwargs)
+
+            update.message.reply_text = reply_with_id  # type: ignore[assignment]
+
+        await handler(update, context)
+
+    return wrapper
 
 
 class TelegramBotAdapter:
@@ -69,16 +101,18 @@ class TelegramBotAdapter:
         self._bot_username: str = ""
 
         # Register command handlers (e.g. /start, /help).
+        # Each handler is wrapped to auto-append a req_id to every reply.
         for cmd, cb in (command_callbacks or {}).items():
-            self._app.add_handler(CommandHandler(cmd, cb))
+            self._app.add_handler(CommandHandler(cmd, _wrap_with_req_id(cb)))
 
-        # Inline keyboard button callback handler.
+        # Inline keyboard button callback handler (no req_id — callbacks
+        # edit existing messages, not new replies).
         if callback_query_handler:
             self._app.add_handler(CallbackQueryHandler(callback_query_handler))
 
         # Catch-all text message handler (after commands).
         self._app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, message_callback)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, _wrap_with_req_id(message_callback))
         )
 
     # ------------------------------------------------------------------
