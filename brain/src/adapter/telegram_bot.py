@@ -41,16 +41,17 @@ HandlerCallback = Callable[
 
 
 def _wrap_with_req_id(handler: HandlerCallback) -> HandlerCallback:
-    """Middleware: generate req_id and patch reply_text to auto-append it.
+    """Middleware: bind request_id to structlog context and patch reply_text.
 
-    Every outbound reply_text from any handler gets a small ``[req_id]``
-    footer for log correlation — no handler code needs to change.
+    Uses the same ``bind_request_id`` as the HTTP middleware so all logs
+    from a Telegram handler share one request_id.  Every outbound
+    reply_text gets a small ``[req_id]`` footer for log correlation.
     """
 
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        rid = hashlib.md5(f"{time.time()}".encode()).hexdigest()[:6]
-        # Store in context for handlers that log explicitly.
-        context.user_data["req_id"] = rid  # type: ignore[index]
+        from ..infra.logging import bind_request_id
+
+        rid = bind_request_id()  # generates UUID, binds to structlog context
 
         # Patch reply_text on the message object.
         if update.message and hasattr(update.message, "reply_text"):
