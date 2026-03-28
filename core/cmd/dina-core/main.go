@@ -980,6 +980,8 @@ func main() {
 
 		// Extract _correlation_id from decrypted body for end-to-end tracing.
 		// The sender's Brain embeds this so both sides can trace the message.
+		// Set it as the request ID in context so tracer.Emit picks it up
+		// automatically — same pattern as HTTP middleware.
 		bodyStr := string(msg.Body)
 		var correlationID string
 		{
@@ -991,15 +993,14 @@ func main() {
 			}
 		}
 		if correlationID != "" {
+			ctx = context.WithValue(ctx, middleware.RequestIDKey, correlationID)
 			slog.Info("ingress: D2D correlation", "correlation_id", correlationID, "from", msg.From, "type", msg.Type)
-			// Write to trace store so dina-admin trace <correlation_id> works.
-			if traceStore != nil {
-				_ = traceStore.Append(correlationID, "d2d_received", "core",
-					fmt.Sprintf(`{"from":"%s","type":"%s"}`, msg.From, msg.Type))
-				_ = traceStore.Append(correlationID, "d2d_decrypted", "core",
-					fmt.Sprintf(`{"body_len":%d}`, len(msg.Body)))
-			}
 		}
+
+		// Trace via context — tracer reads req_id from ctx automatically.
+		tracer.Emit(ctx, "d2d_received", "core", map[string]string{
+			"from": msg.From, "type": string(msg.Type),
+		})
 
 		// Stage memory-producing D2D content for vault persistence.
 		if stageD2DMemory != nil {
@@ -1008,10 +1009,9 @@ func main() {
 		// Push to Brain for nudge assembly / handler routing.
 		// Pass correlation_id so receiver Brain can bind it for tracing.
 		go func() {
-			if correlationID != "" && traceStore != nil {
-				_ = traceStore.Append(correlationID, "d2d_brain_forward", "core",
-					`{"step":"pushing to brain for nudge"}`)
-			}
+			tracer.Emit(ctx, "d2d_brain_forward", "core", map[string]string{
+				"type": string(msg.Type),
+			})
 			payload := map[string]interface{}{
 				"from":         msg.From,
 				"body":         bodyStr,
