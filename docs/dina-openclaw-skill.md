@@ -1,7 +1,7 @@
 ---
 name: dina
 description: Sovereign personal AI — encrypted vault, persona access control, PII scrubbing, session-scoped grants, action gating.
-version: 0.6.7
+version: 0.8.0
 metadata:
   openclaw:
     emoji: "🛡️"
