@@ -977,22 +977,43 @@ func main() {
 		}
 		transportSvc.StoreInbound(msg)
 		auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "stored")
+
+		// Extract _correlation_id from decrypted body for end-to-end tracing.
+		// The sender's Brain embeds this so both sides can trace the message.
+		bodyStr := string(msg.Body)
+		var correlationID string
+		{
+			var bodyMap map[string]interface{}
+			if json.Unmarshal(msg.Body, &bodyMap) == nil {
+				if cid, ok := bodyMap["_correlation_id"].(string); ok && cid != "" {
+					correlationID = cid
+				}
+			}
+		}
+		if correlationID != "" {
+			slog.Info("ingress: D2D correlation", "correlation_id", correlationID, "from", msg.From, "type", msg.Type)
+		}
+
 		// Stage memory-producing D2D content for vault persistence.
 		if stageD2DMemory != nil {
 			stageD2DMemory(ctx, msg)
 		}
 		// Push to Brain for nudge assembly / handler routing.
+		// Pass correlation_id so receiver Brain can bind it for tracing.
 		go func() {
-			bodyStr := string(msg.Body)
+			payload := map[string]interface{}{
+				"from":         msg.From,
+				"body":         bodyStr,
+				"id":           msg.ID,
+				"created_time": msg.CreatedTime,
+				"type":         string(msg.Type),
+			}
+			if correlationID != "" {
+				payload["_correlation_id"] = correlationID
+			}
 			_ = brain.Process(context.Background(), domain.TaskEvent{
-				Type: string(msg.Type),
-				Payload: map[string]interface{}{
-					"from":         msg.From,
-					"body":         bodyStr,
-					"id":           msg.ID,
-					"created_time": msg.CreatedTime,
-					"type":         string(msg.Type),
-				},
+				Type:    string(msg.Type),
+				Payload: payload,
 			})
 		}()
 		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)

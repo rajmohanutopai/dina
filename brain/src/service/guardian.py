@@ -4369,6 +4369,27 @@ class GuardianLoop:
         # D2D events arrive via Core's brain.Process() with fields in "payload".
         payload = event.get("payload") or event
         from_did = payload.get("from", "") or event.get("from", "")
+
+        # Bind correlation_id from sender for end-to-end tracing.
+        # The sender's Brain embedded this in the D2D body; Core extracted
+        # it and passed it here. All receiver logs + Telegram notification
+        # will share the same ID as the sender.
+        corr_id = payload.get("_correlation_id", "")
+        if not corr_id:
+            # Also check inside the body (JSON string).
+            body_raw = payload.get("body", "")
+            if isinstance(body_raw, str):
+                try:
+                    body_parsed = json.loads(body_raw)
+                    corr_id = body_parsed.get("_correlation_id", "")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        if corr_id:
+            from ..infra.logging import bind_request_id
+            bind_request_id(corr_id)
+            from ..infra.trace_emit import trace as _trace
+            _trace("d2d.received", "brain", {"from": from_did, "type": msg_type})
+
         # Set contact_did so nudge assembler can find vault context.
         if from_did and "contact_did" not in event:
             event["contact_did"] = from_did

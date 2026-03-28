@@ -435,8 +435,14 @@ class UserCommandService:
             msg_type = "social.update"
             body = {"text": message_text, "category": "context"}
 
-        # Send via Core
+        # Send via Core — embed correlation_id for end-to-end tracing.
         try:
+            import structlog as _structlog
+            ctx = _structlog.contextvars.get_contextvars()
+            corr_id = ctx.get("request_id", "")
+            if corr_id:
+                body["_correlation_id"] = corr_id
+
             body_b64 = base64.b64encode(json.dumps(body).encode()).decode()
             await self._core._request("POST", "/v1/msg/send", json={
                 "to": contact_did,
