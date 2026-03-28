@@ -15,7 +15,7 @@
 * **The Vision** - This README is the Vision Document. For you to understand Dina.
 * **Start Here:** [**Open dina.html**](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
-* **What Works Now:** [Usage Guide](./CAPABILITIES.md))
+* **What Works Now:** [Usage Guide](./CAPABILITIES.md)
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **Discussion:** [Join the Discord](https://discord.gg/gDRcrEwy)
@@ -176,7 +176,7 @@ Dina can also act as a safety layer for autonomous agents. Malicious actors will
 
 If the autonomous agent integrates with Dina properly, Dina will be able to watch when the autonomous agent acts on your behalf. She will not interfere with safe tasks. But when the agent wants to send an email, move money, or share your data, it can send the request to Dina. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. By separating out the actual agent who does the work with the safety checker who holds the keys to the house, it provides one extra level of safety.
 
-Dina comes with `dina-cli` for this very purpose. Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node (similar to GitHub SSH Key method). Any agent can use `dina validate --session <session-id>` to get Guardian oversight automatically.
+Dina comes with `dina-agent` for this very purpose. Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node (similar to GitHub SSH Key method). Any agent can use `dina validate --session <session-id>` to get Guardian oversight automatically.
 
 Currently, this is just a SKILL added to other agents. So, as of now, it can be overcome by a clever prompt - so it is a safety net, but not fully secure. But if an external agent fully integrates with Dina protocol, much higher safety could be achieved.
 
