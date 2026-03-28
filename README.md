@@ -33,24 +33,7 @@ git clone https://github.com/rajmohanutopai/dina.git
 cd dina
 ./install.sh
 ./dina-admin status
-
-# client machine (where openclaw or other agents run)
-pip install dina-agent
-dina status
-
-# pair with dina home node
-./dina-admin device pair # generate pairing code at home node
-dina configure # use pairing code to pair
-
-# start a session and interact
-dina session start --name "tea research"   # returns session ID
-dina remember "I like strong cardamom tea" --session <session-id>
-dina ask "what kind of tea do I like?" --session <session-id>
-dina session end <session-id>
 ```
-
-Use [`docs/dina-openclaw-skill.md`](./docs/dina-openclaw-skill.md) - any AI agent (OpenClaw, and other agents) can use Dina for Unique ID, encrypted memory, PII scrubbing, and action gating. Please download and update the file for your specific use cases.
-<br/>
 
 ```bash
 # This is currently at Technical Preview stage. It is not fully polished for daily use. The architecture is ready, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 

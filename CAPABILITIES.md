@@ -149,6 +149,33 @@ You can configure what's safe and what's not.
 
 ---
 
+## Integrating with OpenClaw
+
+```bash
+# client machine (where openclaw or other agents run)
+pip install dina-agent
+dina status
+
+# pair with dina home node
+./dina-admin device pair # generate pairing code at home node
+dina configure # use pairing code to pair
+
+# start a session and interact
+dina session start --name "tea research"   # returns session ID
+dina remember "I like strong cardamom tea" --session <session-id>
+dina ask "what kind of tea do I like?" --session <session-id>
+dina session end <session-id>
+```
+
+Use [`docs/dina-openclaw-skill.md`](./docs/dina-openclaw-skill.md) - any AI agent (OpenClaw, and other agents) can use Dina for Unique ID, encrypted memory, PII scrubbing, and action gating. Please download and update the file for your specific use cases.
+<br/>
+
+An example integration is shown below
+
+![OpenClaw](./docs/images/openclaw-dina.png)
+---
+
+
 ## She Talks to Other Dinas
 
 Dina can talk to other Dinas. You have to setup contact information first, and then use it to talk to other Dinas.

@@ -17,6 +17,18 @@ Every contact, relation etc should be a proper Database entry
 So, when information comes like Sanchos mother is sick, that should get filed under Sancho's information
 Obviously security of others also has to be maintained, so, Idenity.sqlite contains sanchos basic information - but in the finance vaulet etc, we store against sancho as ID
 
+
+# Bugs
+
+1.
+  1. D2D received ✓ — message arrived, decrypted                                                                                                                                                                     
+  2. Brain forwarded ✓ — nudge assembly started
+  3. Contacts resolved ✓ — status 200                                                                                                                                                                                
+  4. Persona "default" not found — authz_error access_denied persona=default (3 times, status 404)                                                                                                                   
+
+2. when i sent 2 days later message it went and created a reminder saying 460 seconds remaining etc
+
+
 # Better Reply Architecture
 
   1. Handlers still format text — handle_status builds "*Your Dina*\nDID: ..." and passes it as BotResponse(text=...). That's just reply_text with extra steps. A truly clean architecture would have handlers return
