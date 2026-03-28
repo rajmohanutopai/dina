@@ -446,9 +446,9 @@ class BlueskyBotAdapter:
 
         # Handle confirmation replies (YES/NO for pending trust).
         lower = text.strip().lower()
-        if lower in ("yes", "confirm", "publish"):
+        if lower == "publish" and self._dispatcher._pending_trust:
             response = await self._dispatcher.handle_trust_confirm(True)
-        elif lower in ("no", "cancel", "deny"):
+        elif lower == "cancel" and self._dispatcher._pending_trust:
             response = await self._dispatcher.handle_trust_confirm(False)
         else:
             response = await self._dispatcher.dispatch(request)
