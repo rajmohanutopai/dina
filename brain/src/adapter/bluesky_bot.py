@@ -189,6 +189,8 @@ _COMMAND_MAP: dict[str, Command] = {
     "/flag": Command.FLAG,
     "/trust": Command.TRUST,
     "/remember": Command.REMEMBER,
+    "/delete": Command.REMINDER_DELETE,
+    "/edit": Command.REMINDER_EDIT,
     "/help": Command.HELP,
     "status": Command.STATUS,
     "ask": Command.ASK,
@@ -241,6 +243,12 @@ def _parse_args(cmd: Command, rest: str) -> CommandRequest:
         args["prompt"] = rest
     elif cmd == Command.REMEMBER:
         args["text"] = rest
+    elif cmd == Command.REMINDER_DELETE:
+        args["id"] = rest.split()[0] if rest else ""
+    elif cmd == Command.REMINDER_EDIT:
+        parts = rest.split(None, 1)
+        args["id"] = parts[0] if parts else ""
+        args["text"] = parts[1] if len(parts) > 1 else ""
     elif cmd == Command.SEND:
         if ":" in rest:
             contact, msg = rest.split(":", 1)

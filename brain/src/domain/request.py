@@ -27,6 +27,8 @@ class Command(Enum):
     VOUCH = "vouch"
     FLAG = "flag"
     TRUST = "trust"
+    REMINDER_DELETE = "reminder_delete"
+    REMINDER_EDIT = "reminder_edit"
     HELP = "help"
 
 

@@ -285,6 +285,97 @@ class CommandDispatcher:
             log.error("dispatch.remember_failed", extra={"error": str(exc)})
             return ErrorResponse(text="Could not save. Please try again.")
 
+    # ── Reminder management ────────────────────────────────────────
+
+    async def _handle_reminder_delete(self, req: CommandRequest) -> BotResponse:
+        """Delete a reminder by short ID."""
+        short_id = req.args.get("id", "").strip()
+        if not short_id:
+            return ErrorResponse(text="Usage: delete <reminder_id>")
+        # Resolve short ID to full ID.
+        import hashlib
+        rem_id = None
+        try:
+            resp = await self._cmds._core._request("GET", "/v1/reminders/pending")
+            for r in resp.json().get("reminders", []):
+                rid = r.get("id", "")
+                if hashlib.md5(rid.encode()).hexdigest()[:4] == short_id or rid == short_id:
+                    rem_id = rid
+                    break
+        except Exception:
+            pass
+        if not rem_id:
+            return ErrorResponse(text=f"Reminder {short_id} not found.")
+        try:
+            await self._cmds._core._request("DELETE", f"/v1/reminder/{rem_id}")
+            return BotResponse(text=f"Reminder {short_id} deleted.")
+        except Exception:
+            return ErrorResponse(text=f"Could not delete reminder {short_id}.")
+
+    async def _handle_reminder_edit(self, req: CommandRequest) -> BotResponse:
+        """Edit a reminder — LLM parses new time and message."""
+        short_id = req.args.get("id", "").strip()
+        edit_text = req.args.get("text", "").strip()
+        if not short_id or not edit_text:
+            return ErrorResponse(text="Usage: edit <reminder_id> <new time — new message>")
+        if not self._guardian:
+            return ErrorResponse(text="Edit not available.")
+        # Resolve short ID.
+        import hashlib
+        rem_id = None
+        try:
+            resp = await self._cmds._core._request("GET", "/v1/reminders/pending")
+            for r in resp.json().get("reminders", []):
+                rid = r.get("id", "")
+                if hashlib.md5(rid.encode()).hexdigest()[:4] == short_id or rid == short_id:
+                    rem_id = rid
+                    break
+        except Exception:
+            pass
+        if not rem_id:
+            return ErrorResponse(text=f"Reminder {short_id} not found.")
+        # Ask LLM to parse the new time and message.
+        try:
+            import datetime as _dt
+            import json as _json
+            now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            prompt = (
+                f"Today is {now}. The user wants to update a reminder.\n"
+                f"New text: \"{edit_text}\"\n\n"
+                f"Extract the date/time and message. Respond with JSON only:\n"
+                f'{{"fire_at": "YYYY-MM-DDTHH:MM:SSZ", "message": "the reminder text"}}'
+            )
+            resp = await self._guardian._llm.route(
+                task_type="classification",
+                prompt=prompt,
+                messages=[
+                    {"role": "system", "content": "Parse reminder time and message. JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            raw = resp.get("content", "").strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            parsed = _json.loads(raw)
+            fire_at = parsed.get("fire_at", "")
+            message = parsed.get("message", edit_text)
+            dt = _dt.datetime.fromisoformat(fire_at.replace("Z", "+00:00"))
+            trigger_ts = int(dt.timestamp())
+            # Delete old + create new.
+            try:
+                await self._cmds._core._request("DELETE", f"/v1/reminder/{rem_id}")
+            except Exception:
+                pass
+            await self._cmds._core.store_reminder({
+                "type": "", "message": message, "trigger_at": trigger_ts,
+                "metadata": "{}", "source_item_id": "", "source": req.source or "channel",
+                "persona": "general", "kind": "reminder",
+            })
+            return BotResponse(text=f"Reminder updated: {fire_at} — {message}")
+        except Exception as exc:
+            log.warning("dispatch.edit_failed", extra={"error": str(exc)})
+            return ErrorResponse(text="Could not parse. Try: edit <id> Apr 5, 3:00 PM — New message")
+
     # ── Help ─────────────────────────────────────────────────────────
 
     async def _handle_help(self, req: CommandRequest) -> BotResponse:
@@ -293,6 +384,9 @@ class CommandDispatcher:
                  "Memory\n"
                  "  ask <question> — ask me anything\n"
                  "  remember <text> — store a memory\n\n"
+                 "Reminders\n"
+                 "  delete <id> — delete a reminder\n"
+                 "  edit <id> <new time — message> — edit a reminder\n\n"
                  "Dina-to-Dina\n"
                  "  send Name: message — message another Dina\n"
                  "  contact list — show your contacts\n"
@@ -321,5 +415,7 @@ _DISPATCH_TABLE: dict = {
     Command.SEND: CommandDispatcher._handle_send,
     Command.ASK: CommandDispatcher._handle_ask,
     Command.REMEMBER: CommandDispatcher._handle_remember,
+    Command.REMINDER_DELETE: CommandDispatcher._handle_reminder_delete,
+    Command.REMINDER_EDIT: CommandDispatcher._handle_reminder_edit,
     Command.HELP: CommandDispatcher._handle_help,
 }
