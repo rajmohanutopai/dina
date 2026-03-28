@@ -239,6 +239,8 @@ def _parse_args(cmd: Command, rest: str) -> CommandRequest:
 
     if cmd == Command.ASK:
         args["prompt"] = rest
+    elif cmd == Command.REMEMBER:
+        args["text"] = rest
     elif cmd == Command.SEND:
         if ":" in rest:
             contact, msg = rest.split(":", 1)
