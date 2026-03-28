@@ -368,21 +368,45 @@ def _step_messaging_channel() -> tuple[TelegramConfig | None, BlueskyConfig | No
         return TelegramConfig(token=token, user_id=user_id), None
 
     else:
-        # Bluesky
+        # Bluesky — Dina's bot account
+        _event("info", message="Dina needs a Bluesky account to receive your DMs.")
         handle = _prompt(
             "bluesky_handle", "text",
-            "Your Bluesky handle",
-            help_text="e.g., yourname.bsky.social",
+            "Dina's Bluesky handle",
+            help_text="Create a new account for your Dina (e.g., my-dina.bsky.social)",
         ).strip()
 
         password = _prompt(
             "bluesky_password", "text",
-            "Bluesky app password",
+            "Dina's app password",
             secret=True,
-            help_text="Create one at bsky.app → Settings → App Passwords",
+            help_text="Create at bsky.app → Settings → App Passwords",
         ).strip()
 
-        return None, BlueskyConfig(handle=handle, password=password)
+        # Owner — your personal Bluesky handle (for DM access control)
+        owner_handle = _prompt(
+            "bluesky_owner", "text",
+            "Your personal Bluesky handle",
+            help_text="Only DMs from this account will be processed (e.g., yourname.bsky.social)",
+        ).strip()
+
+        owner_did = ""
+        if owner_handle:
+            # Resolve handle → DID via Bluesky API
+            _event("info", message=f"Resolving {owner_handle}...")
+            try:
+                import urllib.request, json as _json
+                url = f"https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle={owner_handle}"
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    owner_did = _json.loads(resp.read()).get("did", "")
+                if owner_did:
+                    _event("ok", message=f"Owner: {owner_handle} ({owner_did[:25]}...)")
+                else:
+                    _event("info", message="Could not resolve DID — DM access control disabled")
+            except Exception:
+                _event("info", message="Could not resolve DID — DM access control disabled")
+
+        return None, BlueskyConfig(handle=handle, password=password, owner_did=owner_did)
 
 
 # ======================================================================

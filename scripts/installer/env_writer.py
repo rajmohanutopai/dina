@@ -74,6 +74,8 @@ def write_env(
         lines += ["", "# Bluesky"]
         lines.append(f"DINA_BSKY_HANDLE={config.bluesky.handle}")
         lines.append(f"DINA_BSKY_PASSWORD={config.bluesky.password}")
+        if config.bluesky.owner_did:
+            lines.append(f"DINA_BSKY_OWNER_DID={config.bluesky.owner_did}")
         if config.bluesky.service != "https://bsky.social":
             lines.append(f"DINA_BSKY_SERVICE={config.bluesky.service}")
 

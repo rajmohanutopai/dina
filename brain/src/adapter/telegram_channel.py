@@ -88,11 +88,15 @@ class TelegramChannel:
     # ── Type-specific renderers ────────────────────────────────────
 
     async def _send_text(self, text: str, markdown: bool = False, is_error: bool = False) -> None:
-        text = self._append_req_id(text, is_markdown=markdown)
-        kwargs: dict[str, Any] = {}
+        text_with_id = self._append_req_id(text, is_markdown=markdown)
         if markdown:
-            kwargs["parse_mode"] = "Markdown"
-        await self._message.reply_text(text, **kwargs)
+            try:
+                await self._message.reply_text(text_with_id, parse_mode="Markdown")
+                return
+            except Exception:
+                # Markdown parse error (unbalanced *, _, `) — send plain.
+                pass
+        await self._message.reply_text(self._append_req_id(text, is_markdown=False))
 
     async def _send_status(self, r: StatusResponse) -> None:
         text = (

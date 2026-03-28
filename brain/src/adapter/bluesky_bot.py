@@ -290,7 +290,11 @@ def _parse_contact_args(rest: str) -> CommandRequest:
 # ── Bot Adapter ────────────────────────────────────────────────────
 
 class BlueskyBotAdapter:
-    """Polls Bluesky for mentions and DMs, dispatches via CommandDispatcher.
+    """Polls Bluesky DMs from the owner, dispatches via CommandDispatcher.
+
+    DM-only, owner-only. Public mentions are ignored — Dina is a
+    private assistant, not a public bot. Same model as Telegram's
+    allowed_user_ids.
 
     Parameters
     ----------
@@ -298,27 +302,30 @@ class BlueskyBotAdapter:
         Authenticated BlueskyClient.
     dispatcher:
         CommandDispatcher for routing commands.
+    owner_did:
+        DID of the owner. Only DMs from this DID are processed.
+        If empty, DMs from any user are processed (not recommended).
     """
 
-    def __init__(self, client: BlueskyClient, dispatcher: CommandDispatcher) -> None:
+    def __init__(self, client: BlueskyClient, dispatcher: CommandDispatcher, owner_did: str = "") -> None:
         self._client = client
         self._dispatcher = dispatcher
-        self._last_seen_notif: str = ""  # ISO timestamp of last processed notification
+        self._owner_did = owner_did
         self._last_seen_dm: dict[str, str] = {}  # convo_id → last message ID
         self._running = False
         self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
-        """Start polling for mentions and DMs."""
+        """Start polling for DMs."""
         try:
             await self._client.ensure_session()
             log.info("bluesky.adapter.started", extra={
                 "handle": self._client.handle,
                 "did": self._client.did,
+                "owner_did": self._owner_did or "(any)",
             })
             self._running = True
             self._tasks = [
-                asyncio.create_task(self._poll_mentions()),
                 asyncio.create_task(self._poll_dms()),
             ]
         except Exception as exc:
@@ -331,77 +338,6 @@ class BlueskyBotAdapter:
         for task in self._tasks:
             task.cancel()
         log.info("bluesky.adapter.stopped")
-
-    # ── Mention polling ────────────────────────────────────────────
-
-    async def _poll_mentions(self) -> None:
-        """Poll notifications for @mentions."""
-        while self._running:
-            try:
-                data = await self._client.list_notifications(limit=25)
-                notifications = data.get("notifications", [])
-
-                for notif in notifications:
-                    # Only process mentions (not likes, follows, etc.)
-                    if notif.get("reason") != "mention":
-                        continue
-                    # Skip already-seen notifications.
-                    indexed_at = notif.get("indexedAt", "")
-                    if indexed_at <= self._last_seen_notif:
-                        continue
-
-                    await self._handle_mention(notif)
-                    self._last_seen_notif = indexed_at
-
-                # Mark as seen.
-                if notifications:
-                    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                    await self._client.update_seen(now)
-
-            except Exception as exc:
-                log.warning("bluesky.mention_poll_error", extra={"error": str(exc)})
-
-            await asyncio.sleep(_MENTION_POLL_S)
-
-    async def _handle_mention(self, notif: dict) -> None:
-        """Process a single @mention notification."""
-        from ..infra.logging import bind_request_id
-        rid = bind_request_id()
-
-        record = notif.get("record", {})
-        text = record.get("text", "")
-        author_did = notif.get("author", {}).get("did", "")
-        author_handle = notif.get("author", {}).get("handle", "")
-        uri = notif.get("uri", "")
-        cid = notif.get("cid", "")
-
-        log.info("bluesky.mention", extra={
-            "author": author_handle, "text": text[:80], "req_id": rid,
-        })
-
-        # Parse command.
-        request = parse_bluesky_command(text)
-        if not request:
-            return
-        request.user_id = author_did
-        request.args["req_id"] = rid
-
-        # Dispatch.
-        response = await self._dispatcher.dispatch(request)
-
-        # Build reply reference.
-        reply_ref = {
-            "root": {"uri": uri, "cid": cid},
-            "parent": {"uri": uri, "cid": cid},
-        }
-
-        # Send response via BlueskyChannel.
-        channel = BlueskyChannel(
-            client=self._client,
-            reply_ref=reply_ref,
-            req_id=rid,
-        )
-        await channel.send(response)
 
     # ── DM polling ─────────────────────────────────────────────────
 
@@ -425,6 +361,12 @@ class BlueskyBotAdapter:
                     sender_did = last_msg.get("sender", {}).get("did", "")
                     if sender_did == self._client.did:
                         self._last_seen_dm[convo_id] = last_msg_id
+                        continue
+
+                    # Owner filter — only process DMs from the owner.
+                    if self._owner_did and sender_did != self._owner_did:
+                        self._last_seen_dm[convo_id] = last_msg_id
+                        log.debug("bluesky.dm_ignored", extra={"sender": sender_did[:30], "reason": "not owner"})
                         continue
 
                     # Skip non-text messages.

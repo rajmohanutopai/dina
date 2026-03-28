@@ -524,7 +524,11 @@ class TelegramService:
             })
             response_text = self._extract_response(result)
             if response_text:
-                await ch.send(RichResponse(text=response_text))
+                try:
+                    await ch.send(RichResponse(text=response_text))
+                except Exception:
+                    # Markdown parse error — retry as plain text.
+                    await ch.send(BotResponse(text=response_text))
         except Exception as exc:
             log.error(
                 "telegram.ask_failed",

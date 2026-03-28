@@ -45,6 +45,7 @@ class BlueskyConfig(BaseModel):
     handle: str           # e.g., "dina.bsky.social"
     password: str         # app password (not main password)
     service: str = "https://bsky.social"
+    owner_did: str = ""   # DID of the owner — only DMs from this DID are processed
 
 
 class InstallerConfig(BaseModel):
