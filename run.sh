@@ -270,7 +270,7 @@ if [ -n "${RUNNING}" ]; then
     ok "Containers already running"
     echo -e "  ${DIM}Use ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}${DIM} to restart.${RESET}"
 else
-    $COMPOSE up -d 2>&1 | while IFS= read -r line; do
+    $COMPOSE up -d --build 2>&1 | while IFS= read -r line; do
         echo -e "  ${DIM}${line}${RESET}"
     done
     ok "Containers started"
