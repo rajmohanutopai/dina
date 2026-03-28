@@ -4463,10 +4463,15 @@ class GuardianLoop:
                 # For social messages, run through nudge assembly.
                 if handler == "nudge_assembly":
                     nudge = await self._nudge.assemble_nudge(event, from_did)
-                    # Push to Telegram: nudge if available, else raw D2D notification.
-                    if hasattr(self, "_telegram") and self._telegram:
-                        if not self._telegram._paired_users:
-                            await self._telegram.load_paired_users()
+                    # Push notification to all configured channels.
+                    _has_channel = (
+                        (hasattr(self, "_telegram") and self._telegram)
+                        or (hasattr(self, "_bluesky") and self._bluesky)
+                    )
+                    if _has_channel:
+                        if hasattr(self, "_telegram") and self._telegram:
+                            if not self._telegram._paired_users:
+                                await self._telegram.load_paired_users()
                         notify_text = None
                         if nudge and nudge.get("text"):
                             notify_text = f"💬 {nudge['text']}"
@@ -4515,16 +4520,28 @@ class GuardianLoop:
                             except Exception:
                                 pass
 
-                    # Send reminder plan with Edit/Delete buttons — same UX
-                    # as /remember (shared method on TelegramService).
-                    if plan and plan.get("reminders") and hasattr(self, "_telegram") and self._telegram:
-                        if not self._telegram._paired_users:
-                            await self._telegram.load_paired_users()
-                        for chat_id in self._telegram._paired_users:
-                            try:
-                                await self._telegram.send_reminder_plan(chat_id, plan)
-                            except Exception:
-                                pass
+                    # Send reminder plan — Telegram gets buttons, Bluesky gets text.
+                    if plan and plan.get("reminders"):
+                        # Telegram: interactive Edit/Delete buttons.
+                        if hasattr(self, "_telegram") and self._telegram:
+                            if not self._telegram._paired_users:
+                                await self._telegram.load_paired_users()
+                            for chat_id in self._telegram._paired_users:
+                                try:
+                                    await self._telegram.send_reminder_plan(chat_id, plan)
+                                except Exception:
+                                    pass
+                        # Bluesky: plain text summary.
+                        elif hasattr(self, "_bluesky") and self._bluesky:
+                            lines = []
+                            for r in plan.get("reminders", []):
+                                msg = r.get("message", "")
+                                fire = r.get("fire_at", "")
+                                lines.append(f"🔔 {fire} — {msg}")
+                            if lines:
+                                await self._push_notification(
+                                    "Reminders set:\n" + "\n".join(lines), "d2d_reminder"
+                                )
 
                     return {
                         "action": "nudge_assembled",
@@ -4532,8 +4549,12 @@ class GuardianLoop:
                         "nudge": nudge,
                         "staged": staged,
                     }
-                # Push safety alerts and coordination to Telegram immediately.
-                if hasattr(self, "_telegram") and self._telegram:
+                # Push safety alerts and coordination to all channels.
+                _has_channel2 = (
+                    (hasattr(self, "_telegram") and self._telegram)
+                    or (hasattr(self, "_bluesky") and self._bluesky)
+                )
+                if _has_channel2:
                     # Body is in the payload dict from Core's brain.Process().
                     raw_body = payload.get("body", "") or event.get("body", "")
                     body = raw_body
