@@ -4531,16 +4531,21 @@ class GuardianLoop:
                                     await self._telegram.send_reminder_plan(chat_id, plan)
                                 except Exception:
                                     pass
-                        # Bluesky: plain text summary.
+                        # Bluesky: plain text summary with IDs for /delete and /edit.
                         elif hasattr(self, "_bluesky") and self._bluesky:
                             lines = []
                             for r in plan.get("reminders", []):
                                 msg = r.get("message", "")
                                 fire = r.get("fire_at", "")
-                                lines.append(f"🔔 {fire} — {msg}")
+                                short_id = r.get("short_id", "?")
+                                lines.append(f"[{short_id}] 🔔 {fire} — {msg}")
                             if lines:
+                                first_id = plan["reminders"][0].get("short_id", "id")
                                 await self._push_notification(
-                                    "Reminders set:\n" + "\n".join(lines), "d2d_reminder"
+                                    "Reminders set:\n" + "\n".join(lines)
+                                    + f"\n\n/delete {first_id} to remove"
+                                    + f"\n/edit {first_id} <new time — message> to update",
+                                    "d2d_reminder",
                                 )
 
                     return {
