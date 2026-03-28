@@ -633,6 +633,42 @@ def create_app() -> FastAPI:
         if telegram_service is not None:
             telegram_service._pds_publisher = pds_publisher_instance
 
+    # 3c. Bluesky channel (optional — enabled when DINA_BSKY_HANDLE is set)
+    bluesky_bot = None
+    bsky_handle = os.environ.get("DINA_BSKY_HANDLE", "")
+    bsky_password = os.environ.get("DINA_BSKY_PASSWORD", "")
+    bsky_service = os.environ.get("DINA_BSKY_SERVICE", "https://bsky.social")
+    if bsky_handle and bsky_password:
+        try:
+            from .adapter.bluesky_bot import BlueskyBotAdapter, BlueskyClient
+            from .service.command_dispatcher import CommandDispatcher
+            from .service.user_commands import UserCommandService as _UCS
+
+            # Reuse existing UserCommandService if Telegram created one,
+            # otherwise create a new one.
+            if telegram_service is not None:
+                bsky_user_cmds = telegram_service._cmds
+            else:
+                bsky_user_cmds = _UCS(core=brain_core_client)
+                if pds_publisher_instance:
+                    bsky_user_cmds.pds_publisher = pds_publisher_instance
+
+            bsky_dispatcher = CommandDispatcher(
+                user_commands=bsky_user_cmds,
+                guardian=guardian,
+            )
+            bsky_client = BlueskyClient(bsky_service, bsky_handle, bsky_password)
+            bluesky_bot = BlueskyBotAdapter(bsky_client, bsky_dispatcher)
+            log.info("brain.bluesky.configured", extra={"handle": bsky_handle})
+        except Exception as exc:
+            log.warning("brain.bluesky.config_failed", extra={"error": str(exc)})
+            bluesky_bot = None
+    else:
+        log.info(
+            "brain.bluesky.disabled",
+            extra={"hint": "Set DINA_BSKY_HANDLE and DINA_BSKY_PASSWORD to enable"},
+        )
+
     # 4. Build sub-apps
     async def _sync_loop(engine: SyncEngine) -> None:
         """Background loop — runs sync cycles every 5 minutes."""
@@ -735,7 +771,37 @@ def create_app() -> FastAPI:
 
             telegram_task = asyncio.create_task(_start_telegram_with_retry())
 
+        # Start Bluesky polling if configured.
+        bluesky_task: asyncio.Task | None = None
+        if bluesky_bot:
+            async def _start_bluesky_with_retry() -> None:
+                backoff = 2
+                for attempt in range(1, 16):
+                    try:
+                        await bluesky_bot.start()
+                        log.info("brain.bluesky.polling_started")
+                        return
+                    except Exception as exc:
+                        log.warning("brain.bluesky.start_retry", extra={
+                            "attempt": attempt, "error": str(exc),
+                        })
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, 60)
+                log.error("brain.bluesky.start_gave_up")
+
+            bluesky_task = asyncio.create_task(_start_bluesky_with_retry())
+
         yield
+
+        # Stop Bluesky polling.
+        if bluesky_task and not bluesky_task.done():
+            bluesky_task.cancel()
+        if bluesky_bot:
+            try:
+                await bluesky_bot.stop()
+                log.info("brain.bluesky.polling_stopped")
+            except Exception:
+                pass
 
         # Stop Telegram polling.
         if telegram_task and not telegram_task.done():
