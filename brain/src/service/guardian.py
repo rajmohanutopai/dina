@@ -2986,9 +2986,8 @@ class GuardianLoop:
         # propagated to Core so sensitive personas auto-unlock.
         source = event.get("source", "")
         user_origin = source if source in ("telegram", "admin") else ""
-        log.info("guardian.reason.start", extra={
-            "req_id": req_id, "prompt": prompt[:80], "source": source,
-        })
+        from ..infra.trace_emit import trace as _trace
+        _trace("guardian.reason.start", "brain", {"prompt": prompt[:80], "source": source})
 
         try:
             vault = None
@@ -3086,11 +3085,11 @@ class GuardianLoop:
                 vault = {**(vault or {}), **tool_vault}
 
             pre_rehydrated_content = result.get("content", "")
-            log.info("guardian.reason.llm_response", extra={
-                "req_id": req_id,
+            tools_names = [tc.get("name") for tc in result.get("tools_called", [])]
+            _trace("guardian.reason.llm_response", "brain", {
                 "content_len": len(pre_rehydrated_content),
                 "content_preview": pre_rehydrated_content[:200],
-                "tools_called": [tc.get("name") for tc in result.get("tools_called", [])],
+                "tools_called": tools_names,
             })
             guard_result = None
             vault_items: list = []
@@ -3141,10 +3140,8 @@ class GuardianLoop:
                     tc.get("name") == "search_trust_network"
                     for tc in tools_list
                 )
-                log.info("guardian.guard_scan_decision", extra={
-                    "req_id": req_id,
+                _trace("guardian.guard_scan", "brain", {
                     "trust_tool_used": trust_tool_used,
-                    "tools_list": [tc.get("name") for tc in tools_list],
                     "sentence_count": len(sentences),
                     "consensus_flagged": guard_result.get("consensus_sentences", []),
                     "fabricated_flagged": guard_result.get("fabricated_sentences", []),

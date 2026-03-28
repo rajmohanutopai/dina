@@ -850,30 +850,67 @@ def model_set(env_var: str, model_id: str) -> None:
 @click.argument("req_id")
 @click.pass_context
 def trace(ctx: click.Context, req_id: str) -> None:
-    """Show request trace timeline."""
+    """Show request trace timeline.
+
+    Queries both Core and Brain trace stores, merges by timestamp.
+
+    \b
+    Example:
+      dina-admin trace a3f2b1c4d5e6
+    """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
+
+    all_events: list[dict] = []
+
+    # Query Core trace store.
     try:
         resp = client._request("GET", f"/v1/trace/{req_id}")
-        data = resp.json()
-        events = data.get("events", [])
-        if json_mode:
-            click.echo(json.dumps(data, indent=2))
-            return
-        if not events:
-            click.echo(f"No trace found for {req_id}")
-            return
-        base_ts = events[0]["ts_ms"]
-        for e in events:
-            offset = e["ts_ms"] - base_ts
+        core_events = resp.json().get("events", [])
+        for e in core_events:
             detail = json.loads(e["detail"]) if isinstance(e["detail"], str) else e["detail"]
-            parts = [f"{k}={v}" for k, v in detail.items()]
-            click.echo(
-                f"  [+{offset}ms]  {e['component']:<6} {e['step']:<20} {' '.join(parts)}"
-            )
-    except AdminClientError as exc:
-        print_error(str(exc), json_mode)
-        ctx.exit(1)
+            all_events.append({
+                "ts_ms": e["ts_ms"], "step": e["step"],
+                "component": e.get("component", "core"), "detail": detail,
+            })
+    except Exception:
+        pass  # Core trace may be empty or unavailable
+
+    # Query Brain trace store.
+    brain_url = os.environ.get("DINA_BRAIN_URL", "http://brain:8200")
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"{brain_url}/api/v1/trace/{req_id}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            brain_data = json.loads(resp.read())
+            for e in brain_data.get("events", []):
+                all_events.append({
+                    "ts_ms": e["ts_ms"], "step": e["step"],
+                    "component": e.get("component", "brain"), "detail": e.get("detail", {}),
+                })
+    except Exception:
+        pass  # Brain trace may be empty or unavailable
+
+    # Sort by timestamp.
+    all_events.sort(key=lambda e: e["ts_ms"])
+
+    if json_mode:
+        click.echo(json.dumps({"req_id": req_id, "events": all_events}, indent=2))
+        return
+
+    if not all_events:
+        click.echo(f"No trace found for {req_id}")
+        return
+
+    click.echo(f"  Trace: {req_id}  ({len(all_events)} events)\n")
+    base_ts = all_events[0]["ts_ms"]
+    for e in all_events:
+        offset = e["ts_ms"] - base_ts
+        detail = e["detail"]
+        parts = [f"{k}={v}" for k, v in detail.items()] if isinstance(detail, dict) else [str(detail)]
+        click.echo(
+            f"  [+{offset:>5}ms]  {e['component']:<6} {e['step']:<30} {' '.join(parts)}"
+        )
 
 
 # ── policy (action risk policy) ──────────────────────────────────────────

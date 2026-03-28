@@ -17,6 +17,26 @@ Every contact, relation etc should be a proper Database entry
 So, when information comes like Sanchos mother is sick, that should get filed under Sancho's information
 Obviously security of others also has to be maintained, so, Idenity.sqlite contains sanchos basic information - but in the finance vaulet etc, we store against sancho as ID
 
+# Better Reply Architecture
+
+  1. Handlers still format text — handle_status builds "*Your Dina*\nDID: ..." and passes it as BotResponse(text=...). That's just reply_text with extra steps. A truly clean architecture would have handlers return
+   structured data:                                               
+  # Current (step 1):                                                                                                                                                                                                
+  await ch.send(BotResponse(text=f"DID: `{did}`\nStatus: {status}", parse_mode="Markdown"))
+                                                                                                                                                                                                                     
+  # Beautiful (step 2):                                                                                                                                                                                              
+  return StatusResponse(did=did, status=status, version=version)                                                                                                                                                     
+  # TelegramChannel formats it. CLIChannel formats differently.                                                                                                                                                      
+                                                                                                                                                                                                                     
+  2. ErrorResponse is empty — it's just BotResponse with a different name. Should carry error codes/categories.                                                                                                      
+  3. Channel protocol is incomplete — has send() but TelegramChannel also has edit(). Protocol mismatch.                                                                                                             
+  4. Outbound notifications bypass the channel — send_nudge, send_reminder_plan use self._bot.send_message() directly.                                                                                               
+  5. _ch(context) returns Any — no type safety.                                                                                                                                                                      
+                                                                                                                                                                                                                     
+  The proper step 2 would be: handlers return typed response objects (not formatted strings), and each channel knows how to render them. That makes CLI/web channels trivially different renderers over the same     
+  data.                                                                                                                                                                                                              
+
+
 # Dina Task
 
 To ask OpenClaw to do somethings - it is not just validate and ask and reminder. this is Dina telling OpenClaw to do things

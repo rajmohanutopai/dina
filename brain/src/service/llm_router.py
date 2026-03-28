@@ -200,6 +200,10 @@ class LLMRouter:
 
         # ---- Execute ----
         route_label = "local" if provider_obj.is_local else "cloud"
+        from ..infra.trace_emit import trace as _trace
+        _trace("llm.call", "brain", {
+            "task_type": task_type, "model": provider_obj.model_name, "route": route_label,
+        })
         log.info(
             "llm_router.route",
             task_type=task_type,
@@ -226,6 +230,11 @@ class LLMRouter:
                 **complete_kwargs,
             )
             _elapsed = _time.monotonic() - _t0
+            _trace("llm.response", "brain", {
+                "model": provider_obj.model_name, "elapsed_s": round(_elapsed, 2),
+                "tokens_in": response.get("tokens_in", 0) if isinstance(response, dict) else 0,
+                "tokens_out": response.get("tokens_out", 0) if isinstance(response, dict) else 0,
+            })
             log.info(
                 "llm_router.complete",
                 model=provider_obj.model_name,

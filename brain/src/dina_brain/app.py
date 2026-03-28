@@ -19,6 +19,7 @@ from .routes import pii as pii_route
 from .routes import process as process_route
 from .routes import proposals as proposals_route
 from .routes import reason as reason_route
+from .routes import trace as trace_route
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -235,6 +236,10 @@ def create_brain_app(
     )
     app.include_router(
         proposals_route.router,
+        dependencies=[Depends(verify_service_auth)],
+    )
+    app.include_router(
+        trace_route.router,
         dependencies=[Depends(verify_service_auth)],
     )
 

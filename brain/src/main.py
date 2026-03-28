@@ -605,15 +605,6 @@ def create_app() -> FastAPI:
             guardian._telegram = telegram_service  # wire for approval prompts
             staging_processor._telegram = telegram_service  # wire for reminder push
 
-            # Wire PDS publisher for trust commands (/vouch, /review, /flag)
-            pds_url = os.environ.get("DINA_PDS_URL", "")
-            pds_handle = os.environ.get("DINA_PDS_HANDLE", "")
-            pds_password = os.environ.get("DINA_PDS_ADMIN_PASSWORD", "")
-            if pds_url and pds_handle and pds_password:
-                from .adapter.pds_publisher import PDSPublisher
-                user_commands.pds_publisher = PDSPublisher(pds_url, pds_handle, pds_password)
-                log.info("brain.pds_publisher.configured", extra={"pds_url": pds_url})
-
             log.info("brain.telegram.configured")
         except ImportError:
             log.warning(
@@ -627,6 +618,20 @@ def create_app() -> FastAPI:
             "brain.telegram.disabled",
             extra={"hint": "Set DINA_TELEGRAM_TOKEN to enable"},
         )
+
+    # Wire PDS publisher for trust commands — independent of Telegram.
+    # Works via Telegram (/review, /vouch, /flag), admin CLI, and web UI.
+    pds_url = os.environ.get("DINA_PDS_URL", "")
+    pds_handle = os.environ.get("DINA_PDS_HANDLE", "")
+    pds_password = os.environ.get("DINA_PDS_ADMIN_PASSWORD", "")
+    pds_publisher_instance = None
+    if pds_url and pds_handle and pds_password:
+        from .adapter.pds_publisher import PDSPublisher
+        pds_publisher_instance = PDSPublisher(pds_url, pds_handle, pds_password)
+        log.info("brain.pds_publisher.configured", extra={"pds_url": pds_url})
+        # Wire into UserCommandService if Telegram created it.
+        if telegram_service is not None:
+            telegram_service._pds_publisher = pds_publisher_instance
 
     # 4. Build sub-apps
     async def _sync_loop(engine: SyncEngine) -> None:

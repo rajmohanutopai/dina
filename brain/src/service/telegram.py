@@ -35,6 +35,7 @@ import datetime as _dt
 import os
 import zoneinfo
 
+from ..domain.response import BotResponse, ConfirmResponse, ErrorResponse
 from ..port.core_client import CoreClient
 from .user_commands import UserCommandService, validate_name, validate_did
 
@@ -117,6 +118,11 @@ class TelegramService:
         """
         self._bot = bot
 
+    @staticmethod
+    def _ch(context: Any) -> Any:
+        """Get the TelegramChannel from context. Falls back to None."""
+        return context.user_data.get("channel") if hasattr(context, "user_data") else None
+
     # ------------------------------------------------------------------
     # Startup
     # ------------------------------------------------------------------
@@ -161,10 +167,12 @@ class TelegramService:
         chat_id = update.effective_chat.id
         username = update.effective_user.username or str(user_id)
 
+        ch = self._ch(context)
+
         if user_id in self._paired_users:
-            await update.message.reply_text(  # type: ignore[union-attr]
-                "You're already paired. Send me a message and I'll help."
-            )
+            await ch.send(BotResponse(
+                text="You're already paired. Send me a message and I'll help."
+            ))
             return
 
         if user_id not in self._allowed_users:
@@ -172,10 +180,10 @@ class TelegramService:
                 "telegram.start.rejected",
                 extra={"user_id": user_id, "username": username},
             )
-            await update.message.reply_text(  # type: ignore[union-attr]
-                "Sorry, I can only chat with my owner. "
+            await ch.send(BotResponse(
+                text="Sorry, I can only chat with my owner. "
                 "Ask them to add your Telegram user ID to the allowed list."
-            )
+            ))
             return
 
         # Pair the user.
@@ -184,10 +192,10 @@ class TelegramService:
             "telegram.start.paired",
             extra={"user_id": user_id, "username": username},
         )
-        await update.message.reply_text(  # type: ignore[union-attr]
-            "Welcome! You're now paired with Dina. "
+        await ch.send(BotResponse(
+            text="Welcome! You're now paired with Dina. "
             "Send me any message and I'll think about it."
-        )
+        ))
 
     # ------------------------------------------------------------------
     # /remember command
@@ -207,11 +215,12 @@ class TelegramService:
         if not update.message:
             return
 
+        ch = self._ch(context)
         user_id = update.effective_user.id
         if not self._is_allowed_user(user_id):
-            await update.message.reply_text(
-                "I don't recognise you yet. Send /start to pair."
-            )
+            await ch.send(BotResponse(
+                text="I don't recognise you yet. Send /start to pair."
+            ))
             return
 
         # Auto-pair on first interaction.
@@ -224,10 +233,10 @@ class TelegramService:
         if text.lower().startswith("/remember"):
             text = text[len("/remember"):].strip()
         if not text:
-            await update.message.reply_text(
-                "Usage: /remember <text>\n"
+            await ch.send(BotResponse(
+                text="Usage: /remember <text>\n"
                 "Example: /remember My FD interest rate is now 7.8%"
-            )
+            ))
             return
 
         try:
@@ -293,18 +302,18 @@ class TelegramService:
                     log.debug("telegram.suppressed_error", exc_info=_exc)
 
             if plan and plan.get("reminders"):
-                await update.message.reply_text(result_msg, parse_mode="Markdown")
+                await ch.send(BotResponse(text=result_msg, parse_mode="Markdown"))
                 await self.send_reminder_plan(update.effective_chat.id, plan)
             else:
-                await update.message.reply_text(result_msg, parse_mode="Markdown")
+                await ch.send(BotResponse(text=result_msg, parse_mode="Markdown"))
         except Exception as exc:
             log.error(
                 "telegram.remember_failed",
                 extra={"error": f"{type(exc).__name__}: {exc}"},
             )
-            await update.message.reply_text(
-                "Sorry, I couldn't save that. Please try again."
-            )
+            await ch.send(ErrorResponse(
+                text="Sorry, I couldn't save that. Please try again."
+            ))
 
     # ------------------------------------------------------------------
     # /edit command (reminder editing)
@@ -316,12 +325,13 @@ class TelegramService:
         """Handle /edit command from Telegram command handler."""
         if not update.effective_user or not update.message:
             return
+        ch = self._ch(context)
         text = (update.message.text or "").strip()
         if text.lower().startswith("/edit"):
             text = text[len("/edit"):].strip()
-        await self._process_edit(update, f"/edit {text}" if text else "/edit")
+        await self._process_edit(update, f"/edit {text}" if text else "/edit", ch=ch)
 
-    async def _process_edit(self, update: Update, raw_text: str) -> None:
+    async def _process_edit(self, update: Update, raw_text: str, *, ch: Any) -> None:
         """Process an edit command — accepts raw text including /edit prefix."""
         if not update.message:
             return
@@ -329,17 +339,13 @@ class TelegramService:
         if text.lower().startswith("/edit"):
             text = text[len("/edit"):].strip()
         if not text:
-            await update.message.reply_text(
-                "Usage: /edit <reminder_id> <new time — new message>"
-            )
+            await ch.send(BotResponse(text="Usage: /edit <reminder_id> <new time — new message>"))
             return
 
         # Parse: first token is short reminder ID, rest is the edited text.
         parts = text.split(None, 1)
         if len(parts) < 2:
-            await update.message.reply_text(
-                "Usage: /edit <id> <new time — new message>"
-            )
+            await ch.send(BotResponse(text="Usage: /edit <id> <new time — new message>"))
             return
         short_id = parts[0]
         edited_text = parts[1]
@@ -357,7 +363,7 @@ class TelegramService:
         except Exception as _exc:
             log.debug("telegram.suppressed_error", exc_info=_exc)
         if not rem_id:
-            await update.message.reply_text(f"Reminder `{short_id}` not found.")
+            await ch.send(ErrorResponse(text=f"Reminder `{short_id}` not found."))
             return
 
         # Ask LLM to parse the new time and message.
@@ -406,14 +412,10 @@ class TelegramService:
             })
 
             time_str = _format_local_time(fire_at)
-            await update.message.reply_text(
-                f"✏️ Reminder updated:\n{time_str} — {message}"
-            )
+            await ch.send(BotResponse(text=f"✏️ Reminder updated:\n{time_str} — {message}"))
         except Exception as exc:
             log.warning("telegram.edit_failed", extra={"error": str(exc)})
-            await update.message.reply_text(
-                "Could not parse the edit. Try: /edit <id> Apr 5, 3:00 PM — New message"
-            )
+            await ch.send(ErrorResponse(text="Could not parse the edit. Try: /edit <id> Apr 5, 3:00 PM — New message"))
 
     # ------------------------------------------------------------------
     # /send command (D2D messaging)
@@ -426,31 +428,32 @@ class TelegramService:
         if not update.effective_user or not update.message:
             return
 
+        ch = self._ch(context)
         user_id = update.effective_user.id
         if not self._is_allowed_user(user_id):
-            await update.message.reply_text(
-                "I don't recognise you yet. Send /start to pair."
-            )
+            await ch.send(BotResponse(
+                text="I don't recognise you yet. Send /start to pair."
+            ))
             return
 
         text = (update.message.text or "").strip()
         if text.lower().startswith("/send"):
             text = text[len("/send"):].strip()
         if ":" not in text:
-            await update.message.reply_text(
-                "Usage: /send Name: message\n"
+            await ch.send(BotResponse(
+                text="Usage: /send Name: message\n"
                 "Example: /send Sancho: I'll be there in 30 minutes"
-            )
+            ))
             return
 
         colon_pos = text.index(":")
         contact_name = text[:colon_pos].strip()
         message_text = text[colon_pos + 1:].strip()
         if not contact_name or not message_text:
-            await update.message.reply_text(
-                "Usage: /send Name: message\n"
+            await ch.send(BotResponse(
+                text="Usage: /send Name: message\n"
                 "Example: /send Sancho: I'll be there in 30 minutes"
-            )
+            ))
             return
 
         result = await self._cmds.send_d2d(
@@ -465,11 +468,11 @@ class TelegramService:
                 "safety.alert": "Safety alert",
                 "trust.vouch.request": "Trust request",
             }.get(result.data.get("type", ""), result.data.get("type", ""))
-            await update.message.reply_text(
-                f"Sent to {contact_name}: {type_label}\n{message_text}"
-            )
+            await ch.send(BotResponse(
+                text=f"Sent to {contact_name}: {type_label}\n{message_text}"
+            ))
         else:
-            await update.message.reply_text(result.message)
+            await ch.send(ErrorResponse(text=result.message))
 
     # ------------------------------------------------------------------
     # /ask command
@@ -487,13 +490,14 @@ class TelegramService:
         if not update.message:
             return
 
+        ch = self._ch(context)
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
 
         if not self._is_allowed_user(user_id):
-            await update.message.reply_text(
-                "I don't recognise you yet. Send /start to pair."
-            )
+            await ch.send(BotResponse(
+                text="I don't recognise you yet. Send /start to pair."
+            ))
             return
 
         if user_id not in self._paired_users:
@@ -503,10 +507,10 @@ class TelegramService:
         if text.lower().startswith("/ask"):
             text = text[len("/ask"):].strip()
         if not text:
-            await update.message.reply_text(
-                "Usage: /ask <question>\n"
+            await ch.send(BotResponse(
+                text="Usage: /ask <question>\n"
                 "Example: /ask What is my FD status?"
-            )
+            ))
             return
 
         import hashlib
@@ -524,19 +528,19 @@ class TelegramService:
             })
             response_text = self._extract_response(result)
             if response_text:
-                await update.message.reply_text(
-                    f"{response_text}\n\n`[{req_id}]`",
+                await ch.send(BotResponse(
+                    text=f"{response_text}\n\n`[{req_id}]`",
                     parse_mode="Markdown",
-                )
+                ))
         except Exception as exc:
             log.error(
                 "telegram.ask_failed",
                 extra={"error": type(exc).__name__, "chat_id": chat_id, "req_id": req_id},
             )
-            await update.message.reply_text(
-                f"Something went wrong. Please try again.\n\n`[{req_id}]`",
+            await ch.send(ErrorResponse(
+                text=f"Something went wrong. Please try again.\n\n`[{req_id}]`",
                 parse_mode="Markdown",
-            )
+            ))
 
     # ------------------------------------------------------------------
     # Message handler (default = ask)
@@ -557,6 +561,7 @@ class TelegramService:
         if not update.message or not update.message.text:
             return
 
+        ch = self._ch(context)
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
         chat_type = update.effective_chat.type
@@ -574,9 +579,9 @@ class TelegramService:
         # --- DM handling ---
         elif chat_type == "private":
             if not self._is_allowed_user(user_id):
-                await update.message.reply_text(
-                    "I don't recognise you yet. Send /start to pair."
-                )
+                await ch.send(BotResponse(
+                    text="I don't recognise you yet. Send /start to pair."
+                ))
                 return
             # Auto-pair allowed users on first DM so they receive
             # outbound notifications (approvals, nudges) without
@@ -587,7 +592,7 @@ class TelegramService:
         # --- Check for approval response (approve/deny via text) ---
         approval_response = await self.handle_approval_response(text)
         if approval_response:
-            await update.message.reply_text(approval_response, parse_mode="Markdown")
+            await ch.send(BotResponse(text=approval_response, parse_mode="Markdown"))
             return
 
         # --- Handle inline edit from switch_inline_query_current_chat ---
@@ -597,12 +602,12 @@ class TelegramService:
             stripped = stripped.replace(f"@{self._bot.bot_username}", "").strip()
         if stripped.startswith("/edit"):
             # Can't modify update.message.text (immutable) — call edit directly.
-            await self._process_edit(update, stripped)
+            await self._process_edit(update, stripped, ch=ch)
             return
 
         # --- No default action — guide the user ---
-        await update.message.reply_text(
-            "Here's what I can do:\n\n"
+        await ch.send(BotResponse(
+            text="Here's what I can do:\n\n"
             "*Memory*\n"
             "/ask <question> — ask me anything\n"
             "/remember <text> — store a memory\n\n"
@@ -618,7 +623,7 @@ class TelegramService:
             "*Info*\n"
             "/status — your DID and node health",
             parse_mode="Markdown",
-        )
+        ))
 
     # ------------------------------------------------------------------
     # Outbound nudge
@@ -742,6 +747,7 @@ class TelegramService:
             return
         await query.answer()  # Acknowledge the button press
 
+        ch = self._ch(context)
         data = query.data
 
         # Handle reminder buttons.
@@ -749,31 +755,24 @@ class TelegramService:
             rem_id = data[len("reminder_delete:"):]
             try:
                 await self._core._request("DELETE", f"/v1/reminder/{rem_id}")
-                if query.message:
-                    await query.message.reply_text("🗑 Reminder deleted.")
+                if ch:
+                    await ch.send(BotResponse(text="🗑 Reminder deleted."))
             except Exception:
-                if query.message:
-                    await query.message.reply_text("Failed to delete reminder.")
+                if ch:
+                    await ch.send(ErrorResponse(text="Failed to delete reminder."))
             return
 
         # Trust publish buttons (Publish / Cancel).
         if data.startswith("trust_yes:") or data == "trust_no":
-            await self._handle_trust_callback(update)
+            await self._handle_trust_callback(update, ch)
             return
 
         # Edit button uses switch_inline_query_current_chat — no callback needed.
 
         # Handle approval buttons.
         response = await self.handle_approval_response(data)
-        if response and query.message:
-            try:
-                original_text = query.message.text or ""
-                await query.message.edit_text(
-                    f"{original_text}\n\n{response}",
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                await query.message.reply_text(response, parse_mode="Markdown")
+        if response and ch:
+            await ch.edit(BotResponse(text=response, parse_mode="Markdown"))
 
     # ------------------------------------------------------------------
     # Access control
@@ -914,9 +913,10 @@ class TelegramService:
         """/status — show your Dina's identity and health."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
+        ch = self._ch(context)
         result = await self._cmds.get_status()
         if not result.ok:
-            await update.message.reply_text(result.message)
+            await ch.send(ErrorResponse(text=result.message))
             return
         d = result.data
         lines = [
@@ -925,7 +925,7 @@ class TelegramService:
             f"Status: {d['status']}",
             f"Version: {d['version']}",
         ]
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await ch.send(BotResponse(text="\n".join(lines), parse_mode="Markdown"))
 
     async def handle_vouch(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -933,12 +933,13 @@ class TelegramService:
         """/vouch Name: reason — vouch for a contact on the Trust Network."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
+        ch = self._ch(context)
         text = " ".join(context.args) if context.args else ""
         if ":" not in text:
-            await update.message.reply_text(
-                "Usage: /vouch Name: reason\n"
+            await ch.send(BotResponse(
+                text="Usage: /vouch Name: reason\n"
                 "Example: /vouch Sancho: Known him for 10 years, trustworthy"
-            )
+            ))
             return
 
         name, reason = text.split(":", 1)
@@ -948,26 +949,24 @@ class TelegramService:
         # Validate inputs
         err = validate_name(name)
         if err:
-            await update.message.reply_text(err)
+            await ch.send(ErrorResponse(text=err))
             return
 
         # Resolve contact name → DID
         did = await self._cmds.resolve_contact_did(name)
         if not did:
-            await update.message.reply_text(f"Contact '{name}' not found.")
+            await ch.send(ErrorResponse(text=f"Contact '{name}' not found."))
             return
 
-        # Confirmation
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("Publish", callback_data=f"trust_yes:{did[:20]}"),
-            InlineKeyboardButton("Cancel", callback_data="trust_no"),
-        ]])
         self._pending_trust = {"cmd": "vouch", "name": name, "text": reason}
-        await update.message.reply_text(
-            f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
+        await ch.send(ConfirmResponse(
+            text=f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
             parse_mode="Markdown",
-            reply_markup=keyboard,
-        )
+            actions=[
+                {"label": "Publish", "callback_data": f"trust_yes:{did[:20]}"},
+                {"label": "Cancel", "callback_data": "trust_no"},
+            ],
+        ))
 
     async def handle_review(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -975,12 +974,13 @@ class TelegramService:
         """/review Product: review text — publish a product review to the Trust Network."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
+        ch = self._ch(context)
         text = " ".join(context.args) if context.args else ""
         if ":" not in text:
-            await update.message.reply_text(
-                "Usage: /review Product: your review\n"
+            await ch.send(BotResponse(
+                text="Usage: /review Product: your review\n"
                 "Example: /review Aeron Chair: Fixed my back pain in 2 weeks"
-            )
+            ))
             return
 
         product, review = text.split(":", 1)
@@ -990,19 +990,18 @@ class TelegramService:
         # Validate product name
         err = validate_name(product)
         if err:
-            await update.message.reply_text(err)
+            await ch.send(ErrorResponse(text=err))
             return
 
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("Publish", callback_data=f"trust_yes:review"),
-            InlineKeyboardButton("Cancel", callback_data="trust_no"),
-        ]])
         self._pending_trust = {"cmd": "review", "product": product, "text": review}
-        await update.message.reply_text(
-            f"Review of *{_escape_markdown(product)}*:\n_{_escape_markdown(review)}_\n\nPublish to Trust Network?",
+        await ch.send(ConfirmResponse(
+            text=f"Review of *{_escape_markdown(product)}*:\n_{_escape_markdown(review)}_\n\nPublish to Trust Network?",
             parse_mode="Markdown",
-            reply_markup=keyboard,
-        )
+            actions=[
+                {"label": "Publish", "callback_data": "trust_yes:review"},
+                {"label": "Cancel", "callback_data": "trust_no"},
+            ],
+        ))
 
     async def handle_flag(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -1010,12 +1009,13 @@ class TelegramService:
         """/flag DID_or_name: reason — flag a bad actor on the Trust Network."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
+        ch = self._ch(context)
         text = " ".join(context.args) if context.args else ""
         if ":" not in text:
-            await update.message.reply_text(
-                "Usage: /flag Name: reason\n"
+            await ch.send(BotResponse(
+                text="Usage: /flag Name: reason\n"
                 "Example: /flag ScamSeller: Sent counterfeit product"
-            )
+            ))
             return
 
         target, reason = text.split(":", 1)
@@ -1028,7 +1028,7 @@ class TelegramService:
         else:
             err = validate_name(target)
         if err:
-            await update.message.reply_text(err)
+            await ch.send(ErrorResponse(text=err))
             return
 
         # Try to resolve as contact name, otherwise treat as DID
@@ -1037,19 +1037,18 @@ class TelegramService:
             did = target
 
         if not did:
-            await update.message.reply_text(f"Could not resolve '{target}'. Use a contact name or DID.")
+            await ch.send(ErrorResponse(text=f"Could not resolve '{target}'. Use a contact name or DID."))
             return
 
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("Publish", callback_data=f"trust_yes:flag"),
-            InlineKeyboardButton("Cancel", callback_data="trust_no"),
-        ]])
         self._pending_trust = {"cmd": "flag", "target": target, "text": reason}
-        await update.message.reply_text(
-            f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
+        await ch.send(ConfirmResponse(
+            text=f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
             parse_mode="Markdown",
-            reply_markup=keyboard,
-        )
+            actions=[
+                {"label": "Publish", "callback_data": "trust_yes:flag"},
+                {"label": "Cancel", "callback_data": "trust_no"},
+            ],
+        ))
 
     async def handle_trust(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -1057,36 +1056,37 @@ class TelegramService:
         """/trust Name_or_DID — query trust score (read-only, no publish)."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
+        ch = self._ch(context)
         text = " ".join(context.args) if context.args else ""
         if not text:
-            await update.message.reply_text(
-                "Usage: /trust Name or DID\n"
+            await ch.send(BotResponse(
+                text="Usage: /trust Name or DID\n"
                 "Example: /trust Sancho"
-            )
+            ))
             return
 
         result = await self._cmds.query_trust(text)
         if not result.ok:
-            await update.message.reply_text(result.message)
+            await ch.send(ErrorResponse(text=result.message))
             return
 
         d = result.data
-        await update.message.reply_text(
-            f"Trust: *{_escape_markdown(d['display_name'])}*\n"
+        await ch.send(BotResponse(
+            text=f"Trust: *{_escape_markdown(d['display_name'])}*\n"
             f"Score: {d['score']}\n"
             f"Attestations: {d['total_attestations']} ({d['positive_attestations']} positive)\n"
             f"Vouches: {d['vouch_count']}",
             parse_mode="Markdown",
-        )
+        ))
 
-    async def _handle_trust_callback(self, update: Update) -> None:
+    async def _handle_trust_callback(self, update: Update, ch: Any) -> None:
         """Handle Publish/Cancel callback for trust commands."""
         query = update.callback_query
         await query.answer()
         data = query.data or ""
 
         if data == "trust_no":
-            await query.edit_message_text("Cancelled.")
+            await ch.edit(BotResponse(text="Cancelled."))
             self._pending_trust = None
             return
 
@@ -1095,7 +1095,7 @@ class TelegramService:
 
         pending = getattr(self, "_pending_trust", None)
         if not pending:
-            await query.edit_message_text("Nothing to publish (expired).")
+            await ch.edit(BotResponse(text="Nothing to publish (expired)."))
             return
 
         cmd = pending["cmd"]
@@ -1113,20 +1113,20 @@ class TelegramService:
                     target=pending["target"], reason=pending["text"],
                 )
             else:
-                await query.edit_message_text("Unknown command.")
+                await ch.edit(ErrorResponse(text="Unknown command."))
                 self._pending_trust = None
                 return
 
             if result.ok:
                 uri = result.data.get("uri", "?") if result.data else "?"
-                await query.edit_message_text(
-                    f"{result.message}\nURI: `{uri}`",
+                await ch.edit(BotResponse(
+                    text=f"{result.message}\nURI: `{uri}`",
                     parse_mode="Markdown",
-                )
+                ))
             else:
-                await query.edit_message_text(result.message)
+                await ch.edit(ErrorResponse(text=result.message))
         except Exception as exc:
-            await query.edit_message_text(f"Publish failed: {exc}")
+            await ch.edit(ErrorResponse(text=f"Publish failed: {exc}"))
             log.warning("trust_publish_failed", extra={"cmd": cmd, "error": str(exc)})
         finally:
             self._pending_trust = None
@@ -1139,15 +1139,16 @@ class TelegramService:
         """/contact add|delete|list — manage your contacts."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
+        ch = self._ch(context)
         args = context.args or []
         if not args:
-            await update.message.reply_text(
-                "Supported actions:\n"
+            await ch.send(BotResponse(
+                text="Supported actions:\n"
                 "  /contact add Name: did:plc:...\n"
                 "  /contact delete Name\n"
                 "  /contact list\n"
                 "  /contact cleanup"
-            )
+            ))
             return
 
         action = args[0].lower()
@@ -1155,11 +1156,11 @@ class TelegramService:
         if action == "list":
             result = await self._cmds.list_contacts()
             if not result.ok:
-                await update.message.reply_text(result.message)
+                await ch.send(ErrorResponse(text=result.message))
                 return
             contacts = result.data["contacts"]
             if not contacts:
-                await update.message.reply_text("No contacts.")
+                await ch.send(BotResponse(text="No contacts."))
                 return
             lines = []
             for c in contacts:
@@ -1167,51 +1168,51 @@ class TelegramService:
                 did = c.get("did", "?")
                 trust = c.get("trust_level", "")
                 lines.append(f"  {name} — `{did[:35]}...` {trust}")
-            await update.message.reply_text(
-                f"*Contacts ({len(contacts)}):*\n" + "\n".join(lines),
+            await ch.send(BotResponse(
+                text=f"*Contacts ({len(contacts)}):*\n" + "\n".join(lines),
                 parse_mode="Markdown",
-            )
+            ))
             return
 
         if action == "add":
             rest = " ".join(args[1:])
             if ":" not in rest or not rest.split(":", 1)[1].strip().startswith("did:"):
-                await update.message.reply_text(
-                    "Usage: /contact add Name: did:plc:...\n"
+                await ch.send(BotResponse(
+                    text="Usage: /contact add Name: did:plc:...\n"
                     "Example: /contact add Sancho: did:plc:abc123"
-                )
+                ))
                 return
             name, did = rest.split(":", 1)
             name = name.strip()
             did = did.strip()
             result = await self._cmds.add_contact(name, did)
             if result.ok:
-                await update.message.reply_text(
-                    f"Contact added: *{_escape_markdown(name)}* (`{did[:30]}...`)",
+                await ch.send(BotResponse(
+                    text=f"Contact added: *{_escape_markdown(name)}* (`{did[:30]}...`)",
                     parse_mode="Markdown",
-                )
+                ))
             else:
-                await update.message.reply_text(result.message)
+                await ch.send(ErrorResponse(text=result.message))
             return
 
         if action in ("delete", "remove"):
             if len(args) < 2:
-                await update.message.reply_text("Usage: /contact delete Name")
+                await ch.send(BotResponse(text="Usage: /contact delete Name"))
                 return
             name = " ".join(args[1:])
             result = await self._cmds.delete_contact(name)
-            await update.message.reply_text(result.message)
+            await ch.send(BotResponse(text=result.message))
             return
 
         if action == "cleanup":
             result = await self._cmds.cleanup_contacts()
-            await update.message.reply_text(result.message)
+            await ch.send(BotResponse(text=result.message))
             return
 
-        await update.message.reply_text(
-            "Supported actions:\n"
+        await ch.send(BotResponse(
+            text="Supported actions:\n"
             "  /contact add Name: did:plc:...\n"
             "  /contact delete Name\n"
             "  /contact list\n"
             "  /contact cleanup"
-        )
+        ))

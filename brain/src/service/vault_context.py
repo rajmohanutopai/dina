@@ -495,7 +495,8 @@ class ToolExecutor:
         if not query:
             return {"error": "query is required"}
 
-        log.info("trust_search.request", extra={
+        from ..infra.trace_emit import trace as _trace
+        _trace("trust_search.request", "brain", {
             "query": query, "category": category or "product-review",
         })
 
@@ -506,9 +507,8 @@ class ToolExecutor:
                 query=query, category=category or "product-review", subject_type="", limit=10,
             )
             raw_count = len(result.get("results", [])) if result else 0
-            log.info("trust_search.appview_response", extra={
-                "query": query, "category": category or "product-review",
-                "result_count": raw_count,
+            _trace("trust_search.appview_response", "brain", {
+                "query": query, "result_count": raw_count,
             })
             # If no results with category filter, try text-only search
             if result and not result.get("results"):
@@ -550,7 +550,7 @@ class ToolExecutor:
                 "category": r.get("category", ""),
             })
 
-        log.info("trust_search.formatted", extra={
+        _trace("trust_search.result", "brain", {
             "query": query, "item_count": len(items),
             "products": [i["product_name"] for i in items if i["product_name"]],
         })

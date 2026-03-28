@@ -73,18 +73,15 @@ func (l *Logging) Handler(next http.Handler) http.Handler {
 			attrs = append(attrs, slog.String("did", did))
 		}
 
-		// Log errors at WARN level for visibility.
-		args := make([]any, len(attrs))
-		for i, a := range attrs {
-			args[i] = a
-		}
+		// Log with a manually constructed record so "source" shows the
+		// request path instead of this middleware file.
+		level := slog.LevelInfo
 		if sw.status >= 500 {
-			slog.Warn("http request", args...)
-		} else if sw.status >= 400 {
-			slog.Info("http request", args...)
-		} else {
-			slog.Info("http request", args...)
+			level = slog.LevelWarn
 		}
+		rec := slog.NewRecord(time.Now(), level, "http request", 0)
+		rec.AddAttrs(attrs...)
+		_ = slog.Default().Handler().Handle(r.Context(), rec)
 
 		// Emit trace event for request debugging (no-op when Emitter is nil).
 		if l.Emitter != nil {

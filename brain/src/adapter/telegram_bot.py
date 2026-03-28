@@ -39,32 +39,35 @@ HandlerCallback = Callable[
 
 
 def _wrap_with_req_id(handler: HandlerCallback) -> HandlerCallback:
-    """Middleware: bind request_id to structlog context.
+    """Middleware: bind request_id, create TelegramChannel, emit traces.
 
-    Uses the same ``bind_request_id`` as the HTTP middleware so all logs
-    from a Telegram handler share one request_id.  The req_id is sent
-    as a small follow-up message after the handler completes.
+    Creates a ``TelegramChannel`` with the request_id and stores it in
+    ``context.user_data["channel"]``.  Handlers use ``channel.send()``
+    to deliver responses — req_id is appended automatically.
 
-    Phase 2 will introduce a BotReply class that handlers return instead
-    of calling reply_text directly, making cross-cutting concerns trivial.
+    Handlers that still use ``update.message.reply_text`` directly
+    (during migration) won't get req_id — this incentivizes migration.
     """
 
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         from ..infra.logging import bind_request_id
+        from .telegram_channel import TelegramChannel
 
         rid = bind_request_id()
         context.user_data["req_id"] = rid  # type: ignore[index]
 
+        # Create channel for this request.
+        msg = update.message or (update.callback_query.message if update.callback_query else None)
+        if msg:
+            context.user_data["channel"] = TelegramChannel(msg, rid)  # type: ignore[index]
+
+        from ..infra.trace_emit import trace
+        cmd = update.message.text[:30] if update.message and update.message.text else "?"
+        trace("telegram.request", "brain", {"command": cmd})
+
         await handler(update, context)
 
-        # Append req_id as a quiet follow-up for log correlation.
-        if update.effective_chat:
-            try:
-                await update.effective_chat.send_message(
-                    f"_[{rid}]_", parse_mode="Markdown",
-                )
-            except Exception:
-                pass
+        trace("telegram.response", "brain")
 
     return wrapper
 
@@ -104,10 +107,9 @@ class TelegramBotAdapter:
         for cmd, cb in (command_callbacks or {}).items():
             self._app.add_handler(CommandHandler(cmd, _wrap_with_req_id(cb)))
 
-        # Inline keyboard button callback handler (no req_id — callbacks
-        # edit existing messages, not new replies).
+        # Inline keyboard button callback handler.
         if callback_query_handler:
-            self._app.add_handler(CallbackQueryHandler(callback_query_handler))
+            self._app.add_handler(CallbackQueryHandler(_wrap_with_req_id(callback_query_handler)))
 
         # Catch-all text message handler (after commands).
         self._app.add_handler(

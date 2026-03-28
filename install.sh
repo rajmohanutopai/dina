@@ -897,6 +897,10 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
 
     if [ "${_PDS_REGISTERED}" != "true" ]; then
         echo -e "  ${YELLOW}⚠${RESET} Could not reach community PDS. Trust Network will be configured on next restart."
+    else
+        # Restart Brain so it picks up the new PDS credentials from .env.
+        # Containers were started in Step 6 before PDS account was created.
+        $COMPOSE up -d --force-recreate brain >/dev/null 2>&1 || true
     fi
     echo ""
 else
