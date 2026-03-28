@@ -992,6 +992,13 @@ func main() {
 		}
 		if correlationID != "" {
 			slog.Info("ingress: D2D correlation", "correlation_id", correlationID, "from", msg.From, "type", msg.Type)
+			// Write to trace store so dina-admin trace <correlation_id> works.
+			if traceStore != nil {
+				_ = traceStore.Append(correlationID, "d2d_received", "core",
+					fmt.Sprintf(`{"from":"%s","type":"%s"}`, msg.From, msg.Type))
+				_ = traceStore.Append(correlationID, "d2d_decrypted", "core",
+					fmt.Sprintf(`{"body_len":%d}`, len(msg.Body)))
+			}
 		}
 
 		// Stage memory-producing D2D content for vault persistence.
@@ -1001,6 +1008,10 @@ func main() {
 		// Push to Brain for nudge assembly / handler routing.
 		// Pass correlation_id so receiver Brain can bind it for tracing.
 		go func() {
+			if correlationID != "" && traceStore != nil {
+				_ = traceStore.Append(correlationID, "d2d_brain_forward", "core",
+					`{"step":"pushing to brain for nudge"}`)
+			}
 			payload := map[string]interface{}{
 				"from":         msg.From,
 				"body":         bodyStr,
