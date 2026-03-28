@@ -2005,19 +2005,9 @@ class GuardianLoop:
         except Exception:
             log.warning("guardian.reminder.notify_failed")
 
-        # Push to Telegram so the user gets it on their phone.
-        if hasattr(self, "_telegram") and self._telegram:
-            if not self._telegram._paired_users:
-                await self._telegram.load_paired_users()
-            try:
-                emoji = {"birthday": "🎂", "appointment": "📅", "payment_due": "💳"}.get(kind, "🔔")
-                for chat_id in self._telegram._paired_users:
-                    await self._telegram._bot.send_message(
-                        chat_id, f"{emoji} {notification_text}",
-                    )
-                log.info("guardian.reminder.telegram_sent")
-            except Exception as exc:
-                log.warning("guardian.reminder.telegram_failed", error=str(exc))
+        # Push to all configured channels (Telegram, Bluesky).
+        emoji = {"birthday": "🎂", "appointment": "📅", "payment_due": "💳"}.get(kind, "🔔")
+        await self._push_notification(f"{emoji} {notification_text}", "reminder")
 
         return {
             "status": "ok",
@@ -3689,6 +3679,30 @@ class GuardianLoop:
 
         return False
 
+    async def _push_notification(self, text: str, source: str = "") -> None:
+        """Push a notification to all configured channels (Telegram, Bluesky).
+
+        Best-effort — logs failures but never raises.
+        """
+        # Telegram
+        if hasattr(self, "_telegram") and self._telegram:
+            try:
+                if not self._telegram._paired_users:
+                    await self._telegram.load_paired_users()
+                for chat_id in self._telegram._paired_users:
+                    await self._telegram._bot.send_message(chat_id, text)
+                log.info("guardian.notify.telegram_sent", source=source)
+            except Exception:
+                log.warning("guardian.notify.telegram_failed", source=source)
+
+        # Bluesky
+        if hasattr(self, "_bluesky") and self._bluesky:
+            try:
+                await self._bluesky.send_owner_dm(text)
+                log.info("guardian.notify.bluesky_sent", source=source)
+            except Exception:
+                log.warning("guardian.notify.bluesky_failed", source=source)
+
     async def _build_anti_her_redirect(self) -> str:
         """Build a human-redirect response for Anti-Her violations.
 
@@ -4471,12 +4485,7 @@ class GuardianLoop:
                                     if context:
                                         notify_text += f": {context}"
                         if notify_text:
-                            try:
-                                for chat_id in self._telegram._paired_users:
-                                    await self._telegram._bot.send_message(chat_id, notify_text)
-                                log.info("guardian.didcomm.nudge_sent", handler=handler)
-                            except Exception:
-                                log.warning("guardian.didcomm.nudge_send_failed")
+                            await self._push_notification(notify_text, f"didcomm.nudge.{handler}")
                     # Create reminders for D2D messages with temporal content.
                     plan = None
                     if hasattr(self, "_staging_processor") and self._staging_processor:
@@ -4559,17 +4568,7 @@ class GuardianLoop:
                             notify_text = f"🤝 Vouch response for {subject}...: {vouch}"
 
                     if notify_text:
-                        # Lazy retry: load paired users if empty (startup race).
-                        if not self._telegram._paired_users:
-                            await self._telegram.load_paired_users()
-                        try:
-                            for chat_id in self._telegram._paired_users:
-                                await self._telegram._bot.send_message(
-                                    chat_id, notify_text,
-                                )
-                            log.info("guardian.didcomm.notify_sent", handler=handler)
-                        except Exception:
-                            log.warning("guardian.didcomm.notify_send_failed", handler=handler)
+                        await self._push_notification(notify_text, f"didcomm.{handler}")
 
                 return {"action": "routed", "handler": handler, "staged": staged}
 

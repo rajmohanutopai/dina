@@ -237,6 +237,54 @@ class CommandDispatcher:
             log.error("dispatch.ask_failed", extra={"error": str(exc)})
             return ErrorResponse(text="Something went wrong. Please try again.")
 
+    # ── Remember ──────────────────────────────────────────────────────
+
+    async def _handle_remember(self, req: CommandRequest) -> BotResponse:
+        """Store a memory via staging pipeline."""
+        text = req.args.get("text", "")
+        if not text:
+            return ErrorResponse(text="Usage: remember <text>")
+        if not self._guardian:
+            return ErrorResponse(text="Remember not available.")
+        try:
+            # Use Core's staging_ingest (same path as Telegram /remember).
+            import time as _time
+            staging_id = await self._cmds._core.staging_ingest({
+                "type": "note",
+                "source": req.source or "channel",
+                "source_id": f"ch_{int(_time.time())}",
+                "summary": text[:200],
+                "body": text,
+                "sender": req.user_id,
+                "metadata": "{}",
+                "ingress_channel": req.source or "channel",
+                "origin_kind": "user",
+            })
+            # Poll for result.
+            import asyncio
+            result_msg = "Stored."
+            for _ in range(15):
+                await asyncio.sleep(1)
+                try:
+                    status = await self._cmds._core.staging_status(staging_id)
+                    s = status.get("status", "")
+                    persona = status.get("persona", "")
+                    if s == "stored":
+                        result_msg = f"Stored in {persona} vault." if persona else "Stored."
+                        break
+                    elif s in ("needs_approval", "pending_unlock"):
+                        result_msg = f"Needs approval for {persona} vault." if persona else "Needs approval."
+                        break
+                    elif s == "failed":
+                        result_msg = "Failed to store."
+                        break
+                except Exception:
+                    break
+            return BotResponse(text=result_msg)
+        except Exception as exc:
+            log.error("dispatch.remember_failed", extra={"error": str(exc)})
+            return ErrorResponse(text="Could not save. Please try again.")
+
     # ── Help ─────────────────────────────────────────────────────────
 
     async def _handle_help(self, req: CommandRequest) -> BotResponse:
@@ -272,5 +320,6 @@ _DISPATCH_TABLE: dict = {
     Command.FLAG: CommandDispatcher._handle_flag,
     Command.SEND: CommandDispatcher._handle_send,
     Command.ASK: CommandDispatcher._handle_ask,
+    Command.REMEMBER: CommandDispatcher._handle_remember,
     Command.HELP: CommandDispatcher._handle_help,
 }

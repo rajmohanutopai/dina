@@ -660,6 +660,7 @@ def create_app() -> FastAPI:
             bsky_client = BlueskyClient(bsky_service, bsky_handle, bsky_password)
             bsky_owner_did = os.environ.get("DINA_BSKY_OWNER_DID", "")
             bluesky_bot = BlueskyBotAdapter(bsky_client, bsky_dispatcher, owner_did=bsky_owner_did)
+            guardian._bluesky = bluesky_bot  # wire for D2D notifications
             log.info("brain.bluesky.configured", extra={"handle": bsky_handle})
         except Exception as exc:
             log.warning("brain.bluesky.config_failed", extra={"error": str(exc)})

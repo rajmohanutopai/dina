@@ -339,6 +339,49 @@ class BlueskyBotAdapter:
             task.cancel()
         log.info("bluesky.adapter.stopped")
 
+    # ── Proactive DM to owner ────────────────────────────────────
+
+    async def send_owner_dm(self, text: str) -> None:
+        """Send a DM to the owner (for push notifications).
+
+        Finds or creates the DM conversation with the owner DID.
+        """
+        if not self._owner_did:
+            log.warning("bluesky.send_owner_dm.no_owner_did")
+            return
+        try:
+            await self._client.ensure_session()
+            # Find existing conversation with owner.
+            convos = (await self._client.list_convos(limit=50)).get("convos", [])
+            convo_id = None
+            for c in convos:
+                members = c.get("members", [])
+                member_dids = [m.get("did", "") for m in members]
+                if self._owner_did in member_dids:
+                    convo_id = c.get("id")
+                    break
+
+            if not convo_id:
+                # Create new conversation with owner.
+                resp = await self._client._client.get(
+                    f"{self._client._dm_service}/xrpc/chat.bsky.convo.getConvoForMembers",
+                    headers={
+                        **self._client._auth_headers(),
+                        "Atproto-Proxy": "did:web:api.bsky.chat#bsky_chat",
+                    },
+                    params={"members": [self._owner_did]},
+                )
+                resp.raise_for_status()
+                convo_id = resp.json().get("convo", {}).get("id")
+
+            if convo_id:
+                await self._client.send_dm(convo_id, text)
+                log.info("bluesky.owner_dm_sent")
+            else:
+                log.warning("bluesky.send_owner_dm.no_convo")
+        except Exception as exc:
+            log.warning("bluesky.send_owner_dm.failed", extra={"error": str(exc)})
+
     # ── DM polling ─────────────────────────────────────────────────
 
     async def _poll_dms(self) -> None:
