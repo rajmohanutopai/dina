@@ -238,10 +238,8 @@ def create_brain_app(
         proposals_route.router,
         dependencies=[Depends(verify_service_auth)],
     )
-    app.include_router(
-        trace_route.router,
-        dependencies=[Depends(verify_service_auth)],
-    )
+    # Trace endpoint — no auth required (debugging tool, no sensitive data).
+    app.include_router(trace_route.router)
 
     # ------------------------------------------------------------------
     # Exception handlers for consistent error format
