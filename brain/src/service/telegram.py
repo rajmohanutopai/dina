@@ -35,7 +35,7 @@ import datetime as _dt
 import os
 import zoneinfo
 
-from ..domain.response import BotResponse, ConfirmResponse, ErrorResponse, RichResponse
+from ..domain.response import BotResponse, ConfirmOption, ConfirmResponse, ErrorResponse, RichResponse
 from ..port.core_client import CoreClient
 from .user_commands import UserCommandService, validate_name, validate_did
 
@@ -950,9 +950,9 @@ class TelegramService:
         self._pending_trust = {"cmd": "vouch", "name": name, "text": reason}
         await ch.send(ConfirmResponse(
             text=f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
-            actions=[
-                {"label": "Publish", "callback_data": f"trust_yes:{did[:20]}"},
-                {"label": "Cancel", "callback_data": "trust_no"},
+            options=[
+                ConfirmOption(label="Publish", action="confirm", data={"callback_data": f"trust_yes:{did[:20]}"}),
+                ConfirmOption(label="Cancel", action="cancel", data={"callback_data": "trust_no"}),
             ],
         ))
 
@@ -984,9 +984,9 @@ class TelegramService:
         self._pending_trust = {"cmd": "review", "product": product, "text": review}
         await ch.send(ConfirmResponse(
             text=f"Review of *{_escape_markdown(product)}*:\n_{_escape_markdown(review)}_\n\nPublish to Trust Network?",
-            actions=[
-                {"label": "Publish", "callback_data": "trust_yes:review"},
-                {"label": "Cancel", "callback_data": "trust_no"},
+            options=[
+                ConfirmOption(label="Publish", action="confirm", data={"callback_data": "trust_yes:review"}),
+                ConfirmOption(label="Cancel", action="cancel", data={"callback_data": "trust_no"}),
             ],
         ))
 
@@ -1030,9 +1030,9 @@ class TelegramService:
         self._pending_trust = {"cmd": "flag", "target": target, "text": reason}
         await ch.send(ConfirmResponse(
             text=f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
-            actions=[
-                {"label": "Publish", "callback_data": "trust_yes:flag"},
-                {"label": "Cancel", "callback_data": "trust_no"},
+            options=[
+                ConfirmOption(label="Publish", action="confirm", data={"callback_data": "trust_yes:flag"}),
+                ConfirmOption(label="Cancel", action="cancel", data={"callback_data": "trust_no"}),
             ],
         ))
 
