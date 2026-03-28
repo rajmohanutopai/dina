@@ -69,6 +69,14 @@ def write_env(
                 f"DINA_TELEGRAM_ALLOWED_USERS={config.telegram.user_id}"
             )
 
+    # Bluesky
+    if config.bluesky:
+        lines += ["", "# Bluesky"]
+        lines.append(f"DINA_BSKY_HANDLE={config.bluesky.handle}")
+        lines.append(f"DINA_BSKY_PASSWORD={config.bluesky.password}")
+        if config.bluesky.service != "https://bsky.social":
+            lines.append(f"DINA_BSKY_SERVICE={config.bluesky.service}")
+
     lines += [
         "",
         "# Add more providers: see models.json or run ./dina-admin model list",

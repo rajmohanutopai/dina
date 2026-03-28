@@ -116,6 +116,11 @@ class TelegramBotAdapter:
             MessageHandler(filters.TEXT & ~filters.COMMAND, _wrap_with_req_id(message_callback))
         )
 
+        # Unknown command handler — catches /typos and shows help.
+        self._app.add_handler(
+            MessageHandler(filters.COMMAND, _wrap_with_req_id(message_callback))
+        )
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------

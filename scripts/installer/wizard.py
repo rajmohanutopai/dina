@@ -332,45 +332,57 @@ def _step_llm_providers() -> list[LLMProviderConfig]:
     return providers
 
 
-def _step_telegram() -> TelegramConfig | None:
-    """Ask about Telegram setup."""
+def _step_messaging_channel() -> tuple[TelegramConfig | None, BlueskyConfig | None]:
+    """Ask which messaging channel to connect."""
+    from .models import BlueskyConfig
+
     while True:
         val = _prompt(
-            "telegram_choice", "choice",
-            "Connect Telegram?",
+            "channel_choice", "choice",
+            "Connect a messaging channel",
             choices=[
-                {"key": "1", "label": "Yes — enter Bot Token", "help": "recommended"},
-                {"key": "2", "label": "Skip for now"},
+                {"key": "1", "label": "Telegram"},
+                {"key": "2", "label": "Bluesky"},
             ],
-            default="1",
-            help_text="Without Telegram, agent approval requests will queue\n"
-                      "until you check via dina-admin or the admin web UI.",
+            help_text="Dina uses this channel for notifications, commands, and approvals.",
         )
-        if val == "2" or val == "":
-            return None
-        if val == "1":
+        if val in ("1", "2"):
             break
-        _error("telegram_choice", "Please enter 1 or 2.")
+        _error("channel_choice", "Please choose 1 (Telegram) or 2 (Bluesky).")
 
-    token = _prompt(
-        "telegram_token", "text",
-        "Enter your bot token",
-        help_text="From @BotFather (looks like 123456:ABC-DEF...)",
-        allow_blank=True,
-    ).strip()
+    if val == "1":
+        # Telegram
+        token = _prompt(
+            "telegram_token", "text",
+            "Telegram bot token",
+            help_text="From @BotFather (looks like 123456:ABC-DEF...)",
+        ).strip()
 
-    if not token:
-        _event("info", message="Skipping Telegram — approve requests via: dina-admin persona approvals")
-        return None
+        user_id = _prompt(
+            "telegram_user_id", "text",
+            "Your Telegram user ID",
+            help_text="From @userinfobot (numeric ID)",
+            allow_blank=True,
+        ).strip()
 
-    user_id = _prompt(
-        "telegram_user_id", "text",
-        "Enter your Telegram user ID",
-        help_text="From @userinfobot (numeric ID)",
-        allow_blank=True,
-    ).strip()
+        return TelegramConfig(token=token, user_id=user_id), None
 
-    return TelegramConfig(token=token, user_id=user_id)
+    else:
+        # Bluesky
+        handle = _prompt(
+            "bluesky_handle", "text",
+            "Your Bluesky handle",
+            help_text="e.g., yourname.bsky.social",
+        ).strip()
+
+        password = _prompt(
+            "bluesky_password", "text",
+            "Bluesky app password",
+            secret=True,
+            help_text="Create one at bsky.app → Settings → App Passwords",
+        ).strip()
+
+        return None, BlueskyConfig(handle=handle, password=password)
 
 
 # ======================================================================
@@ -459,12 +471,18 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
     if owner_name:
         _event("ok", message=f"Hello, {owner_name}")
 
-    # Step 7: Telegram (skip if already configured in .env)
+    # Step 7: Messaging channel (skip if already configured in .env)
     existing_telegram = _read_env_value(env_file, "DINA_TELEGRAM_TOKEN")
+    existing_bsky = _read_env_value(env_file, "DINA_BSKY_HANDLE")
     if existing_telegram:
         telegram = TelegramConfig(token=existing_telegram)
+        bluesky = None
+    elif existing_bsky:
+        from .models import BlueskyConfig
+        telegram = None
+        bluesky = BlueskyConfig(handle=existing_bsky, password=_read_env_value(env_file, "DINA_BSKY_PASSWORD") or "")
     else:
-        telegram = _step_telegram()
+        telegram, bluesky = _step_messaging_channel()
 
     # Step 8: LLM providers (skip if any API key already in .env)
     llm_providers: list[LLMProviderConfig] = []
@@ -505,6 +523,7 @@ def run_wizard(dina_dir: Path, core_port: int = 0, pds_port: int = 0) -> None:
         hex_seed=hex_seed,
         llm_providers=llm_providers,
         telegram=telegram,
+        bluesky=bluesky,
         owner_name=owner_name,
     )
 

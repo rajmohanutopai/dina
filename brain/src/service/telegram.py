@@ -35,7 +35,7 @@ import datetime as _dt
 import os
 import zoneinfo
 
-from ..domain.response import BotResponse, ConfirmResponse, ErrorResponse
+from ..domain.response import BotResponse, ConfirmResponse, ErrorResponse, RichResponse
 from ..port.core_client import CoreClient
 from .user_commands import UserCommandService, validate_name, validate_did
 
@@ -302,10 +302,10 @@ class TelegramService:
                     log.debug("telegram.suppressed_error", exc_info=_exc)
 
             if plan and plan.get("reminders"):
-                await ch.send(BotResponse(text=result_msg, parse_mode="Markdown"))
+                await ch.send(RichResponse(text=result_msg))
                 await self.send_reminder_plan(update.effective_chat.id, plan)
             else:
-                await ch.send(BotResponse(text=result_msg, parse_mode="Markdown"))
+                await ch.send(RichResponse(text=result_msg))
         except Exception as exc:
             log.error(
                 "telegram.remember_failed",
@@ -513,9 +513,6 @@ class TelegramService:
             ))
             return
 
-        import hashlib
-        req_id = hashlib.md5(f"{chat_id}:{time.time()}".encode()).hexdigest()[:6]
-        log.info("telegram.ask", extra={"req_id": req_id, "prompt": text[:80]})
         try:
             result = await self._guardian.process_event({
                 "type": "reason",
@@ -524,23 +521,16 @@ class TelegramService:
                 "source": "telegram",
                 "chat_id": chat_id,
                 "user_id": user_id,
-                "request_id": req_id,
             })
             response_text = self._extract_response(result)
             if response_text:
-                await ch.send(BotResponse(
-                    text=f"{response_text}\n\n`[{req_id}]`",
-                    parse_mode="Markdown",
-                ))
+                await ch.send(RichResponse(text=response_text))
         except Exception as exc:
             log.error(
                 "telegram.ask_failed",
-                extra={"error": type(exc).__name__, "chat_id": chat_id, "req_id": req_id},
+                extra={"error": type(exc).__name__, "chat_id": chat_id},
             )
-            await ch.send(ErrorResponse(
-                text=f"Something went wrong. Please try again.\n\n`[{req_id}]`",
-                parse_mode="Markdown",
-            ))
+            await ch.send(ErrorResponse(text="Something went wrong. Please try again."))
 
     # ------------------------------------------------------------------
     # Message handler (default = ask)
@@ -592,7 +582,7 @@ class TelegramService:
         # --- Check for approval response (approve/deny via text) ---
         approval_response = await self.handle_approval_response(text)
         if approval_response:
-            await ch.send(BotResponse(text=approval_response, parse_mode="Markdown"))
+            await ch.send(RichResponse(text=approval_response))
             return
 
         # --- Handle inline edit from switch_inline_query_current_chat ---
@@ -606,7 +596,7 @@ class TelegramService:
             return
 
         # --- No default action — guide the user ---
-        await ch.send(BotResponse(
+        await ch.send(RichResponse(
             text="Here's what I can do:\n\n"
             "*Memory*\n"
             "/ask <question> — ask me anything\n"
@@ -622,7 +612,6 @@ class TelegramService:
             "/trust Name — check trust score\n\n"
             "*Info*\n"
             "/status — your DID and node health",
-            parse_mode="Markdown",
         ))
 
     # ------------------------------------------------------------------
@@ -772,7 +761,7 @@ class TelegramService:
         # Handle approval buttons.
         response = await self.handle_approval_response(data)
         if response and ch:
-            await ch.edit(BotResponse(text=response, parse_mode="Markdown"))
+            await ch.edit(RichResponse(text=response))
 
     # ------------------------------------------------------------------
     # Access control
@@ -925,7 +914,7 @@ class TelegramService:
             f"Status: {d['status']}",
             f"Version: {d['version']}",
         ]
-        await ch.send(BotResponse(text="\n".join(lines), parse_mode="Markdown"))
+        await ch.send(RichResponse(text="\n".join(lines)))
 
     async def handle_vouch(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -961,7 +950,6 @@ class TelegramService:
         self._pending_trust = {"cmd": "vouch", "name": name, "text": reason}
         await ch.send(ConfirmResponse(
             text=f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
-            parse_mode="Markdown",
             actions=[
                 {"label": "Publish", "callback_data": f"trust_yes:{did[:20]}"},
                 {"label": "Cancel", "callback_data": "trust_no"},
@@ -996,7 +984,6 @@ class TelegramService:
         self._pending_trust = {"cmd": "review", "product": product, "text": review}
         await ch.send(ConfirmResponse(
             text=f"Review of *{_escape_markdown(product)}*:\n_{_escape_markdown(review)}_\n\nPublish to Trust Network?",
-            parse_mode="Markdown",
             actions=[
                 {"label": "Publish", "callback_data": "trust_yes:review"},
                 {"label": "Cancel", "callback_data": "trust_no"},
@@ -1043,7 +1030,6 @@ class TelegramService:
         self._pending_trust = {"cmd": "flag", "target": target, "text": reason}
         await ch.send(ConfirmResponse(
             text=f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
-            parse_mode="Markdown",
             actions=[
                 {"label": "Publish", "callback_data": "trust_yes:flag"},
                 {"label": "Cancel", "callback_data": "trust_no"},
@@ -1076,7 +1062,6 @@ class TelegramService:
             f"Score: {d['score']}\n"
             f"Attestations: {d['total_attestations']} ({d['positive_attestations']} positive)\n"
             f"Vouches: {d['vouch_count']}",
-            parse_mode="Markdown",
         ))
 
     async def _handle_trust_callback(self, update: Update, ch: Any) -> None:
@@ -1119,9 +1104,8 @@ class TelegramService:
 
             if result.ok:
                 uri = result.data.get("uri", "?") if result.data else "?"
-                await ch.edit(BotResponse(
+                await ch.edit(RichResponse(
                     text=f"{result.message}\nURI: `{uri}`",
-                    parse_mode="Markdown",
                 ))
             else:
                 await ch.edit(ErrorResponse(text=result.message))
@@ -1168,9 +1152,8 @@ class TelegramService:
                 did = c.get("did", "?")
                 trust = c.get("trust_level", "")
                 lines.append(f"  {name} — `{did[:35]}...` {trust}")
-            await ch.send(BotResponse(
+            await ch.send(RichResponse(
                 text=f"*Contacts ({len(contacts)}):*\n" + "\n".join(lines),
-                parse_mode="Markdown",
             ))
             return
 
@@ -1187,9 +1170,8 @@ class TelegramService:
             did = did.strip()
             result = await self._cmds.add_contact(name, did)
             if result.ok:
-                await ch.send(BotResponse(
+                await ch.send(RichResponse(
                     text=f"Contact added: *{_escape_markdown(name)}* (`{did[:30]}...`)",
-                    parse_mode="Markdown",
                 ))
             else:
                 await ch.send(ErrorResponse(text=result.message))

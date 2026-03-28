@@ -40,6 +40,13 @@ class TelegramConfig(BaseModel):
     user_id: str = ""
 
 
+class BlueskyConfig(BaseModel):
+    """Bluesky channel configuration."""
+    handle: str           # e.g., "dina.bsky.social"
+    password: str         # app password (not main password)
+    service: str = "https://bsky.social"
+
+
 class InstallerConfig(BaseModel):
     """Complete specification of all user choices. No I/O, no prompts."""
 
@@ -57,6 +64,9 @@ class InstallerConfig(BaseModel):
 
     # Telegram
     telegram: TelegramConfig | None = None
+
+    # Bluesky
+    bluesky: BlueskyConfig | None = None
 
     # User
     owner_name: str = ""
