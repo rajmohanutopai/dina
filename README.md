@@ -35,23 +35,23 @@ cd dina
 ./dina-admin status
 ```
 
-```bash
-# This is currently at Technical Preview stage. It is not fully polished for daily use. The architecture is ready, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
-```
 ---
 
-## What Dina Does
+## What do you get with Dina?
 
-1. **D2D Messaging** — encrypted Dina-to-Dina communication via shared relay
-2. **Smart Reminders** — auto-extracted from temporal content, timezone-aware
-3. **Vault Context Enrichment** — enriches reminders, nudges, and advice with what Dina knows about you
-4. **Trust Network** — publish and query verified peer attestations (reviews, vouches, flags) on AT Protocol
-5. **Agent Safety: Action Gating** — agents validate intent before acting, session-scoped approval
-6. **Agent Safety: PII Scrubbing** — scrub PII before external APIs, rehydrate on response
-7. **Agent Safety: Persona Vault** — cryptographic isolation per life domain, approval per session
-8. **Anti-Her** — connects you to humans, never replaces them
-9. **Multi-Channel** — Telegram, Bluesky, CLI — one Dina, many interfaces
-10. **Sovereign Export** — portable identity, take everything to a new machine
+> This is currently at Technical Preview stage. The architecture is ready, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
+
+1. **Personal Memory** — tell Dina anything and she remembers it in your encrypted vault. "Emma's birthday is March 15", "I have chronic back pain". Ask anytime and she recalls instantly.
+2. **Vault Context Enrichment** — Dina uses information that she knows about you. Purchase search includes your back pain and budget. Reminders include relationship context.
+3. **D2D Messaging** — your Dina talks to other Dinas through encrypted channels. Messages are buffered if the other side is offline.
+4. **Smart Reminders** — based on context, automatically creates reminders. Sancho's Dina pings you - "Sancho is arriving at 5pm" and Dina creates a reminder at 4:50 PM. When it fires: "Sancho is arriving in 10 minutes; he enjoys orange juice."
+5. **Trust Network** — publish reviews, vouches, and flags as signed attestations on AT Protocol. When you ask "I want a chair", Dina searches for ergonomic chairs with verified peer reviews, and is not swayed by ads.
+6. **Agent Safety: Action Gating** - AI agents like OpenClaw can ask Dina before acting. Safe actions pass silently. Risky ones (send email, delete data) comes to user for approval. Per-session, revoked when done.
+7. **Agent Safety: Persona Vault** — Health data is in a separate encrypted file from financial data. Different keys. An agent with work access cannot decrypt your health vault without users approval. Per-session, revoked when done.
+8. **Agent Safety: PII Scrubbing** — Dina scrubs phone numbers, Govt IDs, credit cards in request. The response comes back, Dina restores the originals. Your PII never leaves your Home Node.
+9. **Anti-Her** — Dina actively avoids emotional intimacy. Relationships should be with other humans, not AI.
+10. **Multi-Channel** — talk to Dina on Telegram, Bluesky DM, or CLI. 
+11. **Sovereign Export** — `dina-admin export` gives you the full archive. Your data is yours.
 
 [`📖 See Dina in action — Full Capabilities & Usage Guide`](./CAPABILITIES.md)
 

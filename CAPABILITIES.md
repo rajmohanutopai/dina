@@ -58,6 +58,8 @@ It is Emma's birthday today, you may wish to contact her.
 
 ## She is secure
 
+Data is stored in different vaults.
+
 - **General** — recipes, hobbies, family, preferences. Open.
 - **Work** — meetings, colleagues, projects. Open.
 - **Health** — medical records, allergies, test results. Locked until you approve.
@@ -98,7 +100,7 @@ Approval comes to telegram and user approves
 ✅ Approved: apr-1774423823840426930
 ```
 
-Agent can query that questions status to get the answer. Also, further questions in that session related to finance will be allowed
+Agent can query that previous questions status to get the answer, once approval is available. Also, further questions in that session related to finance will be allowed
 ```
 (.venv) ~/dina % dina ask --session ses_55s3khhq55s3  "Which bank has my account"
 Your account is with Barclay's (ending in 0102).
