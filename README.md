@@ -39,19 +39,20 @@ cd dina
 
 ## What do you get with Dina?
 
-> This is currently at Technical Preview stage. The architecture is ready, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
+> This is currently at Technical Preview stage. The code is available, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
 
-1. **Personal Memory** — tell Dina anything and she remembers it in your encrypted vault. "Emma's birthday is March 15", "I have chronic back pain". Ask anytime and she recalls instantly.
-2. **Vault Context Enrichment** — Dina uses information that she knows about you. Purchase search includes your back pain and budget. Reminders include relationship context.
-3. **D2D Messaging** — your Dina talks to other Dinas through encrypted channels. Messages are buffered if the other side is offline.
-4. **Smart Reminders** — based on context, automatically creates reminders. Sancho's Dina pings you - "Sancho is arriving at 5pm" and Dina creates a reminder at 4:50 PM. When it fires: "Sancho is arriving in 10 minutes; he enjoys orange juice."
-5. **Trust Network** — publish reviews, vouches, and flags as signed attestations on AT Protocol. When you ask "I want a chair", Dina searches for ergonomic chairs with verified peer reviews, and is not swayed by ads.
-6. **Agent Safety: Action Gating** - AI agents like OpenClaw can ask Dina before acting. Safe actions pass silently. Risky ones (send email, delete data) comes to user for approval. Per-session, revoked when done.
-7. **Agent Safety: Persona Vault** — Health data is in a separate encrypted file from financial data. Different keys. An agent with work access cannot decrypt your health vault without users approval. Per-session, revoked when done.
-8. **Agent Safety: PII Scrubbing** — Dina scrubs phone numbers, Govt IDs, credit cards in request. The response comes back, Dina restores the originals. Your PII never leaves your Home Node.
-9. **Anti-Her** — Dina actively avoids emotional intimacy. Relationships should be with other humans, not AI.
-10. **Multi-Channel** — talk to Dina on Telegram, Bluesky DM, or CLI. 
-11. **Sovereign Export** — `dina-admin export` gives you the full archive. Your data is yours.
+1. **Cryptographic Identity** - Globally resolvable globally unique identity not linked to any platform and fully owned by you.
+2. **Personal Memory** — tell Dina anything and she remembers it in your encrypted vault. "Emma's birthday is March 15", "I have chronic back pain". Ask anytime and she recalls instantly.
+3. **Vault Context Enrichment** — Dina uses information that she knows about you. Purchase search includes your back pain and budget. Reminders include relationship context.
+4. **D2D Messaging** — your Dina talks to other Dinas through encrypted channels. Messages are buffered if the other side is offline.
+5. **Smart Reminders** — based on context, automatically creates reminders. Sancho's Dina pings you - "Sancho is arriving at 5pm" and Dina creates a reminder at 4:50 PM. When it fires: "Sancho is arriving in 10 minutes; he enjoys orange juice."
+6. **Trust Network** — publish reviews, vouches, and flags as signed attestations on AT Protocol. When you ask "I want a chair", Dina searches for ergonomic chairs with verified peer reviews, and is not swayed by ads.
+7. **Agent Safety: Action Gating** - AI agents like OpenClaw can ask Dina before acting. Safe actions pass silently. Risky ones (send email, delete data) comes to user for approval. Per-session, revoked when done.
+8. **Agent Safety: Persona Vault** — Health data is in a separate encrypted file from financial data. Different keys. An agent with work access cannot decrypt your health vault without users approval. Per-session, revoked when done.
+9. **Agent Safety: PII Scrubbing** — Dina scrubs phone numbers, Govt IDs, credit cards in request. The response comes back, Dina restores the originals. Your PII never leaves your Home Node.
+10. **Anti-Her** — Dina actively avoids emotional intimacy. Relationships should be with other humans, not AI.
+11. **Multi-Channel** — talk to Dina on Telegram, Bluesky DM, or CLI. 
+12. **Sovereign Export** — `dina-admin export` gives you the full archive. Your data is yours.
 
 [`📖 See Dina in action — Full Capabilities & Usage Guide`](./CAPABILITIES.md)
 
