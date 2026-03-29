@@ -40,11 +40,20 @@ cd dina
 ```
 ---
 
-## See Dina in Action
+## What Dina Does
 
-Seeing how Dina works will give a really good picture of what Dina is.
+1. **D2D Messaging** — encrypted Dina-to-Dina communication via shared relay
+2. **Smart Reminders** — auto-extracted from temporal content, timezone-aware
+3. **Vault Context Enrichment** — enriches reminders, nudges, and advice with what Dina knows about you
+4. **Trust Network** — publish and query verified peer attestations (reviews, vouches, flags) on AT Protocol
+5. **Agent Safety: Action Gating** — agents validate intent before acting, session-scoped approval
+6. **Agent Safety: PII Scrubbing** — scrub PII before external APIs, rehydrate on response
+7. **Agent Safety: Persona Vault** — cryptographic isolation per life domain, approval per session
+8. **Anti-Her** — connects you to humans, never replaces them
+9. **Multi-Channel** — Telegram, Bluesky, CLI — one Dina, many interfaces
+10. **Sovereign Export** — portable identity, take everything to a new machine
 
- [`📖 Read the Full Capabilities & Usage Guide`](./CAPABILITIES.md)
+[`📖 See Dina in action — Full Capabilities & Usage Guide`](./CAPABILITIES.md)
 
 ---
 <br/>
