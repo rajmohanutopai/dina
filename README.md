@@ -1,24 +1,21 @@
-# Dina — Your Personal AI, With an Identity
+# Dina: Your Personal AI, With an Identity
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests: 4500+ passing](https://img.shields.io/badge/Tests-4%2C500+%20passing-brightgreen)]()
 [![Status: Technical Preview](https://img.shields.io/badge/Status-Technical%20Preview-orange)]()
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
-[![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
 
-> **Dina is a sovereign personal AI that knows your world, has a cryptographic identity, a built-in trust network, and a simple rule: she works for you and nobody else.**
+> **Dina is a personal AI with its own identity, encrypted memory boundaries, and a simple rule: she works for you and nobody else.** She can talk to other Dinas over encrypted channels. When many Dinas connect, they can form a Trust Network through signed attestations, so decisions are guided by trust rather than ads.
 
 ---
 
-### ⚡ Developer Cockpit
+## ⚡ Quick Start
 
-* **The Vision** - This README is the Vision Document. For you to understand Dina.
-* **Start Here:** [**Open dina.html**](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
-* **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **What Works Now:** [Usage Guide](./CAPABILITIES.md)
+* **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
+* **Start Here:** [**Open dina.html**](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
-* **Discussion:** [Join the Discord](https://discord.gg/gDRcrEwy)
 * **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
 
 ---
@@ -37,22 +34,28 @@ cd dina
 
 ---
 
-## What do you get with Dina?
+## What Dina gives you
 
 > This is currently at Technical Preview stage. The code is available, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
 
-1. **Cryptographic Identity** - Globally resolvable globally unique identity not linked to any platform and fully owned by you.
-2. **Personal Memory** — tell Dina anything and she remembers it in your encrypted vault. "Emma's birthday is March 15", "I have chronic back pain". Ask anytime and she recalls instantly.
-3. **Vault Context Enrichment** — Dina uses information that she knows about you. Purchase search includes your back pain and budget. Reminders include relationship context.
-4. **D2D Messaging** — your Dina talks to other Dinas through encrypted channels. Messages are buffered if the other side is offline.
-5. **Smart Reminders** — based on context, automatically creates reminders. Sancho's Dina pings you - "Sancho is arriving at 5pm" and Dina creates a reminder at 4:50 PM. When it fires: "Sancho is arriving in 10 minutes; he enjoys orange juice."
-6. **Trust Network** — publish reviews, vouches, and flags as signed attestations on AT Protocol. When you ask "I want a chair", Dina searches for ergonomic chairs with verified peer reviews, and is not swayed by ads.
-7. **Agent Safety: Action Gating** - AI agents like OpenClaw can ask Dina before acting. Safe actions pass silently. Risky ones (send email, delete data) comes to user for approval. Per-session, revoked when done.
-8. **Agent Safety: Persona Vault** — Health data is in a separate encrypted file from financial data. Different keys. An agent with work access cannot decrypt your health vault without users approval. Per-session, revoked when done.
-9. **Agent Safety: PII Scrubbing** — Dina scrubs phone numbers, Govt IDs, credit cards in request. The response comes back, Dina restores the originals. Your PII never leaves your Home Node.
-10. **Anti-Her** — Dina actively avoids emotional intimacy. Relationships should be with other humans, not AI.
-11. **Multi-Channel** — talk to Dina on Telegram, Bluesky DM, or CLI. 
-12. **Sovereign Export** — `dina-admin export` gives you the full archive. Your data is yours.
+### Foundations
+1. **Cryptographic Identity** A globally unique, user-owned identity not tied to any platform. It is the cryptographic root of Dina. Persona boundaries, vault keys, messaging encryption, Trust Network attestations, all derive from it.
+2. **Personal Memory** Tell Dina things like "Emma’s birthday is March 15" or "I have chronic back pain" and she stores them in your encrypted vaults so she can recall them later.
+3. **Persona Vaults** Health data is in a separate encrypted vault from financial data or work data, each of them locked with its own cryptographic keys. These are real cryptographic compartments, not just labels or preferences
+4. **Vault Context Enrichment** Dina uses information that she knows about you to make your actions more relevant. If you are buying a chair, Dina will include consideration of your back pain and budget while searching for chairs. Reminders can include relationship context.
+
+### What you notice first
+5. **Smart Reminders** Dina can create reminders from context, not just explicit commands. If Sancho’s Dina says he is arriving at 5 PM, Dina can remind you at 4:50 PM and include useful context like "he enjoys orange juice"
+6. **Agent Safety: Action Gating** Integrated AI agents like OpenClaw can ask Dina before taking risky actions. Safe actions pass silently. Sensitive actions like send email or delete data come to you for approval. Access is session-scoped and revoked when done.
+7. **Agent Safety: Scoped Vault Access** Integrated agents like OpenClaw do not get blanket access to all of Dina’s memory. Access is granted per session to specific vaults, so an agent with work access cannot decrypt your health vault unless you explicitly approve it.
+8. **Agent Safety: PII Scrubbing** Dina can scrub phone numbers, government IDs, credit card details, and similar identifiers before an outbound call. When the response comes back, Dina restores the originals.
+
+### When multiple Dinas come together
+9. **D2D Messaging** Your Dina can talk to other Dinas through encrypted channels. Messages are buffered if the other side is offline.
+10. **Trust Network** Dina can publish reviews, vouches, and flags as signed attestations on AT Protocol. So when you ask for something like a chair, Dina can use trusted peer results instead of ads to help you decide.
+
+### Ownership and portability
+11. **Sovereign Export** `dina-admin export` gives you the full archive. Your data is yours.
 
 [`📖 See Dina in action — Full Capabilities & Usage Guide`](./CAPABILITIES.md)
 
