@@ -13,7 +13,7 @@
 
 * **What Works Now:** [Usage Guide](./CAPABILITIES.md)
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
-* **Start Here:** [**Open dina.html**](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
+* **Start Here:** [Open dina.html](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
@@ -36,7 +36,7 @@ cd dina
 
 ## What Dina gives you
 
-> This is currently at Technical Preview stage. The code is available, backed by 4,500+ tests. You can install Dina, talk to her on Telegram, store memories across personas, watch agents request approval for sensitive data, talk to other Dinas and see the Trust Network in action. 
+> Dina is currently a Technical Preview. The code is available now, backed by 4,500+ tests, and the main flows already work end to end through Telegram or Bluesky. 
 
 ### Foundations
 1. **Cryptographic Identity** A globally unique, user-owned identity not tied to any platform. It is the cryptographic root of Dina. Persona boundaries, vault keys, messaging encryption, Trust Network attestations, all derive from it.
