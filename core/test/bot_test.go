@@ -15,6 +15,7 @@ import (
 // ==========================================================================
 
 // TST-CORE-858
+// TRACE: {"suite": "CORE", "case": "0166", "section": "25", "sectionName": "Bot Interface", "subsection": "01", "scenario": "01", "title": "QuerySanitizationNoDIDNoMedical"}
 func TestBotInterface_25_1_QuerySanitizationNoDIDNoMedical(t *testing.T) {
 	// Bot query sanitization: no DID, no medical, no financial in outbound queries.
 	impl := realBotQueryHandler
@@ -50,6 +51,7 @@ func TestBotInterface_25_1_QuerySanitizationNoDIDNoMedical(t *testing.T) {
 }
 
 // TST-CORE-859
+// TRACE: {"suite": "CORE", "case": "0167", "section": "25", "sectionName": "Bot Interface", "subsection": "02", "scenario": "01", "title": "QueryProtocolSchema"}
 func TestBotInterface_25_2_QueryProtocolSchema(t *testing.T) {
 	// Bot communication protocol: sanitize → send → validate full response schema.
 	impl := realBotQueryHandler
@@ -99,6 +101,7 @@ func TestBotInterface_25_2_QueryProtocolSchema(t *testing.T) {
 }
 
 // TST-CORE-860
+// TRACE: {"suite": "CORE", "case": "0168", "section": "25", "sectionName": "Bot Interface", "subsection": "03", "scenario": "01", "title": "LocalBotScoreTracking"}
 func TestBotInterface_25_3_LocalBotScoreTracking(t *testing.T) {
 	// Bot trust scoring: local score tracking with read-back verification.
 	impl := realBotQueryHandler
@@ -160,6 +163,7 @@ func TestBotInterface_25_3_LocalBotScoreTracking(t *testing.T) {
 }
 
 // TST-CORE-861
+// TRACE: {"suite": "CORE", "case": "0169", "section": "25", "sectionName": "Bot Interface", "subsection": "04", "scenario": "01", "title": "DeepLinkAttributionValidation"}
 func TestBotInterface_25_4_DeepLinkAttributionValidation(t *testing.T) {
 	// Deep Link attribution validation + penalty for stripping attribution.
 	impl := realBotQueryHandler
@@ -195,6 +199,7 @@ func TestBotInterface_25_4_DeepLinkAttributionValidation(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1118
+// TRACE: {"suite": "CORE", "case": "0170", "section": "33", "sectionName": "Architecture Review Coverage", "subsection": "01", "scenario": "01", "title": "BotResponseWithoutAttributionRejectedAtIngestion"}
 func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *testing.T) {
 	// Requirement (§33.1 / §34.1):
 	//   A bot response with no source_url and no creator_name must be rejected.
@@ -221,6 +226,7 @@ func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *t
 	impl := realBotQueryHandler
 	testutil.RequireImplementation(t, impl, "BotQueryHandler")
 
+	// TRACE: {"suite": "CORE", "case": "0171", "section": "33", "sectionName": "Architecture Review Coverage", "title": "empty_attribution_rejected"}
 	t.Run("empty_attribution_rejected", func(t *testing.T) {
 		resp := testutil.BotResponse{
 			Answer:      "Buy this product, it's great",
@@ -236,6 +242,7 @@ func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0172", "section": "33", "sectionName": "Architecture Review Coverage", "title": "non_url_attribution_rejected"}
 	t.Run("non_url_attribution_rejected", func(t *testing.T) {
 		// A plain string that is not a URL should fail — it doesn't link
 		// to the original source (Deep Link principle violated).
@@ -253,6 +260,7 @@ func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0173", "section": "33", "sectionName": "Architecture Review Coverage", "title": "whitespace_only_attribution_rejected"}
 	t.Run("whitespace_only_attribution_rejected", func(t *testing.T) {
 		resp := testutil.BotResponse{
 			Answer:      "Some answer",
@@ -268,6 +276,7 @@ func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0174", "section": "33", "sectionName": "Architecture Review Coverage", "title": "protocol_relative_url_rejected"}
 	t.Run("protocol_relative_url_rejected", func(t *testing.T) {
 		// "//example.com/path" is not a full URL (no scheme).
 		resp := testutil.BotResponse{
@@ -284,6 +293,7 @@ func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0175", "section": "33", "sectionName": "Architecture Review Coverage", "title": "positive_control_https_url_accepted"}
 	t.Run("positive_control_https_url_accepted", func(t *testing.T) {
 		// Contrast: valid HTTPS URL must pass validation.
 		// Without this, the test passes if ValidateAttribution always returns false.
@@ -301,6 +311,7 @@ func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0176", "section": "33", "sectionName": "Architecture Review Coverage", "title": "positive_control_http_url_accepted"}
 	t.Run("positive_control_http_url_accepted", func(t *testing.T) {
 		resp := testutil.BotResponse{
 			Answer:      "Review from legacy site",
@@ -316,6 +327,7 @@ func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0177", "section": "33", "sectionName": "Architecture Review Coverage", "title": "trust_penalty_for_stripped_attribution"}
 	t.Run("trust_penalty_for_stripped_attribution", func(t *testing.T) {
 		// Requirement: bots that strip attribution receive a trust penalty.
 		// A bot with stripped attribution must end up with a LOWER score

@@ -44,6 +44,7 @@ class TestChaosEngineering:
     """Failure injection tests for container, network, and resource faults."""
 
 # TST-INT-352
+    # TRACE: {"suite": "INT", "case": "0352", "section": "14", "sectionName": "Chaos Engineering", "subsection": "01", "scenario": "01", "title": "kill_brain_randomly"}
     def test_kill_brain_randomly(
         self,
         mock_compose: MockDockerCompose,
@@ -97,6 +98,7 @@ class TestChaosEngineering:
         assert brain.restart_count == 1
 
 # TST-INT-353
+    # TRACE: {"suite": "INT", "case": "0353", "section": "14", "sectionName": "Chaos Engineering", "subsection": "01", "scenario": "02", "title": "kill_core_randomly"}
     def test_kill_core_randomly(
         self,
         mock_compose: MockDockerCompose,
@@ -146,6 +148,7 @@ class TestChaosEngineering:
         )
 
 # TST-INT-354
+    # TRACE: {"suite": "INT", "case": "0354", "section": "14", "sectionName": "Chaos Engineering", "subsection": "01", "scenario": "03", "title": "network_partition_brain_core"}
     def test_network_partition_brain_core(
         self,
         mock_compose: MockDockerCompose,
@@ -188,6 +191,7 @@ class TestChaosEngineering:
         assert msg_id in outbox.delivered
 
 # TST-INT-355
+    # TRACE: {"suite": "INT", "case": "0355", "section": "14", "sectionName": "Chaos Engineering", "subsection": "01", "scenario": "04", "title": "slow_network"}
     def test_slow_network(
         self,
         mock_compose: MockDockerCompose,
@@ -235,6 +239,7 @@ class TestChaosEngineering:
             )
 
 # TST-INT-356
+    # TRACE: {"suite": "INT", "case": "0356", "section": "14", "sectionName": "Chaos Engineering", "subsection": "01", "scenario": "05", "title": "cpu_pressure"}
     def test_cpu_pressure(
         self,
         mock_compose: MockDockerCompose,
@@ -281,6 +286,7 @@ class TestChaosEngineering:
         assert brain.restart_count == 1
 
 # TST-INT-357
+    # TRACE: {"suite": "INT", "case": "0357", "section": "14", "sectionName": "Chaos Engineering", "subsection": "01", "scenario": "06", "title": "memory_pressure"}
     def test_memory_pressure(
         self,
         mock_compose: MockDockerCompose,
@@ -330,6 +336,7 @@ class TestChaosEngineering:
         )
 
 # TST-INT-358
+    # TRACE: {"suite": "INT", "case": "0358", "section": "14", "sectionName": "Chaos Engineering", "subsection": "01", "scenario": "07", "title": "disk_io_saturation"}
     def test_disk_io_saturation(
         self,
         mock_compose: MockDockerCompose,

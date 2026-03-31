@@ -51,6 +51,7 @@ class TestProductResearchPurchase:
     reporting."""
 
 # TST-E2E-013
+    # TRACE: {"suite": "E2E", "case": "0013", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "01", "title": "product_research_via_reviewbot"}
     def test_product_research_via_reviewbot(
         self,
         don_alonso: HomeNode,
@@ -146,6 +147,7 @@ class TestProductResearchPurchase:
         assert response.get("requester_trust_ring") == don_alonso.trust_ring.value
 
 # TST-E2E-014
+    # TRACE: {"suite": "E2E", "case": "0014", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "02", "title": "trust_network_check"}
     def test_trust_network_check(
         self,
         don_alonso: HomeNode,
@@ -244,6 +246,7 @@ class TestProductResearchPurchase:
         assert appview.query_product("nonexistent_chair") is None
 
 # TST-E2E-015
+    # TRACE: {"suite": "E2E", "case": "0015", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "03", "title": "cart_handover"}
     def test_cart_handover(
         self,
         don_alonso: HomeNode,
@@ -392,6 +395,7 @@ class TestProductResearchPurchase:
         )
 
 # TST-E2E-016
+    # TRACE: {"suite": "E2E", "case": "0016", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "04", "title": "d2d_commerce_persona_gating"}
     def test_d2d_commerce_persona_gating(
         self,
         don_alonso: HomeNode,
@@ -486,6 +490,7 @@ class TestProductResearchPurchase:
         )
 
 # TST-E2E-017
+    # TRACE: {"suite": "E2E", "case": "0017", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "05", "title": "cold_start_web_search"}
     def test_cold_start_web_search(
         self,
         don_alonso: HomeNode,
@@ -543,6 +548,7 @@ class TestProductResearchPurchase:
         assert last_intent.details["risk"] == ActionRisk.SAFE.name
 
 # TST-E2E-018
+    # TRACE: {"suite": "E2E", "case": "0018", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "06", "title": "outcome_reporting"}
     def test_outcome_reporting(
         self,
         don_alonso: HomeNode,

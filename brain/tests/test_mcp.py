@@ -250,6 +250,7 @@ def http_client():
 
 # TST-BRAIN-226
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0226", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "01", "title": "route_to_specialist_agent"}
 async def test_mcp_6_1_1_route_to_specialist_agent(agent_router) -> None:
     """SS6.1.1: Task requiring legal review routes to specialist legal-review agent."""
     task = {"type": "legal_review", "prompt": "Review this NDA for red flags"}
@@ -259,6 +260,7 @@ async def test_mcp_6_1_1_route_to_specialist_agent(agent_router) -> None:
 
 # TST-BRAIN-227
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0227", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "02", "title": "route_by_capability"}
 async def test_mcp_6_1_2_route_by_capability(agent_router) -> None:
     """SS6.1.2: Task requiring image analysis routes to agent with that capability."""
     task = {"type": "image_analysis", "prompt": "Describe this product photo"}
@@ -268,6 +270,7 @@ async def test_mcp_6_1_2_route_by_capability(agent_router) -> None:
 
 # TST-BRAIN-228
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0228", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "03", "title": "route_by_trust_scores"}
 async def test_mcp_6_1_3_route_by_trust_scores(agent_router) -> None:
     """SS6.1.3: When multiple agents can handle a task, highest trust score wins.
 
@@ -327,6 +330,7 @@ async def test_mcp_6_1_3_route_by_trust_scores(agent_router) -> None:
 
 # TST-BRAIN-229
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0229", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "04", "title": "no_suitable_agent_fallback"}
 async def test_mcp_6_1_4_no_suitable_agent_fallback(agent_router) -> None:
     """SS6.1.4: No suitable MCP agent available -- falls back to local LLM."""
     task = {"type": "obscure_task", "prompt": "Do something unusual"}
@@ -336,6 +340,7 @@ async def test_mcp_6_1_4_no_suitable_agent_fallback(agent_router) -> None:
 
 # TST-BRAIN-230
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0230", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "05", "title": "agent_timeout"}
 async def test_mcp_6_1_5_agent_timeout() -> None:
     """SS6.1.5: Agent that takes longer than 30s times out gracefully."""
     mcp = AsyncMock()
@@ -355,6 +360,7 @@ async def test_mcp_6_1_5_agent_timeout() -> None:
 
 # TST-BRAIN-231
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0231", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "01", "title": "safe_intent_auto_approved"}
 async def test_mcp_6_2_1_safe_intent_auto_approved() -> None:
     """SS6.2.1: Safe intent (fetch_weather) auto-approved without user review.
 
@@ -393,6 +399,7 @@ async def test_mcp_6_2_1_safe_intent_auto_approved() -> None:
 
 # TST-BRAIN-232
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0232", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "02", "title": "risky_intent_flagged"}
 async def test_mcp_6_2_2_risky_intent_flagged(intent_classifier) -> None:
     """SS6.2.2: Risky intent (send_email) flagged for user review before execution.
 
@@ -431,6 +438,7 @@ async def test_mcp_6_2_2_risky_intent_flagged(intent_classifier) -> None:
 
 # TST-BRAIN-233
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0233", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "03", "title": "blocked_intent_denied"}
 async def test_mcp_6_2_3_blocked_intent_denied() -> None:
     """SS6.2.3: Blocked intent (untrusted bot reading vault) denied outright.
 
@@ -489,6 +497,7 @@ async def test_mcp_6_2_3_blocked_intent_denied() -> None:
 
 # TST-BRAIN-234
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0234", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "04", "title": "agent_raw_vault_access_blocked"}
 async def test_mcp_6_2_4_agent_raw_vault_access_blocked(intent_classifier) -> None:
     """SS6.2.4: Agent attempts to access raw vault data -- blocked regardless of trust."""
     intent = make_safe_intent(action="read_vault", target="raw_data")
@@ -499,6 +508,7 @@ async def test_mcp_6_2_4_agent_raw_vault_access_blocked(intent_classifier) -> No
 
 # TST-BRAIN-235
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0235", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "05", "title": "untrusted_source_higher_scrutiny"}
 async def test_mcp_6_2_5_untrusted_source_higher_scrutiny(intent_classifier) -> None:
     """SS6.2.5: Agent from untrusted source gets elevated scrutiny threshold."""
     intent = make_safe_intent(
@@ -510,6 +520,7 @@ async def test_mcp_6_2_5_untrusted_source_higher_scrutiny(intent_classifier) -> 
 
 
 # TST-BRAIN-236
+# TRACE: {"suite": "BRAIN", "case": "0236", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "06", "title": "agent_response_pii_leakage_check"}
 def test_mcp_6_2_6_agent_response_pii_leakage_check(pii_scrubber) -> None:
     """SS6.2.6: Agent response is scanned for PII leakage before delivery to user."""
     response_text = "Dr. Sharma's records at john@example.com"
@@ -531,6 +542,7 @@ def test_mcp_6_2_6_agent_response_pii_leakage_check(pii_scrubber) -> None:
 
 # TST-BRAIN-237
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0237", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "07", "title": "agent_cannot_access_encryption_keys"}
 async def test_mcp_6_2_7_agent_cannot_access_encryption_keys() -> None:
     """SS6.2.7: Agent intent targeting encryption keys is always denied.
 
@@ -569,6 +581,7 @@ async def test_mcp_6_2_7_agent_cannot_access_encryption_keys() -> None:
 
 # TST-BRAIN-238
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0238", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "08", "title": "agent_cannot_access_persona_metadata"}
 async def test_mcp_6_2_8_agent_cannot_access_persona_metadata(intent_classifier) -> None:
     """SS6.2.8: Agent cannot access persona metadata (cross-compartment leak)."""
     intent = make_blocked_intent(action="list_personas", target="all")
@@ -578,6 +591,7 @@ async def test_mcp_6_2_8_agent_cannot_access_persona_metadata(intent_classifier)
 
 # TST-BRAIN-239
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0239", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "09", "title": "agent_cannot_initiate_calls_to_dina"}
 async def test_mcp_6_2_9_agent_cannot_initiate_calls_to_dina() -> None:
     """SS6.2.9: Agent cannot initiate unsolicited calls to Dina -- only respond to delegation.
 
@@ -620,6 +634,7 @@ async def test_mcp_6_2_9_agent_cannot_initiate_calls_to_dina() -> None:
 
 # TST-BRAIN-240
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0240", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "10", "title": "disconnect_compromised_agent"}
 async def test_mcp_6_2_10_disconnect_compromised_agent() -> None:
     """SS6.2.10: Agent with blocked action (read_vault) is denied by production review_intent.
 
@@ -666,6 +681,7 @@ async def test_mcp_6_2_10_disconnect_compromised_agent() -> None:
 
 # TST-BRAIN-241
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0241", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "11", "title": "agent_cannot_enumerate_other_agents"}
 async def test_mcp_6_2_11_agent_cannot_enumerate_other_agents() -> None:
     """SS6.2.11: Agent cannot discover or enumerate other connected agents.
 
@@ -705,6 +721,7 @@ async def test_mcp_6_2_11_agent_cannot_enumerate_other_agents() -> None:
 
 # TST-BRAIN-242
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0242", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "12", "title": "constraint_draft_only_enforced"}
 async def test_mcp_6_2_12_constraint_draft_only_enforced(intent_classifier) -> None:
     """SS6.2.12: Constraint 'draft_only' prevents agent from sending (only drafts)."""
     intent = make_risky_intent(
@@ -718,6 +735,7 @@ async def test_mcp_6_2_12_constraint_draft_only_enforced(intent_classifier) -> N
 
 # TST-BRAIN-243
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0243", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "13", "title": "constraint_no_payment_enforced"}
 async def test_mcp_6_2_13_constraint_no_payment_enforced() -> None:
     """SS6.2.13: Payment actions are flagged by production review_intent.
 
@@ -760,6 +778,7 @@ async def test_mcp_6_2_13_constraint_no_payment_enforced() -> None:
 
 # TST-BRAIN-244
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0244", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "14", "title": "silence_protocol_checked_before_delegation"}
 async def test_mcp_6_2_14_silence_protocol_checked_before_delegation(
     intent_classifier, mock_silence_classifier,
 ) -> None:
@@ -775,6 +794,7 @@ async def test_mcp_6_2_14_silence_protocol_checked_before_delegation(
 
 # TST-BRAIN-245
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0245", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "15", "title": "agent_outcome_recorded_in_tier3"}
 async def test_mcp_6_2_15_agent_outcome_recorded_in_tier3(agent_router) -> None:
     """SS6.2.15: Agent execution outcome is recorded in Tier 3 of the Trust Network."""
     outcome = agent_router.record_outcome(
@@ -787,6 +807,7 @@ async def test_mcp_6_2_15_agent_outcome_recorded_in_tier3(agent_router) -> None:
 
 # TST-BRAIN-246
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0246", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "16", "title": "no_raw_vault_data_to_agents"}
 async def test_mcp_6_2_16_no_raw_vault_data_to_agents(query_sanitizer) -> None:
     """SS6.2.16: Agents receive questions only -- raw vault data never leaves Home Node."""
     query = "Find a chair under $500"
@@ -805,6 +826,7 @@ async def test_mcp_6_2_16_no_raw_vault_data_to_agents(query_sanitizer) -> None:
 
 # TST-BRAIN-247
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0247", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "03", "scenario": "01", "title": "initialize_session"}
 async def test_mcp_6_3_1_initialize_session() -> None:
     """SS6.3.1: MCP session initializes with tool listing and capability exchange."""
     client = MCPHTTPClient(base_urls={"agent_server": "http://localhost:9999"})
@@ -830,6 +852,7 @@ async def test_mcp_6_3_1_initialize_session() -> None:
 
 # TST-BRAIN-248
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0248", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "03", "scenario": "02", "title": "tool_invocation"}
 async def test_mcp_6_3_2_tool_invocation() -> None:
     """SS6.3.2: Tool invocation sends correct args and returns structured result.
 
@@ -866,6 +889,7 @@ async def test_mcp_6_3_2_tool_invocation() -> None:
 
 # TST-BRAIN-249
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0249", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "03", "scenario": "03", "title": "session_cleanup"}
 async def test_mcp_6_3_3_session_cleanup() -> None:
     """SS6.3.3: MCP session is cleanly disconnected after task completion."""
     # MCPStdioClient disconnect_all cleans up sessions
@@ -880,6 +904,7 @@ async def test_mcp_6_3_3_session_cleanup() -> None:
 
 # TST-BRAIN-250
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0250", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "03", "scenario": "04", "title": "server_unreachable"}
 async def test_mcp_6_3_4_server_unreachable() -> None:
     """SS6.3.4: MCP server unreachable -- error handled gracefully, no crash."""
     # MCPStdioClient raises MCPError for unconfigured server
@@ -900,6 +925,7 @@ async def test_mcp_6_3_4_server_unreachable() -> None:
 
 # TST-BRAIN-251
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0251", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "01", "title": "query_includes_context_not_identity"}
 async def test_mcp_6_4_1_query_includes_context_not_identity(query_sanitizer) -> None:
     """SS6.4.1: Query sent to agent includes product context but not user identity."""
     sanitized = query_sanitizer.sanitize("I, John Smith, want a chair under $500")
@@ -909,6 +935,7 @@ async def test_mcp_6_4_1_query_includes_context_not_identity(query_sanitizer) ->
 
 # TST-BRAIN-252
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0252", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "02", "title": "budget_from_financial_persona_stripped"}
 async def test_mcp_6_4_2_budget_from_financial_persona_stripped(query_sanitizer) -> None:
     """SS6.4.2: Exact budget from financial persona is stripped or generalized."""
     sanitized = query_sanitizer.sanitize(
@@ -921,6 +948,7 @@ async def test_mcp_6_4_2_budget_from_financial_persona_stripped(query_sanitizer)
 
 # TST-BRAIN-253
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0253", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "03", "title": "medical_details_generalized"}
 async def test_mcp_6_4_3_medical_details_generalized(query_sanitizer) -> None:
     """SS6.4.3: Specific medical details are generalized before sending to agent."""
     sanitized = query_sanitizer.sanitize(
@@ -934,6 +962,7 @@ async def test_mcp_6_4_3_medical_details_generalized(query_sanitizer) -> None:
 
 # TST-BRAIN-254
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0254", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "04", "title": "no_persona_data_in_query"}
 async def test_mcp_6_4_4_no_persona_data_in_query(query_sanitizer) -> None:
     """SS6.4.4: No persona metadata (persona_id, tier, compartment) appears in the query."""
     sanitized = query_sanitizer.sanitize("Find a chair", persona_id="shopping")
@@ -943,6 +972,7 @@ async def test_mcp_6_4_4_no_persona_data_in_query(query_sanitizer) -> None:
 
 # TST-BRAIN-255
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0255", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "05", "title": "past_purchase_context_included"}
 async def test_mcp_6_4_5_past_purchase_context_included(query_sanitizer) -> None:
     """SS6.4.5: Relevant past purchase context is included (anonymized)."""
     sanitized = query_sanitizer.sanitize(
@@ -955,6 +985,7 @@ async def test_mcp_6_4_5_past_purchase_context_included(query_sanitizer) -> None
 
 # TST-BRAIN-256
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0256", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "06", "title": "no_pii_even_if_user_types_pii"}
 async def test_mcp_6_4_6_no_pii_even_if_user_types_pii(query_sanitizer) -> None:
     """SS6.4.6: Even if user types PII in their query, it is scrubbed before agent sees it."""
     query = "My SSN is 123-45-6789, find me a chair"
@@ -965,6 +996,7 @@ async def test_mcp_6_4_6_no_pii_even_if_user_types_pii(query_sanitizer) -> None:
 
 # TST-BRAIN-257
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0257", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "07", "title": "attribution_preserved_in_response"}
 async def test_mcp_6_4_7_attribution_preserved_in_response(query_sanitizer) -> None:
     """SS6.4.7: Bot response includes attribution (Deep Link Default principle)."""
     response = {"result": "Battery lasts 8h", "source": "MKBHD", "timestamp": "4:32"}
@@ -975,6 +1007,7 @@ async def test_mcp_6_4_7_attribution_preserved_in_response(query_sanitizer) -> N
 
 # TST-BRAIN-258
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0258", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "04", "scenario": "08", "title": "bot_response_without_attribution"}
 async def test_mcp_6_4_8_bot_response_without_attribution(query_sanitizer) -> None:
     """SS6.4.8: Bot response lacking attribution is flagged for the user."""
     # Response WITHOUT source or attribution → must be flagged.
@@ -998,6 +1031,7 @@ async def test_mcp_6_4_8_bot_response_without_attribution(query_sanitizer) -> No
 
 # TST-BRAIN-408
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0408", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "06", "title": "trust_scores_appview_query"}
 async def test_mcp_6_1_6_trust_scores_appview_query() -> None:
     """SS6.1.6: Brain queries Trust AppView API for product scores."""
     mcp = AsyncMock()
@@ -1016,6 +1050,7 @@ async def test_mcp_6_1_6_trust_scores_appview_query() -> None:
 
 # TST-BRAIN-409
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0409", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "07", "title": "trust_scores_appview_fallback"}
 async def test_mcp_6_1_7_trust_scores_appview_fallback() -> None:
     """SS6.1.7: Trust AppView unavailable -> graceful fallback (returns None).
 
@@ -1047,6 +1082,7 @@ async def test_mcp_6_1_7_trust_scores_appview_fallback() -> None:
 
 
 # TST-BRAIN-410
+# TRACE: {"suite": "BRAIN", "case": "0410", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "08", "title": "bot_trust_scores_tracking"}
 def test_mcp_6_1_8_bot_trust_scores_tracking() -> None:
     """SS6.1.8: Brain recalculates per-bot trust after each interaction."""
     mcp = AsyncMock()
@@ -1067,6 +1103,7 @@ def test_mcp_6_1_8_bot_trust_scores_tracking() -> None:
 
 
 # TST-BRAIN-395
+# TRACE: {"suite": "BRAIN", "case": "0395", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "17", "title": "bot_response_pii_validation"}
 def test_mcp_6_2_17_bot_response_pii_validation() -> None:
     """SS6.2.17: Bot response with leaked PII detected and scrubbed."""
     try:

@@ -34,6 +34,7 @@ vi.mock('@/shared/utils/logger', () => ({
 // Traces to: Architecture §"Directory Structure — shared/atproto/uri.ts"
 // ---------------------------------------------------------------------------
 describe('§3.1 AT URI Parser', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0161", "section": "01", "sectionName": "General", "title": "UT-URI-001: parse valid AT URI"}
   it('UT-URI-001: parse valid AT URI', () => {
     const result = parseAtUri('at://did:plc:abc/com.dina.trust.attestation/tid123')
     expect(result.did).toBe('did:plc:abc')
@@ -41,6 +42,7 @@ describe('§3.1 AT URI Parser', () => {
     expect(result.rkey).toBe('tid123')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0162", "section": "01", "sectionName": "General", "title": "UT-URI-002: parse AT URI \u2014 did:web"}
   it('UT-URI-002: parse AT URI — did:web', () => {
     const result = parseAtUri('at://did:web:example.com/collection/rkey')
     expect(result.did).toBe('did:web:example.com')
@@ -48,23 +50,28 @@ describe('§3.1 AT URI Parser', () => {
     expect(result.rkey).toBe('rkey')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0163", "section": "01", "sectionName": "General", "title": "UT-URI-003: construct AT URI"}
   it('UT-URI-003: construct AT URI', () => {
     const uri = constructAtUri('did:plc:abc', 'com.dina.trust.attestation', 'tid123')
     expect(uri).toBe('at://did:plc:abc/com.dina.trust.attestation/tid123')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0164", "section": "01", "sectionName": "General", "title": "UT-URI-004: invalid URI \u2014 missing protocol"}
   it('UT-URI-004: invalid URI — missing protocol', () => {
     expect(() => parseAtUri('did:plc:abc/collection/rkey')).toThrow('Invalid AT URI')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0165", "section": "01", "sectionName": "General", "title": "UT-URI-005: invalid URI \u2014 missing collection"}
   it('UT-URI-005: invalid URI — missing collection', () => {
     expect(() => parseAtUri('at://did:plc:abc')).toThrow('Invalid AT URI')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0166", "section": "01", "sectionName": "General", "title": "UT-URI-006: invalid URI \u2014 empty string"}
   it('UT-URI-006: invalid URI — empty string', () => {
     expect(() => parseAtUri('')).toThrow('Invalid AT URI')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0167", "section": "01", "sectionName": "General", "title": "UT-URI-007: round-trip: parse -> construct -> parse"}
   it('UT-URI-007: round-trip: parse -> construct -> parse', () => {
     const original = 'at://did:plc:abc/com.dina.trust.vouch/tid456'
     const parsed = parseAtUri(original)
@@ -74,6 +81,7 @@ describe('§3.1 AT URI Parser', () => {
     expect(reparsed).toEqual(parsed)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0168", "section": "01", "sectionName": "General", "title": "UT-URI-008: special characters in rkey"}
   it('UT-URI-008: special characters in rkey', () => {
     const result = parseAtUri('at://did:plc:abc/collection/rkey-with_special-chars_123')
     expect(result.rkey).toBe('rkey-with_special-chars_123')
@@ -94,6 +102,7 @@ function expectedId(input: string): string {
 // Traces to: Architecture §"3-Tier Subject Identity", Fix 10
 // ---------------------------------------------------------------------------
 describe('§3.2 Deterministic ID', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0169", "section": "01", "sectionName": "General", "title": "UT-DI-001: Fix 10: Tier 1 \u2014 DID produces global ID"}
   it('UT-DI-001: Fix 10: Tier 1 — DID produces global ID', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
     const result = generateDeterministicId(ref, 'did:plc:author1')
@@ -101,6 +110,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.isAuthorScoped).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0170", "section": "01", "sectionName": "General", "title": "UT-DI-002: Fix 10: Tier 1 \u2014 same DID, different authors -> same ID"}
   it('UT-DI-002: Fix 10: Tier 1 — same DID, different authors -> same ID', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
     const result1 = generateDeterministicId(ref, 'did:plc:author-a')
@@ -108,6 +118,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result1.id).toBe(result2.id)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0171", "section": "01", "sectionName": "General", "title": "UT-DI-003: Fix 10: Tier 1 \u2014 URI produces global ID"}
   it('UT-DI-003: Fix 10: Tier 1 — URI produces global ID', () => {
     const ref: SubjectRef = { type: 'content', uri: 'https://example.com' }
     const result = generateDeterministicId(ref, 'did:plc:author1')
@@ -115,6 +126,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.isAuthorScoped).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0172", "section": "01", "sectionName": "General", "title": "UT-DI-004: Fix 10: Tier 1 \u2014 same URI, different authors -> same ID"}
   it('UT-DI-004: Fix 10: Tier 1 — same URI, different authors -> same ID', () => {
     const ref: SubjectRef = { type: 'content', uri: 'https://example.com' }
     const result1 = generateDeterministicId(ref, 'did:plc:author-a')
@@ -122,6 +134,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result1.id).toBe(result2.id)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0173", "section": "01", "sectionName": "General", "title": "UT-DI-005: Fix 10: Tier 1 \u2014 identifier produces global ID"}
   it('UT-DI-005: Fix 10: Tier 1 — identifier produces global ID', () => {
     const ref: SubjectRef = { type: 'product', identifier: 'asin:B01234' }
     const result = generateDeterministicId(ref, 'did:plc:author1')
@@ -129,6 +142,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.isAuthorScoped).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0174", "section": "01", "sectionName": "General", "title": "UT-DI-006: Fix 10: Tier 1 \u2014 priority: DID > URI > identifier"}
   it('UT-DI-006: Fix 10: Tier 1 — priority: DID > URI > identifier', () => {
     const ref: SubjectRef = {
       type: 'product',
@@ -142,6 +156,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.isAuthorScoped).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0175", "section": "01", "sectionName": "General", "title": "UT-DI-007: Fix 10: Tier 1 \u2014 priority: URI > identifier"}
   it('UT-DI-007: Fix 10: Tier 1 — priority: URI > identifier', () => {
     const ref: SubjectRef = {
       type: 'product',
@@ -154,12 +169,14 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.isAuthorScoped).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0176", "section": "01", "sectionName": "General", "title": "UT-DI-008: Fix 10: Tier 2 \u2014 name-only -> author-scoped"}
   it('UT-DI-008: Fix 10: Tier 2 — name-only -> author-scoped', () => {
     const ref = { type: 'organization', name: 'Darshini Tiffin Center' } as SubjectRef
     const result = generateDeterministicId(ref, 'did:plc:author1')
     expect(result.isAuthorScoped).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0177", "section": "01", "sectionName": "General", "title": "UT-DI-009: Fix 10: Tier 2 \u2014 same name, different authors -> different IDs"}
   it('UT-DI-009: Fix 10: Tier 2 — same name, different authors -> different IDs', () => {
     const ref = { type: 'organization', name: 'Darshini Tiffin Center' } as SubjectRef
     const resultA = generateDeterministicId(ref, 'did:plc:author-a')
@@ -169,6 +186,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(resultB.isAuthorScoped).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0178", "section": "01", "sectionName": "General", "title": "UT-DI-010: Fix 10: Tier 2 \u2014 same name, same author -> same ID"}
   it('UT-DI-010: Fix 10: Tier 2 — same name, same author -> same ID', () => {
     const ref = { type: 'organization', name: 'Darshini Tiffin Center' } as SubjectRef
     const result1 = generateDeterministicId(ref, 'did:plc:author1')
@@ -176,6 +194,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result1.id).toBe(result2.id)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0179", "section": "01", "sectionName": "General", "title": "UT-DI-011: case normalization"}
   it('UT-DI-011: case normalization', () => {
     const ref1 = { type: 'organization', name: 'Darshini Tiffin' } as SubjectRef
     const ref2 = { type: 'organization', name: 'darshini tiffin' } as SubjectRef
@@ -184,6 +203,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result1.id).toBe(result2.id)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0180", "section": "01", "sectionName": "General", "title": "UT-DI-012: whitespace normalization"}
   it('UT-DI-012: whitespace normalization', () => {
     const ref1 = { type: 'organization', name: '  Darshini Tiffin  ' } as SubjectRef
     const ref2 = { type: 'organization', name: 'Darshini Tiffin' } as SubjectRef
@@ -192,12 +212,14 @@ describe('§3.2 Deterministic ID', () => {
     expect(result1.id).toBe(result2.id)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0181", "section": "01", "sectionName": "General", "title": "UT-DI-013: ID format \u2014 prefix"}
   it('UT-DI-013: ID format — prefix', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
     const result = generateDeterministicId(ref, 'did:plc:author1')
     expect(result.id).toMatch(/^sub_/)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0182", "section": "01", "sectionName": "General", "title": "UT-DI-014: ID format \u2014 length"}
   it('UT-DI-014: ID format — length', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
     const result = generateDeterministicId(ref, 'did:plc:author1')
@@ -205,6 +227,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.id.length).toBe(36)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0183", "section": "01", "sectionName": "General", "title": "UT-DI-015: name fallback order"}
   it('UT-DI-015: name fallback order', () => {
     // ref with DID but no name, no URI, no identifier — Tier 1 uses DID
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
@@ -214,6 +237,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.isAuthorScoped).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0184", "section": "01", "sectionName": "General", "title": "UT-DI-016: name fallback \u2014 "}
   it('UT-DI-016: name fallback — "Unknown Subject"', () => {
     // ref with no name, no URI, no DID, no identifier -> Tier 2 fallback
     const ref = { type: 'organization' } as SubjectRef
@@ -226,6 +250,7 @@ describe('§3.2 Deterministic ID', () => {
     expect(result.id).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0185", "section": "01", "sectionName": "General", "title": "UT-DI-017: different subject types -> different IDs (Tier 2)"}
   it('UT-DI-017: different subject types -> different IDs (Tier 2)', () => {
     const ref1 = { type: 'organization', name: 'Test Corp' } as SubjectRef
     const ref2 = { type: 'claim', name: 'Test Corp' } as SubjectRef
@@ -248,6 +273,7 @@ describe('§3.3 Retry Utility', () => {
     vi.useRealTimers()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0186", "section": "01", "sectionName": "General", "title": "UT-RT-001: succeeds on first try -> no retry"}
   it('UT-RT-001: succeeds on first try -> no retry', async () => {
     const { withRetry } = await import('@/shared/utils/retry')
     const fn = vi.fn().mockResolvedValue('ok')
@@ -256,6 +282,7 @@ describe('§3.3 Retry Utility', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0187", "section": "01", "sectionName": "General", "title": "UT-RT-002: fails once then succeeds -> one retry"}
   it('UT-RT-002: fails once then succeeds -> one retry', async () => {
     const { withRetry } = await import('@/shared/utils/retry')
     const fn = vi.fn()
@@ -270,6 +297,7 @@ describe('§3.3 Retry Utility', () => {
     expect(fn).toHaveBeenCalledTimes(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0188", "section": "01", "sectionName": "General", "title": "UT-RT-003: exhausts all retries -> throws"}
   it('UT-RT-003: exhausts all retries -> throws', async () => {
     const { withRetry } = await import('@/shared/utils/retry')
     const error = new Error('persistent failure')
@@ -284,6 +312,7 @@ describe('§3.3 Retry Utility', () => {
     expect(fn).toHaveBeenCalledTimes(3) // initial + 2 retries
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0189", "section": "01", "sectionName": "General", "title": "UT-RT-004: exponential backoff timing"}
   it('UT-RT-004: exponential backoff timing', async () => {
     const { withRetry } = await import('@/shared/utils/retry')
     const fn = vi.fn()
@@ -311,6 +340,7 @@ describe('§3.3 Retry Utility', () => {
     expect(result).toBe('ok')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0190", "section": "01", "sectionName": "General", "title": "UT-RT-005: max delay cap"}
   it('UT-RT-005: max delay cap', async () => {
     const { withRetry } = await import('@/shared/utils/retry')
     const fn = vi.fn().mockRejectedValue(new Error('fail'))
@@ -338,6 +368,7 @@ describe('§3.3 Retry Utility', () => {
 // Tests the generic batchProcess utility (shared/utils/batch.ts)
 // ---------------------------------------------------------------------------
 describe('§3.4 Batch Insert', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0191", "section": "01", "sectionName": "General", "title": "UT-BA-001: single batch \u2014 within limit"}
   it('UT-BA-001: single batch — within limit', async () => {
     const { batchProcess } = await import('@/shared/utils/batch')
     const items = Array.from({ length: 50 }, (_, i) => i)
@@ -350,6 +381,7 @@ describe('§3.4 Batch Insert', () => {
     expect(batches[0]).toEqual(items)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0192", "section": "01", "sectionName": "General", "title": "UT-BA-002: multiple batches"}
   it('UT-BA-002: multiple batches', async () => {
     const { batchProcess } = await import('@/shared/utils/batch')
     const items = Array.from({ length: 250 }, (_, i) => i)
@@ -363,6 +395,7 @@ describe('§3.4 Batch Insert', () => {
     expect(batches[2]).toHaveLength(50)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0193", "section": "01", "sectionName": "General", "title": "UT-BA-003: empty input"}
   it('UT-BA-003: empty input', async () => {
     const { batchProcess } = await import('@/shared/utils/batch')
     const fn = vi.fn()
@@ -370,6 +403,7 @@ describe('§3.4 Batch Insert', () => {
     expect(fn).not.toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0194", "section": "01", "sectionName": "General", "title": "UT-BA-004: exact batch boundary"}
   it('UT-BA-004: exact batch boundary', async () => {
     const { batchProcess } = await import('@/shared/utils/batch')
     const items = Array.from({ length: 200 }, (_, i) => i)
@@ -387,6 +421,7 @@ describe('§3.4 Batch Insert', () => {
 // §3.5 Error Types
 // ---------------------------------------------------------------------------
 describe('§3.5 Error Types', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0195", "section": "01", "sectionName": "General", "title": "UT-ER-001: AppError \u2014 message and code"}
   it('UT-ER-001: AppError — message and code', () => {
     const err = new AppError('something went wrong', 'INTERNAL', 500)
     expect(err.message).toBe('something went wrong')
@@ -396,6 +431,7 @@ describe('§3.5 Error Types', () => {
     expect(err).toBeInstanceOf(AppError)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0196", "section": "01", "sectionName": "General", "title": "UT-ER-002: ValidationError extends AppError"}
   it('UT-ER-002: ValidationError extends AppError', () => {
     const details = [{ field: 'name', message: 'required' }]
     const err = new ValidationError('Validation failed', details)
@@ -407,6 +443,7 @@ describe('§3.5 Error Types', () => {
     expect(err).toBeInstanceOf(Error)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0197", "section": "01", "sectionName": "General", "title": "UT-ER-003: NotFoundError extends AppError"}
   it('UT-ER-003: NotFoundError extends AppError', () => {
     const err = new NotFoundError('Subject not found')
     expect(err.statusCode).toBe(404)
@@ -417,6 +454,7 @@ describe('§3.5 Error Types', () => {
     expect(err).toBeInstanceOf(Error)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0198", "section": "01", "sectionName": "General", "title": "UT-ER-004: error serialization"}
   it('UT-ER-004: error serialization', () => {
     const details = [{ field: 'email', message: 'invalid format' }]
     const err = new ValidationError('Invalid input', details)

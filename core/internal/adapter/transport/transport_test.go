@@ -2,6 +2,7 @@ package transport
 
 import "testing"
 
+// TRACE: {"suite": "CORE", "case": "2144", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "01", "title": "IsHostAllowed"}
 func TestIsHostAllowed(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -26,6 +26,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-394
+// TRACE: {"suite": "CORE", "case": "1713", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "01", "title": "SendToKnownRecipient"}
 func TestTransport_7_1_1_SendToKnownRecipient(t *testing.T) {
 	impl := realTransporter
 	// impl = transport.New()
@@ -37,6 +38,7 @@ func TestTransport_7_1_1_SendToKnownRecipient(t *testing.T) {
 }
 
 // TST-CORE-805
+// TRACE: {"suite": "CORE", "case": "1714", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "02", "title": "SendToUnresolvableDIDFails"}
 func TestTransport_7_1_2_SendToUnresolvableDIDFails(t *testing.T) {
 	impl := realTransporter
 	// impl = transport.New()
@@ -48,6 +50,7 @@ func TestTransport_7_1_2_SendToUnresolvableDIDFails(t *testing.T) {
 }
 
 // TST-CORE-806
+// TRACE: {"suite": "CORE", "case": "1715", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "03", "title": "SendEmptyEnvelopeRejected"}
 func TestTransport_7_1_3_SendEmptyEnvelopeRejected(t *testing.T) {
 	impl := realTransporter
 	// impl = transport.New()
@@ -58,6 +61,7 @@ func TestTransport_7_1_3_SendEmptyEnvelopeRejected(t *testing.T) {
 }
 
 // TST-CORE-807
+// TRACE: {"suite": "CORE", "case": "1716", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "04", "title": "SendNilEnvelopeRejected"}
 func TestTransport_7_1_4_SendNilEnvelopeRejected(t *testing.T) {
 	impl := realTransporter
 	// impl = transport.New()
@@ -68,6 +72,7 @@ func TestTransport_7_1_4_SendNilEnvelopeRejected(t *testing.T) {
 }
 
 // TST-CORE-808
+// TRACE: {"suite": "CORE", "case": "1717", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "05", "title": "MockSendRecordsMessages"}
 func TestTransport_7_1_5_MockSendRecordsMessages(t *testing.T) {
 	// Verify mock records messages (used by other tests as test double).
 	mock := testutil.NewMockTransporter()
@@ -111,6 +116,7 @@ func TestTransport_7_1_5_MockSendRecordsMessages(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-395
+// TRACE: {"suite": "CORE", "case": "1718", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "01", "title": "OutboxSchema"}
 func TestTransport_7_1_OutboxSchema(t *testing.T) {
 	// Verify outbox message schema contract: all required fields survive
 	// an Enqueue → GetByID round-trip through the real OutboxManager.
@@ -144,6 +150,7 @@ func TestTransport_7_1_OutboxSchema(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-810
+// TRACE: {"suite": "CORE", "case": "1719", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "01", "title": "ReceiveFromInbox"}
 func TestTransport_7_2_1_ReceiveFromInbox(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -170,6 +177,7 @@ func TestTransport_7_2_1_ReceiveFromInbox(t *testing.T) {
 }
 
 // TST-CORE-811
+// TRACE: {"suite": "CORE", "case": "1720", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "02", "title": "EmptyInboxReturnsNil"}
 func TestTransport_7_2_2_EmptyInboxReturnsNil(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -187,6 +195,7 @@ func TestTransport_7_2_2_EmptyInboxReturnsNil(t *testing.T) {
 }
 
 // TST-CORE-812
+// TRACE: {"suite": "CORE", "case": "1721", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "03", "title": "InboxFIFOOrder"}
 func TestTransport_7_2_3_InboxFIFOOrder(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -228,6 +237,7 @@ func TestTransport_7_2_3_InboxFIFOOrder(t *testing.T) {
 }
 
 // TST-CORE-813
+// TRACE: {"suite": "CORE", "case": "1722", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "04", "title": "InboxSpoolWhenLocked"}
 func TestTransport_7_2_4_InboxSpoolWhenLocked(t *testing.T) {
 	im := transport.NewInboxManager(transport.DefaultInboxConfig())
 	testutil.RequireImplementation(t, im, "InboxManager")
@@ -263,6 +273,7 @@ func TestTransport_7_2_4_InboxSpoolWhenLocked(t *testing.T) {
 }
 
 // TST-CORE-814
+// TRACE: {"suite": "CORE", "case": "1723", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "05", "title": "InboxRejectWhenSpoolFull"}
 func TestTransport_7_2_5_InboxRejectWhenSpoolFull(t *testing.T) {
 	inbox := transport.NewInboxManager(transport.DefaultInboxConfig())
 	ctx := context.Background()
@@ -300,6 +311,7 @@ func TestTransport_7_2_5_InboxRejectWhenSpoolFull(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-434
+// TRACE: {"suite": "CORE", "case": "1724", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "01", "title": "ResolveKnownDID"}
 func TestTransport_7_3_1_ResolveKnownDID(t *testing.T) {
 	tr := transport.NewTransporter(nil)
 
@@ -317,6 +329,7 @@ func TestTransport_7_3_1_ResolveKnownDID(t *testing.T) {
 }
 
 // TST-CORE-437
+// TRACE: {"suite": "CORE", "case": "1725", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "02", "title": "ResolveUnknownDIDFails"}
 func TestTransport_7_3_2_ResolveUnknownDIDFails(t *testing.T) {
 	impl := realTransporter
 	// impl = transport.New()
@@ -337,6 +350,7 @@ func TestTransport_7_3_2_ResolveUnknownDIDFails(t *testing.T) {
 }
 
 // TST-CORE-815
+// TRACE: {"suite": "CORE", "case": "1726", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "03", "title": "ResolveAddedEndpoint"}
 func TestTransport_7_3_3_ResolveAddedEndpoint(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -363,6 +377,7 @@ func TestTransport_7_3_3_ResolveAddedEndpoint(t *testing.T) {
 }
 
 // TST-CORE-816
+// TRACE: {"suite": "CORE", "case": "1727", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "04", "title": "ResolveUnknownDIDReturnsErrorAndIncrementsMiss"}
 func TestTransport_7_3_4_ResolveUnknownDIDReturnsErrorAndIncrementsMiss(t *testing.T) {
 	impl := realDIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
@@ -387,6 +402,7 @@ func TestTransport_7_3_4_ResolveUnknownDIDReturnsErrorAndIncrementsMiss(t *testi
 // --------------------------------------------------------------------------
 
 // TST-CORE-818
+// TRACE: {"suite": "CORE", "case": "1728", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "01", "title": "EnvelopeContainsRequiredFields"}
 func TestTransport_7_4_1_EnvelopeContainsRequiredFields(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -423,6 +439,7 @@ func TestTransport_7_4_1_EnvelopeContainsRequiredFields(t *testing.T) {
 }
 
 // TST-CORE-819
+// TRACE: {"suite": "CORE", "case": "1729", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "02", "title": "EnvelopeFromFieldIsDID"}
 func TestTransport_7_4_2_EnvelopeFromFieldIsDID(t *testing.T) {
 	// Fresh Transporter — no shared state.
 	tr := transport.NewTransporter(nil)
@@ -475,6 +492,7 @@ func TestTransport_7_4_2_EnvelopeFromFieldIsDID(t *testing.T) {
 }
 
 // TST-CORE-820
+// TRACE: {"suite": "CORE", "case": "1730", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "03", "title": "EnvelopeMaxSize"}
 func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -506,6 +524,7 @@ func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 }
 
 // TST-CORE-821
+// TRACE: {"suite": "CORE", "case": "1731", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "13", "title": "EnvelopeInvalidJSONRejected"}
 func TestTransport_7_4_13_EnvelopeInvalidJSONRejected(t *testing.T) {
 	tr := transport.NewTransporter(nil)
 	tr.AddEndpoint("did:key:z6MkRecipient", "https://recipient.example.com")
@@ -535,6 +554,7 @@ func TestTransport_7_4_13_EnvelopeInvalidJSONRejected(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-822
+// TRACE: {"suite": "CORE", "case": "1732", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "01", "title": "EnvelopeEncryptedInTransit"}
 func TestTransport_7_5_1_EnvelopeEncryptedInTransit(t *testing.T) {
 	// Requirement: Envelopes must be encrypted in transit using NaCl crypto_box_seal.
 	// Test the actual encryption — seal plaintext, verify ciphertext differs,
@@ -600,6 +620,7 @@ func TestTransport_7_5_1_EnvelopeEncryptedInTransit(t *testing.T) {
 }
 
 // TST-CORE-823
+// TRACE: {"suite": "CORE", "case": "1733", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "02", "title": "EncryptDecryptRoundtrip"}
 func TestTransport_7_5_2_EncryptDecryptRoundtrip(t *testing.T) {
 	// End-to-end: seal envelope → transmit → open at recipient.
 	// Requires both BoxSealer and KeyConverter implementations.
@@ -640,6 +661,7 @@ func TestTransport_7_5_2_EncryptDecryptRoundtrip(t *testing.T) {
 }
 
 // TST-CORE-824
+// TRACE: {"suite": "CORE", "case": "1734", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "03", "title": "WrongRecipientCannotDecrypt"}
 func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 	boxImpl := realEncryptor
 	// boxImpl = box.New()
@@ -686,6 +708,7 @@ func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-825
+// TRACE: {"suite": "CORE", "case": "1735", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "01", "title": "DirectDeliveryPreferred"}
 func TestTransport_7_6_1_DirectDeliveryPreferred(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -702,6 +725,7 @@ func TestTransport_7_6_1_DirectDeliveryPreferred(t *testing.T) {
 }
 
 // TST-CORE-826
+// TRACE: {"suite": "CORE", "case": "1736", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "02", "title": "MsgBoxUsedWhenDirectFails"}
 func TestTransport_7_6_2_MsgBoxUsedWhenDirectFails(t *testing.T) {
 	// §7.6.2: When direct delivery fails (DID has no resolvable endpoint),
 	// the transport must fall back to the configured msgbox. Without a msgbox,
@@ -739,6 +763,7 @@ func TestTransport_7_6_2_MsgBoxUsedWhenDirectFails(t *testing.T) {
 }
 
 // TST-CORE-827
+// TRACE: {"suite": "CORE", "case": "1737", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "03", "title": "MockSendError"}
 func TestTransport_7_6_3_MockSendError(t *testing.T) {
 	mock := testutil.NewMockTransporter()
 	mock.SendErr = testutil.ErrNotImplemented
@@ -753,6 +778,7 @@ func TestTransport_7_6_3_MockSendError(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-809
+// TRACE: {"suite": "CORE", "case": "1738", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "06", "title": "OutboxEnqueuePersistsMessage"}
 func TestTransport_7_1_6_OutboxEnqueuePersistsMessage(t *testing.T) {
 	// Fresh production OutboxManager — no shared state.
 	impl := transport.NewOutboxManager(100)
@@ -784,6 +810,7 @@ func TestTransport_7_1_6_OutboxEnqueuePersistsMessage(t *testing.T) {
 }
 
 // TST-CORE-396
+// TRACE: {"suite": "CORE", "case": "1739", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "07", "title": "SuccessfulDeliveryMarked"}
 func TestTransport_7_1_7_SuccessfulDeliveryMarked(t *testing.T) {
 	impl := transport.NewOutboxManager(100)
 
@@ -820,6 +847,7 @@ func TestTransport_7_1_7_SuccessfulDeliveryMarked(t *testing.T) {
 }
 
 // TST-CORE-397
+// TRACE: {"suite": "CORE", "case": "1740", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "08", "title": "DeliveryFailureRetry"}
 func TestTransport_7_1_8_DeliveryFailureRetry(t *testing.T) {
 	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -846,6 +874,7 @@ func TestTransport_7_1_8_DeliveryFailureRetry(t *testing.T) {
 }
 
 // TST-CORE-398
+// TRACE: {"suite": "CORE", "case": "1741", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "09", "title": "MaxRetriesExhaustedNudge"}
 func TestTransport_7_1_9_MaxRetriesExhaustedNudge(t *testing.T) {
 	// Fresh OutboxManager — no shared state.
 	impl := transport.NewOutboxManager(100)
@@ -891,6 +920,7 @@ func TestTransport_7_1_9_MaxRetriesExhaustedNudge(t *testing.T) {
 }
 
 // TST-CORE-399
+// TRACE: {"suite": "CORE", "case": "1742", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "10", "title": "UserRequeueAfterFailure"}
 func TestTransport_7_1_10_UserRequeueAfterFailure(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
@@ -912,6 +942,7 @@ func TestTransport_7_1_10_UserRequeueAfterFailure(t *testing.T) {
 }
 
 // TST-CORE-400
+// TRACE: {"suite": "CORE", "case": "1743", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "11", "title": "TTL24Hours"}
 func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
 	// Fresh OutboxManager to avoid shared state pollution.
 	impl := transport.NewOutboxManager(100)
@@ -958,6 +989,7 @@ func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
 }
 
 // TST-CORE-401
+// TRACE: {"suite": "CORE", "case": "1744", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "12", "title": "QueueSizeLimit100"}
 func TestTransport_7_1_12_QueueSizeLimit100(t *testing.T) {
 	// Use a fresh production OutboxManager (not the shared singleton) to avoid
 	// polluting other tests, and to exercise the real queue-limit logic.
@@ -984,6 +1016,7 @@ func TestTransport_7_1_12_QueueSizeLimit100(t *testing.T) {
 // OutboxManager, which does not yet exist. This test verifies the weaker
 // property: enqueue → retrieve round-trip returns the correct message.
 // TODO: Upgrade to a real restart test once a durable OutboxManager is implemented.
+// TRACE: {"suite": "CORE", "case": "1745", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "13", "title": "OutboxEnqueueRetrieveRoundTrip"}
 func TestTransport_7_1_13_OutboxEnqueueRetrieveRoundTrip(t *testing.T) {
 	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -1003,6 +1036,7 @@ func TestTransport_7_1_13_OutboxEnqueueRetrieveRoundTrip(t *testing.T) {
 }
 
 // TST-CORE-404
+// TRACE: {"suite": "CORE", "case": "1746", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "14", "title": "IdempotentDelivery"}
 func TestTransport_7_1_14_IdempotentDelivery(t *testing.T) {
 	// Fresh OutboxManager — no shared state.
 	impl := transport.NewOutboxManager(100)
@@ -1051,6 +1085,7 @@ func TestTransport_7_1_14_IdempotentDelivery(t *testing.T) {
 }
 
 // TST-CORE-407
+// TRACE: {"suite": "CORE", "case": "1747", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "15", "title": "PriorityOrdering"}
 func TestTransport_7_1_15_PriorityOrdering(t *testing.T) {
 	// Fresh OutboxManager to avoid shared state pollution.
 	impl := transport.NewOutboxManager(100)
@@ -1114,6 +1149,7 @@ func TestTransport_7_1_15_PriorityOrdering(t *testing.T) {
 }
 
 // TST-CORE-408
+// TRACE: {"suite": "CORE", "case": "1748", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "16", "title": "PayloadIsPreEncrypted"}
 func TestTransport_7_1_16_PayloadIsPreEncrypted(t *testing.T) {
 	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -1133,6 +1169,7 @@ func TestTransport_7_1_16_PayloadIsPreEncrypted(t *testing.T) {
 }
 
 // TST-CORE-409
+// TRACE: {"suite": "CORE", "case": "1749", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "17", "title": "SendingStatusDuringDelivery"}
 func TestTransport_7_1_17_SendingStatusDuringDelivery(t *testing.T) {
 	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -1170,6 +1207,7 @@ func TestTransport_7_1_17_SendingStatusDuringDelivery(t *testing.T) {
 }
 
 // TST-CORE-410
+// TRACE: {"suite": "CORE", "case": "1750", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "18", "title": "UserIgnoresNudgeExpires"}
 func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
 	// §7.1.18: User ignores delivery nudge → message expires after TTL.
 	// Fresh OutboxManager to avoid shared state.
@@ -1216,6 +1254,7 @@ func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-411
+// TRACE: {"suite": "CORE", "case": "1751", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "06", "title": "Valve1IPRateLimitExceeded"}
 func TestTransport_7_2_6_Valve1IPRateLimitExceeded(t *testing.T) {
 	// Fresh production InboxManager with default config (IP limit = 50).
 	cfg := transport.DefaultInboxConfig()
@@ -1241,6 +1280,7 @@ func TestTransport_7_2_6_Valve1IPRateLimitExceeded(t *testing.T) {
 }
 
 // TST-CORE-412
+// TRACE: {"suite": "CORE", "case": "1752", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "07", "title": "Valve1NormalTraffic"}
 func TestTransport_7_2_7_Valve1NormalTraffic(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.IPRateLimit = 50
@@ -1250,6 +1290,7 @@ func TestTransport_7_2_7_Valve1NormalTraffic(t *testing.T) {
 }
 
 // TST-CORE-413
+// TRACE: {"suite": "CORE", "case": "1753", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "08", "title": "Valve1GlobalRateLimit"}
 func TestTransport_7_2_8_Valve1GlobalRateLimit(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.GlobalRateLimit = 1000
@@ -1263,6 +1304,7 @@ func TestTransport_7_2_8_Valve1GlobalRateLimit(t *testing.T) {
 }
 
 // TST-CORE-414
+// TRACE: {"suite": "CORE", "case": "1754", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "09", "title": "Valve1PayloadCap256KB"}
 func TestTransport_7_2_9_Valve1PayloadCap256KB(t *testing.T) {
 	// Use real InboxManager from production code, not mock.
 	im := realInboxManager
@@ -1277,6 +1319,7 @@ func TestTransport_7_2_9_Valve1PayloadCap256KB(t *testing.T) {
 }
 
 // TST-CORE-415
+// TRACE: {"suite": "CORE", "case": "1755", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "10", "title": "Valve1PayloadWithinCap"}
 func TestTransport_7_2_10_Valve1PayloadWithinCap(t *testing.T) {
 	// Use real InboxManager from production code, not mock.
 	impl := realInboxManager
@@ -1294,6 +1337,7 @@ func TestTransport_7_2_10_Valve1PayloadWithinCap(t *testing.T) {
 }
 
 // TST-CORE-416
+// TRACE: {"suite": "CORE", "case": "1756", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "11", "title": "Valve2SpoolWhenLocked"}
 func TestTransport_7_2_11_Valve2SpoolWhenLocked(t *testing.T) {
 	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -1326,6 +1370,7 @@ func TestTransport_7_2_11_Valve2SpoolWhenLocked(t *testing.T) {
 }
 
 // TST-CORE-417
+// TRACE: {"suite": "CORE", "case": "1757", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "12", "title": "Valve2SpoolCapExceeded"}
 func TestTransport_7_2_12_Valve2SpoolCapExceeded(t *testing.T) {
 	// §7.2.12: Spool exceeding capacity must reject new messages (fail-closed).
 	// Fresh production InboxManager with small spool cap.
@@ -1361,6 +1406,7 @@ func TestTransport_7_2_12_Valve2SpoolCapExceeded(t *testing.T) {
 }
 
 // TST-CORE-418
+// TRACE: {"suite": "CORE", "case": "1758", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "13", "title": "Valve2RejectNewPreservesExisting"}
 func TestTransport_7_2_13_Valve2RejectNewPreservesExisting(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.SpoolMaxBytes = 100
@@ -1381,6 +1427,7 @@ func TestTransport_7_2_13_Valve2RejectNewPreservesExisting(t *testing.T) {
 }
 
 // TST-CORE-419
+// TRACE: {"suite": "CORE", "case": "1759", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "14", "title": "Valve3SweeperOnUnlock"}
 func TestTransport_7_2_14_Valve3SweeperOnUnlock(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 
@@ -1400,6 +1447,7 @@ func TestTransport_7_2_14_Valve3SweeperOnUnlock(t *testing.T) {
 }
 
 // TST-CORE-422
+// TRACE: {"suite": "CORE", "case": "1760", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "15", "title": "Valve3TTLEnforcement"}
 func TestTransport_7_2_15_Valve3TTLEnforcement(t *testing.T) {
 	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -1433,6 +1481,7 @@ func TestTransport_7_2_15_Valve3TTLEnforcement(t *testing.T) {
 }
 
 // TST-CORE-423
+// TRACE: {"suite": "CORE", "case": "1761", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "16", "title": "Valve3MessageWithinTTL"}
 func TestTransport_7_2_16_Valve3MessageWithinTTL(t *testing.T) {
 	// §7.2.16: Messages within TTL survive ProcessSpool; without TTL they are cleared.
 	cfg := transport.DefaultInboxConfig()
@@ -1469,6 +1518,7 @@ func TestTransport_7_2_16_Valve3MessageWithinTTL(t *testing.T) {
 }
 
 // TST-CORE-425
+// TRACE: {"suite": "CORE", "case": "1762", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "17", "title": "FastPathVaultUnlocked"}
 func TestTransport_7_2_17_FastPathVaultUnlocked(t *testing.T) {
 	// §7.2.17: When vault is unlocked, ProcessSpool delivers all messages immediately (fast path).
 	cfg := transport.DefaultInboxConfig()
@@ -1505,6 +1555,7 @@ func TestTransport_7_2_17_FastPathVaultUnlocked(t *testing.T) {
 }
 
 // TST-CORE-426
+// TRACE: {"suite": "CORE", "case": "1763", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "18", "title": "FastPathPerDIDRateLimit"}
 func TestTransport_7_2_18_FastPathPerDIDRateLimit(t *testing.T) {
 	// Use the real InboxManager with a low per-DID rate limit.
 	cfg := transport.DefaultInboxConfig()
@@ -1523,6 +1574,7 @@ func TestTransport_7_2_18_FastPathPerDIDRateLimit(t *testing.T) {
 }
 
 // TST-CORE-427
+// TRACE: {"suite": "CORE", "case": "1764", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "19", "title": "DeadDropPerDIDImpossibleWhenLocked"}
 func TestTransport_7_2_19_DeadDropPerDIDImpossibleWhenLocked(t *testing.T) {
 	// §7.2.19: Per-DID rate limiting is impossible when vault is locked because
 	// the DID is inside the encrypted envelope. When locked, the inbox must use
@@ -1569,6 +1621,7 @@ func TestTransport_7_2_19_DeadDropPerDIDImpossibleWhenLocked(t *testing.T) {
 }
 
 // TST-CORE-428
+// TRACE: {"suite": "CORE", "case": "1765", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "20", "title": "DIDVerificationOnInbound"}
 func TestTransport_7_2_20_DIDVerificationOnInbound(t *testing.T) {
 	// Fresh InboxManager — no shared state.
 	cfg := transport.DefaultInboxConfig()
@@ -1606,6 +1659,7 @@ func TestTransport_7_2_20_DIDVerificationOnInbound(t *testing.T) {
 }
 
 // TST-CORE-429
+// TRACE: {"suite": "CORE", "case": "1766", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "21", "title": "DIDVerificationFailure"}
 func TestTransport_7_2_21_DIDVerificationFailure(t *testing.T) {
 	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -1623,6 +1677,7 @@ func TestTransport_7_2_21_DIDVerificationFailure(t *testing.T) {
 }
 
 // TST-CORE-430
+// TRACE: {"suite": "CORE", "case": "1767", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "22", "title": "UnknownSenderDID"}
 func TestTransport_7_2_22_UnknownSenderDID(t *testing.T) {
 	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -1668,6 +1723,7 @@ func TestTransport_7_2_22_UnknownSenderDID(t *testing.T) {
 }
 
 // TST-CORE-431
+// TRACE: {"suite": "CORE", "case": "1768", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "23", "title": "SpoolDirectoryIsSafe"}
 func TestTransport_7_2_23_SpoolDirectoryIsSafe(t *testing.T) {
 	// §7.2.23: Spool uses opaque IDs — no DID/metadata embedded in storage keys.
 	src, err := os.ReadFile("../internal/adapter/transport/transport.go")
@@ -1698,6 +1754,7 @@ func TestTransport_7_2_23_SpoolDirectoryIsSafe(t *testing.T) {
 }
 
 // TST-CORE-432
+// TRACE: {"suite": "CORE", "case": "1769", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "24", "title": "DoSWhileLocked"}
 func TestTransport_7_2_24_DoSWhileLocked(t *testing.T) {
 	// §7.2.24: DoS while vault is locked — IP rate limit + spool cap protect the system.
 	cfg := transport.DefaultInboxConfig()
@@ -1736,6 +1793,7 @@ func TestTransport_7_2_24_DoSWhileLocked(t *testing.T) {
 }
 
 // TST-CORE-433
+// TRACE: {"suite": "CORE", "case": "1770", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "25", "title": "DoSWhileUnlocked"}
 func TestTransport_7_2_25_DoSWhileUnlocked(t *testing.T) {
 	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -1762,6 +1820,7 @@ func TestTransport_7_2_25_DoSWhileUnlocked(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-438
+// TRACE: {"suite": "CORE", "case": "1771", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "05", "title": "MalformedDIDValidationError"}
 func TestTransport_7_3_5_MalformedDIDValidationError(t *testing.T) {
 	// Fresh Transporter for isolation.
 	impl := transport.NewTransporter(nil)
@@ -1797,6 +1856,7 @@ func TestTransport_7_3_5_MalformedDIDValidationError(t *testing.T) {
 }
 
 // TST-CORE-435
+// TRACE: {"suite": "CORE", "case": "1772", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "06", "title": "DIDCacheHit"}
 func TestTransport_7_3_6_DIDCacheHit(t *testing.T) {
 	// Fresh resolver to isolate from other tests.
 	impl := transport.NewDIDResolver()
@@ -1832,6 +1892,7 @@ func TestTransport_7_3_6_DIDCacheHit(t *testing.T) {
 }
 
 // TST-CORE-436
+// TRACE: {"suite": "CORE", "case": "1773", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "07", "title": "DIDCacheExpiry"}
 func TestTransport_7_3_7_DIDCacheExpiry(t *testing.T) {
 	// Fresh DIDResolver — no shared state, no TTL/fetcher side effects.
 	impl := transport.NewDIDResolver()
@@ -1882,6 +1943,7 @@ func TestTransport_7_3_7_DIDCacheExpiry(t *testing.T) {
 }
 
 // TST-CORE-817
+// TRACE: {"suite": "CORE", "case": "1774", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "08", "title": "UnresolvableDIDNotCached"}
 func TestTransport_7_3_8_UnresolvableDIDNotCached(t *testing.T) {
 	impl := realDIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
@@ -1912,6 +1974,7 @@ func TestTransport_7_3_8_UnresolvableDIDNotCached(t *testing.T) {
 
 // TST-CORE-439
 // TST-CORE-1034 SendMessage populates msg.From from senderDID
+// TRACE: {"suite": "CORE", "case": "1775", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "05", "title": "PlaintextStructure"}
 func TestTransport_7_4_5_PlaintextStructure(t *testing.T) {
 	// Fresh production Transporter — validates envelope structure on Send.
 	impl := transport.NewTransporter(nil)
@@ -1948,6 +2011,7 @@ func TestTransport_7_4_5_PlaintextStructure(t *testing.T) {
 }
 
 // TST-CORE-440
+// TRACE: {"suite": "CORE", "case": "1776", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "06", "title": "MessageIDFormat"}
 func TestTransport_7_4_6_MessageIDFormat(t *testing.T) {
 	// Production OutboxManager generates IDs with "outbox-" prefix when
 	// messages are enqueued without a pre-set ID.
@@ -1978,6 +2042,7 @@ func TestTransport_7_4_6_MessageIDFormat(t *testing.T) {
 }
 
 // TST-CORE-443
+// TRACE: {"suite": "CORE", "case": "1777", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "07", "title": "MessageCategories"}
 func TestTransport_7_4_7_MessageCategories(t *testing.T) {
 	// Valid message type categories.
 	validTypes := []string{
@@ -1992,6 +2057,7 @@ func TestTransport_7_4_7_MessageCategories(t *testing.T) {
 }
 
 // TST-CORE-444
+// TRACE: {"suite": "CORE", "case": "1778", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "08", "title": "UnknownMessageTypeAccepted"}
 func TestTransport_7_4_8_UnknownMessageTypeAccepted(t *testing.T) {
 	// Unknown message types should be accepted and stored (extensible).
 	msg := testutil.TestD2DMessage()
@@ -2002,6 +2068,7 @@ func TestTransport_7_4_8_UnknownMessageTypeAccepted(t *testing.T) {
 }
 
 // TST-CORE-441, TST-CORE-446
+// TRACE: {"suite": "CORE", "case": "1779", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "09", "title": "EnvelopeFormat"}
 func TestTransport_7_4_9_EnvelopeFormat(t *testing.T) {
 	// Verify encrypted envelope structure.
 	envelope := testutil.D2DEnvelope{
@@ -2022,6 +2089,7 @@ func TestTransport_7_4_9_EnvelopeFormat(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-448
+// TRACE: {"suite": "CORE", "case": "1780", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "04", "title": "FullConnectionFlow"}
 func TestTransport_7_5_4_FullConnectionFlow(t *testing.T) {
 	// Fresh Transporter — no shared state.
 	tr := transport.NewTransporter(nil)
@@ -2074,6 +2142,7 @@ func TestTransport_7_5_4_FullConnectionFlow(t *testing.T) {
 }
 
 // TST-CORE-449
+// TRACE: {"suite": "CORE", "case": "1781", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "05", "title": "MutualAuthentication"}
 func TestTransport_7_5_5_MutualAuthentication(t *testing.T) {
 	// §7.5.5: Mutual authentication — both sender and recipient must
 	// verify each other's identity before message exchange. This means:
@@ -2114,6 +2183,7 @@ func TestTransport_7_5_5_MutualAuthentication(t *testing.T) {
 }
 
 // TST-CORE-450
+// TRACE: {"suite": "CORE", "case": "1782", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "06", "title": "ContactAllowlistCheck"}
 func TestTransport_7_5_6_ContactAllowlistCheck(t *testing.T) {
 	// §7.5.6: Only DIDs with resolvable endpoints (i.e. in the contact/allowlist)
 	// can receive messages. Unknown DIDs must be rejected.
@@ -2148,6 +2218,7 @@ func TestTransport_7_5_6_ContactAllowlistCheck(t *testing.T) {
 }
 
 // TST-CORE-451
+// TRACE: {"suite": "CORE", "case": "1783", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "07", "title": "EndpointFromDIDDocument"}
 func TestTransport_7_5_7_EndpointFromDIDDocument(t *testing.T) {
 	// §7.5.7: DID Document's service[0].serviceEndpoint must be parsed to
 	// extract the delivery URL. The production DIDResolver parses the JSON
@@ -2197,6 +2268,7 @@ func TestTransport_7_5_7_EndpointFromDIDDocument(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-452
+// TRACE: {"suite": "CORE", "case": "1784", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "04", "title": "MsgBoxForwardEnvelope"}
 func TestTransport_7_6_4_MsgBoxForwardEnvelope(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -2230,6 +2302,7 @@ func TestTransport_7_6_4_MsgBoxForwardEnvelope(t *testing.T) {
 }
 
 // TST-CORE-453
+// TRACE: {"suite": "CORE", "case": "1785", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "05", "title": "MsgBoxCannotReadContent"}
 func TestTransport_7_6_5_MsgBoxCannotReadContent(t *testing.T) {
 	// Requirement: msgbox.forwards encrypted envelopes without reading content.
 	// The msgbox.sees only recipient DID + opaque ciphertext — never plaintext.
@@ -2283,6 +2356,7 @@ func TestTransport_7_6_5_MsgBoxCannotReadContent(t *testing.T) {
 }
 
 // TST-CORE-454
+// TRACE: {"suite": "CORE", "case": "1786", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "06", "title": "DIDDocumentPointsToMsgBox"}
 func TestTransport_7_6_6_DIDDocumentPointsToMsgBox(t *testing.T) {
 	// Fresh Transporter + DIDResolver — no shared state.
 	resolver := transport.NewDIDResolver()
@@ -2323,6 +2397,7 @@ func TestTransport_7_6_6_DIDDocumentPointsToMsgBox(t *testing.T) {
 }
 
 // TST-CORE-455
+// TRACE: {"suite": "CORE", "case": "1787", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "07", "title": "UserCanSwitchMsgBox"}
 func TestTransport_7_6_7_UserCanSwitchMsgBox(t *testing.T) {
 	// Fresh Transporter — no shared state.
 	tr := transport.NewTransporter(nil)
@@ -2363,6 +2438,7 @@ func TestTransport_7_6_7_UserCanSwitchMsgBox(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-403
+// TRACE: {"suite": "CORE", "case": "1788", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "19", "title": "SchedulerInterval30s"}
 func TestTransport_7_1_19_SchedulerInterval30s(t *testing.T) {
 	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -2387,6 +2463,7 @@ func TestTransport_7_1_19_SchedulerInterval30s(t *testing.T) {
 }
 
 // TST-CORE-405
+// TRACE: {"suite": "CORE", "case": "1789", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "20", "title": "DeliveredMessagesCleanup"}
 func TestTransport_7_1_20_DeliveredMessagesCleanup(t *testing.T) {
 	// Fresh instance — no shared state.
 	impl := transport.NewOutboxManager(10)
@@ -2424,6 +2501,7 @@ func TestTransport_7_1_20_DeliveredMessagesCleanup(t *testing.T) {
 }
 
 // TST-CORE-406
+// TRACE: {"suite": "CORE", "case": "1790", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "21", "title": "FailedMessagesCleanup"}
 func TestTransport_7_1_21_FailedMessagesCleanup(t *testing.T) {
 	// Fresh OutboxManager for isolation.
 	impl := transport.NewOutboxManager(100)
@@ -2473,6 +2551,7 @@ func TestTransport_7_1_21_FailedMessagesCleanup(t *testing.T) {
 }
 
 // TST-CORE-420
+// TRACE: {"suite": "CORE", "case": "1791", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "26", "title": "SweeperDecryptsChecksDID"}
 func TestTransport_7_2_26_SweeperDecryptsChecksDID(t *testing.T) {
 	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -2495,6 +2574,7 @@ func TestTransport_7_2_26_SweeperDecryptsChecksDID(t *testing.T) {
 }
 
 // TST-CORE-421
+// TRACE: {"suite": "CORE", "case": "1792", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "27", "title": "SweeperBlocklistFeedback"}
 func TestTransport_7_2_27_SweeperBlocklistFeedback(t *testing.T) {
 	// §7.2.27: When the sweeper detects a spam DID, its rate limit should be
 	// exhausted (blocklist-equivalent). Per-DID rate limiting isolates spammers
@@ -2535,6 +2615,7 @@ func TestTransport_7_2_27_SweeperBlocklistFeedback(t *testing.T) {
 }
 
 // TST-CORE-424
+// TRACE: {"suite": "CORE", "case": "1793", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "28", "title": "Valve3BlobCleanup"}
 func TestTransport_7_2_28_Valve3BlobCleanup(t *testing.T) {
 	// §7.2.28: Valve 3 ProcessSpool must clean up all spooled blobs.
 	// When TTL is 0 (default), all blobs are drained. When TTL is set,
@@ -2596,6 +2677,7 @@ func TestTransport_7_2_28_Valve3BlobCleanup(t *testing.T) {
 }
 
 // TST-CORE-442
+// TRACE: {"suite": "CORE", "case": "1794", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "10", "title": "Ed25519SignatureOnPlaintext"}
 func TestTransport_7_4_10_Ed25519SignatureOnPlaintext(t *testing.T) {
 	// Test actual Ed25519 sign/verify on plaintext message using production signer.
 	signer := dinacrypto.NewEd25519Signer()
@@ -2639,6 +2721,7 @@ func TestTransport_7_4_10_Ed25519SignatureOnPlaintext(t *testing.T) {
 }
 
 // TST-CORE-445
+// TRACE: {"suite": "CORE", "case": "1795", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "11", "title": "EphemeralKeyPerMessage"}
 func TestTransport_7_4_11_EphemeralKeyPerMessage(t *testing.T) {
 	// §7.4.11: Each message must use a fresh ephemeral X25519 keypair for
 	// crypto_box_seal. Reusing keys would compromise forward secrecy.
@@ -2679,6 +2762,7 @@ func TestTransport_7_4_11_EphemeralKeyPerMessage(t *testing.T) {
 }
 
 // TST-CORE-447
+// TRACE: {"suite": "CORE", "case": "1796", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "12", "title": "PhaseMigrationInvariant"}
 func TestTransport_7_4_12_PhaseMigrationInvariant(t *testing.T) {
 	// Migration invariant: the plaintext message structure accepted by Send()
 	// must be stable. Verify Send() accepts well-formed JSON and rejects
@@ -2717,6 +2801,7 @@ func TestTransport_7_4_12_PhaseMigrationInvariant(t *testing.T) {
 }
 
 // TST-CORE-894
+// TRACE: {"suite": "CORE", "case": "1797", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "01", "title": "OutboxRetryBackoffIncludesJitter"}
 func TestTransport_7_5_OutboxRetryBackoffIncludesJitter(t *testing.T) {
 	// Outbox retry backoff includes jitter (not just exponential).
 	impl := realOutboxManager
@@ -2737,6 +2822,7 @@ func TestTransport_7_5_OutboxRetryBackoffIncludesJitter(t *testing.T) {
 }
 
 // TST-CORE-930
+// TRACE: {"suite": "CORE", "case": "1798", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "01", "title": "MessageCategoryNamespaceValidation"}
 func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 	// Fresh OutboxManager — no shared state.
 	om := transport.NewOutboxManager(10)
@@ -2801,6 +2887,7 @@ func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 }
 
 // TST-CORE-442
+// TRACE: {"suite": "CORE", "case": "1799", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "04", "title": "Ed25519SignatureOnPlaintext"}
 func TestTransport_7_4_4_Ed25519SignatureOnPlaintext(t *testing.T) {
 	signer := realSigner
 	testutil.RequireImplementation(t, signer, "Signer")
@@ -2862,6 +2949,7 @@ func TestTransport_7_4_4_Ed25519SignatureOnPlaintext(t *testing.T) {
 //   - Cache invalidation must force re-resolution on next Resolve()
 //   - Error responses from the network must NOT be cached
 
+// TRACE: {"suite": "CORE", "case": "1800", "section": "30", "sectionName": "Test System Quality", "subsection": "11", "scenario": "02", "title": "DIDResolutionEndpointVerification"}
 func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 	// Helper: create a DID document JSON with a service endpoint.
 	didDoc := func(did, endpoint string) []byte {
@@ -2871,6 +2959,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		))
 	}
 
+	// TRACE: {"suite": "CORE", "case": "1801", "section": "30", "sectionName": "Test System Quality", "title": "resolve_did_returns_correct_service_endpoint"}
 	t.Run("resolve_did_returns_correct_service_endpoint", func(t *testing.T) {
 		// Simulate a networked DID resolution: the fetcher returns a DID
 		// document for did:plc:sancho containing the expected endpoint.
@@ -2892,6 +2981,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireEqual(t, fetchCount, 1)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1802", "section": "30", "sectionName": "Test System Quality", "title": "cache_serves_resolved_did_without_refetch"}
 	t.Run("cache_serves_resolved_did_without_refetch", func(t *testing.T) {
 		// After the first resolution, subsequent resolves must be served
 		// from cache — the fetcher must NOT be called again.
@@ -2917,6 +3007,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireEqual(t, fetchCount, 1) // still 1 — cache hit
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1803", "section": "30", "sectionName": "Test System Quality", "title": "cache_ttl_expiration_triggers_refetch"}
 	t.Run("cache_ttl_expiration_triggers_refetch", func(t *testing.T) {
 		// When the cache TTL expires, the next resolve must re-fetch from
 		// the network. This ensures stale endpoints are refreshed.
@@ -2945,6 +3036,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireEqual(t, fetchCount, 2) // both fetched
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1804", "section": "30", "sectionName": "Test System Quality", "title": "invalid_did_format_rejected_before_fetch"}
 	t.Run("invalid_did_format_rejected_before_fetch", func(t *testing.T) {
 		// Invalid DIDs must be rejected immediately — no network call.
 		resolver := transport.NewDIDResolver()
@@ -2974,6 +3066,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1805", "section": "30", "sectionName": "Test System Quality", "title": "unknown_did_without_fetcher_returns_error"}
 	t.Run("unknown_did_without_fetcher_returns_error", func(t *testing.T) {
 		// When no fetcher is configured and the DID is not in cache,
 		// resolution must fail with ErrDIDNotFound.
@@ -2984,6 +3077,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1806", "section": "30", "sectionName": "Test System Quality", "title": "fetcher_error_not_cached"}
 	t.Run("fetcher_error_not_cached", func(t *testing.T) {
 		// If the fetcher returns an error, the result must NOT be cached.
 		// On the next attempt, the fetcher must be called again — giving
@@ -3011,6 +3105,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireEqual(t, attempt, 2)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1807", "section": "30", "sectionName": "Test System Quality", "title": "cache_invalidation_forces_refetch"}
 	t.Run("cache_invalidation_forces_refetch", func(t *testing.T) {
 		// InvalidateCache must remove the DID from cache, forcing the
 		// next Resolve() to call the fetcher again. This is needed when
@@ -3039,6 +3134,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireEqual(t, fetchCount, 2)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1808", "section": "30", "sectionName": "Test System Quality", "title": "multiple_dids_resolve_to_different_endpoints"}
 	t.Run("multiple_dids_resolve_to_different_endpoints", func(t *testing.T) {
 		// Each DID must resolve independently to its own service endpoint.
 		// Resolving one DID must not affect another's cached result.
@@ -3076,6 +3172,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1809", "section": "30", "sectionName": "Test System Quality", "title": "did_document_missing_service_array_rejected"}
 	t.Run("did_document_missing_service_array_rejected", func(t *testing.T) {
 		// A DID document without a service array is useless for messaging.
 		// ResolveEndpoint must return an error — we can't determine where
@@ -3090,6 +3187,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1810", "section": "30", "sectionName": "Test System Quality", "title": "did_document_empty_service_endpoint_rejected"}
 	t.Run("did_document_empty_service_endpoint_rejected", func(t *testing.T) {
 		// A service entry with an empty serviceEndpoint is invalid.
 		resolver := transport.NewDIDResolver()
@@ -3102,6 +3200,7 @@ func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1811", "section": "30", "sectionName": "Test System Quality", "title": "cache_stats_track_hits_and_misses"}
 	t.Run("cache_stats_track_hits_and_misses", func(t *testing.T) {
 		// Verify cache statistics are correctly maintained.
 		// This validates the observability of the resolution system —

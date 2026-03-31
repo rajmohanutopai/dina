@@ -38,6 +38,7 @@ def scratchpad():
 
 # TST-BRAIN-308
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0308", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "01", "scenario": "01", "title": "checkpoint_after_step1"}
 async def test_scratchpad_12_1_1_checkpoint_after_step1(scratchpad) -> None:
     """SS12.1.1: Checkpoint after step 1.
 
@@ -54,6 +55,7 @@ async def test_scratchpad_12_1_1_checkpoint_after_step1(scratchpad) -> None:
 
 # TST-BRAIN-309
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0309", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "01", "scenario": "02", "title": "checkpoint_after_step2"}
 async def test_scratchpad_12_1_2_checkpoint_after_step2(scratchpad) -> None:
     """SS12.1.2: Checkpoint after step 2.
 
@@ -74,6 +76,7 @@ async def test_scratchpad_12_1_2_checkpoint_after_step2(scratchpad) -> None:
 
 # TST-BRAIN-310
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0310", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "01", "scenario": "03", "title": "checkpoint_overwrites_previous"}
 async def test_scratchpad_12_1_3_checkpoint_overwrites_previous(
     scratchpad,
 ) -> None:
@@ -132,6 +135,7 @@ async def test_scratchpad_12_1_3_checkpoint_overwrites_previous(
 
 # TST-BRAIN-311
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0311", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "01", "scenario": "04", "title": "checkpoint_includes_all_prior_context"}
 async def test_scratchpad_12_1_4_checkpoint_includes_all_prior_context(
     scratchpad,
 ) -> None:
@@ -175,6 +179,7 @@ async def test_scratchpad_12_1_4_checkpoint_includes_all_prior_context(
 
 # TST-BRAIN-312
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0312", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "02", "scenario": "01", "title": "resume_from_step3"}
 async def test_scratchpad_12_2_1_resume_from_step3(scratchpad) -> None:
     """SS12.2.1: Resume from step 3 of 5.
 
@@ -202,6 +207,7 @@ async def test_scratchpad_12_2_1_resume_from_step3(scratchpad) -> None:
 
 # TST-BRAIN-313
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0313", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "02", "scenario": "02", "title": "no_scratchpad_fresh_start"}
 async def test_scratchpad_12_2_2_no_scratchpad_fresh_start(
     scratchpad,
 ) -> None:
@@ -233,6 +239,7 @@ async def test_scratchpad_12_2_2_no_scratchpad_fresh_start(
 
 # TST-BRAIN-314
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0314", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "02", "scenario": "03", "title": "stale_checkpoint_expired"}
 async def test_scratchpad_12_2_3_stale_checkpoint_expired(
     scratchpad,
 ) -> None:
@@ -253,6 +260,7 @@ async def test_scratchpad_12_2_3_stale_checkpoint_expired(
 
 # TST-BRAIN-315
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0315", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "02", "scenario": "04", "title": "resume_uses_accumulated_context"}
 async def test_scratchpad_12_2_4_resume_uses_accumulated_context(
     scratchpad,
 ) -> None:
@@ -279,6 +287,7 @@ async def test_scratchpad_12_2_4_resume_uses_accumulated_context(
 
 # TST-BRAIN-316
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0316", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "02", "scenario": "05", "title": "multiple_tasks_resume_independently"}
 async def test_scratchpad_12_2_5_multiple_tasks_resume_independently(
     scratchpad,
 ) -> None:
@@ -319,6 +328,7 @@ async def test_scratchpad_12_2_5_multiple_tasks_resume_independently(
 
 # TST-BRAIN-317
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0317", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "03", "scenario": "01", "title": "deleted_on_completion"}
 async def test_scratchpad_12_3_1_deleted_on_completion(scratchpad) -> None:
     """SS12.3.1: Scratchpad deleted on completion.
 
@@ -337,6 +347,7 @@ async def test_scratchpad_12_3_1_deleted_on_completion(scratchpad) -> None:
 
 # TST-BRAIN-318
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0318", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "03", "scenario": "02", "title": "auto_expires_24h"}
 async def test_scratchpad_12_3_2_auto_expires_24h(scratchpad) -> None:
     """SS12.3.2: Scratchpad auto-expires after 24h.
 
@@ -362,6 +373,7 @@ async def test_scratchpad_12_3_2_auto_expires_24h(scratchpad) -> None:
 
 # TST-BRAIN-319
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0319", "section": "12", "sectionName": "Scratchpad (Cognitive Checkpointing)", "subsection": "03", "scenario": "03", "title": "large_checkpoint"}
 async def test_scratchpad_12_3_3_large_checkpoint(scratchpad) -> None:
     """SS12.3.3: Large checkpoint -- multi-step with large context.
 

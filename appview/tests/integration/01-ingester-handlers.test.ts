@@ -37,6 +37,7 @@ beforeEach(async () => {
 // §1.1 Attestation Handler (IT-ATT-001..023) — 23 tests
 // ---------------------------------------------------------------------------
 describe('§1.1 Attestation Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0296", "section": "01", "sectionName": "General", "title": "IT-ATT-001: create attestation \u2014 basic insert"}
   it('IT-ATT-001: create attestation — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -61,6 +62,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(rows[0].subjectId).toBeTruthy()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0297", "section": "01", "sectionName": "General", "title": "IT-ATT-002: create attestation \u2014 all optional fields"}
   it('IT-ATT-002: create attestation — all optional fields', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -116,6 +118,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(row.text).toBe('Great laptop with excellent battery life')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0298", "section": "01", "sectionName": "General", "title": "IT-ATT-003: subject resolved via Tier 1 (DID)"}
   it('IT-ATT-003: subject resolved via Tier 1 (DID)', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -138,6 +141,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(subjectRows[0].authorScopedDid).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0299", "section": "01", "sectionName": "General", "title": "IT-ATT-004: subject resolved via Tier 1 (URI)"}
   it('IT-ATT-004: subject resolved via Tier 1 (URI)', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -159,6 +163,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(subjectRows[0].authorScopedDid).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0300", "section": "01", "sectionName": "General", "title": "IT-ATT-005: subject resolved via Tier 1 (identifier)"}
   it('IT-ATT-005: subject resolved via Tier 1 (identifier)', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -180,6 +185,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(subjectRows[0].authorScopedDid).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0301", "section": "01", "sectionName": "General", "title": "IT-ATT-006: Fix 10: subject resolved via Tier 2 (name-only)"}
   it('IT-ATT-006: Fix 10: subject resolved via Tier 2 (name-only)', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -200,6 +206,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(subjectRows[0].authorScopedDid).toBe('did:plc:author6')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0302", "section": "01", "sectionName": "General", "title": "IT-ATT-007: Fix 10: same name, different authors \u2014 different subjects"}
   it('IT-ATT-007: Fix 10: same name, different authors — different subjects', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -234,6 +241,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(scopedDids).toEqual(['did:plc:authorA', 'did:plc:authorB'])
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0303", "section": "01", "sectionName": "General", "title": "IT-ATT-008: Fix 10: same name, same author \u2014 same subject"}
   it('IT-ATT-008: Fix 10: same name, same author — same subject', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -266,6 +274,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(subjectRows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0304", "section": "01", "sectionName": "General", "title": "IT-ATT-009: Fix 10: same DID, different authors \u2014 same subject (Tier 1)"}
   it('IT-ATT-009: Fix 10: same DID, different authors — same subject (Tier 1)', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -299,6 +308,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(subjectRows[0].did).toBe('did:plc:sharedSubject')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0305", "section": "01", "sectionName": "General", "title": "IT-ATT-010: mention edges created"}
   it('IT-ATT-010: mention edges created', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -325,6 +335,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(targetDids).toEqual(['did:plc:m1', 'did:plc:m2', 'did:plc:m3'])
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0306", "section": "01", "sectionName": "General", "title": "IT-ATT-011: mention edges idempotent on replay"}
   it('IT-ATT-011: mention edges idempotent on replay', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     const op = {
@@ -351,6 +362,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(mentionRows).toHaveLength(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0307", "section": "01", "sectionName": "General", "title": "IT-ATT-012: Fix 9: dirty flags set \u2014 subject"}
   it('IT-ATT-012: Fix 9: dirty flags set — subject', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -371,6 +383,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(scoreRows[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0308", "section": "01", "sectionName": "General", "title": "IT-ATT-013: Fix 9: dirty flags set \u2014 author profile"}
   it('IT-ATT-013: Fix 9: dirty flags set — author profile', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -391,6 +404,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(profileRows[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0309", "section": "01", "sectionName": "General", "title": "IT-ATT-014: Fix 9: dirty flags set \u2014 mentioned DIDs"}
   it('IT-ATT-014: Fix 9: dirty flags set — mentioned DIDs', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -418,6 +432,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(profileB[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0310", "section": "01", "sectionName": "General", "title": "IT-ATT-015: Fix 9: dirty flags set \u2014 subject DID"}
   it('IT-ATT-015: Fix 9: dirty flags set — subject DID', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -438,6 +453,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(profileRows[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0311", "section": "01", "sectionName": "General", "title": "IT-ATT-016: search content populated"}
   it('IT-ATT-016: search content populated', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -465,6 +481,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(sc).toContain('product')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0312", "section": "01", "sectionName": "General", "title": "IT-ATT-017: tsvector index functional"}
   it('IT-ATT-017: tsvector index functional', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -490,6 +507,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(rows[0].uri).toBe('at://did:plc:test/com.dina.trust.attestation/17')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0313", "section": "01", "sectionName": "General", "title": "IT-ATT-018: Fix 1: idempotent upsert \u2014 replay same event"}
   it('IT-ATT-018: Fix 1: idempotent upsert — replay same event', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     const op = {
@@ -512,6 +530,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0314", "section": "01", "sectionName": "General", "title": "IT-ATT-019: Fix 1: upsert updates changed fields"}
   it('IT-ATT-019: Fix 1: upsert updates changed fields', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     const createdAt = new Date().toISOString()
@@ -548,6 +567,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(rows[0].cid).toBe('bafytest19b')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0315", "section": "01", "sectionName": "General", "title": "IT-ATT-020: cosigner DID extracted"}
   it('IT-ATT-020: cosigner DID extracted', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -570,6 +590,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(rows[0].cosignerDid).toBe('did:plc:cosignerX')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0316", "section": "01", "sectionName": "General", "title": "IT-ATT-021: agent-generated flag"}
   it('IT-ATT-021: agent-generated flag', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -591,6 +612,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(rows[0].isAgentGenerated).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0317", "section": "01", "sectionName": "General", "title": "IT-ATT-022: tags stored as array"}
   it('IT-ATT-022: tags stored as array', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -612,6 +634,7 @@ describe('§1.1 Attestation Handler', () => {
     expect(rows[0].tags).toEqual(['food', 'quality'])
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0318", "section": "01", "sectionName": "General", "title": "IT-ATT-023: domain nullable"}
   it('IT-ATT-023: domain nullable', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
@@ -637,6 +660,7 @@ describe('§1.1 Attestation Handler', () => {
 // §1.2 Vouch Handler (IT-VCH-001..006) — 6 tests
 // ---------------------------------------------------------------------------
 describe('§1.2 Vouch Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0319", "section": "01", "sectionName": "General", "title": "IT-VCH-001: create vouch \u2014 basic insert"}
   it('IT-VCH-001: create vouch — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
@@ -665,6 +689,7 @@ describe('§1.2 Vouch Handler', () => {
     expect(rows[0].text).toBe('I trust this person fully')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0320", "section": "01", "sectionName": "General", "title": "IT-VCH-002: Fix 1: idempotent upsert"}
   it('IT-VCH-002: Fix 1: idempotent upsert', async () => {
     const handler = routeHandler('com.dina.trust.vouch')!
     const op = {
@@ -686,6 +711,7 @@ describe('§1.2 Vouch Handler', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0321", "section": "01", "sectionName": "General", "title": "IT-VCH-003: trust edge created"}
   it('IT-VCH-003: trust edge created', async () => {
     const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
@@ -709,6 +735,7 @@ describe('§1.2 Vouch Handler', () => {
     expect(edges[0].weight).toBeCloseTo(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0322", "section": "01", "sectionName": "General", "title": "IT-VCH-004: trust edge weight varies by confidence"}
   it('IT-VCH-004: trust edge weight varies by confidence', async () => {
     const handler = routeHandler('com.dina.trust.vouch')!
     const confidences = [
@@ -736,6 +763,7 @@ describe('§1.2 Vouch Handler', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0323", "section": "01", "sectionName": "General", "title": "IT-VCH-005: dirty flags set \u2014 subject DID"}
   it('IT-VCH-005: dirty flags set — subject DID', async () => {
     const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
@@ -756,6 +784,7 @@ describe('§1.2 Vouch Handler', () => {
     expect(profileRows[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0324", "section": "01", "sectionName": "General", "title": "IT-VCH-006: dirty flags set \u2014 author DID"}
   it('IT-VCH-006: dirty flags set — author DID', async () => {
     const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
@@ -781,6 +810,7 @@ describe('§1.2 Vouch Handler', () => {
 // §1.3 Endorsement Handler (IT-END-001..004) — 4 tests
 // ---------------------------------------------------------------------------
 describe('§1.3 Endorsement Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0325", "section": "01", "sectionName": "General", "title": "IT-END-001: create endorsement \u2014 basic insert"}
   it('IT-END-001: create endorsement — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.endorsement')!
     await handler.handleCreate(ctx, {
@@ -808,6 +838,7 @@ describe('§1.3 Endorsement Handler', () => {
     expect(rows[0].text).toBe('Excellent TypeScript developer')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0326", "section": "01", "sectionName": "General", "title": "IT-END-002: Fix 1: idempotent upsert"}
   it('IT-END-002: Fix 1: idempotent upsert', async () => {
     const handler = routeHandler('com.dina.trust.endorsement')!
     const op = {
@@ -829,6 +860,7 @@ describe('§1.3 Endorsement Handler', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0327", "section": "01", "sectionName": "General", "title": "IT-END-003: trust edge created"}
   it('IT-END-003: trust edge created', async () => {
     const handler = routeHandler('com.dina.trust.endorsement')!
     await handler.handleCreate(ctx, {
@@ -851,6 +883,7 @@ describe('§1.3 Endorsement Handler', () => {
     expect(edges[0].weight).toBeCloseTo(0.8)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0328", "section": "01", "sectionName": "General", "title": "IT-END-004: dirty flags set"}
   it('IT-END-004: dirty flags set', async () => {
     const handler = routeHandler('com.dina.trust.endorsement')!
     await handler.handleCreate(ctx, {
@@ -879,6 +912,7 @@ describe('§1.3 Endorsement Handler', () => {
 // §1.4 Flag Handler (IT-FLG-001..003) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§1.4 Flag Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0329", "section": "01", "sectionName": "General", "title": "IT-FLG-001: create flag \u2014 basic insert"}
   it('IT-FLG-001: create flag — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.flag')!
     await handler.handleCreate(ctx, {
@@ -905,6 +939,7 @@ describe('§1.4 Flag Handler', () => {
     expect(rows[0].subjectId).toBeTruthy()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0330", "section": "01", "sectionName": "General", "title": "IT-FLG-002: Fix 1: idempotent upsert"}
   it('IT-FLG-002: Fix 1: idempotent upsert', async () => {
     const handler = routeHandler('com.dina.trust.flag')!
     const op = {
@@ -926,6 +961,7 @@ describe('§1.4 Flag Handler', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0331", "section": "01", "sectionName": "General", "title": "IT-FLG-003: dirty flags set"}
   it('IT-FLG-003: dirty flags set', async () => {
     const handler = routeHandler('com.dina.trust.flag')!
     await handler.handleCreate(ctx, {
@@ -957,6 +993,7 @@ describe('§1.4 Flag Handler', () => {
 // §1.5 Reply Handler (IT-RPL-001..003) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§1.5 Reply Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0332", "section": "01", "sectionName": "General", "title": "IT-RPL-001: create reply \u2014 basic insert"}
   it('IT-RPL-001: create reply — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.reply')!
     await handler.handleCreate(ctx, {
@@ -982,6 +1019,7 @@ describe('§1.5 Reply Handler', () => {
     expect(rows[0].text).toBe('I completely agree with this assessment')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0333", "section": "01", "sectionName": "General", "title": "IT-RPL-002: reply with intent "}
   it('IT-RPL-002: reply with intent "dispute"', async () => {
     const handler = routeHandler('com.dina.trust.reply')!
     await handler.handleCreate(ctx, {
@@ -1005,6 +1043,7 @@ describe('§1.5 Reply Handler', () => {
     expect(rows[0].evidenceJson).toEqual([{ type: 'link', url: 'https://counter-evidence.example.com' }])
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0334", "section": "01", "sectionName": "General", "title": "IT-RPL-003: Fix 1: idempotent upsert"}
   it('IT-RPL-003: Fix 1: idempotent upsert', async () => {
     const handler = routeHandler('com.dina.trust.reply')!
     const op = {
@@ -1032,6 +1071,7 @@ describe('§1.5 Reply Handler', () => {
 // §1.6 Reaction Handler (IT-RXN-001..003) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§1.6 Reaction Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0335", "section": "01", "sectionName": "General", "title": "IT-RXN-001: create reaction \u2014 basic insert"}
   it('IT-RXN-001: create reaction — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.reaction')!
     await handler.handleCreate(ctx, {
@@ -1053,6 +1093,7 @@ describe('§1.6 Reaction Handler', () => {
     expect(rows[0].reaction).toBe('helpful')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0336", "section": "01", "sectionName": "General", "title": "IT-RXN-002: Fix 1: idempotent \u2014 onConflictDoNothing"}
   it('IT-RXN-002: Fix 1: idempotent — onConflictDoNothing', async () => {
     const handler = routeHandler('com.dina.trust.reaction')!
     const op = {
@@ -1076,6 +1117,7 @@ describe('§1.6 Reaction Handler', () => {
     expect(rows[0].reaction).toBe('agree')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0337", "section": "01", "sectionName": "General", "title": "IT-RXN-003: all reaction types"}
   it('IT-RXN-003: all reaction types', async () => {
     const handler = routeHandler('com.dina.trust.reaction')!
     const reactionTypes = ['helpful', 'unhelpful', 'agree', 'disagree', 'verified', 'can-confirm', 'suspicious', 'outdated']
@@ -1104,6 +1146,7 @@ describe('§1.6 Reaction Handler', () => {
 // §1.7 Report Record Handler (IT-RPT-001..003) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§1.7 Report Record Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0338", "section": "01", "sectionName": "General", "title": "IT-RPT-001: create report \u2014 basic insert"}
   it('IT-RPT-001: create report — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.reportRecord')!
     await handler.handleCreate(ctx, {
@@ -1128,6 +1171,7 @@ describe('§1.7 Report Record Handler', () => {
     expect(rows[0].text).toBe('This is spam content')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0339", "section": "01", "sectionName": "General", "title": "IT-RPT-002: Fix 1: idempotent upsert"}
   it('IT-RPT-002: Fix 1: idempotent upsert', async () => {
     const handler = routeHandler('com.dina.trust.reportRecord')!
     const op = {
@@ -1148,6 +1192,7 @@ describe('§1.7 Report Record Handler', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0340", "section": "01", "sectionName": "General", "title": "IT-RPT-003: all report types stored"}
   it('IT-RPT-003: all report types stored', async () => {
     const handler = routeHandler('com.dina.trust.reportRecord')!
     const reportTypes = [
@@ -1180,6 +1225,7 @@ describe('§1.7 Report Record Handler', () => {
 // §1.8 Revocation Handler (IT-REV-001..003) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§1.8 Revocation Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0341", "section": "01", "sectionName": "General", "title": "IT-REV-001: create revocation \u2014 marks attestation as revoked"}
   it('IT-REV-001: create revocation — marks attestation as revoked', async () => {
     // First create an attestation to revoke
     const attHandler = routeHandler('com.dina.trust.attestation')!
@@ -1228,6 +1274,7 @@ describe('§1.8 Revocation Handler', () => {
     expect(attRows[0].revokedByUri).toBe(revocationUri)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0342", "section": "01", "sectionName": "General", "title": "IT-REV-002: Fix 1: idempotent upsert"}
   it('IT-REV-002: Fix 1: idempotent upsert', async () => {
     const revHandler = routeHandler('com.dina.trust.revocation')!
     const op = {
@@ -1248,6 +1295,7 @@ describe('§1.8 Revocation Handler', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0343", "section": "01", "sectionName": "General", "title": "IT-REV-003: dirty flags set for revoked attestation\\"}
   it('IT-REV-003: dirty flags set for revoked attestation\'s subject', async () => {
     // Create attestation first
     const attHandler = routeHandler('com.dina.trust.attestation')!
@@ -1289,6 +1337,7 @@ describe('§1.8 Revocation Handler', () => {
 // §1.9 Delegation Handler (IT-DLG-001..003) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§1.9 Delegation Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0344", "section": "01", "sectionName": "General", "title": "IT-DLG-001: create delegation \u2014 basic insert"}
   it('IT-DLG-001: create delegation — basic insert', async () => {
     const handler = routeHandler('com.dina.trust.delegation')!
     await handler.handleCreate(ctx, {
@@ -1314,6 +1363,7 @@ describe('§1.9 Delegation Handler', () => {
     expect(rows[0].expiresAt).toBeTruthy()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0345", "section": "01", "sectionName": "General", "title": "IT-DLG-002: trust edge created"}
   it('IT-DLG-002: trust edge created', async () => {
     const handler = routeHandler('com.dina.trust.delegation')!
     await handler.handleCreate(ctx, {
@@ -1338,6 +1388,7 @@ describe('§1.9 Delegation Handler', () => {
     expect(edges[0].domain).toBe('full')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0346", "section": "01", "sectionName": "General", "title": "IT-DLG-003: Fix 1: idempotent upsert"}
   it('IT-DLG-003: Fix 1: idempotent upsert', async () => {
     const handler = routeHandler('com.dina.trust.delegation')!
     const op = {
@@ -1364,6 +1415,7 @@ describe('§1.9 Delegation Handler', () => {
 // §1.10 Remaining Handlers — Minimal Smoke Tests (IT-HND-001..010) — 10 tests
 // ---------------------------------------------------------------------------
 describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0347", "section": "01", "sectionName": "General", "title": "IT-HND-001: collection handler \u2014 create + idempotent"}
   it('IT-HND-001: collection handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.collection')!
     const op = {
@@ -1399,6 +1451,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0348", "section": "01", "sectionName": "General", "title": "IT-HND-002: media handler \u2014 create + idempotent"}
   it('IT-HND-002: media handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.media')!
     const op = {
@@ -1428,6 +1481,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0349", "section": "01", "sectionName": "General", "title": "IT-HND-003: subject handler \u2014 create + idempotent"}
   it('IT-HND-003: subject handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.subject')!
     const op = {
@@ -1454,6 +1508,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0350", "section": "01", "sectionName": "General", "title": "IT-HND-004: amendment handler \u2014 create + marks original"}
   it('IT-HND-004: amendment handler — create + marks original', async () => {
     // First create an attestation to amend
     const attHandler = routeHandler('com.dina.trust.attestation')!
@@ -1503,6 +1558,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(attRows[0].latestAmendmentUri).toBe(amendmentUri)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0351", "section": "01", "sectionName": "General", "title": "IT-HND-005: verification handler \u2014 create + idempotent"}
   it('IT-HND-005: verification handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.verification')!
     // Use 'inconclusive' result to avoid the raw SQL UPDATE path that references
@@ -1535,6 +1591,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0352", "section": "01", "sectionName": "General", "title": "IT-HND-006: review-request handler \u2014 create + idempotent"}
   it('IT-HND-006: review-request handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.reviewRequest')!
     const op = {
@@ -1562,6 +1619,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0353", "section": "01", "sectionName": "General", "title": "IT-HND-007: comparison handler \u2014 create + idempotent"}
   it('IT-HND-007: comparison handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.comparison')!
     const op = {
@@ -1596,6 +1654,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0354", "section": "01", "sectionName": "General", "title": "IT-HND-008: subject-claim handler \u2014 create + idempotent"}
   it('IT-HND-008: subject-claim handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.subjectClaim')!
     const op = {
@@ -1625,6 +1684,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0355", "section": "01", "sectionName": "General", "title": "IT-HND-009: trust-policy handler \u2014 create + idempotent"}
   it('IT-HND-009: trust-policy handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.trustPolicy')!
     const op = {
@@ -1655,6 +1715,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     expect(rows2).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0356", "section": "01", "sectionName": "General", "title": "IT-HND-010: notification-prefs handler \u2014 create + idempotent"}
   it('IT-HND-010: notification-prefs handler — create + idempotent', async () => {
     const handler = routeHandler('com.dina.trust.notificationPrefs')!
     const op = {

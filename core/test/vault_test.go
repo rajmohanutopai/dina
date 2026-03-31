@@ -31,6 +31,7 @@ var vaultCtx = context.Background()
 // --------------------------------------------------------------------------
 
 // TST-CORE-196
+// TRACE: {"suite": "CORE", "case": "1833", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "CreateNewVault"}
 func TestVault_4_1_1_CreateNewVault(t *testing.T) {
 	// Use a fresh manager with its own temp dir so state is isolated.
 	dir := testutil.TempDir(t)
@@ -103,6 +104,7 @@ func TestVault_4_1_1_CreateNewVault(t *testing.T) {
 }
 
 // TST-CORE-197
+// TRACE: {"suite": "CORE", "case": "1834", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "02", "title": "OpenExistingVault"}
 func TestVault_4_1_2_OpenExistingVault(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -141,6 +143,7 @@ func TestVault_4_1_2_OpenExistingVault(t *testing.T) {
 }
 
 // TST-CORE-198
+// TRACE: {"suite": "CORE", "case": "1835", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "03", "title": "OpenWithWrongDEK"}
 func TestVault_4_1_3_OpenWithWrongDEK(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -162,6 +165,7 @@ func TestVault_4_1_3_OpenWithWrongDEK(t *testing.T) {
 }
 
 // TST-CORE-199
+// TRACE: {"suite": "CORE", "case": "1836", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "04", "title": "SchemaMigration"}
 func TestVault_4_1_4_SchemaMigration(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -179,6 +183,7 @@ func TestVault_4_1_4_SchemaMigration(t *testing.T) {
 }
 
 // TST-CORE-200
+// TRACE: {"suite": "CORE", "case": "1837", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "05", "title": "ConcurrentAccess"}
 func TestVault_4_1_5_ConcurrentAccess(t *testing.T) {
 	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
@@ -247,6 +252,7 @@ func TestVault_4_1_5_ConcurrentAccess(t *testing.T) {
 }
 
 // TST-CORE-201
+// TRACE: {"suite": "CORE", "case": "1838", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "06", "title": "PRAGMAsEnforced"}
 func TestVault_4_1_6_PRAGMAsEnforced(t *testing.T) {
 	// Verify that the production SQLCipher connection (pool.go DSN) and
 	// the real SQL schema files set every required PRAGMA.
@@ -302,6 +308,7 @@ func TestVault_4_1_6_PRAGMAsEnforced(t *testing.T) {
 }
 
 // TST-CORE-202
+// TRACE: {"suite": "CORE", "case": "1839", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "07", "title": "WALCrashRecovery"}
 func TestVault_4_1_7_WALCrashRecovery(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -338,6 +345,7 @@ func TestVault_4_1_7_WALCrashRecovery(t *testing.T) {
 }
 
 // TST-CORE-203
+// TRACE: {"suite": "CORE", "case": "1840", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "08", "title": "SynchronousNormalInWAL"}
 func TestVault_4_1_8_SynchronousNormalInWAL(t *testing.T) {
 	// §4.1.8: PRAGMA synchronous=NORMAL (value 1) in WAL mode.
 	// Read production pool.go DSN to verify synchronous is set.
@@ -367,6 +375,7 @@ func TestVault_4_1_8_SynchronousNormalInWAL(t *testing.T) {
 }
 
 // TST-CORE-204
+// TRACE: {"suite": "CORE", "case": "1841", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "09", "title": "ForeignKeysEnforced"}
 func TestVault_4_1_9_ForeignKeysEnforced(t *testing.T) {
 	// §4.1.9: PRAGMA foreign_keys=ON prevents orphaned data.
 	// Read production schema files to verify foreign_keys is set.
@@ -401,6 +410,7 @@ func TestVault_4_1_9_ForeignKeysEnforced(t *testing.T) {
 }
 
 // TST-CORE-205
+// TRACE: {"suite": "CORE", "case": "1842", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "10", "title": "BusyTimeout5000"}
 func TestVault_4_1_10_BusyTimeout5000(t *testing.T) {
 	// §4.1.10: busy_timeout=5000 — concurrent writes wait up to 5s instead of SQLITE_BUSY.
 	// Read production pool.go DSN to verify busy_timeout is set.
@@ -440,6 +450,7 @@ func TestVault_4_1_10_BusyTimeout5000(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-206
+// TRACE: {"suite": "CORE", "case": "1843", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "1_VaultManagerStructure"}
 func TestVault_4_1_1_1_VaultManagerStructure(t *testing.T) {
 	// §4.1.1.1: VaultManager must support multiple personas keyed by name,
 	// each with its own encryption key. Identity pool is always open.
@@ -498,6 +509,7 @@ func TestVault_4_1_1_1_VaultManagerStructure(t *testing.T) {
 }
 
 // TST-CORE-207
+// TRACE: {"suite": "CORE", "case": "1844", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "2_SingleWriterSerialization"}
 func TestVault_4_1_1_2_SingleWriterSerialization(t *testing.T) {
 	// §4.1.1.2: Concurrent writes to same persona must be serialized (no data loss).
 	// Fresh vault to avoid shared state.
@@ -555,6 +567,7 @@ func TestVault_4_1_1_2_SingleWriterSerialization(t *testing.T) {
 }
 
 // TST-CORE-208
+// TRACE: {"suite": "CORE", "case": "1845", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "3_ReadPoolMultipleReaders"}
 func TestVault_4_1_1_3_ReadPoolMultipleReaders(t *testing.T) {
 	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
@@ -589,6 +602,7 @@ func TestVault_4_1_1_3_ReadPoolMultipleReaders(t *testing.T) {
 }
 
 // TST-CORE-209
+// TRACE: {"suite": "CORE", "case": "1846", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "4_ReadConnectionQueryOnly"}
 func TestVault_4_1_1_4_ReadConnectionQueryOnly(t *testing.T) {
 	// §4.1.1.4: Read connections must have PRAGMA query_only=ON, ensuring they
 	// can only perform queries, not writes. This prevents accidental data
@@ -651,6 +665,7 @@ func TestVault_4_1_1_4_ReadConnectionQueryOnly(t *testing.T) {
 }
 
 // TST-CORE-210
+// TRACE: {"suite": "CORE", "case": "1847", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "5_WriteAutocheckpoint"}
 func TestVault_4_1_1_5_WriteAutocheckpoint(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -673,6 +688,7 @@ func TestVault_4_1_1_5_WriteAutocheckpoint(t *testing.T) {
 }
 
 // TST-CORE-211
+// TRACE: {"suite": "CORE", "case": "1848", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "6_CrossPersonaWriteIndependence"}
 func TestVault_4_1_1_6_CrossPersonaWriteIndependence(t *testing.T) {
 	// Writes to /personal must not contend with /health — different files,
 	// different write connections. Uses production vault.Manager.
@@ -741,6 +757,7 @@ func TestVault_4_1_1_6_CrossPersonaWriteIndependence(t *testing.T) {
 }
 
 // TST-CORE-212
+// TRACE: {"suite": "CORE", "case": "1849", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "7_ConcurrentReadersDuringWrite"}
 func TestVault_4_1_1_7_ConcurrentReadersDuringWrite(t *testing.T) {
 	// WAL allows concurrent readers while a write is in progress.
 	impl := realVaultManager
@@ -799,6 +816,7 @@ func TestVault_4_1_1_7_ConcurrentReadersDuringWrite(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-213
+// TRACE: {"suite": "CORE", "case": "1850", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "StoreItem"}
 func TestVault_4_2_1_StoreItem(t *testing.T) {
 	vm := realVaultManager
 	testutil.RequireImplementation(t, vm, "VaultManager")
@@ -827,6 +845,7 @@ func TestVault_4_2_1_StoreItem(t *testing.T) {
 }
 
 // TST-CORE-214
+// TRACE: {"suite": "CORE", "case": "1851", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "RetrieveByID"}
 func TestVault_4_2_2_RetrieveByID(t *testing.T) {
 	vm := realVaultManager
 	testutil.RequireImplementation(t, vm, "VaultManager")
@@ -857,6 +876,7 @@ func TestVault_4_2_2_RetrieveByID(t *testing.T) {
 }
 
 // TST-CORE-215
+// TRACE: {"suite": "CORE", "case": "1852", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "03", "title": "RetrieveNonExistent"}
 func TestVault_4_2_3_RetrieveNonExistent(t *testing.T) {
 	vm := realVaultManager
 	testutil.RequireImplementation(t, vm, "VaultManager")
@@ -889,6 +909,7 @@ func TestVault_4_2_3_RetrieveNonExistent(t *testing.T) {
 }
 
 // TST-CORE-216
+// TRACE: {"suite": "CORE", "case": "1853", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "04", "title": "UpdateItem"}
 func TestVault_4_2_4_UpdateItem(t *testing.T) {
 	vm := testutil.NewMockVaultManager()
 	persona := "test-crud"
@@ -909,6 +930,7 @@ func TestVault_4_2_4_UpdateItem(t *testing.T) {
 }
 
 // TST-CORE-217
+// TRACE: {"suite": "CORE", "case": "1854", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "05", "title": "DeleteItem"}
 func TestVault_4_2_5_DeleteItem(t *testing.T) {
 	vm := realVaultManager
 	testutil.RequireImplementation(t, vm, "VaultManager")
@@ -943,6 +965,7 @@ func TestVault_4_2_5_DeleteItem(t *testing.T) {
 }
 
 // TST-CORE-218
+// TRACE: {"suite": "CORE", "case": "1855", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "06", "title": "ListByCategory"}
 func TestVault_4_2_6_ListByCategory(t *testing.T) {
 	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
@@ -980,6 +1003,7 @@ func TestVault_4_2_6_ListByCategory(t *testing.T) {
 }
 
 // TST-CORE-219
+// TRACE: {"suite": "CORE", "case": "1856", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "07", "title": "Pagination"}
 func TestVault_4_2_7_Pagination(t *testing.T) {
 	vm := testutil.NewMockVaultManager()
 	persona := "test-crud-pagination"
@@ -1000,6 +1024,7 @@ func TestVault_4_2_7_Pagination(t *testing.T) {
 }
 
 // TST-CORE-220
+// TRACE: {"suite": "CORE", "case": "1857", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "08", "title": "ItemSizeLimit"}
 func TestVault_4_2_8_ItemSizeLimit(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -1028,6 +1053,7 @@ func TestVault_4_2_8_ItemSizeLimit(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-248
+// TRACE: {"suite": "CORE", "case": "1858", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "FTS5KeywordSearch"}
 func TestVault_4_3_1_FTS5KeywordSearch(t *testing.T) {
 	// §4.3.1: FTS5 keyword search must find items matching the query.
 	// Fresh vault to avoid shared state.
@@ -1081,6 +1107,7 @@ func TestVault_4_3_1_FTS5KeywordSearch(t *testing.T) {
 }
 
 // TST-CORE-249
+// TRACE: {"suite": "CORE", "case": "1859", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "02", "title": "SemanticVectorSearch"}
 func TestVault_4_3_2_SemanticVectorSearch(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -1107,6 +1134,7 @@ func TestVault_4_3_2_SemanticVectorSearch(t *testing.T) {
 
 // TST-CORE-250
 // TST-CORE-1049 Hybrid query returns FTS5 results
+// TRACE: {"suite": "CORE", "case": "1860", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "03", "title": "HybridSearch"}
 func TestVault_4_3_3_HybridSearch(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -1128,6 +1156,7 @@ func TestVault_4_3_3_HybridSearch(t *testing.T) {
 }
 
 // TST-CORE-251
+// TRACE: {"suite": "CORE", "case": "1861", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "HybridSearchFormulaVerified"}
 func TestVault_4_3_HybridSearchFormulaVerified(t *testing.T) {
 	// Fresh SchemaInspector — no shared state.
 	impl := vault.NewSchemaInspector()
@@ -1165,6 +1194,7 @@ func TestVault_4_3_HybridSearchFormulaVerified(t *testing.T) {
 }
 
 // TST-CORE-252
+// TRACE: {"suite": "CORE", "case": "1862", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "04", "title": "EmptyResults"}
 func TestVault_4_3_4_EmptyResults(t *testing.T) {
 	// Fresh production vault — query on empty vault must return empty slice, not error.
 	vaultDir, err := os.MkdirTemp("", "dina-empty-search-")
@@ -1204,6 +1234,7 @@ func TestVault_4_3_4_EmptyResults(t *testing.T) {
 }
 
 // TST-CORE-253
+// TRACE: {"suite": "CORE", "case": "1863", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "05", "title": "CrossPersonaBoundary"}
 func TestVault_4_3_5_CrossPersonaBoundary(t *testing.T) {
 	// Fresh production vault.Manager — no shared state.
 	dir := t.TempDir()
@@ -1261,6 +1292,7 @@ func TestVault_4_3_5_CrossPersonaBoundary(t *testing.T) {
 }
 
 // TST-CORE-254
+// TRACE: {"suite": "CORE", "case": "1864", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "06", "title": "FTS5Injection"}
 func TestVault_4_3_6_FTS5Injection(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)
@@ -1281,6 +1313,7 @@ func TestVault_4_3_6_FTS5Injection(t *testing.T) {
 }
 
 // TST-CORE-255
+// TRACE: {"suite": "CORE", "case": "1865", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "07", "title": "IncludeContentFalseDefault"}
 func TestVault_4_3_7_IncludeContentFalseDefault(t *testing.T) {
 	// §4.3.7: When include_content=false, query results must return summary
 	// only — BodyText must be empty. This is the default behavior to minimize
@@ -1343,6 +1376,7 @@ func TestVault_4_3_7_IncludeContentFalseDefault(t *testing.T) {
 }
 
 // TST-CORE-256
+// TRACE: {"suite": "CORE", "case": "1866", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "08", "title": "IncludeContentTrue"}
 func TestVault_4_3_8_IncludeContentTrue(t *testing.T) {
 	// Fresh Manager — no shared state.
 	dir, err := os.MkdirTemp("", "dina-vault-content-true-")
@@ -1396,6 +1430,7 @@ func TestVault_4_3_8_IncludeContentTrue(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-271
+// TRACE: {"suite": "CORE", "case": "1867", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "01", "title": "WriteScratchpad"}
 func TestVault_4_4_1_WriteScratchpad(t *testing.T) {
 	impl := vault.NewScratchpadManager()
 
@@ -1425,6 +1460,7 @@ func TestVault_4_4_1_WriteScratchpad(t *testing.T) {
 }
 
 // TST-CORE-272
+// TRACE: {"suite": "CORE", "case": "1868", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "02", "title": "ReadScratchpad"}
 func TestVault_4_4_2_ReadScratchpad(t *testing.T) {
 	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
@@ -1442,6 +1478,7 @@ func TestVault_4_4_2_ReadScratchpad(t *testing.T) {
 }
 
 // TST-CORE-273
+// TRACE: {"suite": "CORE", "case": "1869", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "03", "title": "Accumulation"}
 func TestVault_4_4_3_Accumulation(t *testing.T) {
 	impl := vault.NewScratchpadManager()
 
@@ -1483,6 +1520,7 @@ func TestVault_4_4_3_Accumulation(t *testing.T) {
 }
 
 // TST-CORE-274
+// TRACE: {"suite": "CORE", "case": "1870", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "04", "title": "ResumeFromExactStep"}
 func TestVault_4_4_4_ResumeFromExactStep(t *testing.T) {
 	impl := realScratchpadManager
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
@@ -1514,6 +1552,7 @@ func TestVault_4_4_4_ResumeFromExactStep(t *testing.T) {
 }
 
 // TST-CORE-275
+// TRACE: {"suite": "CORE", "case": "1871", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "05", "title": "NoScratchpadStartFresh"}
 func TestVault_4_4_5_NoScratchpadStartFresh(t *testing.T) {
 	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
@@ -1537,6 +1576,7 @@ func TestVault_4_4_5_NoScratchpadStartFresh(t *testing.T) {
 }
 
 // TST-CORE-276
+// TRACE: {"suite": "CORE", "case": "1872", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "06", "title": "TTLAutoExpire"}
 func TestVault_4_4_6_TTLAutoExpire(t *testing.T) {
 	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
@@ -1553,6 +1593,7 @@ func TestVault_4_4_6_TTLAutoExpire(t *testing.T) {
 }
 
 // TST-CORE-277
+// TRACE: {"suite": "CORE", "case": "1873", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "07", "title": "DeleteOnCompletion"}
 func TestVault_4_4_7_DeleteOnCompletion(t *testing.T) {
 	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
@@ -1579,6 +1620,7 @@ func TestVault_4_4_7_DeleteOnCompletion(t *testing.T) {
 }
 
 // TST-CORE-278
+// TRACE: {"suite": "CORE", "case": "1874", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "08", "title": "SizeLimit"}
 func TestVault_4_4_8_SizeLimit(t *testing.T) {
 	// §4.4.8: Scratchpad enforces 10 MiB size limit.
 	impl := vault.NewScratchpadManager()
@@ -1618,6 +1660,7 @@ func TestVault_4_4_8_SizeLimit(t *testing.T) {
 }
 
 // TST-CORE-279
+// TRACE: {"suite": "CORE", "case": "1875", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "09", "title": "StoredInIdentitySQLite"}
 func TestVault_4_4_9_StoredInIdentitySQLite(t *testing.T) {
 	// Fresh ScratchpadManager — scratchpad is operational state, not user data.
 	// It lives in identity.sqlite, not in persona vaults.
@@ -1655,6 +1698,7 @@ func TestVault_4_4_9_StoredInIdentitySQLite(t *testing.T) {
 }
 
 // TST-CORE-280
+// TRACE: {"suite": "CORE", "case": "1876", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "10", "title": "MultipleConcurrentScratchpads"}
 func TestVault_4_4_10_MultipleConcurrentScratchpads(t *testing.T) {
 	// Fresh ScratchpadManager — no shared state.
 	impl := vault.NewScratchpadManager()
@@ -1704,6 +1748,7 @@ func TestVault_4_4_10_MultipleConcurrentScratchpads(t *testing.T) {
 }
 
 // TST-CORE-281
+// TRACE: {"suite": "CORE", "case": "1877", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "11", "title": "OverwriteSameTaskLaterStep"}
 func TestVault_4_4_11_OverwriteSameTaskLaterStep(t *testing.T) {
 	// Fresh ScratchpadManager — no shared state.
 	impl := vault.NewScratchpadManager()
@@ -1759,6 +1804,7 @@ func TestVault_4_4_11_OverwriteSameTaskLaterStep(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-282
+// TRACE: {"suite": "CORE", "case": "1878", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "01", "title": "StageItemForReview"}
 func TestVault_4_5_1_StageItemForReview(t *testing.T) {
 	// Fresh vault + staging — no shared state.
 	vaultDir, err := os.MkdirTemp("", "dina-stage-review-")
@@ -1802,6 +1848,7 @@ func TestVault_4_5_1_StageItemForReview(t *testing.T) {
 }
 
 // TST-CORE-283
+// TRACE: {"suite": "CORE", "case": "1879", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "02", "title": "ApprovePromotesToVault"}
 func TestVault_4_5_2_ApprovePromotesToVault(t *testing.T) {
 	// Fresh vault + staging manager to isolate from other tests.
 	vaultDir, err := os.MkdirTemp("", "dina-staging-approve-")
@@ -1848,6 +1895,7 @@ func TestVault_4_5_2_ApprovePromotesToVault(t *testing.T) {
 }
 
 // TST-CORE-284
+// TRACE: {"suite": "CORE", "case": "1880", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "03", "title": "RejectDeletesItem"}
 func TestVault_4_5_3_RejectDeletesItem(t *testing.T) {
 	impl := realStagingManager
 	// impl = staging.New(db)
@@ -1865,6 +1913,7 @@ func TestVault_4_5_3_RejectDeletesItem(t *testing.T) {
 }
 
 // TST-CORE-285
+// TRACE: {"suite": "CORE", "case": "1881", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "04", "title": "AutoApproveLowRisk"}
 func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 	// Fresh vault + staging manager — no shared state.
 	dir, err := os.MkdirTemp("", "dina-autoapprove-")
@@ -1935,6 +1984,7 @@ func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 }
 
 // TST-CORE-286
+// TRACE: {"suite": "CORE", "case": "1882", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "05", "title": "PerItemExpiryAndSweep"}
 func TestVault_4_5_5_PerItemExpiryAndSweep(t *testing.T) {
 	impl := realStagingManager
 	// impl = staging.New(db)
@@ -1964,6 +2014,7 @@ func TestVault_4_5_5_PerItemExpiryAndSweep(t *testing.T) {
 }
 
 // TST-CORE-287
+// TRACE: {"suite": "CORE", "case": "1883", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "06", "title": "StagingEncryptedAtRest"}
 func TestVault_4_5_6_StagingEncryptedAtRest(t *testing.T) {
 	// Fresh vault + staging — no shared state.
 	dir := t.TempDir()
@@ -2016,6 +2067,7 @@ func TestVault_4_5_6_StagingEncryptedAtRest(t *testing.T) {
 }
 
 // TST-CORE-288
+// TRACE: {"suite": "CORE", "case": "1884", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "07", "title": "StagingNotBackedUp"}
 func TestVault_4_5_7_StagingNotBackedUp(t *testing.T) {
 	// Fresh vault + staging + backup managers to verify staging exclusion.
 	vaultDir, err := os.MkdirTemp("", "dina-staging-backup-")
@@ -2077,6 +2129,7 @@ func TestVault_4_5_7_StagingNotBackedUp(t *testing.T) {
 }
 
 // TST-CORE-289
+// TRACE: {"suite": "CORE", "case": "1885", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "08", "title": "DraftDontSendInStaging"}
 func TestVault_4_5_8_DraftDontSendInStaging(t *testing.T) {
 	// Fresh vault + staging to verify draft stays in staging, not in vault.
 	vaultDir, err := os.MkdirTemp("", "dina-draft-staging-")
@@ -2121,6 +2174,7 @@ func TestVault_4_5_8_DraftDontSendInStaging(t *testing.T) {
 }
 
 // TST-CORE-290
+// TRACE: {"suite": "CORE", "case": "1886", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "09", "title": "CartHandoverInStaging"}
 func TestVault_4_5_9_CartHandoverInStaging(t *testing.T) {
 	impl := realStagingManager
 	// impl = staging.New(db)
@@ -2138,6 +2192,7 @@ func TestVault_4_5_9_CartHandoverInStaging(t *testing.T) {
 }
 
 // TST-CORE-291
+// TRACE: {"suite": "CORE", "case": "1887", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "10", "title": "StagingItemsPerPersona"}
 func TestVault_4_5_10_StagingItemsPerPersona(t *testing.T) {
 	impl := realStagingManager
 	// impl = staging.New(db)
@@ -2154,6 +2209,7 @@ func TestVault_4_5_10_StagingItemsPerPersona(t *testing.T) {
 }
 
 // TST-CORE-292
+// TRACE: {"suite": "CORE", "case": "1888", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "11", "title": "SweeperSchedule"}
 func TestVault_4_5_11_SweeperSchedule(t *testing.T) {
 	// Fresh StagingManager — no shared state.
 	dir, err := os.MkdirTemp("", "dina-sweeper-schedule-")
@@ -2204,6 +2260,7 @@ func TestVault_4_5_11_SweeperSchedule(t *testing.T) {
 }
 
 // TST-CORE-293
+// TRACE: {"suite": "CORE", "case": "1889", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "12", "title": "PerTypeTTL"}
 func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 	// §4.5.12: Different item types have different staging TTLs.
 	// Brain sets expires_at at creation; core sweeper enforces uniformly.
@@ -2267,6 +2324,7 @@ func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-294
+// TRACE: {"suite": "CORE", "case": "1890", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "OnlineBackup"}
 func TestVault_4_6_1_OnlineBackup(t *testing.T) {
 	impl := realBackupManager
 	testutil.RequireImplementation(t, impl, "BackupManager")
@@ -2323,6 +2381,7 @@ func TestVault_4_6_1_OnlineBackup(t *testing.T) {
 }
 
 // TST-CORE-295
+// TRACE: {"suite": "CORE", "case": "1891", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "02", "title": "BackupEncrypted"}
 func TestVault_4_6_2_BackupEncrypted(t *testing.T) {
 	// Fresh vault + backup manager — no shared state.
 	dir, err := os.MkdirTemp("", "dina-backup-enc-")
@@ -2375,6 +2434,7 @@ func TestVault_4_6_2_BackupEncrypted(t *testing.T) {
 }
 
 // TST-CORE-296
+// TRACE: {"suite": "CORE", "case": "1892", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "03", "title": "VACUUMINTOForbidden"}
 func TestVault_4_6_3_VACUUMINTOForbidden(t *testing.T) {
 	// Code audit test: VACUUM INTO must NEVER be called in the codebase.
 	// VACUUM INTO produces PLAINTEXT in SQLCipher — CVE-level vulnerability.
@@ -2392,6 +2452,7 @@ func TestVault_4_6_3_VACUUMINTOForbidden(t *testing.T) {
 }
 
 // TST-CORE-297
+// TRACE: {"suite": "CORE", "case": "1893", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "04", "title": "BackupToDifferentLocation"}
 func TestVault_4_6_4_BackupToDifferentLocation(t *testing.T) {
 	impl := realBackupManager
 	// impl = backup.New(db)
@@ -2408,6 +2469,7 @@ func TestVault_4_6_4_BackupToDifferentLocation(t *testing.T) {
 }
 
 // TST-CORE-298
+// TRACE: {"suite": "CORE", "case": "1894", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "05", "title": "RestoreFromBackup"}
 func TestVault_4_6_5_RestoreFromBackup(t *testing.T) {
 	impl := realBackupManager
 	testutil.RequireImplementation(t, impl, "BackupManager")
@@ -2454,6 +2516,7 @@ func TestVault_4_6_5_RestoreFromBackup(t *testing.T) {
 }
 
 // TST-CORE-299
+// TRACE: {"suite": "CORE", "case": "1895", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "06", "title": "CIPlaintextCheck"}
 func TestVault_4_6_6_CIPlaintextCheck(t *testing.T) {
 	// Fresh vault + backup — no shared state.
 	dir, err := os.MkdirTemp("", "dina-ci-plaintext-")
@@ -2511,6 +2574,7 @@ func TestVault_4_6_6_CIPlaintextCheck(t *testing.T) {
 }
 
 // TST-CORE-300
+// TRACE: {"suite": "CORE", "case": "1896", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "07", "title": "BackupScopeTier0Tier1Only"}
 func TestVault_4_6_7_BackupScopeTier0Tier1Only(t *testing.T) {
 	// Fresh vault + backup — no shared state.
 	dir, err := os.MkdirTemp("", "dina-backup-scope-")
@@ -2569,6 +2633,7 @@ func TestVault_4_6_7_BackupScopeTier0Tier1Only(t *testing.T) {
 }
 
 // TST-CORE-301
+// TRACE: {"suite": "CORE", "case": "1897", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "08", "title": "AutomatedBackupScheduling"}
 func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 	// Fresh vault + backup — no shared state.
 	dir, err := os.MkdirTemp("", "dina-backup-schedule-")
@@ -2627,6 +2692,7 @@ func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-221
+// TRACE: {"suite": "CORE", "case": "1898", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "1_ContactsTableNoPersonaField"}
 func TestVault_4_2_1_1_ContactsTableNoPersonaField(t *testing.T) {
 	// Requirement: contacts table is cross-cutting (identity-level), no persona column.
 	// Verify against the REAL SQL schema file — not a fake SchemaInspector.
@@ -2670,6 +2736,7 @@ func TestVault_4_2_1_1_ContactsTableNoPersonaField(t *testing.T) {
 }
 
 // TST-CORE-222
+// TRACE: {"suite": "CORE", "case": "1899", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "2_ContactsTrustLevelEnum"}
 func TestVault_4_2_1_2_ContactsTrustLevelEnum(t *testing.T) {
 	// Validates the contacts trust_level CHECK constraint against the REAL SQL
 	// schema file (identity_001.sql), not the hardcoded Go map in SchemaInspect
@@ -2725,6 +2792,7 @@ func TestVault_4_2_1_2_ContactsTrustLevelEnum(t *testing.T) {
 }
 
 // TST-CORE-223
+// TRACE: {"suite": "CORE", "case": "1900", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "3_ContactsSharingPolicyJSON"}
 func TestVault_4_2_1_3_ContactsSharingPolicyJSON(t *testing.T) {
 	// Requirement: contacts table has a sharing_tier column (not sharing_policy)
 	// with CHECK constraint for valid tiers.
@@ -2769,6 +2837,7 @@ func TestVault_4_2_1_3_ContactsSharingPolicyJSON(t *testing.T) {
 }
 
 // TST-CORE-224
+// TRACE: {"suite": "CORE", "case": "1901", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "4_IdxContactsTrustExists"}
 func TestVault_4_2_1_4_IdxContactsTrustExists(t *testing.T) {
 	// Requirement: An index on contacts(trust_level) must exist for efficient
 	// trust-level filtering queries. Verify against REAL SQL schema.
@@ -2802,6 +2871,7 @@ func TestVault_4_2_1_4_IdxContactsTrustExists(t *testing.T) {
 }
 
 // TST-CORE-225
+// TRACE: {"suite": "CORE", "case": "1902", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "5_AuditLogTableSchema"}
 func TestVault_4_2_1_5_AuditLogTableSchema(t *testing.T) {
 	// Validates against the REAL SQL schema file (identity_001.sql), not the
 	// hardcoded Go map in SchemaInspect — the Go map has drifted before
@@ -2849,6 +2919,7 @@ func TestVault_4_2_1_5_AuditLogTableSchema(t *testing.T) {
 }
 
 // TST-CORE-226
+// TRACE: {"suite": "CORE", "case": "1903", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "6_KVStoreForSyncCursors"}
 func TestVault_4_2_1_6_KVStoreForSyncCursors(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -2878,6 +2949,7 @@ func TestVault_4_2_1_6_KVStoreForSyncCursors(t *testing.T) {
 }
 
 // TST-CORE-227
+// TRACE: {"suite": "CORE", "case": "1904", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "7_DeviceTokensSHA256Hash"}
 func TestVault_4_2_1_7_DeviceTokensSHA256Hash(t *testing.T) {
 	// Requirement: device_tokens.token_hash must be SHA-256 hex-encoded.
 	// Verify against the actual SQL schema file, not an in-memory fake.
@@ -2925,6 +2997,7 @@ func TestVault_4_2_1_7_DeviceTokensSHA256Hash(t *testing.T) {
 }
 
 // TST-CORE-228
+// TRACE: {"suite": "CORE", "case": "1905", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "8_DeviceTokensPartialIndex"}
 func TestVault_4_2_1_8_DeviceTokensPartialIndex(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -2941,6 +3014,7 @@ func TestVault_4_2_1_8_DeviceTokensPartialIndex(t *testing.T) {
 }
 
 // TST-CORE-229
+// TRACE: {"suite": "CORE", "case": "1906", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "9_CrashLogTableSchema"}
 func TestVault_4_2_1_9_CrashLogTableSchema(t *testing.T) {
 	// Requirement: crash_log table in identity schema with sanitized crash entries.
 	// Verify against REAL SQL schema — not a fake SchemaInspector.
@@ -2992,6 +3066,7 @@ func TestVault_4_2_1_9_CrashLogTableSchema(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-230
+// TRACE: {"suite": "CORE", "case": "1907", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "1_VaultItemsRequiredColumns"}
 func TestVault_4_2_2_1_VaultItemsRequiredColumns(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3012,6 +3087,7 @@ func TestVault_4_2_2_1_VaultItemsRequiredColumns(t *testing.T) {
 }
 
 // TST-CORE-231
+// TRACE: {"suite": "CORE", "case": "1908", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "2_VaultItemsFTS5Table"}
 func TestVault_4_2_2_2_VaultItemsFTS5Table(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3025,6 +3101,7 @@ func TestVault_4_2_2_2_VaultItemsFTS5Table(t *testing.T) {
 }
 
 // TST-CORE-232
+// TRACE: {"suite": "CORE", "case": "1909", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "3_FTS5TokenizerUnicode61"}
 func TestVault_4_2_2_3_FTS5TokenizerUnicode61(t *testing.T) {
 	// Requirement: FTS5 tokenizer must be unicode61 with remove_diacritics
 	// for multilingual support. Verify against REAL SQL schema.
@@ -3065,6 +3142,7 @@ func TestVault_4_2_2_3_FTS5TokenizerUnicode61(t *testing.T) {
 }
 
 // TST-CORE-233
+// TRACE: {"suite": "CORE", "case": "1910", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "4_PorterStemmerForbidden"}
 func TestVault_4_2_2_4_PorterStemmerForbidden(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3082,6 +3160,7 @@ func TestVault_4_2_2_4_PorterStemmerForbidden(t *testing.T) {
 }
 
 // TST-CORE-234
+// TRACE: {"suite": "CORE", "case": "1911", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "5_FTS5EncryptedBySQLCipher"}
 func TestVault_4_2_2_5_FTS5EncryptedBySQLCipher(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3096,6 +3175,7 @@ func TestVault_4_2_2_5_FTS5EncryptedBySQLCipher(t *testing.T) {
 }
 
 // TST-CORE-235
+// TRACE: {"suite": "CORE", "case": "1912", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "6_RelationshipsTable"}
 func TestVault_4_2_2_6_RelationshipsTable(t *testing.T) {
 	// Requirement: relationships table links vault items (from_id → to_id)
 	// with a rel_type. Not entity tracking — item-to-item links.
@@ -3152,6 +3232,7 @@ func TestVault_4_2_2_6_RelationshipsTable(t *testing.T) {
 }
 
 // TST-CORE-236
+// TRACE: {"suite": "CORE", "case": "1913", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "7_VaultItemsTypeEnforced"}
 func TestVault_4_2_2_7_VaultItemsTypeEnforced(t *testing.T) {
 	// §4.2.2.7: vault_items.type column has CHECK constraint — only valid
 	// types accepted. Invalid types must be rejected at insert time.
@@ -3186,6 +3267,7 @@ func TestVault_4_2_2_7_VaultItemsTypeEnforced(t *testing.T) {
 }
 
 // TST-CORE-237
+// TRACE: {"suite": "CORE", "case": "1914", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "8_RelationshipsEntityTypeEnforced"}
 func TestVault_4_2_2_8_RelationshipsEntityTypeEnforced(t *testing.T) {
 	// Fresh SchemaInspector — no shared state.
 	impl := vault.NewSchemaInspector()
@@ -3214,6 +3296,7 @@ func TestVault_4_2_2_8_RelationshipsEntityTypeEnforced(t *testing.T) {
 }
 
 // TST-CORE-238
+// TRACE: {"suite": "CORE", "case": "1915", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "9_FTS5ContentSyncInsert"}
 func TestVault_4_2_2_9_FTS5ContentSyncInsert(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3231,6 +3314,7 @@ func TestVault_4_2_2_9_FTS5ContentSyncInsert(t *testing.T) {
 }
 
 // TST-CORE-239
+// TRACE: {"suite": "CORE", "case": "1916", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "10_FTS5ContentSyncUpdate"}
 func TestVault_4_2_2_10_FTS5ContentSyncUpdate(t *testing.T) {
 	// Requirement: UPDATE on vault_items must propagate to FTS5 index
 	// via the AFTER UPDATE trigger — old text no longer matches, new text does.
@@ -3292,6 +3376,7 @@ func TestVault_4_2_2_10_FTS5ContentSyncUpdate(t *testing.T) {
 }
 
 // TST-CORE-240
+// TRACE: {"suite": "CORE", "case": "1917", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "11_FTS5ContentSyncDelete"}
 func TestVault_4_2_2_11_FTS5ContentSyncDelete(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3312,6 +3397,7 @@ func TestVault_4_2_2_11_FTS5ContentSyncDelete(t *testing.T) {
 }
 
 // TST-CORE-241
+// TRACE: {"suite": "CORE", "case": "1918", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "12_SchemaVersionIdentity"}
 func TestVault_4_2_2_12_SchemaVersionIdentity(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3323,6 +3409,7 @@ func TestVault_4_2_2_12_SchemaVersionIdentity(t *testing.T) {
 }
 
 // TST-CORE-242
+// TRACE: {"suite": "CORE", "case": "1919", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "02", "title": "13_SchemaVersionPersonaVault"}
 func TestVault_4_2_2_13_SchemaVersionPersonaVault(t *testing.T) {
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
@@ -3339,6 +3426,7 @@ func TestVault_4_2_2_13_SchemaVersionPersonaVault(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-243
+// TRACE: {"suite": "CORE", "case": "1920", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "03", "title": "1_BatchStore100Items"}
 func TestVault_4_2_3_1_BatchStore100Items(t *testing.T) {
 	vm := testutil.NewMockVaultManager()
 	persona := "test-batch"
@@ -3359,6 +3447,7 @@ func TestVault_4_2_3_1_BatchStore100Items(t *testing.T) {
 }
 
 // TST-CORE-244
+// TRACE: {"suite": "CORE", "case": "1921", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "03", "title": "2_BatchPerformance"}
 func TestVault_4_2_3_2_BatchPerformance(t *testing.T) {
 	// Requirement: Batch ingestion must be significantly faster than
 	// individual inserts (fewer transactions). Verify correctness + timing.
@@ -3411,6 +3500,7 @@ func TestVault_4_2_3_2_BatchPerformance(t *testing.T) {
 }
 
 // TST-CORE-245
+// TRACE: {"suite": "CORE", "case": "1922", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "03", "title": "3_BatchFailureRollback"}
 func TestVault_4_2_3_3_BatchFailureRollback(t *testing.T) {
 	// §4.2.3.3: If any item in a batch violates a constraint, the entire
 	// batch must be rolled back — no partial inserts. Atomic all-or-nothing.
@@ -3468,6 +3558,7 @@ func TestVault_4_2_3_3_BatchFailureRollback(t *testing.T) {
 }
 
 // TST-CORE-246
+// TRACE: {"suite": "CORE", "case": "1923", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "03", "title": "4_BatchDuringConcurrentReads"}
 func TestVault_4_2_3_4_BatchDuringConcurrentReads(t *testing.T) {
 	// Requirement: WAL mode allows concurrent batch writes and reads.
 	// A search must succeed while a batch store is in progress.
@@ -3545,6 +3636,7 @@ func TestVault_4_2_3_4_BatchDuringConcurrentReads(t *testing.T) {
 }
 
 // TST-CORE-247
+// TRACE: {"suite": "CORE", "case": "1924", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "03", "title": "5_BatchIngestionPlusEmbedding"}
 func TestVault_4_2_3_5_BatchIngestionPlusEmbedding(t *testing.T) {
 	// Requirement: Items are available for FTS5 immediately after batch store,
 	// even before embeddings arrive for semantic search.
@@ -3619,6 +3711,7 @@ func TestVault_4_2_3_5_BatchIngestionPlusEmbedding(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-251
+// TRACE: {"suite": "CORE", "case": "1925", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "04", "title": "HybridSearchFormulaVerified"}
 func TestVault_4_3_4_HybridSearchFormulaVerified(t *testing.T) {
 	// Requirement: Hybrid search combines FTS5 text rank + vector cosine similarity.
 	// Hybrid mode must return results that match BOTH text and vector criteria.
@@ -3692,6 +3785,7 @@ func TestVault_4_3_4_HybridSearchFormulaVerified(t *testing.T) {
 }
 
 // TST-CORE-257
+// TRACE: {"suite": "CORE", "case": "1926", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "10", "title": "FilterByTypes"}
 func TestVault_4_3_10_FilterByTypes(t *testing.T) {
 	vm := testutil.NewMockVaultManager()
 	persona := "test-search-types"
@@ -3717,6 +3811,7 @@ func TestVault_4_3_10_FilterByTypes(t *testing.T) {
 }
 
 // TST-CORE-258
+// TRACE: {"suite": "CORE", "case": "1927", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "11", "title": "FilterByTimeRange"}
 func TestVault_4_3_11_FilterByTimeRange(t *testing.T) {
 	// Fresh production vault — no mocks.
 	vaultDir, err := os.MkdirTemp("", "dina-time-range-")
@@ -3766,6 +3861,7 @@ func TestVault_4_3_11_FilterByTimeRange(t *testing.T) {
 }
 
 // TST-CORE-259
+// TRACE: {"suite": "CORE", "case": "1928", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "12", "title": "LimitDefault20"}
 func TestVault_4_3_12_LimitDefault20(t *testing.T) {
 	vm := testutil.NewMockVaultManager()
 	persona := "test-search-limit-default"
@@ -3786,6 +3882,7 @@ func TestVault_4_3_12_LimitDefault20(t *testing.T) {
 }
 
 // TST-CORE-260
+// TRACE: {"suite": "CORE", "case": "1929", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "13", "title": "LimitMax100"}
 func TestVault_4_3_13_LimitMax100(t *testing.T) {
 	// Fresh vault to control exact item count.
 	dir := t.TempDir()
@@ -3843,6 +3940,7 @@ func TestVault_4_3_13_LimitMax100(t *testing.T) {
 }
 
 // TST-CORE-261
+// TRACE: {"suite": "CORE", "case": "1930", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "14", "title": "Pagination"}
 func TestVault_4_3_14_Pagination(t *testing.T) {
 	// Fresh production vault.Manager — no shared state.
 	dir := t.TempDir()
@@ -3907,6 +4005,7 @@ func TestVault_4_3_14_Pagination(t *testing.T) {
 }
 
 // TST-CORE-262
+// TRACE: {"suite": "CORE", "case": "1931", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "15", "title": "LockedPersonaStructured403"}
 func TestVault_4_3_15_LockedPersonaStructured403(t *testing.T) {
 	// §4.3.15: Querying a locked (closed) persona must return a structured
 	// error indicating the persona is not open. Must not silently return
@@ -3962,6 +4061,7 @@ func TestVault_4_3_15_LockedPersonaStructured403(t *testing.T) {
 }
 
 // TST-CORE-263
+// TRACE: {"suite": "CORE", "case": "1932", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "16", "title": "SimpleSearchFastPath"}
 func TestVault_4_3_16_SimpleSearchFastPath(t *testing.T) {
 	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
@@ -4000,6 +4100,7 @@ func TestVault_4_3_16_SimpleSearchFastPath(t *testing.T) {
 }
 
 // TST-CORE-264
+// TRACE: {"suite": "CORE", "case": "1933", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "17", "title": "SemanticSearchBrainOrchestrates"}
 func TestVault_4_3_17_SemanticSearchBrainOrchestrates(t *testing.T) {
 	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
@@ -4077,6 +4178,7 @@ func TestVault_4_3_17_SemanticSearchBrainOrchestrates(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-265
+// TRACE: {"suite": "CORE", "case": "1934", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "1_EmbeddingModelTrackedInMetadata"}
 func TestVault_4_3_1_1_EmbeddingModelTrackedInMetadata(t *testing.T) {
 	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
@@ -4088,6 +4190,7 @@ func TestVault_4_3_1_1_EmbeddingModelTrackedInMetadata(t *testing.T) {
 }
 
 // TST-CORE-266
+// TRACE: {"suite": "CORE", "case": "1935", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "2_ModelChangeDetected"}
 func TestVault_4_3_1_2_ModelChangeDetected(t *testing.T) {
 	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
@@ -4099,6 +4202,7 @@ func TestVault_4_3_1_2_ModelChangeDetected(t *testing.T) {
 }
 
 // TST-CORE-267
+// TRACE: {"suite": "CORE", "case": "1936", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "3_ReindexTriggered"}
 func TestVault_4_3_1_3_ReindexTriggered(t *testing.T) {
 	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
@@ -4158,6 +4262,7 @@ func TestVault_4_3_1_3_ReindexTriggered(t *testing.T) {
 }
 
 // TST-CORE-268
+// TRACE: {"suite": "CORE", "case": "1937", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "4_FTS5AvailableDuringReindexing"}
 func TestVault_4_3_1_4_FTS5AvailableDuringReindexing(t *testing.T) {
 	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
@@ -4207,6 +4312,7 @@ func TestVault_4_3_1_4_FTS5AvailableDuringReindexing(t *testing.T) {
 }
 
 // TST-CORE-269
+// TRACE: {"suite": "CORE", "case": "1938", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "5_ReembedCompletes"}
 func TestVault_4_3_1_5_ReembedCompletes(t *testing.T) {
 	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
@@ -4219,6 +4325,7 @@ func TestVault_4_3_1_5_ReembedCompletes(t *testing.T) {
 }
 
 // TST-CORE-270
+// TRACE: {"suite": "CORE", "case": "1939", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "6_NoDualIndex"}
 func TestVault_4_3_1_6_NoDualIndex(t *testing.T) {
 	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
@@ -4255,6 +4362,7 @@ func TestVault_4_3_1_6_NoDualIndex(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-302
+// TRACE: {"suite": "CORE", "case": "1940", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "1_EncryptedBackupBeforeMigration"}
 func TestVault_4_6_1_1_EncryptedBackupBeforeMigration(t *testing.T) {
 	// Fresh MigrationSafety with isolated temp directory.
 	migDir, err := os.MkdirTemp("", "dina-migration-backup-")
@@ -4288,6 +4396,7 @@ func TestVault_4_6_1_1_EncryptedBackupBeforeMigration(t *testing.T) {
 }
 
 // TST-CORE-303
+// TRACE: {"suite": "CORE", "case": "1941", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "2_IntegrityCheckAfterMigration"}
 func TestVault_4_6_1_2_IntegrityCheckAfterMigration(t *testing.T) {
 	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
@@ -4315,6 +4424,7 @@ func TestVault_4_6_1_2_IntegrityCheckAfterMigration(t *testing.T) {
 }
 
 // TST-CORE-304
+// TRACE: {"suite": "CORE", "case": "1942", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "3_IntegrityOkCommit"}
 func TestVault_4_6_1_3_IntegrityOkCommit(t *testing.T) {
 	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
@@ -4355,6 +4465,7 @@ func TestVault_4_6_1_3_IntegrityOkCommit(t *testing.T) {
 }
 
 // TST-CORE-305
+// TRACE: {"suite": "CORE", "case": "1943", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "4_IntegrityFailRollbackRestore"}
 func TestVault_4_6_1_4_IntegrityFailRollbackRestore(t *testing.T) {
 	// Fresh MigrationSafety with isolated temp directory — no shared state.
 	dir := t.TempDir()
@@ -4400,6 +4511,7 @@ func TestVault_4_6_1_4_IntegrityFailRollbackRestore(t *testing.T) {
 }
 
 // TST-CORE-306
+// TRACE: {"suite": "CORE", "case": "1944", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "5_PreFlightBackupPath"}
 func TestVault_4_6_1_5_PreFlightBackupPath(t *testing.T) {
 	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
@@ -4414,6 +4526,7 @@ func TestVault_4_6_1_5_PreFlightBackupPath(t *testing.T) {
 }
 
 // TST-CORE-307
+// TRACE: {"suite": "CORE", "case": "1945", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "6_AutomaticOnCoreUpdate"}
 func TestVault_4_6_1_6_AutomaticOnCoreUpdate(t *testing.T) {
 	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
@@ -4465,6 +4578,7 @@ func TestVault_4_6_1_6_AutomaticOnCoreUpdate(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-308
+// TRACE: {"suite": "CORE", "case": "1946", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "01", "title": "AppendAuditEntry"}
 func TestVault_4_7_1_AppendAuditEntry(t *testing.T) {
 	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
@@ -4519,6 +4633,7 @@ func TestVault_4_7_1_AppendAuditEntry(t *testing.T) {
 }
 
 // TST-CORE-309
+// TRACE: {"suite": "CORE", "case": "1947", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "02", "title": "AppendOnlyEnforcement"}
 func TestVault_4_7_2_AppendOnlyEnforcement(t *testing.T) {
 	// Fresh AuditLogger for isolation.
 	logger := vault.NewAuditLogger()
@@ -4599,6 +4714,7 @@ func TestVault_4_7_2_AppendOnlyEnforcement(t *testing.T) {
 }
 
 // TST-CORE-310
+// TRACE: {"suite": "CORE", "case": "1948", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "03", "title": "AuditLogRotation"}
 func TestVault_4_7_3_AuditLogRotation(t *testing.T) {
 	// Fresh AuditLogger to control exact entries.
 	logger := vault.NewAuditLogger()
@@ -4645,6 +4761,7 @@ func TestVault_4_7_3_AuditLogRotation(t *testing.T) {
 }
 
 // TST-CORE-311
+// TRACE: {"suite": "CORE", "case": "1949", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "04", "title": "QueryAuditLog"}
 func TestVault_4_7_4_QueryAuditLog(t *testing.T) {
 	// Fresh AuditLogger for isolation.
 	logger := vault.NewAuditLogger()
@@ -4708,6 +4825,7 @@ func TestVault_4_7_4_QueryAuditLog(t *testing.T) {
 }
 
 // TST-CORE-312
+// TRACE: {"suite": "CORE", "case": "1950", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "05", "title": "AuditLogIntegrityHashChain"}
 func TestVault_4_7_5_AuditLogIntegrityHashChain(t *testing.T) {
 	// Create a fresh logger so we control the exact chain state.
 	logger := vault.NewAuditLogger()
@@ -4748,6 +4866,7 @@ func TestVault_4_7_5_AuditLogIntegrityHashChain(t *testing.T) {
 }
 
 // TST-CORE-313
+// TRACE: {"suite": "CORE", "case": "1951", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "06", "title": "AuditLogJSONFormat"}
 func TestVault_4_7_6_AuditLogJSONFormat(t *testing.T) {
 	// §4.7.6: Audit log entries must have all required fields preserved.
 	logger := vault.NewAuditLogger()
@@ -4793,6 +4912,7 @@ func TestVault_4_7_6_AuditLogJSONFormat(t *testing.T) {
 }
 
 // TST-CORE-314
+// TRACE: {"suite": "CORE", "case": "1952", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "07", "title": "RetentionConfigurable"}
 func TestVault_4_7_7_RetentionConfigurable(t *testing.T) {
 	// Fresh AuditLogger — no shared state.
 	logger := vault.NewAuditLogger()
@@ -4844,6 +4964,7 @@ func TestVault_4_7_7_RetentionConfigurable(t *testing.T) {
 }
 
 // TST-CORE-315
+// TRACE: {"suite": "CORE", "case": "1953", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "08", "title": "WatchdogDailyCleanup"}
 func TestVault_4_7_8_WatchdogDailyCleanup(t *testing.T) {
 	// Use an isolated AuditLogger to avoid shared-state interference.
 	logger := vault.NewAuditLogger()
@@ -4894,6 +5015,7 @@ func TestVault_4_7_8_WatchdogDailyCleanup(t *testing.T) {
 }
 
 // TST-CORE-316
+// TRACE: {"suite": "CORE", "case": "1954", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "09", "title": "RawEntriesForForensics"}
 func TestVault_4_7_9_RawEntriesForForensics(t *testing.T) {
 	// §4.7.9: Audit log must preserve individual timestamped entries for
 	// forensic analysis. Entries must NOT be summarized (e.g., "brain accessed
@@ -4962,6 +5084,7 @@ func TestVault_4_7_9_RawEntriesForForensics(t *testing.T) {
 }
 
 // TST-CORE-317
+// TRACE: {"suite": "CORE", "case": "1955", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "10", "title": "AuditLogStoredInIdentitySQLite"}
 func TestVault_4_7_10_AuditLogStoredInIdentitySQLite(t *testing.T) {
 	// Fresh AuditLogger — no shared state.
 	logger := vault.NewAuditLogger()
@@ -5017,6 +5140,7 @@ func TestVault_4_7_10_AuditLogStoredInIdentitySQLite(t *testing.T) {
 }
 
 // TST-CORE-318
+// TRACE: {"suite": "CORE", "case": "1956", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "11", "title": "StorageGrowthBounded"}
 func TestVault_4_7_11_StorageGrowthBounded(t *testing.T) {
 	// Requirement: Audit log growth is bounded by retention policy.
 	// Purge must remove entries older than retention window and keep recent ones.
@@ -5068,6 +5192,7 @@ func TestVault_4_7_11_StorageGrowthBounded(t *testing.T) {
 }
 
 // TST-CORE-319
+// TRACE: {"suite": "CORE", "case": "1957", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "12", "title": "CrashLog90DayRetention"}
 func TestVault_4_7_12_CrashLog90DayRetention(t *testing.T) {
 	// Fresh instance to avoid cross-test pollution from shared global.
 	logger := vault.NewAuditLogger()
@@ -5117,6 +5242,7 @@ func TestVault_4_7_12_CrashLog90DayRetention(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-320
+// TRACE: {"suite": "CORE", "case": "1958", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "01", "title": "SecurityModeBootFullSequence"}
 func TestVault_4_8_1_SecurityModeBootFullSequence(t *testing.T) {
 	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
@@ -5135,6 +5261,7 @@ func TestVault_4_8_1_SecurityModeBootFullSequence(t *testing.T) {
 }
 
 // TST-CORE-321
+// TRACE: {"suite": "CORE", "case": "1959", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "02", "title": "ConvenienceModeBootFullSequence"}
 func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
 	// §4.8.2: Convenience mode boot sequence: read master seed from keyfile,
 	// derive DEKs via HKDF, open identity first, then personal. No passphrase
@@ -5188,6 +5315,7 @@ func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
 }
 
 // TST-CORE-322
+// TRACE: {"suite": "CORE", "case": "1960", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "03", "title": "BootOpensIdentityFirst"}
 func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
 	// §4.8.3: Boot sequence must open identity.sqlite FIRST (gatekeeper needs
 	// contacts table). Then "general" is opened. Other personas in the list
@@ -5245,6 +5373,7 @@ func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
 }
 
 // TST-CORE-323
+// TRACE: {"suite": "CORE", "case": "1961", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "04", "title": "BootOpensPersonalSecond"}
 func TestVault_4_8_4_BootOpensPersonalSecond(t *testing.T) {
 	// Use the real vault.Manager to verify boot behaviour against real vault
 	// infrastructure instead of the stub BootSeq (whose openVaultInternal is
@@ -5290,6 +5419,7 @@ func TestVault_4_8_4_BootOpensPersonalSecond(t *testing.T) {
 }
 
 // TST-CORE-324
+// TRACE: {"suite": "CORE", "case": "1962", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "05", "title": "OtherPersonasRemainClosedAtBoot"}
 func TestVault_4_8_5_OtherPersonasRemainClosedAtBoot(t *testing.T) {
 	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
@@ -5314,6 +5444,7 @@ func TestVault_4_8_5_OtherPersonasRemainClosedAtBoot(t *testing.T) {
 }
 
 // TST-CORE-325
+// TRACE: {"suite": "CORE", "case": "1963", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "06", "title": "DEKsNotDerivedForClosedPersonas"}
 func TestVault_4_8_6_DEKsNotDerivedForClosedPersonas(t *testing.T) {
 	// §4.8.6: HKDF must NOT be called for locked/non-default personas at boot.
 	// Key material must never enter RAM until explicit unlock. Only identity
@@ -5364,6 +5495,7 @@ func TestVault_4_8_6_DEKsNotDerivedForClosedPersonas(t *testing.T) {
 }
 
 // TST-CORE-326
+// TRACE: {"suite": "CORE", "case": "1964", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "07", "title": "BrainNotifiedOnVaultUnlock"}
 func TestVault_4_8_7_BrainNotifiedOnVaultUnlock(t *testing.T) {
 	// Fresh BootSequencer + Manager — no shared state.
 	dir, err := os.MkdirTemp("", "dina-brain-notify-")
@@ -5412,6 +5544,7 @@ func TestVault_4_8_7_BrainNotifiedOnVaultUnlock(t *testing.T) {
 }
 
 // TST-CORE-327
+// TRACE: {"suite": "CORE", "case": "1965", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "08", "title": "HKDFInfoStringsCorrectIdentity"}
 func TestVault_4_8_8_HKDFInfoStringsCorrectIdentity(t *testing.T) {
 	// Requirement: HKDF info string "dina:vault:identity:v1" must produce
 	// a consistent, deterministic DEK from the same master seed + salt.
@@ -5461,6 +5594,7 @@ func TestVault_4_8_8_HKDFInfoStringsCorrectIdentity(t *testing.T) {
 }
 
 // TST-CORE-328
+// TRACE: {"suite": "CORE", "case": "1966", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "09", "title": "HKDFInfoStringsPerPersona"}
 func TestVault_4_8_9_HKDFInfoStringsPerPersona(t *testing.T) {
 	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
@@ -5475,6 +5609,7 @@ func TestVault_4_8_9_HKDFInfoStringsPerPersona(t *testing.T) {
 }
 
 // TST-CORE-329
+// TRACE: {"suite": "CORE", "case": "1967", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "10", "title": "SQLCipherPRAGMAsEnforced"}
 func TestVault_4_8_10_SQLCipherPRAGMAsEnforced(t *testing.T) {
 	// Requirement: SQLCipher databases must enforce specific PRAGMAs:
 	// journal_mode = WAL, foreign_keys = ON, busy_timeout = 5000.
@@ -5525,6 +5660,7 @@ func TestVault_4_8_10_SQLCipherPRAGMAsEnforced(t *testing.T) {
 }
 
 // TST-CORE-330
+// TRACE: {"suite": "CORE", "case": "1968", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "11", "title": "ModeStoredInConfig"}
 func TestVault_4_8_11_ModeStoredInConfig(t *testing.T) {
 	// Fresh BootSequencer — no shared state.
 	dir := t.TempDir()
@@ -5568,6 +5704,7 @@ func TestVault_4_8_11_ModeStoredInConfig(t *testing.T) {
 }
 
 // TST-CORE-331
+// TRACE: {"suite": "CORE", "case": "1969", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "12", "title": "ModeChangeableAtRuntime"}
 func TestVault_4_8_12_ModeChangeableAtRuntime(t *testing.T) {
 	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
@@ -5581,6 +5718,7 @@ func TestVault_4_8_12_ModeChangeableAtRuntime(t *testing.T) {
 }
 
 // TST-CORE-332
+// TRACE: {"suite": "CORE", "case": "1970", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "13", "title": "DefaultModeManagedConvenience"}
 func TestVault_4_8_13_DefaultModeManagedConvenience(t *testing.T) {
 	// Fresh BootSequencer — no shared state.
 	dir := t.TempDir()
@@ -5616,6 +5754,7 @@ func TestVault_4_8_13_DefaultModeManagedConvenience(t *testing.T) {
 }
 
 // TST-CORE-333
+// TRACE: {"suite": "CORE", "case": "1971", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "14", "title": "DefaultModeSelfHostedSecurity"}
 func TestVault_4_8_14_DefaultModeSelfHostedSecurity(t *testing.T) {
 	// Fresh BootSequencer for isolation.
 	dir := t.TempDir()
@@ -5656,6 +5795,7 @@ func TestVault_4_8_14_DefaultModeSelfHostedSecurity(t *testing.T) {
 }
 
 // TST-CORE-334
+// TRACE: {"suite": "CORE", "case": "1972", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "15", "title": "SecurityModeWrongPassphraseVaultStaysLocked"}
 func TestVault_4_8_15_SecurityModeWrongPassphraseVaultStaysLocked(t *testing.T) {
 	// §4.8.15: Wrong passphrase → AES-256-GCM unwrap fails, vault stays locked.
 	dir := t.TempDir()
@@ -5696,6 +5836,7 @@ func TestVault_4_8_15_SecurityModeWrongPassphraseVaultStaysLocked(t *testing.T) 
 }
 
 // TST-CORE-335
+// TRACE: {"suite": "CORE", "case": "1973", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "16", "title": "ConvenienceModeKeyfileMissingError"}
 func TestVault_4_8_16_ConvenienceModeKeyfileMissingError(t *testing.T) {
 	// §4.8.16: Convenience mode with missing keyfile must refuse to start.
 	// Fresh BootSequencer to avoid shared state.
@@ -5727,6 +5868,7 @@ func TestVault_4_8_16_ConvenienceModeKeyfileMissingError(t *testing.T) {
 }
 
 // TST-CORE-336
+// TRACE: {"suite": "CORE", "case": "1974", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "17", "title": "ConvenienceModeKeyfileWrongPermissions"}
 func TestVault_4_8_17_ConvenienceModeKeyfileWrongPermissions(t *testing.T) {
 	// Fresh BootSequencer with isolated vault directory.
 	vaultDir, err := os.MkdirTemp("", "dina-boot-perms-")
@@ -5771,6 +5913,7 @@ func TestVault_4_8_17_ConvenienceModeKeyfileWrongPermissions(t *testing.T) {
 }
 
 // TST-CORE-337
+// TRACE: {"suite": "CORE", "case": "1975", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "18", "title": "ConfigMissingGracefulDefault"}
 func TestVault_4_8_18_ConfigMissingGracefulDefault(t *testing.T) {
 	// §4.8.18: Missing config (empty mode) should default to security mode gracefully.
 	// Fresh BootSequencer to avoid shared state.
@@ -5803,6 +5946,7 @@ func TestVault_4_8_18_ConfigMissingGracefulDefault(t *testing.T) {
 }
 
 // TST-CORE-338
+// TRACE: {"suite": "CORE", "case": "1976", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "19", "title": "ConfigInvalidModeValue"}
 func TestVault_4_8_19_ConfigInvalidModeValue(t *testing.T) {
 	// §4.8.19: Invalid boot mode must be rejected with error.
 	// Fresh BootSequencer to avoid shared state from other tests.
@@ -5846,6 +5990,7 @@ func TestVault_4_8_19_ConfigInvalidModeValue(t *testing.T) {
 }
 
 // TST-CORE-339
+// TRACE: {"suite": "CORE", "case": "1977", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "20", "title": "SecurityModeWrappedSeedPath"}
 func TestVault_4_8_20_SecurityModeWrappedSeedPath(t *testing.T) {
 	// §4.8.20: Security mode accepts WrappedSeedPath for encrypted master seed.
 	// The wrapped_seed.bin file contains an AES-256-GCM blob + 16-byte Argon2id salt.
@@ -5890,6 +6035,7 @@ func TestVault_4_8_20_SecurityModeWrappedSeedPath(t *testing.T) {
 }
 
 // TST-CORE-340
+// TRACE: {"suite": "CORE", "case": "1978", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "21", "title": "MasterSeedNeverPlaintextInSecurityMode"}
 func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
 	// Fresh BootSequencer with isolated vault directory.
 	vaultDir, err := os.MkdirTemp("", "dina-seed-security-")
@@ -5943,6 +6089,7 @@ func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
 }
 
 // TST-CORE-341
+// TRACE: {"suite": "CORE", "case": "1979", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "22", "title": "ConvenienceModeKeyfilePath"}
 func TestVault_4_8_22_ConvenienceModeKeyfilePath(t *testing.T) {
 	// §4.8.22: Convenience mode uses a raw master seed keyfile at a configurable
 	// path. The keyfile must exist and the boot must accept it.
@@ -5985,6 +6132,7 @@ func TestVault_4_8_22_ConvenienceModeKeyfilePath(t *testing.T) {
 }
 
 // TST-CORE-342
+// TRACE: {"suite": "CORE", "case": "1980", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "23", "title": "ModeSwitchSecurityToConvenience"}
 func TestVault_4_8_23_ModeSwitchSecurityToConvenience(t *testing.T) {
 	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
@@ -6025,6 +6173,7 @@ func padMinute(i int) string {
 }
 
 // TST-CORE-883
+// TRACE: {"suite": "CORE", "case": "1981", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "09", "scenario": "01", "title": "FTS5WithIndicScripts"}
 func TestVault_4_9_FTS5WithIndicScripts(t *testing.T) {
 	// Requirement: FTS5 with unicode61 tokenizer must handle Indic scripts
 	// (Hindi, Tamil, Kannada) — the multilingual claim requires non-Latin search.
@@ -6099,6 +6248,7 @@ func TestVault_4_9_FTS5WithIndicScripts(t *testing.T) {
 }
 
 // TST-CORE-884
+// TRACE: {"suite": "CORE", "case": "1982", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "09", "scenario": "02", "title": "UsesSqliteVecNotVSS"}
 func TestVault_4_9_2_UsesSqliteVecNotVSS(t *testing.T) {
 	// §4.9.2: Vector search uses sqlite-vec (BLOB embedding column),
 	// NOT the deprecated sqlite-vss extension.
@@ -6155,6 +6305,7 @@ func TestVault_4_9_2_UsesSqliteVecNotVSS(t *testing.T) {
 }
 
 // TST-CORE-885
+// TRACE: {"suite": "CORE", "case": "1983", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "09", "scenario": "03", "title": "FTS5AvailableDuringReindex"}
 func TestVault_4_9_3_FTS5AvailableDuringReindex(t *testing.T) {
 	// §4.9.3: FTS5 full-text search must remain available while sqlite-vec
 	// embedding index is being re-built. Users can still search by text
@@ -6244,6 +6395,7 @@ func TestVault_4_9_3_FTS5AvailableDuringReindex(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1141
+// TRACE: {"suite": "CORE", "case": "1984", "section": "36", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "04", "title": "ApprovalExpiresIfNotActedOn"}
 func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 	// Requirement (§36.1, row 4):
 	//   Generate approval (stage item with TTL), wait past TTL →
@@ -6260,6 +6412,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 	//   4. Sweep count is accurate
 	//   5. Double-sweep on already-swept items returns 0
 
+	// TRACE: {"suite": "CORE", "case": "1985", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "expired_item_swept_then_approve_fails"}
 	t.Run("expired_item_swept_then_approve_fails", func(t *testing.T) {
 		// Stage an item with expiresAt in the past (already expired).
 		dir := t.TempDir()
@@ -6306,6 +6459,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1986", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "non_expired_survives_sweep_and_approves"}
 	t.Run("non_expired_survives_sweep_and_approves", func(t *testing.T) {
 		// Positive control: item with future TTL must survive Sweep and
 		// remain approvable. Without this, the test passes if Sweep removes everything.
@@ -6348,6 +6502,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		testutil.RequireTrue(t, found, "non-expired approved item must appear in vault")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1987", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "selective_sweep_mixed_expiry"}
 	t.Run("selective_sweep_mixed_expiry", func(t *testing.T) {
 		// Mix of expired and non-expired items: Sweep removes only expired ones.
 		dir := t.TempDir()
@@ -6407,6 +6562,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1988", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "double_sweep_returns_zero"}
 	t.Run("double_sweep_returns_zero", func(t *testing.T) {
 		// After sweeping expired items, a second sweep should return 0.
 		dir := t.TempDir()
@@ -6434,6 +6590,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		testutil.RequireEqual(t, count2, 0)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1989", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "reject_still_works_before_expiry"}
 	t.Run("reject_still_works_before_expiry", func(t *testing.T) {
 		// User can explicitly reject before TTL — rejection is independent of expiry.
 		dir := t.TempDir()
@@ -6469,6 +6626,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1139
+// TRACE: {"suite": "CORE", "case": "1990", "section": "36", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "02", "title": "StagingItemCannotBeExecutedWithoutUserApproval"}
 func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.T) {
 	// Requirement (§36.1):
 	//   "No agent under the Dina Protocol shall ever press Send."
@@ -6483,6 +6641,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 	//   4. Stage multiple → approve only one → verify selective promotion
 	//   5. Approve already-approved → error (single-use gate)
 
+	// TRACE: {"suite": "CORE", "case": "1991", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "unapproved_item_not_in_vault"}
 	t.Run("unapproved_item_not_in_vault", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -6501,6 +6660,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1992", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "approved_item_promoted_to_vault"}
 	t.Run("approved_item_promoted_to_vault", func(t *testing.T) {
 		// Positive control: proves the test above isn't passing trivially.
 		dir := t.TempDir()
@@ -6528,6 +6688,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1993", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "rejected_item_never_reaches_vault"}
 	t.Run("rejected_item_never_reaches_vault", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -6557,6 +6718,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1994", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "selective_approval_only_approved_items_in_vault"}
 	t.Run("selective_approval_only_approved_items_in_vault", func(t *testing.T) {
 		// Stage 3 items, approve only the middle one.
 		dir := t.TempDir()
@@ -6600,6 +6762,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1995", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "double_approval_fails"}
 	t.Run("double_approval_fails", func(t *testing.T) {
 		// Single-use gate: approval consumes the staging entry.
 		dir := t.TempDir()
@@ -6627,6 +6790,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 // --------------------------------------------------------------------------
 
 // TST-CORE-1143
+// TRACE: {"suite": "CORE", "case": "1996", "section": "36", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "06", "title": "CartHandoverNoPaymentCredentialsStored"}
 func TestVault_36_1_6_CartHandoverNoPaymentCredentialsStored(t *testing.T) {
 	// Requirement (§36.1 / Cart Handover principle):
 	//   "Dina advises on purchases but never touches money."
@@ -6655,6 +6819,7 @@ func TestVault_36_1_6_CartHandoverNoPaymentCredentialsStored(t *testing.T) {
 		{"cvv_field", "\"cvv\":"},
 	}
 
+	// TRACE: {"suite": "CORE", "case": "1997", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "cart_handover_items_contain_no_credentials"}
 	t.Run("cart_handover_items_contain_no_credentials", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -6706,6 +6871,7 @@ func TestVault_36_1_6_CartHandoverNoPaymentCredentialsStored(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1998", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "positive_control_credential_detection_works"}
 	t.Run("positive_control_credential_detection_works", func(t *testing.T) {
 		// Prove the detection logic above isn't vacuously true.
 		// Inject known credential patterns into test strings and verify detection.
@@ -6732,6 +6898,7 @@ func TestVault_36_1_6_CartHandoverNoPaymentCredentialsStored(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1999", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "metadata_json_inspected_for_hidden_credentials"}
 	t.Run("metadata_json_inspected_for_hidden_credentials", func(t *testing.T) {
 		// Even if credentials are nested in Metadata JSON, they must be absent.
 		dir := t.TempDir()
@@ -6767,6 +6934,7 @@ func TestVault_36_1_6_CartHandoverNoPaymentCredentialsStored(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2000", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "staged_cart_handover_approved_remains_clean"}
 	t.Run("staged_cart_handover_approved_remains_clean", func(t *testing.T) {
 		// Full staging flow: Stage → Approve → Query → inspect for credentials.
 		dir := t.TempDir()
@@ -6808,6 +6976,7 @@ func TestVault_36_1_6_CartHandoverNoPaymentCredentialsStored(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1119
+// TRACE: {"suite": "CORE", "case": "2001", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "01", "scenario": "01", "title": "DeepLinkPreservedThroughVaultStoreRetrieveCycle"}
 func TestVault_34_1_1_DeepLinkPreservedThroughVaultStoreRetrieveCycle(t *testing.T) {
 	// Requirement (§34.1 / Deep Link Default):
 	//   "Dina credits sources — not just extracts. Creators get traffic, users get truth."
@@ -6822,6 +6991,7 @@ func TestVault_34_1_1_DeepLinkPreservedThroughVaultStoreRetrieveCycle(t *testing
 	//   4. Metadata JSON preserved exactly (no rewriting/reformatting)
 	//   5. Positive control: different items have different deep_links (not all the same)
 
+	// TRACE: {"suite": "CORE", "case": "2002", "section": "34", "sectionName": "Thesis: Loyalty", "title": "deep_link_url_preserved_on_retrieval"}
 	t.Run("deep_link_url_preserved_on_retrieval", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -6860,6 +7030,7 @@ func TestVault_34_1_1_DeepLinkPreservedThroughVaultStoreRetrieveCycle(t *testing
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2003", "section": "34", "sectionName": "Thesis: Loyalty", "title": "provenance_fields_preserved"}
 	t.Run("provenance_fields_preserved", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -6897,6 +7068,7 @@ func TestVault_34_1_1_DeepLinkPreservedThroughVaultStoreRetrieveCycle(t *testing
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2004", "section": "34", "sectionName": "Thesis: Loyalty", "title": "multiple_items_independent_deep_links"}
 	t.Run("multiple_items_independent_deep_links", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -6939,6 +7111,7 @@ func TestVault_34_1_1_DeepLinkPreservedThroughVaultStoreRetrieveCycle(t *testing
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2005", "section": "34", "sectionName": "Thesis: Loyalty", "title": "deep_link_with_special_characters_preserved"}
 	t.Run("deep_link_with_special_characters_preserved", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -6970,6 +7143,7 @@ func TestVault_34_1_1_DeepLinkPreservedThroughVaultStoreRetrieveCycle(t *testing
 // --------------------------------------------------------------------------
 
 // TST-CORE-1120
+// TRACE: {"suite": "CORE", "case": "2006", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "01", "scenario": "02", "title": "VaultItemProvenanceChainImmutableAfterStorage"}
 func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T) {
 	// Requirement (§34.1):
 	//   Once a vault item is stored, its provenance fields (Source, SourceID,
@@ -6984,6 +7158,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 	//   4. StoreBatch preserves each item's independent provenance
 	//   5. Positive control: verify stored data is actually read back (not defaults)
 
+	// TRACE: {"suite": "CORE", "case": "2007", "section": "34", "sectionName": "Thesis: Loyalty", "title": "provenance_immutable_after_store"}
 	t.Run("provenance_immutable_after_store", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7024,6 +7199,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2008", "section": "34", "sectionName": "Thesis: Loyalty", "title": "storing_second_item_does_not_alter_first"}
 	t.Run("storing_second_item_does_not_alter_first", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7064,6 +7240,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2009", "section": "34", "sectionName": "Thesis: Loyalty", "title": "delete_and_restore_creates_new_item"}
 	t.Run("delete_and_restore_creates_new_item", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7115,6 +7292,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2010", "section": "34", "sectionName": "Thesis: Loyalty", "title": "batch_store_preserves_independent_provenance"}
 	t.Run("batch_store_preserves_independent_provenance", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7156,6 +7334,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 // --------------------------------------------------------------------------
 
 // TST-CORE-1142
+// TRACE: {"suite": "CORE", "case": "2011", "section": "36", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "05", "title": "BatchApprovalsRequireIndividualConsent"}
 func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 	// Requirement (§36.1):
 	//   "Each draft gets separate approval token — no bulk approve without review."
@@ -7170,6 +7349,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 	//   4. Positive control: verify approved items ARE in vault (not vacuously passing)
 	//   5. Mixed approve/reject: some approved, some rejected, remainder still staged
 
+	// TRACE: {"suite": "CORE", "case": "2012", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "ten_items_require_individual_approval"}
 	t.Run("ten_items_require_individual_approval", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7220,6 +7400,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2013", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "mixed_approve_reject_independent"}
 	t.Run("mixed_approve_reject_independent", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7269,6 +7450,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2014", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "rejected_items_cannot_be_approved_later"}
 	t.Run("rejected_items_cannot_be_approved_later", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7300,6 +7482,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2015", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "approval_order_independent"}
 	t.Run("approval_order_independent", func(t *testing.T) {
 		// Approving items out of staging order must work.
 		dir := t.TempDir()
@@ -7338,6 +7521,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1117
+// TRACE: {"suite": "CORE", "case": "2016", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "01", "scenario": "03", "title": "BotResponseWithSponsoredContentTagged"}
 func TestVault_34_1_3_BotResponseWithSponsoredContentTagged(t *testing.T) {
 	// Requirement (§34.1 / Dead Internet Filter):
 	//   Bot responses with sponsored content must be transparently tagged.
@@ -7352,6 +7536,7 @@ func TestVault_34_1_3_BotResponseWithSponsoredContentTagged(t *testing.T) {
 	//   4. Multiple sponsored items from different sponsors → each preserved independently
 	//   5. Sponsorship metadata survives staging → approve → vault cycle
 
+	// TRACE: {"suite": "CORE", "case": "2017", "section": "34", "sectionName": "Thesis: Loyalty", "title": "sponsored_metadata_preserved_in_vault"}
 	t.Run("sponsored_metadata_preserved_in_vault", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7386,6 +7571,7 @@ func TestVault_34_1_3_BotResponseWithSponsoredContentTagged(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2018", "section": "34", "sectionName": "Thesis: Loyalty", "title": "unsponsored_explicitly_tagged_false"}
 	t.Run("unsponsored_explicitly_tagged_false", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7410,6 +7596,7 @@ func TestVault_34_1_3_BotResponseWithSponsoredContentTagged(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2019", "section": "34", "sectionName": "Thesis: Loyalty", "title": "positive_control_sponsored_vs_unsponsored_distinguishable"}
 	t.Run("positive_control_sponsored_vs_unsponsored_distinguishable", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7448,6 +7635,7 @@ func TestVault_34_1_3_BotResponseWithSponsoredContentTagged(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2020", "section": "34", "sectionName": "Thesis: Loyalty", "title": "multiple_sponsors_preserved_independently"}
 	t.Run("multiple_sponsors_preserved_independently", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7478,6 +7666,7 @@ func TestVault_34_1_3_BotResponseWithSponsoredContentTagged(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2021", "section": "34", "sectionName": "Thesis: Loyalty", "title": "sponsored_metadata_survives_staging_cycle"}
 	t.Run("sponsored_metadata_survives_staging_cycle", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7524,6 +7713,7 @@ func TestVault_34_1_3_BotResponseWithSponsoredContentTagged(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1138
+// TRACE: {"suite": "CORE", "case": "2022", "section": "36", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "08", "title": "StagingItemsAutoExpireAfterTTL"}
 func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 	// Requirement (§36.1, row 8):
 	//   Store draft in Tier 4 staging with a TTL. After the TTL elapses,
@@ -7542,6 +7732,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 	//   4. Multi-TTL scenario: items expire independently based on their own TTL
 	//   5. Sweep count accuracy across multiple TTL tiers
 
+	// TRACE: {"suite": "CORE", "case": "2023", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "zero_TTL_items_never_expire"}
 	t.Run("zero_TTL_items_never_expire", func(t *testing.T) {
 		// expiresAt=0 means "no expiry" — Sweep() must never remove these.
 		dir := t.TempDir()
@@ -7583,6 +7774,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		testutil.RequireTrue(t, found, "zero-TTL item must survive sweeps and reach vault")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2024", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "expired_items_truly_gone_approve_and_reject_fail"}
 	t.Run("expired_items_truly_gone_approve_and_reject_fail", func(t *testing.T) {
 		// After Sweep removes an expired item, both Approve and Reject must fail.
 		// The item is completely gone — not just "expired but present."
@@ -7630,6 +7822,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2025", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "positive_control_future_TTL_survives_and_operates"}
 	t.Run("positive_control_future_TTL_survives_and_operates", func(t *testing.T) {
 		// Contrast test: without this, the test would pass if Sweep
 		// removes everything regardless of TTL.
@@ -7670,6 +7863,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		testutil.RequireTrue(t, found, "future-TTL item must survive sweep and reach vault")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2026", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "multi_TTL_independent_expiry"}
 	t.Run("multi_TTL_independent_expiry", func(t *testing.T) {
 		// Items with different TTLs expire independently based on their own
 		// expiresAt value. This validates that expiry is per-item, not global.
@@ -7727,6 +7921,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		testutil.RequireNoError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2027", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "sweep_count_accuracy_across_TTL_tiers"}
 	t.Run("sweep_count_accuracy_across_TTL_tiers", func(t *testing.T) {
 		// Verify that Sweep returns the exact count of removed items,
 		// and subsequent sweeps return 0 (no double-counting).
@@ -7771,6 +7966,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1140
+// TRACE: {"suite": "CORE", "case": "2028", "section": "36", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "10", "title": "ApprovalTokenSingleUse"}
 func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 	// Requirement (§36.1, row 10):
 	//   Each staging ID (approval token) is consumed on first use.
@@ -7785,6 +7981,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 	//   4. Reject then Approve fails (cross-operation consumption)
 	//   5. Positive control: fresh staging IDs work independently
 
+	// TRACE: {"suite": "CORE", "case": "2029", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "approve_consumes_token_second_approve_fails"}
 	t.Run("approve_consumes_token_second_approve_fails", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7812,6 +8009,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2030", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "reject_removes_token_approve_after_reject_fails"}
 	t.Run("reject_removes_token_approve_after_reject_fails", func(t *testing.T) {
 		// Reject deletes the staging entry. The critical requirement is that
 		// after rejection, the approval token is gone — no one can Approve
@@ -7851,6 +8049,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2031", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "approve_consumes_token_item_only_promoted_once"}
 	t.Run("approve_consumes_token_item_only_promoted_once", func(t *testing.T) {
 		// After Approve, the staging entry is deleted. The item is promoted
 		// to vault exactly once. A second Approve fails, proving single-use.
@@ -7889,6 +8088,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		testutil.RequireEqual(t, count, 1)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2032", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "reject_then_approve_fails_cross_operation"}
 	t.Run("reject_then_approve_fails_cross_operation", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -7922,6 +8122,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2033", "section": "36", "sectionName": "Thesis: Action Integrity", "title": "positive_control_fresh_IDs_work_independently"}
 	t.Run("positive_control_fresh_IDs_work_independently", func(t *testing.T) {
 		// Consuming one staging ID must not affect other staging IDs.
 		dir := t.TempDir()
@@ -7971,6 +8172,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1144
+// TRACE: {"suite": "CORE", "case": "2034", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "01", "scenario": "07", "title": "SponsorshipHasZeroRankingWeight"}
 func TestVault_34_1_7_SponsorshipHasZeroRankingWeight(t *testing.T) {
 	// Requirement (§34.1, Verified Truth — Law 2):
 	//   "Rank by trust, not by ad spend." Sponsorship metadata must have
@@ -7989,6 +8191,7 @@ func TestVault_34_1_7_SponsorshipHasZeroRankingWeight(t *testing.T) {
 	//   3. FTS5 search: sponsorship metadata has no effect on text search results
 	//   4. Multiple sponsored items don't cluster higher than unsponsored
 
+	// TRACE: {"suite": "CORE", "case": "2035", "section": "34", "sectionName": "Thesis: Loyalty", "title": "identical_embeddings_rank_equally_regardless_of_sponsorship"}
 	t.Run("identical_embeddings_rank_equally_regardless_of_sponsorship", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
@@ -8043,6 +8246,7 @@ func TestVault_34_1_7_SponsorshipHasZeroRankingWeight(t *testing.T) {
 		testutil.RequireTrue(t, foundUnsponsored, "unsponsored item must appear in results")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2036", "section": "34", "sectionName": "Thesis: Loyalty", "title": "positive_control_different_embeddings_rank_differently"}
 	t.Run("positive_control_different_embeddings_rank_differently", func(t *testing.T) {
 		// Without this test, the previous test passes if VectorSearch ignores
 		// all embeddings and returns everything equally. This proves ranking
@@ -8093,6 +8297,7 @@ func TestVault_34_1_7_SponsorshipHasZeroRankingWeight(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2037", "section": "34", "sectionName": "Thesis: Loyalty", "title": "FTS5_search_sponsorship_has_no_effect"}
 	t.Run("FTS5_search_sponsorship_has_no_effect", func(t *testing.T) {
 		// FTS5 text search must rank by text relevance, not sponsorship.
 		dir := t.TempDir()
@@ -8140,6 +8345,7 @@ func TestVault_34_1_7_SponsorshipHasZeroRankingWeight(t *testing.T) {
 		testutil.RequireTrue(t, foundUnsponsored, "unsponsored item must appear in FTS5 results")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "2038", "section": "34", "sectionName": "Thesis: Loyalty", "title": "multiple_sponsored_dont_cluster_above_unsponsored"}
 	t.Run("multiple_sponsored_dont_cluster_above_unsponsored", func(t *testing.T) {
 		// Multiple sponsored items with weaker embeddings must NOT rank
 		// above a single unsponsored item with a stronger embedding.

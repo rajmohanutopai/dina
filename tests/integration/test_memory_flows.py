@@ -31,6 +31,7 @@ class TestPrivateRecall:
     """Dina remembers the user's life — promises, emotions, meaning."""
 
 # TST-INT-281
+    # TRACE: {"suite": "INT", "case": "0281", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "01", "title": "book_promise_recall"}
     def test_book_promise_recall(
         self, mock_dina: MockDinaCore, sample_memory: MockVault
     ):
@@ -47,6 +48,7 @@ class TestPrivateRecall:
         assert entry["to"] == "daughter"
 
 # TST-INT-282
+    # TRACE: {"suite": "INT", "case": "0282", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "02", "title": "emotion_indexed_search"}
     def test_emotion_indexed_search(
         self, mock_dina: MockDinaCore, sample_memory: MockVault
     ):
@@ -60,6 +62,7 @@ class TestPrivateRecall:
         assert "picnic" in entry["content"]
 
 # TST-INT-275
+    # TRACE: {"suite": "INT", "case": "0275", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "03", "title": "memory_survives_sessions"}
     def test_memory_survives_sessions(
         self, mock_identity, mock_vault: MockVault
     ):
@@ -76,6 +79,7 @@ class TestPrivateRecall:
         assert "session_test" in dina_session_2.vault.search_fts("session")
 
 # TST-INT-274
+    # TRACE: {"suite": "INT", "case": "0274", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "04", "title": "encrypted_at_rest"}
     def test_encrypted_at_rest(self, mock_dina: MockDinaCore):
         """Data stored via persona encryption cannot be read as plaintext
         by inspecting the vault directly."""
@@ -90,6 +94,7 @@ class TestPrivateRecall:
         assert decrypted is not None
 
 # TST-INT-280
+    # TRACE: {"suite": "INT", "case": "0280", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "05", "title": "searchable_by_meaning"}
     def test_searchable_by_meaning(
         self, mock_dina: MockDinaCore, sample_memory: MockVault
     ):
@@ -111,6 +116,7 @@ class TestMemoryPrivacy:
     """Raw memory never leaves the user's control."""
 
 # TST-INT-510
+    # TRACE: {"suite": "INT", "case": "0510", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "01", "title": "raw_memory_never_sent_to_bots"}
     def test_raw_memory_never_sent_to_bots(
         self,
         mock_dina: MockDinaCore,
@@ -154,6 +160,7 @@ class TestMemoryPrivacy:
         assert "travel" in sent_query
 
 # TST-INT-511
+    # TRACE: {"suite": "INT", "case": "0511", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "02", "title": "deletion_is_permanent"}
     def test_deletion_is_permanent(self, mock_dina: MockDinaCore):
         """When the user deletes a memory, it is truly gone — not soft-deleted."""
         vault = mock_dina.vault
@@ -177,6 +184,7 @@ class TestMemoryPrivacy:
             assert "delete_me" not in partition
 
 # TST-INT-512
+    # TRACE: {"suite": "INT", "case": "0512", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "03", "title": "not_accessible_by_other_personas"}
     def test_not_accessible_by_other_personas(self, mock_dina: MockDinaCore):
         """Health persona data is invisible to consumer persona queries."""
         vault = mock_dina.vault
@@ -206,6 +214,7 @@ class TestMemoryIngestion:
     """Connectors ingest external data into the vault correctly."""
 
 # TST-INT-513
+    # TRACE: {"suite": "INT", "case": "0513", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "01", "title": "email_read_only"}
     def test_email_read_only(self, mock_gmail_connector: MockGmailConnector):
         """Gmail connector operates in read-only mode — it polls but never
         writes back to the mail server."""
@@ -228,6 +237,7 @@ class TestMemoryIngestion:
         assert len(items_again) == 0
 
 # TST-INT-276
+    # TRACE: {"suite": "INT", "case": "0276", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "02", "title": "calendar_indexed"}
     def test_calendar_indexed(
         self,
         mock_calendar_connector: MockCalendarConnector,
@@ -279,6 +289,7 @@ class TestMemoryIngestion:
         ) is None
 
 # TST-INT-277
+    # TRACE: {"suite": "INT", "case": "0277", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "03", "title": "chat_ingestion"}
     def test_chat_ingestion(
         self,
         mock_telegram_connector: MockTelegramConnector,

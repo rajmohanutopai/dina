@@ -72,6 +72,7 @@ func newTestPool(t *testing.T) *sqlite.Pool {
 
 // TST-CORE-D2D-200
 // GetScenarioTier returns deny_by_default when no policy has been set.
+// TRACE: {"suite": "CORE", "case": "0400", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "01", "title": "ScenarioPolicy_GetTier_DefaultDeny"}
 func TestScenarioPolicy_GetTier_DefaultDeny(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -87,6 +88,7 @@ func TestScenarioPolicy_GetTier_DefaultDeny(t *testing.T) {
 
 // TST-CORE-D2D-201
 // SetScenarioPolicy + GetScenarioTier round-trip.
+// TRACE: {"suite": "CORE", "case": "0401", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "01", "title": "ScenarioPolicy_SetGet_RoundTrip"}
 func TestScenarioPolicy_SetGet_RoundTrip(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -118,6 +120,7 @@ func TestScenarioPolicy_SetGet_RoundTrip(t *testing.T) {
 
 // TST-CORE-D2D-202
 // ListPolicies returns empty map for unknown contact.
+// TRACE: {"suite": "CORE", "case": "0402", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "01", "title": "ScenarioPolicy_ListPolicies_EmptyForUnknown"}
 func TestScenarioPolicy_ListPolicies_EmptyForUnknown(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -133,6 +136,7 @@ func TestScenarioPolicy_ListPolicies_EmptyForUnknown(t *testing.T) {
 
 // TST-CORE-D2D-203
 // ListPolicies returns all policies after SetScenarioPolicy calls.
+// TRACE: {"suite": "CORE", "case": "0403", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "01", "title": "ScenarioPolicy_ListPolicies_AllPolicies"}
 func TestScenarioPolicy_ListPolicies_AllPolicies(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -167,6 +171,7 @@ func TestScenarioPolicy_ListPolicies_AllPolicies(t *testing.T) {
 
 // TST-CORE-D2D-204
 // SetScenarioPolicy is idempotent (INSERT OR REPLACE replaces existing tier).
+// TRACE: {"suite": "CORE", "case": "0404", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "01", "title": "ScenarioPolicy_SetPolicy_Idempotent"}
 func TestScenarioPolicy_SetPolicy_Idempotent(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -195,6 +200,7 @@ func TestScenarioPolicy_SetPolicy_Idempotent(t *testing.T) {
 
 // TST-CORE-D2D-205
 // SetDefaultPolicies inserts 6 defaults for a new contact.
+// TRACE: {"suite": "CORE", "case": "0405", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "06", "scenario": "01", "title": "ScenarioPolicy_SetDefaultPolicies_FiveDefaults"}
 func TestScenarioPolicy_SetDefaultPolicies_FiveDefaults(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -233,6 +239,7 @@ func TestScenarioPolicy_SetDefaultPolicies_FiveDefaults(t *testing.T) {
 
 // TST-CORE-D2D-206
 // SetDefaultPolicies does not overwrite existing policies (INSERT OR IGNORE).
+// TRACE: {"suite": "CORE", "case": "0406", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "01", "title": "ScenarioPolicy_SetDefaultPolicies_NoOverwrite"}
 func TestScenarioPolicy_SetDefaultPolicies_NoOverwrite(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -261,6 +268,7 @@ func TestScenarioPolicy_SetDefaultPolicies_NoOverwrite(t *testing.T) {
 
 // TST-CORE-D2D-207
 // Multiple contacts have isolated policies.
+// TRACE: {"suite": "CORE", "case": "0407", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "08", "scenario": "01", "title": "ScenarioPolicy_MultipleContacts_Isolated"}
 func TestScenarioPolicy_MultipleContacts_Isolated(t *testing.T) {
 	pool := newTestPool(t)
 	mgr := sqlite.NewScenarioPolicyManager(pool)
@@ -296,6 +304,7 @@ func newTestD2DOutbox(t *testing.T) *sqlite.D2DOutboxManager {
 
 // TST-CORE-D2D-210
 // Enqueue returns a non-empty ID.
+// TRACE: {"suite": "CORE", "case": "0408", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "09", "scenario": "01", "title": "D2DOutbox_Enqueue_ReturnsID"}
 func TestD2DOutbox_Enqueue_ReturnsID(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -314,6 +323,7 @@ func TestD2DOutbox_Enqueue_ReturnsID(t *testing.T) {
 
 // TST-CORE-D2D-211
 // Enqueue with the same ID is idempotent (INSERT OR IGNORE).
+// TRACE: {"suite": "CORE", "case": "0409", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "01", "title": "D2DOutbox_Enqueue_Idempotent"}
 func TestD2DOutbox_Enqueue_Idempotent(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -348,6 +358,7 @@ func TestD2DOutbox_Enqueue_Idempotent(t *testing.T) {
 
 // TST-CORE-D2D-212
 // ListPending returns pending messages with next_retry <= now.
+// TRACE: {"suite": "CORE", "case": "0410", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "11", "scenario": "01", "title": "D2DOutbox_ListPending_ReturnsPendingMessages"}
 func TestD2DOutbox_ListPending_ReturnsPendingMessages(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -378,6 +389,7 @@ func TestD2DOutbox_ListPending_ReturnsPendingMessages(t *testing.T) {
 
 // TST-CORE-D2D-213
 // ListPending excludes pending_approval messages.
+// TRACE: {"suite": "CORE", "case": "0411", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "12", "scenario": "01", "title": "D2DOutbox_ListPending_ExcludesPendingApproval"}
 func TestD2DOutbox_ListPending_ExcludesPendingApproval(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -406,6 +418,7 @@ func TestD2DOutbox_ListPending_ExcludesPendingApproval(t *testing.T) {
 
 // TST-CORE-D2D-214
 // ListPending excludes messages with retries >= 5.
+// TRACE: {"suite": "CORE", "case": "0412", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "13", "scenario": "01", "title": "D2DOutbox_ListPending_ExcludesExhaustedRetries"}
 func TestD2DOutbox_ListPending_ExcludesExhaustedRetries(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -441,6 +454,7 @@ func TestD2DOutbox_ListPending_ExcludesExhaustedRetries(t *testing.T) {
 
 // TST-CORE-D2D-215
 // MarkDelivered transitions status to delivered.
+// TRACE: {"suite": "CORE", "case": "0413", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "14", "scenario": "01", "title": "D2DOutbox_MarkDelivered"}
 func TestD2DOutbox_MarkDelivered(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -468,6 +482,7 @@ func TestD2DOutbox_MarkDelivered(t *testing.T) {
 
 // TST-CORE-D2D-216
 // MarkFailed increments retries and sets next_retry with exponential backoff.
+// TRACE: {"suite": "CORE", "case": "0414", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "15", "scenario": "01", "title": "D2DOutbox_MarkFailed_ExponentialBackoff"}
 func TestD2DOutbox_MarkFailed_ExponentialBackoff(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -498,6 +513,7 @@ func TestD2DOutbox_MarkFailed_ExponentialBackoff(t *testing.T) {
 
 // TST-CORE-D2D-217
 // Requeue resets failed message to pending with zero retries.
+// TRACE: {"suite": "CORE", "case": "0415", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "16", "scenario": "01", "title": "D2DOutbox_Requeue_ResetsPendingState"}
 func TestD2DOutbox_Requeue_ResetsPendingState(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -538,6 +554,7 @@ func TestD2DOutbox_Requeue_ResetsPendingState(t *testing.T) {
 
 // TST-CORE-D2D-218
 // Requeue returns error for non-failed messages.
+// TRACE: {"suite": "CORE", "case": "0416", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "17", "scenario": "01", "title": "D2DOutbox_Requeue_ErrorForNonFailed"}
 func TestD2DOutbox_Requeue_ErrorForNonFailed(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -556,6 +573,7 @@ func TestD2DOutbox_Requeue_ErrorForNonFailed(t *testing.T) {
 
 // TST-CORE-D2D-219
 // PendingCount counts only pending (not failed/delivered/pending_approval).
+// TRACE: {"suite": "CORE", "case": "0417", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "18", "scenario": "01", "title": "D2DOutbox_PendingCount"}
 func TestD2DOutbox_PendingCount(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -588,6 +606,7 @@ func TestD2DOutbox_PendingCount(t *testing.T) {
 
 // TST-CORE-D2D-220
 // DeleteExpired removes delivered/failed messages older than TTL.
+// TRACE: {"suite": "CORE", "case": "0418", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "19", "scenario": "01", "title": "D2DOutbox_DeleteExpired_RemovesOldTerminalMessages"}
 func TestD2DOutbox_DeleteExpired_RemovesOldTerminalMessages(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -641,6 +660,7 @@ func TestD2DOutbox_DeleteExpired_RemovesOldTerminalMessages(t *testing.T) {
 
 // TST-CORE-D2D-221
 // DeleteExpired does NOT remove pending messages.
+// TRACE: {"suite": "CORE", "case": "0419", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "20", "scenario": "01", "title": "D2DOutbox_DeleteExpired_PreservesPendingMessages"}
 func TestD2DOutbox_DeleteExpired_PreservesPendingMessages(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -683,6 +703,7 @@ func TestD2DOutbox_DeleteExpired_PreservesPendingMessages(t *testing.T) {
 
 // TST-CORE-D2D-222
 // ResumeAfterApproval transitions pending_approval → pending.
+// TRACE: {"suite": "CORE", "case": "0420", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "21", "scenario": "01", "title": "D2DOutbox_ResumeAfterApproval"}
 func TestD2DOutbox_ResumeAfterApproval(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()
@@ -735,6 +756,7 @@ func TestD2DOutbox_ResumeAfterApproval(t *testing.T) {
 
 // TST-CORE-D2D-223
 // ResumeAfterApproval returns error for non-pending_approval messages.
+// TRACE: {"suite": "CORE", "case": "0421", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "22", "scenario": "01", "title": "D2DOutbox_ResumeAfterApproval_ErrorForWrongStatus"}
 func TestD2DOutbox_ResumeAfterApproval_ErrorForWrongStatus(t *testing.T) {
 	outbox := newTestD2DOutbox(t)
 	ctx := context.Background()

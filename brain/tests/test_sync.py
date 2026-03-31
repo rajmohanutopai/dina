@@ -49,6 +49,7 @@ def sync_engine():
 
 # TST-BRAIN-140
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0140", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "01", "title": "schedule_connector"}
 async def test_sync_5_1_1_schedule_connector(sync_engine) -> None:
     """SS5.1.1: Schedule Gmail connector at interval=15m -- runs every 15 minutes."""
     engine, core, mcp = sync_engine
@@ -62,6 +63,7 @@ async def test_sync_5_1_1_schedule_connector(sync_engine) -> None:
 
 # TST-BRAIN-141
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0141", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "02", "title": "multiple_connectors_independent"}
 async def test_sync_5_1_2_multiple_connectors_independent(sync_engine) -> None:
     """SS5.1.2: Gmail + Calendar + RSS each run on independent schedule."""
     engine, core, mcp = sync_engine
@@ -89,6 +91,7 @@ async def test_sync_5_1_2_multiple_connectors_independent(sync_engine) -> None:
 
 # TST-BRAIN-142
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0142", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "03", "title": "connector_failure_backoff"}
 async def test_sync_5_1_3_connector_failure_backoff(sync_engine) -> None:
     """SS5.1.3: Connector failure (e.g. Gmail auth expired) -- error logged, retried with backoff."""
     engine, core, mcp = sync_engine
@@ -99,6 +102,7 @@ async def test_sync_5_1_3_connector_failure_backoff(sync_engine) -> None:
 
 # TST-BRAIN-143
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0143", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "04", "title": "manual_trigger"}
 async def test_sync_5_1_4_manual_trigger(sync_engine) -> None:
     """SS5.1.4: Admin triggers sync now -- immediate run regardless of schedule."""
     engine, core, mcp = sync_engine
@@ -111,6 +115,7 @@ async def test_sync_5_1_4_manual_trigger(sync_engine) -> None:
 
 # TST-BRAIN-144
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0144", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "05", "title": "overlapping_runs_skipped"}
 async def test_sync_5_1_5_overlapping_runs_skipped(sync_engine) -> None:
     """SS5.1.5: Sequential runs on same source are independent and idempotent."""
     engine, core, mcp = sync_engine
@@ -130,6 +135,7 @@ async def test_sync_5_1_5_overlapping_runs_skipped(sync_engine) -> None:
 
 # TST-BRAIN-145
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0145", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "06", "title": "morning_routine"}
 async def test_sync_5_1_6_morning_routine(sync_engine) -> None:
     """SS5.1.6: Morning routine -- full Gmail + Calendar + briefing."""
     engine, core, mcp = sync_engine
@@ -147,6 +153,7 @@ async def test_sync_5_1_6_morning_routine(sync_engine) -> None:
 
 # TST-BRAIN-146
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0146", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "07", "title": "hourly_check"}
 async def test_sync_5_1_7_hourly_check(sync_engine) -> None:
     """SS5.1.7: Hourly check -- Brain->MCP->OpenClaw 'any new emails since gmail_cursor?'."""
     engine, core, mcp = sync_engine
@@ -164,6 +171,7 @@ async def test_sync_5_1_7_hourly_check(sync_engine) -> None:
 
 # TST-BRAIN-147
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0147", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "08", "title": "on_demand_sync"}
 async def test_sync_5_1_8_on_demand_sync(sync_engine) -> None:
     """SS5.1.8: On-demand sync -- user says 'Check my email', immediate sync cycle."""
     engine, core, mcp = sync_engine
@@ -186,6 +194,7 @@ async def test_sync_5_1_8_on_demand_sync(sync_engine) -> None:
 
 # TST-BRAIN-148
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0148", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "09", "title": "cursor_preserved_across_restarts"}
 async def test_sync_5_1_9_cursor_preserved_across_restarts(sync_engine) -> None:
     """SS5.1.9: Cursor preserved across restarts -- reads gmail_cursor from core KV."""
     engine, core, mcp = sync_engine
@@ -199,6 +208,7 @@ async def test_sync_5_1_9_cursor_preserved_across_restarts(sync_engine) -> None:
 
 # TST-BRAIN-149
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0149", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "10", "title": "cursor_update_after_sync"}
 async def test_sync_5_1_10_cursor_update_after_sync(sync_engine) -> None:
     """SS5.1.10: Cursor update after sync -- PUT core/v1/vault/kv/gmail_cursor."""
     engine, core, mcp = sync_engine
@@ -214,6 +224,7 @@ async def test_sync_5_1_10_cursor_update_after_sync(sync_engine) -> None:
 
 # TST-BRAIN-150
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0150", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "11", "title": "calendar_sync_frequency"}
 async def test_sync_5_1_11_calendar_sync_frequency(sync_engine) -> None:
     """SS5.1.11: Calendar sync every 30 minutes + morning routine."""
     engine, core, mcp = sync_engine
@@ -226,6 +237,7 @@ async def test_sync_5_1_11_calendar_sync_frequency(sync_engine) -> None:
 
 # TST-BRAIN-151
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0151", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "12", "title": "contacts_sync_daily"}
 async def test_sync_5_1_12_contacts_sync_daily(sync_engine) -> None:
     """SS5.1.12: Contacts sync daily -- contacts change infrequently."""
     engine, core, mcp = sync_engine
@@ -242,6 +254,7 @@ async def test_sync_5_1_12_contacts_sync_daily(sync_engine) -> None:
 
 # TST-BRAIN-152
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0152", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "13", "title": "calendar_cursor_separate_key"}
 async def test_sync_5_1_13_calendar_cursor_separate_key(sync_engine) -> None:
     """SS5.1.13: calendar_cursor is a separate KV key from gmail_cursor."""
     engine, core, mcp = sync_engine
@@ -256,6 +269,7 @@ async def test_sync_5_1_13_calendar_cursor_separate_key(sync_engine) -> None:
 
 # TST-BRAIN-153
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0153", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "14", "title": "morning_routine_full_sequence"}
 async def test_sync_5_1_14_morning_routine_full_sequence(sync_engine) -> None:
     """SS5.1.14: Morning routine full sequence -- fetch emails, triage, calendar, cursors, briefing."""
     engine, core, mcp = sync_engine
@@ -280,6 +294,7 @@ async def test_sync_5_1_14_morning_routine_full_sequence(sync_engine) -> None:
 
 # TST-BRAIN-154
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0154", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "15", "title": "calendar_rolling_window"}
 async def test_sync_5_1_15_calendar_rolling_window(sync_engine) -> None:
     """SS5.1.15: Calendar rolling window: -1 month / +1 year."""
     engine, core, mcp = sync_engine
@@ -295,6 +310,7 @@ async def test_sync_5_1_15_calendar_rolling_window(sync_engine) -> None:
 
 # TST-BRAIN-155
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0155", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "16", "title": "calendar_read_write_split"}
 async def test_sync_5_1_16_calendar_read_write_split(sync_engine) -> None:
     """SS5.1.16: Calendar read/write split -- read from local vault, write via MCP."""
     engine, core, mcp = sync_engine
@@ -322,6 +338,7 @@ async def test_sync_5_1_16_calendar_read_write_split(sync_engine) -> None:
 
 # TST-BRAIN-156
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0156", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "01", "title": "pass1_metadata_fetch"}
 async def test_sync_5_2_1_pass1_metadata_fetch(sync_engine) -> None:
     """SS5.2.1: Pass 1 metadata fetch -- messages.get(format=metadata), headers only."""
     engine, core, mcp = sync_engine
@@ -333,6 +350,7 @@ async def test_sync_5_2_1_pass1_metadata_fetch(sync_engine) -> None:
 
 # TST-BRAIN-157
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0157", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "02", "title": "pass1_gmail_category_filter"}
 async def test_sync_5_2_2_pass1_gmail_category_filter(sync_engine) -> None:
     """SS5.2.2: Pass 1 Gmail category filter -- Promotions/Social/Updates/Forums bulk-filtered."""
     engine, core, mcp = sync_engine
@@ -350,6 +368,7 @@ async def test_sync_5_2_2_pass1_gmail_category_filter(sync_engine) -> None:
 
 # TST-BRAIN-158
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0158", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "03", "title": "pass1_primary_proceeds"}
 async def test_sync_5_2_3_pass1_primary_proceeds(sync_engine) -> None:
     """SS5.2.3: Pass 1 PRIMARY emails proceed to Pass 2."""
     engine, core, mcp = sync_engine
@@ -360,6 +379,7 @@ async def test_sync_5_2_3_pass1_primary_proceeds(sync_engine) -> None:
 
 # TST-BRAIN-159
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0159", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "04", "title": "pass2a_regex_sender_filter"}
 async def test_sync_5_2_4_pass2a_regex_sender_filter(sync_engine) -> None:
     """SS5.2.4: Pass 2a regex pre-filter (sender) -- noreply@, no-reply@, etc. -> SKIP."""
     engine, core, mcp = sync_engine
@@ -379,6 +399,7 @@ async def test_sync_5_2_4_pass2a_regex_sender_filter(sync_engine) -> None:
 
 # TST-BRAIN-160
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0160", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "05", "title": "pass2a_subject_regex_filter"}
 async def test_sync_5_2_5_pass2a_subject_regex_filter(sync_engine) -> None:
     """SS5.2.5: Pass 2a subject regex filter -- 'Weekly digest', 'OTP', 'verification code' -> SKIP."""
     engine, core, mcp = sync_engine
@@ -395,6 +416,7 @@ async def test_sync_5_2_5_pass2a_subject_regex_filter(sync_engine) -> None:
 
 # TST-BRAIN-161
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0161", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "06", "title": "pass2b_llm_batch_classification"}
 async def test_sync_5_2_6_pass2b_llm_batch_classification(sync_engine) -> None:
     """SS5.2.6: Pass 2b — 50 PRIMARY emails survive triage and reach storage.
 
@@ -431,6 +453,7 @@ async def test_sync_5_2_6_pass2b_llm_batch_classification(sync_engine) -> None:
 
 # TST-BRAIN-162
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0162", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "07", "title": "pass2b_ingest_classification"}
 async def test_sync_5_2_7_pass2b_ingest_classification(sync_engine) -> None:
     """SS5.2.7: Pass 2b INGEST classification -- financial document -> PRIMARY."""
     engine, core, mcp = sync_engine
@@ -444,6 +467,7 @@ async def test_sync_5_2_7_pass2b_ingest_classification(sync_engine) -> None:
 
 # TST-BRAIN-163
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0163", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "08", "title": "pass2b_skip_classification"}
 async def test_sync_5_2_8_pass2b_skip_classification(sync_engine) -> None:
     """SS5.2.8: Pass 2b SKIP classification -- newsletter -> LLM triage needed."""
     engine, core, mcp = sync_engine
@@ -461,6 +485,7 @@ async def test_sync_5_2_8_pass2b_skip_classification(sync_engine) -> None:
 
 # TST-BRAIN-164
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0164", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "09", "title": "full_download_ingest_only"}
 async def test_sync_5_2_9_full_download_ingest_only(sync_engine) -> None:
     """SS5.2.9: Full download for INGEST only -- only PRIMARY items get stored."""
     engine, core, mcp = sync_engine
@@ -478,6 +503,7 @@ async def test_sync_5_2_9_full_download_ingest_only(sync_engine) -> None:
 
 # TST-BRAIN-165
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0165", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "10", "title": "thin_records_for_all_skipped"}
 async def test_sync_5_2_10_thin_records_for_all_skipped(sync_engine) -> None:
     """SS5.2.10: Thin records for ALL skipped emails."""
     engine, core, mcp = sync_engine
@@ -494,6 +520,7 @@ async def test_sync_5_2_10_thin_records_for_all_skipped(sync_engine) -> None:
 
 # TST-BRAIN-166
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0166", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "11", "title": "thin_records_not_embedded"}
 async def test_sync_5_2_11_thin_records_not_embedded(sync_engine) -> None:
     """SS5.2.11: Thin records not embedded -- no embedding vector generated."""
     engine, core, mcp = sync_engine
@@ -508,6 +535,7 @@ async def test_sync_5_2_11_thin_records_not_embedded(sync_engine) -> None:
 
 # TST-BRAIN-167
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0167", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "12", "title": "on_demand_fetch_skipped"}
 async def test_sync_5_2_12_on_demand_fetch_skipped(sync_engine) -> None:
     """SS5.2.12: On-demand fetch of skipped email -- pass-through retrieval.
 
@@ -540,6 +568,7 @@ async def test_sync_5_2_12_on_demand_fetch_skipped(sync_engine) -> None:
 
 # TST-BRAIN-168
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0168", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "13", "title": "pii_scrub_before_cloud_llm"}
 async def test_sync_5_2_13_pii_scrub_before_cloud_llm(sync_engine) -> None:
     """SS5.2.13: PII scrub before cloud LLM -- vault retains PII, scrubbing is at LLM time.
 
@@ -571,6 +600,7 @@ async def test_sync_5_2_13_pii_scrub_before_cloud_llm(sync_engine) -> None:
 
 # TST-BRAIN-169
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0169", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "14", "title": "end_to_end_5000_emails"}
 async def test_sync_5_2_14_end_to_end_5000_emails(sync_engine) -> None:
     """SS5.2.14: End-to-end 5000 emails -- triage filters majority."""
     engine, core, mcp = sync_engine
@@ -599,6 +629,7 @@ async def test_sync_5_2_14_end_to_end_5000_emails(sync_engine) -> None:
 
 # TST-BRAIN-170
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0170", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "15", "title": "fiduciary_override_security_alert"}
 async def test_sync_5_2_15_fiduciary_override_security_alert(sync_engine) -> None:
     """SS5.2.15: Fiduciary override: security alert always INGEST regardless."""
     engine, core, mcp = sync_engine
@@ -613,6 +644,7 @@ async def test_sync_5_2_15_fiduciary_override_security_alert(sync_engine) -> Non
 
 # TST-BRAIN-171
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0171", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "16", "title": "fiduciary_override_financial"}
 async def test_sync_5_2_16_fiduciary_override_financial(sync_engine) -> None:
     """SS5.2.16: Fiduciary override: financial document -- 'domains cancel in 5 days'."""
     engine, core, mcp = sync_engine
@@ -627,6 +659,7 @@ async def test_sync_5_2_16_fiduciary_override_financial(sync_engine) -> None:
 
 # TST-BRAIN-172
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0172", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "17", "title": "always_ingest_sender_exception"}
 async def test_sync_5_2_17_always_ingest_sender_exception(sync_engine) -> None:
     """SS5.2.17: always_ingest sender exception -- config overrides normal triage."""
     engine, core, mcp = sync_engine
@@ -642,6 +675,7 @@ async def test_sync_5_2_17_always_ingest_sender_exception(sync_engine) -> None:
 
 # TST-BRAIN-173
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0173", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "18", "title": "dina_triage_off"}
 async def test_sync_5_2_18_dina_triage_off(sync_engine) -> None:
     """SS5.2.18: DINA_TRIAGE=off -- all filtering disabled, every email ingested.
 
@@ -676,6 +710,7 @@ async def test_sync_5_2_18_dina_triage_off(sync_engine) -> None:
 
 # TST-BRAIN-174
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0174", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "19", "title": "llm_triage_cost_tracking"}
 async def test_sync_5_2_19_llm_triage_cost_tracking(sync_engine) -> None:
     """SS5.2.19: LLM triage cost tracking -- cloud LLM cost logging."""
     engine, core, mcp = sync_engine
@@ -690,6 +725,7 @@ async def test_sync_5_2_19_llm_triage_cost_tracking(sync_engine) -> None:
 
 # TST-BRAIN-175
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0175", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "20", "title": "llm_triage_sees_only_subject_sender"}
 async def test_sync_5_2_20_llm_triage_sees_only_subject_sender(sync_engine) -> None:
     """SS5.2.20: LLM triage sees ONLY subject+sender, NEVER body."""
     engine, core, mcp = sync_engine
@@ -708,6 +744,7 @@ async def test_sync_5_2_20_llm_triage_sees_only_subject_sender(sync_engine) -> N
 
 # TST-BRAIN-176
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0176", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "21", "title": "llm_triage_prompt_audit"}
 async def test_sync_5_2_21_llm_triage_prompt_audit(sync_engine) -> None:
     """SS5.2.21: LLM triage prompt audit -- no body text leaks into triage."""
     engine, core, mcp = sync_engine
@@ -723,6 +760,7 @@ async def test_sync_5_2_21_llm_triage_prompt_audit(sync_engine) -> None:
 
 # TST-BRAIN-177
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0177", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "22", "title": "thin_record_skip_reason_differentiates"}
 async def test_sync_5_2_22_thin_record_skip_reason_differentiates(sync_engine) -> None:
     """SS5.2.22: Thin record skip_reason differentiates filter stage."""
     engine, core, mcp = sync_engine
@@ -741,6 +779,7 @@ async def test_sync_5_2_22_thin_record_skip_reason_differentiates(sync_engine) -
 
 # TST-BRAIN-178
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0178", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "23", "title": "fiduciary_override_account_expiration"}
 async def test_sync_5_2_23_fiduciary_override_account_expiration(sync_engine) -> None:
     """SS5.2.23: Fiduciary override: account/domain expiration -- always INGEST."""
     engine, core, mcp = sync_engine
@@ -755,6 +794,7 @@ async def test_sync_5_2_23_fiduciary_override_account_expiration(sync_engine) ->
 
 # TST-BRAIN-179
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0179", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "24", "title": "llm_triage_batch_size_max_50"}
 async def test_sync_5_2_24_llm_triage_batch_size_max_50(sync_engine) -> None:
     """SS5.2.24: LLM triage batch size max 50 subjects per call."""
     engine, core, mcp = sync_engine
@@ -764,6 +804,7 @@ async def test_sync_5_2_24_llm_triage_batch_size_max_50(sync_engine) -> None:
 
 # TST-BRAIN-180
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0180", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "25", "title": "normalizer_standard_schema"}
 async def test_sync_5_2_25_normalizer_standard_schema(sync_engine) -> None:
     """SS5.2.25: Normalizer: all connectors produce standard schema."""
     engine, core, mcp = sync_engine
@@ -778,6 +819,7 @@ async def test_sync_5_2_25_normalizer_standard_schema(sync_engine) -> None:
 
 # TST-BRAIN-181
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0181", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "26", "title": "persona_routing_configurable"}
 async def test_sync_5_2_26_persona_routing_configurable(sync_engine) -> None:
     """SS5.2.26: Persona routing: configurable per-connector rules."""
     engine, core, mcp = sync_engine
@@ -796,6 +838,7 @@ async def test_sync_5_2_26_persona_routing_configurable(sync_engine) -> None:
 
 # TST-BRAIN-182
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0182", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "03", "scenario": "01", "title": "exact_duplicate_gmail_id_upsert"}
 async def test_sync_5_3_1_exact_duplicate_gmail_id_upsert(sync_engine) -> None:
     """SS5.3.1: Exact duplicate (Gmail message ID upsert) -- second copy rejected."""
     engine, core, mcp = sync_engine
@@ -816,6 +859,7 @@ async def test_sync_5_3_1_exact_duplicate_gmail_id_upsert(sync_engine) -> None:
 
 # TST-BRAIN-183
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0183", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "03", "scenario": "02", "title": "near_duplicate_normalized_hash"}
 async def test_sync_5_3_2_near_duplicate_normalized_hash(sync_engine) -> None:
     """SS5.3.2: Near-duplicate -- same content, different formatting -- detected by normalized hash."""
     engine, core, mcp = sync_engine
@@ -829,6 +873,7 @@ async def test_sync_5_3_2_near_duplicate_normalized_hash(sync_engine) -> None:
 
 # TST-BRAIN-184
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0184", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "03", "scenario": "03", "title": "legitimate_repeat_stored"}
 async def test_sync_5_3_3_legitimate_repeat_stored(sync_engine) -> None:
     """SS5.3.3: Legitimate repeat -- monthly statement with different content."""
     engine, core, mcp = sync_engine
@@ -846,6 +891,7 @@ async def test_sync_5_3_3_legitimate_repeat_stored(sync_engine) -> None:
 
 # TST-BRAIN-185
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0185", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "03", "scenario": "04", "title": "cross_source_duplicate_merged"}
 async def test_sync_5_3_4_cross_source_duplicate_merged(sync_engine) -> None:
     """SS5.3.4: Cross-source duplicate -- same event from Gmail and Calendar."""
     engine, core, mcp = sync_engine
@@ -869,6 +915,7 @@ async def test_sync_5_3_4_cross_source_duplicate_merged(sync_engine) -> None:
 
 # TST-BRAIN-186
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0186", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "04", "scenario": "01", "title": "batch_request_100_items"}
 async def test_sync_5_4_1_batch_request_100_items(sync_engine) -> None:
     """SS5.4.1: Batch request: 100 items -- single POST core/v1/vault/store/batch."""
     engine, core, mcp = sync_engine
@@ -890,6 +937,7 @@ async def test_sync_5_4_1_batch_request_100_items(sync_engine) -> None:
 
 # TST-BRAIN-187
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0187", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "04", "scenario": "02", "title": "batch_size_cap_100"}
 async def test_sync_5_4_2_batch_size_cap_100(sync_engine) -> None:
     """SS5.4.2: Batch size cap 100 -- 250 items ingested individually via staging."""
     engine, core, mcp = sync_engine
@@ -906,6 +954,7 @@ async def test_sync_5_4_2_batch_size_cap_100(sync_engine) -> None:
 
 # TST-BRAIN-188
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0188", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "04", "scenario": "03", "title": "batch_mixed_types"}
 async def test_sync_5_4_3_batch_mixed_types(sync_engine) -> None:
     """SS5.4.3: Batch with mixed types -- emails + calendar events in single batch."""
     engine, core, mcp = sync_engine
@@ -921,6 +970,7 @@ async def test_sync_5_4_3_batch_mixed_types(sync_engine) -> None:
 
 # TST-BRAIN-189
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0189", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "04", "scenario": "04", "title": "batch_failure_retry"}
 async def test_sync_5_4_4_batch_failure_retry(sync_engine) -> None:
     """SS5.4.4: Per-item staging failure -- individual failures don't crash the batch.
 
@@ -946,6 +996,7 @@ async def test_sync_5_4_4_batch_failure_retry(sync_engine) -> None:
 
 # TST-BRAIN-190
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0190", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "04", "scenario": "05", "title": "batch_partial_retry_not_needed"}
 async def test_sync_5_4_5_batch_partial_retry_not_needed(sync_engine) -> None:
     """SS5.4.5: Per-item staging -- all items ingested individually."""
     engine, core, mcp = sync_engine
@@ -968,6 +1019,7 @@ async def test_sync_5_4_5_batch_partial_retry_not_needed(sync_engine) -> None:
 
 # TST-BRAIN-191
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0191", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "04", "scenario": "06", "title": "background_embedding_after_batch"}
 async def test_sync_5_4_6_background_embedding_after_batch(sync_engine) -> None:
     """SS5.4.6: Background embedding after batch -- embedding doesn't block batch storage."""
     engine, core, mcp = sync_engine
@@ -980,6 +1032,7 @@ async def test_sync_5_4_6_background_embedding_after_batch(sync_engine) -> None:
 
 # TST-BRAIN-192
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0192", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "04", "scenario": "07", "title": "batch_progress_tracking"}
 async def test_sync_5_4_7_batch_progress_tracking(sync_engine) -> None:
     """SS5.4.7: Batch ingestion progress tracking."""
     engine, core, mcp = sync_engine
@@ -1002,6 +1055,7 @@ async def test_sync_5_4_7_batch_progress_tracking(sync_engine) -> None:
 
 # TST-BRAIN-193
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0193", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "01", "title": "healthy_normal_sync"}
 async def test_sync_5_5_1_healthy_normal_sync(sync_engine) -> None:
     """SS5.5.1: HEALTHY: normal sync -- MCP call succeeds."""
     engine, core, mcp = sync_engine
@@ -1013,6 +1067,7 @@ async def test_sync_5_5_1_healthy_normal_sync(sync_engine) -> None:
 
 # TST-BRAIN-194
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0194", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "02", "title": "healthy_to_degraded"}
 async def test_sync_5_5_2_healthy_to_degraded(sync_engine) -> None:
     """SS5.5.2: HEALTHY -> DEGRADED -- single MCP call fails."""
     engine, core, mcp = sync_engine
@@ -1023,6 +1078,7 @@ async def test_sync_5_5_2_healthy_to_degraded(sync_engine) -> None:
 
 # TST-BRAIN-195
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0195", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "03", "title": "degraded_to_offline"}
 async def test_sync_5_5_3_degraded_to_offline(sync_engine) -> None:
     """SS5.5.3: DEGRADED -> OFFLINE -- 3 consecutive MCP failures."""
     engine, core, mcp = sync_engine
@@ -1046,6 +1102,7 @@ async def test_sync_5_5_3_degraded_to_offline(sync_engine) -> None:
 
 # TST-BRAIN-196
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0196", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "04", "title": "offline_to_healthy"}
 async def test_sync_5_5_4_offline_to_healthy(sync_engine) -> None:
     """SS5.5.4: OFFLINE -> HEALTHY -- MCP call succeeds after being OFFLINE."""
     engine, core, mcp = sync_engine
@@ -1063,6 +1120,7 @@ async def test_sync_5_5_4_offline_to_healthy(sync_engine) -> None:
 
 # TST-BRAIN-197
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0197", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "05", "title": "cursors_preserved_during_outage"}
 async def test_sync_5_5_5_cursors_preserved_during_outage(sync_engine) -> None:
     """SS5.5.5: Cursors preserved during outage.
 
@@ -1088,6 +1146,7 @@ async def test_sync_5_5_5_cursors_preserved_during_outage(sync_engine) -> None:
 
 # TST-BRAIN-198
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0198", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "06", "title": "degradation_is_tier2"}
 async def test_sync_5_5_6_degradation_is_tier2(sync_engine) -> None:
     """SS5.5.6: Degradation is Tier 2 (solicited, not fiduciary)."""
     engine, core, mcp = sync_engine
@@ -1101,6 +1160,7 @@ async def test_sync_5_5_6_degradation_is_tier2(sync_engine) -> None:
 
 # TST-BRAIN-199
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0199", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "07", "title": "sync_status_in_admin_ui"}
 async def test_sync_5_5_7_sync_status_in_admin_ui(sync_engine) -> None:
     """SS5.5.7: Sync status in admin UI -- run_sync_cycle returns stats."""
     engine, core, mcp = sync_engine
@@ -1115,6 +1175,7 @@ async def test_sync_5_5_7_sync_status_in_admin_ui(sync_engine) -> None:
 
 # TST-BRAIN-200
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0200", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "08", "title": "degraded_to_healthy_direct"}
 async def test_sync_5_5_8_degraded_to_healthy_direct(sync_engine) -> None:
     """SS5.5.8: DEGRADED -> HEALTHY (direct recovery).
 
@@ -1141,6 +1202,7 @@ async def test_sync_5_5_8_degraded_to_healthy_direct(sync_engine) -> None:
 
 # TST-BRAIN-201
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0201", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "05", "scenario": "09", "title": "consecutive_failure_counter_resets"}
 async def test_sync_5_5_9_consecutive_failure_counter_resets(sync_engine) -> None:
     """SS5.5.9: Consecutive failure counter resets on success."""
     engine, core, mcp = sync_engine
@@ -1170,6 +1232,7 @@ async def test_sync_5_5_9_consecutive_failure_counter_resets(sync_engine) -> Non
 
 # TST-BRAIN-202
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0202", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "01", "title": "attachment_metadata_only"}
 async def test_sync_5_6_1_attachment_metadata_only(sync_engine) -> None:
     """SS5.6.1: Email attachment: metadata only -- store summary, NOT bytes."""
     engine, core, mcp = sync_engine
@@ -1193,6 +1256,7 @@ async def test_sync_5_6_1_attachment_metadata_only(sync_engine) -> None:
 
 # TST-BRAIN-203
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0203", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "02", "title": "attachment_summary"}
 async def test_sync_5_6_2_attachment_summary(sync_engine) -> None:
     """SS5.6.2: Attachment summary -- email with attachment metadata stored via sync."""
     engine, core, mcp = sync_engine
@@ -1217,6 +1281,7 @@ async def test_sync_5_6_2_attachment_summary(sync_engine) -> None:
 
 # TST-BRAIN-204
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0204", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "03", "title": "deep_link_to_source"}
 async def test_sync_5_6_3_deep_link_to_source(sync_engine) -> None:
     """SS5.6.3: Deep link to source -- user gets link to original email.
 
@@ -1240,6 +1305,7 @@ async def test_sync_5_6_3_deep_link_to_source(sync_engine) -> None:
 
 # TST-BRAIN-205
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0205", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "04", "title": "dead_reference_accepted"}
 async def test_sync_5_6_4_dead_reference_accepted(sync_engine) -> None:
     """SS5.6.4: Dead reference accepted -- summary survives in vault."""
     engine, core, mcp = sync_engine
@@ -1257,6 +1323,7 @@ async def test_sync_5_6_4_dead_reference_accepted(sync_engine) -> None:
 
 # TST-BRAIN-206
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0206", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "05", "title": "voice_memo_exception"}
 async def test_sync_5_6_5_voice_memo_exception(sync_engine) -> None:
     """SS5.6.5: Voice memo exception -- transcript stored via staging pipeline."""
     engine, core, mcp = sync_engine
@@ -1280,6 +1347,7 @@ async def test_sync_5_6_5_voice_memo_exception(sync_engine) -> None:
 
 # TST-BRAIN-207
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0207", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "06", "title": "media_directory_on_disk"}
 async def test_sync_5_6_6_media_directory_on_disk(sync_engine) -> None:
     """SS5.6.6: Media directory on disk -- voice note audio at media/ alongside vault.
 
@@ -1307,6 +1375,7 @@ async def test_sync_5_6_6_media_directory_on_disk(sync_engine) -> None:
 
 # TST-BRAIN-208
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0208", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "07", "title": "vault_size_stays_portable"}
 async def test_sync_5_6_7_vault_size_stays_portable(sync_engine) -> None:
     """SS5.6.7: Vault size stays portable -- text + metadata only.
 
@@ -1336,6 +1405,7 @@ async def test_sync_5_6_7_vault_size_stays_portable(sync_engine) -> None:
 
 # TST-BRAIN-209
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0209", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "08", "title": "media_directory_encrypted_at_rest"}
 async def test_sync_5_6_8_media_directory_encrypted_at_rest(sync_engine) -> None:
     """SS5.6.8: media/ directory encrypted at rest.
 
@@ -1363,6 +1433,7 @@ async def test_sync_5_6_8_media_directory_encrypted_at_rest(sync_engine) -> None
 
 # TST-BRAIN-210
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0210", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "09", "title": "attachment_reference_uri_format"}
 async def test_sync_5_6_9_attachment_reference_uri_format(sync_engine) -> None:
     """SS5.6.9: Attachment reference URI format -- gmail://msg/<id>/attachment/<id>.
 
@@ -1390,6 +1461,7 @@ async def test_sync_5_6_9_attachment_reference_uri_format(sync_engine) -> None:
 
 # TST-BRAIN-211
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0211", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "06", "scenario": "10", "title": "dead_reference_graceful_handling"}
 async def test_sync_5_6_10_dead_reference_graceful_handling(sync_engine) -> None:
     """SS5.6.10: Dead reference graceful handling."""
     engine, core, mcp = sync_engine
@@ -1412,6 +1484,7 @@ async def test_sync_5_6_10_dead_reference_graceful_handling(sync_engine) -> None
 
 # TST-BRAIN-212
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0212", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "01", "title": "default_history_horizon"}
 async def test_sync_5_7_1_default_history_horizon(sync_engine) -> None:
     """SS5.7.1: Default history horizon -- first sync with no cursor fetches all.
 
@@ -1437,6 +1510,7 @@ async def test_sync_5_7_1_default_history_horizon(sync_engine) -> None:
 
 # TST-BRAIN-213
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0213", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "02", "title": "custom_history_horizon"}
 async def test_sync_5_7_2_custom_history_horizon(sync_engine) -> None:
     """SS5.7.2: Custom history horizon -- DINA_HISTORY_DAYS=90."""
     custom_horizon = 90
@@ -1445,6 +1519,7 @@ async def test_sync_5_7_2_custom_history_horizon(sync_engine) -> None:
 
 # TST-BRAIN-214
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0214", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "03", "title": "extended_history_horizon"}
 async def test_sync_5_7_3_extended_history_horizon(sync_engine) -> None:
     """SS5.7.3: Extended history horizon -- DINA_HISTORY_DAYS=730.
 
@@ -1472,6 +1547,7 @@ async def test_sync_5_7_3_extended_history_horizon(sync_engine) -> None:
 
 # TST-BRAIN-215
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0215", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "04", "title": "data_beyond_horizon_never_downloaded"}
 async def test_sync_5_7_4_data_beyond_horizon_never_downloaded(sync_engine) -> None:
     """SS5.7.4: Data beyond horizon NEVER downloaded."""
     engine, core, mcp = sync_engine
@@ -1486,6 +1562,7 @@ async def test_sync_5_7_4_data_beyond_horizon_never_downloaded(sync_engine) -> N
 
 # TST-BRAIN-216
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0216", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "05", "title": "zone1_data_vectorized_fts"}
 async def test_sync_5_7_5_zone1_data_vectorized_fts(sync_engine) -> None:
     """SS5.7.5: Zone 1 data: vectorized + FTS-indexed."""
     engine, core, mcp = sync_engine
@@ -1503,6 +1580,7 @@ async def test_sync_5_7_5_zone1_data_vectorized_fts(sync_engine) -> None:
 
 # TST-BRAIN-217
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0217", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "06", "title": "zone2_data_not_in_vault"}
 async def test_sync_5_7_6_zone2_data_not_in_vault(sync_engine) -> None:
     """SS5.7.6: Zone 2 data: not in vault -- requires pass-through.
 
@@ -1530,6 +1608,7 @@ async def test_sync_5_7_6_zone2_data_not_in_vault(sync_engine) -> None:
 
 # TST-BRAIN-218
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0218", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "07", "title": "startup_fast_sync_30_days"}
 async def test_sync_5_7_7_startup_fast_sync_30_days(sync_engine) -> None:
     """SS5.7.7: Startup fast sync: 30 days."""
     engine, core, mcp = sync_engine
@@ -1548,6 +1627,7 @@ async def test_sync_5_7_7_startup_fast_sync_30_days(sync_engine) -> None:
 
 # TST-BRAIN-219
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0219", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "08", "title": "startup_backfill_remaining"}
 async def test_sync_5_7_8_startup_backfill_remaining(sync_engine) -> None:
     """SS5.7.8: Startup backfill: remaining 365 days in background batches."""
     engine, core, mcp = sync_engine
@@ -1565,6 +1645,7 @@ async def test_sync_5_7_8_startup_backfill_remaining(sync_engine) -> None:
 
 # TST-BRAIN-220
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0220", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "07", "scenario": "09", "title": "user_queries_preempt_backfill"}
 async def test_sync_5_7_9_user_queries_preempt_backfill(sync_engine) -> None:
     """SS5.7.9: User queries preempt backfill.
 
@@ -1593,6 +1674,7 @@ async def test_sync_5_7_9_user_queries_preempt_backfill(sync_engine) -> None:
 
 # TST-BRAIN-221
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0221", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "08", "scenario": "01", "title": "hot_memory_search_first"}
 async def test_sync_5_8_1_hot_memory_search_first(sync_engine) -> None:
     """SS5.8.1: Hot memory search first -- dedup checks local cache before core.
 
@@ -1617,6 +1699,7 @@ async def test_sync_5_8_1_hot_memory_search_first(sync_engine) -> None:
 
 # TST-BRAIN-222
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0222", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "08", "scenario": "02", "title": "cold_fallback_not_found"}
 async def test_sync_5_8_2_cold_fallback_not_found(sync_engine) -> None:
     """SS5.8.2: Cold fallback: not found locally -- search Gmail directly."""
     engine, core, mcp = sync_engine
@@ -1634,6 +1717,7 @@ async def test_sync_5_8_2_cold_fallback_not_found(sync_engine) -> None:
 
 # TST-BRAIN-223
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0223", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "08", "scenario": "03", "title": "cold_results_not_saved"}
 async def test_sync_5_8_3_cold_results_not_saved(sync_engine) -> None:
     """SS5.8.3: Cold results shown, NOT saved -- results displayed but NOT stored.
 
@@ -1666,6 +1750,7 @@ async def test_sync_5_8_3_cold_results_not_saved(sync_engine) -> None:
 
 # TST-BRAIN-224
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0224", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "08", "scenario": "04", "title": "privacy_disclosure"}
 async def test_sync_5_8_4_privacy_disclosure(sync_engine) -> None:
     """SS5.8.4: Privacy disclosure -- direct Gmail search returns result with disclosure flag."""
     engine, core, mcp = sync_engine
@@ -1683,6 +1768,7 @@ async def test_sync_5_8_4_privacy_disclosure(sync_engine) -> None:
 
 # TST-BRAIN-225
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0225", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "08", "scenario": "05", "title": "explicit_old_date_triggers_cold"}
 async def test_sync_5_8_5_explicit_old_date_triggers_cold(sync_engine) -> None:
     """SS5.8.5: Explicit old date triggers cold -- '2022 invoice' skips local.
 
@@ -1716,6 +1802,7 @@ async def test_sync_5_8_5_explicit_old_date_triggers_cold(sync_engine) -> None:
 
 
 # TST-BRAIN-405
+# TRACE: {"suite": "BRAIN", "case": "0405", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "27", "title": "llm_triage_timeout_fallback"}
 def test_sync_5_2_27_llm_triage_timeout_fallback(sync_engine) -> None:
     """SS5.2.27: LLM triage fails 3x -> all remaining emails classified SKIP."""
     engine, core, mcp = sync_engine
@@ -1729,6 +1816,7 @@ def test_sync_5_2_27_llm_triage_timeout_fallback(sync_engine) -> None:
 
 # TST-BRAIN-406
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0406", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "02", "scenario": "28", "title": "llm_triage_timeout_admin_status"}
 async def test_sync_5_2_28_llm_triage_timeout_admin_status(sync_engine) -> None:
     """SS5.2.28: Admin UI shows triage LLM timeout status."""
     engine, core, mcp = sync_engine
@@ -1748,6 +1836,7 @@ async def test_sync_5_2_28_llm_triage_timeout_admin_status(sync_engine) -> None:
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0128", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "89", "title": "sync_trust_scorer_assigns_provenance"}
 async def test_sync_trust_scorer_assigns_provenance():
     """SyncEngine._ingest_batch routes items through staging_ingest.
 
@@ -1790,6 +1879,7 @@ async def test_sync_trust_scorer_assigns_provenance():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0129", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "90", "title": "sync_without_trust_scorer_no_provenance"}
 async def test_sync_without_trust_scorer_no_provenance():
     """Without TrustScorer, items are staged without provenance fields."""
     core = AsyncMock()
@@ -1813,6 +1903,7 @@ async def test_sync_without_trust_scorer_no_provenance():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0130", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "91", "title": "sync_ingest_single_item_gets_provenance"}
 async def test_sync_ingest_single_item_gets_provenance():
     """SyncEngine.ingest() routes single items through staging_ingest.
 
@@ -1847,6 +1938,7 @@ async def test_sync_ingest_single_item_gets_provenance():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0131", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "92", "title": "sync_contradiction_detection"}
 async def test_sync_contradiction_detection():
     """_ingest_batch stages items for downstream contradiction detection.
 
@@ -1880,6 +1972,7 @@ async def test_sync_contradiction_detection():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0132", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "93", "title": "brain_startup_wires_trust_scorer"}
 async def test_brain_startup_wires_trust_scorer():
     """Brain app startup creates SyncEngine with TrustScorer.
 

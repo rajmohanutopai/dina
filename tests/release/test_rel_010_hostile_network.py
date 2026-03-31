@@ -19,6 +19,7 @@ class TestHostileNetwork:
     """Real API tests for REL-010: D2D under network fault."""
 
     # REL-010
+    # TRACE: {"suite": "REL", "case": "0010", "section": "10", "sectionName": "Hostile Network", "subsection": "01", "scenario": "01", "title": "rel_010_send_to_nonexistent_peer_fails_gracefully"}
     def test_rel_010_send_to_nonexistent_peer_fails_gracefully(
         self, core_url, auth_headers,
     ) -> None:
@@ -46,6 +47,7 @@ class TestHostileNetwork:
         )
 
     # REL-010
+    # TRACE: {"suite": "REL", "case": "0010", "section": "10", "sectionName": "Hostile Network", "subsection": "01", "scenario": "02", "title": "rel_010_core_healthy_after_failed_send"}
     def test_rel_010_core_healthy_after_failed_send(
         self, core_url,
     ) -> None:
@@ -54,6 +56,7 @@ class TestHostileNetwork:
         assert resp.status_code == 200
 
     # REL-010
+    # TRACE: {"suite": "REL", "case": "0010", "section": "10", "sectionName": "Hostile Network", "subsection": "01", "scenario": "03", "title": "rel_010_invalid_did_rejected"}
     def test_rel_010_invalid_did_rejected(
         self, core_url, auth_headers,
     ) -> None:
@@ -73,6 +76,7 @@ class TestHostileNetwork:
         )
 
     # REL-010
+    # TRACE: {"suite": "REL", "case": "0010", "section": "10", "sectionName": "Hostile Network", "subsection": "01", "scenario": "04", "title": "rel_010_empty_body_handled_without_crash"}
     def test_rel_010_empty_body_handled_without_crash(
         self, core_url, auth_headers, actor_b_did,
     ) -> None:
@@ -100,6 +104,7 @@ class TestHostileNetwork:
             assert "error" in data, f"Rejection missing error field: {data}"
 
     # REL-010
+    # TRACE: {"suite": "REL", "case": "0010", "section": "10", "sectionName": "Hostile Network", "subsection": "01", "scenario": "05", "title": "rel_010_node_b_healthy_after_fault_tests"}
     def test_rel_010_node_b_healthy_after_fault_tests(
         self, core_b_url,
     ) -> None:

@@ -137,6 +137,7 @@ def client(app: FastAPI) -> TestClient:
 
 
 # TST-BRAIN-295
+# TRACE: {"suite": "BRAIN", "case": "0295", "section": "10", "sectionName": "API Endpoints", "subsection": "01", "scenario": "01", "title": "healthz_returns_200"}
 def test_api_10_1_1_healthz_returns_200(client: TestClient) -> None:
     """S10.1.1: GET /healthz returns 200 with status JSON -- no auth required."""
     resp = client.get("/healthz")
@@ -147,6 +148,7 @@ def test_api_10_1_1_healthz_returns_200(client: TestClient) -> None:
 
 
 # TST-BRAIN-381
+# TRACE: {"suite": "BRAIN", "case": "0381", "section": "10", "sectionName": "API Endpoints", "subsection": "01", "scenario": "02", "title": "healthz_includes_components"}
 def test_api_10_1_2_healthz_includes_components(client: TestClient) -> None:
     """S10.1.2: /healthz response includes status field and JSON body.
 
@@ -168,6 +170,7 @@ def test_api_10_1_2_healthz_includes_components(client: TestClient) -> None:
 
 
 # TST-BRAIN-382
+# TRACE: {"suite": "BRAIN", "case": "0382", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "01", "title": "process_valid_event"}
 def test_api_10_2_1_process_valid_event(client: TestClient) -> None:
     """S10.2.1: POST /v1/process with valid event returns 200 and result."""
     event = make_event(type="message", body="Hello, Dina")
@@ -178,6 +181,7 @@ def test_api_10_2_1_process_valid_event(client: TestClient) -> None:
 
 
 # TST-BRAIN-383
+# TRACE: {"suite": "BRAIN", "case": "0383", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "02", "title": "process_missing_auth"}
 def test_api_10_2_2_process_missing_auth(client: TestClient) -> None:
     """S10.2.2: POST /v1/process without auth returns 401.
 
@@ -201,6 +205,7 @@ def test_api_10_2_2_process_missing_auth(client: TestClient) -> None:
 
 
 # TST-BRAIN-384
+# TRACE: {"suite": "BRAIN", "case": "0384", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "03", "title": "process_wrong_signature"}
 def test_api_10_2_3_process_wrong_signature(client: TestClient) -> None:
     """S10.2.3: POST /v1/process with wrong signature returns 401.
 
@@ -228,6 +233,7 @@ def test_api_10_2_3_process_wrong_signature(client: TestClient) -> None:
 
 
 # TST-BRAIN-385
+# TRACE: {"suite": "BRAIN", "case": "0385", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "04", "title": "process_invalid_json"}
 def test_api_10_2_4_process_invalid_json(client: TestClient) -> None:
     """S10.2.4: POST /v1/process with malformed JSON returns 422.
 
@@ -242,6 +248,7 @@ def test_api_10_2_4_process_invalid_json(client: TestClient) -> None:
 
 
 # TST-BRAIN-301
+# TRACE: {"suite": "BRAIN", "case": "0301", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "05", "title": "process_missing_required_fields"}
 def test_api_10_2_5_process_missing_required_fields(client: TestClient) -> None:
     """S10.2.5: POST /v1/process with incomplete event payload returns 422."""
     # 'type' is required by ProcessEventRequest
@@ -257,6 +264,7 @@ def test_api_10_2_5_process_missing_required_fields(client: TestClient) -> None:
 
 
 # TST-BRAIN-386
+# TRACE: {"suite": "BRAIN", "case": "0386", "section": "10", "sectionName": "API Endpoints", "subsection": "03", "scenario": "01", "title": "reason_valid_request"}
 def test_api_10_3_1_reason_valid_request(client: TestClient) -> None:
     """S10.3.1: POST /v1/reason with valid task returns 200 and LLM response."""
     resp = _signed_post(
@@ -269,6 +277,7 @@ def test_api_10_3_1_reason_valid_request(client: TestClient) -> None:
 
 
 # TST-BRAIN-387
+# TRACE: {"suite": "BRAIN", "case": "0387", "section": "10", "sectionName": "API Endpoints", "subsection": "03", "scenario": "02", "title": "reason_missing_prompt"}
 def test_api_10_3_2_reason_missing_prompt(client: TestClient) -> None:
     """S10.3.2: POST /v1/reason without 'prompt' field returns 422."""
     resp = _signed_post(client, "/api/v1/reason", {"type": "reason"})
@@ -276,6 +285,7 @@ def test_api_10_3_2_reason_missing_prompt(client: TestClient) -> None:
 
 
 # TST-BRAIN-388
+# TRACE: {"suite": "BRAIN", "case": "0388", "section": "10", "sectionName": "API Endpoints", "subsection": "03", "scenario": "03", "title": "reason_no_auth"}
 def test_api_10_3_3_reason_no_auth(client: TestClient) -> None:
     """S10.3.3: POST /v1/reason without auth returns 401."""
     resp = client.post(
@@ -291,6 +301,7 @@ def test_api_10_3_3_reason_no_auth(client: TestClient) -> None:
 
 
 # TST-BRAIN-389
+# TRACE: {"suite": "BRAIN", "case": "0389", "section": "10", "sectionName": "API Endpoints", "subsection": "04", "scenario": "01", "title": "response_content_type_json"}
 def test_api_10_4_1_response_content_type_json(client: TestClient) -> None:
     """S10.4.1: All API responses have Content-Type: application/json.
 
@@ -330,6 +341,7 @@ def test_api_10_4_1_response_content_type_json(client: TestClient) -> None:
 
 
 # TST-BRAIN-390
+# TRACE: {"suite": "BRAIN", "case": "0390", "section": "10", "sectionName": "API Endpoints", "subsection": "04", "scenario": "02", "title": "error_response_format"}
 def test_api_10_4_2_error_response_format(client: TestClient) -> None:
     """S10.4.2: Error responses follow consistent JSON format with 'detail' field."""
     # Missing auth -> 401 with detail.
@@ -347,6 +359,7 @@ def test_api_10_4_2_error_response_format(client: TestClient) -> None:
 
 
 # TST-BRAIN-391
+# TRACE: {"suite": "BRAIN", "case": "0391", "section": "10", "sectionName": "API Endpoints", "subsection": "04", "scenario": "03", "title": "unknown_route_returns_404"}
 def test_api_10_4_3_unknown_route_returns_404(client: TestClient) -> None:
     """S10.4.3: Request to undefined route returns 404."""
     resp = _signed_get_path(client, "/api/v1/nonexistent")
@@ -365,6 +378,7 @@ def _signed_get_path(client: TestClient, path: str) -> "Response":
 
 
 # TST-BRAIN-296
+# TRACE: {"suite": "BRAIN", "case": "0296", "section": "10", "sectionName": "API Endpoints", "subsection": "01", "scenario": "01", "title": "health_with_llm_down"}
 def test_api_10_1_health_with_llm_down() -> None:
     """S10.1 row 2: GET /healthz when LLM is unreachable returns degraded status.
 
@@ -404,6 +418,7 @@ def test_api_10_1_health_with_llm_down() -> None:
 
 
 # TST-BRAIN-297
+# TRACE: {"suite": "BRAIN", "case": "0297", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "01", "title": "process_text_query"}
 def test_api_10_2_process_text_query(client: TestClient) -> None:
     """S10.2 row 1: POST /v1/process with text query returns guardian response."""
     event = make_event(type="query", body="What is my schedule today?")
@@ -416,6 +431,7 @@ def test_api_10_2_process_text_query(client: TestClient) -> None:
 
 
 # TST-BRAIN-298
+# TRACE: {"suite": "BRAIN", "case": "0298", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "01", "title": "process_agent_intent"}
 def test_api_10_2_process_agent_intent(client: TestClient) -> None:
     """S10.2 row 2: POST /v1/process with agent intent returns classification."""
     event = make_event(
@@ -433,6 +449,7 @@ def test_api_10_2_process_agent_intent(client: TestClient) -> None:
 
 
 # TST-BRAIN-299
+# TRACE: {"suite": "BRAIN", "case": "0299", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "01", "title": "process_incoming_message"}
 def test_api_10_2_process_incoming_message(client: TestClient) -> None:
     """S10.2 row 3: POST /v1/process with incoming message returns classification."""
     event = make_event(type="message", body="Your flight has been cancelled")
@@ -444,6 +461,7 @@ def test_api_10_2_process_incoming_message(client: TestClient) -> None:
 
 
 # TST-BRAIN-300
+# TRACE: {"suite": "BRAIN", "case": "0300", "section": "10", "sectionName": "API Endpoints", "subsection": "02", "scenario": "01", "title": "invalid_event_type"}
 def test_api_10_2_invalid_event_type() -> None:
     """S10.2 row 4: Unknown event type returns 400 Bad Request.
 
@@ -468,6 +486,7 @@ def test_api_10_2_invalid_event_type() -> None:
 
 
 # TST-BRAIN-419
+# TRACE: {"suite": "BRAIN", "case": "0419", "section": "10", "sectionName": "API Endpoints", "subsection": "05", "scenario": "01", "title": "language_agnostic_contract"}
 def test_api_10_5_1_language_agnostic_contract() -> None:
     """S10.5.1: Brain API contract is language-agnostic.
 
@@ -518,6 +537,7 @@ def test_api_10_5_1_language_agnostic_contract() -> None:
 
 
 # TST-BRAIN-814
+# TRACE: {"suite": "BRAIN", "case": "0814", "section": "10", "sectionName": "API Endpoints", "subsection": "01", "scenario": "20", "title": "br1_pii_scrub_strips_original_values"}
 def test_br1_pii_scrub_strips_original_values() -> None:
     """BR1: POST /v1/pii/scrub must NOT return 'value' (original PII) in entities.
 
@@ -576,6 +596,7 @@ def test_br1_pii_scrub_strips_original_values() -> None:
 
 
 # TST-BRAIN-819
+# TRACE: {"suite": "BRAIN", "case": "0819", "section": "10", "sectionName": "API Endpoints", "subsection": "01", "scenario": "21", "title": "br5_process_rate_limited"}
 def test_br5_process_rate_limited() -> None:
     """BR5: POST /v1/process must be rate-limited (burst=5, then 429).
 

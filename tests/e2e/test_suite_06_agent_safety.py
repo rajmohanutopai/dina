@@ -34,6 +34,7 @@ class TestAgentSafetyDelegation:
     """Suite 6 — Agent Safety & Delegation (TST-E2E-029 through TST-E2E-034)."""
 
     # TST-E2E-029
+    # TRACE: {"suite": "E2E", "case": "0029", "section": "06", "sectionName": "Agent Safety", "subsection": "01", "scenario": "01", "title": "license_renewal_delegation"}
     def test_license_renewal_delegation(
         self, don_alonso: HomeNode, openclaw: MockOpenClaw,
     ) -> None:
@@ -118,6 +119,7 @@ class TestAgentSafetyDelegation:
         assert staging.staging_id in node.staging
 
     # TST-E2E-030
+    # TRACE: {"suite": "E2E", "case": "0030", "section": "06", "sectionName": "Agent Safety", "subsection": "01", "scenario": "02", "title": "draft_dont_send_email"}
     def test_draft_dont_send_email(
         self, don_alonso: HomeNode, openclaw: MockOpenClaw,
     ) -> None:
@@ -251,6 +253,7 @@ class TestAgentSafetyDelegation:
         )
 
     # TST-E2E-031
+    # TRACE: {"suite": "E2E", "case": "0031", "section": "06", "sectionName": "Agent Safety", "subsection": "01", "scenario": "03", "title": "malicious_bot_blocking"}
     def test_malicious_bot_blocking(
         self,
         don_alonso: HomeNode,
@@ -350,6 +353,7 @@ class TestAgentSafetyDelegation:
         assert len(blocked_audits) >= 1
 
     # TST-E2E-032
+    # TRACE: {"suite": "E2E", "case": "0032", "section": "06", "sectionName": "Agent Safety", "subsection": "01", "scenario": "04", "title": "agent_intent_verification"}
     def test_agent_intent_verification(
         self, don_alonso: HomeNode, openclaw: MockOpenClaw,
     ) -> None:
@@ -431,6 +435,7 @@ class TestAgentSafetyDelegation:
         assert "transfer_money" in logged_actions
 
     # TST-E2E-033
+    # TRACE: {"suite": "E2E", "case": "0033", "section": "06", "sectionName": "Agent Safety", "subsection": "01", "scenario": "05", "title": "task_queue_crash_recovery"}
     def test_task_queue_crash_recovery(
         self, don_alonso: HomeNode,
     ) -> None:
@@ -556,6 +561,7 @@ class TestAgentSafetyDelegation:
         )
 
     # TST-E2E-034
+    # TRACE: {"suite": "E2E", "case": "0034", "section": "06", "sectionName": "Agent Safety", "subsection": "01", "scenario": "06", "title": "dead_letter_notification"}
     def test_dead_letter_notification(
         self, don_alonso: HomeNode,
     ) -> None:

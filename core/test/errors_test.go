@@ -25,6 +25,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-601
+// TRACE: {"suite": "CORE", "case": "0495", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "01", "scenario": "01", "title": "MalformedJSON"}
 func TestErrors_16_1_MalformedJSON(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
 	impl := realErrorHandler
@@ -43,6 +44,7 @@ func TestErrors_16_1_MalformedJSON(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-602
+// TRACE: {"suite": "CORE", "case": "0496", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "02", "scenario": "01", "title": "RequestBodyTooLarge"}
 func TestErrors_16_2_RequestBodyTooLarge(t *testing.T) {
 	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
@@ -72,6 +74,7 @@ func TestErrors_16_2_RequestBodyTooLarge(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-603
+// TRACE: {"suite": "CORE", "case": "0497", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "03", "scenario": "01", "title": "UnknownEndpoint"}
 func TestErrors_16_3_UnknownEndpoint(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
 	impl := realErrorHandler
@@ -99,6 +102,7 @@ func TestErrors_16_3_UnknownEndpoint(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-604
+// TRACE: {"suite": "CORE", "case": "0498", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "04", "scenario": "01", "title": "MethodNotAllowed"}
 func TestErrors_16_4_MethodNotAllowed(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
 	impl := realErrorHandler
@@ -134,6 +138,7 @@ func TestErrors_16_4_MethodNotAllowed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-605
+// TRACE: {"suite": "CORE", "case": "0499", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "05", "scenario": "01", "title": "ContentTypeEnforcement"}
 func TestErrors_16_5_ContentTypeEnforcement(t *testing.T) {
 	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
@@ -175,6 +180,7 @@ func TestErrors_16_5_ContentTypeEnforcement(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-606
+// TRACE: {"suite": "CORE", "case": "0500", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "06", "scenario": "01", "title": "ConcurrentVaultWrites"}
 func TestErrors_16_6_ConcurrentVaultWrites(t *testing.T) {
 	// var impl testutil.VaultManager = realvault.New(...)
 	impl := realVaultManager
@@ -233,6 +239,7 @@ func TestErrors_16_6_ConcurrentVaultWrites(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-607
+// TRACE: {"suite": "CORE", "case": "0501", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "07", "scenario": "01", "title": "DiskFull"}
 func TestErrors_16_7_DiskFull(t *testing.T) {
 	// Simulate disk full by sending an oversized request body to the error handler.
 	// The error handler must return a graceful error (not panic).
@@ -279,6 +286,7 @@ func TestErrors_16_7_DiskFull(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-608
+// TRACE: {"suite": "CORE", "case": "0502", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "08", "scenario": "01", "title": "VaultFileCorruption"}
 func TestErrors_16_8_VaultFileCorruption(t *testing.T) {
 	// Create corrupted vault data and verify the vault manager detects and reports the error.
 	impl := realVaultManager
@@ -319,6 +327,7 @@ func TestErrors_16_8_VaultFileCorruption(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-609
+// TRACE: {"suite": "CORE", "case": "0503", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "09", "scenario": "01", "title": "GracefulShutdown"}
 func TestErrors_16_9_GracefulShutdown(t *testing.T) {
 	// Use a fresh server instance for lifecycle test (don't mutate shared realServer).
 	impl := server.NewServer()
@@ -346,6 +355,7 @@ func TestErrors_16_9_GracefulShutdown(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-610
+// TRACE: {"suite": "CORE", "case": "0504", "section": "16", "sectionName": "Error Handling & Edge Cases", "subsection": "10", "scenario": "01", "title": "PanicRecovery"}
 func TestErrors_16_10_PanicRecovery(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
 	impl := realErrorHandler

@@ -50,6 +50,7 @@ class TestThroughput:
     """Verify the system handles concurrent load without data loss."""
 
 # TST-INT-338
+    # TRACE: {"suite": "INT", "case": "0338", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "01", "title": "concurrent_websocket_connections"}
     def test_concurrent_websocket_connections(
         self,
         mock_ws_server: MockWebSocketServer,
@@ -101,6 +102,7 @@ class TestThroughput:
             assert conn.received[0].payload["text"] == f"Hello device {i}"
 
 # TST-INT-339
+    # TRACE: {"suite": "INT", "case": "0339", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "02", "title": "vault_write_throughput"}
     def test_vault_write_throughput(
         self,
         mock_vault: MockVault,
@@ -136,6 +138,7 @@ class TestThroughput:
             assert item["index"] == i
 
 # TST-INT-340
+    # TRACE: {"suite": "INT", "case": "0340", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "03", "title": "vault_search_under_load"}
     def test_vault_search_under_load(
         self,
         mock_vault: MockVault,
@@ -173,6 +176,7 @@ class TestThroughput:
         assert mock_perf_metrics.errors == 0
 
 # TST-INT-341
+    # TRACE: {"suite": "INT", "case": "0341", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "04", "title": "inbound_message_handling"}
     def test_inbound_message_handling(
         self,
         mock_dina: MockDinaCore,
@@ -203,6 +207,7 @@ class TestThroughput:
         assert mock_perf_metrics.errors == 0
 
 # TST-INT-342
+    # TRACE: {"suite": "INT", "case": "0342", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "05", "title": "outbox_drain_rate"}
     def test_outbox_drain_rate(
         self,
         mock_outbox: MockOutbox,
@@ -251,6 +256,7 @@ class TestLatency:
     """Verify p99 latency for key operations stays within bounds."""
 
 # TST-INT-343
+    # TRACE: {"suite": "INT", "case": "0343", "section": "17", "sectionName": "Architecture Validation", "subsection": "02", "scenario": "01", "title": "query_to_response_local_llm"}
     def test_query_to_response_local_llm(
         self,
         mock_dina: MockDinaCore,
@@ -288,6 +294,7 @@ class TestLatency:
         assert p99 < 1000.0, "p99 must be under 1s for local LLM (mock)"
 
 # TST-INT-344
+    # TRACE: {"suite": "INT", "case": "0344", "section": "17", "sectionName": "Architecture Validation", "subsection": "02", "scenario": "02", "title": "query_to_response_cloud_llm"}
     def test_query_to_response_cloud_llm(
         self,
         mock_cloud_llm_router: MockLLMRouter,
@@ -329,6 +336,7 @@ class TestLatency:
         assert p99 >= 0.0, "p99 latency must be recorded for cloud LLM"
 
 # TST-INT-345
+    # TRACE: {"suite": "INT", "case": "0345", "section": "17", "sectionName": "Architecture Validation", "subsection": "02", "scenario": "03", "title": "message_send_latency"}
     def test_message_send_latency(
         self,
         mock_dina: MockDinaCore,
@@ -366,6 +374,7 @@ class TestLatency:
         assert p99 >= 0.0
 
 # TST-INT-346
+    # TRACE: {"suite": "INT", "case": "0346", "section": "17", "sectionName": "Architecture Validation", "subsection": "02", "scenario": "04", "title": "pairing_completion_latency"}
     def test_pairing_completion_latency(
         self,
         mock_pairing_manager: MockPairingManager,
@@ -414,6 +423,7 @@ class TestResourceUsage:
     """Verify memory and disk usage stay within budgeted bounds."""
 
 # TST-INT-347
+    # TRACE: {"suite": "INT", "case": "0347", "section": "17", "sectionName": "Architecture Validation", "subsection": "03", "scenario": "01", "title": "core_memory_usage"}
     def test_core_memory_usage(
         self,
         mock_go_core: MockGoCore,
@@ -446,6 +456,7 @@ class TestResourceUsage:
         assert mock_perf_metrics.total_requests == 1
 
 # TST-INT-348
+    # TRACE: {"suite": "INT", "case": "0348", "section": "17", "sectionName": "Architecture Validation", "subsection": "03", "scenario": "02", "title": "brain_memory_usage"}
     def test_brain_memory_usage(
         self,
         mock_dina: MockDinaCore,
@@ -475,6 +486,7 @@ class TestResourceUsage:
         assert log_count == 200
 
 # TST-INT-349
+    # TRACE: {"suite": "INT", "case": "0349", "section": "17", "sectionName": "Architecture Validation", "subsection": "03", "scenario": "03", "title": "llm_memory_usage"}
     def test_llm_memory_usage(
         self,
         mock_llm_router: MockLLMRouter,
@@ -504,6 +516,7 @@ class TestResourceUsage:
         assert log_size == num_routes, "Routing log must grow linearly"
 
 # TST-INT-350
+    # TRACE: {"suite": "INT", "case": "0350", "section": "17", "sectionName": "Architecture Validation", "subsection": "03", "scenario": "04", "title": "disk_usage_growth"}
     def test_disk_usage_growth(
         self,
         mock_vault: MockVault,
@@ -539,6 +552,7 @@ class TestResourceUsage:
             )
 
 # TST-INT-351
+    # TRACE: {"suite": "INT", "case": "0351", "section": "17", "sectionName": "Architecture Validation", "subsection": "03", "scenario": "05", "title": "spool_disk_usage"}
     def test_spool_disk_usage(
         self,
         mock_inbox_spool: MockInboxSpool,

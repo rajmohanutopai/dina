@@ -18,6 +18,7 @@ class TestAgentGateway:
     """Real API tests for REL-008: agent gateway lifecycle."""
 
     # REL-008
+    # TRACE: {"suite": "REL", "case": "0008", "section": "08", "sectionName": "Agent Gateway", "subsection": "01", "scenario": "01", "title": "rel_008_pairing_initiate_returns_code"}
     def test_rel_008_pairing_initiate_returns_code(
         self, core_url, auth_headers,
     ) -> None:
@@ -33,6 +34,7 @@ class TestAgentGateway:
         assert len(code) > 0, f"No pairing code returned: {data}"
 
     # REL-008
+    # TRACE: {"suite": "REL", "case": "0008", "section": "08", "sectionName": "Agent Gateway", "subsection": "01", "scenario": "02", "title": "rel_008_pairing_complete_registers_device"}
     def test_rel_008_pairing_complete_registers_device(
         self, core_url, auth_headers,
     ) -> None:
@@ -75,6 +77,7 @@ class TestAgentGateway:
         assert device_id, f"Pairing returned no device_id: {resp.json()}"
 
     # REL-008
+    # TRACE: {"suite": "REL", "case": "0008", "section": "08", "sectionName": "Agent Gateway", "subsection": "01", "scenario": "03", "title": "rel_008_devices_list_shows_paired"}
     def test_rel_008_devices_list_shows_paired(
         self, core_url, auth_headers,
     ) -> None:
@@ -119,6 +122,7 @@ class TestAgentGateway:
         )
 
     # REL-008
+    # TRACE: {"suite": "REL", "case": "0008", "section": "08", "sectionName": "Agent Gateway", "subsection": "01", "scenario": "04", "title": "rel_008_unapproved_agent_blocked"}
     def test_rel_008_unapproved_agent_blocked(
         self, core_url,
     ) -> None:

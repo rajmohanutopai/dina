@@ -38,6 +38,7 @@ class TestPIIScrubbing:
     """Verify that every category of PII is reliably scrubbed."""
 
 # TST-INT-529
+    # TRACE: {"suite": "INT", "case": "0529", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "01", "title": "name_scrubbed"}
     def test_name_scrubbed(self, mock_scrubber) -> None:
         """Personal names are replaced with opaque tokens."""
         text = "Rajmohan is heading to the office."
@@ -51,6 +52,7 @@ class TestPIIScrubbing:
         assert "heading to the office" in scrubbed
 
 # TST-INT-530
+    # TRACE: {"suite": "INT", "case": "0530", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "02", "title": "email_scrubbed"}
     def test_email_scrubbed(self, mock_scrubber) -> None:
         """Email addresses are replaced with opaque tokens."""
         text = "Please contact rajmohan@email.com for details."
@@ -60,6 +62,7 @@ class TestPIIScrubbing:
         assert scrubbed != text, "scrub must modify the text"
 
 # TST-INT-531
+    # TRACE: {"suite": "INT", "case": "0531", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "03", "title": "address_scrubbed"}
     def test_address_scrubbed(self, mock_scrubber) -> None:
         """Physical addresses are replaced with opaque tokens."""
         text = "Ship to 123 Main Street, please."
@@ -69,6 +72,7 @@ class TestPIIScrubbing:
         assert scrubbed != text, "scrub must modify the text"
 
 # TST-INT-532
+    # TRACE: {"suite": "INT", "case": "0532", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "04", "title": "phone_scrubbed"}
     def test_phone_scrubbed(self, mock_scrubber) -> None:
         """Phone numbers are replaced with opaque tokens."""
         text = "Call me at +91-9876543210."
@@ -78,6 +82,7 @@ class TestPIIScrubbing:
         assert scrubbed != text, "scrub must modify the text"
 
 # TST-INT-533
+    # TRACE: {"suite": "INT", "case": "0533", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "05", "title": "financial_data_scrubbed"}
     def test_financial_data_scrubbed(self, mock_scrubber) -> None:
         """Credit card numbers and financial identifiers are scrubbed."""
         text = "My card is 4111-2222-3333-4444 and Aadhaar is XXXX-XXXX-1234."
@@ -103,6 +108,7 @@ class TestPIIScrubbing:
         assert "4111-2222-3333-4444" in restored
 
 # TST-INT-152
+    # TRACE: {"suite": "INT", "case": "0152", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "06", "title": "health_data_scrubbed"}
     def test_health_data_scrubbed(self, mock_scrubber) -> None:
         """Health data containing PII (names, contacts) is scrubbed.
         Medical content survives.  Round-trip restores originals."""
@@ -132,6 +138,7 @@ class TestPIIScrubbing:
         assert "+91-9876543210" in restored
 
 # TST-INT-082
+    # TRACE: {"suite": "INT", "case": "0082", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "07", "title": "scrubbed_query_still_useful"}
     def test_scrubbed_query_still_useful(self, mock_scrubber) -> None:
         """After scrubbing, the semantic intent of the query is preserved."""
         query = (
@@ -166,6 +173,7 @@ class TestDataBoundary:
     """Verify that the cloud LLM never sees raw user data."""
 
 # TST-INT-151
+    # TRACE: {"suite": "INT", "case": "0151", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "02", "scenario": "01", "title": "bot_receives_question_not_data"}
     def test_bot_receives_question_not_data(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -187,6 +195,7 @@ class TestDataBoundary:
         )
 
 # TST-INT-534
+    # TRACE: {"suite": "INT", "case": "0534", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "02", "scenario": "02", "title": "response_comes_back_clean"}
     def test_response_comes_back_clean(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -221,6 +230,7 @@ class TestDataBoundary:
         assert "verdict" in restored
 
 # TST-INT-081
+    # TRACE: {"suite": "INT", "case": "0081", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "02", "scenario": "03", "title": "no_data_exfiltration_via_prompt_injection"}
     def test_no_data_exfiltration_via_prompt_injection(
         self, mock_dina: MockDinaCore
     ) -> None:

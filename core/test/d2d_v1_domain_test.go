@@ -24,6 +24,7 @@ import (
 // V1MessageFamilies
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0422", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "01", "title": "V1MessageFamilies_ContainsExpectedTypes"}
 func TestV1MessageFamilies_ContainsExpectedTypes(t *testing.T) {
 	expected := []domain.MessageType{
 		domain.MsgTypePresenceSignal,
@@ -46,6 +47,7 @@ func TestV1MessageFamilies_ContainsExpectedTypes(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0423", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "01", "title": "V1MessageFamilies_ExcludesLegacyTypes"}
 func TestV1MessageFamilies_ExcludesLegacyTypes(t *testing.T) {
 	legacyTypes := []domain.MessageType{
 		domain.MessageTypeEstate,
@@ -67,6 +69,7 @@ func TestV1MessageFamilies_ExcludesLegacyTypes(t *testing.T) {
 // MsgTypeToScenario
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0424", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "01", "title": "MsgTypeToScenario_KnownTypes"}
 func TestMsgTypeToScenario_KnownTypes(t *testing.T) {
 	cases := []struct {
 		msgType  domain.MessageType
@@ -89,6 +92,7 @@ func TestMsgTypeToScenario_KnownTypes(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0425", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "01", "title": "MsgTypeToScenario_UnknownType_ReturnsEmpty"}
 func TestMsgTypeToScenario_UnknownType_ReturnsEmpty(t *testing.T) {
 	got := domain.MsgTypeToScenario("totally.unknown")
 	if got != "" {
@@ -100,6 +104,7 @@ func TestMsgTypeToScenario_UnknownType_ReturnsEmpty(t *testing.T) {
 // D2DMemoryTypes
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0426", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "01", "title": "D2DMemoryTypes_OnlyMemoryProducingTypes"}
 func TestD2DMemoryTypes_OnlyMemoryProducingTypes(t *testing.T) {
 	// Exactly 2 types produce memory in v1.
 	if len(domain.D2DMemoryTypes) != 2 {
@@ -141,6 +146,7 @@ func mustJSON(t *testing.T, v interface{}) []byte {
 	return b
 }
 
+// TRACE: {"suite": "CORE", "case": "0427", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "01", "title": "ValidateV1Body_PresenceSignal_Valid"}
 func TestValidateV1Body_PresenceSignal_Valid(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"status": "online",
@@ -150,6 +156,7 @@ func TestValidateV1Body_PresenceSignal_Valid(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0428", "section": "07", "sectionName": "Transport Layer", "subsection": "07", "scenario": "01", "title": "ValidateV1Body_PresenceSignal_WithOptionalFields"}
 func TestValidateV1Body_PresenceSignal_WithOptionalFields(t *testing.T) {
 	eta := 10
 	body := mustJSON(t, map[string]interface{}{
@@ -162,6 +169,7 @@ func TestValidateV1Body_PresenceSignal_WithOptionalFields(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0429", "section": "07", "sectionName": "Transport Layer", "subsection": "08", "scenario": "01", "title": "ValidateV1Body_SocialUpdate_Valid"}
 func TestValidateV1Body_SocialUpdate_Valid(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"text":     "Just finished a big project!",
@@ -172,6 +180,7 @@ func TestValidateV1Body_SocialUpdate_Valid(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0430", "section": "07", "sectionName": "Transport Layer", "subsection": "09", "scenario": "01", "title": "ValidateV1Body_SafetyAlert_Valid"}
 func TestValidateV1Body_SafetyAlert_Valid(t *testing.T) {
 	for _, severity := range []string{"low", "medium", "high", "critical"} {
 		body := mustJSON(t, map[string]interface{}{
@@ -184,6 +193,7 @@ func TestValidateV1Body_SafetyAlert_Valid(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0431", "section": "07", "sectionName": "Transport Layer", "subsection": "10", "scenario": "01", "title": "ValidateV1Body_TrustVouchRequest_Valid"}
 func TestValidateV1Body_TrustVouchRequest_Valid(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"subject_did": "did:plc:abc123",
@@ -194,6 +204,7 @@ func TestValidateV1Body_TrustVouchRequest_Valid(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0432", "section": "07", "sectionName": "Transport Layer", "subsection": "11", "scenario": "01", "title": "ValidateV1Body_TrustVouchResponse_Valid"}
 func TestValidateV1Body_TrustVouchResponse_Valid(t *testing.T) {
 	for _, vouch := range []string{"yes", "no", "partial"} {
 		body := mustJSON(t, map[string]interface{}{
@@ -206,6 +217,7 @@ func TestValidateV1Body_TrustVouchResponse_Valid(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0433", "section": "07", "sectionName": "Transport Layer", "subsection": "12", "scenario": "01", "title": "ValidateV1Body_CoordinationRequest_Valid"}
 func TestValidateV1Body_CoordinationRequest_Valid(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"action":  "propose_time",
@@ -217,6 +229,7 @@ func TestValidateV1Body_CoordinationRequest_Valid(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0434", "section": "07", "sectionName": "Transport Layer", "subsection": "13", "scenario": "01", "title": "ValidateV1Body_CoordinationResponse_Valid"}
 func TestValidateV1Body_CoordinationResponse_Valid(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"action": "accept",
@@ -231,6 +244,7 @@ func TestValidateV1Body_CoordinationResponse_Valid(t *testing.T) {
 // ValidateV1Body — ErrUnknownMessageType
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0435", "section": "07", "sectionName": "Transport Layer", "subsection": "14", "scenario": "01", "title": "ValidateV1Body_UnknownType"}
 func TestValidateV1Body_UnknownType(t *testing.T) {
 	unknownTypes := []domain.MessageType{
 		"dina/social/update",
@@ -257,6 +271,7 @@ func TestValidateV1Body_UnknownType(t *testing.T) {
 // ValidateV1Body — ErrInvalidD2DBody (missing required fields)
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0436", "section": "07", "sectionName": "Transport Layer", "subsection": "15", "scenario": "01", "title": "ValidateV1Body_PresenceSignal_MissingStatus"}
 func TestValidateV1Body_PresenceSignal_MissingStatus(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"eta_minutes": 5,
@@ -267,6 +282,7 @@ func TestValidateV1Body_PresenceSignal_MissingStatus(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0437", "section": "07", "sectionName": "Transport Layer", "subsection": "16", "scenario": "01", "title": "ValidateV1Body_SocialUpdate_MissingText"}
 func TestValidateV1Body_SocialUpdate_MissingText(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"category": "life_event",
@@ -277,6 +293,7 @@ func TestValidateV1Body_SocialUpdate_MissingText(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0438", "section": "07", "sectionName": "Transport Layer", "subsection": "17", "scenario": "01", "title": "ValidateV1Body_SafetyAlert_MissingMessage"}
 func TestValidateV1Body_SafetyAlert_MissingMessage(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"severity": "high",
@@ -287,6 +304,7 @@ func TestValidateV1Body_SafetyAlert_MissingMessage(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0439", "section": "07", "sectionName": "Transport Layer", "subsection": "18", "scenario": "01", "title": "ValidateV1Body_SafetyAlert_MissingSeverity"}
 func TestValidateV1Body_SafetyAlert_MissingSeverity(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"message": "Something happened",
@@ -297,6 +315,7 @@ func TestValidateV1Body_SafetyAlert_MissingSeverity(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0440", "section": "07", "sectionName": "Transport Layer", "subsection": "19", "scenario": "01", "title": "ValidateV1Body_SafetyAlert_InvalidSeverity"}
 func TestValidateV1Body_SafetyAlert_InvalidSeverity(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"message":  "Something happened",
@@ -308,6 +327,7 @@ func TestValidateV1Body_SafetyAlert_InvalidSeverity(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0441", "section": "07", "sectionName": "Transport Layer", "subsection": "20", "scenario": "01", "title": "ValidateV1Body_TrustVouchRequest_MissingSubjectDID"}
 func TestValidateV1Body_TrustVouchRequest_MissingSubjectDID(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"context": "met at conference",
@@ -318,6 +338,7 @@ func TestValidateV1Body_TrustVouchRequest_MissingSubjectDID(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0442", "section": "07", "sectionName": "Transport Layer", "subsection": "21", "scenario": "01", "title": "ValidateV1Body_TrustVouchResponse_MissingSubjectDID"}
 func TestValidateV1Body_TrustVouchResponse_MissingSubjectDID(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"vouch": "yes",
@@ -328,6 +349,7 @@ func TestValidateV1Body_TrustVouchResponse_MissingSubjectDID(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0443", "section": "07", "sectionName": "Transport Layer", "subsection": "22", "scenario": "01", "title": "ValidateV1Body_TrustVouchResponse_InvalidVouch"}
 func TestValidateV1Body_TrustVouchResponse_InvalidVouch(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"subject_did": "did:plc:abc",
@@ -339,6 +361,7 @@ func TestValidateV1Body_TrustVouchResponse_InvalidVouch(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0444", "section": "07", "sectionName": "Transport Layer", "subsection": "23", "scenario": "01", "title": "ValidateV1Body_TrustVouchResponse_MissingVouch"}
 func TestValidateV1Body_TrustVouchResponse_MissingVouch(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"subject_did": "did:plc:abc",
@@ -349,6 +372,7 @@ func TestValidateV1Body_TrustVouchResponse_MissingVouch(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0445", "section": "07", "sectionName": "Transport Layer", "subsection": "24", "scenario": "01", "title": "ValidateV1Body_CoordinationRequest_MissingAction"}
 func TestValidateV1Body_CoordinationRequest_MissingAction(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"context": "Lunch?",
@@ -359,6 +383,7 @@ func TestValidateV1Body_CoordinationRequest_MissingAction(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0446", "section": "07", "sectionName": "Transport Layer", "subsection": "25", "scenario": "01", "title": "ValidateV1Body_CoordinationRequest_MissingContext"}
 func TestValidateV1Body_CoordinationRequest_MissingContext(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"action": "propose_time",
@@ -369,6 +394,7 @@ func TestValidateV1Body_CoordinationRequest_MissingContext(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0447", "section": "07", "sectionName": "Transport Layer", "subsection": "26", "scenario": "01", "title": "ValidateV1Body_CoordinationResponse_MissingAction"}
 func TestValidateV1Body_CoordinationResponse_MissingAction(t *testing.T) {
 	body := mustJSON(t, map[string]interface{}{
 		"note": "sounds good",
@@ -383,6 +409,7 @@ func TestValidateV1Body_CoordinationResponse_MissingAction(t *testing.T) {
 // ValidateV1Body — malformed JSON
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0448", "section": "07", "sectionName": "Transport Layer", "subsection": "27", "scenario": "01", "title": "ValidateV1Body_MalformedJSON"}
 func TestValidateV1Body_MalformedJSON(t *testing.T) {
 	types := []domain.MessageType{
 		domain.MsgTypePresenceSignal,
@@ -405,6 +432,7 @@ func TestValidateV1Body_MalformedJSON(t *testing.T) {
 // OutboxStatus constants
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0449", "section": "07", "sectionName": "Transport Layer", "subsection": "28", "scenario": "01", "title": "OutboxStatusConstants"}
 func TestOutboxStatusConstants(t *testing.T) {
 	// Verify all 5 constants are distinct strings.
 	statuses := []domain.OutboxStatus{
@@ -447,6 +475,7 @@ func TestOutboxStatusConstants(t *testing.T) {
 // ScenarioTier constants
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0450", "section": "07", "sectionName": "Transport Layer", "subsection": "29", "scenario": "01", "title": "ScenarioTierConstants"}
 func TestScenarioTierConstants(t *testing.T) {
 	tiers := []domain.ScenarioTier{
 		domain.ScenarioStandingPolicy,
@@ -476,6 +505,7 @@ func TestScenarioTierConstants(t *testing.T) {
 // Sentinel errors
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0451", "section": "07", "sectionName": "Transport Layer", "subsection": "30", "scenario": "01", "title": "D2VSentinelErrors"}
 func TestD2VSentinelErrors(t *testing.T) {
 	// ErrUnknownMessageType, ErrInvalidD2DBody, ErrNotAContact must be distinct.
 	errs := []error{

@@ -80,6 +80,7 @@ def core_client():
 
 # TST-BRAIN-259
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0259", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "01", "title": "core_client_7_1_1_read_vault_item"}
 async def test_core_client_7_1_1_read_vault_item(core_client) -> None:
     """SS7.1.1: Read a vault item by persona_id and item_id — returns VaultItem model."""
     expected = make_vault_item(item_id="item-042")
@@ -101,6 +102,7 @@ async def test_core_client_7_1_1_read_vault_item(core_client) -> None:
 
 # TST-BRAIN-260
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0260", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "02", "title": "core_client_7_1_2_write_vault_item"}
 async def test_core_client_7_1_2_write_vault_item(core_client) -> None:
     """SS7.1.2: Write a vault item — returns the stored item_id."""
     item = make_vault_item(item_id="item-new")
@@ -121,6 +123,7 @@ async def test_core_client_7_1_2_write_vault_item(core_client) -> None:
 
 # TST-BRAIN-261
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0261", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "03", "title": "core_client_7_1_3_search_vault"}
 async def test_core_client_7_1_3_search_vault(core_client) -> None:
     """SS7.1.3: Search vault by query — returns list of matching vault items."""
     expected_results = [
@@ -150,6 +153,7 @@ async def test_core_client_7_1_3_search_vault(core_client) -> None:
 
 # TST-BRAIN-262
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0262", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "04", "title": "core_client_7_1_4_write_scratchpad"}
 async def test_core_client_7_1_4_write_scratchpad(core_client) -> None:
     """SS7.1.4: Write a scratchpad checkpoint via KV store."""
     checkpoint = make_scratchpad_checkpoint(task_id="task-abc", step=3)
@@ -169,6 +173,7 @@ async def test_core_client_7_1_4_write_scratchpad(core_client) -> None:
 
 # TST-BRAIN-263
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0263", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "05", "title": "core_client_7_1_5_read_scratchpad"}
 async def test_core_client_7_1_5_read_scratchpad(core_client) -> None:
     """SS7.1.5: Read the latest scratchpad checkpoint from KV store."""
     checkpoint = make_scratchpad_checkpoint(task_id="task-abc", step=3)
@@ -188,6 +193,7 @@ async def test_core_client_7_1_5_read_scratchpad(core_client) -> None:
 
 # TST-BRAIN-264
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0264", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "06", "title": "core_client_7_1_6_send_message"}
 async def test_core_client_7_1_6_send_message(core_client) -> None:
     """SS7.1.6: Send a Dina-to-Dina message via core's transport layer."""
     payload = {
@@ -219,6 +225,7 @@ async def test_core_client_7_1_6_send_message(core_client) -> None:
 
 # TST-BRAIN-265
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0265", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "07", "title": "core_client_7_2_1_core_unreachable_retry"}
 async def test_core_client_7_2_1_core_unreachable_retry(
     core_client, _no_backoff_sleep
 ) -> None:
@@ -263,6 +270,7 @@ async def test_core_client_7_2_1_core_unreachable_retry(
 
 # TST-BRAIN-266
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0266", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "08", "title": "core_client_7_2_2_core_returns_500"}
 async def test_core_client_7_2_2_core_returns_500(core_client) -> None:
     """SS7.2.2: Core returns HTTP 500 — logged and retried."""
     from src.domain.errors import CoreUnreachableError
@@ -287,6 +295,7 @@ async def test_core_client_7_2_2_core_returns_500(core_client) -> None:
 
 # TST-BRAIN-267
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0267", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "09", "title": "core_client_7_2_3_core_returns_401_fatal"}
 async def test_core_client_7_2_3_core_returns_401_fatal(core_client) -> None:
     """SS7.2.3: Core returns HTTP 401 — fatal error, no retry (bad BRAIN_TOKEN)."""
     from src.domain.errors import ConfigError
@@ -310,6 +319,7 @@ async def test_core_client_7_2_3_core_returns_401_fatal(core_client) -> None:
 
 # TST-BRAIN-268
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0268", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "10", "title": "core_client_7_2_4_timeout_30s"}
 async def test_core_client_7_2_4_timeout_30s(core_client) -> None:
     """SS7.2.4: Core request times out after 30 seconds."""
     import httpx
@@ -330,6 +340,7 @@ async def test_core_client_7_2_4_timeout_30s(core_client) -> None:
 
 # TST-BRAIN-269
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0269", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "11", "title": "core_client_7_2_5_invalid_response_json"}
 async def test_core_client_7_2_5_invalid_response_json(
     core_client, _no_backoff_sleep
 ) -> None:
@@ -373,6 +384,7 @@ async def test_core_client_7_2_5_invalid_response_json(
 
 
 # TST-BRAIN-407
+# TRACE: {"suite": "BRAIN", "case": "0407", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "12", "title": "core_client_7_2_6_dead_letter_notification"}
 def test_core_client_7_2_6_dead_letter_notification() -> None:
     """§7.2.6: Task fails 3x -> dead letter -> Tier 2 notification.
 
@@ -404,6 +416,7 @@ def test_core_client_7_2_6_dead_letter_notification() -> None:
 
 
 # TST-BRAIN-458
+# TRACE: {"suite": "BRAIN", "case": "0458", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "13", "title": "core_client_7_3_1_rejects_empty_url"}
 def test_core_client_7_3_1_rejects_empty_url() -> None:
     """CoreHTTPClient rejects empty base_url at construction."""
     from src.adapter.core_http import CoreHTTPClient
@@ -414,6 +427,7 @@ def test_core_client_7_3_1_rejects_empty_url() -> None:
 
 
 # TST-BRAIN-459
+# TRACE: {"suite": "BRAIN", "case": "0459", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "14", "title": "core_client_7_3_2_rejects_no_auth"}
 def test_core_client_7_3_2_rejects_no_auth() -> None:
     """CoreHTTPClient rejects construction with no auth (no token, no service_identity)."""
     from src.adapter.core_http import CoreHTTPClient
@@ -425,6 +439,7 @@ def test_core_client_7_3_2_rejects_no_auth() -> None:
 
 # TST-BRAIN-460
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0460", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "15", "title": "core_client_7_3_3_context_manager"}
 async def test_core_client_7_3_3_context_manager(core_client) -> None:
     """CoreHTTPClient supports async context manager for lifecycle."""
     async with core_client as client:
@@ -436,6 +451,7 @@ async def test_core_client_7_3_3_context_manager(core_client) -> None:
 
 # TST-BRAIN-461
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0461", "section": "07", "sectionName": "Core Client (HTTP Client)", "subsection": "01", "scenario": "16", "title": "core_client_7_3_4_pii_scrub"}
 async def test_core_client_7_3_4_pii_scrub(core_client) -> None:
     """POST /v1/pii/scrub sends text and returns scrub result."""
     scrub_result = {

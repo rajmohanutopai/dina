@@ -21,6 +21,7 @@ class TestUpgradeVerification:
     """Real tests for REL-016: no auto-update, explicit upgrade only."""
 
     # REL-016
+    # TRACE: {"suite": "REL", "case": "0016", "section": "16", "sectionName": "Upgrade", "subsection": "01", "scenario": "01", "title": "rel_016_no_auto_update_service"}
     def test_rel_016_no_auto_update_service(self, release_services) -> None:
         """No auto-update cron job or service runs inside the container."""
         compose_file = release_services._compose_file
@@ -47,6 +48,7 @@ class TestUpgradeVerification:
         )
 
     # REL-016
+    # TRACE: {"suite": "REL", "case": "0016", "section": "16", "sectionName": "Upgrade", "subsection": "01", "scenario": "02", "title": "rel_016_no_watchtower_or_ouroboros"}
     def test_rel_016_no_watchtower_or_ouroboros(self, release_services) -> None:
         """No auto-update container (watchtower, ouroboros) in the stack."""
         compose_file = release_services._compose_file
@@ -68,6 +70,7 @@ class TestUpgradeVerification:
             )
 
     # REL-016
+    # TRACE: {"suite": "REL", "case": "0016", "section": "16", "sectionName": "Upgrade", "subsection": "01", "scenario": "03", "title": "rel_016_healthz_consistent_across_calls"}
     def test_rel_016_healthz_consistent_across_calls(
         self, core_url, auth_headers,
     ) -> None:

@@ -18,6 +18,7 @@ import (
 // the item summary.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0028", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "01", "title": "Approval_PreviewContainsSummary"}
 func TestApproval_PreviewContainsSummary(t *testing.T) {
 	req := domain.ApprovalRequest{
 		ClientDID: "did:key:z6MkAgent1",
@@ -42,6 +43,7 @@ func TestApproval_PreviewContainsSummary(t *testing.T) {
 // TST-CORE-911: vault_query creates approval with Preview = query text.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0029", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "01", "title": "Approval_PreviewContainsQueryText"}
 func TestApproval_PreviewContainsQueryText(t *testing.T) {
 	req := domain.ApprovalRequest{
 		ClientDID: "did:key:z6MkAgent1",
@@ -59,6 +61,7 @@ func TestApproval_PreviewContainsQueryText(t *testing.T) {
 // TST-CORE-912: Preview is NOT in AccessGrant — only Reason is.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0030", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "01", "title": "Approval_PreviewNotInGrant"}
 func TestApproval_PreviewNotInGrant(t *testing.T) {
 	grant := domain.AccessGrant{
 		ClientDID: "did:key:z6MkAgent1",
@@ -96,6 +99,7 @@ func searchSubstring(s, substr string) bool {
 // TST-CORE-913: Preview is truncated to 250 chars + "..." by handler logic.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0031", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "04", "scenario": "01", "title": "Approval_PreviewTruncation"}
 func TestApproval_PreviewTruncation(t *testing.T) {
 	// Simulate what the handler does: truncate preview to 250 chars.
 	longSummary := ""

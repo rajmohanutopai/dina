@@ -59,6 +59,7 @@ def _get(core, path, params=None):
 class TestTierValidation:
     """POST /v1/personas accepts only valid tier names."""
 
+    # TRACE: {"suite": "INT", "case": "0115", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "01", "title": "create_with_valid_tiers"}
     def test_create_with_valid_tiers(self, core) -> None:
         """All 4 tiers accepted."""
         for tier in ("default", "standard", "sensitive", "locked"):
@@ -66,12 +67,14 @@ class TestTierValidation:
             resp = _post(core, "/v1/personas", {"name": name, "tier": tier, "passphrase": "test1234"})
             assert resp.status_code in (201, 409), f"{tier}: {resp.status_code} {resp.text}"
 
+    # TRACE: {"suite": "INT", "case": "0116", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "02", "title": "reject_legacy_tiers"}
     def test_reject_legacy_tiers(self, core) -> None:
         """Legacy 'open' and 'restricted' are rejected."""
         for tier in ("open", "restricted", "invalid", ""):
             resp = _post(core, "/v1/personas", {"name": f"tier_bad_{tier}", "tier": tier, "passphrase": "test1234"})
             assert resp.status_code == 400, f"{tier}: expected 400, got {resp.status_code}"
 
+    # TRACE: {"suite": "INT", "case": "0117", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "03", "title": "default_persona_vault_auto_opens"}
     def test_default_persona_vault_auto_opens(self, core) -> None:
         """Default-tier persona reports vault=open on creation."""
         name = f"auto_open_{int(time.time())}"
@@ -80,6 +83,7 @@ class TestTierValidation:
             data = resp.json()
             assert data.get("vault") == "open", f"expected vault=open: {data}"
 
+    # TRACE: {"suite": "INT", "case": "0118", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "04", "title": "standard_persona_vault_auto_opens"}
     def test_standard_persona_vault_auto_opens(self, core) -> None:
         """Standard-tier persona reports vault=open on creation."""
         name = f"std_open_{int(time.time())}"
@@ -97,6 +101,7 @@ class TestTierValidation:
 class TestSessionLifecycle:
     """POST /v1/session/start, /end, GET /v1/sessions."""
 
+    # TRACE: {"suite": "INT", "case": "0119", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "01", "title": "session_start"}
     def test_session_start(self, core) -> None:
         """Starting a session returns active session with ID and name."""
         name = f"sess_{int(time.time())}"
@@ -110,6 +115,7 @@ class TestSessionLifecycle:
         # Cleanup
         _post(core, "/v1/session/end", {"name": name})
 
+    # TRACE: {"suite": "INT", "case": "0120", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "02", "title": "session_reconnect"}
     def test_session_reconnect(self, core) -> None:
         """Starting same-name session returns existing (reconnect)."""
         name = f"reconnect_{int(time.time())}"
@@ -118,6 +124,7 @@ class TestSessionLifecycle:
         assert r1.json()["id"] == r2.json()["id"]
         _post(core, "/v1/session/end", {"name": name})
 
+    # TRACE: {"suite": "INT", "case": "0121", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "03", "title": "session_list"}
     def test_session_list(self, core) -> None:
         """GET /v1/sessions lists active sessions."""
         name = f"listme_{int(time.time())}"
@@ -128,6 +135,7 @@ class TestSessionLifecycle:
         assert name in names
         _post(core, "/v1/session/end", {"name": name})
 
+    # TRACE: {"suite": "INT", "case": "0122", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "04", "title": "session_end"}
     def test_session_end(self, core) -> None:
         """Ending a session removes it from active list."""
         name = f"endme_{int(time.time())}"
@@ -149,6 +157,7 @@ class TestSessionLifecycle:
 class TestApprovalLifecycle:
     """POST /v1/persona/approve, /deny, GET /v1/persona/approvals."""
 
+    # TRACE: {"suite": "INT", "case": "0123", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "01", "title": "list_pending_approvals"}
     def test_list_pending_approvals(self, core) -> None:
         """GET /v1/persona/approvals returns list."""
         resp = _get(core, "/v1/persona/approvals")
@@ -156,6 +165,7 @@ class TestApprovalLifecycle:
         data = resp.json()
         assert "approvals" in data
 
+    # TRACE: {"suite": "INT", "case": "0124", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "02", "title": "deny_nonexistent_returns_404"}
     def test_deny_nonexistent_returns_404(self, core) -> None:
         """TST-INT-210: Denying a nonexistent approval returns 404."""
         resp = _post(core, "/v1/persona/deny", {"id": "nonexistent-id"})
@@ -170,6 +180,7 @@ class TestApprovalLifecycle:
 class TestVaultTierEnforcement:
     """Vault query respects persona tier based on caller type."""
 
+    # TRACE: {"suite": "INT", "case": "0125", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "01", "title": "query_general_persona_succeeds"}
     def test_query_general_persona_succeeds(self, core) -> None:
         """Query on 'general' (default tier) succeeds for admin."""
         resp = _post(core, "/v1/vault/query", {
@@ -178,6 +189,7 @@ class TestVaultTierEnforcement:
         # Should succeed (200) or return empty results — not 403
         assert resp.status_code == 200, f"general query failed: {resp.text}"
 
+    # TRACE: {"suite": "INT", "case": "0126", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "02", "title": "query_standard_persona_succeeds_for_admin"}
     def test_query_standard_persona_succeeds_for_admin(self, core) -> None:
         """Query on standard tier succeeds for admin (CallerType=user)."""
         # Create a standard persona
@@ -189,6 +201,7 @@ class TestVaultTierEnforcement:
         })
         assert resp.status_code == 200, f"standard query failed: {resp.text}"
 
+    # TRACE: {"suite": "INT", "case": "0127", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "03", "title": "query_locked_persona_returns_403"}
     def test_query_locked_persona_returns_403(self, core) -> None:
         """Query on locked tier returns 403 (vault not open)."""
         # Create locked persona (not unlocked)
@@ -303,6 +316,7 @@ class TestDeviceSignedAgentContext:
             self._core_url, self._admin_headers,
         )
 
+    # TRACE: {"suite": "INT", "case": "0128", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "05", "scenario": "01", "title": "session_scoped_to_device_id"}
     def test_session_scoped_to_device_id(self):
         """Session agent_did equals the registered device_id, not the DID."""
         sess_name = f"sig_sess_{int(time.time())}"
@@ -323,6 +337,7 @@ class TestDeviceSignedAgentContext:
             "/v1/session/end", {"name": sess_name},
         )
 
+    # TRACE: {"suite": "INT", "case": "0129", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "05", "scenario": "02", "title": "vault_read_blocked_by_authz"}
     def test_vault_read_blocked_by_authz(self):
         """Device-scoped agents cannot read vaults directly (persona-blind)."""
         r = _device_post(
@@ -334,6 +349,7 @@ class TestDeviceSignedAgentContext:
             f"vault read must be blocked: {r.status_code} {r.text}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0130", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "05", "scenario": "03", "title": "staging_ingest_allowed"}
     def test_staging_ingest_allowed(self):
         """Phase 4: device-scoped agents write via staging, not vault/store."""
         r = _device_post(
@@ -353,6 +369,7 @@ class TestDeviceSignedAgentContext:
         )
         assert r.json().get("staged") is True
 
+    # TRACE: {"suite": "INT", "case": "0131", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "05", "scenario": "04", "title": "reason_endpoint_not_blocked"}
     def test_reason_endpoint_not_blocked(self):
         """Device-signed /api/v1/ask passes authz (in device allowlist).
 
@@ -400,6 +417,7 @@ class TestDeviceSignedApprovalLifecycle:
             self._core_url, self._admin_headers,
         )
 
+    # TRACE: {"suite": "INT", "case": "0132", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "06", "scenario": "01", "title": "device_uses_staging_not_vault_store"}
     def test_device_uses_staging_not_vault_store(self):
         """Device ingests via staging; vault/store returns 403 forbidden."""
         sess_name = f"staging_sess_{int(time.time())}"
@@ -523,6 +541,7 @@ class TestBrainMediatedApprovalPath:
             content=body_bytes, headers=headers, timeout=10,
         )
 
+    # TRACE: {"suite": "INT", "case": "0133", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "01", "title": "brain_read_approval_lifecycle"}
     def test_brain_read_approval_lifecycle(self):
         """Service-key + X-Agent-DID vault query: denied → approve → 200.
 

@@ -118,6 +118,7 @@ def entity_vault(mock_scrubber, mock_core):
 
 
 # TST-BRAIN-091
+# TRACE: {"suite": "BRAIN", "case": "0091", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "01", "title": "person_name_detection"}
 def test_pii_3_1_1_person_name_detection(spacy_scrubber) -> None:
     """SS3.1.1: 'John Smith' detected and replaced (Faker name or tag)."""
     text = make_pii_text(include=("person",))
@@ -143,6 +144,7 @@ def test_pii_3_1_1_person_name_detection(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-092
+# TRACE: {"suite": "BRAIN", "case": "0092", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "02", "title": "organization_detection"}
 def test_pii_3_1_2_organization_detection(spacy_scrubber) -> None:
     """SS3.1.2: 'Google Inc.' detected and replaced."""
     text = make_pii_text(include=("org",))
@@ -158,6 +160,7 @@ def test_pii_3_1_2_organization_detection(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-093
+# TRACE: {"suite": "BRAIN", "case": "0093", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "03", "title": "location_detection"}
 def test_pii_3_1_3_location_detection(spacy_scrubber) -> None:
     """SS3.1.3: 'San Francisco, CA' detected and replaced."""
     text = make_pii_text(include=("location",))
@@ -172,6 +175,7 @@ def test_pii_3_1_3_location_detection(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-094
+# TRACE: {"suite": "BRAIN", "case": "0094", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "04", "title": "date_with_context"}
 def test_pii_3_1_4_date_with_context(spacy_scrubber) -> None:
     """SS3.1.4: Dates are NOT scrubbed — DATE is in the SAFE whitelist."""
     from src.adapter.scrubber_presidio import SAFE_ENTITIES
@@ -194,6 +198,7 @@ def test_pii_3_1_4_date_with_context(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-095
+# TRACE: {"suite": "BRAIN", "case": "0095", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "05", "title": "multiple_entities"}
 def test_pii_3_1_5_multiple_entities(spacy_scrubber) -> None:
     """SS3.1.5: Multiple entity types in one text all numbered uniquely."""
     text = "John from Google in NYC"
@@ -208,6 +213,7 @@ def test_pii_3_1_5_multiple_entities(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-096
+# TRACE: {"suite": "BRAIN", "case": "0096", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "06", "title": "no_entities"}
 def test_pii_3_1_6_no_entities(spacy_scrubber) -> None:
     """SS3.1.6: Text with no entities passes through unchanged."""
     text = make_pii_text(include=())  # "The weather is nice today"
@@ -220,6 +226,7 @@ def test_pii_3_1_6_no_entities(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-097
+# TRACE: {"suite": "BRAIN", "case": "0097", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "07", "title": "ambiguous_entity"}
 def test_pii_3_1_7_ambiguous_entity(spacy_scrubber) -> None:
     """SS3.1.7: 'Apple' recognized as ORG in 'Apple released a new phone' context."""
     text = "Apple released a new phone"
@@ -233,6 +240,7 @@ def test_pii_3_1_7_ambiguous_entity(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-098
+# TRACE: {"suite": "BRAIN", "case": "0098", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "08", "title": "entity_in_url"}
 def test_pii_3_1_8_entity_in_url(spacy_scrubber) -> None:
     """SS3.1.8: URL containing a person name is preserved (URL not mangled)."""
     text = "Visit john-smith.example.com for details"
@@ -244,6 +252,7 @@ def test_pii_3_1_8_entity_in_url(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-099
+# TRACE: {"suite": "BRAIN", "case": "0099", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "09", "title": "non_english_text"}
 def test_pii_3_1_9_non_english_text(spacy_scrubber) -> None:
     """SS3.1.9: Non-English text handled best-effort with en_core_web_sm."""
     text = "Francois from Paris"
@@ -260,6 +269,7 @@ def test_pii_3_1_9_non_english_text(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-100
+# TRACE: {"suite": "BRAIN", "case": "0100", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "10", "title": "medical_terms"}
 def test_pii_3_1_10_medical_terms(spacy_scrubber) -> None:
     """SS3.1.10: 'L4-L5 disc herniation' detected via custom spaCy rules as MEDICAL."""
     # This test requires SpacyScrubber (with _nlp), not PresidioScrubber.
@@ -286,6 +296,7 @@ def test_pii_3_1_10_medical_terms(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-101
+# TRACE: {"suite": "BRAIN", "case": "0101", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "11", "title": "multiple_same_type"}
 def test_pii_3_1_11_multiple_same_type(spacy_scrubber) -> None:
     """SS3.1.11: Multiple entities of the same type get unique replacements."""
     text = "John Smith met Jane Doe at Google and Meta"
@@ -312,6 +323,7 @@ def test_pii_3_1_11_multiple_same_type(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-102
+# TRACE: {"suite": "BRAIN", "case": "0102", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "12", "title": "replacement_map_accumulates"}
 def test_pii_3_1_12_replacement_map_accumulates(spacy_scrubber) -> None:
     """SS3.1.12: Tier 2 entities accumulate with sequential numbering."""
     text = make_pii_text(include=("email", "person"))
@@ -336,6 +348,7 @@ def test_pii_3_1_12_replacement_map_accumulates(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-103
+# TRACE: {"suite": "BRAIN", "case": "0103", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "13", "title": "address_detection"}
 def test_pii_3_1_13_address_detection(spacy_scrubber) -> None:
     """SS3.1.13: Street address detected and replaced."""
     text = "Lives at 42 Baker Street, London"
@@ -382,6 +395,7 @@ def presidio_scrubber_with_gliner():
 
 
 @pytest.mark.skipif(not _GLINER_AVAILABLE, reason="gliner package not installed")
+# TRACE: {"suite": "BRAIN", "case": "0095", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "14", "title": "gliner_medical_condition"}
 def test_pii_3_1_14_gliner_medical_condition(presidio_scrubber_with_gliner) -> None:
     """SS3.1.14: GLiNER detects 'L4-L5 disc herniation' as MEDICAL_CONDITION."""
     text = "Patient diagnosed with L4-L5 disc herniation."
@@ -396,6 +410,7 @@ def test_pii_3_1_14_gliner_medical_condition(presidio_scrubber_with_gliner) -> N
 
 
 @pytest.mark.skipif(not _GLINER_AVAILABLE, reason="gliner package not installed")
+# TRACE: {"suite": "BRAIN", "case": "0096", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "15", "title": "gliner_medication"}
 def test_pii_3_1_15_gliner_medication(presidio_scrubber_with_gliner) -> None:
     """SS3.1.15: GLiNER detects 'Ibuprofen 400mg' as MEDICATION."""
     text = "Prescribed Ibuprofen 400mg PRN for pain management."
@@ -410,6 +425,7 @@ def test_pii_3_1_15_gliner_medication(presidio_scrubber_with_gliner) -> None:
 
 
 @pytest.mark.skipif(not _GLINER_AVAILABLE, reason="gliner package not installed")
+# TRACE: {"suite": "BRAIN", "case": "0097", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "16", "title": "gliner_mixed_medical_text"}
 def test_pii_3_1_16_gliner_mixed_medical_text(presidio_scrubber_with_gliner) -> None:
     """SS3.1.16: GLiNER detects both medical condition and medication in mixed text."""
     text = (
@@ -432,6 +448,7 @@ def test_pii_3_1_16_gliner_mixed_medical_text(presidio_scrubber_with_gliner) -> 
 
 
 @pytest.mark.skipif(not _GLINER_AVAILABLE, reason="gliner package not installed")
+# TRACE: {"suite": "BRAIN", "case": "0098", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "17", "title": "gliner_scrub_medical"}
 def test_pii_3_1_17_gliner_scrub_medical(presidio_scrubber_with_gliner) -> None:
     """SS3.1.17: Medical entities are scrubbed (replaced with tokens) in full scrub."""
     text = "Patient has L4-L5 disc herniation and takes Ibuprofen 400mg."
@@ -451,6 +468,7 @@ def test_pii_3_1_17_gliner_scrub_medical(presidio_scrubber_with_gliner) -> None:
 
 
 # TST-BRAIN-104
+# TRACE: {"suite": "BRAIN", "case": "0104", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "01", "title": "email_plus_person"}
 def test_pii_3_2_1_email_plus_person(spacy_scrubber) -> None:
     """SS3.2.1: Email (Tier 1 regex) + person name (Tier 2 NER) both scrubbed."""
     text = "Email john@example.com, from John Smith"
@@ -464,6 +482,7 @@ def test_pii_3_2_1_email_plus_person(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-105
+# TRACE: {"suite": "BRAIN", "case": "0105", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "02", "title": "phone_plus_location"}
 def test_pii_3_2_2_phone_plus_location(spacy_scrubber) -> None:
     """SS3.2.2: Phone number (Tier 1) + location (Tier 2) — both must be scrubbed."""
     text = "Call +1-415-555-1234 in San Francisco"
@@ -482,6 +501,7 @@ def test_pii_3_2_2_phone_plus_location(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-106
+# TRACE: {"suite": "BRAIN", "case": "0106", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "03", "title": "tier1_runs_first"}
 def test_pii_3_2_3_tier1_runs_first() -> None:
     """SS3.2.3: Tier 1 (regex) runs before Tier 2 (NER) so NER sees tokens, not raw PII."""
     from src.service.entity_vault import EntityVaultService
@@ -498,6 +518,7 @@ def test_pii_3_2_3_tier1_runs_first() -> None:
 
 
 # TST-BRAIN-107
+# TRACE: {"suite": "BRAIN", "case": "0107", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "04", "title": "batch_performance"}
 def test_pii_3_2_4_batch_performance(spacy_scrubber) -> None:
     """SS3.2.4: 100 text chunks processed within 5 seconds."""
     import time
@@ -516,6 +537,7 @@ def test_pii_3_2_4_batch_performance(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-108
+# TRACE: {"suite": "BRAIN", "case": "0108", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "05", "title": "full_pipeline_to_cloud"}
 def test_pii_3_2_5_full_pipeline_to_cloud(spacy_scrubber) -> None:
     """SS3.2.5: Cloud LLM receives only tokens, never raw PII."""
     text = make_pii_text(include=("person", "org", "location"))
@@ -530,6 +552,7 @@ def test_pii_3_2_5_full_pipeline_to_cloud(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-109
+# TRACE: {"suite": "BRAIN", "case": "0109", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "06", "title": "circular_dependency_prevention"}
 def test_pii_3_2_6_circular_dependency_prevention() -> None:
     """SS3.2.6: Scrubbing is always local, never sends to cloud.
 
@@ -556,6 +579,7 @@ def test_pii_3_2_6_circular_dependency_prevention() -> None:
 
 
 # TST-BRAIN-110
+# TRACE: {"suite": "BRAIN", "case": "0110", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "01", "title": "create_entity_vault"}
 def test_pii_3_3_1_create_entity_vault(entity_vault) -> None:
     """SS3.3.1: Entity vault is an in-memory dict created per request."""
     entities = [
@@ -572,6 +596,7 @@ def test_pii_3_3_1_create_entity_vault(entity_vault) -> None:
 
 
 # TST-BRAIN-111
+# TRACE: {"suite": "BRAIN", "case": "0111", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "02", "title": "scrub_before_llm"}
 def test_pii_3_3_2_scrub_before_llm(entity_vault) -> None:
     """SS3.3.2: LLM receives only tokens, not raw PII."""
     entities = [
@@ -591,6 +616,7 @@ def test_pii_3_3_2_scrub_before_llm(entity_vault) -> None:
 
 
 # TST-BRAIN-112
+# TRACE: {"suite": "BRAIN", "case": "0112", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "03", "title": "rehydrate_after_llm"}
 def test_pii_3_3_3_rehydrate_after_llm(entity_vault) -> None:
     """SS3.3.3: Tokens in LLM response replaced back with original values."""
     entities = [
@@ -615,6 +641,7 @@ def test_pii_3_3_3_rehydrate_after_llm(entity_vault) -> None:
 
 
 # TST-BRAIN-818
+# TRACE: {"suite": "BRAIN", "case": "0818", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "27", "title": "f08_rehydrate_matches_bare_and_bracketed"}
 def test_f08_rehydrate_matches_bare_and_bracketed(entity_vault) -> None:
     """F08: rehydrate() matches both bracketed and bare opaque tokens.
 
@@ -645,6 +672,7 @@ def test_f08_rehydrate_matches_bare_and_bracketed(entity_vault) -> None:
 
 
 # TST-BRAIN-113
+# TRACE: {"suite": "BRAIN", "case": "0113", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "04", "title": "entity_vault_destroyed"}
 def test_pii_3_3_4_entity_vault_destroyed(entity_vault) -> None:
     """SS3.3.4: Entity vault dict is garbage-collected after rehydration.
 
@@ -698,6 +726,7 @@ def test_pii_3_3_4_entity_vault_destroyed(entity_vault) -> None:
 
 
 # TST-BRAIN-114
+# TRACE: {"suite": "BRAIN", "case": "0114", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "05", "title": "entity_vault_never_persisted"}
 def test_pii_3_3_5_entity_vault_never_persisted() -> None:
     """SS3.3.5: Entity vault never written to disk — purely in-memory."""
     from src.service.entity_vault import EntityVaultService
@@ -715,6 +744,7 @@ def test_pii_3_3_5_entity_vault_never_persisted() -> None:
 
 
 # TST-BRAIN-115
+# TRACE: {"suite": "BRAIN", "case": "0115", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "06", "title": "entity_vault_never_logged"}
 def test_pii_3_3_6_entity_vault_never_logged() -> None:
     """SS3.3.6: Replacement map values never appear in log output."""
     from src.service.entity_vault import EntityVaultService
@@ -729,6 +759,7 @@ def test_pii_3_3_6_entity_vault_never_logged() -> None:
 
 
 # TST-BRAIN-116
+# TRACE: {"suite": "BRAIN", "case": "0116", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "07", "title": "entity_vault_not_in_main_vault"}
 def test_pii_3_3_7_entity_vault_not_in_main_vault() -> None:
     """SS3.3.7: No entity_vault table in identity.sqlite."""
     from src.service.entity_vault import EntityVaultService
@@ -743,6 +774,7 @@ def test_pii_3_3_7_entity_vault_not_in_main_vault() -> None:
 
 
 # TST-BRAIN-117
+# TRACE: {"suite": "BRAIN", "case": "0117", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "08", "title": "nested_redaction_tokens"}
 def test_pii_3_3_8_nested_redaction_tokens(entity_vault) -> None:
     """SS3.3.8: LLM-generated tokens distinguished from entity vault tokens."""
     entities = [
@@ -765,6 +797,7 @@ def test_pii_3_3_8_nested_redaction_tokens(entity_vault) -> None:
 
 
 # TST-BRAIN-118
+# TRACE: {"suite": "BRAIN", "case": "0118", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "09", "title": "entity_vault_local_llm_skipped"}
 def test_pii_3_3_9_entity_vault_local_llm_skipped() -> None:
     """SS3.3.9: Entity vault skipped when using local LLM."""
     from src.service.entity_vault import EntityVaultService
@@ -781,6 +814,7 @@ def test_pii_3_3_9_entity_vault_local_llm_skipped() -> None:
 
 
 # TST-BRAIN-119
+# TRACE: {"suite": "BRAIN", "case": "0119", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "10", "title": "scope_one_request"}
 def test_pii_3_3_10_scope_one_request(entity_vault) -> None:
     """SS3.3.10: Each concurrent cloud LLM call has an independent entity vault."""
     entities_a = [
@@ -804,6 +838,7 @@ def test_pii_3_3_10_scope_one_request(entity_vault) -> None:
 
 
 # TST-BRAIN-120
+# TRACE: {"suite": "BRAIN", "case": "0120", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "11", "title": "cloud_sees_topics_not_identities"}
 def test_pii_3_3_11_cloud_sees_topics_not_identities(entity_vault) -> None:
     """SS3.3.11: Cloud LLM sees health topics but cannot identify the patient.
 
@@ -865,6 +900,7 @@ def test_pii_3_3_11_cloud_sees_topics_not_identities(entity_vault) -> None:
 
 
 # TST-BRAIN-413
+# TRACE: {"suite": "BRAIN", "case": "0413", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "07", "title": "include_content_pii_scrub"}
 def test_pii_3_2_7_include_content_pii_scrub(spacy_scrubber) -> None:
     """SS3.2.7: include_content=true triggers brain PII scrub on body_text."""
     vault_response = {"body_text": "Email from John Smith at Google Inc."}
@@ -886,6 +922,7 @@ def test_pii_3_2_7_include_content_pii_scrub(spacy_scrubber) -> None:
 
 
 # TST-BRAIN-414
+# TRACE: {"suite": "BRAIN", "case": "0414", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "08", "title": "circular_dependency_invariant"}
 def test_pii_3_2_8_circular_dependency_invariant() -> None:
     """SS3.2.8: PII scrub NEVER uses cloud LLM — invariant enforcement."""
     try:
@@ -911,6 +948,7 @@ def test_pii_3_2_8_circular_dependency_invariant() -> None:
 # TST-BRAIN-423
 # TST-BRAIN-469 scrub_and_call passes full messages list to LLM
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0423", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "03", "scenario": "12", "title": "scrub_and_call_integration"}
 async def test_pii_3_3_12_scrub_and_call_integration(entity_vault, mock_scrubber, mock_core) -> None:
     """Full scrub_and_call flow: Tier1 -> Tier2 -> cloud LLM -> rehydrate."""
     mock_scrubber.scrub.return_value = (
@@ -946,6 +984,7 @@ async def test_pii_3_3_12_scrub_and_call_integration(entity_vault, mock_scrubber
 
 
 # TST-BRAIN-424
+# TRACE: {"suite": "BRAIN", "case": "0424", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "04", "scenario": "01", "title": "india_aadhaar"}
 def test_pii_3_4_1_india_aadhaar(presidio_scrubber) -> None:
     """SS3.4.1: Aadhaar number detected and replaced with <AADHAAR_NUMBER_1>."""
     text = "My aadhaar number is 2345 6789 0123"
@@ -958,6 +997,7 @@ def test_pii_3_4_1_india_aadhaar(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-425
+# TRACE: {"suite": "BRAIN", "case": "0425", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "04", "scenario": "02", "title": "india_pan"}
 def test_pii_3_4_2_india_pan(presidio_scrubber) -> None:
     """SS3.4.2: PAN number detected and replaced with <IN_PAN_1>."""
     text = "PAN: ABCDE1234F"
@@ -973,6 +1013,7 @@ def test_pii_3_4_2_india_pan(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-426
+# TRACE: {"suite": "BRAIN", "case": "0426", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "04", "scenario": "03", "title": "india_ifsc"}
 def test_pii_3_4_3_india_ifsc(presidio_scrubber) -> None:
     """SS3.4.3: IFSC code detected and replaced."""
     text = "Bank IFSC code: SBIN0001234"
@@ -985,6 +1026,7 @@ def test_pii_3_4_3_india_ifsc(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-427
+# TRACE: {"suite": "BRAIN", "case": "0427", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "04", "scenario": "04", "title": "india_upi"}
 def test_pii_3_4_4_india_upi(presidio_scrubber) -> None:
     """SS3.4.4: UPI ID detected and replaced."""
     text = "Pay me at user@okicici"
@@ -1009,6 +1051,7 @@ def test_pii_3_4_4_india_upi(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-428
+# TRACE: {"suite": "BRAIN", "case": "0428", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "04", "scenario": "05", "title": "india_phone"}
 def test_pii_3_4_5_india_phone(presidio_scrubber) -> None:
     """SS3.4.5: Indian phone number with +91 detected."""
     text = "Call me at +91 9876543210"
@@ -1021,6 +1064,7 @@ def test_pii_3_4_5_india_phone(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-429
+# TRACE: {"suite": "BRAIN", "case": "0429", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "04", "scenario": "06", "title": "india_passport"}
 def test_pii_3_4_6_india_passport(presidio_scrubber) -> None:
     """SS3.4.6: Indian passport detected with context words."""
     text = "My passport number is A1234567"
@@ -1033,6 +1077,7 @@ def test_pii_3_4_6_india_passport(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-430
+# TRACE: {"suite": "BRAIN", "case": "0430", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "04", "scenario": "07", "title": "india_bank_account"}
 def test_pii_3_4_7_india_bank_account(presidio_scrubber) -> None:
     """SS3.4.7: Indian bank account number detected with context.
 
@@ -1073,6 +1118,7 @@ def test_pii_3_4_7_india_bank_account(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-431
+# TRACE: {"suite": "BRAIN", "case": "0431", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "05", "scenario": "01", "title": "classifier_persona"}
 def test_pii_3_5_1_classifier_persona() -> None:
     """SS3.5.1: /health persona forces SENSITIVE classification."""
     from src.service.domain_classifier import DomainClassifier
@@ -1086,6 +1132,7 @@ def test_pii_3_5_1_classifier_persona() -> None:
 
 
 # TST-BRAIN-432
+# TRACE: {"suite": "BRAIN", "case": "0432", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "05", "scenario": "02", "title": "classifier_health"}
 def test_pii_3_5_2_classifier_health() -> None:
     """SS3.5.2: Health keywords trigger SENSITIVE classification."""
     from src.service.domain_classifier import DomainClassifier
@@ -1099,6 +1146,7 @@ def test_pii_3_5_2_classifier_health() -> None:
 
 
 # TST-BRAIN-433
+# TRACE: {"suite": "BRAIN", "case": "0433", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "05", "scenario": "03", "title": "classifier_financial"}
 def test_pii_3_5_3_classifier_financial() -> None:
     """SS3.5.3: Financial keywords trigger ELEVATED or SENSITIVE classification."""
     from src.service.domain_classifier import DomainClassifier
@@ -1112,6 +1160,7 @@ def test_pii_3_5_3_classifier_financial() -> None:
 
 
 # TST-BRAIN-434
+# TRACE: {"suite": "BRAIN", "case": "0434", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "05", "scenario": "04", "title": "classifier_social"}
 def test_pii_3_5_4_classifier_social() -> None:
     """SS3.5.4: Casual social text defaults to GENERAL."""
     from src.service.domain_classifier import DomainClassifier
@@ -1124,6 +1173,7 @@ def test_pii_3_5_4_classifier_social() -> None:
 
 
 # TST-BRAIN-435
+# TRACE: {"suite": "BRAIN", "case": "0435", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "05", "scenario": "05", "title": "classifier_mixed"}
 def test_pii_3_5_5_classifier_mixed() -> None:
     """SS3.5.5: Mixed health and financial signals — highest sensitivity wins."""
     from src.service.domain_classifier import DomainClassifier
@@ -1143,6 +1193,7 @@ def test_pii_3_5_5_classifier_mixed() -> None:
 
 
 # TST-BRAIN-436
+# TRACE: {"suite": "BRAIN", "case": "0436", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "06", "scenario": "01", "title": "safe_date"}
 def test_pii_3_6_1_safe_date(presidio_scrubber) -> None:
     """SS3.6.1: Dates pass through unchanged — DATE is in SAFE whitelist.
 
@@ -1174,6 +1225,7 @@ def test_pii_3_6_1_safe_date(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-437
+# TRACE: {"suite": "BRAIN", "case": "0437", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "06", "scenario": "02", "title": "safe_money"}
 def test_pii_3_6_2_safe_money(presidio_scrubber) -> None:
     """SS3.6.2: Money amounts pass through unchanged."""
     text = "The total cost is $50,000"
@@ -1186,6 +1238,7 @@ def test_pii_3_6_2_safe_money(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-438
+# TRACE: {"suite": "BRAIN", "case": "0438", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "06", "scenario": "03", "title": "safe_norp"}
 def test_pii_3_6_3_safe_norp(presidio_scrubber) -> None:
     """SS3.6.3: Nationalities/groups pass through unchanged."""
     text = "The American delegation arrived"
@@ -1198,6 +1251,7 @@ def test_pii_3_6_3_safe_norp(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-439
+# TRACE: {"suite": "BRAIN", "case": "0439", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "06", "scenario": "04", "title": "safe_time"}
 def test_pii_3_6_4_safe_time(presidio_scrubber) -> None:
     """SS3.6.4: Time values pass through unchanged."""
     text = "The event starts at 3:30 PM"
@@ -1216,6 +1270,7 @@ def test_pii_3_6_4_safe_time(presidio_scrubber) -> None:
 
 # TST-BRAIN-440
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0440", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "07", "scenario": "01", "title": "vault_general_patterns"}
 async def test_pii_3_7_1_vault_general_patterns() -> None:
     """SS3.7.1: GENERAL sensitivity uses patterns-only scrubbing (names not scrubbed)."""
     from src.service.entity_vault import EntityVaultService
@@ -1257,6 +1312,7 @@ async def test_pii_3_7_1_vault_general_patterns() -> None:
 # TST-BRAIN-441
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0441", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "07", "scenario": "02", "title": "vault_sensitive_scrub"}
 async def test_pii_3_7_2_vault_sensitive_scrub() -> None:
     """SS3.7.2: SENSITIVE sensitivity uses full NER scrubbing.
 
@@ -1332,6 +1388,7 @@ async def test_pii_3_7_2_vault_sensitive_scrub() -> None:
 
 # TST-BRAIN-442
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0442", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "07", "scenario": "03", "title": "vault_local_only"}
 async def test_pii_3_7_3_vault_local_only() -> None:
     """SS3.7.3: LOCAL_ONLY sensitivity raises PIIScrubError — cloud send refused."""
     from src.service.entity_vault import EntityVaultService
@@ -1365,6 +1422,7 @@ async def test_pii_3_7_3_vault_local_only() -> None:
 
 
 # TST-BRAIN-443
+# TRACE: {"suite": "BRAIN", "case": "0443", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "07", "scenario": "04", "title": "rehydrate_hallucinated"}
 def test_pii_3_7_4_rehydrate_hallucinated(presidio_scrubber) -> None:
     """SS3.7.4: Rehydrate handles hallucinated tags — tokens not in map left as-is."""
     entity_map = [
@@ -1390,6 +1448,7 @@ def test_pii_3_7_4_rehydrate_hallucinated(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-444
+# TRACE: {"suite": "BRAIN", "case": "0444", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "08", "scenario": "01", "title": "eu_steuer_id"}
 def test_pii_3_8_1_eu_steuer_id(presidio_scrubber) -> None:
     """SS3.8.1: German Steuer-ID detected with context."""
     text = "Meine Steueridentifikationsnummer lautet 12345678901"
@@ -1407,6 +1466,7 @@ def test_pii_3_8_1_eu_steuer_id(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-445
+# TRACE: {"suite": "BRAIN", "case": "0445", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "08", "scenario": "02", "title": "eu_personalausweis"}
 def test_pii_3_8_2_eu_personalausweis(presidio_scrubber) -> None:
     """SS3.8.2: German Personalausweis number detected with context.
 
@@ -1437,6 +1497,7 @@ def test_pii_3_8_2_eu_personalausweis(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-446
+# TRACE: {"suite": "BRAIN", "case": "0446", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "08", "scenario": "03", "title": "eu_french_nir"}
 def test_pii_3_8_3_eu_french_nir(presidio_scrubber) -> None:
     """SS3.8.3: French NIR (social security) detected."""
     text = "Numero de securite sociale: 185076900100542"
@@ -1449,6 +1510,7 @@ def test_pii_3_8_3_eu_french_nir(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-447
+# TRACE: {"suite": "BRAIN", "case": "0447", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "08", "scenario": "04", "title": "eu_french_nif"}
 def test_pii_3_8_4_eu_french_nif(presidio_scrubber) -> None:
     """SS3.8.4: French NIF (tax ID) detected with context."""
     text = "Mon numero fiscal est 0123456789012"
@@ -1461,6 +1523,7 @@ def test_pii_3_8_4_eu_french_nif(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-448
+# TRACE: {"suite": "BRAIN", "case": "0448", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "08", "scenario": "05", "title": "eu_dutch_bsn"}
 def test_pii_3_8_5_eu_dutch_bsn(presidio_scrubber) -> None:
     """SS3.8.5: Dutch BSN detected with context."""
     text = "Mijn BSN is 123456789"
@@ -1473,6 +1536,7 @@ def test_pii_3_8_5_eu_dutch_bsn(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-449
+# TRACE: {"suite": "BRAIN", "case": "0449", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "08", "scenario": "06", "title": "eu_swift_bic"}
 def test_pii_3_8_6_eu_swift_bic(presidio_scrubber) -> None:
     """SS3.8.6: SWIFT/BIC code detected with context."""
     text = "Wire transfer via SWIFT code DEUTDEFF500"
@@ -1490,6 +1554,7 @@ def test_pii_3_8_6_eu_swift_bic(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-450
+# TRACE: {"suite": "BRAIN", "case": "0450", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "01", "title": "faker_natural_language"}
 def test_pii_3_9_1_faker_natural_language(presidio_scrubber) -> None:
     """SS3.9.1: Person names replaced with realistic Faker names, not tags."""
     faker = pytest.importorskip("faker")
@@ -1510,6 +1575,7 @@ def test_pii_3_9_1_faker_natural_language(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-451
+# TRACE: {"suite": "BRAIN", "case": "0451", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "02", "title": "faker_consistency"}
 def test_pii_3_9_2_faker_consistency(presidio_scrubber) -> None:
     """SS3.9.2: Same real value maps to same fake within one scrub() call."""
     faker = pytest.importorskip("faker")
@@ -1531,6 +1597,7 @@ def test_pii_3_9_2_faker_consistency(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-452
+# TRACE: {"suite": "BRAIN", "case": "0452", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "03", "title": "faker_different"}
 def test_pii_3_9_3_faker_different(presidio_scrubber) -> None:
     """SS3.9.3: Different real values get different fakes."""
     faker = pytest.importorskip("faker")
@@ -1553,6 +1620,7 @@ def test_pii_3_9_3_faker_different(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-453
+# TRACE: {"suite": "BRAIN", "case": "0453", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "04", "title": "faker_rehydrate_roundtrip"}
 def test_pii_3_9_4_faker_rehydrate_roundtrip(presidio_scrubber) -> None:
     """SS3.9.4: Full round-trip: scrub with fakes -> rehydrate -> original."""
     faker = pytest.importorskip("faker")
@@ -1573,6 +1641,7 @@ def test_pii_3_9_4_faker_rehydrate_roundtrip(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-454
+# TRACE: {"suite": "BRAIN", "case": "0454", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "05", "title": "opaque_tokens"}
 def test_pii_3_9_5_opaque_tokens() -> None:
     """SS3.9.5: Presidio uses opaque [TYPE_N] tokens for exact-match rehydration."""
     pytest.importorskip("presidio_analyzer")
@@ -1603,6 +1672,7 @@ def test_pii_3_9_5_opaque_tokens() -> None:
 
 
 # TST-BRAIN-455
+# TRACE: {"suite": "BRAIN", "case": "0455", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "06", "title": "org_opaque_token"}
 def test_pii_3_9_6_org_opaque_token(presidio_scrubber) -> None:
     """SS3.9.6: Organizations replaced with opaque [ORG_N] tokens."""
     text = "She works at Google Inc."

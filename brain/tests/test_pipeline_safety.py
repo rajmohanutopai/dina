@@ -157,6 +157,7 @@ def connector_tracker():
 
 # TST-BRAIN-503
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0503", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "01", "title": "reader_pipeline_no_outbound_tools"}
 async def test_reader_pipeline_no_outbound_tools(allowlist_client) -> None:
     """20.1.1: Reader-stage MCP toolset contains no outbound tools.
 
@@ -180,6 +181,7 @@ async def test_reader_pipeline_no_outbound_tools(allowlist_client) -> None:
 
 # TST-BRAIN-504
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0504", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "02", "title": "sender_receives_structured_not_raw"}
 async def test_sender_receives_structured_not_raw(guardian) -> None:
     """20.1.2: Sender stage receives structured data, not a raw poisoned string.
 
@@ -223,6 +225,7 @@ async def test_sender_receives_structured_not_raw(guardian) -> None:
 
 # TST-BRAIN-505
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0505", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "03", "title": "disallowed_mcp_tool_rejected"}
 async def test_disallowed_mcp_tool_rejected(allowlist_client) -> None:
     """20.1.3: Disallowed MCP tools are rejected with deterministic error.
 
@@ -249,6 +252,7 @@ async def test_disallowed_mcp_tool_rejected(allowlist_client) -> None:
 
 # TST-BRAIN-506
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0506", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "04", "title": "tier3_queued_not_interrupted"}
 async def test_tier3_queued_not_interrupted(guardian) -> None:
     """20.2.1: Low-priority engagement event is queued, not interrupted.
 
@@ -270,6 +274,7 @@ async def test_tier3_queued_not_interrupted(guardian) -> None:
 
 # TST-BRAIN-507
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0507", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "05", "title": "briefing_deduplicates_repeated_items"}
 async def test_briefing_deduplicates_repeated_items(guardian) -> None:
     """20.2.2: Duplicate events are deduplicated in the briefing.
 
@@ -296,6 +301,7 @@ async def test_briefing_deduplicates_repeated_items(guardian) -> None:
 
 # TST-BRAIN-508
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0508", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "06", "title": "briefing_crash_regenerates_from_source"}
 async def test_briefing_crash_regenerates_from_source(guardian) -> None:
     """20.2.3: Briefing crash mid-generation retries without double-delivery.
 
@@ -347,6 +353,7 @@ async def test_briefing_crash_regenerates_from_source(guardian) -> None:
 
 # TST-BRAIN-509
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0509", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "07", "title": "openclaw_unavailable_maps_degraded"}
 async def test_openclaw_unavailable_maps_degraded(connector_tracker) -> None:
     """20.3.1: OpenClaw MCP ConnectionError maps to 'degraded' state.
 
@@ -373,6 +380,7 @@ async def test_openclaw_unavailable_maps_degraded(connector_tracker) -> None:
 
 # TST-BRAIN-510
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0510", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "08", "title": "telegram_auth_failure_maps_expired"}
 async def test_telegram_auth_failure_maps_expired(connector_tracker) -> None:
     """20.3.2: Telegram invalid token error maps to 'expired' state.
 
@@ -399,6 +407,7 @@ async def test_telegram_auth_failure_maps_expired(connector_tracker) -> None:
 
 # TST-BRAIN-511
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0511", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "09", "title": "connector_recovery_clears_stale_error"}
 async def test_connector_recovery_clears_stale_error(connector_tracker) -> None:
     """20.3.3: Connector recovery clears stale error, returns to 'healthy'.
 

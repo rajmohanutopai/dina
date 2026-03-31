@@ -16,6 +16,7 @@ class TestWrongAPIKey:
     """REL-011A: Invalid auth produces clear errors."""
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "01", "scenario": "01", "title": "rel_011_wrong_token_returns_401"}
     def test_rel_011_wrong_token_returns_401(self, core_url) -> None:
         """Invalid Bearer token produces 401, not a hang or 500."""
         resp = httpx.post(
@@ -33,6 +34,7 @@ class TestWrongAPIKey:
         )
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "01", "scenario": "02", "title": "rel_011_no_token_returns_401"}
     def test_rel_011_no_token_returns_401(self, core_url) -> None:
         """Missing auth header produces 401, not 500."""
         resp = httpx.post(
@@ -49,6 +51,7 @@ class TestBrainHealth:
     """REL-011B/C: Brain availability and degradation."""
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "02", "scenario": "01", "title": "rel_011_brain_healthz_reachable"}
     def test_rel_011_brain_healthz_reachable(self, brain_url) -> None:
         """Brain /healthz is reachable and returns status."""
         resp = httpx.get(f"{brain_url}/healthz", timeout=10)
@@ -57,6 +60,7 @@ class TestBrainHealth:
         assert data.get("status") in ("ok", "degraded", "healthy")
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "02", "scenario": "02", "title": "rel_011_core_healthz_includes_brain"}
     def test_rel_011_core_healthz_includes_brain(self, core_url) -> None:
         """Core /healthz reports brain connectivity status."""
         resp = httpx.get(f"{core_url}/healthz", timeout=10)
@@ -69,6 +73,7 @@ class TestVaultResilience:
     """REL-011D: Data integrity under normal operation."""
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "03", "scenario": "01", "title": "rel_011_vault_store_and_verify"}
     def test_rel_011_vault_store_and_verify(self, api: httpx.Client) -> None:
         """Data stored is exactly what is retrieved — no corruption."""
         test_value = "critical financial record amount=50000"
@@ -106,6 +111,7 @@ class TestVaultResilience:
         )
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "03", "scenario": "02", "title": "rel_011_concurrent_stores_succeed"}
     def test_rel_011_concurrent_stores_succeed(self, api: httpx.Client) -> None:
         """Multiple sequential stores succeed without errors."""
         for i in range(5):
@@ -124,6 +130,7 @@ class TestVaultResilience:
             )
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "03", "scenario": "03", "title": "rel_011_agent_validate_resilient"}
     def test_rel_011_agent_validate_resilient(
         self, core_url, auth_headers,
     ) -> None:
@@ -144,6 +151,7 @@ class TestVaultResilience:
         )
 
     # REL-011
+    # TRACE: {"suite": "REL", "case": "0011", "section": "11", "sectionName": "Failure Handling", "subsection": "03", "scenario": "04", "title": "rel_011_error_messages_human_readable"}
     def test_rel_011_error_messages_human_readable(self, core_url) -> None:
         """Error responses are human-readable, not raw tracebacks."""
         resp = httpx.post(

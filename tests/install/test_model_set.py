@@ -55,6 +55,7 @@ def _read_defaults(model_dir: Path) -> dict:
 class TestModelSetDirect:
     """Non-interactive model set via command line args."""
 
+    # TRACE: {"suite": "INST", "case": "0069", "section": "07", "sectionName": "Model Config", "subsection": "01", "scenario": "01", "title": "set_lite"}
     def test_set_lite(self, model_dir: Path) -> None:
         """Set lite model directly."""
         result = subprocess.run(
@@ -68,6 +69,7 @@ class TestModelSetDirect:
         defaults = _read_defaults(model_dir)
         assert defaults["lite"] == "gemini/gemini-2.5-flash"
 
+    # TRACE: {"suite": "INST", "case": "0070", "section": "07", "sectionName": "Model Config", "subsection": "01", "scenario": "02", "title": "set_primary"}
     def test_set_primary(self, model_dir: Path) -> None:
         """Set primary model directly."""
         result = subprocess.run(
@@ -80,6 +82,7 @@ class TestModelSetDirect:
         defaults = _read_defaults(model_dir)
         assert defaults["primary"] == "claude/claude-sonnet-4-6"
 
+    # TRACE: {"suite": "INST", "case": "0071", "section": "07", "sectionName": "Model Config", "subsection": "01", "scenario": "03", "title": "set_heavy"}
     def test_set_heavy(self, model_dir: Path) -> None:
         """Set heavy model directly."""
         result = subprocess.run(
@@ -92,6 +95,7 @@ class TestModelSetDirect:
         defaults = _read_defaults(model_dir)
         assert defaults["heavy"] == "openai/gpt-5.4"
 
+    # TRACE: {"suite": "INST", "case": "0072", "section": "07", "sectionName": "Model Config", "subsection": "01", "scenario": "04", "title": "set_invalid_role"}
     def test_set_invalid_role(self, model_dir: Path) -> None:
         """Invalid role name is rejected."""
         result = subprocess.run(
@@ -103,6 +107,7 @@ class TestModelSetDirect:
         assert result.returncode != 0
         assert "Unknown role" in result.stderr or "Unknown role" in result.stdout
 
+    # TRACE: {"suite": "INST", "case": "0073", "section": "07", "sectionName": "Model Config", "subsection": "01", "scenario": "05", "title": "set_preserves_other_roles"}
     def test_set_preserves_other_roles(self, model_dir: Path) -> None:
         """Setting lite doesn't change primary or heavy."""
         before = _read_defaults(model_dir)
@@ -117,6 +122,7 @@ class TestModelSetDirect:
         assert after["primary"] == before["primary"]
         assert after["heavy"] == before["heavy"]
 
+    # TRACE: {"suite": "INST", "case": "0074", "section": "07", "sectionName": "Model Config", "subsection": "01", "scenario": "06", "title": "set_unknown_model_warns"}
     def test_set_unknown_model_warns(self, model_dir: Path) -> None:
         """Setting a model not in models.json warns but proceeds."""
         result = subprocess.run(
@@ -139,6 +145,7 @@ class TestModelSetDirect:
 class TestModelSetInteractive:
     """Interactive model selection via pexpect."""
 
+    # TRACE: {"suite": "INST", "case": "0075", "section": "07", "sectionName": "Model Config", "subsection": "02", "scenario": "01", "title": "interactive_set_by_number"}
     def test_interactive_set_by_number(self, model_dir: Path) -> None:
         """Select a model by number in interactive mode."""
         import pexpect
@@ -168,6 +175,7 @@ class TestModelSetInteractive:
         # Model #1 should be set for lite (first non-llama model)
         assert defaults["lite"] != "?"
 
+    # TRACE: {"suite": "INST", "case": "0076", "section": "07", "sectionName": "Model Config", "subsection": "02", "scenario": "02", "title": "interactive_set_by_paste"}
     def test_interactive_set_by_paste(self, model_dir: Path) -> None:
         """Paste a model name in interactive mode."""
         import pexpect
@@ -193,6 +201,7 @@ class TestModelSetInteractive:
         defaults = _read_defaults(model_dir)
         assert defaults["lite"] == "gemini/gemini-2.5-pro"
 
+    # TRACE: {"suite": "INST", "case": "0077", "section": "07", "sectionName": "Model Config", "subsection": "02", "scenario": "03", "title": "interactive_keep_all"}
     def test_interactive_keep_all(self, model_dir: Path) -> None:
         """Press Enter for all three — no changes."""
         import pexpect
@@ -218,6 +227,7 @@ class TestModelSetInteractive:
         after = _read_defaults(model_dir)
         assert before == after
 
+    # TRACE: {"suite": "INST", "case": "0078", "section": "07", "sectionName": "Model Config", "subsection": "02", "scenario": "04", "title": "interactive_missing_key_prompts"}
     def test_interactive_missing_key_prompts(self, tmp_path: Path) -> None:
         """When .env has no key for selected provider, prompts for it."""
         import pexpect
@@ -256,6 +266,7 @@ class TestModelSetInteractive:
         child.expect(pexpect.EOF, timeout=10)
         child.close()
 
+    # TRACE: {"suite": "INST", "case": "0079", "section": "07", "sectionName": "Model Config", "subsection": "02", "scenario": "05", "title": "interactive_change_all_three"}
     def test_interactive_change_all_three(self, model_dir: Path) -> None:
         """Change all three roles in one pass."""
         import pexpect

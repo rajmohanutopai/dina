@@ -35,6 +35,7 @@ class TestSilenceUnderStress:
     """
 
     # TST-E2E-121
+    # TRACE: {"suite": "E2E", "case": "0121", "section": "23", "sectionName": "Silence Stress", "subsection": "01", "scenario": "01", "title": "notification_storm_only_fiduciary_interrupts"}
     def test_notification_storm_only_fiduciary_interrupts(
         self,
         don_alonso: HomeNode,
@@ -205,6 +206,7 @@ class TestSilenceUnderStress:
         )
 
     # TST-E2E-122
+    # TRACE: {"suite": "E2E", "case": "0122", "section": "23", "sectionName": "Silence Stress", "subsection": "01", "scenario": "02", "title": "ambiguous_urgency_from_untrusted_source"}
     def test_ambiguous_urgency_from_untrusted_source(
         self,
         don_alonso: HomeNode,
@@ -479,6 +481,7 @@ class TestSilenceUnderStress:
         )
 
     # TST-E2E-123
+    # TRACE: {"suite": "E2E", "case": "0123", "section": "23", "sectionName": "Silence Stress", "subsection": "01", "scenario": "03", "title": "dnd_respects_hierarchy"}
     def test_dnd_respects_hierarchy(
         self,
         don_alonso: HomeNode,

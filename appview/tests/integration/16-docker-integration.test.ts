@@ -24,6 +24,7 @@ afterAll(async () => {
 })
 
 describe('16.1 Docker Compose Smoke Tests', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0594", "section": "01", "sectionName": "General", "title": "IT-DCK-001: postgres container healthy"}
   it('IT-DCK-001: postgres container healthy', async () => {
     // Verify PostgreSQL connection works with a simple query
     const result = await db.execute(sql`SELECT 1 as alive`)
@@ -39,6 +40,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
   })
 
   // IT-DCK-002
+  // TRACE: {"suite": "APPVIEW", "case": "0595", "section": "01", "sectionName": "General", "title": "IT-DCK-002: jetstream container healthy"}
   it('IT-DCK-002: jetstream container healthy', async () => {
     // Requirement: The Jetstream container must expose a /health endpoint
     // that returns HTTP 200 when the service is ready to relay AT Protocol
@@ -76,6 +78,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
   })
 
   // IT-DCK-003
+  // TRACE: {"suite": "APPVIEW", "case": "0596", "section": "01", "sectionName": "General", "title": "IT-DCK-003: ingester connects to postgres + jetstream"}
   it('IT-DCK-003: ingester connects to postgres + jetstream', async () => {
     // Requirement: The ingester daemon must successfully connect to BOTH
     // PostgreSQL and Jetstream before it can process AT Protocol events.
@@ -168,6 +171,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
   })
 
   // IT-DCK-004
+  // TRACE: {"suite": "APPVIEW", "case": "0597", "section": "01", "sectionName": "General", "title": "IT-DCK-004: scorer connects to postgres"}
   it('IT-DCK-004: scorer connects to postgres', async () => {
     // Requirement: The scorer daemon must connect to PostgreSQL and register
     // all 9 background scoring jobs. On startup, the scheduler logs
@@ -242,6 +246,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
   })
 
   // IT-DCK-005
+  // TRACE: {"suite": "APPVIEW", "case": "0598", "section": "01", "sectionName": "General", "title": "IT-DCK-005: web container serves health endpoint"}
   it('IT-DCK-005: web container serves health endpoint', async () => {
     // Requirement: The web container must expose a /healthz endpoint that
     // returns HTTP 200 when the xRPC API server is ready to serve trust
@@ -286,6 +291,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0599", "section": "01", "sectionName": "General", "title": "IT-DCK-006: migrations run on startup"}
   it('IT-DCK-006: migrations run on startup', async () => {
     // Verify that all expected tables exist in the database
     const expectedTables = [
@@ -336,6 +342,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     expect(existingTables.length).toBeGreaterThanOrEqual(expectedTables.length)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0600", "section": "01", "sectionName": "General", "title": "IT-DCK-007: HIGH-11: migrate service configuration exists"}
   it('IT-DCK-007: HIGH-11: migrate service configuration exists', async () => {
     // Verify docker-compose.yml has a migrate service
     // We test this by checking that the migration tables exist (they would only exist if migrations ran)
@@ -346,6 +353,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     expect((result as any).rows.length).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0601", "section": "01", "sectionName": "General", "title": "IT-DCK-008: HIGH-08: search_vector migration creates tsvector column"}
   it('IT-DCK-008: HIGH-08: search_vector migration creates tsvector column', async () => {
     // Check if the search_vector column exists on attestations table
     const result = await db.execute(sql`
@@ -364,6 +372,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
   })
 
   // IT-DCK-009
+  // TRACE: {"suite": "APPVIEW", "case": "0602", "section": "01", "sectionName": "General", "title": "IT-DCK-009: HIGH-09: web server health endpoint responds"}
   it('IT-DCK-009: HIGH-09: web server health endpoint responds', async () => {
     // Requirement (HIGH-09): The web server must expose a /health endpoint
     // that verifies database connectivity and returns a structured response.

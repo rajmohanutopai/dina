@@ -113,6 +113,7 @@ class TestImpulseProtection:
     """Dina protects the user from emotional purchasing impulses."""
 
 # TST-INT-440
+    # TRACE: {"suite": "INT", "case": "0440", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "01", "title": "emotional_state_detection"}
     def test_emotional_state_detection(self, mock_dina: MockDinaCore):
         """Dina detects elevated emotional state from recent conversation."""
         messages = [
@@ -124,6 +125,7 @@ class TestImpulseProtection:
         assert state == "elevated"
 
 # TST-INT-441
+    # TRACE: {"suite": "INT", "case": "0441", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "02", "title": "calm_state_not_flagged"}
     def test_calm_state_not_flagged(self, mock_dina: MockDinaCore):
         """A calm user is not flagged for impulse protection."""
         messages = [
@@ -134,6 +136,7 @@ class TestImpulseProtection:
         assert state == "calm"
 
 # TST-INT-442
+    # TRACE: {"suite": "INT", "case": "0442", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "03", "title": "purchase_not_on_list_flagged"}
     def test_purchase_not_on_list_flagged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ):
@@ -171,6 +174,7 @@ class TestImpulseProtection:
         assert "purchase list" in mock_human.notifications[0].body
 
 # TST-INT-443
+    # TRACE: {"suite": "INT", "case": "0443", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "04", "title": "purchase_on_list_passes"}
     def test_purchase_on_list_passes(self, mock_dina: MockDinaCore):
         """A product that IS on the list proceeds without flagging,
         regardless of emotional state."""
@@ -180,6 +184,7 @@ class TestImpulseProtection:
         assert is_on_purchase_list(mock_dina.vault, "thinkpad_x1_2025") is True
 
 # TST-INT-444
+    # TRACE: {"suite": "INT", "case": "0444", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "05", "title": "user_can_override"}
     def test_user_can_override(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ):
@@ -238,6 +243,7 @@ class TestManipulationDetection:
     """Dina identifies and flags manipulation in the commercial environment."""
 
 # TST-INT-445
+    # TRACE: {"suite": "INT", "case": "0445", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "01", "title": "deceptive_ad"}
     def test_deceptive_ad(self, mock_dina: MockDinaCore, mock_human: MockHuman):
         """Dina flags ads with unverifiable claims."""
         ad_content = (
@@ -258,6 +264,7 @@ class TestManipulationDetection:
         assert notification.tier == SilenceTier.TIER_1_FIDUCIARY
 
 # TST-INT-446
+    # TRACE: {"suite": "INT", "case": "0446", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "02", "title": "dark_pattern_in_checkout"}
     def test_dark_pattern_in_checkout(self, mock_dina: MockDinaCore):
         """Dina detects dark patterns in checkout flows — pre-checked
         add-ons, hidden fees, confirm shaming."""
@@ -273,6 +280,7 @@ class TestManipulationDetection:
         assert analysis["risk_score"] > 0
 
 # TST-INT-447
+    # TRACE: {"suite": "INT", "case": "0447", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "03", "title": "fake_urgency"}
     def test_fake_urgency(self, mock_dina: MockDinaCore):
         """Dina detects manufactured urgency — 'Only 2 left!' when the
         count never changes."""
@@ -282,6 +290,7 @@ class TestManipulationDetection:
         assert "urgency" in analysis["flags"]
 
 # TST-INT-267
+    # TRACE: {"suite": "INT", "case": "0267", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "04", "title": "dead_internet_filter"}
     def test_dead_internet_filter(self, mock_dina: MockDinaCore):
         """Dina filters out bot-generated reviews from the trust network,
         keeping only verified human sources."""

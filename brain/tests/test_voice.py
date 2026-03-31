@@ -22,6 +22,7 @@ from .factories import make_voice_transcription
 
 # TST-BRAIN-400
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0400", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "deepgram_to_guardian"}
 async def test_voice_18_1_deepgram_to_guardian() -> None:
     """SS18.1: Voice input via Deepgram -> text -> guardian loop.
 
@@ -68,6 +69,7 @@ async def test_voice_18_1_deepgram_to_guardian() -> None:
 
 
 # TST-BRAIN-401
+# TRACE: {"suite": "BRAIN", "case": "0401", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "01", "title": "deepgram_fallback_gemini"}
 def test_voice_18_2_deepgram_fallback_gemini() -> None:
     """SS18.2: Deepgram unavailable -> fallback to Gemini Flash Lite STT.
 
@@ -95,6 +97,7 @@ def test_voice_18_2_deepgram_fallback_gemini() -> None:
 
 
 # TST-BRAIN-402
+# TRACE: {"suite": "BRAIN", "case": "0402", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "01", "title": "latency_target"}
 def test_voice_18_3_latency_target() -> None:
     """SS18.3: Voice latency within target (< 300ms).
 

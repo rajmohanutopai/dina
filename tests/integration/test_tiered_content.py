@@ -53,6 +53,7 @@ def _patch(core, path, body):
 class TestTieredContentStorage:
     """Store L2, then enrich with L0/L1, verify round-trip."""
 
+    # TRACE: {"suite": "INT", "case": "0218", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "01", "title": "store_then_enrich"}
     def test_store_then_enrich(self, core) -> None:
         """Store item (L2), PATCH enrich (L0/L1), GetItem returns all."""
         # Phase 1: Store L2.
@@ -95,6 +96,7 @@ class TestTieredContentStorage:
         # L2 preserved.
         assert data.get("body_text", data.get("body", "")) == item["body_text"]
 
+    # TRACE: {"suite": "INT", "case": "0219", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "02", "title": "unenriched_item_searchable_via_fts5"}
     def test_unenriched_item_searchable_via_fts5(self, core) -> None:
         """Unenriched item (pending) is still findable via FTS5 keyword search."""
         tag = f"unenriched-{int(time.time())}"
@@ -117,6 +119,7 @@ class TestTieredContentStorage:
                     for r in results)
         assert found, f"{tag} not found in FTS5 results"
 
+    # TRACE: {"suite": "INT", "case": "0220", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "03", "title": "enrich_is_idempotent"}
     def test_enrich_is_idempotent(self, core) -> None:
         """PATCHing enrich twice with different data updates correctly."""
         item = {"type": "note", "summary": f"idem-{int(time.time())}"}
@@ -142,6 +145,7 @@ class TestTieredContentStorage:
         assert data.get("content_l0") == "Updated L0"
         assert data.get("content_l1") == "Updated L1"
 
+    # TRACE: {"suite": "INT", "case": "0221", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "04", "title": "two_phase_full_lifecycle"}
     def test_two_phase_full_lifecycle(self, core) -> None:
         """Full lifecycle: store L2 → search (FTS5) → enrich → search returns enriched."""
         tag = f"lifecycle-{int(time.time())}"

@@ -37,6 +37,7 @@ def _invoke(args, mock_client=None, env=None):
 # ── status ────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "CLI", "case": "0001", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "01", "title": "status_paired_json"}
 def test_status_paired_json(tmp_path):
     """Status shows paired when keypair exists and auth succeeds."""
     mc = MagicMock()
@@ -67,6 +68,7 @@ def test_status_paired_json(tmp_path):
     assert data["core_reachable"] is True
 
 
+# TRACE: {"suite": "CLI", "case": "0002", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "02", "title": "status_not_paired"}
 def test_status_not_paired(tmp_path):
     """Status shows not paired when no keypair exists."""
     identity_dir = tmp_path / "identity"
@@ -85,6 +87,7 @@ def test_status_not_paired(tmp_path):
     assert "no" in result.output.lower()
 
 
+# TRACE: {"suite": "CLI", "case": "0003", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "03", "title": "status_unreachable"}
 def test_status_unreachable(tmp_path):
     """Status shows unreachable when Core is down."""
     identity_dir = tmp_path / "identity"
@@ -112,6 +115,7 @@ def test_status_unreachable(tmp_path):
 
 
 # TST-CLI-028
+# TRACE: {"suite": "CLI", "case": "0028", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "04", "title": "remember_json"}
 def test_remember_json():
     mc = MagicMock()
     mc.remember.return_value = {"id": "abc12345deadbeef", "status": "processing"}
@@ -123,6 +127,7 @@ def test_remember_json():
 
 
 # TST-CLI-029
+# TRACE: {"suite": "CLI", "case": "0029", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "05", "title": "remember_human"}
 def test_remember_human():
     mc = MagicMock()
     mc.remember.return_value = {"id": "abc12345", "status": "processing"}
@@ -131,6 +136,7 @@ def test_remember_human():
 
 
 # TST-CLI-030
+# TRACE: {"suite": "CLI", "case": "0030", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "06", "title": "remember_with_category"}
 def test_remember_with_category():
     mc = MagicMock()
     mc.remember.return_value = {"id": "x", "status": "processing"}
@@ -143,6 +149,7 @@ def test_remember_with_category():
 
 
 # TST-CLI-031
+# TRACE: {"suite": "CLI", "case": "0031", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "07", "title": "ask_json"}
 def test_ask_json():
     mc = MagicMock()
     mc.ask.return_value = {"content": "Buy milk is in your vault."}
@@ -153,6 +160,7 @@ def test_ask_json():
 
 
 # TST-CLI-032
+# TRACE: {"suite": "CLI", "case": "0032", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "08", "title": "ask_no_results"}
 def test_ask_no_results():
     mc = MagicMock()
     mc.ask.return_value = {"content": ""}
@@ -161,6 +169,7 @@ def test_ask_no_results():
     assert "don't have any information" in result.output
 
 
+# TRACE: {"suite": "CLI", "case": "0004", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "09", "title": "ask_llm_not_configured"}
 def test_ask_llm_not_configured():
     mc = MagicMock()
     mc.ask.return_value = {"error_code": "llm_not_configured", "message": "No LLM provider configured.", "content": ""}
@@ -169,6 +178,7 @@ def test_ask_llm_not_configured():
     assert "LLM" in result.output or "llm" in result.output
 
 
+# TRACE: {"suite": "CLI", "case": "0005", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "10", "title": "ask_llm_not_configured_json"}
 def test_ask_llm_not_configured_json():
     mc = MagicMock()
     mc.ask.return_value = {"error_code": "llm_not_configured", "message": "No LLM.", "content": ""}
@@ -178,6 +188,7 @@ def test_ask_llm_not_configured_json():
     assert data["error_code"] == "llm_not_configured"
 
 
+# TRACE: {"suite": "CLI", "case": "0006", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "11", "title": "ask_llm_unreachable"}
 def test_ask_llm_unreachable():
     mc = MagicMock()
     mc.ask.return_value = {"error_code": "llm_unreachable", "message": "LLM provider unreachable.", "content": ""}
@@ -189,6 +200,7 @@ def test_ask_llm_unreachable():
 # ── ask: async approval-wait-resume ────────────────────────────────────
 
 
+# TRACE: {"suite": "CLI", "case": "0007", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "12", "title": "ask_202_polls_until_complete"}
 def test_ask_202_polls_until_complete():
     """ask command polls on 202 and prints the answer when complete."""
     mc = MagicMock()
@@ -213,6 +225,7 @@ def test_ask_202_polls_until_complete():
     assert mc.ask_status.call_count == 2
 
 
+# TRACE: {"suite": "CLI", "case": "0008", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "13", "title": "ask_202_denied"}
 def test_ask_202_denied():
     """ask command prints denied when approval is rejected."""
     mc = MagicMock()
@@ -234,6 +247,7 @@ def test_ask_202_denied():
     assert "denied" in result.output.lower()
 
 
+# TRACE: {"suite": "CLI", "case": "0009", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "14", "title": "ask_202_json_mode_returns_immediately"}
 def test_ask_202_json_mode_returns_immediately():
     """In JSON mode, ask returns 202 data immediately without polling."""
     mc = MagicMock()
@@ -253,6 +267,7 @@ def test_ask_202_json_mode_returns_immediately():
     mc.ask_status.assert_not_called()
 
 
+# TRACE: {"suite": "CLI", "case": "0010", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "15", "title": "ask_status_command"}
 def test_ask_status_command():
     """ask-status command shows current state."""
     mc = MagicMock()
@@ -268,6 +283,7 @@ def test_ask_status_command():
     assert "Here is your answer" in result.output
 
 
+# TRACE: {"suite": "CLI", "case": "0011", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "16", "title": "ask_status_denied"}
 def test_ask_status_denied():
     """ask-status shows denied message."""
     mc = MagicMock()
@@ -286,6 +302,7 @@ def test_ask_status_denied():
 
 
 # TST-CLI-033
+# TRACE: {"suite": "CLI", "case": "0033", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "17", "title": "validate_approved"}
 def test_validate_approved():
     mc = MagicMock()
     mc.process_event.return_value = {"approved": True, "requires_approval": False, "risk": "SAFE"}
@@ -298,6 +315,7 @@ def test_validate_approved():
 
 
 # TST-CLI-034
+# TRACE: {"suite": "CLI", "case": "0034", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "18", "title": "validate_pending"}
 def test_validate_pending():
     mc = MagicMock()
     mc.process_event.return_value = {"approved": False, "requires_approval": True, "risk": "HIGH"}
@@ -310,6 +328,7 @@ def test_validate_pending():
 
 
 # TST-CLI-035
+# TRACE: {"suite": "CLI", "case": "0035", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "19", "title": "validate_fallback_safe"}
 def test_validate_fallback_safe():
     """When Core is unavailable, safe actions auto-approve."""
     mc = MagicMock()
@@ -321,6 +340,7 @@ def test_validate_fallback_safe():
 
 
 # TST-CLI-036
+# TRACE: {"suite": "CLI", "case": "0036", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "20", "title": "validate_fallback_risky"}
 def test_validate_fallback_risky():
     """When Core is unavailable, risky actions need approval."""
     mc = MagicMock()
@@ -335,6 +355,7 @@ def test_validate_fallback_risky():
 
 
 # TST-CLI-037
+# TRACE: {"suite": "CLI", "case": "0037", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "21", "title": "validate_status_found"}
 def test_validate_status_found():
     mc = MagicMock()
     mc.kv_get.return_value = json.dumps({"status": "approved", "action": "read_email"})
@@ -346,6 +367,7 @@ def test_validate_status_found():
 
 
 # TST-CLI-038
+# TRACE: {"suite": "CLI", "case": "0038", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "22", "title": "validate_status_not_found"}
 def test_validate_status_not_found():
     mc = MagicMock()
     mc.kv_get.return_value = None
@@ -357,6 +379,7 @@ def test_validate_status_not_found():
 
 
 # TST-CLI-039
+# TRACE: {"suite": "CLI", "case": "0039", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "23", "title": "scrub_json"}
 def test_scrub_json(tmp_path):
     mc = MagicMock()
     mc.pii_scrub.return_value = {
@@ -381,6 +404,7 @@ def test_scrub_json(tmp_path):
 
 
 # TST-CLI-040
+# TRACE: {"suite": "CLI", "case": "0040", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "24", "title": "rehydrate_json"}
 def test_rehydrate_json():
     runner = CliRunner()
     with patch("dina_cli.main.DinaClient"), \
@@ -403,6 +427,7 @@ def test_rehydrate_json():
 
 
 # TST-CLI-041
+# TRACE: {"suite": "CLI", "case": "0041", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "25", "title": "draft_json"}
 def test_draft_json():
     mc = MagicMock()
     mc.staging_ingest.return_value = {"id": "stg-draft-001", "staged": True}
@@ -426,6 +451,7 @@ def test_draft_json():
 
 
 # TST-CLI-042
+# TRACE: {"suite": "CLI", "case": "0042", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "26", "title": "sign_json"}
 def test_sign_json(tmp_path):
     """sign command signs locally — no server call needed."""
     from dina_cli.signing import CLIIdentity
@@ -447,6 +473,7 @@ def test_sign_json(tmp_path):
 
 
 # TST-CLI-043
+# TRACE: {"suite": "CLI", "case": "0043", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "27", "title": "audit_json"}
 def test_audit_json():
     mc = MagicMock()
     mock_resp = MagicMock()
@@ -463,6 +490,7 @@ def test_audit_json():
 
 
 # TST-CLI-044
+# TRACE: {"suite": "CLI", "case": "0044", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "28", "title": "missing_keypair"}
 def test_missing_keypair():
     """CLI exits with error when no Ed25519 keypair exists."""
     runner = CliRunner()
@@ -474,6 +502,7 @@ def test_missing_keypair():
 
 
 # TST-CLI-045
+# TRACE: {"suite": "CLI", "case": "0045", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "29", "title": "configure_signature_mode"}
 def test_configure_signature_mode(tmp_path):
     """Configure generates Ed25519 keypair and attempts pairing."""
     runner = CliRunner()
@@ -502,6 +531,7 @@ def test_configure_signature_mode(tmp_path):
 
 
 # TST-CLI-046
+# TRACE: {"suite": "CLI", "case": "0046", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "30", "title": "configure_help"}
 def test_configure_help():
     """Configure --help shows without requiring a token."""
     runner = CliRunner()
@@ -514,6 +544,7 @@ def test_configure_help():
 
 
 # TST-CLI-047
+# TRACE: {"suite": "CLI", "case": "0047", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "31", "title": "session_start"}
 def test_session_start():
     """Session start creates a named session."""
     mc = MagicMock()
@@ -528,6 +559,7 @@ def test_session_start():
 
 
 # TST-CLI-048
+# TRACE: {"suite": "CLI", "case": "0048", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "32", "title": "session_end"}
 def test_session_end():
     """Session end closes a session."""
     mc = MagicMock()
@@ -541,6 +573,7 @@ def test_session_end():
 
 
 # TST-CLI-049
+# TRACE: {"suite": "CLI", "case": "0049", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "33", "title": "session_list_empty"}
 def test_session_list_empty():
     """Session list shows no sessions when none active."""
     mc = MagicMock()
@@ -554,6 +587,7 @@ def test_session_list_empty():
 
 
 # TST-CLI-050
+# TRACE: {"suite": "CLI", "case": "0050", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "34", "title": "session_list_with_sessions"}
 def test_session_list_with_sessions():
     """Session list shows active sessions with grants."""
     mc = MagicMock()
@@ -577,6 +611,7 @@ def test_session_list_with_sessions():
 
 
 # TST-CLI-051
+# TRACE: {"suite": "CLI", "case": "0051", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "35", "title": "session_start_json"}
 def test_session_start_json():
     """Session start with --json returns JSON."""
     mc = MagicMock()
@@ -594,6 +629,7 @@ def test_session_start_json():
 
 
 # TST-CLI-052
+# TRACE: {"suite": "CLI", "case": "0052", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "36", "title": "ask_uses_brain_reason"}
 def test_ask_uses_brain_reason():
     """Recall routes through Brain's ask endpoint (persona-blind)."""
     mc = MagicMock()
@@ -605,6 +641,7 @@ def test_ask_uses_brain_reason():
 
 
 # TST-CLI-053
+# TRACE: {"suite": "CLI", "case": "0053", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "37", "title": "ask_with_session"}
 def test_ask_with_session():
     """Recall with --session passes session to ask()."""
     mc = MagicMock()
@@ -618,6 +655,7 @@ def test_ask_with_session():
 
 
 # TST-CLI-054
+# TRACE: {"suite": "CLI", "case": "0054", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "38", "title": "ask_no_persona_flag"}
 def test_ask_no_persona_flag():
     """Recall does NOT have a --persona flag (agents are persona-blind)."""
     mc = MagicMock()
@@ -628,6 +666,7 @@ def test_ask_no_persona_flag():
 
 
 # TST-CLI-055
+# TRACE: {"suite": "CLI", "case": "0055", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "39", "title": "ask_approval_required"}
 def test_ask_approval_required():
     """Recall shows approval message when access requires approval."""
     mc = MagicMock()
@@ -638,6 +677,7 @@ def test_ask_approval_required():
 
 
 # TST-CLI-056
+# TRACE: {"suite": "CLI", "case": "0056", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "40", "title": "ask_persona_locked_shows_hint"}
 def test_ask_persona_locked_shows_hint():
     """Recall shows helpful message when persona is locked."""
     mc = MagicMock()
@@ -648,6 +688,7 @@ def test_ask_persona_locked_shows_hint():
 
 
 # TST-CLI-057
+# TRACE: {"suite": "CLI", "case": "0057", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "41", "title": "ask_with_verbose"}
 def test_ask_with_verbose():
     """Recall --verbose flag is accepted."""
     mc = MagicMock()
@@ -660,6 +701,7 @@ def test_ask_with_verbose():
 
 
 # TST-CLI-058
+# TRACE: {"suite": "CLI", "case": "0058", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "42", "title": "remember_uses_remember_endpoint"}
 def test_remember_uses_remember_endpoint():
     """Remember uses the remember endpoint, not vault_store."""
     mc = MagicMock()
@@ -672,6 +714,7 @@ def test_remember_uses_remember_endpoint():
 
 
 # TST-CLI-059
+# TRACE: {"suite": "CLI", "case": "0059", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "43", "title": "audit_uses_audit_endpoint"}
 def test_audit_uses_audit_endpoint():
     """Audit uses /v1/audit/query, not vault query."""
     mc = MagicMock()
@@ -688,6 +731,7 @@ def test_audit_uses_audit_endpoint():
 # ── unpair ────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "CLI", "case": "0012", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "44", "title": "unpair_not_paired"}
 def test_unpair_not_paired():
     """Unpair when no device_id is saved."""
     runner = CliRunner()
@@ -697,6 +741,7 @@ def test_unpair_not_paired():
     assert "not_paired" in result.output.lower() or "already" in result.output.lower() or "never" in result.output.lower() or "unpaired" in result.output.lower()
 
 
+# TRACE: {"suite": "CLI", "case": "0013", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "45", "title": "unpair_json"}
 def test_unpair_json(tmp_path):
     """Unpair succeeds and returns JSON."""
     identity_dir = tmp_path / "identity"
@@ -723,6 +768,7 @@ def test_unpair_json(tmp_path):
     assert data["device_id"] == "dev-123"
 
 
+# TRACE: {"suite": "CLI", "case": "0014", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "46", "title": "unpair_core_unreachable"}
 def test_unpair_core_unreachable(tmp_path):
     """Unpair fails gracefully when Core is unreachable."""
     identity_dir = tmp_path / "identity"
@@ -745,6 +791,7 @@ def test_unpair_core_unreachable(tmp_path):
 
 
 # TST-CLI-060
+# TRACE: {"suite": "CLI", "case": "0060", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "47", "title": "cli_config_has_no_persona"}
 def test_cli_config_has_no_persona():
     """CLI Config has no persona field — agents are persona-blind."""
     from dina_cli.config import Config

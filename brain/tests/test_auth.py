@@ -130,6 +130,7 @@ def _clear_nonce_cache() -> None:
 
 
 # TST-BRAIN-001
+# TRACE: {"suite": "BRAIN", "case": "0001", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "01", "title": "valid_service_key"}
 def test_auth_1_1_1_valid_service_key(client: TestClient) -> None:
     """S1.1.1: Valid Ed25519 signed request -> 200."""
     resp = _signed_post(client, "/api/v1/process", {"type": "message", "body": "test"})
@@ -137,6 +138,7 @@ def test_auth_1_1_1_valid_service_key(client: TestClient) -> None:
 
 
 # TST-BRAIN-002
+# TRACE: {"suite": "BRAIN", "case": "0002", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "02", "title": "missing_auth"}
 def test_auth_1_1_2_missing_auth(client: TestClient) -> None:
     """S1.1.2: Missing auth headers -> 401 Unauthorized."""
     resp = client.post(
@@ -148,6 +150,7 @@ def test_auth_1_1_2_missing_auth(client: TestClient) -> None:
 
 
 # TST-BRAIN-003
+# TRACE: {"suite": "BRAIN", "case": "0003", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "03", "title": "wrong_signature"}
 def test_auth_1_1_3_wrong_signature(client: TestClient) -> None:
     """S1.1.3: Invalid signature in X-Signature -> 401."""
     resp = client.post(
@@ -164,6 +167,7 @@ def test_auth_1_1_3_wrong_signature(client: TestClient) -> None:
 
 
 # TST-BRAIN-004
+# TRACE: {"suite": "BRAIN", "case": "0004", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "04", "title": "service_key_dir_config"}
 def test_auth_1_1_4_service_key_dir_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """S1.1.4: SERVICE_KEY_DIR is read from DINA_SERVICE_KEY_DIR env var."""
     import sys
@@ -179,6 +183,7 @@ def test_auth_1_1_4_service_key_dir_config(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 # TST-BRAIN-005
+# TRACE: {"suite": "BRAIN", "case": "0005", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "05", "title": "service_key_dir_default"}
 def test_auth_1_1_5_service_key_dir_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """S1.1.5: SERVICE_KEY_DIR defaults to /run/secrets/service_keys."""
     import sys
@@ -194,6 +199,7 @@ def test_auth_1_1_5_service_key_dir_default(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 # TST-BRAIN-006
+# TRACE: {"suite": "BRAIN", "case": "0006", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "06", "title": "constant_time_comparison"}
 def test_auth_1_1_6_constant_time_comparison() -> None:
     """S1.1.6: Admin sub-app uses hmac.compare_digest for CLIENT_TOKEN (no timing leak).
 
@@ -280,6 +286,7 @@ def test_auth_1_1_6_constant_time_comparison() -> None:
 
 
 # TST-BRAIN-007
+# TRACE: {"suite": "BRAIN", "case": "0007", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "01", "title": "api_requires_service_key"}
 def test_auth_1_2_1_api_requires_service_key(client: TestClient) -> None:
     """S1.2.1: /api/* requires Ed25519 service key -- 200 when correctly signed."""
     resp = _signed_post(client, "/api/v1/process", {"type": "query", "body": "test"})
@@ -287,6 +294,7 @@ def test_auth_1_2_1_api_requires_service_key(client: TestClient) -> None:
 
 
 # TST-BRAIN-008
+# TRACE: {"suite": "BRAIN", "case": "0008", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "02", "title": "api_rejects_client_token"}
 def test_auth_1_2_2_api_rejects_client_token(client: TestClient) -> None:
     """S1.2.2: /api/* rejects CLIENT_TOKEN bearer -- 401."""
     resp = client.post(
@@ -303,6 +311,7 @@ def test_auth_1_2_2_api_rejects_client_token(client: TestClient) -> None:
 
 
 # TST-BRAIN-009
+# TRACE: {"suite": "BRAIN", "case": "0009", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "03", "title": "admin_requires_client_token"}
 def test_auth_1_2_3_admin_requires_client_token(client: TestClient) -> None:
     """S1.2.3: /admin/* requires CLIENT_TOKEN -- 200 when correct token provided."""
     resp = client.get(
@@ -313,6 +322,7 @@ def test_auth_1_2_3_admin_requires_client_token(client: TestClient) -> None:
 
 
 # TST-BRAIN-010
+# TRACE: {"suite": "BRAIN", "case": "0010", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "04", "title": "admin_rejects_brain_token"}
 def test_auth_1_2_4_admin_rejects_brain_token(client: TestClient) -> None:
     """S1.2.4: /admin/* rejects BRAIN_TOKEN -- 401 Unauthorized."""
     resp = client.get(
@@ -323,6 +333,7 @@ def test_auth_1_2_4_admin_rejects_brain_token(client: TestClient) -> None:
 
 
 # TST-BRAIN-011
+# TRACE: {"suite": "BRAIN", "case": "0011", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "05", "title": "healthz_unauthenticated"}
 def test_auth_1_2_5_healthz_unauthenticated(client: TestClient) -> None:
     """S1.2.5: GET /healthz requires no auth -- returns 200 {"status": "ok"}."""
     resp = client.get("/healthz")
@@ -332,6 +343,7 @@ def test_auth_1_2_5_healthz_unauthenticated(client: TestClient) -> None:
 
 
 # TST-BRAIN-012
+# TRACE: {"suite": "BRAIN", "case": "0012", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "06", "title": "single_uvicorn_process"}
 def test_auth_1_2_6_single_uvicorn_process(app: FastAPI) -> None:
     """S1.2.6: Single Uvicorn process on port 8200, one healthcheck endpoint.
 
@@ -352,6 +364,7 @@ def test_auth_1_2_6_single_uvicorn_process(app: FastAPI) -> None:
 
 
 # TST-BRAIN-013
+# TRACE: {"suite": "BRAIN", "case": "0013", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "07", "title": "subapp_brain_cannot_import_admin"}
 def test_auth_1_2_7_subapp_brain_cannot_import_admin() -> None:
     """S1.2.7: dina_brain module has no imports from dina_admin -- module boundary enforced."""
     brain_pkg = os.path.normpath(os.path.join(_BRAIN_SRC, "dina_brain"))
@@ -376,6 +389,7 @@ def test_auth_1_2_7_subapp_brain_cannot_import_admin() -> None:
 
 
 # TST-BRAIN-014
+# TRACE: {"suite": "BRAIN", "case": "0014", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "08", "title": "subapp_admin_cannot_import_brain"}
 def test_auth_1_2_8_subapp_admin_cannot_import_brain() -> None:
     """S1.2.8: dina_admin module has no imports from dina_brain -- module boundary enforced."""
     admin_pkg = os.path.normpath(os.path.join(_BRAIN_SRC, "dina_admin"))
@@ -399,6 +413,7 @@ def test_auth_1_2_8_subapp_admin_cannot_import_brain() -> None:
 
 
 # TST-BRAIN-015
+# TRACE: {"suite": "BRAIN", "case": "0015", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "09", "title": "admin_uses_client_token_to_core"}
 def test_auth_1_2_9_admin_uses_client_token_to_core() -> None:
     """S1.2.9: Admin UI calls core:8100 with CLIENT_TOKEN (not BRAIN_TOKEN).
 
@@ -433,6 +448,7 @@ def test_auth_1_2_9_admin_uses_client_token_to_core() -> None:
 
 
 # TST-BRAIN-016
+# TRACE: {"suite": "BRAIN", "case": "0016", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "10", "title": "brain_never_sees_cookies"}
 def test_auth_1_2_10_brain_never_sees_cookies(client: TestClient) -> None:
     """S1.2.10: No Cookie header reaches brain -- core translates cookies to Bearer.
 
@@ -455,6 +471,7 @@ def test_auth_1_2_10_brain_never_sees_cookies(client: TestClient) -> None:
 
 
 # TST-BRAIN-017
+# TRACE: {"suite": "BRAIN", "case": "0017", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "11", "title": "brain_exposes_process"}
 def test_auth_1_2_11_brain_exposes_process(client: TestClient) -> None:
     """S1.2.11: Brain exposes POST /v1/process to core -- returns 200."""
     resp = _signed_post(client, "/api/v1/process", {"type": "query", "body": "test process endpoint"})
@@ -464,6 +481,7 @@ def test_auth_1_2_11_brain_exposes_process(client: TestClient) -> None:
 
 
 # TST-BRAIN-018
+# TRACE: {"suite": "BRAIN", "case": "0018", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "12", "title": "brain_exposes_reason"}
 def test_auth_1_2_12_brain_exposes_reason(client: TestClient) -> None:
     """S1.2.12: Brain exposes POST /v1/reason to core -- returns 200."""
     resp = _signed_post(
@@ -480,6 +498,7 @@ def test_auth_1_2_12_brain_exposes_reason(client: TestClient) -> None:
 
 
 # TST-BRAIN-416
+# TRACE: {"suite": "BRAIN", "case": "0416", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "13", "title": "zero_sqlite_calls"}
 def test_auth_1_2_13_zero_sqlite_calls() -> None:
     """S1.2.13: Code audit -- brain has zero sqlite3/sqlalchemy usage.
 

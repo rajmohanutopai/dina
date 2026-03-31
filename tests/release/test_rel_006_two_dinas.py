@@ -24,12 +24,14 @@ class TestTwoDinas:
     """Real API tests for REL-006: D2D messaging between two nodes."""
 
     # REL-006
+    # TRACE: {"suite": "REL", "case": "0006", "section": "06", "sectionName": "Two Dinas", "subsection": "01", "scenario": "01", "title": "rel_006_node_b_healthy"}
     def test_rel_006_node_b_healthy(self, core_b_url) -> None:
         """Node B Core is reachable and healthy."""
         resp = httpx.get(f"{core_b_url}/healthz", timeout=10)
         assert resp.status_code == 200
 
     # REL-006
+    # TRACE: {"suite": "REL", "case": "0006", "section": "06", "sectionName": "Two Dinas", "subsection": "01", "scenario": "02", "title": "rel_006_send_message_a_to_b"}
     def test_rel_006_send_message_a_to_b(
         self, core_url, auth_headers, actor_b_did,
     ) -> None:
@@ -58,6 +60,7 @@ class TestTwoDinas:
         self.__class__._msg_marker = marker
 
     # REL-006
+    # TRACE: {"suite": "REL", "case": "0006", "section": "06", "sectionName": "Two Dinas", "subsection": "01", "scenario": "03", "title": "rel_006_message_arrives_in_b_inbox"}
     def test_rel_006_message_arrives_in_b_inbox(
         self, core_b_url, auth_headers,
     ) -> None:
@@ -101,6 +104,7 @@ class TestTwoDinas:
         )
 
     # REL-006
+    # TRACE: {"suite": "REL", "case": "0006", "section": "06", "sectionName": "Two Dinas", "subsection": "01", "scenario": "04", "title": "rel_006_send_message_b_to_a"}
     def test_rel_006_send_message_b_to_a(
         self, core_b_url, core_url, auth_headers, actor_a_did,
     ) -> None:

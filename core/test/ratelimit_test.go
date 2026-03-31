@@ -25,6 +25,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-545
+// TRACE: {"suite": "CORE", "case": "1177", "section": "13", "sectionName": "Rate Limiting", "subsection": "01", "scenario": "01", "title": "BelowLimit"}
 func TestRateLimit_13_1_BelowLimit(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
 	impl := realRateLimitChecker
@@ -44,6 +45,7 @@ func TestRateLimit_13_1_BelowLimit(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-546
+// TRACE: {"suite": "CORE", "case": "1178", "section": "13", "sectionName": "Rate Limiting", "subsection": "02", "scenario": "01", "title": "AtLimit"}
 func TestRateLimit_13_2_AtLimit(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
 	impl := realRateLimitChecker
@@ -73,6 +75,7 @@ func TestRateLimit_13_2_AtLimit(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-547
+// TRACE: {"suite": "CORE", "case": "1179", "section": "13", "sectionName": "Rate Limiting", "subsection": "03", "scenario": "01", "title": "AboveLimit"}
 func TestRateLimit_13_3_AboveLimit(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
 	impl := realRateLimitChecker
@@ -111,6 +114,7 @@ func TestRateLimit_13_3_AboveLimit(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-548
+// TRACE: {"suite": "CORE", "case": "1180", "section": "13", "sectionName": "Rate Limiting", "subsection": "04", "scenario": "01", "title": "Reset"}
 func TestRateLimit_13_4_Reset(t *testing.T) {
 	rl := auth.NewRateLimitChecker(10, 60)
 	testutil.RequireImplementation(t, rl, "RateLimitChecker")
@@ -142,6 +146,7 @@ func TestRateLimit_13_4_Reset(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-549
+// TRACE: {"suite": "CORE", "case": "1181", "section": "13", "sectionName": "Rate Limiting", "subsection": "05", "scenario": "01", "title": "PerIPIsolation"}
 func TestRateLimit_13_5_PerIPIsolation(t *testing.T) {
 	rl := auth.NewRateLimitChecker(5, 60)
 	testutil.RequireImplementation(t, rl, "RateLimitChecker")
@@ -176,6 +181,7 @@ func TestRateLimit_13_5_PerIPIsolation(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-550
+// TRACE: {"suite": "CORE", "case": "1182", "section": "13", "sectionName": "Rate Limiting", "subsection": "06", "scenario": "01", "title": "RateLimitHeaders"}
 func TestRateLimit_13_6_RateLimitHeaders(t *testing.T) {
 	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
@@ -218,11 +224,13 @@ func TestRateLimit_13_6_RateLimitHeaders(t *testing.T) {
 // enforces per-IP limit, excess requests rejected. No races or panics.
 // ==========================================================================
 
+// TRACE: {"suite": "CORE", "case": "1183", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "05", "title": "ConcurrentRateLimitBypass"}
 func TestRateLimit_34_2_5_ConcurrentRateLimitBypass(t *testing.T) {
 	// Use a fresh rate limiter with a small limit for testability.
 	const limit = 60
 	rl := auth.NewRateLimitChecker(limit, 60)
 
+	// TRACE: {"suite": "CORE", "case": "1184", "section": "34", "sectionName": "Thesis: Loyalty", "title": "concurrent_requests_enforce_limit_no_excess_allowed"}
 	t.Run("concurrent_requests_enforce_limit_no_excess_allowed", func(t *testing.T) {
 		// Fire 200 concurrent requests from the same IP.
 		// The rate limiter must allow at most `limit` requests total.
@@ -263,6 +271,7 @@ func TestRateLimit_34_2_5_ConcurrentRateLimitBypass(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1185", "section": "34", "sectionName": "Thesis: Loyalty", "title": "per_IP_isolation_under_concurrent_load"}
 	t.Run("per_IP_isolation_under_concurrent_load", func(t *testing.T) {
 		// Verify that concurrent requests from DIFFERENT IPs don't interfere.
 		// Each IP gets its own independent bucket.
@@ -300,6 +309,7 @@ func TestRateLimit_34_2_5_ConcurrentRateLimitBypass(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1186", "section": "34", "sectionName": "Thesis: Loyalty", "title": "no_panics_under_heavy_concurrent_access"}
 	t.Run("no_panics_under_heavy_concurrent_access", func(t *testing.T) {
 		// Stress test: 500 goroutines hit the rate limiter simultaneously.
 		// Must not panic, deadlock, or produce data races.
@@ -318,6 +328,7 @@ func TestRateLimit_34_2_5_ConcurrentRateLimitBypass(t *testing.T) {
 		// If we reach here without panic/deadlock, the test passes.
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1187", "section": "34", "sectionName": "Thesis: Loyalty", "title": "after_window_reset_quota_restored_under_concurrency"}
 	t.Run("after_window_reset_quota_restored_under_concurrency", func(t *testing.T) {
 		// Verify that after the window resets, the token bucket is replenished.
 		// Use a short-window limiter.
@@ -357,6 +368,7 @@ func TestRateLimit_34_2_5_ConcurrentRateLimitBypass(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1188", "section": "34", "sectionName": "Thesis: Loyalty", "title": "positive_control_sequential_requests_work"}
 	t.Run("positive_control_sequential_requests_work", func(t *testing.T) {
 		// Contrast check: sequential requests below limit all succeed.
 		// Without this, the test passes if the rate limiter rejects everything.

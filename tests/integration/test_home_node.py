@@ -61,6 +61,7 @@ class TestSidecarPattern:
     """Verify Go Core + Python Brain sidecar architecture."""
 
 # TST-INT-013
+    # TRACE: {"suite": "INT", "case": "0013", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "01", "title": "core_exposes_vault_query"}
     def test_core_exposes_vault_query(
         self, mock_go_core: MockGoCore, mock_vault: MockVault
     ) -> None:
@@ -76,6 +77,7 @@ class TestSidecarPattern:
         )
 
 # TST-INT-012
+    # TRACE: {"suite": "INT", "case": "0012", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "02", "title": "core_exposes_vault_store"}
     def test_core_exposes_vault_store(
         self, mock_go_core: MockGoCore, mock_vault: MockVault
     ) -> None:
@@ -88,6 +90,7 @@ class TestSidecarPattern:
         )
 
 # TST-INT-086
+    # TRACE: {"suite": "INT", "case": "0086", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "03", "title": "core_exposes_did_sign"}
     def test_core_exposes_did_sign(
         self, mock_go_core: MockGoCore
     ) -> None:
@@ -102,6 +105,7 @@ class TestSidecarPattern:
         )
 
 # TST-INT-007
+    # TRACE: {"suite": "INT", "case": "0007", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "04", "title": "core_exposes_did_verify"}
     def test_core_exposes_did_verify(
         self, mock_go_core: MockGoCore
     ) -> None:
@@ -123,6 +127,7 @@ class TestSidecarPattern:
         assert mock_go_core.did_verify(data, "bad_signature_hex") is False
 
 # TST-INT-082
+    # TRACE: {"suite": "INT", "case": "0082", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "05", "title": "core_exposes_pii_scrub"}
     def test_core_exposes_pii_scrub(
         self, mock_go_core: MockGoCore
     ) -> None:
@@ -138,6 +143,7 @@ class TestSidecarPattern:
         )
 
 # TST-INT-016
+    # TRACE: {"suite": "INT", "case": "0016", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "06", "title": "core_exposes_notify"}
     def test_core_exposes_notify(
         self, mock_go_core: MockGoCore
     ) -> None:
@@ -169,6 +175,7 @@ class TestSidecarPattern:
         assert notify_calls[0]["tier"] == SilenceTier.TIER_2_SOLICITED
 
 # TST-INT-008
+    # TRACE: {"suite": "INT", "case": "0008", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "07", "title": "brain_exposes_process"}
     def test_brain_exposes_process(
         self, mock_brain: MockPythonBrain
     ) -> None:
@@ -183,6 +190,7 @@ class TestSidecarPattern:
         assert len(mock_brain.processed) == 1
 
 # TST-INT-010
+    # TRACE: {"suite": "INT", "case": "0010", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "08", "title": "brain_exposes_reason"}
     def test_brain_exposes_reason(
         self, mock_brain: MockPythonBrain
     ) -> None:
@@ -196,6 +204,7 @@ class TestSidecarPattern:
         assert len(mock_brain.reasoned) == 1
 
 # TST-INT-009
+    # TRACE: {"suite": "INT", "case": "0009", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "09", "title": "brain_crash_doesnt_kill_core"}
     def test_brain_crash_doesnt_kill_core(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -231,6 +240,7 @@ class TestSidecarPattern:
         assert result["processed"] is True
 
 # TST-INT-089
+    # TRACE: {"suite": "INT", "case": "0089", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "01", "scenario": "10", "title": "internal_api_not_exposed_externally"}
     def test_internal_api_not_exposed_externally(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -278,6 +288,7 @@ class TestLLMRouting:
     """Verify that tasks are routed to the correct LLM target."""
 
 # TST-INT-090
+    # TRACE: {"suite": "INT", "case": "0090", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "02", "scenario": "01", "title": "simple_lookup_uses_sqlite_no_llm"}
     def test_simple_lookup_uses_sqlite_no_llm(
         self, mock_llm_router: MockLLMRouter
     ) -> None:
@@ -298,6 +309,7 @@ class TestLLMRouting:
         )
 
 # TST-INT-083
+    # TRACE: {"suite": "INT", "case": "0083", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "02", "scenario": "02", "title": "basic_summarization_uses_local"}
     def test_basic_summarization_uses_local(self) -> None:
         """Summarization and lightweight tasks route to local LLM.
 
@@ -339,6 +351,7 @@ class TestLLMRouting:
         assert selected.is_local, "unknown task should default to local"
 
 # TST-INT-075
+    # TRACE: {"suite": "INT", "case": "0075", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "02", "scenario": "03", "title": "complex_reasoning_uses_cloud"}
     def test_complex_reasoning_uses_cloud(
         self, mock_llm_router: MockLLMRouter
     ) -> None:
@@ -370,6 +383,7 @@ class TestLLMRouting:
             "FTS search needs no LLM"
 
 # TST-INT-081
+    # TRACE: {"suite": "INT", "case": "0081", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "02", "scenario": "04", "title": "sensitive_persona_never_uses_cloud"}
     def test_sensitive_persona_never_uses_cloud(
         self, mock_llm_router: MockLLMRouter
     ) -> None:
@@ -402,6 +416,7 @@ class TestLLMRouting:
         assert target_consumer == LLMTarget.CLOUD
 
 # TST-INT-073
+    # TRACE: {"suite": "INT", "case": "0073", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "02", "scenario": "05", "title": "latency_sensitive_uses_on_device"}
     def test_latency_sensitive_uses_on_device(
         self, mock_llm_router: MockLLMRouter
     ) -> None:
@@ -421,6 +436,7 @@ class TestOnlineModeLLMRouting:
     """Online Mode: no local LLM, basic tasks go to Gemini 2.5 Flash Lite."""
 
 # TST-INT-078
+    # TRACE: {"suite": "INT", "case": "0078", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "03", "scenario": "01", "title": "basic_tasks_route_to_cloud"}
     def test_basic_tasks_route_to_cloud(
         self, mock_cloud_llm_router: MockLLMRouter
     ) -> None:
@@ -437,6 +453,7 @@ class TestOnlineModeLLMRouting:
         assert len(cloud_entries) == 3
 
 # TST-INT-074
+    # TRACE: {"suite": "INT", "case": "0074", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "03", "scenario": "02", "title": "complex_tasks_still_cloud"}
     def test_complex_tasks_still_cloud(
         self, mock_cloud_llm_router: MockLLMRouter
     ) -> None:
@@ -447,6 +464,7 @@ class TestOnlineModeLLMRouting:
         assert target == LLMTarget.CLOUD
 
 # TST-INT-077
+    # TRACE: {"suite": "INT", "case": "0077", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "03", "scenario": "03", "title": "sensitive_persona_never_cloud_even_in_online_mode"}
     def test_sensitive_persona_never_cloud_even_in_online_mode(
         self, mock_cloud_llm_router: MockLLMRouter
     ) -> None:
@@ -465,6 +483,7 @@ class TestOnlineModeLLMRouting:
         assert target == LLMTarget.ON_DEVICE
 
 # TST-INT-072
+    # TRACE: {"suite": "INT", "case": "0072", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "03", "scenario": "04", "title": "fts_still_no_llm_in_online_mode"}
     def test_fts_still_no_llm_in_online_mode(
         self, mock_cloud_llm_router: MockLLMRouter
     ) -> None:
@@ -521,6 +540,7 @@ class TestBrainTokenAuth:
         return getattr(core, "_brain_token", None) == getattr(brain, "_brain_token", None)
 
 # TST-INT-001
+    # TRACE: {"suite": "INT", "case": "0001", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "04", "scenario": "01", "title": "shared_token_accepted"}
     def test_shared_token_accepted(self) -> None:
         """Both services share the same BRAIN_TOKEN -- communication succeeds."""
         token = self._make_brain_token()
@@ -538,6 +558,7 @@ class TestBrainTokenAuth:
         assert any(c["endpoint"] == "/v1/vault/store" for c in core.api_calls)
 
 # TST-INT-002
+    # TRACE: {"suite": "INT", "case": "0002", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "04", "scenario": "02", "title": "token_mismatch_rejected"}
     def test_token_mismatch_rejected(self) -> None:
         """Different tokens on Core and Brain -- system is non-functional.
 
@@ -565,6 +586,7 @@ class TestBrainTokenAuth:
         assert auth.auth_log[1]["result"] is True
 
 # TST-INT-003
+    # TRACE: {"suite": "INT", "case": "0003", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "04", "scenario": "03", "title": "token_rotation"}
     def test_token_rotation(self) -> None:
         """Replace BRAIN_TOKEN, restart both services -- new token accepted."""
         old_token = self._make_brain_token()
@@ -588,6 +610,7 @@ class TestBrainTokenAuth:
         assert result["processed"] is True
 
 # TST-INT-004
+    # TRACE: {"suite": "INT", "case": "0004", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "04", "scenario": "04", "title": "token_file_permissions"}
     def test_token_file_permissions(self) -> None:
         """BRAIN_TOKEN file must have restrictive permissions (chmod 600).
 
@@ -620,6 +643,7 @@ class TestRequestFlowCoreToBrain:
     """Verify that Go Core correctly forwards requests to the Python Brain."""
 
 # TST-INT-005
+    # TRACE: {"suite": "INT", "case": "0005", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "05", "scenario": "01", "title": "forward_user_query"}
     def test_forward_user_query(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -645,6 +669,7 @@ class TestRequestFlowCoreToBrain:
         )
 
 # TST-INT-006
+    # TRACE: {"suite": "INT", "case": "0006", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "05", "scenario": "02", "title": "forward_inbound_d2d_message"}
     def test_forward_inbound_d2d_message(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -674,6 +699,7 @@ class TestRequestFlowBrainToCore:
     """Verify Brain -> Core API calls for vault reads, scratchpad, and messaging."""
 
 # TST-INT-011
+    # TRACE: {"suite": "INT", "case": "0011", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "06", "scenario": "01", "title": "read_vault_item"}
     def test_read_vault_item(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -691,6 +717,7 @@ class TestRequestFlowBrainToCore:
         )
 
 # TST-INT-014
+    # TRACE: {"suite": "INT", "case": "0014", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "06", "scenario": "02", "title": "write_scratchpad"}
     def test_write_scratchpad(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -742,6 +769,7 @@ class TestRequestFlowBrainToCore:
         assert "5 of 6" in updated["partial_result"]
 
 # TST-INT-015
+    # TRACE: {"suite": "INT", "case": "0015", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "06", "scenario": "03", "title": "send_outbound_message"}
     def test_send_outbound_message(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -803,6 +831,7 @@ class TestUserQueryWS:
     """
 
 # TST-INT-017
+    # TRACE: {"suite": "INT", "case": "0017", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "07", "scenario": "01", "title": "simple_query_full_ws_flow"}
     def test_simple_query_full_ws_flow(
         self, mock_dina: MockDinaCore, mock_thin_client: MockThinClient
     ) -> None:
@@ -859,6 +888,7 @@ class TestUserQueryWS:
         assert received["tier"] is not None
 
 # TST-INT-019
+    # TRACE: {"suite": "INT", "case": "0019", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "07", "scenario": "02", "title": "streaming_response_chunks"}
     def test_streaming_response_chunks(
         self, mock_dina: MockDinaCore, mock_thin_client: MockThinClient
     ) -> None:
@@ -916,6 +946,7 @@ class TestUserQueryWS:
             assert "whisper" not in chunk
 
 # TST-INT-020
+    # TRACE: {"suite": "INT", "case": "0020", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "07", "scenario": "03", "title": "query_during_brain_outage"}
     def test_query_during_brain_outage(
         self, mock_dina: MockDinaCore, mock_thin_client: MockThinClient
     ) -> None:
@@ -967,6 +998,7 @@ class TestUserQueryWS:
         assert result_after is not None
 
 # TST-INT-023
+    # TRACE: {"suite": "INT", "case": "0023", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "07", "scenario": "04", "title": "heartbeat_round_trip"}
     def test_heartbeat_round_trip(
         self, mock_dina: MockDinaCore, mock_thin_client: MockThinClient
     ) -> None:
@@ -1059,6 +1091,7 @@ class TestAdminUI:
         }
 
 # TST-INT-025
+    # TRACE: {"suite": "INT", "case": "0025", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "08", "scenario": "01", "title": "browser_login_dashboard"}
     def test_browser_login_dashboard(
         self, mock_dina: MockDinaCore, mock_admin_api: MockAdminAPI
     ) -> None:
@@ -1088,6 +1121,7 @@ class TestAdminUI:
         assert post_logout is None, "Logged-out session must deny dashboard access"
 
 # TST-INT-026
+    # TRACE: {"suite": "INT", "case": "0026", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "08", "scenario": "02", "title": "dashboard_query_response"}
     def test_dashboard_query_response(
         self, mock_dina: MockDinaCore, mock_admin_api: MockAdminAPI
     ) -> None:
@@ -1132,6 +1166,7 @@ class TestAdminUI:
         assert "/admin/query" in endpoints_called
 
 # TST-INT-027
+    # TRACE: {"suite": "INT", "case": "0027", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "08", "scenario": "03", "title": "session_expiry_redirect"}
     def test_session_expiry_redirect(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -1191,6 +1226,7 @@ class TestDevicePairing:
         return str(uuid.uuid4().int % 1_000_000).zfill(6)
 
 # TST-INT-028
+    # TRACE: {"suite": "INT", "case": "0028", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "09", "scenario": "01", "title": "full_pairing_flow"}
     def test_full_pairing_flow(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -1238,6 +1274,7 @@ class TestDevicePairing:
         assert recheck["used"] is True
 
 # TST-INT-029
+    # TRACE: {"suite": "INT", "case": "0029", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "09", "scenario": "02", "title": "pairing_then_immediate_use"}
     def test_pairing_then_immediate_use(
         self, mock_dina: MockDinaCore, mock_thin_client: MockThinClient
     ) -> None:
@@ -1293,6 +1330,7 @@ class TestOnboarding:
     """
 
 # TST-INT-035
+    # TRACE: {"suite": "INT", "case": "0035", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "10", "scenario": "01", "title": "full_managed_onboarding"}
     def test_full_managed_onboarding(self) -> None:
         """All 10 silent onboarding steps execute in order.
 
@@ -1362,6 +1400,7 @@ class TestOnboarding:
         assert flag["steps_run"] == 10
 
 # TST-INT-036
+    # TRACE: {"suite": "INT", "case": "0036", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "10", "scenario": "02", "title": "post_onboarding_system_functional"}
     def test_post_onboarding_system_functional(self) -> None:
         """After onboarding, all subsystems are wired and functional.
 
@@ -1403,6 +1442,7 @@ class TestOnboarding:
         assert dina.go_core.did_verify(b"tampered data", sig) is False
 
 # TST-INT-037
+    # TRACE: {"suite": "INT", "case": "0037", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "10", "scenario": "03", "title": "only_personal_persona_initially"}
     def test_only_personal_persona_initially(self) -> None:
         """After onboarding only the /personal persona exists.
 
@@ -1426,6 +1466,7 @@ class TestOnboarding:
         assert personal.storage_partition == "partition_consumer"
 
 # TST-INT-038
+    # TRACE: {"suite": "INT", "case": "0038", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "10", "scenario": "04", "title": "day7_mnemonic_backup_prompt"}
     def test_day7_mnemonic_backup_prompt(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -1464,6 +1505,7 @@ class TestOnboarding:
         assert "recovery phrase" in mock_human.notifications[0].body
 
 # TST-INT-039
+    # TRACE: {"suite": "INT", "case": "0039", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "10", "scenario": "05", "title": "cloud_llm_pii_consent"}
     def test_cloud_llm_pii_consent(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -1543,6 +1585,7 @@ class TestCompromisedBrain:
     """
 
 # TST-INT-042
+    # TRACE: {"suite": "INT", "case": "0042", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "11", "scenario": "01", "title": "brain_restricted_creates_audit_trail"}
     def test_brain_restricted_creates_audit_trail(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -1573,6 +1616,7 @@ class TestCompromisedBrain:
             assert "endpoint" in mock_dina.go_core.api_calls[i]
 
 # TST-INT-043
+    # TRACE: {"suite": "INT", "case": "0043", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "11", "scenario": "02", "title": "brain_cannot_call_admin_endpoints"}
     def test_brain_cannot_call_admin_endpoints(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -1632,6 +1676,7 @@ class TestBrainLocalLLM:
     """Verify Brain sends prompts to local LLM router and receives completions."""
 
 # TST-INT-071
+    # TRACE: {"suite": "INT", "case": "0071", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "12", "scenario": "01", "title": "brain_local_llm_completion"}
     def test_brain_local_llm_completion(
         self,
         mock_dina: MockDinaCore,
@@ -1700,6 +1745,7 @@ class TestCloudLLMRateLimited:
     """Verify graceful handling when a cloud LLM returns rate-limited errors."""
 
 # TST-INT-076
+    # TRACE: {"suite": "INT", "case": "0076", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "13", "scenario": "01", "title": "cloud_llm_rate_limited"}
     def test_cloud_llm_rate_limited(
         self,
         mock_cloud_llm_router: MockLLMRouter,
@@ -1750,6 +1796,7 @@ class TestPIIScrubberPipeline:
     (named entity recognition), Tier 3 = LLM-based (presidio)."""
 
 # TST-INT-079
+    # TRACE: {"suite": "INT", "case": "0079", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "14", "scenario": "01", "title": "full_tier1_tier2_pipeline"}
     def test_full_tier1_tier2_pipeline(
         self,
         mock_scrubber: MockPIIScrubber,
@@ -1795,6 +1842,7 @@ class TestPIIScrubberPipeline:
         assert log_entry["scrubbed_length"] < log_entry["original_length"]
 
 # TST-INT-080
+    # TRACE: {"suite": "INT", "case": "0080", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "14", "scenario": "02", "title": "replacement_map_round_trip"}
     def test_replacement_map_round_trip(
         self,
         mock_scrubber: MockPIIScrubber,
@@ -1856,6 +1904,7 @@ class TestPIIScrubberPipeline:
             "Clean text must pass through unchanged"
 
 # TST-INT-084
+    # TRACE: {"suite": "INT", "case": "0084", "section": "02", "sectionName": "End-to-End User Flows", "subsection": "14", "scenario": "03", "title": "tier3_absent_gracefully"}
     def test_tier3_absent_gracefully(
         self,
         mock_scrubber: MockPIIScrubber,

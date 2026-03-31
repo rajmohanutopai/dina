@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TRACE: {"suite": "CORE", "case": "2087", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "01", "title": "Pairing_10_RevokeDeviceMethodNotAllowed"}
 func TestPairing_10_RevokeDeviceMethodNotAllowed(t *testing.T) {
 	// The method guard must reject non-DELETE requests before touching the
 	// service layer, so a nil Device service is fine here.

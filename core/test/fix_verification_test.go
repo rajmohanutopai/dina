@@ -26,6 +26,7 @@ import (
 // ============================================================================
 
 // TST-CORE-1031 DrainSpool returns all non-expired payloads
+// TRACE: {"suite": "CORE", "case": "0552", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "01", "title": "DrainSpoolReturnsPayloads"}
 func TestFixVerify_31_1_1_DrainSpoolReturnsPayloads(t *testing.T) {
 	// Use the real transport.InboxManager, not the test-only mock.
 	inbox := transport.NewInboxManager(transport.InboxConfig{
@@ -77,6 +78,7 @@ func TestFixVerify_31_1_1_DrainSpoolReturnsPayloads(t *testing.T) {
 }
 
 // TST-CORE-1032 DrainSpool skips expired messages
+// TRACE: {"suite": "CORE", "case": "0553", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "02", "title": "DrainSpoolSkipsExpired"}
 func TestFixVerify_31_1_2_DrainSpoolSkipsExpired(t *testing.T) {
 	// Use the real transport.InboxManager which has SetTTL support.
 	inbox := transport.NewInboxManager(transport.InboxConfig{
@@ -127,6 +129,7 @@ func TestFixVerify_31_1_2_DrainSpoolSkipsExpired(t *testing.T) {
 }
 
 // TST-CORE-1033 onEnvelope callback fires on fast-path ingest
+// TRACE: {"suite": "CORE", "case": "0554", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "03", "title": "OnEnvelopeCallback"}
 func TestFixVerify_31_1_3_OnEnvelopeCallback(t *testing.T) {
 	// Test the onEnvelope callback pattern used by Router.ProcessPending:
 	// spool messages -> drain -> invoke callback for each payload.
@@ -172,6 +175,7 @@ func TestFixVerify_31_1_3_OnEnvelopeCallback(t *testing.T) {
 }
 
 // TST-CORE-1036 Immediate decrypt: no 10s delay for D2D
+// TRACE: {"suite": "CORE", "case": "0555", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "06", "title": "ImmediateDecrypt"}
 func TestFixVerify_31_1_6_ImmediateDecrypt(t *testing.T) {
 	// Test that DrainSpool returns messages immediately (within milliseconds),
 	// proving there is no artificial delay in the D2D pipeline.
@@ -205,6 +209,7 @@ func TestFixVerify_31_1_6_ImmediateDecrypt(t *testing.T) {
 }
 
 // TST-CORE-1037 Cross-node D2D: Alonso -> Sancho roundtrip
+// TRACE: {"suite": "CORE", "case": "0556", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "07", "title": "CrossNodeD2D_AlonsoToSancho"}
 func TestFixVerify_31_1_7_CrossNodeD2D_AlonsoToSancho(t *testing.T) {
 	// Test cross-node D2D message delivery using the PRODUCTION domain.DinaMessage
 	// through TransportService.StoreInbound / GetInbound — not the testutil fixture.
@@ -244,6 +249,7 @@ func TestFixVerify_31_1_7_CrossNodeD2D_AlonsoToSancho(t *testing.T) {
 }
 
 // TST-CORE-1038 Cross-node D2D: Sancho -> Alonso roundtrip
+// TRACE: {"suite": "CORE", "case": "0557", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "08", "title": "CrossNodeD2D_SanchoToAlonso"}
 func TestFixVerify_31_1_8_CrossNodeD2D_SanchoToAlonso(t *testing.T) {
 	// Test the reverse direction: Sancho → Alonso using PRODUCTION domain.DinaMessage
 	// through TransportService.StoreInbound / GetInbound.
@@ -291,6 +297,7 @@ func TestFixVerify_31_1_8_CrossNodeD2D_SanchoToAlonso(t *testing.T) {
 }
 
 // TST-CORE-1039 Cross-node D2D: multicast (Alonso -> all 3)
+// TRACE: {"suite": "CORE", "case": "0558", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "09", "title": "CrossNodeD2D_Multicast"}
 func TestFixVerify_31_1_9_CrossNodeD2D_Multicast(t *testing.T) {
 	// Test multicast using PRODUCTION domain.DinaMessage through TransportService.
 	env := newTransportTestEnv(t)
@@ -357,6 +364,7 @@ func TestFixVerify_31_1_9_CrossNodeD2D_Multicast(t *testing.T) {
 // ============================================================================
 
 // TST-CORE-1040 TaskEvent marshals to snake_case JSON
+// TRACE: {"suite": "CORE", "case": "0559", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "02", "scenario": "01", "title": "TaskEventSnakeCaseJSON"}
 func TestFixVerify_31_2_1_TaskEventSnakeCaseJSON(t *testing.T) {
 	evt := domain.TaskEvent{
 		TaskID:  "task_123",
@@ -381,6 +389,7 @@ func TestFixVerify_31_2_1_TaskEventSnakeCaseJSON(t *testing.T) {
 }
 
 // TST-CORE-1041 ProcessEventRequest accepts task_id field
+// TRACE: {"suite": "CORE", "case": "0560", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "02", "scenario": "02", "title": "ProcessEventAcceptsTaskID"}
 func TestFixVerify_31_2_2_ProcessEventAcceptsTaskID(t *testing.T) {
 	// Verify that a TaskEvent with task_id marshals correctly and can round-trip
 	// through JSON, which is the format used by ProcessEvent on the wire.
@@ -428,6 +437,7 @@ func TestFixVerify_31_2_2_ProcessEventAcceptsTaskID(t *testing.T) {
 }
 
 // TST-CORE-1042 TST-CORE-995 BrainClient.Reason sends "prompt" (not "query")
+// TRACE: {"suite": "CORE", "case": "0561", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "02", "scenario": "03", "title": "ReasonSendsPrompt"}
 func TestFixVerify_31_2_3_ReasonSendsPrompt(t *testing.T) {
 	// Create a test HTTP server that captures the request body.
 	var capturedBody []byte
@@ -484,6 +494,7 @@ func TestFixVerify_31_2_3_ReasonSendsPrompt(t *testing.T) {
 }
 
 // TST-CORE-1043 ReasonResult fields
+// TRACE: {"suite": "CORE", "case": "0562", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "02", "scenario": "04", "title": "ReasonResultFields"}
 func TestFixVerify_31_2_4_ReasonResultFields(t *testing.T) {
 	jsonStr := `{"content":"answer","model":"gemini","tokens_in":10,"tokens_out":20}`
 	var result domain.ReasonResult
@@ -505,6 +516,7 @@ func TestFixVerify_31_2_4_ReasonResultFields(t *testing.T) {
 }
 
 // TST-CORE-1201 ReasonHandler propagates approval_required from Brain as 403
+// TRACE: {"suite": "CORE", "case": "0563", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "03", "scenario": "01", "title": "ReasonApprovalPropagation"}
 func TestFixVerify_34_3_ReasonApprovalPropagation(t *testing.T) {
 	// Scenario: Brain returns HTTP 403 with approval_required detail.
 	// Core's ReasonHandler must detect "approval_required" in the error
@@ -595,6 +607,7 @@ func TestFixVerify_34_3_ReasonApprovalPropagation(t *testing.T) {
 // ============================================================================
 
 // TST-CORE-1050 Degradation signal in response
+// TRACE: {"suite": "CORE", "case": "0564", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "04", "scenario": "02", "title": "DegradationSignal"}
 func TestFixVerify_31_4_2_DegradationSignal(t *testing.T) {
 	// Test real degradation: VectorSearch on items without embeddings returns
 	// empty (degradation signal), while FTS5 Query on the same items succeeds.
@@ -652,6 +665,7 @@ func TestFixVerify_31_4_2_DegradationSignal(t *testing.T) {
 }
 
 // TST-CORE-1051 Semantic query returns FTS5 with degradation flag
+// TRACE: {"suite": "CORE", "case": "0565", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "04", "scenario": "03", "title": "SemanticFallbackToFTS5"}
 func TestFixVerify_31_4_3_SemanticFallbackToFTS5(t *testing.T) {
 	// Test the real fallback pattern: VectorSearch returns nothing when
 	// items have no embeddings, so the caller falls back to Query (FTS5).
@@ -741,6 +755,7 @@ func TestFixVerify_31_4_3_SemanticFallbackToFTS5(t *testing.T) {
 // ============================================================================
 
 // TST-CORE-1052 PUT /v1/contacts/{did} updates contact name
+// TRACE: {"suite": "CORE", "case": "0566", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "05", "scenario": "01", "title": "UpdateContact"}
 func TestFixVerify_31_5_1_UpdateContact(t *testing.T) {
 	// Fresh ContactDirectory per test — no shared state leaks.
 	cd := identity.NewContactDirectory()
@@ -807,6 +822,7 @@ func TestFixVerify_31_5_1_UpdateContact(t *testing.T) {
 }
 
 // TST-CORE-1054 Admin UI update calls core API (not vault hack)
+// TRACE: {"suite": "CORE", "case": "0567", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "05", "scenario": "03", "title": "AdminUICallsCoreAPI"}
 func TestFixVerify_31_5_3_AdminUICallsCoreAPI(t *testing.T) {
 	// This test verifies the core API contract that the admin UI would call.
 	// The admin UI must use the ContactDirectory API (Add, UpdateName, UpdateTrust)
@@ -850,6 +866,7 @@ func TestFixVerify_31_5_3_AdminUICallsCoreAPI(t *testing.T) {
 // ============================================================================
 
 // TST-CORE-1055 Default brain config core URL is http://core:8100
+// TRACE: {"suite": "CORE", "case": "0568", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "06", "scenario": "01", "title": "DefaultCoreURL"}
 func TestFixVerify_31_6_1_DefaultCoreURL(t *testing.T) {
 	// Clear env vars that could override defaults, ensuring we test production defaults().
 	t.Setenv("DINA_ADMIN_ADDR", "")
@@ -873,6 +890,7 @@ func TestFixVerify_31_6_1_DefaultCoreURL(t *testing.T) {
 }
 
 // TST-CORE-1057 DINA_KNOWN_PEERS parsed into peer registry
+// TRACE: {"suite": "CORE", "case": "0569", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "06", "scenario": "03", "title": "KnownPeersParsed"}
 func TestFixVerify_31_6_3_KnownPeersParsed(t *testing.T) {
 	// DINA_KNOWN_PEERS is a comma-separated list of "did=endpoint" pairs.
 	// While the actual env var handling is in main.go, we test the parsing

@@ -37,6 +37,7 @@ def _clear_config_env(monkeypatch):
 
 
 # TST-BRAIN-289
+# TRACE: {"suite": "BRAIN", "case": "0289", "section": "09", "sectionName": "Configuration", "subsection": "01", "scenario": "01", "title": "core_url_from_env"}
 def test_config_9_1_1_core_url_from_env(monkeypatch) -> None:
     """§9.1.1: CORE_URL is read from the DINA_CORE_URL environment variable."""
     _clear_config_env(monkeypatch)
@@ -49,6 +50,7 @@ def test_config_9_1_1_core_url_from_env(monkeypatch) -> None:
 
 # TST-BRAIN-376
 # TST-BRAIN-487 Default core URL is http://core:8100
+# TRACE: {"suite": "BRAIN", "case": "0376", "section": "09", "sectionName": "Configuration", "subsection": "01", "scenario": "02", "title": "core_url_default"}
 def test_config_9_1_2_core_url_default(monkeypatch) -> None:
     """§9.1.2: CORE_URL defaults to http://core:8100 when not set."""
     _clear_config_env(monkeypatch)
@@ -64,6 +66,7 @@ def test_config_9_1_2_core_url_default(monkeypatch) -> None:
 
 
 # TST-BRAIN-377
+# TRACE: {"suite": "BRAIN", "case": "0377", "section": "09", "sectionName": "Configuration", "subsection": "02", "scenario": "01", "title": "service_key_dir_from_env"}
 def test_config_9_2_1_service_key_dir_from_env(monkeypatch) -> None:
     """§9.2.1: SERVICE_KEY_DIR is read from DINA_SERVICE_KEY_DIR environment variable."""
     _clear_config_env(monkeypatch)
@@ -75,6 +78,7 @@ def test_config_9_2_1_service_key_dir_from_env(monkeypatch) -> None:
 
 
 # TST-BRAIN-293
+# TRACE: {"suite": "BRAIN", "case": "0293", "section": "09", "sectionName": "Configuration", "subsection": "02", "scenario": "02", "title": "service_key_dir_default"}
 def test_config_9_2_2_service_key_dir_default(monkeypatch) -> None:
     """§9.2.2: SERVICE_KEY_DIR defaults to /run/secrets/service_keys."""
     _clear_config_env(monkeypatch)
@@ -90,6 +94,7 @@ def test_config_9_2_2_service_key_dir_default(monkeypatch) -> None:
 
 
 # TST-BRAIN-378
+# TRACE: {"suite": "BRAIN", "case": "0378", "section": "09", "sectionName": "Configuration", "subsection": "03", "scenario": "01", "title": "listen_port_default"}
 def test_config_9_3_1_listen_port_default(monkeypatch) -> None:
     """§9.3.1: LISTEN_PORT defaults to 8200."""
     _clear_config_env(monkeypatch)
@@ -100,6 +105,7 @@ def test_config_9_3_1_listen_port_default(monkeypatch) -> None:
 
 
 # TST-BRAIN-379
+# TRACE: {"suite": "BRAIN", "case": "0379", "section": "09", "sectionName": "Configuration", "subsection": "03", "scenario": "02", "title": "log_level_default"}
 def test_config_9_3_2_log_level_default(monkeypatch) -> None:
     """§9.3.2: LOG_LEVEL defaults to INFO."""
     _clear_config_env(monkeypatch)
@@ -115,6 +121,7 @@ def test_config_9_3_2_log_level_default(monkeypatch) -> None:
 
 
 # TST-BRAIN-380
+# TRACE: {"suite": "BRAIN", "case": "0380", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "01", "title": "client_token_from_env"}
 def test_config_9_4_1_client_token_from_env(monkeypatch) -> None:
     """§9.4.1: CLIENT_TOKEN is read from DINA_CLIENT_TOKEN env var."""
     _clear_config_env(monkeypatch)
@@ -125,6 +132,7 @@ def test_config_9_4_1_client_token_from_env(monkeypatch) -> None:
 
 
 # TST-BRAIN-294
+# TRACE: {"suite": "BRAIN", "case": "0294", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "02", "title": "invalid_core_url_raises"}
 def test_config_9_4_2_invalid_core_url_raises(monkeypatch) -> None:
     """§9.4.2: Invalid CORE_URL (not a valid URL) fails validation."""
     _clear_config_env(monkeypatch)
@@ -140,6 +148,7 @@ def test_config_9_4_2_invalid_core_url_raises(monkeypatch) -> None:
 
 
 # TST-BRAIN-290
+# TRACE: {"suite": "BRAIN", "case": "0290", "section": "09", "sectionName": "Configuration", "subsection": "01", "scenario": "09", "title": "config_9_llm_url_from_env"}
 def test_config_9_llm_url_from_env(monkeypatch) -> None:
     """§9 row 2: LLM_URL is read from the DINA_LLM_URL environment variable."""
     _clear_config_env(monkeypatch)
@@ -151,6 +160,7 @@ def test_config_9_llm_url_from_env(monkeypatch) -> None:
 
 
 # TST-BRAIN-291
+# TRACE: {"suite": "BRAIN", "case": "0291", "section": "09", "sectionName": "Configuration", "subsection": "01", "scenario": "10", "title": "config_9_missing_core_url_uses_default"}
 def test_config_9_missing_core_url_uses_default(monkeypatch) -> None:
     """§9 row 3: Missing CORE_URL uses default http://core:8100."""
     _clear_config_env(monkeypatch)
@@ -161,6 +171,7 @@ def test_config_9_missing_core_url_uses_default(monkeypatch) -> None:
 
 
 # TST-BRAIN-292
+# TRACE: {"suite": "BRAIN", "case": "0292", "section": "09", "sectionName": "Configuration", "subsection": "01", "scenario": "11", "title": "config_9_missing_llm_url_graceful"}
 def test_config_9_missing_llm_url_graceful(monkeypatch) -> None:
     """§9 row 4: Brain starts but LLM routing disabled when LLM_URL is not set."""
     _clear_config_env(monkeypatch)

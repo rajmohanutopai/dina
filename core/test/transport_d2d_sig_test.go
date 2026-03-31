@@ -142,6 +142,7 @@ type d2dPayloadWire struct {
 // TST-CORE-1088 TST-CORE-1002
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1693", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "01", "title": "SendMessage_DeliveryPayloadIsJSONWrapper"}
 func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -219,6 +220,7 @@ func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T)
 // --------------------------------------------------------------------------
 
 // TST-CORE-1089
+// TRACE: {"suite": "CORE", "case": "1694", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "02", "title": "ProcessInbound_JSONWrapperValidSig_Success"}
 func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -269,6 +271,7 @@ func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.
 // --------------------------------------------------------------------------
 
 // TST-CORE-1090
+// TRACE: {"suite": "CORE", "case": "1695", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "03", "title": "ProcessInbound_JSONWrapperTamperedSig_Error"}
 func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -315,6 +318,7 @@ func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing
 // TST-CORE-1093
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1696", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "06", "title": "ProcessInbound_RawBytesLegacy_Rejected"}
 func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	// TST-CORE-1093: ProcessInbound raw bytes legacy rejected
 	// Requirement: Raw NaCl bytes (no JSON wrapper), without DINA_ALLOW_UNSIGNED_D2D
@@ -323,6 +327,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	ctx := context.Background()
 
 	// Sub-test 1: Real encrypted payload without JSON wrapper → rejected.
+	// TRACE: {"suite": "CORE", "case": "1697", "section": "31", "sectionName": "Code Review Fix Verification", "title": "encrypted_raw_nacl_rejected"}
 	t.Run("encrypted_raw_nacl_rejected", func(t *testing.T) {
 		msg := domain.DinaMessage{
 			ID:          "msg-fix11-004",
@@ -349,6 +354,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	})
 
 	// Sub-test 2: Random garbage bytes → rejected.
+	// TRACE: {"suite": "CORE", "case": "1698", "section": "31", "sectionName": "Code Review Fix Verification", "title": "random_bytes_rejected"}
 	t.Run("random_bytes_rejected", func(t *testing.T) {
 		garbage := []byte{0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04}
 		_, err := env.svc.ProcessInbound(ctx, garbage)
@@ -361,6 +367,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	})
 
 	// Sub-test 3: Empty payload → rejected.
+	// TRACE: {"suite": "CORE", "case": "1699", "section": "31", "sectionName": "Code Review Fix Verification", "title": "empty_payload_rejected"}
 	t.Run("empty_payload_rejected", func(t *testing.T) {
 		_, err := env.svc.ProcessInbound(ctx, []byte{})
 		if err == nil {
@@ -369,6 +376,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	})
 
 	// Sub-test 4: JSON without required "c" and "s" fields → rejected.
+	// TRACE: {"suite": "CORE", "case": "1700", "section": "31", "sectionName": "Code Review Fix Verification", "title": "json_missing_sig_field_rejected"}
 	t.Run("json_missing_sig_field_rejected", func(t *testing.T) {
 		// Has ciphertext but no signature — not the proper wrapper format.
 		partial := []byte(`{"c":"dGVzdA=="}`)
@@ -387,6 +395,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1095
+// TRACE: {"suite": "CORE", "case": "1701", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "08", "title": "ProcessOutbox_UsesJSONWrapper"}
 func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -464,6 +473,7 @@ func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 // Test 6: Full round-trip: SendMessage -> delivery -> ProcessInbound
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1702", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "09", "title": "FullRoundTrip_SendAndReceiveWithSig"}
 func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -512,6 +522,7 @@ func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1091
+// TRACE: {"suite": "CORE", "case": "1703", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "04", "title": "ProcessInbound_JSONWrapperEmptySig_Rejected"}
 func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing.T) {
 	// CRITICAL-04: unsigned messages (empty sig) are now rejected by default.
 	env := newD2DSigTestEnv(t)
@@ -550,6 +561,7 @@ func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing
 // --------------------------------------------------------------------------
 
 // TST-CORE-1094
+// TRACE: {"suite": "CORE", "case": "1704", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "07", "title": "ProcessInbound_JSONWrapper_DIDSpoofing_Rejected"}
 func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -601,9 +613,11 @@ func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *tes
 // The override must be opt-in (off by default) and every legacy message must
 // generate a log warning for migration tracking.
 
+// TRACE: {"suite": "CORE", "case": "1705", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "05", "title": "ProcessInbound_RawBytesLegacy_Migration"}
 func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) {
 	ctx := context.Background()
 
+	// TRACE: {"suite": "CORE", "case": "1706", "section": "31", "sectionName": "Code Review Fix Verification", "title": "raw_nacl_accepted_when_allow_unsigned_enabled"}
 	t.Run("raw_nacl_accepted_when_allow_unsigned_enabled", func(t *testing.T) {
 		// With DINA_ALLOW_UNSIGNED_D2D enabled, raw NaCl sealed box bytes
 		// that aren't JSON should be decrypted without signature verification.
@@ -639,6 +653,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1707", "section": "31", "sectionName": "Code Review Fix Verification", "title": "raw_nacl_rejected_when_allow_unsigned_disabled"}
 	t.Run("raw_nacl_rejected_when_allow_unsigned_disabled", func(t *testing.T) {
 		// Default (disabled): raw NaCl bytes must still be rejected.
 		// This confirms the override is opt-in, not default.
@@ -666,6 +681,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1708", "section": "31", "sectionName": "Code Review Fix Verification", "title": "json_wrapper_still_works_with_allow_unsigned_enabled"}
 	t.Run("json_wrapper_still_works_with_allow_unsigned_enabled", func(t *testing.T) {
 		// With allowUnsignedD2D enabled, properly signed JSON wrappers must
 		// STILL work normally. The legacy path is a fallback, not a replacement.
@@ -709,6 +725,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1709", "section": "31", "sectionName": "Code Review Fix Verification", "title": "garbage_bytes_rejected_even_with_allow_unsigned"}
 	t.Run("garbage_bytes_rejected_even_with_allow_unsigned", func(t *testing.T) {
 		// Random garbage that isn't valid NaCl must still be rejected.
 		// The legacy path tries to decrypt — decryption failure = rejection.
@@ -722,6 +739,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1710", "section": "31", "sectionName": "Code Review Fix Verification", "title": "empty_payload_rejected_even_with_allow_unsigned"}
 	t.Run("empty_payload_rejected_even_with_allow_unsigned", func(t *testing.T) {
 		env := newD2DSigTestEnv(t)
 		env.svc.SetAllowUnsignedD2D(true)
@@ -732,6 +750,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1711", "section": "31", "sectionName": "Code Review Fix Verification", "title": "message_body_preserved_in_legacy_path"}
 	t.Run("message_body_preserved_in_legacy_path", func(t *testing.T) {
 		// The decrypted message body must be intact after legacy decryption.
 		env := newD2DSigTestEnv(t)
@@ -758,6 +777,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1712", "section": "31", "sectionName": "Code Review Fix Verification", "title": "toggle_allow_unsigned_off_rejects_again"}
 	t.Run("toggle_allow_unsigned_off_rejects_again", func(t *testing.T) {
 		// Verify SetAllowUnsignedD2D(false) re-enables rejection.
 		env := newD2DSigTestEnv(t)

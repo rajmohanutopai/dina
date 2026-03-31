@@ -42,6 +42,7 @@ class TestCustodianRecovery:
     """SSS custodian-based estate recovery — no timers, no false activations."""
 
 # TST-INT-219
+    # TRACE: {"suite": "INT", "case": "0219", "section": "08", "sectionName": "Digital Estate", "subsection": "01", "scenario": "01", "title": "threshold_met_activates_estate"}
     def test_threshold_met_activates_estate(
         self,
         mock_estate_manager: MockEstateManager,
@@ -62,6 +63,7 @@ class TestCustodianRecovery:
         assert mock_estate_manager.estate_mode_active is True
 
 # TST-INT-220
+    # TRACE: {"suite": "INT", "case": "0220", "section": "08", "sectionName": "Digital Estate", "subsection": "01", "scenario": "02", "title": "below_threshold_blocks_estate"}
     def test_below_threshold_blocks_estate(
         self,
         mock_estate_manager: MockEstateManager,
@@ -84,6 +86,7 @@ class TestCustodianRecovery:
         assert mock_estate_manager.estate_mode_active is False
 
 # TST-INT-221
+    # TRACE: {"suite": "INT", "case": "0221", "section": "08", "sectionName": "Digital Estate", "subsection": "01", "scenario": "03", "title": "invalid_share_rejected"}
     def test_invalid_share_rejected(
         self,
         mock_estate_manager: MockEstateManager,
@@ -110,6 +113,7 @@ class TestCustodianRecovery:
         assert mock_estate_manager.estate_mode_active is False
 
 # TST-INT-232
+    # TRACE: {"suite": "INT", "case": "0232", "section": "08", "sectionName": "Digital Estate", "subsection": "01", "scenario": "04", "title": "estate_mode_notifies_beneficiaries"}
     def test_estate_mode_notifies_beneficiaries(
         self,
         mock_estate_manager: MockEstateManager,
@@ -157,6 +161,7 @@ class TestCustodianRecovery:
             assert b.dina_did in recipient_dids
 
 # TST-INT-223
+    # TRACE: {"suite": "INT", "case": "0223", "section": "08", "sectionName": "Digital Estate", "subsection": "01", "scenario": "05", "title": "per_beneficiary_keys"}
     def test_per_beneficiary_keys(
         self,
         mock_estate_manager: MockEstateManager,
@@ -210,6 +215,7 @@ class TestCustodianRecovery:
             assert "personas" in msg.payload
 
 # TST-INT-228
+    # TRACE: {"suite": "INT", "case": "0228", "section": "08", "sectionName": "Digital Estate", "subsection": "01", "scenario": "06", "title": "keys_delivered_via_dina_to_dina"}
     def test_keys_delivered_via_dina_to_dina(
         self,
         mock_estate_manager: MockEstateManager,
@@ -235,6 +241,7 @@ class TestCustodianRecovery:
             assert "access_type" in msg.payload
 
 # TST-INT-227
+    # TRACE: {"suite": "INT", "case": "0227", "section": "08", "sectionName": "Digital Estate", "subsection": "01", "scenario": "07", "title": "remaining_data_destroyed"}
     def test_remaining_data_destroyed(
         self,
         mock_estate_manager: MockEstateManager,
@@ -290,6 +297,7 @@ class TestEstateConfiguration:
     """The user configures their estate plan while alive."""
 
 # TST-INT-224
+    # TRACE: {"suite": "INT", "case": "0224", "section": "08", "sectionName": "Digital Estate", "subsection": "02", "scenario": "01", "title": "plan_stored_in_tier_0"}
     def test_plan_stored_in_tier_0(self, mock_dina: MockDinaCore):
         """The estate plan is stored in Tier 0 (identity/config tier),
         the most protected storage layer."""
@@ -334,6 +342,7 @@ class TestEstateConfiguration:
         assert retrieved["default_action"] == "destroy"
 
 # TST-INT-229
+    # TRACE: {"suite": "INT", "case": "0229", "section": "08", "sectionName": "Digital Estate", "subsection": "02", "scenario": "02", "title": "manual_trigger_with_recovery_phrase"}
     def test_manual_trigger_with_recovery_phrase(
         self, mock_dina: MockDinaCore, mock_p2p: MockP2PChannel
     ):
@@ -385,6 +394,7 @@ class TestEstateConfiguration:
             assert msg.from_did == mock_dina.identity.root_did
 
 # TST-INT-230
+    # TRACE: {"suite": "INT", "case": "0230", "section": "08", "sectionName": "Digital Estate", "subsection": "02", "scenario": "03", "title": "sss_custodian_coordination"}
     def test_sss_custodian_coordination(self, mock_dina: MockDinaCore):
         """SSS custodian coordination: multiple custodians present shares
         (some physical QR, some digital via D2D) to meet the threshold.
@@ -462,6 +472,7 @@ class TestBeneficiaryKeyDerivation:
     """Each beneficiary receives a unique derived key — never the master key."""
 
 # TST-INT-222
+    # TRACE: {"suite": "INT", "case": "0222", "section": "08", "sectionName": "Digital Estate", "subsection": "03", "scenario": "01", "title": "beneficiary_key_derived_from_master_and_did"}
     def test_beneficiary_key_derived_from_master_and_did(
         self,
         mock_estate_manager: MockEstateManager,
@@ -518,6 +529,7 @@ class TestBeneficiaryAccessTypes:
     """Access types control what beneficiaries can do with received data."""
 
 # TST-INT-225
+    # TRACE: {"suite": "INT", "case": "0225", "section": "08", "sectionName": "Digital Estate", "subsection": "04", "scenario": "01", "title": "full_decrypt_access"}
     def test_full_decrypt_access(
         self,
         mock_estate_manager: MockEstateManager,
@@ -588,6 +600,7 @@ class TestBeneficiaryAccessTypes:
         assert health_persona.decrypt(health_str) is not None
 
 # TST-INT-226
+    # TRACE: {"suite": "INT", "case": "0226", "section": "08", "sectionName": "Digital Estate", "subsection": "04", "scenario": "02", "title": "read_only_90_days_access"}
     def test_read_only_90_days_access(
         self,
         mock_estate_manager: MockEstateManager,
@@ -656,6 +669,7 @@ class TestDestructionGating:
     """Data destruction is gated on delivery confirmation."""
 
 # TST-INT-231
+    # TRACE: {"suite": "INT", "case": "0231", "section": "08", "sectionName": "Digital Estate", "subsection": "05", "scenario": "01", "title": "destruction_gated_on_delivery_confirmation"}
     def test_destruction_gated_on_delivery_confirmation(
         self,
         mock_estate_manager: MockEstateManager,

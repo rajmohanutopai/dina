@@ -25,6 +25,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-456
+// TRACE: {"suite": "CORE", "case": "1348", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "01", "title": "EnqueueReturnsID"}
 func TestTaskQueue_8_1_1_EnqueueReturnsID(t *testing.T) {
 	impl := taskqueue.NewTaskQueue()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -54,6 +55,7 @@ func TestTaskQueue_8_1_1_EnqueueReturnsID(t *testing.T) {
 }
 
 // TST-CORE-828
+// TRACE: {"suite": "CORE", "case": "1349", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "02", "title": "DequeueTransitionsToRunning"}
 func TestTaskQueue_8_1_2_DequeueTransitionsToRunning(t *testing.T) {
 	impl := realTaskQueuer
 	// impl = taskqueue.New()
@@ -73,6 +75,7 @@ func TestTaskQueue_8_1_2_DequeueTransitionsToRunning(t *testing.T) {
 }
 
 // TST-CORE-829
+// TRACE: {"suite": "CORE", "case": "1350", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "03", "title": "DequeueEmptyReturnsNil"}
 func TestTaskQueue_8_1_3_DequeueEmptyReturnsNil(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	testutil.RequireImplementation(t, q, "TaskQueuer")
@@ -100,6 +103,7 @@ func TestTaskQueue_8_1_3_DequeueEmptyReturnsNil(t *testing.T) {
 }
 
 // TST-CORE-830
+// TRACE: {"suite": "CORE", "case": "1351", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "04", "title": "CompleteTask"}
 func TestTaskQueue_8_1_4_CompleteTask(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	ctx := context.Background()
@@ -130,6 +134,7 @@ func TestTaskQueue_8_1_4_CompleteTask(t *testing.T) {
 }
 
 // TST-CORE-831
+// TRACE: {"suite": "CORE", "case": "1352", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "05", "title": "MockEnqueueDequeue"}
 func TestTaskQueue_8_1_5_MockEnqueueDequeue(t *testing.T) {
 	// Fresh production TaskQueue — no mocks.
 	impl := taskqueue.NewTaskQueue()
@@ -173,6 +178,7 @@ func TestTaskQueue_8_1_5_MockEnqueueDequeue(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-832
+// TRACE: {"suite": "CORE", "case": "1353", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "01", "title": "HighPriorityFirst"}
 func TestTaskQueue_8_2_1_HighPriorityFirst(t *testing.T) {
 	impl := realTaskQueuer
 	// impl = taskqueue.New()
@@ -199,6 +205,7 @@ func TestTaskQueue_8_2_1_HighPriorityFirst(t *testing.T) {
 }
 
 // TST-CORE-833
+// TRACE: {"suite": "CORE", "case": "1354", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "02", "title": "SamePriorityFIFO"}
 func TestTaskQueue_8_2_2_SamePriorityFIFO(t *testing.T) {
 	impl := realTaskQueuer
 	// impl = taskqueue.New()
@@ -223,6 +230,7 @@ func TestTaskQueue_8_2_2_SamePriorityFIFO(t *testing.T) {
 }
 
 // TST-CORE-834
+// TRACE: {"suite": "CORE", "case": "1355", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "03", "title": "MockPriorityNotEnforced"}
 func TestTaskQueue_8_2_3_MockPriorityNotEnforced(t *testing.T) {
 	// The mock does not enforce priority ordering (simple FIFO).
 	// This test documents that the mock is a basic stub.
@@ -253,6 +261,7 @@ func TestTaskQueue_8_2_3_MockPriorityNotEnforced(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-835
+// TRACE: {"suite": "CORE", "case": "1356", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "01", "title": "FailTask"}
 func TestTaskQueue_8_3_1_FailTask(t *testing.T) {
 	impl := realTaskQueuer
 	// impl = taskqueue.New()
@@ -285,6 +294,7 @@ func TestTaskQueue_8_3_1_FailTask(t *testing.T) {
 }
 
 // TST-CORE-836
+// TRACE: {"suite": "CORE", "case": "1357", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "02", "title": "RetryIncrementsCounter"}
 func TestTaskQueue_8_3_2_RetryIncrementsCounter(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -322,6 +332,7 @@ func TestTaskQueue_8_3_2_RetryIncrementsCounter(t *testing.T) {
 }
 
 // TST-CORE-837
+// TRACE: {"suite": "CORE", "case": "1358", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "03", "title": "RetryNonFailedTaskFails"}
 func TestTaskQueue_8_3_3_RetryNonFailedTaskFails(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -335,6 +346,7 @@ func TestTaskQueue_8_3_3_RetryNonFailedTaskFails(t *testing.T) {
 }
 
 // TST-CORE-838
+// TRACE: {"suite": "CORE", "case": "1359", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "04", "title": "FailNonExistentTaskFails"}
 func TestTaskQueue_8_3_4_FailNonExistentTaskFails(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	ctx := context.Background()
@@ -367,6 +379,7 @@ func TestTaskQueue_8_3_4_FailNonExistentTaskFails(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-839
+// TRACE: {"suite": "CORE", "case": "1360", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "01", "title": "CrashRecoveryReEnqueuesRunningTasks"}
 func TestTaskQueue_8_4_1_CrashRecoveryReEnqueuesRunningTasks(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -397,6 +410,7 @@ func TestTaskQueue_8_4_1_CrashRecoveryReEnqueuesRunningTasks(t *testing.T) {
 }
 
 // TST-CORE-840
+// TRACE: {"suite": "CORE", "case": "1361", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "02", "title": "RetryScheduleExponentialBackoff"}
 func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	ctx := context.Background()
@@ -449,6 +463,7 @@ func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 }
 
 // TST-CORE-841
+// TRACE: {"suite": "CORE", "case": "1362", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "03", "title": "MaxRetriesExceededMarksDeadLetter"}
 func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	ctx := context.Background()
@@ -504,6 +519,7 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 }
 
 // TST-CORE-842
+// TRACE: {"suite": "CORE", "case": "1363", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "04", "title": "PersistenceAcrossRestart"}
 func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
 	ctx := context.Background()
 
@@ -563,6 +579,7 @@ func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-457
+// TRACE: {"suite": "CORE", "case": "1364", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "06", "title": "TaskIDIsULID"}
 func TestTaskQueue_8_1_6_TaskIDIsULID(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -581,6 +598,7 @@ func TestTaskQueue_8_1_6_TaskIDIsULID(t *testing.T) {
 }
 
 // TST-CORE-458
+// TRACE: {"suite": "CORE", "case": "1365", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "07", "title": "SendToBrainSetsProcessing"}
 func TestTaskQueue_8_1_7_SendToBrainSetsProcessing(t *testing.T) {
 	// §8.1.7: When Core dequeues a task to send to Brain, status must become "running".
 	// Fresh TaskQueue to avoid shared state.
@@ -613,6 +631,7 @@ func TestTaskQueue_8_1_7_SendToBrainSetsProcessing(t *testing.T) {
 }
 
 // TST-CORE-459
+// TRACE: {"suite": "CORE", "case": "1366", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "08", "title": "BrainACKDeletesTask"}
 func TestTaskQueue_8_1_8_BrainACKDeletesTask(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -634,6 +653,7 @@ func TestTaskQueue_8_1_8_BrainACKDeletesTask(t *testing.T) {
 }
 
 // TST-CORE-461
+// TRACE: {"suite": "CORE", "case": "1367", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "09", "title": "TaskTypes"}
 func TestTaskQueue_8_1_9_TaskTypes(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -649,6 +669,7 @@ func TestTaskQueue_8_1_9_TaskTypes(t *testing.T) {
 }
 
 // TST-CORE-463
+// TRACE: {"suite": "CORE", "case": "1368", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "10", "title": "ConcurrentWorkers"}
 func TestTaskQueue_8_1_10_ConcurrentWorkers(t *testing.T) {
 	// §8.1.10: Concurrent workers must each get unique tasks — no double-dequeue.
 	// Fresh TaskQueue to avoid shared state.
@@ -714,6 +735,7 @@ func TestTaskQueue_8_1_10_ConcurrentWorkers(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-464
+// TRACE: {"suite": "CORE", "case": "1369", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "04", "title": "WatchdogDetectsTimedOutTask"}
 func TestTaskQueue_8_2_4_WatchdogDetectsTimedOutTask(t *testing.T) {
 	impl := realWatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
@@ -726,6 +748,7 @@ func TestTaskQueue_8_2_4_WatchdogDetectsTimedOutTask(t *testing.T) {
 }
 
 // TST-CORE-465
+// TRACE: {"suite": "CORE", "case": "1370", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "05", "title": "WatchdogRunsPeriodically"}
 func TestTaskQueue_8_2_5_WatchdogRunsPeriodically(t *testing.T) {
 	// Fresh TaskQueue + Watchdog for isolation.
 	q := taskqueue.NewTaskQueue()
@@ -784,6 +807,7 @@ func TestTaskQueue_8_2_5_WatchdogRunsPeriodically(t *testing.T) {
 }
 
 // TST-CORE-466
+// TRACE: {"suite": "CORE", "case": "1371", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "06", "title": "WatchdogDoesNotTouchHealthyTasks"}
 func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	watchdog := taskqueue.NewWatchdog(q)
@@ -817,6 +841,7 @@ func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
 }
 
 // TST-CORE-467
+// TRACE: {"suite": "CORE", "case": "1372", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "07", "title": "ResetTaskReDispatched"}
 func TestTaskQueue_8_2_7_ResetTaskReDispatched(t *testing.T) {
 	// Fresh TaskQueue + Watchdog — no shared state.
 	queue := taskqueue.NewTaskQueue()
@@ -864,6 +889,7 @@ func TestTaskQueue_8_2_7_ResetTaskReDispatched(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-468
+// TRACE: {"suite": "CORE", "case": "1373", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "05", "title": "DeadLetterAfter3Failures"}
 func TestTaskQueue_8_3_5_DeadLetterAfter3Failures(t *testing.T) {
 	// Fresh TaskQueue — no shared state. Production maxRetries defaults to 5.
 	impl := taskqueue.NewTaskQueue()
@@ -915,6 +941,7 @@ func TestTaskQueue_8_3_5_DeadLetterAfter3Failures(t *testing.T) {
 }
 
 // TST-CORE-471
+// TRACE: {"suite": "CORE", "case": "1374", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "06", "title": "TaskCancellation"}
 func TestTaskQueue_8_3_6_TaskCancellation(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -943,6 +970,7 @@ func TestTaskQueue_8_3_6_TaskCancellation(t *testing.T) {
 }
 
 // TST-CORE-472
+// TRACE: {"suite": "CORE", "case": "1375", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "07", "title": "IndexOnStatusTimeout"}
 func TestTaskQueue_8_3_7_IndexOnStatusTimeout(t *testing.T) {
 	// §8.3.7: Task queue must support efficient watchdog scans.
 	// The in-memory TaskQueue doesn't use SQLite indexes, but per requirements
@@ -986,6 +1014,7 @@ func TestTaskQueue_8_3_7_IndexOnStatusTimeout(t *testing.T) {
 }
 
 // TST-CORE-473
+// TRACE: {"suite": "CORE", "case": "1376", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "08", "title": "NoSilentDataLoss"}
 func TestTaskQueue_8_3_8_NoSilentDataLoss(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -1023,6 +1052,7 @@ func TestTaskQueue_8_3_8_NoSilentDataLoss(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-474
+// TRACE: {"suite": "CORE", "case": "1377", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "05", "title": "StoreReminder"}
 func TestTaskQueue_8_4_5_StoreReminder(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
@@ -1033,6 +1063,7 @@ func TestTaskQueue_8_4_5_StoreReminder(t *testing.T) {
 }
 
 // TST-CORE-475
+// TRACE: {"suite": "CORE", "case": "1378", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "06", "title": "NextPendingReminder"}
 func TestTaskQueue_8_4_6_NextPendingReminder(t *testing.T) {
 	sched := taskqueue.NewReminderScheduler()
 	ctx := context.Background()
@@ -1077,6 +1108,7 @@ func TestTaskQueue_8_4_6_NextPendingReminder(t *testing.T) {
 }
 
 // TST-CORE-476
+// TRACE: {"suite": "CORE", "case": "1379", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "07", "title": "SleepUntilTriggerTime"}
 func TestTaskQueue_8_4_7_SleepUntilTriggerTime(t *testing.T) {
 	impl := realReminderScheduler
 	testutil.RequireImplementation(t, impl, "ReminderScheduler")
@@ -1129,6 +1161,7 @@ func TestTaskQueue_8_4_7_SleepUntilTriggerTime(t *testing.T) {
 }
 
 // TST-CORE-477
+// TRACE: {"suite": "CORE", "case": "1380", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "08", "title": "MissedReminderOnStartup"}
 func TestTaskQueue_8_4_8_MissedReminderOnStartup(t *testing.T) {
 	// §8.4.8: Missed reminders (trigger time in the past) must be returned by NextPending.
 	// Fresh scheduler to avoid shared state.
@@ -1166,6 +1199,7 @@ func TestTaskQueue_8_4_8_MissedReminderOnStartup(t *testing.T) {
 }
 
 // TST-CORE-478
+// TRACE: {"suite": "CORE", "case": "1381", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "09", "title": "FireAndMarkDone"}
 func TestTaskQueue_8_4_9_FireAndMarkDone(t *testing.T) {
 	impl := realReminderScheduler
 	testutil.RequireImplementation(t, impl, "ReminderScheduler")
@@ -1196,6 +1230,7 @@ func TestTaskQueue_8_4_9_FireAndMarkDone(t *testing.T) {
 }
 
 // TST-CORE-479
+// TRACE: {"suite": "CORE", "case": "1382", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "10", "title": "NoPendingSleepOneMinute"}
 func TestTaskQueue_8_4_10_NoPendingSleepOneMinute(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
@@ -1206,6 +1241,7 @@ func TestTaskQueue_8_4_10_NoPendingSleepOneMinute(t *testing.T) {
 }
 
 // TST-CORE-480
+// TRACE: {"suite": "CORE", "case": "1383", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "11", "title": "NoCronLibrary"}
 func TestTaskQueue_8_4_11_NoCronLibrary(t *testing.T) {
 	// Code audit: no cron library dependency — scheduling delegated to brain.
 	goMod, err := os.ReadFile("../go.mod")
@@ -1222,6 +1258,7 @@ func TestTaskQueue_8_4_11_NoCronLibrary(t *testing.T) {
 }
 
 // TST-CORE-481
+// TRACE: {"suite": "CORE", "case": "1384", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "12", "title": "ComplexSchedulingDelegated"}
 func TestTaskQueue_8_4_12_ComplexSchedulingDelegated(t *testing.T) {
 	// Core must NOT contain cron libraries — complex scheduling is
 	// delegated to the Brain. Verify via go.mod (portable relative path)
@@ -1261,6 +1298,7 @@ func TestTaskQueue_8_4_12_ComplexSchedulingDelegated(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-460
+// TRACE: {"suite": "CORE", "case": "1385", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "11", "title": "BrainNoACKCrash"}
 func TestTaskQueue_8_1_11_BrainNoACKCrash(t *testing.T) {
 	// Fresh instances — no shared state.
 	q := taskqueue.NewTaskQueue()
@@ -1313,6 +1351,7 @@ func TestTaskQueue_8_1_11_BrainNoACKCrash(t *testing.T) {
 }
 
 // TST-CORE-462
+// TRACE: {"suite": "CORE", "case": "1386", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "12", "title": "TaskPersistenceAcrossRestart"}
 func TestTaskQueue_8_1_12_TaskPersistenceAcrossRestart(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -1333,6 +1372,7 @@ func TestTaskQueue_8_1_12_TaskPersistenceAcrossRestart(t *testing.T) {
 }
 
 // TST-CORE-469
+// TRACE: {"suite": "CORE", "case": "1387", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "09", "title": "DeadLetterNot5"}
 func TestTaskQueue_8_3_9_DeadLetterNot5(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -1381,6 +1421,7 @@ func TestTaskQueue_8_3_9_DeadLetterNot5(t *testing.T) {
 }
 
 // TST-CORE-470
+// TRACE: {"suite": "CORE", "case": "1388", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "10", "title": "RetryBackoff"}
 func TestTaskQueue_8_3_10_RetryBackoff(t *testing.T) {
 	// Fresh TaskQueue — no shared state.
 	impl := taskqueue.NewTaskQueue()
@@ -1434,6 +1475,7 @@ func TestTaskQueue_8_3_10_RetryBackoff(t *testing.T) {
 }
 
 // TST-CORE-933
+// TRACE: {"suite": "CORE", "case": "1389", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "13", "title": "SilenceRules_StoredAndRetrievable"}
 func TestTaskQueue_8_4_13_SilenceRules_StoredAndRetrievable(t *testing.T) {
 	// Silence rules stored and retrievable from vault.
 	impl := realVaultManager
@@ -1464,6 +1506,7 @@ func TestTaskQueue_8_4_13_SilenceRules_StoredAndRetrievable(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-882
+// TRACE: {"suite": "CORE", "case": "1390", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "05", "scenario": "01", "title": "DequeueClaimsOnlyOneTask"}
 func TestTaskQueue_8_5_1_DequeueClaimsOnlyOneTask(t *testing.T) {
 	q := taskqueue.NewTaskQueue()
 	ctx := context.Background()
@@ -1506,6 +1549,7 @@ func TestTaskQueue_8_5_1_DequeueClaimsOnlyOneTask(t *testing.T) {
 }
 
 // TST-CORE-883
+// TRACE: {"suite": "CORE", "case": "1391", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "05", "scenario": "02", "title": "AcknowledgeWithCorrectID"}
 func TestTaskQueue_8_5_2_AcknowledgeWithCorrectID(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -1531,6 +1575,7 @@ func TestTaskQueue_8_5_2_AcknowledgeWithCorrectID(t *testing.T) {
 }
 
 // TST-CORE-884
+// TRACE: {"suite": "CORE", "case": "1392", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "05", "scenario": "03", "title": "AcknowledgeWithWrongID"}
 func TestTaskQueue_8_5_3_AcknowledgeWithWrongID(t *testing.T) {
 	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")

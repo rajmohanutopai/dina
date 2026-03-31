@@ -52,6 +52,7 @@ def _run_wizard_with_answers(
 class TestWizardNewIdentity:
     """New identity flow: identity → phrase → ack → passphrase → confirm → mode → name → telegram → LLM → done."""
 
+    # TRACE: {"suite": "INST", "case": "0060", "section": "01", "sectionName": "Wizard", "subsection": "01", "scenario": "01", "title": "new_identity_full_flow"}
     def test_new_identity_full_flow(self, tmp_path: Path) -> None:
         answers = [
             {"field": "identity_choice", "value": "1"},       # Create new
@@ -88,6 +89,7 @@ class TestWizardNewIdentity:
         env_content = (tmp_path / ".env").read_text()
         assert "DINA_OWNER_NAME=Rajmohan" in env_content
 
+    # TRACE: {"suite": "INST", "case": "0061", "section": "01", "sectionName": "Wizard", "subsection": "01", "scenario": "02", "title": "maximum_security_mode"}
     def test_maximum_security_mode(self, tmp_path: Path) -> None:
         answers = [
             {"field": "identity_choice", "value": "1"},
@@ -114,6 +116,7 @@ class TestWizardNewIdentity:
 class TestWizardRestore:
     """Restore from mnemonic — no recovery phrase event."""
 
+    # TRACE: {"suite": "INST", "case": "0062", "section": "01", "sectionName": "Wizard", "subsection": "02", "scenario": "01", "title": "restore_mnemonic"}
     def test_restore_mnemonic(self, tmp_path: Path) -> None:
         # First, generate a phrase to restore from
         from scripts.installer import run_install, InstallerConfig
@@ -152,6 +155,7 @@ class TestWizardRestore:
 class TestWizardValidation:
     """Wizard validates input and re-prompts."""
 
+    # TRACE: {"suite": "INST", "case": "0063", "section": "01", "sectionName": "Wizard", "subsection": "03", "scenario": "01", "title": "short_passphrase_reprompts"}
     def test_short_passphrase_reprompts(self, tmp_path: Path) -> None:
         answers = [
             {"field": "identity_choice", "value": "1"},
@@ -177,6 +181,7 @@ class TestWizardValidation:
         done = [m for m in messages if m.get("type") == "done"]
         assert len(done) == 1
 
+    # TRACE: {"suite": "INST", "case": "0064", "section": "01", "sectionName": "Wizard", "subsection": "03", "scenario": "02", "title": "passphrase_mismatch_reprompts"}
     def test_passphrase_mismatch_reprompts(self, tmp_path: Path) -> None:
         answers = [
             {"field": "identity_choice", "value": "1"},
@@ -205,6 +210,7 @@ class TestWizardValidation:
 class TestWizardIdempotent:
     """Re-running wizard on already-installed dir skips identity setup."""
 
+    # TRACE: {"suite": "INST", "case": "0065", "section": "01", "sectionName": "Wizard", "subsection": "04", "scenario": "01", "title": "rerun_skips_identity"}
     def test_rerun_skips_identity(self, tmp_path: Path) -> None:
         # First install
         answers1 = [
@@ -254,6 +260,7 @@ class TestWizardIdempotent:
 class TestWizardLLMProviders:
     """LLM provider selection."""
 
+    # TRACE: {"suite": "INST", "case": "0066", "section": "01", "sectionName": "Wizard", "subsection": "05", "scenario": "01", "title": "gemini_key_written_to_env"}
     def test_gemini_key_written_to_env(self, tmp_path: Path) -> None:
         answers = [
             {"field": "identity_choice", "value": "1"},
@@ -285,6 +292,7 @@ class TestWizardVerification:
     display and word checking loop.
     """
 
+    # TRACE: {"suite": "INST", "case": "0067", "section": "01", "sectionName": "Wizard", "subsection": "06", "scenario": "01", "title": "wizard_waits_for_verification_done"}
     def test_wizard_waits_for_verification_done(self, tmp_path: Path) -> None:
         """Wizard waits for verification_done after recovery_ack."""
         answers = [
@@ -316,6 +324,7 @@ class TestWizardVerification:
 class TestWizardIdempotentConfig:
     """Re-run skips owner name, Telegram, and LLM if already in .env."""
 
+    # TRACE: {"suite": "INST", "case": "0068", "section": "01", "sectionName": "Wizard", "subsection": "07", "scenario": "01", "title": "rerun_skips_owner_and_telegram"}
     def test_rerun_skips_owner_and_telegram(self, tmp_path: Path) -> None:
         """If owner name and Telegram token are in .env, wizard doesn't re-ask."""
         # First install with owner + telegram

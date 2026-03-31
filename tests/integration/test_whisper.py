@@ -32,6 +32,7 @@ class TestWhisperAssembly:
     """Verify that whispers assemble context from the vault."""
 
 # TST-INT-588
+    # TRACE: {"suite": "INT", "case": "0588", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "01", "title": "telegram_conversation_context"}
     def test_telegram_conversation_context(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         sancho_identity,
@@ -58,6 +59,7 @@ class TestWhisperAssembly:
         assert mock_whisper.whisper_log[0]["contact"] == contact_did
 
 # TST-INT-589
+    # TRACE: {"suite": "INT", "case": "0589", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "02", "title": "meeting_preparation"}
     def test_meeting_preparation(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
     ) -> None:
@@ -79,6 +81,7 @@ class TestWhisperAssembly:
         assert "data-driven" in whisper
 
 # TST-INT-021
+    # TRACE: {"suite": "INT", "case": "0021", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "03", "title": "whisper_delivered_as_overlay"}
     def test_whisper_delivered_as_overlay(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         mock_human: MockHuman, sancho_identity,
@@ -109,6 +112,7 @@ class TestWhisperAssembly:
         assert "Birthday" in mock_human.notifications[0].body
 
 # TST-INT-022
+    # TRACE: {"suite": "INT", "case": "0022", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "04", "title": "whisper_respects_silence_tier"}
     def test_whisper_respects_silence_tier(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         mock_classifier: MockSilenceClassifier, mock_human: MockHuman,
@@ -145,6 +149,7 @@ class TestDisconnectDetection:
     """Detect interrupted conversations and social cues."""
 
 # TST-INT-024
+    # TRACE: {"suite": "INT", "case": "0024", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "01", "title": "detects_interrupted_conversation"}
     def test_detects_interrupted_conversation(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         sancho_identity,
@@ -169,6 +174,7 @@ class TestDisconnectDetection:
         assert mock_whisper.whisper_log[-1]["situation"] == "conversation_resume"
 
 # TST-INT-018
+    # TRACE: {"suite": "INT", "case": "0018", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "02", "title": "social_cue_awareness"}
     def test_social_cue_awareness(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
     ) -> None:

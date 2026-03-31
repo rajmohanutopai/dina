@@ -28,6 +28,7 @@ afterAll(async () => {
 // §7 Rate Limiter with Database Effects (IT-RL-001..005) — 5 tests
 // ---------------------------------------------------------------------------
 describe('§7 Rate Limiter with Database Effects (Fix 11)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0421", "section": "01", "sectionName": "General", "title": "IT-RL-001: Fix 11: 50 records \u2192 all written to DB"}
   it('IT-RL-001: Fix 11: 50 records → all written to DB', async () => {
     const did = 'did:plc:rateLimitTest001'
 
@@ -46,6 +47,7 @@ describe('§7 Rate Limiter with Database Effects (Fix 11)', () => {
     expect(quarantined.has(did)).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0422", "section": "01", "sectionName": "General", "title": "IT-RL-002: Fix 11: 51st record \u2192 dropped, no DB write"}
   it('IT-RL-002: Fix 11: 51st record → dropped, no DB write', async () => {
     const did = 'did:plc:rateLimitTest002'
 
@@ -66,6 +68,7 @@ describe('§7 Rate Limiter with Database Effects (Fix 11)', () => {
     expect(quarantined.has(did)).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0423", "section": "01", "sectionName": "General", "title": "IT-RL-003: Fix 11: rate-limited DID \u2192 zero DB I/O"}
   it('IT-RL-003: Fix 11: rate-limited DID → zero DB I/O', async () => {
     const did = 'did:plc:rateLimitTest003'
 
@@ -88,6 +91,7 @@ describe('§7 Rate Limiter with Database Effects (Fix 11)', () => {
     expect(count).toBe(50)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0424", "section": "01", "sectionName": "General", "title": "IT-RL-004: Fix 11: quarantine feeds sybil detection"}
   it('IT-RL-004: Fix 11: quarantine feeds sybil detection', async () => {
     const did = 'did:plc:rateLimitTest004'
 
@@ -109,6 +113,7 @@ describe('§7 Rate Limiter with Database Effects (Fix 11)', () => {
     expect(quarantinedArray).toContain(did)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0425", "section": "01", "sectionName": "General", "title": "IT-RL-005: Fix 11: different DIDs not affected"}
   it('IT-RL-005: Fix 11: different DIDs not affected', async () => {
     const didA = 'did:plc:rateLimitTestA'
     const didB = 'did:plc:rateLimitTestB'

@@ -36,6 +36,7 @@ class TestAntiHerHumanConnection:
     # ------------------------------------------------------------------
 
     # REL-025
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "01", "title": "rel_025_emotional_dependency_detection"}
     def test_rel_025_emotional_dependency_detection(
         self, core_url, auth_headers,
     ) -> None:
@@ -98,6 +99,7 @@ class TestAntiHerHumanConnection:
     # ------------------------------------------------------------------
 
     # REL-025
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "02", "title": "rel_025_loneliness_redirects_to_humans"}
     def test_rel_025_loneliness_redirects_to_humans(
         self, core_url, auth_headers,
     ) -> None:
@@ -142,16 +144,19 @@ class TestAntiHerHumanConnection:
 
     # REL-025
     @pytest.mark.skip(reason="Proactive neglect nudges not yet implemented — needs contact relationship model")
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "03", "title": "rel_025_neglected_contacts_with_context"}
     def test_rel_025_neglected_contacts_with_context(self) -> None:
         """Contacts with >30 days without interaction surfaced in briefing."""
 
     # REL-025
     @pytest.mark.skip(reason="Birthday nudges not yet implemented — needs contact birthday field")
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "04", "title": "rel_025_birthday_nudge_contextual"}
     def test_rel_025_birthday_nudge_contextual(self) -> None:
         """Birthday nudge must be contextual with relationship context."""
 
     # REL-025
     @pytest.mark.skip(reason="Promise tracking not yet implemented — needs promise store")
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "05", "title": "rel_025_promise_followup_nudge"}
     def test_rel_025_promise_followup_nudge(self) -> None:
         """Stored promise produces follow-up nudge after deadline."""
 
@@ -160,6 +165,7 @@ class TestAntiHerHumanConnection:
     # ------------------------------------------------------------------
 
     # REL-025
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "06", "title": "rel_025_direct_loneliness_redirect"}
     def test_rel_025_direct_loneliness_redirect(
         self, release_services,
     ) -> None:
@@ -211,6 +217,7 @@ class TestAntiHerHumanConnection:
         )
 
     # REL-025
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "07", "title": "rel_025_factual_emotion_not_blocked"}
     def test_rel_025_factual_emotion_not_blocked(
         self, release_services,
     ) -> None:
@@ -250,6 +257,7 @@ class TestAntiHerHumanConnection:
     # ------------------------------------------------------------------
 
     # REL-025
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "08", "title": "rel_025_depressed_user_gets_redirect"}
     def test_rel_025_depressed_user_gets_redirect(
         self, core_url, auth_headers,
     ) -> None:
@@ -299,6 +307,7 @@ class TestAntiHerHumanConnection:
     # ------------------------------------------------------------------
 
     # REL-025
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "09", "title": "rel_025_no_anthropomorphic_language"}
     def test_rel_025_no_anthropomorphic_language(
         self, core_url, auth_headers,
     ) -> None:
@@ -338,6 +347,7 @@ class TestAntiHerHumanConnection:
     # ------------------------------------------------------------------
 
     # REL-025
+    # TRACE: {"suite": "REL", "case": "0025", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "10", "title": "rel_025_no_engagement_hooks_after_completion"}
     def test_rel_025_no_engagement_hooks_after_completion(
         self, core_url, auth_headers,
     ) -> None:
@@ -391,6 +401,7 @@ class TestAntiHerHumanConnection:
         "How much money do I have?",
         "Am I allergic to anything?",
     ])
+    # TRACE: {"suite": "REL", "case": "0001", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "11", "title": "rel_025_vault_recall_not_blocked_by_anti_her"}
     def test_rel_025_vault_recall_not_blocked_by_anti_her(
         self, core_url, auth_headers, query,
     ) -> None:

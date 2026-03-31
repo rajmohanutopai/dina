@@ -31,6 +31,7 @@ afterEach(() => {
 // SS5.1 SWR Cache
 // ---------------------------------------------------------------------------
 describe('SS5.1 SWR Cache', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0224", "section": "01", "sectionName": "General", "title": "UT-SWR-001: Fix 6: fresh hit -- serve from cache"}
   it('UT-SWR-001: Fix 6: fresh hit -- serve from cache', async () => {
     // Description: Key in cache, not expired
     // Expected: Returns cached data, fetchData NOT called
@@ -51,6 +52,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(getCacheStats().size).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0225", "section": "01", "sectionName": "General", "title": "UT-SWR-002: Fix 6: total miss -- fetch and cache"}
   it('UT-SWR-002: Fix 6: total miss -- fetch and cache', async () => {
     // Description: Key not in cache
     // Expected: fetchData called, result cached
@@ -64,6 +66,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(getCacheStats().size).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0226", "section": "01", "sectionName": "General", "title": "UT-SWR-003: Fix 6: stale hit -- serve stale, refresh in background"}
   it('UT-SWR-003: Fix 6: stale hit -- serve stale, refresh in background', async () => {
     // Description: Key in cache, expired
     // Expected: Immediately returns stale data, background refresh triggered
@@ -96,6 +99,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(third).toBe('fresh-data')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0227", "section": "01", "sectionName": "General", "title": "UT-SWR-004: Fix 6: promise coalescing -- concurrent requests"}
   it('UT-SWR-004: Fix 6: promise coalescing -- concurrent requests', async () => {
     // Description: 10 concurrent withSWR calls for same key
     // Expected: fetchData called exactly ONCE
@@ -117,6 +121,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0228", "section": "01", "sectionName": "General", "title": "UT-SWR-005: promise coalescing -- different keys independent"}
   it('UT-SWR-005: promise coalescing -- different keys independent', async () => {
     // Description: Concurrent calls for key-A and key-B
     // Expected: fetchData called once per key
@@ -134,6 +139,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(fetchB).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0229", "section": "01", "sectionName": "General", "title": "UT-SWR-006: background refresh failure -- stale data preserved"}
   it('UT-SWR-006: background refresh failure -- stale data preserved', async () => {
     // Description: Stale entry, background fetch throws
     // Expected: Stale data still served on next request
@@ -164,6 +170,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(stillStale).toBe('original-data')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0230", "section": "01", "sectionName": "General", "title": "UT-SWR-007: total miss failure -- error propagated"}
   it('UT-SWR-007: total miss failure -- error propagated', async () => {
     // Description: No cached data, fetchData throws
     // Expected: Error thrown to caller
@@ -173,6 +180,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0231", "section": "01", "sectionName": "General", "title": "UT-SWR-008: Fix 8: O(1) LRU eviction"}
   it('UT-SWR-008: Fix 8: O(1) LRU eviction', async () => {
     // Description: Fill cache to MAX_CACHE_SIZE + 1
     // Expected: Oldest entry evicted, newest retained
@@ -197,6 +205,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(result).toBe('val-0') // Still cached, not evicted
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0232", "section": "01", "sectionName": "General", "title": "UT-SWR-009: cache key generation -- resolveKey"}
   it('UT-SWR-009: cache key generation -- resolveKey', () => {
     // Description: Different params produce different keys
     // Expected: Each combination produces unique key
@@ -216,6 +225,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(key1).toContain('resolve:')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0233", "section": "01", "sectionName": "General", "title": "UT-SWR-010: cache key -- optional params omitted"}
   it('UT-SWR-010: cache key -- optional params omitted', () => {
     // Description: requesterDid undefined
     // Expected: Key includes empty string for missing params
@@ -229,6 +239,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(keyFull).not.toBe(keyMinimal)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0234", "section": "01", "sectionName": "General", "title": "UT-SWR-011: CACHE_TTLS correctness"}
   it('UT-SWR-011: CACHE_TTLS correctness', () => {
     // Description: RESOLVE = 5s, GET_PROFILE = 10s, SEARCH = 3s
     // Expected: Constants have correct values
@@ -237,6 +248,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(CACHE_TTLS.SEARCH).toBe(3_000)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0235", "section": "01", "sectionName": "General", "title": "UT-SWR-012: TTL boundary -- entry at exact expiry time"}
   it('UT-SWR-012: TTL boundary -- entry at exact expiry time', async () => {
     // Description: now = expiresAt exactly
     // Expected: Treated as stale (not fresh)
@@ -263,6 +275,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(fetchFn).toHaveBeenCalledTimes(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0236", "section": "01", "sectionName": "General", "title": "UT-SWR-013: in-flight map cleaned up on success"}
   it('UT-SWR-013: in-flight map cleaned up on success', async () => {
     // Description: Successful fetch
     // Expected: key removed from inFlight map
@@ -283,6 +296,7 @@ describe('SS5.1 SWR Cache', () => {
     expect(getCacheStats().inFlight).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0237", "section": "01", "sectionName": "General", "title": "UT-SWR-014: in-flight map cleaned up on error"}
   it('UT-SWR-014: in-flight map cleaned up on error', async () => {
     // Description: Failed fetch
     // Expected: key removed from inFlight map

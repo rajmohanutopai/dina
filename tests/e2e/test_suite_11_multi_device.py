@@ -35,6 +35,7 @@ class TestMultiDeviceSync:
     client semantics, cache corruption, and heartbeat cleanup."""
 
 # TST-E2E-053
+    # TRACE: {"suite": "E2E", "case": "0053", "section": "11", "sectionName": "Multi-Device", "subsection": "01", "scenario": "01", "title": "realtime_multi_device_push"}
     def test_realtime_multi_device_push(
         self,
         don_alonso: HomeNode,
@@ -119,6 +120,7 @@ class TestMultiDeviceSync:
         )
 
 # TST-E2E-054
+    # TRACE: {"suite": "E2E", "case": "0054", "section": "11", "sectionName": "Multi-Device", "subsection": "01", "scenario": "02", "title": "offline_sync_reconciliation"}
     def test_offline_sync_reconciliation(
         self,
         fresh_don_alonso: HomeNode,
@@ -242,6 +244,7 @@ class TestMultiDeviceSync:
         assert "nonexistent_item" not in delta_ids
 
 # TST-E2E-055
+    # TRACE: {"suite": "E2E", "case": "0055", "section": "11", "sectionName": "Multi-Device", "subsection": "01", "scenario": "03", "title": "thin_client_no_local_storage"}
     def test_thin_client_no_local_storage(
         self,
         fresh_don_alonso: HomeNode,
@@ -333,6 +336,7 @@ class TestMultiDeviceSync:
         assert len(rich.local_cache) == 1
 
 # TST-E2E-056
+    # TRACE: {"suite": "E2E", "case": "0056", "section": "11", "sectionName": "Multi-Device", "subsection": "01", "scenario": "04", "title": "rich_client_offline_operations"}
     def test_rich_client_offline_operations(
         self,
         fresh_don_alonso: HomeNode,
@@ -413,6 +417,7 @@ class TestMultiDeviceSync:
             assert "created_offline" in persona.items[item_id].body_text
 
 # TST-E2E-057
+    # TRACE: {"suite": "E2E", "case": "0057", "section": "11", "sectionName": "Multi-Device", "subsection": "01", "scenario": "05", "title": "cache_corruption_recovery"}
     def test_cache_corruption_recovery(
         self,
         fresh_don_alonso: HomeNode,
@@ -494,6 +499,7 @@ class TestMultiDeviceSync:
             assert item_id in rich.local_cache
 
 # TST-E2E-058
+    # TRACE: {"suite": "E2E", "case": "0058", "section": "11", "sectionName": "Multi-Device", "subsection": "01", "scenario": "06", "title": "heartbeat_stale_connection_cleanup"}
     def test_heartbeat_stale_connection_cleanup(
         self,
         fresh_don_alonso: HomeNode,

@@ -35,6 +35,7 @@ class TestActionIntegrity:
     # ------------------------------------------------------------------
 
     # REL-027
+    # TRACE: {"suite": "REL", "case": "0027", "section": "27", "sectionName": "Action Integrity", "subsection": "01", "scenario": "01", "title": "rel_027_send_downgraded_to_draft"}
     def test_rel_027_send_downgraded_to_draft(
         self, brain_url, brain_signer,
     ) -> None:
@@ -80,6 +81,7 @@ class TestActionIntegrity:
     # ------------------------------------------------------------------
 
     # REL-027
+    # TRACE: {"suite": "REL", "case": "0027", "section": "27", "sectionName": "Action Integrity", "subsection": "01", "scenario": "02", "title": "rel_027_ttl_by_risk_profile"}
     def test_rel_027_ttl_by_risk_profile(
         self, brain_url, brain_signer,
     ) -> None:
@@ -146,6 +148,7 @@ class TestActionIntegrity:
     # ------------------------------------------------------------------
 
     # REL-027
+    # TRACE: {"suite": "REL", "case": "0027", "section": "27", "sectionName": "Action Integrity", "subsection": "01", "scenario": "03", "title": "rel_027_pending_actions_listed_individually"}
     def test_rel_027_pending_actions_listed_individually(
         self, brain_url, brain_signer,
     ) -> None:
@@ -217,6 +220,7 @@ class TestActionIntegrity:
     # ------------------------------------------------------------------
 
     # REL-027
+    # TRACE: {"suite": "REL", "case": "0027", "section": "27", "sectionName": "Action Integrity", "subsection": "01", "scenario": "04", "title": "rel_027_payload_mutation_invalidates_approval"}
     def test_rel_027_payload_mutation_invalidates_approval(
         self, brain_url, brain_signer,
     ) -> None:
@@ -279,6 +283,7 @@ class TestActionIntegrity:
     # ------------------------------------------------------------------
 
     # REL-027
+    # TRACE: {"suite": "REL", "case": "0027", "section": "27", "sectionName": "Action Integrity", "subsection": "01", "scenario": "05", "title": "rel_027_approval_survives_crash"}
     def test_rel_027_approval_survives_crash(
         self, brain_url, brain_signer,
     ) -> None:
@@ -334,6 +339,7 @@ class TestActionIntegrity:
     # ------------------------------------------------------------------
 
     # REL-027
+    # TRACE: {"suite": "REL", "case": "0027", "section": "27", "sectionName": "Action Integrity", "subsection": "01", "scenario": "06", "title": "rel_027_independent_approval_tokens"}
     def test_rel_027_independent_approval_tokens(
         self, brain_url, brain_signer,
     ) -> None:

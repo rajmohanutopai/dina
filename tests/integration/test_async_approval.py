@@ -51,6 +51,7 @@ def _get(core, path):
 class TestAsyncApprovalFlow:
     """Full async approval-wait-resume lifecycle."""
 
+    # TRACE: {"suite": "INT", "case": "0022", "section": "24", "sectionName": "Async Approval Flow", "subsection": "01", "scenario": "01", "title": "reason_returns_202_for_sensitive_persona"}
     def test_reason_returns_202_for_sensitive_persona(self, core) -> None:
         """TST-INT-750: Reason request touching sensitive persona gets 202 (not 403).
 
@@ -83,12 +84,14 @@ class TestAsyncApprovalFlow:
             assert data.get("request_id", "").startswith("reason-")
             assert data.get("approval_id", "").startswith("apr-")
 
+    # TRACE: {"suite": "INT", "case": "0023", "section": "24", "sectionName": "Async Approval Flow", "subsection": "01", "scenario": "02", "title": "reason_status_404_for_unknown"}
     def test_reason_status_404_for_unknown(self, core) -> None:
         """TST-INT-751: GET /api/v1/ask/{id}/status returns 404 for unknown IDs."""
         resp = _get(core, "/api/v1/ask/reason-nonexistent-id/status")
         assert resp.status_code == 404
         assert "not found" in resp.json().get("error", "").lower()
 
+    # TRACE: {"suite": "INT", "case": "0751", "section": "24", "sectionName": "Async Approval Flow", "subsection": "01", "scenario": "03", "title": "pending_reason_lifecycle_via_result_endpoint"}
     def test_pending_reason_lifecycle_via_result_endpoint(self, core) -> None:
         """TST-INT-752: Full lifecycle: reason 202 → submit result → poll complete.
 
@@ -147,6 +150,7 @@ class TestAsyncApprovalFlow:
             "persona": "health", "passphrase": "test",
         })
 
+    # TRACE: {"suite": "INT", "case": "0024", "section": "24", "sectionName": "Async Approval Flow", "subsection": "01", "scenario": "04", "title": "full_approve_resume_cycle"}
     def test_full_approve_resume_cycle(self, core) -> None:
         """TST-INT-753: Full cycle: create sensitive persona → reason → 202 → approve → poll → answer.
 
@@ -221,6 +225,7 @@ class TestAsyncApprovalFlow:
             pytest.fail(f"Request did not complete: status={final_status}")
         pytest.fail("Request never completed after approval")
 
+    # TRACE: {"suite": "INT", "case": "0025", "section": "24", "sectionName": "Async Approval Flow", "subsection": "01", "scenario": "05", "title": "wrong_caller_gets_403"}
     def test_wrong_caller_gets_403(self, core) -> None:
         """TST-INT-754: Status poll with wrong caller DID returns 403 (access denied).
 
@@ -255,6 +260,7 @@ class TestAsyncApprovalFlow:
         )
         assert "access denied" in rogue_resp.json().get("error", "").lower()
 
+    # TRACE: {"suite": "INT", "case": "0026", "section": "24", "sectionName": "Async Approval Flow", "subsection": "01", "scenario": "06", "title": "second_approval_cycle_via_result"}
     def test_second_approval_cycle_via_result(self, core) -> None:
         """TST-INT-755: Second-approval cycle: result endpoint returns pending_approval with new approval_id.
 
@@ -309,6 +315,7 @@ class TestAsyncApprovalFlow:
         assert final.status_code == 200
         assert final.json()["status"] == "complete"
 
+    # TRACE: {"suite": "INT", "case": "0027", "section": "24", "sectionName": "Async Approval Flow", "subsection": "01", "scenario": "07", "title": "deny_marks_request_denied"}
     def test_deny_marks_request_denied(self, core) -> None:
         """TST-INT-756: Denying an approval marks the pending request as denied."""
         # Create sensitive persona

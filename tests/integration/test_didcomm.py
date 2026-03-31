@@ -33,6 +33,7 @@ class TestConnectionEstablishment:
     """DIDComm v2.1 connection setup — QR, PLC resolution, mutual auth, key exchange, relay."""
 
 # TST-INT-058
+    # TRACE: {"suite": "INT", "case": "0058", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "01", "title": "did_exchanged_via_qr"}
     def test_did_exchanged_via_qr(
         self,
         mock_identity: MockIdentity,
@@ -84,6 +85,7 @@ class TestConnectionEstablishment:
         assert plc.resolve("did:plc:Unknown000000000000000000000") is None
 
 # TST-INT-047
+    # TRACE: {"suite": "INT", "case": "0047", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "02", "title": "plc_lookup_resolves_endpoint"}
     def test_plc_lookup_resolves_endpoint(
         self,
         mock_plc_resolver: MockPLCResolver,
@@ -104,6 +106,7 @@ class TestConnectionEstablishment:
         assert resolved.service_endpoint == "https://sancho.homenode.example.com/didcomm"
 
 # TST-INT-057
+    # TRACE: {"suite": "INT", "case": "0057", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "03", "title": "plc_lookup_returns_none_for_unknown"}
     def test_plc_lookup_returns_none_for_unknown(
         self, mock_plc_resolver: MockPLCResolver
     ) -> None:
@@ -112,6 +115,7 @@ class TestConnectionEstablishment:
         assert result is None
 
 # TST-INT-469
+    # TRACE: {"suite": "INT", "case": "0469", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "04", "title": "direct_home_node_connection"}
     def test_direct_home_node_connection(
         self,
         mock_plc_resolver: MockPLCResolver,
@@ -141,6 +145,7 @@ class TestConnectionEstablishment:
         assert sancho_identity.root_did in mock_p2p.authenticated_peers
 
 # TST-INT-046
+    # TRACE: {"suite": "INT", "case": "0046", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "05", "title": "mutual_authentication"}
     def test_mutual_authentication(
         self,
         mock_identity: MockIdentity,
@@ -178,6 +183,7 @@ class TestConnectionEstablishment:
         assert mock_identity.root_did in sancho_p2p.authenticated_peers
 
 # TST-INT-045
+    # TRACE: {"suite": "INT", "case": "0045", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "06", "title": "x25519_key_exchange"}
     def test_x25519_key_exchange(
         self,
         mock_identity: MockIdentity,
@@ -212,6 +218,7 @@ class TestConnectionEstablishment:
         assert user_consumer_again.derived_key == user_consumer.derived_key
 
 # TST-INT-070
+    # TRACE: {"suite": "INT", "case": "0070", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "01", "scenario": "07", "title": "relay_fallback_for_nat"}
     def test_relay_fallback_for_nat(
         self,
         mock_relay: MockRelay,
@@ -246,6 +253,7 @@ class TestMessageTypes:
     """Typed Dina-to-Dina messages per the protocol spec."""
 
 # TST-INT-470
+    # TRACE: {"suite": "INT", "case": "0470", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "01", "title": "social_arrival"}
     def test_social_arrival(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -300,6 +308,7 @@ class TestMessageTypes:
         assert received.payload["eta_minutes"] == 0
 
 # TST-INT-054
+    # TRACE: {"suite": "INT", "case": "0054", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "02", "title": "social_departure"}
     def test_social_departure(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -348,6 +357,7 @@ class TestMessageTypes:
         assert delivered.to_did == mock_identity.root_did
 
 # TST-INT-471
+    # TRACE: {"suite": "INT", "case": "0471", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "03", "title": "commerce_inquiry"}
     def test_commerce_inquiry(
         self, mock_identity: MockIdentity, seller_identity: MockIdentity
     ) -> None:
@@ -409,6 +419,7 @@ class TestMessageTypes:
         assert received.to_did == seller_identity.root_did
 
 # TST-INT-472
+    # TRACE: {"suite": "INT", "case": "0472", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "04", "title": "commerce_negotiate"}
     def test_commerce_negotiate(
         self, mock_identity: MockIdentity, seller_identity: MockIdentity
     ) -> None:
@@ -469,6 +480,7 @@ class TestMessageTypes:
         assert received.from_did == mock_identity.root_did
 
 # TST-INT-473
+    # TRACE: {"suite": "INT", "case": "0473", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "05", "title": "identity_verify"}
     def test_identity_verify(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -486,6 +498,7 @@ class TestMessageTypes:
         assert msg.payload["challenge"] == "nonce_abc123"
 
 # TST-INT-474
+    # TRACE: {"suite": "INT", "case": "0474", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "02", "scenario": "06", "title": "trust_outcome"}
     def test_trust_outcome(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -515,6 +528,7 @@ class TestSharingRules:
     """Per-contact sharing rules — cryptographic enforcement, offline queuing."""
 
 # TST-INT-050
+    # TRACE: {"suite": "INT", "case": "0050", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "03", "scenario": "01", "title": "friend_sharing_rules_applied"}
     def test_friend_sharing_rules_applied(
         self,
         mock_p2p: MockP2PChannel,
@@ -532,6 +546,7 @@ class TestSharingRules:
         assert "health_details" in friend_rule.denied
 
 # TST-INT-051
+    # TRACE: {"suite": "INT", "case": "0051", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "03", "scenario": "02", "title": "seller_sharing_rules_applied"}
     def test_seller_sharing_rules_applied(
         self,
         seller_identity: MockIdentity,
@@ -548,6 +563,7 @@ class TestSharingRules:
         assert "other_persona" in seller_rule.denied
 
 # TST-INT-055
+    # TRACE: {"suite": "INT", "case": "0055", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "03", "scenario": "03", "title": "sharing_rules_enforced_cryptographically"}
     def test_sharing_rules_enforced_cryptographically(
         self,
         mock_identity: MockIdentity,
@@ -576,6 +592,7 @@ class TestSharingRules:
         assert "financial" in friend_rule.denied
 
 # TST-INT-048
+    # TRACE: {"suite": "INT", "case": "0048", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "03", "scenario": "04", "title": "message_queued_when_peer_offline"}
     def test_message_queued_when_peer_offline(
         self,
         mock_p2p: MockP2PChannel,
@@ -597,6 +614,7 @@ class TestSharingRules:
         assert mock_p2p.queue[0].type == "dina/social/arrival"
 
 # TST-INT-060
+    # TRACE: {"suite": "INT", "case": "0060", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "03", "scenario": "05", "title": "queued_message_delivered_after_authentication"}
     def test_queued_message_delivered_after_authentication(
         self,
         mock_p2p: MockP2PChannel,

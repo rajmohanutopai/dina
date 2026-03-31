@@ -118,6 +118,7 @@ func (m *mockClock) NewTicker(d time.Duration) *time.Ticker { return time.NewTic
 // Tests
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2151", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "Vault_4_GetItemSuccess"}
 func TestVault_4_GetItemSuccess(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -153,6 +154,7 @@ func TestVault_4_GetItemSuccess(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2152", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "Vault_4_GetItemNotFound"}
 func TestVault_4_GetItemNotFound(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -174,6 +176,7 @@ func TestVault_4_GetItemNotFound(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2153", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "Vault_4_GetItemLockedPersona"}
 func TestVault_4_GetItemLockedPersona(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -195,6 +198,7 @@ func TestVault_4_GetItemLockedPersona(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2154", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "01", "title": "Vault_4_GetItemGatekeeperDenied"}
 func TestVault_4_GetItemGatekeeperDenied(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -218,6 +222,7 @@ func TestVault_4_GetItemGatekeeperDenied(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2155", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "01", "title": "Vault_4_GetKVSuccess"}
 func TestVault_4_GetKVSuccess(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -252,6 +257,7 @@ func TestVault_4_GetKVSuccess(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2156", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "Vault_4_GetKVNotFound"}
 func TestVault_4_GetKVNotFound(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -273,6 +279,7 @@ func TestVault_4_GetKVNotFound(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2157", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "01", "title": "Vault_4_GetKVPrefixesKey"}
 func TestVault_4_GetKVPrefixesKey(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -302,6 +309,7 @@ func TestVault_4_GetKVPrefixesKey(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2158", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "01", "title": "Vault_4_GetItemGatekeeperReceivesItemIDAsTarget"}
 func TestVault_4_GetItemGatekeeperReceivesItemIDAsTarget(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
@@ -367,6 +375,7 @@ func (m *hybridMockReader) VectorSearch(_ context.Context, _ domain.PersonaName,
 	return m.vectorResults, nil
 }
 
+// TRACE: {"suite": "CORE", "case": "2159", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "09", "scenario": "01", "title": "HybridSearch_TrustWeighting_CaveatedDemoted"}
 func TestHybridSearch_TrustWeighting_CaveatedDemoted(t *testing.T) {
 	mgr := newMockVaultManager()
 	persona := domain.PersonaName("general")
@@ -401,6 +410,7 @@ func TestHybridSearch_TrustWeighting_CaveatedDemoted(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2160", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "10", "scenario": "01", "title": "HybridSearch_TrustWeighting_SelfBoosted"}
 func TestHybridSearch_TrustWeighting_SelfBoosted(t *testing.T) {
 	mgr := newMockVaultManager()
 	persona := domain.PersonaName("general")
@@ -467,6 +477,7 @@ func TestHybridSearch_TrustWeighting_SelfBoosted(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2161", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "11", "scenario": "01", "title": "HybridSearch_TrustWeighting_LowConfidencePenalty"}
 func TestHybridSearch_TrustWeighting_LowConfidencePenalty(t *testing.T) {
 	mgr := newMockVaultManager()
 	persona := domain.PersonaName("general")
@@ -498,6 +509,7 @@ func TestHybridSearch_TrustWeighting_LowConfidencePenalty(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2162", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "12", "scenario": "01", "title": "HybridSearch_TrustWeighting_CompoundModifiers"}
 func TestHybridSearch_TrustWeighting_CompoundModifiers(t *testing.T) {
 	mgr := newMockVaultManager()
 	persona := domain.PersonaName("general")
@@ -528,6 +540,7 @@ func TestHybridSearch_TrustWeighting_CompoundModifiers(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2163", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "13", "scenario": "01", "title": "HybridSearch_TrustWeighting_NormalUnchanged"}
 func TestHybridSearch_TrustWeighting_NormalUnchanged(t *testing.T) {
 	mgr := newMockVaultManager()
 	persona := domain.PersonaName("general")

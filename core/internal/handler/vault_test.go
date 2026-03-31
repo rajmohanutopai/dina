@@ -13,6 +13,7 @@ import (
 // injectUserOrigin — Core-enforced allowlist for user_origin values
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2132", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "InjectUserOrigin_AllowlistedValues"}
 func TestInjectUserOrigin_AllowlistedValues(t *testing.T) {
 	for _, origin := range []string{"telegram", "admin"} {
 		r := httptest.NewRequest("POST", "/v1/vault/query", nil)
@@ -32,6 +33,7 @@ func TestInjectUserOrigin_AllowlistedValues(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2133", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "InjectUserOrigin_UnknownValueRejected"}
 func TestInjectUserOrigin_UnknownValueRejected(t *testing.T) {
 	for _, origin := range []string{"hacker", "bot", "cli", "TELEGRAM", "Admin"} {
 		r := httptest.NewRequest("POST", "/v1/vault/query", nil)
@@ -47,6 +49,7 @@ func TestInjectUserOrigin_UnknownValueRejected(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2134", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "InjectUserOrigin_EmptyString"}
 func TestInjectUserOrigin_EmptyString(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/vault/query", nil)
 	ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "brain")
@@ -60,6 +63,7 @@ func TestInjectUserOrigin_EmptyString(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2135", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "01", "title": "InjectUserOrigin_NonBrainCallerIgnored"}
 func TestInjectUserOrigin_NonBrainCallerIgnored(t *testing.T) {
 	for _, caller := range []string{"agent", "user", "connector"} {
 		r := httptest.NewRequest("POST", "/v1/vault/query", nil)
@@ -75,6 +79,7 @@ func TestInjectUserOrigin_NonBrainCallerIgnored(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2136", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "01", "title": "InjectUserOrigin_AmbiguousAgentDID"}
 func TestInjectUserOrigin_AmbiguousAgentDID(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/vault/query", nil)
 	ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "brain")
@@ -94,6 +99,7 @@ func TestInjectUserOrigin_AmbiguousAgentDID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TST-CORE-1226
+// TRACE: {"suite": "CORE", "case": "2137", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "FC1_DeviceBlockedFromUserSettings"}
 func TestFC1_DeviceBlockedFromUserSettings(t *testing.T) {
 	// Device caller requesting user_settings → blocked
 	r := httptest.NewRequest("GET", "/v1/vault/kv/user_settings", nil)
@@ -106,6 +112,7 @@ func TestFC1_DeviceBlockedFromUserSettings(t *testing.T) {
 }
 
 // TST-CORE-1227
+// TRACE: {"suite": "CORE", "case": "2138", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "01", "title": "FC1_DeviceBlockedFromAdminPrefixKeys"}
 func TestFC1_DeviceBlockedFromAdminPrefixKeys(t *testing.T) {
 	for _, key := range []string{"admin:config", "admin:secrets"} {
 		r := httptest.NewRequest("GET", "/v1/vault/kv/"+key, nil)
@@ -119,6 +126,7 @@ func TestFC1_DeviceBlockedFromAdminPrefixKeys(t *testing.T) {
 }
 
 // TST-CORE-1228
+// TRACE: {"suite": "CORE", "case": "2139", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "01", "title": "FC1_DeviceAllowedOnSafeKeys"}
 func TestFC1_DeviceAllowedOnSafeKeys(t *testing.T) {
 	for _, key := range []string{"approval:apr-001", "scratchpad:task-1", "session:state"} {
 		r := httptest.NewRequest("GET", "/v1/vault/kv/"+key, nil)
@@ -132,6 +140,7 @@ func TestFC1_DeviceAllowedOnSafeKeys(t *testing.T) {
 }
 
 // TST-CORE-1229
+// TRACE: {"suite": "CORE", "case": "2140", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "09", "scenario": "01", "title": "FC1_AdminNotBlockedFromUserSettings"}
 func TestFC1_AdminNotBlockedFromUserSettings(t *testing.T) {
 	// Admin/brain caller → NOT blocked
 	for _, caller := range []string{"", "brain"} {
@@ -152,6 +161,7 @@ func TestFC1_AdminNotBlockedFromUserSettings(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TST-CORE-1230
+// TRACE: {"suite": "CORE", "case": "2141", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "10", "scenario": "01", "title": "GH6_ClientErrorEscapesQuotes"}
 func TestGH6_ClientErrorEscapesQuotes(t *testing.T) {
 	rec := httptest.NewRecorder()
 	clientError(rec, `msg with "quotes" and \backslash`, 400, nil)
@@ -168,6 +178,7 @@ func TestGH6_ClientErrorEscapesQuotes(t *testing.T) {
 }
 
 // TST-CORE-1231
+// TRACE: {"suite": "CORE", "case": "2142", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "11", "scenario": "01", "title": "GH6_ClientErrorEscapesControlChars"}
 func TestGH6_ClientErrorEscapesControlChars(t *testing.T) {
 	rec := httptest.NewRecorder()
 	clientError(rec, "line1\nline2\ttab", 500, nil)
@@ -186,6 +197,7 @@ func TestGH6_ClientErrorEscapesControlChars(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TST-CORE-1232
+// TRACE: {"suite": "CORE", "case": "2143", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "12", "scenario": "01", "title": "GH11_ImportPathTraversalBlocked"}
 func TestGH11_ImportPathTraversalBlocked(t *testing.T) {
 	h := &ExportHandler{ExportBaseDir: "/tmp/dina-exports"}
 

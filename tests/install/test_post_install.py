@@ -90,6 +90,7 @@ def _post(c: dict, path: str, body: dict, timeout: float = 30) -> httpx.Response
 class TestDefaultPersonas:
     """Four default personas exist and have correct access tiers."""
 
+    # TRACE: {"suite": "INST", "case": "0080", "section": "06", "sectionName": "Post-Install", "subsection": "01", "scenario": "01", "title": "four_personas_exist"}
     def test_four_personas_exist(self, core) -> None:
         resp = _get(core, "/v1/personas")
         assert resp.status_code == 200
@@ -104,18 +105,21 @@ class TestDefaultPersonas:
         missing = expected - names
         assert not missing, f"Missing personas: {missing} (got: {names})"
 
+    # TRACE: {"suite": "INST", "case": "0081", "section": "06", "sectionName": "Post-Install", "subsection": "01", "scenario": "02", "title": "general_open"}
     def test_general_open(self, core) -> None:
         resp = _post(core, "/v1/vault/query", {
             "persona": "general", "query": "test", "mode": "fts5",
         })
         assert resp.status_code == 200
 
+    # TRACE: {"suite": "INST", "case": "0082", "section": "06", "sectionName": "Post-Install", "subsection": "01", "scenario": "03", "title": "work_open"}
     def test_work_open(self, core) -> None:
         resp = _post(core, "/v1/vault/query", {
             "persona": "work", "query": "test", "mode": "fts5",
         })
         assert resp.status_code == 200
 
+    # TRACE: {"suite": "INST", "case": "0083", "section": "06", "sectionName": "Post-Install", "subsection": "01", "scenario": "04", "title": "health_auto_opens"}
     def test_health_auto_opens(self, core) -> None:
         """v1 auto-open: sensitive personas open for authorized callers (admin CLIENT_TOKEN)."""
         resp = _post(core, "/v1/vault/query", {
@@ -123,6 +127,7 @@ class TestDefaultPersonas:
         })
         assert resp.status_code == 200
 
+    # TRACE: {"suite": "INST", "case": "0084", "section": "06", "sectionName": "Post-Install", "subsection": "01", "scenario": "05", "title": "finance_auto_opens"}
     def test_finance_auto_opens(self, core) -> None:
         """v1 auto-open: sensitive personas open for authorized callers (admin CLIENT_TOKEN)."""
         resp = _post(core, "/v1/vault/query", {
@@ -137,6 +142,7 @@ class TestDefaultPersonas:
 
 
 class TestVaultRoundTrip:
+    # TRACE: {"suite": "INST", "case": "0085", "section": "06", "sectionName": "Post-Install", "subsection": "02", "scenario": "01", "title": "store_and_query"}
     def test_store_and_query(self, core) -> None:
         tag = f"postinstall_{os.getpid()}"
         store = _post(core, "/v1/vault/store", {
@@ -172,6 +178,7 @@ class TestLLMErrorReporting:
     (Core-only testing), Core returns 502 — skip in that case.
     """
 
+    # TRACE: {"suite": "INST", "case": "0086", "section": "06", "sectionName": "Post-Install", "subsection": "03", "scenario": "01", "title": "reason_returns_error_code_or_content"}
     def test_reason_returns_error_code_or_content(self, core) -> None:
         resp = _post(core, "/api/v1/ask", {"prompt": "hello"}, timeout=60)
         if resp.status_code == 502:
@@ -184,6 +191,7 @@ class TestLLMErrorReporting:
             f"Neither error_code nor content: {json.dumps(data)[:200]}"
         )
 
+    # TRACE: {"suite": "INST", "case": "0087", "section": "06", "sectionName": "Post-Install", "subsection": "03", "scenario": "02", "title": "error_code_classified"}
     def test_error_code_classified(self, core) -> None:
         resp = _post(core, "/api/v1/ask", {"prompt": "test"}, timeout=60)
         if resp.status_code == 502:
@@ -196,6 +204,7 @@ class TestLLMErrorReporting:
                 "llm_unreachable", "llm_error",
             }
 
+    # TRACE: {"suite": "INST", "case": "0088", "section": "06", "sectionName": "Post-Install", "subsection": "03", "scenario": "03", "title": "error_has_message"}
     def test_error_has_message(self, core) -> None:
         resp = _post(core, "/api/v1/ask", {"prompt": "test"}, timeout=60)
         if resp.status_code == 502:
@@ -211,6 +220,7 @@ class TestLLMErrorReporting:
 
 
 class TestDID:
+    # TRACE: {"suite": "INST", "case": "0089", "section": "06", "sectionName": "Post-Install", "subsection": "04", "scenario": "01", "title": "did_available"}
     def test_did_available(self, core) -> None:
         resp = httpx.get(
             f"{core['url']}/.well-known/atproto-did", timeout=10,
@@ -225,10 +235,12 @@ class TestDID:
 
 
 class TestSecurity:
+    # TRACE: {"suite": "INST", "case": "0090", "section": "06", "sectionName": "Post-Install", "subsection": "05", "scenario": "01", "title": "no_auth_401"}
     def test_no_auth_401(self, core) -> None:
         resp = httpx.get(f"{core['url']}/v1/personas", timeout=10)
         assert resp.status_code == 401
 
+    # TRACE: {"suite": "INST", "case": "0091", "section": "06", "sectionName": "Post-Install", "subsection": "05", "scenario": "02", "title": "bad_token_401"}
     def test_bad_token_401(self, core) -> None:
         resp = httpx.get(
             f"{core['url']}/v1/personas",
@@ -237,6 +249,7 @@ class TestSecurity:
         )
         assert resp.status_code == 401
 
+    # TRACE: {"suite": "INST", "case": "0092", "section": "06", "sectionName": "Post-Install", "subsection": "05", "scenario": "03", "title": "healthz_no_auth"}
     def test_healthz_no_auth(self, core) -> None:
         resp = httpx.get(f"{core['url']}/healthz", timeout=10)
         assert resp.status_code == 200
@@ -248,11 +261,13 @@ class TestSecurity:
 
 
 class TestApprovals:
+    # TRACE: {"suite": "INST", "case": "0093", "section": "06", "sectionName": "Post-Install", "subsection": "06", "scenario": "01", "title": "list_empty"}
     def test_list_empty(self, core) -> None:
         resp = _get(core, "/v1/approvals")
         assert resp.status_code == 200
         assert "approvals" in resp.json()
 
+    # TRACE: {"suite": "INST", "case": "0094", "section": "06", "sectionName": "Post-Install", "subsection": "06", "scenario": "02", "title": "deny_unknown_404"}
     def test_deny_unknown_404(self, core) -> None:
         resp = _post(core, "/v1/approvals/apr-nonexistent/deny", {})
         assert resp.status_code in (404, 403)
@@ -264,10 +279,12 @@ class TestApprovals:
 
 
 class TestAsyncApproval:
+    # TRACE: {"suite": "INST", "case": "0095", "section": "06", "sectionName": "Post-Install", "subsection": "07", "scenario": "01", "title": "reason_status_404_for_unknown"}
     def test_reason_status_404_for_unknown(self, core) -> None:
         resp = _get(core, "/api/v1/ask/reason-nonexistent/status")
         assert resp.status_code == 404
 
+    # TRACE: {"suite": "INST", "case": "0096", "section": "06", "sectionName": "Post-Install", "subsection": "07", "scenario": "02", "title": "reason_endpoint_exists"}
     def test_reason_endpoint_exists(self, core) -> None:
         resp = _post(core, "/api/v1/ask", {"prompt": "test"}, timeout=60)
         # 502 = Brain not running (Core-only), which is fine — endpoint exists
@@ -280,6 +297,7 @@ class TestAsyncApproval:
 
 
 class TestKVStore:
+    # TRACE: {"suite": "INST", "case": "0097", "section": "06", "sectionName": "Post-Install", "subsection": "08", "scenario": "01", "title": "round_trip"}
     def test_round_trip(self, core) -> None:
         key = f"postinstall_{os.getpid()}"
         put = httpx.put(
@@ -304,6 +322,7 @@ class TestKVStore:
 
 
 class TestPII:
+    # TRACE: {"suite": "INST", "case": "0098", "section": "06", "sectionName": "Post-Install", "subsection": "09", "scenario": "01", "title": "scrub_phone"}
     def test_scrub_phone(self, core) -> None:
         resp = _post(core, "/v1/pii/scrub", {"text": "Call 9876543210"})
         assert resp.status_code == 200
@@ -316,6 +335,7 @@ class TestPII:
 
 
 class TestOwnerName:
+    # TRACE: {"suite": "INST", "case": "0099", "section": "06", "sectionName": "Post-Install", "subsection": "10", "scenario": "01", "title": "brain_healthz_accepts_owner_name"}
     def test_brain_healthz_accepts_owner_name(self, core) -> None:
         """Brain healthz works regardless of DINA_OWNER_NAME setting."""
         # Brain runs on port 8200 internally — we can't reach it directly
@@ -337,6 +357,7 @@ class TestPersonaBootstrapIdempotent:
     trigger re-bootstrap (which would duplicate the 4 defaults).
     """
 
+    # TRACE: {"suite": "INST", "case": "0100", "section": "06", "sectionName": "Post-Install", "subsection": "11", "scenario": "01", "title": "create_extra_persona_no_duplicates"}
     def test_create_extra_persona_no_duplicates(self, core) -> None:
         """Creating a custom persona doesn't duplicate defaults on next query."""
         # Create a 5th persona

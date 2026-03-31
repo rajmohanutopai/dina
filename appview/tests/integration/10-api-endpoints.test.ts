@@ -202,6 +202,7 @@ function makeSubjectId(did: string): string {
 // 10.1 Resolve Endpoint
 // ---------------------------------------------------------------------------
 describe('10.1 Resolve Endpoint', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0490", "section": "01", "sectionName": "General", "title": "IT-API-001: resolve -- DID subject with scores"}
   it('IT-API-001: resolve -- DID subject with scores', async () => {
     const did = 'did:plc:scored'
     const subjectId = makeSubjectId(did)
@@ -230,6 +231,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.reasoning).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0491", "section": "01", "sectionName": "General", "title": "IT-API-002: resolve -- subject not found"}
   it('IT-API-002: resolve -- subject not found', async () => {
     const result = await resolve(db, {
       subject: JSON.stringify({ type: 'did', did: 'did:plc:unknown' }),
@@ -240,6 +242,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.attestationSummary).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0492", "section": "01", "sectionName": "General", "title": "IT-API-003: resolve -- invalid params"}
   it('IT-API-003: resolve -- invalid params', async () => {
     // MEDIUM-01 fix: malformed JSON in subject returns error response, not throw
     const result = await resolve(db, { subject: 'not-json' })
@@ -247,6 +250,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.reasoning).toContain('Invalid subject JSON')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0493", "section": "01", "sectionName": "General", "title": "IT-API-004: resolve -- DID profile included"}
   it('IT-API-004: resolve -- DID profile included', async () => {
     const did = 'did:plc:profiled'
     const subjectId = makeSubjectId(did)
@@ -263,6 +267,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.reasoning).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0494", "section": "01", "sectionName": "General", "title": "IT-API-005: resolve -- flags included"}
   it('IT-API-005: resolve -- flags included', async () => {
     const did = 'did:plc:flagged'
     const subjectId = makeSubjectId(did)
@@ -281,6 +286,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.flags.map(f => f.flagType)).toContain('fake-review')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0495", "section": "01", "sectionName": "General", "title": "IT-API-006: resolve -- graph context (with requesterDid)"}
   it('IT-API-006: resolve -- graph context (with requesterDid)', async () => {
     const requesterDid = 'did:plc:requester'
     const targetDid = 'did:plc:target'
@@ -304,6 +310,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.graphContext).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0496", "section": "01", "sectionName": "General", "title": "IT-API-007: resolve -- graph context null (no requesterDid)"}
   it('IT-API-007: resolve -- graph context null (no requesterDid)', async () => {
     const did = 'did:plc:noreq'
     const subjectId = makeSubjectId(did)
@@ -317,6 +324,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.graphContext).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0497", "section": "01", "sectionName": "General", "title": "IT-API-008: resolve -- authenticity consensus"}
   it('IT-API-008: resolve -- authenticity consensus', async () => {
     const did = 'did:plc:auth'
     const subjectId = makeSubjectId(did)
@@ -337,6 +345,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.authenticity!.confidence).toBe(0.9)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0498", "section": "01", "sectionName": "General", "title": "IT-API-009: resolve -- recommendation computed"}
   it('IT-API-009: resolve -- recommendation computed', async () => {
     const did = 'did:plc:recommend'
     const subjectId = makeSubjectId(did)
@@ -361,6 +370,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.recommendation).toBe('proceed')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0499", "section": "01", "sectionName": "General", "title": "IT-API-010: resolve -- context affects recommendation"}
   it('IT-API-010: resolve -- context affects recommendation', async () => {
     const did = 'did:plc:ctx'
     const subjectId = makeSubjectId(did)
@@ -391,6 +401,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(generalResult.recommendation).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0500", "section": "01", "sectionName": "General", "title": "IT-API-010a: resolve -- malformed subject JSON -> error"}
   it('IT-API-010a: resolve -- malformed subject JSON -> error', async () => {
     // MEDIUM-01 fix: malformed JSON returns error response, not throw
     const result = await resolve(db, { subject: 'not-valid-json{' })
@@ -398,6 +409,7 @@ describe('10.1 Resolve Endpoint', () => {
     expect(result.reasoning).toContain('Invalid subject JSON')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0501", "section": "01", "sectionName": "General", "title": "IT-API-010b: resolve -- domain-specific score used when available"}
   it('IT-API-010b: resolve -- domain-specific score used when available', async () => {
     const did = 'did:plc:domres'
     const subjectId = makeSubjectId(did)
@@ -431,6 +443,7 @@ describe('10.1 Resolve Endpoint', () => {
 // 10.2 Resolve -- Cache Integration (Fix 6)
 // ---------------------------------------------------------------------------
 describe('10.2 Resolve -- Cache Integration (Fix 6)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0502", "section": "01", "sectionName": "General", "title": "IT-API-011: Fix 6: concurrent resolves coalesced"}
   it('IT-API-011: Fix 6: concurrent resolves coalesced', async () => {
     const did = 'did:plc:cached'
     const subjectId = makeSubjectId(did)
@@ -454,6 +467,7 @@ describe('10.2 Resolve -- Cache Integration (Fix 6)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0503", "section": "01", "sectionName": "General", "title": "IT-API-012: Fix 6: stale-while-revalidate"}
   it('IT-API-012: Fix 6: stale-while-revalidate', async () => {
     const did = 'did:plc:swr'
     const subjectId = makeSubjectId(did)
@@ -473,6 +487,7 @@ describe('10.2 Resolve -- Cache Integration (Fix 6)', () => {
     expect(result2.confidence).toBe(result1.confidence)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0504", "section": "01", "sectionName": "General", "title": "IT-API-013: Fix 6: different subjects -> separate entries"}
   it('IT-API-013: Fix 6: different subjects -> separate entries', async () => {
     // Create two distinct subjects
     for (let i = 0; i < 3; i++) {
@@ -496,6 +511,7 @@ describe('10.2 Resolve -- Cache Integration (Fix 6)', () => {
     expect(results[2].trustLevel).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0505", "section": "01", "sectionName": "General", "title": "IT-API-014: Fix 6: cache key includes requesterDid"}
   it('IT-API-014: Fix 6: cache key includes requesterDid', async () => {
     const did = 'did:plc:ckr'
     const subjectId = makeSubjectId(did)
@@ -523,6 +539,7 @@ describe('10.2 Resolve -- Cache Integration (Fix 6)', () => {
 // 10.3 Search Endpoint
 // ---------------------------------------------------------------------------
 describe('10.3 Search Endpoint', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0506", "section": "01", "sectionName": "General", "title": "IT-API-015: search -- full-text query (category filter fallback)"}
   it('IT-API-015: search -- full-text query (category filter fallback)', async () => {
     // Since full-text search requires tsvector, test with category filter instead
     await insertAttestation('at://did:plc:a/att/1', 'did:plc:a', {
@@ -545,6 +562,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results.length).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0507", "section": "01", "sectionName": "General", "title": "IT-API-016: search -- category filter"}
   it('IT-API-016: search -- category filter', async () => {
     await insertAttestation('at://did:plc:a/att/s1', 'did:plc:a', { category: 'service' })
     await insertAttestation('at://did:plc:a/att/p1', 'did:plc:a', { category: 'product' })
@@ -554,6 +572,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0508", "section": "01", "sectionName": "General", "title": "IT-API-017: search -- domain filter"}
   it('IT-API-017: search -- domain filter', async () => {
     await insertAttestation('at://did:plc:a/att/f1', 'did:plc:a', { domain: 'food' })
     await insertAttestation('at://did:plc:a/att/t1', 'did:plc:a', { domain: 'tech' })
@@ -563,6 +582,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0509", "section": "01", "sectionName": "General", "title": "IT-API-018: search -- sentiment filter"}
   it('IT-API-018: search -- sentiment filter', async () => {
     await insertAttestation('at://did:plc:a/att/pos1', 'did:plc:a', { sentiment: 'positive' })
     await insertAttestation('at://did:plc:a/att/neg1', 'did:plc:a', { sentiment: 'negative' })
@@ -572,6 +592,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0510", "section": "01", "sectionName": "General", "title": "IT-API-019: search -- authorDid filter"}
   it('IT-API-019: search -- authorDid filter', async () => {
     await insertAttestation('at://did:plc:author1/att/1', 'did:plc:author1', { sentiment: 'positive' })
     await insertAttestation('at://did:plc:author2/att/1', 'did:plc:author2', { sentiment: 'positive' })
@@ -581,6 +602,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0511", "section": "01", "sectionName": "General", "title": "IT-API-020: search -- tags filter"}
   it('IT-API-020: search -- tags filter', async () => {
     await insertAttestation('at://did:plc:a/att/tag1', 'did:plc:a', { tags: ['quality', 'value', 'speed'] })
     await insertAttestation('at://did:plc:a/att/tag2', 'did:plc:a', { tags: ['quality', 'value'] })
@@ -591,6 +613,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0512", "section": "01", "sectionName": "General", "title": "IT-API-021: search -- date range (since/until)"}
   it('IT-API-021: search -- date range (since/until)', async () => {
     await insertAttestation('at://did:plc:a/att/old', 'did:plc:a', {
       recordCreatedAt: new Date('2025-12-15'),
@@ -612,6 +635,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results.length).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0513", "section": "01", "sectionName": "General", "title": "IT-API-022: search -- sort by recent"}
   it('IT-API-022: search -- sort by recent', async () => {
     const now = Date.now()
     await insertAttestation('at://did:plc:a/att/r1', 'did:plc:a', {
@@ -634,6 +658,7 @@ describe('10.3 Search Endpoint', () => {
     expect(uris[2]).toBe('at://did:plc:a/att/r1')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0514", "section": "01", "sectionName": "General", "title": "IT-API-023: search -- sort by relevant (with q) falls back"}
   it('IT-API-023: search -- sort by relevant (with q) falls back', async () => {
     // Full-text search requires tsvector; test with sort=recent as fallback
     await insertAttestation('at://did:plc:a/att/rel1', 'did:plc:a', {
@@ -650,6 +675,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.results).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0515", "section": "01", "sectionName": "General", "title": "IT-API-024: search -- pagination cursor"}
   it('IT-API-024: search -- pagination cursor', async () => {
     const now = Date.now()
     // Insert 5 attestations with well-separated timestamps
@@ -679,6 +705,7 @@ describe('10.3 Search Endpoint', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0516", "section": "01", "sectionName": "General", "title": "IT-API-025: search -- limit respected"}
   it('IT-API-025: search -- limit respected', async () => {
     const now = Date.now()
     // Insert 15 attestations
@@ -693,6 +720,7 @@ describe('10.3 Search Endpoint', () => {
     expect(result.cursor).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0517", "section": "01", "sectionName": "General", "title": "IT-API-026: search -- excludes revoked attestations"}
   it('IT-API-026: search -- excludes revoked attestations', async () => {
     await insertAttestation('at://did:plc:a/att/active', 'did:plc:a', { isRevoked: false })
     await insertAttestation('at://did:plc:a/att/revoked', 'did:plc:a', { isRevoked: true })
@@ -702,6 +730,7 @@ describe('10.3 Search Endpoint', () => {
     expect((result.results[0] as any).uri).toBe('at://did:plc:a/att/active')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0518", "section": "01", "sectionName": "General", "title": "IT-API-027: search -- empty results"}
   it('IT-API-027: search -- empty results', async () => {
     const result = await search(db, {
       domain: 'nonexistent-domain',
@@ -712,12 +741,14 @@ describe('10.3 Search Endpoint', () => {
     expect(result.cursor).toBeUndefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0519", "section": "01", "sectionName": "General", "title": "IT-API-028: search -- invalid params (limit exceeds max)"}
   it('IT-API-028: search -- invalid params (limit exceeds max)', async () => {
     // SearchParams has max: 100, so limit = 200 should fail validation
     const parsed = SearchParams.safeParse({ limit: 200 })
     expect(parsed.success).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0520", "section": "01", "sectionName": "General", "title": "IT-API-029: search -- subjectType filter"}
   it('IT-API-029: search -- subjectType filter', async () => {
     // subjectType is not directly filterable in the current search implementation,
     // but we can verify the search runs with the parameter via the schema
@@ -726,6 +757,7 @@ describe('10.3 Search Endpoint', () => {
     expect(parsed.data!.subjectType).toBe('product')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0521", "section": "01", "sectionName": "General", "title": "IT-API-030: search -- minConfidence filter"}
   it('IT-API-030: search -- minConfidence filter', async () => {
     // minConfidence is accepted by the schema
     const parsed = SearchParams.safeParse({ minConfidence: 'high', sort: 'recent' })
@@ -738,6 +770,7 @@ describe('10.3 Search Endpoint', () => {
 // 10.4 Get Profile Endpoint
 // ---------------------------------------------------------------------------
 describe('10.4 Get Profile Endpoint', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0522", "section": "01", "sectionName": "General", "title": "IT-API-031: get profile -- existing DID"}
   it('IT-API-031: get profile -- existing DID', async () => {
     await insertProfile('did:plc:exists', {
       overallTrustScore: 0.75,
@@ -767,11 +800,13 @@ describe('10.4 Get Profile Endpoint', () => {
     expect(result!.activeDomains).toEqual(['food', 'tech'])
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0523", "section": "01", "sectionName": "General", "title": "IT-API-032: get profile -- non-existent DID"}
   it('IT-API-032: get profile -- non-existent DID', async () => {
     const result = await getProfile(db, { did: 'did:plc:nonexistent' })
     expect(result).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0524", "section": "01", "sectionName": "General", "title": "IT-API-033: get profile -- includes reviewer stats"}
   it('IT-API-033: get profile -- includes reviewer stats', async () => {
     await insertProfile('did:plc:reviewer', {
       totalAttestationsBy: 50,
@@ -788,6 +823,7 @@ describe('10.4 Get Profile Endpoint', () => {
     expect(result!.reviewerStats.helpfulRatio).toBeCloseTo(0.85)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0525", "section": "01", "sectionName": "General", "title": "IT-API-034: get profile -- includes trust score"}
   it('IT-API-034: get profile -- includes trust score', async () => {
     await insertProfile('did:plc:trusted', { overallTrustScore: 0.92 })
 
@@ -801,6 +837,7 @@ describe('10.4 Get Profile Endpoint', () => {
 // 10.5 Get Attestations Endpoint
 // ---------------------------------------------------------------------------
 describe('10.5 Get Attestations Endpoint', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0526", "section": "01", "sectionName": "General", "title": "IT-API-035: get attestations -- by subject"}
   it('IT-API-035: get attestations -- by subject', async () => {
     const subId = 'sub_test1'
     const subOther = 'sub_other1'
@@ -815,6 +852,7 @@ describe('10.5 Get Attestations Endpoint', () => {
     expect(result.attestations.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0527", "section": "01", "sectionName": "General", "title": "IT-API-036: get attestations -- by author"}
   it('IT-API-036: get attestations -- by author', async () => {
     await insertAttestation('at://did:plc:author/att/1', 'did:plc:author', {})
     await insertAttestation('at://did:plc:author/att/2', 'did:plc:author', {})
@@ -824,6 +862,7 @@ describe('10.5 Get Attestations Endpoint', () => {
     expect(result.attestations.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0528", "section": "01", "sectionName": "General", "title": "IT-API-037: get attestations -- pagination"}
   it('IT-API-037: get attestations -- pagination', async () => {
     const now = Date.now()
     for (let i = 0; i < 10; i++) {
@@ -841,6 +880,7 @@ describe('10.5 Get Attestations Endpoint', () => {
     expect(new Set(page1Uris).size).toBe(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0529", "section": "01", "sectionName": "General", "title": "IT-API-038: get attestations -- includes thread replies"}
   it('IT-API-038: get attestations -- includes thread replies', async () => {
     // Insert an attestation and a reply to it
     await insertAttestation('at://did:plc:a/att/parent', 'did:plc:a', {})
@@ -872,6 +912,7 @@ describe('10.5 Get Attestations Endpoint', () => {
 // 10.6 Get Graph Endpoint
 // ---------------------------------------------------------------------------
 describe('10.6 Get Graph Endpoint', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0530", "section": "01", "sectionName": "General", "title": "IT-API-039: get graph -- center DID"}
   it('IT-API-039: get graph -- center DID', async () => {
     await insertProfile('did:plc:center', { overallTrustScore: 0.7 })
     await insertEdge('did:plc:center', 'did:plc:neighbor1')
@@ -889,6 +930,7 @@ describe('10.6 Get Graph Endpoint', () => {
     expect(result.nodes.length).toBe(4)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0531", "section": "01", "sectionName": "General", "title": "IT-API-040: get graph -- depth limit"}
   it('IT-API-040: get graph -- depth limit', async () => {
     await insertProfile('did:plc:dl', { overallTrustScore: 0.5 })
     await insertEdge('did:plc:dl', 'did:plc:hop1')
@@ -901,6 +943,7 @@ describe('10.6 Get Graph Endpoint', () => {
     expect(edge.to).toBe('did:plc:hop1')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0532", "section": "01", "sectionName": "General", "title": "IT-API-041: get graph -- domain filter"}
   it('IT-API-041: get graph -- domain filter', async () => {
     await insertProfile('did:plc:gdom', { overallTrustScore: 0.5 })
     await insertEdge('did:plc:gdom', 'did:plc:food1', { domain: 'food' })
@@ -913,6 +956,7 @@ describe('10.6 Get Graph Endpoint', () => {
     expect(result.edges[0].to).toBe('did:plc:food1')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0533", "section": "01", "sectionName": "General", "title": "IT-API-042: get graph -- empty graph"}
   it('IT-API-042: get graph -- empty graph', async () => {
     await insertProfile('did:plc:lonely', { overallTrustScore: 0.3 })
 
@@ -926,6 +970,7 @@ describe('10.6 Get Graph Endpoint', () => {
 // §10+ API Endpoint Fixes (AppView Issues)
 // ---------------------------------------------------------------------------
 describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0534", "section": "01", "sectionName": "General", "title": "IT-API-043: MEDIUM-01: resolve rejects overlong subject"}
   it('IT-API-043: MEDIUM-01: resolve rejects overlong subject', async () => {
     // MEDIUM-01: subject now has .max(4096) validation
     const oversizedSubject = 'x'.repeat(5000)
@@ -933,6 +978,7 @@ describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
     expect(result.success).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0535", "section": "01", "sectionName": "General", "title": "IT-API-044: MEDIUM-05: resolve only returns active flags"}
   it('IT-API-044: MEDIUM-05: resolve only returns active flags', async () => {
     // Set up a subject with both active and inactive flags
     // Use the deterministic subject ID that resolve() will compute via resolveSubject()
@@ -958,6 +1004,7 @@ describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
     expect(result.flags.length).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0536", "section": "01", "sectionName": "General", "title": "IT-API-045: MEDIUM-04/HIGH-08: search uses composite cursor for stable paginatio"}
   it('IT-API-045: MEDIUM-04/HIGH-08: search uses composite cursor for stable pagination', async () => {
     // Insert multiple attestations with the same timestamp
     await insertSubject('sub-cursor', { name: 'Cursor Test' })
@@ -980,6 +1027,7 @@ describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0537", "section": "01", "sectionName": "General", "title": "IT-API-046: MEDIUM-04: get-attestations cursor actually filters results"}
   it('IT-API-046: MEDIUM-04: get-attestations cursor actually filters results', async () => {
     // Insert attestations
     await insertSubject('sub-ga', { name: 'GA Test' })

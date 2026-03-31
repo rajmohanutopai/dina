@@ -30,6 +30,7 @@ DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
 class TestAuditAppendAndQuery:
     """Verify entries written via append can be read back via query."""
 
+    # TRACE: {"suite": "INT", "case": "0028", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "01", "title": "audit_append_and_query_roundtrip"}
     def test_audit_append_and_query_roundtrip(self, mock_audit_log) -> None:
         """Write an audit entry, read it back, verify fields match."""
         entry = {
@@ -51,6 +52,7 @@ class TestAuditAppendAndQuery:
         assert found["persona"] == "personal"
         assert found["requester"] == "brain"
 
+    # TRACE: {"suite": "INT", "case": "0029", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "02", "title": "audit_multiple_entries_ordered"}
     def test_audit_multiple_entries_ordered(self, mock_audit_log) -> None:
         """Multiple entries are returned newest-first."""
         for i in range(3):
@@ -80,6 +82,7 @@ class TestAuditAppendAndQuery:
 class TestAuditQueryFilters:
     """Verify query filters work correctly."""
 
+    # TRACE: {"suite": "INT", "case": "0030", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "01", "title": "audit_query_filter_by_action"}
     def test_audit_query_filter_by_action(self, mock_audit_log) -> None:
         """Filter by action returns only matching entries."""
         mock_audit_log.append({
@@ -105,6 +108,7 @@ class TestAuditQueryFilters:
                 f"Filter leaked non-matching action: {e['action']}"
             )
 
+    # TRACE: {"suite": "INT", "case": "0031", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "02", "title": "audit_query_filter_by_persona"}
     def test_audit_query_filter_by_persona(self, mock_audit_log) -> None:
         """Filter by persona returns only matching entries."""
         mock_audit_log.append({
@@ -138,6 +142,7 @@ class TestAuditQueryFilters:
 class TestAuditQueryLimit:
     """Verify limit parameter is honored."""
 
+    # TRACE: {"suite": "INT", "case": "0032", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "01", "title": "audit_query_limit"}
     def test_audit_query_limit(self, mock_audit_log) -> None:
         """Query returns at most `limit` entries."""
         for i in range(10):
@@ -163,6 +168,7 @@ class TestAuditQueryLimit:
 class TestAuditReasonTrace:
     """Verify reason_trace entries carry parseable metadata."""
 
+    # TRACE: {"suite": "INT", "case": "0033", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "01", "title": "audit_reason_trace_metadata"}
     def test_audit_reason_trace_metadata(self, mock_audit_log) -> None:
         """reason_trace entries have parseable JSON metadata."""
         trace_meta = {
@@ -215,6 +221,7 @@ class TestAuditHashChain:
         DOCKER_MODE,
         reason="Hash chain verification is internal to SQLiteAuditLogger",
     )
+    # TRACE: {"suite": "INT", "case": "0034", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "05", "scenario": "01", "title": "audit_hash_chain_integrity"}
     def test_audit_hash_chain_integrity(self, mock_audit_log) -> None:
         """Three entries form a valid hash chain."""
         for i in range(3):
@@ -254,6 +261,7 @@ PII_PATTERNS = [
 class TestAuditNoPII:
     """Verify audit entries don't contain raw PII."""
 
+    # TRACE: {"suite": "INT", "case": "0035", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "06", "scenario": "01", "title": "audit_no_pii_in_previews"}
     def test_audit_no_pii_in_previews(self, mock_audit_log) -> None:
         """Prompt/response previews are truncated and contain no PII.
 

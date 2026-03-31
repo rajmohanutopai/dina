@@ -39,6 +39,7 @@ class TestDraftProtocol:
     """Verify that outbound messages are drafted, never sent directly."""
 
 # TST-INT-487
+    # TRACE: {"suite": "INT", "case": "0487", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "01", "title": "email_draft_created_not_sent"}
     def test_email_draft_created_not_sent(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -62,6 +63,7 @@ class TestDraftProtocol:
         assert retrieved.subject == "Meeting notes"
 
 # TST-INT-488
+    # TRACE: {"suite": "INT", "case": "0488", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "02", "title": "draft_has_confidence_score"}
     def test_draft_has_confidence_score(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -84,6 +86,7 @@ class TestDraftProtocol:
         assert retrieved.confidence == 0.78
 
 # TST-INT-489
+    # TRACE: {"suite": "INT", "case": "0489", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "03", "title": "auto_expires_72h"}
     def test_auto_expires_72h(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -114,6 +117,7 @@ class TestDraftProtocol:
         assert staging.get(draft.draft_id) is None
 
 # TST-INT-296
+    # TRACE: {"suite": "INT", "case": "0296", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "04", "title": "high_risk_never_drafted"}
     def test_high_risk_never_drafted(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -137,6 +141,7 @@ class TestDraftProtocol:
         assert mock_dina.staging._items == {}
 
 # TST-INT-490
+    # TRACE: {"suite": "INT", "case": "0490", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "05", "title": "user_reviews_before_sending"}
     def test_user_reviews_before_sending(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -178,6 +183,7 @@ class TestDraftProtocol:
         )
 
 # TST-INT-292
+    # TRACE: {"suite": "INT", "case": "0292", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "06", "title": "delegated_agent_also_drafts_only"}
     def test_delegated_agent_also_drafts_only(
         self, mock_dina: MockDinaCore, mock_legal_bot: MockLegalBot,
     ) -> None:
@@ -209,6 +215,7 @@ class TestPaymentIntentProtocol:
     """Verify that Dina generates payment intents, never executes payments."""
 
 # TST-INT-491
+    # TRACE: {"suite": "INT", "case": "0491", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "01", "title": "upi_intent_generated"}
     def test_upi_intent_generated(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -235,6 +242,7 @@ class TestPaymentIntentProtocol:
         assert retrieved.amount == 95000.0
 
 # TST-INT-492
+    # TRACE: {"suite": "INT", "case": "0492", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "02", "title": "crypto_intent"}
     def test_crypto_intent(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -285,6 +293,7 @@ class TestPaymentIntentProtocol:
         assert web_retrieved.method == "web"
 
 # TST-INT-293
+    # TRACE: {"suite": "INT", "case": "0293", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "03", "title": "web_checkout_link"}
     def test_web_checkout_link(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -331,6 +340,7 @@ class TestPaymentIntentProtocol:
         assert staging.get("pay_web_test").method == "web"  # no collision
 
 # TST-INT-493
+    # TRACE: {"suite": "INT", "case": "0493", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "04", "title": "dina_never_sees_payment_credentials"}
     def test_dina_never_sees_payment_credentials(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -360,6 +370,7 @@ class TestPaymentIntentProtocol:
                 f"Sensitive pattern '{pattern}' found in payment intent"
 
 # TST-INT-494
+    # TRACE: {"suite": "INT", "case": "0494", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "05", "title": "outcome_recorded_for_trust"}
     def test_outcome_recorded_for_trust(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -448,6 +459,7 @@ class TestDraftLifecycle:
         return notifications
 
 # TST-INT-726
+    # TRACE: {"suite": "INT", "case": "0726", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "01", "title": "draft_lifecycle_create_review_expire"}
     def test_draft_lifecycle_create_review_expire(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -705,6 +717,7 @@ class TestConcurrentApprovals:
     """
 
 # TST-INT-730
+    # TRACE: {"suite": "INT", "case": "0730", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "04", "scenario": "01", "title": "concurrent_actions_independent_approval_tokens"}
     def test_concurrent_actions_independent_approval_tokens(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1037,6 +1050,7 @@ class TestApprovalPayloadMutation:
     """
 
 # TST-INT-732
+    # TRACE: {"suite": "INT", "case": "0732", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "01", "title": "approval_invalidated_on_payload_mutation"}
     def test_approval_invalidated_on_payload_mutation(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1144,6 +1158,7 @@ class TestApprovalPayloadMutation:
             "Token for mutated body must differ from token for original body"
         )
 
+    # TRACE: {"suite": "INT", "case": "0088", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "02", "title": "unmodified_payload_sends_successfully"}
     def test_unmodified_payload_sends_successfully(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1188,6 +1203,7 @@ class TestApprovalPayloadMutation:
             "Draft must be marked sent after successful send"
         )
 
+    # TRACE: {"suite": "INT", "case": "0089", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "03", "title": "whitespace_only_change_still_invalidates"}
     def test_whitespace_only_change_still_invalidates(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1230,6 +1246,7 @@ class TestApprovalPayloadMutation:
         # Draft remains pending
         assert staging.get(draft.draft_id).sent is False
 
+    # TRACE: {"suite": "INT", "case": "0090", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "04", "title": "reapproval_with_new_token_succeeds"}
     def test_reapproval_with_new_token_succeeds(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1293,6 +1310,7 @@ class TestApprovalPayloadMutation:
             "Draft must be marked sent after re-approval succeeds"
         )
 
+    # TRACE: {"suite": "INT", "case": "0091", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "05", "title": "different_draft_approval_not_affected"}
     def test_different_draft_approval_not_affected(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1363,6 +1381,7 @@ class TestApprovalPayloadMutation:
             "Draft A's token must not validate for draft B's payload"
         )
 
+    # TRACE: {"suite": "INT", "case": "0092", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "06", "title": "empty_body_mutation_detected"}
     def test_empty_body_mutation_detected(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1407,6 +1426,7 @@ class TestApprovalPayloadMutation:
             "Token for empty body is still a valid SHA-256 hash"
         )
 
+    # TRACE: {"suite": "INT", "case": "0093", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "07", "title": "case_change_detected"}
     def test_case_change_detected(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1455,6 +1475,7 @@ class TestApprovalPayloadMutation:
             "SHA-256 must produce different hashes for different case"
         )
 
+    # TRACE: {"suite": "INT", "case": "0094", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "08", "title": "append_detected"}
     def test_append_detected(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -1612,6 +1633,7 @@ class TestAgentSendDowngrade:
 
     # ---- Primary test (TST-INT-728) ----------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0728", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "01", "title": "agent_send_request_always_downgraded_to_draft"}
     def test_agent_send_request_always_downgraded_to_draft(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1665,6 +1687,7 @@ class TestAgentSendDowngrade:
 
     # ---- Counter-proofs ----------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0095", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "02", "title": "non_send_action_not_downgraded"}
     def test_non_send_action_not_downgraded(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1695,6 +1718,7 @@ class TestAgentSendDowngrade:
         )
         assert result["draft_id"] is None
 
+    # TRACE: {"suite": "INT", "case": "0096", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "03", "title": "downgraded_draft_requires_human_approval"}
     def test_downgraded_draft_requires_human_approval(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1745,6 +1769,7 @@ class TestAgentSendDowngrade:
         )
         assert staging.get(draft.draft_id).sent is True
 
+    # TRACE: {"suite": "INT", "case": "0097", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "04", "title": "agent_cannot_mark_draft_as_sent"}
     def test_agent_cannot_mark_draft_as_sent(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1792,6 +1817,7 @@ class TestAgentSendDowngrade:
 
     # ---- Edge cases --------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0098", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "05", "title": "all_send_variants_downgraded"}
     def test_all_send_variants_downgraded(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1834,6 +1860,7 @@ class TestAgentSendDowngrade:
                 f"Action '{action}' is not send-like — must NOT be downgraded"
             )
 
+    # TRACE: {"suite": "INT", "case": "0099", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "06", "title": "draft_body_preserves_original_content_exactly"}
     def test_draft_body_preserves_original_content_exactly(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1872,6 +1899,7 @@ class TestAgentSendDowngrade:
             "Staged draft body must match the original exactly after retrieval"
         )
 
+    # TRACE: {"suite": "INT", "case": "0100", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "07", "title": "draft_gets_unique_id"}
     def test_draft_gets_unique_id(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1898,6 +1926,7 @@ class TestAgentSendDowngrade:
             "50 send requests must produce 50 unique draft IDs"
         )
 
+    # TRACE: {"suite": "INT", "case": "0101", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "08", "title": "multiple_send_requests_each_create_separate_draft"}
     def test_multiple_send_requests_each_create_separate_draft(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -2085,6 +2114,7 @@ class TestCartHandoverLifecycle:
     """
 
 # TST-INT-727
+    # TRACE: {"suite": "INT", "case": "0727", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "01", "title": "cart_handover_lifecycle_create_expire"}
     def test_cart_handover_lifecycle_create_expire(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2215,6 +2245,7 @@ class TestCartHandoverLifecycle:
 
     # -- Counter-proofs -------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0102", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "02", "title": "cart_handover_shorter_ttl_than_draft"}
     def test_cart_handover_shorter_ttl_than_draft(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2279,6 +2310,7 @@ class TestCartHandoverLifecycle:
             "Draft must be gone at 73h"
         )
 
+    # TRACE: {"suite": "INT", "case": "0103", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "03", "title": "intent_alive_before_expiry"}
     def test_intent_alive_before_expiry(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2314,6 +2346,7 @@ class TestCartHandoverLifecycle:
         assert expired_count == 0
         assert staging._items.get(intent_id) is not None
 
+    # TRACE: {"suite": "INT", "case": "0104", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "04", "title": "executed_intent_does_not_expire"}
     def test_executed_intent_does_not_expire(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2369,6 +2402,7 @@ class TestCartHandoverLifecycle:
 
     # -- Edge cases -----------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0105", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "05", "title": "exactly_at_expiry_boundary"}
     def test_exactly_at_expiry_boundary(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2426,6 +2460,7 @@ class TestCartHandoverLifecycle:
         assert expired_count_after == 1
         assert staging._items.get(intent_id) is None
 
+    # TRACE: {"suite": "INT", "case": "0106", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "06", "title": "multiple_intents_expire_independently"}
     def test_multiple_intents_expire_independently(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2501,6 +2536,7 @@ class TestCartHandoverLifecycle:
         assert expired_count_18h == 1, "Only C should be purged at t+18h"
         assert staging._items.get(id_c) is None
 
+    # TRACE: {"suite": "INT", "case": "0107", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "07", "title": "cart_handover_preserves_payment_details"}
     def test_cart_handover_preserves_payment_details(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2581,6 +2617,7 @@ class TestCartHandoverLifecycle:
             "Expiry notification must mention currency"
         )
 
+    # TRACE: {"suite": "INT", "case": "0108", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "08", "title": "zero_amount_intent_still_has_ttl"}
     def test_zero_amount_intent_still_has_ttl(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2774,6 +2811,7 @@ class TestApprovalSurvivesBrainCrash:
     # ---- Primary test (TST-INT-729) -----------------------------------------
 
 # TST-INT-729
+    # TRACE: {"suite": "INT", "case": "0729", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "01", "title": "approval_survives_brain_crash"}
     def test_approval_survives_brain_crash(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2897,6 +2935,7 @@ class TestApprovalSurvivesBrainCrash:
 
     # ---- Counter-proofs -----------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0109", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "02", "title": "draft_in_core_not_in_brain_memory"}
     def test_draft_in_core_not_in_brain_memory(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2949,6 +2988,7 @@ class TestApprovalSurvivesBrainCrash:
         )
         brain.restart()
 
+    # TRACE: {"suite": "INT", "case": "0110", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "03", "title": "brain_crash_does_not_auto_approve_pending_drafts"}
     def test_brain_crash_does_not_auto_approve_pending_drafts(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -2994,6 +3034,7 @@ class TestApprovalSurvivesBrainCrash:
                 f"crash — SAFETY VIOLATION. sent must remain False."
             )
 
+    # TRACE: {"suite": "INT", "case": "0111", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "04", "title": "brain_crash_does_not_corrupt_draft_content"}
     def test_brain_crash_does_not_corrupt_draft_content(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -3079,6 +3120,7 @@ class TestApprovalSurvivesBrainCrash:
 
     # ---- Edge cases ---------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0112", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "05", "title": "multiple_crashes_drafts_still_survive"}
     def test_multiple_crashes_drafts_still_survive(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -3147,6 +3189,7 @@ class TestApprovalSurvivesBrainCrash:
                 f"Cycle {cycle_num}: draft silently approved"
             )
 
+    # TRACE: {"suite": "INT", "case": "0113", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "06", "title": "approval_mid_crash_recoverable"}
     def test_approval_mid_crash_recoverable(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -3235,6 +3278,7 @@ class TestApprovalSurvivesBrainCrash:
             "Draft must be sendable after mid-review crash recovery"
         )
 
+    # TRACE: {"suite": "INT", "case": "0114", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "07", "title": "expired_draft_during_crash_still_expires"}
     def test_expired_draft_during_crash_still_expires(
         self, mock_dina: MockDinaCore,
     ) -> None:

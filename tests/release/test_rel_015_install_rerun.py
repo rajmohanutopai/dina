@@ -16,6 +16,7 @@ class TestInstallRerun:
     """Real API tests for REL-015: idempotent operations."""
 
     # REL-015
+    # TRACE: {"suite": "REL", "case": "0015", "section": "15", "sectionName": "Install Rerun", "subsection": "01", "scenario": "01", "title": "rel_015_did_stable_across_requests"}
     def test_rel_015_did_stable_across_requests(
         self, core_url, auth_headers,
     ) -> None:
@@ -33,6 +34,7 @@ class TestInstallRerun:
         assert len(set(dids)) == 1, f"DID should be stable, got: {dids}"
 
     # REL-015
+    # TRACE: {"suite": "REL", "case": "0015", "section": "15", "sectionName": "Install Rerun", "subsection": "01", "scenario": "02", "title": "rel_015_persona_recreate_idempotent"}
     def test_rel_015_persona_recreate_idempotent(
         self, core_url, auth_headers,
     ) -> None:
@@ -61,6 +63,7 @@ class TestInstallRerun:
             assert id1 == id2, f"Persona ID changed on recreate: {id1} → {id2}"
 
     # REL-015
+    # TRACE: {"suite": "REL", "case": "0015", "section": "15", "sectionName": "Install Rerun", "subsection": "01", "scenario": "03", "title": "rel_015_healthz_stable"}
     def test_rel_015_healthz_stable(self, core_url) -> None:
         """Healthz returns consistent results across calls."""
         statuses = set()
@@ -71,6 +74,7 @@ class TestInstallRerun:
         assert len(statuses) == 1, f"Health status should be stable, got: {statuses}"
 
     # REL-015
+    # TRACE: {"suite": "REL", "case": "0015", "section": "15", "sectionName": "Install Rerun", "subsection": "01", "scenario": "04", "title": "rel_015_vault_data_survives_re_unlock"}
     def test_rel_015_vault_data_survives_re_unlock(
         self, core_url, auth_headers,
     ) -> None:

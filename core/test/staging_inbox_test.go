@@ -65,6 +65,7 @@ func newStagingItem(connectorID, source, sourceID, summary string) domain.Stagin
 // --------------------------------------------------------------------------
 
 // TST-CORE-1200
+// TRACE: {"suite": "CORE", "case": "1311", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "01", "scenario": "01", "title": "StagingInbox_Ingest"}
 func TestStagingInbox_Ingest(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -92,6 +93,7 @@ func TestStagingInbox_Ingest(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1201
+// TRACE: {"suite": "CORE", "case": "1312", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "02", "scenario": "01", "title": "StagingInbox_DedupOnConnectorSourceID"}
 func TestStagingInbox_DedupOnConnectorSourceID(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -119,6 +121,7 @@ func TestStagingInbox_DedupOnConnectorSourceID(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1202
+// TRACE: {"suite": "CORE", "case": "1313", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "03", "scenario": "01", "title": "StagingInbox_Claim"}
 func TestStagingInbox_Claim(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -149,6 +152,7 @@ func TestStagingInbox_Claim(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1203
+// TRACE: {"suite": "CORE", "case": "1314", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "04", "scenario": "01", "title": "StagingInbox_ClaimSetsLease"}
 func TestStagingInbox_ClaimSetsLease(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -178,6 +182,7 @@ func TestStagingInbox_ClaimSetsLease(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1204
+// TRACE: {"suite": "CORE", "case": "1315", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "05", "scenario": "01", "title": "StagingInbox_ExpiredLeaseReverts"}
 func TestStagingInbox_ExpiredLeaseReverts(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -214,6 +219,7 @@ func TestStagingInbox_ExpiredLeaseReverts(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1205
+// TRACE: {"suite": "CORE", "case": "1316", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "06", "scenario": "01", "title": "StagingInbox_ResolveOpenPersona"}
 func TestStagingInbox_ResolveOpenPersona(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -250,6 +256,7 @@ func TestStagingInbox_ResolveOpenPersona(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1206
+// TRACE: {"suite": "CORE", "case": "1317", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "07", "scenario": "01", "title": "StagingInbox_ResolveLockedPersona"}
 func TestStagingInbox_ResolveLockedPersona(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -289,6 +296,7 @@ func TestStagingInbox_ResolveLockedPersona(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1207
+// TRACE: {"suite": "CORE", "case": "1318", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "08", "scenario": "01", "title": "StagingInbox_DrainPending"}
 func TestStagingInbox_DrainPending(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -336,6 +344,7 @@ func TestStagingInbox_DrainPending(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1208
+// TRACE: {"suite": "CORE", "case": "1319", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "09", "scenario": "01", "title": "StagingInbox_MarkFailed"}
 func TestStagingInbox_MarkFailed(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -365,6 +374,7 @@ func TestStagingInbox_MarkFailed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1209
+// TRACE: {"suite": "CORE", "case": "1320", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "10", "scenario": "01", "title": "StagingInbox_SweepExpired"}
 func TestStagingInbox_SweepExpired(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -436,6 +446,7 @@ func TestStagingInbox_SweepExpired(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1210
+// TRACE: {"suite": "CORE", "case": "1321", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "11", "scenario": "01", "title": "StagingInbox_ListByStatus"}
 func TestStagingInbox_ListByStatus(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -502,6 +513,7 @@ func TestStagingInbox_ListByStatus(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1211
+// TRACE: {"suite": "CORE", "case": "1322", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "12", "scenario": "01", "title": "StagingInbox_LineageInResolve"}
 func TestStagingInbox_LineageInResolve(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -542,6 +554,7 @@ func TestStagingInbox_LineageInResolve(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1212
+// TRACE: {"suite": "CORE", "case": "1323", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "13", "scenario": "01", "title": "StagingInbox_ConcurrentClaim"}
 func TestStagingInbox_ConcurrentClaim(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -599,6 +612,7 @@ func TestStagingInbox_ConcurrentClaim(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1213
+// TRACE: {"suite": "CORE", "case": "1324", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "14", "scenario": "01", "title": "StagingInbox_ConnectorAuthz"}
 func TestStagingInbox_ConnectorAuthz(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -638,6 +652,7 @@ func TestStagingInbox_ConnectorAuthz(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1214
+// TRACE: {"suite": "CORE", "case": "1325", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "15", "scenario": "01", "title": "StagingInbox_Phase4_DeviceVaultStoreLockdown"}
 func TestStagingInbox_Phase4_DeviceVaultStoreLockdown(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -672,6 +687,7 @@ func TestStagingInbox_Phase4_DeviceVaultStoreLockdown(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1215
+// TRACE: {"suite": "CORE", "case": "1326", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "16", "scenario": "01", "title": "StagingInbox_Phase4_BrainVaultStoreAllowed"}
 func TestStagingInbox_Phase4_BrainVaultStoreAllowed(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -696,6 +712,7 @@ func TestStagingInbox_Phase4_BrainVaultStoreAllowed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1216
+// TRACE: {"suite": "CORE", "case": "1327", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "17", "scenario": "01", "title": "StagingInbox_Phase4_AdminVaultStoreAllowed"}
 func TestStagingInbox_Phase4_AdminVaultStoreAllowed(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -716,6 +733,7 @@ func TestStagingInbox_Phase4_AdminVaultStoreAllowed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1217
+// TRACE: {"suite": "CORE", "case": "1328", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "18", "scenario": "01", "title": "CXH1_DeviceCannotSelfApprove"}
 func TestCXH1_DeviceCannotSelfApprove(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -754,6 +772,7 @@ func TestCXH1_DeviceCannotSelfApprove(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1218
+// TRACE: {"suite": "CORE", "case": "1329", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "19", "scenario": "01", "title": "CXH1_ApprovalHandlerRejectsMalformedJSON"}
 func TestCXH1_ApprovalHandlerRejectsMalformedJSON(t *testing.T) {
 	h := &handler.ApprovalHandler{Persona: &handler.PersonaHandler{}}
 
@@ -779,6 +798,7 @@ func TestCXH1_ApprovalHandlerRejectsMalformedJSON(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1219
+// TRACE: {"suite": "CORE", "case": "1330", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "20", "scenario": "01", "title": "CXH1_ApprovalHandlerBlocksDeviceCaller"}
 func TestCXH1_ApprovalHandlerBlocksDeviceCaller(t *testing.T) {
 	h := &handler.ApprovalHandler{Persona: &handler.PersonaHandler{}}
 
@@ -806,6 +826,7 @@ func TestCXH1_ApprovalHandlerBlocksDeviceCaller(t *testing.T) {
 //     read audit (GET /v1/audit/query) but CANNOT write (POST /v1/audit/append).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1331", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "21", "scenario": "01", "title": "FH1_DeviceCannotAppendAudit"}
 func TestFH1_DeviceCannotAppendAudit(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 	kind := "client"
@@ -832,6 +853,7 @@ func TestFH1_DeviceCannotAppendAudit(t *testing.T) {
 //     cannot access /v1/notify. Only Brain should push notifications.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1332", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "22", "scenario": "01", "title": "CXH3_DeviceCannotPushNotifications"}
 func TestCXH3_DeviceCannotPushNotifications(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 	kind := "client"
@@ -853,6 +875,7 @@ func TestCXH3_DeviceCannotPushNotifications(t *testing.T) {
 //     personas (GET /v1/personas) but the handler blocks POST (create).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1333", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "23", "scenario": "01", "title": "FH3_BrainCannotCreatePersonas"}
 func TestFH3_BrainCannotCreatePersonas(t *testing.T) {
 	// Auth layer: Brain IS allowed on /v1/personas (prefix match — needed for list).
 	checker := auth.NewAdminEndpointChecker()
@@ -883,6 +906,7 @@ func TestFH3_BrainCannotCreatePersonas(t *testing.T) {
 //     requires auth (admin-only), device-scoped tokens are blocked.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1334", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "24", "scenario": "01", "title": "CXH6_SyncStatusRequiresAuth"}
 func TestCXH6_SyncStatusRequiresAuth(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 
@@ -906,6 +930,7 @@ func TestCXH6_SyncStatusRequiresAuth(t *testing.T) {
 // 25. TestCXH6_SyncStatusNoProxyURL — response must NOT expose internal URL.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1335", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "25", "scenario": "01", "title": "CXH6_SyncStatusNoProxyURL"}
 func TestCXH6_SyncStatusNoProxyURL(t *testing.T) {
 	h := &handler.AdminHandler{ProxyURL: "http://brain:8200"}
 	r := httptest.NewRequest(http.MethodGet, "/v1/admin/sync-status", nil)
@@ -932,6 +957,7 @@ func TestCXH6_SyncStatusNoProxyURL(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1220
+// TRACE: {"suite": "CORE", "case": "1336", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "26", "scenario": "01", "title": "VT3_EmbeddingRejectsNaNInf"}
 func TestVT3_EmbeddingRejectsNaNInf(t *testing.T) {
 	// Valid embedding should work.
 	valid := make([]float32, 768)
@@ -969,6 +995,7 @@ func TestVT3_EmbeddingRejectsNaNInf(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1221
+// TRACE: {"suite": "CORE", "case": "1337", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "27", "scenario": "01", "title": "VT6_ExtendLeaseAdditive"}
 func TestVT6_ExtendLeaseAdditive(t *testing.T) {
 	inbox := newStagingInbox()
 	ctx := context.Background()
@@ -1040,6 +1067,7 @@ func newSQLiteStagingInbox(t *testing.T) *sqlite.StagingInbox {
 // TST-CORE-1222: GetStatusDetailed — stored item returns status and persona.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1338", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "28", "scenario": "01", "title": "GetStatusDetailed_StoredItemReturnsPersona"}
 func TestGetStatusDetailed_StoredItemReturnsPersona(t *testing.T) {
 	inbox := newSQLiteStagingInbox(t)
 	ctx := context.Background()
@@ -1075,6 +1103,7 @@ func TestGetStatusDetailed_StoredItemReturnsPersona(t *testing.T) {
 // TST-CORE-1223: GetStatusDetailed — received item returns empty persona.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1339", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "29", "scenario": "01", "title": "GetStatusDetailed_ReceivedItemHasEmptyPersona"}
 func TestGetStatusDetailed_ReceivedItemHasEmptyPersona(t *testing.T) {
 	inbox := newSQLiteStagingInbox(t)
 	ctx := context.Background()
@@ -1095,6 +1124,7 @@ func TestGetStatusDetailed_ReceivedItemHasEmptyPersona(t *testing.T) {
 // TST-CORE-1224: GetStatusDetailed — non-existent ID returns error.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1340", "section": "08", "sectionName": "Task Queue (Outbox Pattern)", "subsection": "30", "scenario": "01", "title": "GetStatusDetailed_UnknownIDReturnsError"}
 func TestGetStatusDetailed_UnknownIDReturnsError(t *testing.T) {
 	inbox := newSQLiteStagingInbox(t)
 	ctx := context.Background()

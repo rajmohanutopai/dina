@@ -83,6 +83,7 @@ class TestInstallLifecycle:
 
     # REL-028
     @pytest.mark.slow
+    # TRACE: {"suite": "REL", "case": "0028", "section": "28", "sectionName": "Install Lifecycle", "subsection": "01", "scenario": "01", "title": "rel_028_full_lifecycle"}
     def test_rel_028_full_lifecycle(self, lifecycle_dir: Path) -> None:
         """Fresh install, stop, restart, verify health and DID stability.
 

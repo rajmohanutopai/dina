@@ -19,6 +19,7 @@ from dina_cli.signing import CLIIdentity, _ED25519_MULTICODEC
 
 
 # TST-CLI-001
+# TRACE: {"suite": "CLI", "case": "0001", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "01", "title": "generate_creates_files"}
 def test_generate_creates_files(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     assert not identity.exists
@@ -29,6 +30,7 @@ def test_generate_creates_files(tmp_path):
 
 
 # TST-CLI-002
+# TRACE: {"suite": "CLI", "case": "0002", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "02", "title": "private_key_permissions"}
 def test_private_key_permissions(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -37,6 +39,7 @@ def test_private_key_permissions(tmp_path):
 
 
 # TST-CLI-003
+# TRACE: {"suite": "CLI", "case": "0003", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "03", "title": "load_existing_keypair"}
 def test_load_existing_keypair(tmp_path):
     # Generate, then load in a fresh instance.
     CLIIdentity(identity_dir=tmp_path).generate()
@@ -46,6 +49,7 @@ def test_load_existing_keypair(tmp_path):
 
 
 # TST-CLI-004
+# TRACE: {"suite": "CLI", "case": "0004", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "04", "title": "ensure_loaded_auto_loads"}
 def test_ensure_loaded_auto_loads(tmp_path):
     CLIIdentity(identity_dir=tmp_path).generate()
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -54,6 +58,7 @@ def test_ensure_loaded_auto_loads(tmp_path):
 
 
 # TST-CLI-005
+# TRACE: {"suite": "CLI", "case": "0005", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "05", "title": "ensure_loaded_raises_when_missing"}
 def test_ensure_loaded_raises_when_missing(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     with pytest.raises(FileNotFoundError, match="No keypair found"):
@@ -64,6 +69,7 @@ def test_ensure_loaded_raises_when_missing(tmp_path):
 
 
 # TST-CLI-006
+# TRACE: {"suite": "CLI", "case": "0006", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "06", "title": "did_format"}
 def test_did_format(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -72,6 +78,7 @@ def test_did_format(tmp_path):
 
 
 # TST-CLI-007
+# TRACE: {"suite": "CLI", "case": "0007", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "07", "title": "did_deterministic"}
 def test_did_deterministic(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -79,6 +86,7 @@ def test_did_deterministic(tmp_path):
 
 
 # TST-CLI-008
+# TRACE: {"suite": "CLI", "case": "0008", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "08", "title": "did_different_keys"}
 def test_did_different_keys(tmp_path):
     id1 = CLIIdentity(identity_dir=tmp_path / "a")
     id1.generate()
@@ -91,6 +99,7 @@ def test_did_different_keys(tmp_path):
 
 
 # TST-CLI-009
+# TRACE: {"suite": "CLI", "case": "0009", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "09", "title": "public_key_multibase_format"}
 def test_public_key_multibase_format(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -104,6 +113,7 @@ def test_public_key_multibase_format(tmp_path):
 
 
 # TST-CLI-010
+# TRACE: {"suite": "CLI", "case": "0010", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "10", "title": "public_key_multibase_roundtrip"}
 def test_public_key_multibase_roundtrip(tmp_path):
     """Verify the multibase encodes the correct public key."""
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -121,6 +131,7 @@ def test_public_key_multibase_roundtrip(tmp_path):
 
 
 # TST-CLI-011
+# TRACE: {"suite": "CLI", "case": "0011", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "11", "title": "sign_request_returns_four_parts"}
 def test_sign_request_returns_four_parts(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -132,6 +143,7 @@ def test_sign_request_returns_four_parts(tmp_path):
 
 
 # TST-CLI-012
+# TRACE: {"suite": "CLI", "case": "0012", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "12", "title": "sign_request_verifiable"}
 def test_sign_request_verifiable(tmp_path):
     """Verify the signature matches the canonical payload."""
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -150,6 +162,7 @@ def test_sign_request_verifiable(tmp_path):
 
 
 # TST-CLI-013
+# TRACE: {"suite": "CLI", "case": "0013", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "13", "title": "sign_request_empty_body"}
 def test_sign_request_empty_body(tmp_path):
     """GET requests with no body use SHA-256 of empty string."""
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -164,6 +177,7 @@ def test_sign_request_empty_body(tmp_path):
 
 
 # TST-CLI-014
+# TRACE: {"suite": "CLI", "case": "0014", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "14", "title": "sign_request_different_payloads_differ"}
 def test_sign_request_different_payloads_differ(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()

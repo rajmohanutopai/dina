@@ -85,6 +85,7 @@ func buildDIDDocument(pubKey ed25519.PublicKey) []byte {
 
 // TestHandleVerify_ValidSignature generates an Ed25519 keypair, signs data,
 // and verifies that HandleVerify returns valid=true.
+// TRACE: {"suite": "CORE", "case": "2088", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "Identity_3_HandleVerifyValidSignature"}
 func TestIdentity_3_HandleVerifyValidSignature(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -134,6 +135,7 @@ func TestIdentity_3_HandleVerifyValidSignature(t *testing.T) {
 
 // TestHandleVerify_TamperedSignature verifies that a tampered signature
 // returns valid=false.
+// TRACE: {"suite": "CORE", "case": "2089", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "01", "title": "Identity_3_HandleVerifyTamperedSignature"}
 func TestIdentity_3_HandleVerifyTamperedSignature(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -185,6 +187,7 @@ func TestIdentity_3_HandleVerifyTamperedSignature(t *testing.T) {
 
 // TestHandleVerify_WrongData verifies that signing one message but verifying
 // against different data returns valid=false.
+// TRACE: {"suite": "CORE", "case": "2090", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "01", "title": "Identity_3_HandleVerifyWrongData"}
 func TestIdentity_3_HandleVerifyWrongData(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -234,6 +237,7 @@ func TestIdentity_3_HandleVerifyWrongData(t *testing.T) {
 
 // TestHandleVerify_NoVerificationMethod verifies that a DID document with
 // no verification methods returns an error.
+// TRACE: {"suite": "CORE", "case": "2091", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "01", "title": "Identity_3_HandleVerifyNoVerificationMethod"}
 func TestIdentity_3_HandleVerifyNoVerificationMethod(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -275,6 +279,7 @@ func TestIdentity_3_HandleVerifyNoVerificationMethod(t *testing.T) {
 
 // TestHandleVerify_InvalidMultibasePrefix verifies that a DID document
 // with a non-'z' multibase prefix returns an error.
+// TRACE: {"suite": "CORE", "case": "2092", "section": "03", "sectionName": "Identity (DID)", "subsection": "05", "scenario": "01", "title": "Identity_3_HandleVerifyInvalidMultibasePrefix"}
 func TestIdentity_3_HandleVerifyInvalidMultibasePrefix(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -324,6 +329,7 @@ func TestIdentity_3_HandleVerifyInvalidMultibasePrefix(t *testing.T) {
 
 // TestHandleVerify_InvalidMulticodecPrefix verifies that a DID document
 // with wrong multicodec prefix bytes returns an error.
+// TRACE: {"suite": "CORE", "case": "2093", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "01", "title": "Identity_3_HandleVerifyInvalidMulticodecPrefix"}
 func TestIdentity_3_HandleVerifyInvalidMulticodecPrefix(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -376,6 +382,7 @@ func TestIdentity_3_HandleVerifyInvalidMulticodecPrefix(t *testing.T) {
 
 // TestHandleVerify_InvalidDID verifies that an invalid DID string returns
 // a 400 error.
+// TRACE: {"suite": "CORE", "case": "2094", "section": "03", "sectionName": "Identity (DID)", "subsection": "07", "scenario": "01", "title": "Identity_3_HandleVerifyInvalidDID"}
 func TestIdentity_3_HandleVerifyInvalidDID(t *testing.T) {
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 

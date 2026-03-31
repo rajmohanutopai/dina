@@ -42,6 +42,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-557
+// TRACE: {"suite": "CORE", "case": "1226", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "01", "title": "LivenessProbe"}
 func TestServer_15_1_1_LivenessProbe(t *testing.T) {
 	impl := realHealthChecker
 	testutil.RequireImplementation(t, impl, "HealthChecker")
@@ -63,6 +64,7 @@ func TestServer_15_1_1_LivenessProbe(t *testing.T) {
 }
 
 // TST-CORE-558
+// TRACE: {"suite": "CORE", "case": "1227", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "02", "title": "ReadinessProbeVaultHealthy"}
 func TestServer_15_1_2_ReadinessProbeVaultHealthy(t *testing.T) {
 	impl := realHealthChecker
 	testutil.RequireImplementation(t, impl, "HealthChecker")
@@ -81,6 +83,7 @@ func TestServer_15_1_2_ReadinessProbeVaultHealthy(t *testing.T) {
 }
 
 // TST-CORE-559
+// TRACE: {"suite": "CORE", "case": "1228", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "03", "title": "ReadinessProbeVaultLocked"}
 func TestServer_15_1_3_ReadinessProbeVaultLocked(t *testing.T) {
 	// Negative: vault locked — Readiness must return error.
 	locked := newHealthChecker(false)
@@ -100,6 +103,7 @@ func TestServer_15_1_3_ReadinessProbeVaultLocked(t *testing.T) {
 }
 
 // TST-CORE-560
+// TRACE: {"suite": "CORE", "case": "1229", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "04", "title": "ReadinessProbeSQLiteLocked"}
 func TestServer_15_1_4_ReadinessProbeSQLiteLocked(t *testing.T) {
 	// Use a locked-vault health checker to simulate SQLite locked/corrupted.
 	impl := newHealthChecker(false)
@@ -124,6 +128,7 @@ func TestServer_15_1_4_ReadinessProbeSQLiteLocked(t *testing.T) {
 }
 
 // TST-CORE-561
+// TRACE: {"suite": "CORE", "case": "1230", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "05", "title": "LivenessNotEqualReadiness"}
 func TestServer_15_1_5_LivenessNotEqualReadiness(t *testing.T) {
 	// §15.1 #5: Zombie state — liveness OK but readiness fails.
 	// Must prove the two probes are independent.
@@ -148,6 +153,7 @@ func TestServer_15_1_5_LivenessNotEqualReadiness(t *testing.T) {
 }
 
 // TST-CORE-562
+// TRACE: {"suite": "CORE", "case": "1231", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "06", "title": "DockerHealthcheckUsesHealthz"}
 func TestServer_15_1_6_DockerHealthcheckUsesHealthz(t *testing.T) {
 	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
@@ -165,6 +171,7 @@ func TestServer_15_1_6_DockerHealthcheckUsesHealthz(t *testing.T) {
 }
 
 // TST-CORE-563
+// TRACE: {"suite": "CORE", "case": "1232", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "07", "title": "DockerHealthcheckParams"}
 func TestServer_15_1_7_DockerHealthcheckParams(t *testing.T) {
 	// Requirement: Docker healthcheck must use /healthz endpoint,
 	// and readiness must only pass when vault is queryable.
@@ -221,6 +228,7 @@ func TestServer_15_1_7_DockerHealthcheckParams(t *testing.T) {
 }
 
 // TST-CORE-564
+// TRACE: {"suite": "CORE", "case": "1233", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "08", "title": "BrainStartsAfterCoreHealthy"}
 func TestServer_15_1_8_BrainStartsAfterCoreHealthy(t *testing.T) {
 	// Requirement: Brain must only start after Core is healthy.
 	// Test the readiness gate: Brain should check Core's /healthz before proceeding.
@@ -265,6 +273,7 @@ func TestServer_15_1_8_BrainStartsAfterCoreHealthy(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-565
+// TRACE: {"suite": "CORE", "case": "1234", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "01", "title": "SearchVault"}
 func TestServer_15_2_1_SearchVault(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
@@ -298,6 +307,7 @@ func TestServer_15_2_1_SearchVault(t *testing.T) {
 }
 
 // TST-CORE-566
+// TRACE: {"suite": "CORE", "case": "1235", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "02", "title": "StoreItem"}
 func TestServer_15_2_2_StoreItem(t *testing.T) {
 	// Wire real production components: vault.Manager → service.VaultService → handler.VaultHandler.
 	dir := t.TempDir()
@@ -339,6 +349,7 @@ func TestServer_15_2_2_StoreItem(t *testing.T) {
 }
 
 // TST-CORE-567
+// TRACE: {"suite": "CORE", "case": "1236", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "03", "title": "GetItemByID"}
 func TestServer_15_2_3_GetItemByID(t *testing.T) {
 	api := server.NewVaultAPI()
 	testutil.RequireImplementation(t, api, "VaultAPI")
@@ -367,6 +378,7 @@ func TestServer_15_2_3_GetItemByID(t *testing.T) {
 }
 
 // TST-CORE-568
+// TRACE: {"suite": "CORE", "case": "1237", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "04", "title": "DeleteItem"}
 func TestServer_15_2_4_DeleteItem(t *testing.T) {
 	api := server.NewVaultAPI()
 
@@ -399,6 +411,7 @@ func TestServer_15_2_4_DeleteItem(t *testing.T) {
 }
 
 // TST-CORE-569
+// TRACE: {"suite": "CORE", "case": "1238", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "05", "title": "StoreCrashTraceback"}
 func TestServer_15_2_5_StoreCrashTraceback(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
@@ -442,6 +455,7 @@ func TestServer_15_2_5_StoreCrashTraceback(t *testing.T) {
 }
 
 // TST-CORE-570
+// TRACE: {"suite": "CORE", "case": "1239", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "06", "title": "ACKTask"}
 func TestServer_15_2_6_ACKTask(t *testing.T) {
 	// Fresh VaultAPI — no shared state.
 	impl := server.NewVaultAPI()
@@ -489,6 +503,7 @@ func TestServer_15_2_6_ACKTask(t *testing.T) {
 
 // TST-CORE-571
 // TST-CORE-1046 PUT KV with JSON body
+// TRACE: {"suite": "CORE", "case": "1240", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "07", "title": "VaultKVStore"}
 func TestServer_15_2_7_VaultKVStore(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
@@ -517,6 +532,7 @@ func TestServer_15_2_7_VaultKVStore(t *testing.T) {
 
 // TST-CORE-572
 // TST-CORE-1047 GET KV returns JSON
+// TRACE: {"suite": "CORE", "case": "1241", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "08", "title": "VaultKVRead"}
 func TestServer_15_2_8_VaultKVRead(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
@@ -532,6 +548,7 @@ func TestServer_15_2_8_VaultKVRead(t *testing.T) {
 
 // TST-CORE-573
 // TST-CORE-1048 PUT KV with raw body (backward compat)
+// TRACE: {"suite": "CORE", "case": "1242", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "09", "title": "VaultKVUpsert"}
 func TestServer_15_2_9_VaultKVUpsert(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
@@ -550,6 +567,7 @@ func TestServer_15_2_9_VaultKVUpsert(t *testing.T) {
 }
 
 // TST-CORE-574
+// TRACE: {"suite": "CORE", "case": "1243", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "10", "title": "VaultKVNotFound"}
 func TestServer_15_2_10_VaultKVNotFound(t *testing.T) {
 	api := server.NewVaultAPI()
 
@@ -567,6 +585,7 @@ func TestServer_15_2_10_VaultKVNotFound(t *testing.T) {
 }
 
 // TST-CORE-575
+// TRACE: {"suite": "CORE", "case": "1244", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "11", "title": "VaultBatchStore"}
 func TestServer_15_2_11_VaultBatchStore(t *testing.T) {
 	// Fresh VaultAPI — no shared state.
 	impl := server.NewVaultAPI()
@@ -607,6 +626,7 @@ func TestServer_15_2_11_VaultBatchStore(t *testing.T) {
 }
 
 // TST-CORE-576
+// TRACE: {"suite": "CORE", "case": "1245", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "12", "title": "VaultBatchStoreExceedsCap"}
 func TestServer_15_2_12_VaultBatchStoreExceedsCap(t *testing.T) {
 	// Fresh instance — no shared state.
 	impl := server.NewVaultAPI()
@@ -656,6 +676,7 @@ func TestServer_15_2_12_VaultBatchStoreExceedsCap(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-577
+// TRACE: {"suite": "CORE", "case": "1246", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "01", "title": "GetOwnDID"}
 func TestServer_15_3_1_GetOwnDID(t *testing.T) {
 	// §15.3.1: GET /v1/did must return a valid DID Document containing
 	// the node's root DID, verificationMethod, and proper JSON structure.
@@ -702,6 +723,7 @@ func TestServer_15_3_1_GetOwnDID(t *testing.T) {
 }
 
 // TST-CORE-578
+// TRACE: {"suite": "CORE", "case": "1247", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "02", "title": "CreatePersona"}
 func TestServer_15_3_2_CreatePersona(t *testing.T) {
 	// Wire real production components: identity.PersonaManager → handler.PersonaHandler.
 	pm := realPersonaManager
@@ -782,6 +804,7 @@ func TestServer_15_3_2_CreatePersona(t *testing.T) {
 }
 
 // TST-CORE-579
+// TRACE: {"suite": "CORE", "case": "1248", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "03", "title": "ListPersonas"}
 func TestServer_15_3_3_ListPersonas(t *testing.T) {
 	// Fresh IdentityAPI — no shared state.
 	impl := server.NewIdentityAPI()
@@ -829,6 +852,7 @@ func TestServer_15_3_3_ListPersonas(t *testing.T) {
 }
 
 // TST-CORE-580
+// TRACE: {"suite": "CORE", "case": "1249", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "04", "title": "GetContacts"}
 func TestServer_15_3_4_GetContacts(t *testing.T) {
 	// Fresh IdentityAPI to isolate from other tests.
 	impl := server.NewIdentityAPI()
@@ -858,6 +882,7 @@ func TestServer_15_3_4_GetContacts(t *testing.T) {
 }
 
 // TST-CORE-581
+// TRACE: {"suite": "CORE", "case": "1250", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "05", "title": "AddContact"}
 func TestServer_15_3_5_AddContact(t *testing.T) {
 	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
@@ -868,6 +893,7 @@ func TestServer_15_3_5_AddContact(t *testing.T) {
 }
 
 // TST-CORE-582
+// TRACE: {"suite": "CORE", "case": "1251", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "06", "title": "RegisterDevice"}
 func TestServer_15_3_6_RegisterDevice(t *testing.T) {
 	impl := server.NewIdentityAPI()
 
@@ -897,6 +923,7 @@ func TestServer_15_3_6_RegisterDevice(t *testing.T) {
 }
 
 // TST-CORE-583
+// TRACE: {"suite": "CORE", "case": "1252", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "07", "title": "ListDevices"}
 func TestServer_15_3_7_ListDevices(t *testing.T) {
 	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
@@ -927,6 +954,7 @@ func TestServer_15_3_7_ListDevices(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-584
+// TRACE: {"suite": "CORE", "case": "1253", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "04", "scenario": "01", "title": "SendMessage"}
 func TestServer_15_4_1_SendMessage(t *testing.T) {
 	// Fresh MessagingAPI — no shared state.
 	impl := server.NewMessagingAPI()
@@ -962,6 +990,7 @@ func TestServer_15_4_1_SendMessage(t *testing.T) {
 }
 
 // TST-CORE-585
+// TRACE: {"suite": "CORE", "case": "1254", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "04", "scenario": "02", "title": "ReceiveMessages"}
 func TestServer_15_4_2_ReceiveMessages(t *testing.T) {
 	// Fresh MessagingAPI — no shared state.
 	impl := server.NewMessagingAPI()
@@ -985,6 +1014,7 @@ func TestServer_15_4_2_ReceiveMessages(t *testing.T) {
 }
 
 // TST-CORE-586
+// TRACE: {"suite": "CORE", "case": "1255", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "04", "scenario": "03", "title": "AcknowledgeMessage"}
 func TestServer_15_4_3_AcknowledgeMessage(t *testing.T) {
 	// Fresh MessagingAPI — no shared state.
 	impl := server.NewMessagingAPI()
@@ -1028,6 +1058,7 @@ func TestServer_15_4_3_AcknowledgeMessage(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-587
+// TRACE: {"suite": "CORE", "case": "1256", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "01", "title": "InitiatePairing"}
 func TestServer_15_5_1_InitiatePairing(t *testing.T) {
 	// Fresh instance — no shared state.
 	impl := server.NewPairingAPI()
@@ -1060,6 +1091,7 @@ func TestServer_15_5_1_InitiatePairing(t *testing.T) {
 }
 
 // TST-CORE-588
+// TRACE: {"suite": "CORE", "case": "1257", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "02", "title": "InitiateStoresPendingPairing"}
 func TestServer_15_5_2_InitiateStoresPendingPairing(t *testing.T) {
 	api := server.NewPairingAPI()
 
@@ -1084,6 +1116,7 @@ func TestServer_15_5_2_InitiateStoresPendingPairing(t *testing.T) {
 }
 
 // TST-CORE-589
+// TRACE: {"suite": "CORE", "case": "1258", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "03", "title": "CompletePairing"}
 func TestServer_15_5_3_CompletePairing(t *testing.T) {
 	api := server.NewPairingAPI()
 
@@ -1105,6 +1138,7 @@ func TestServer_15_5_3_CompletePairing(t *testing.T) {
 }
 
 // TST-CORE-590
+// TRACE: {"suite": "CORE", "case": "1259", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "04", "title": "ClientTokenIs32BytesHex"}
 func TestServer_15_5_4_ClientTokenIs32BytesHex(t *testing.T) {
 	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
@@ -1139,6 +1173,7 @@ func TestServer_15_5_4_ClientTokenIs32BytesHex(t *testing.T) {
 }
 
 // TST-CORE-591
+// TRACE: {"suite": "CORE", "case": "1260", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "05", "title": "SHA256HashStoredNotToken"}
 func TestServer_15_5_5_SHA256HashStoredNotToken(t *testing.T) {
 	// §15.5.5: device_tokens table must store SHA-256(CLIENT_TOKEN), never the
 	// plaintext token. The raw token is returned to the client exactly once
@@ -1182,6 +1217,7 @@ func TestServer_15_5_5_SHA256HashStoredNotToken(t *testing.T) {
 }
 
 // TST-CORE-592
+// TRACE: {"suite": "CORE", "case": "1261", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "06", "title": "PendingPairingDeletedAfterComplete"}
 func TestServer_15_5_6_PendingPairingDeletedAfterComplete(t *testing.T) {
 	api := server.NewPairingAPI()
 
@@ -1209,6 +1245,7 @@ func TestServer_15_5_6_PendingPairingDeletedAfterComplete(t *testing.T) {
 }
 
 // TST-CORE-593
+// TRACE: {"suite": "CORE", "case": "1262", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "07", "title": "DeviceNameStored"}
 func TestServer_15_5_7_DeviceNameStored(t *testing.T) {
 	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
@@ -1224,6 +1261,7 @@ func TestServer_15_5_7_DeviceNameStored(t *testing.T) {
 }
 
 // TST-CORE-594
+// TRACE: {"suite": "CORE", "case": "1263", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "08", "title": "ManagedHostingNoTerminal"}
 func TestServer_15_5_8_ManagedHostingNoTerminal(t *testing.T) {
 	// Managed hosting uses the same pairing API (POST /v1/pair/initiate, /v1/pair/complete)
 	// but presents via signup UI instead of terminal. The API is terminal-agnostic.
@@ -1242,6 +1280,7 @@ func TestServer_15_5_8_ManagedHostingNoTerminal(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-595
+// TRACE: {"suite": "CORE", "case": "1264", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "06", "scenario": "01", "title": "ATProtoDiscoveryEndpoint"}
 func TestServer_15_6_1_ATProtoDiscoveryEndpoint(t *testing.T) {
 	// Fresh ATProtoDiscovery with a known root DID.
 	impl := server.NewATProtoDiscovery("did:plc:abc123xyz")
@@ -1265,6 +1304,7 @@ func TestServer_15_6_1_ATProtoDiscoveryEndpoint(t *testing.T) {
 }
 
 // TST-CORE-596
+// TRACE: {"suite": "CORE", "case": "1265", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "06", "scenario": "02", "title": "DiscoveryReturnsRootDID"}
 func TestServer_15_6_2_DiscoveryReturnsRootDID(t *testing.T) {
 	// Fresh ATProtoDiscovery — no shared state.
 	rootDID := "did:plc:root-discovery-test-abc123"
@@ -1302,6 +1342,7 @@ func TestServer_15_6_2_DiscoveryReturnsRootDID(t *testing.T) {
 }
 
 // TST-CORE-597
+// TRACE: {"suite": "CORE", "case": "1266", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "06", "scenario": "03", "title": "DiscoveryUnauthenticated"}
 func TestServer_15_6_3_DiscoveryUnauthenticated(t *testing.T) {
 	// Fresh ATProtoDiscovery — no shared state.
 	rootDID := "did:plc:unauth-discovery-test"
@@ -1334,6 +1375,7 @@ func TestServer_15_6_3_DiscoveryUnauthenticated(t *testing.T) {
 }
 
 // TST-CORE-598
+// TRACE: {"suite": "CORE", "case": "1267", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "06", "scenario": "04", "title": "DiscoveryAvailableInDevMode"}
 func TestServer_15_6_4_DiscoveryAvailableInDevMode(t *testing.T) {
 	// §15.6 #4: GET localhost:8100/.well-known/atproto-did returns DID on dev port.
 	// Test via httptest to verify the endpoint actually serves a DID.
@@ -1378,6 +1420,7 @@ func TestServer_15_6_4_DiscoveryAvailableInDevMode(t *testing.T) {
 }
 
 // TST-CORE-599
+// TRACE: {"suite": "CORE", "case": "1268", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "06", "scenario": "05", "title": "MissingDIDNoIdentityYet"}
 func TestServer_15_6_5_MissingDIDNoIdentityYet(t *testing.T) {
 	// Fresh ATProtoDiscovery with empty root DID simulates fresh install.
 	implEmpty := server.NewATProtoDiscovery("")
@@ -1404,6 +1447,7 @@ func TestServer_15_6_5_MissingDIDNoIdentityYet(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-600
+// TRACE: {"suite": "CORE", "case": "1269", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "07", "scenario": "01", "title": "ScrubText"}
 func TestServer_15_7_1_ScrubText(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -1417,6 +1461,7 @@ func TestServer_15_7_1_ScrubText(t *testing.T) {
 }
 
 // TST-CORE-901
+// TRACE: {"suite": "CORE", "case": "1270", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "07", "scenario": "02", "title": "MetricsEndpointExists"}
 func TestServer_15_7_2_MetricsEndpointExists(t *testing.T) {
 	// Fresh server to avoid shared state pollution.
 	impl := server.NewServer()
@@ -1456,6 +1501,7 @@ func TestServer_15_7_2_MetricsEndpointExists(t *testing.T) {
 }
 
 // TST-CORE-902
+// TRACE: {"suite": "CORE", "case": "1271", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "07", "scenario": "03", "title": "SyncStatusEndpoint"}
 func TestServer_15_7_3_SyncStatusEndpoint(t *testing.T) {
 	// Sync status API endpoint for admin UI.
 	impl := realServer

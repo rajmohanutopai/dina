@@ -38,6 +38,7 @@ class TestSanchoMoment:
     messaging, and egress audit trails."""
 
 # TST-E2E-007
+    # TRACE: {"suite": "E2E", "case": "0007", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "01", "title": "complete_9_step_arrival_flow"}
     def test_complete_9_step_arrival_flow(
         self,
         don_alonso: HomeNode,
@@ -120,6 +121,7 @@ class TestSanchoMoment:
         assert last_recv.details["action"] == "processed"
 
 # TST-E2E-008
+    # TRACE: {"suite": "E2E", "case": "0008", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "02", "title": "sharing_policy_blocks_context"}
     def test_sharing_policy_blocks_context(
         self,
         don_alonso: HomeNode,
@@ -229,6 +231,7 @@ class TestSanchoMoment:
         # (vault context from don_alonso's own memory may still appear)
 
 # TST-E2E-009
+    # TRACE: {"suite": "E2E", "case": "0009", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "03", "title": "dnd_context_queues_for_briefing"}
     def test_dnd_context_queues_for_briefing(
         self,
         don_alonso: HomeNode,
@@ -351,6 +354,7 @@ class TestSanchoMoment:
         don_alonso.dnd_active = False
 
 # TST-E2E-010
+    # TRACE: {"suite": "E2E", "case": "0010", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "04", "title": "vault_locked_dead_drop"}
     def test_vault_locked_dead_drop(
         self,
         don_alonso: HomeNode,
@@ -445,6 +449,7 @@ class TestSanchoMoment:
         # The exact count depends on whether mock decryption succeeds
 
 # TST-E2E-011
+    # TRACE: {"suite": "E2E", "case": "0011", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "05", "title": "bidirectional_d2d"}
     def test_bidirectional_d2d(
         self,
         don_alonso: HomeNode,
@@ -575,6 +580,7 @@ class TestSanchoMoment:
         )
 
 # TST-E2E-012
+    # TRACE: {"suite": "E2E", "case": "0012", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "06", "title": "egress_audit_trail"}
     def test_egress_audit_trail(
         self,
         don_alonso: HomeNode,

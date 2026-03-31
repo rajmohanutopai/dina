@@ -43,6 +43,7 @@ from tests.integration.mocks import (
 # ---------------------------------------------------------------------------
 
 # TST-INT-605
+# TRACE: {"suite": "INT", "case": "0605", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "01", "title": "dead_drop_ip_rate_limit_and_payload_cap"}
 def test_dead_drop_ip_rate_limit_and_payload_cap(
     mock_dead_drop: MockDeadDropIngress,
 ):
@@ -67,6 +68,7 @@ def test_dead_drop_ip_rate_limit_and_payload_cap(
 
 
 # TST-INT-606
+# TRACE: {"suite": "INT", "case": "0606", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "02", "title": "per_did_rate_limit_only_when_vault_unlocked"}
 def test_per_did_rate_limit_only_when_vault_unlocked(
     mock_dead_drop: MockDeadDropIngress,
 ):
@@ -111,6 +113,7 @@ def test_per_did_rate_limit_only_when_vault_unlocked(
 
 
 # TST-INT-607
+# TRACE: {"suite": "INT", "case": "0607", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "03", "title": "sweeper_blocklists_spam_did_source_ip"}
 def test_sweeper_blocklists_spam_did_source_ip(
     mock_dead_drop: MockDeadDropIngress,
 ):
@@ -135,6 +138,7 @@ def test_sweeper_blocklists_spam_did_source_ip(
 
 
 # TST-INT-608
+# TRACE: {"suite": "INT", "case": "0608", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "04", "title": "ttl_expired_message_stored_silently"}
 def test_ttl_expired_message_stored_silently(
     mock_dead_drop: MockDeadDropIngress,
 ):
@@ -161,6 +165,7 @@ def test_ttl_expired_message_stored_silently(
 # ---------------------------------------------------------------------------
 
 # TST-INT-609
+# TRACE: {"suite": "INT", "case": "0609", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "05", "title": "boot_minimal_persona_dbs_opened"}
 def test_boot_minimal_persona_dbs_opened(
     mock_boot_manager: MockBootManager,
 ):
@@ -193,6 +198,7 @@ def test_boot_minimal_persona_dbs_opened(
 # ---------------------------------------------------------------------------
 
 # TST-INT-610
+# TRACE: {"suite": "INT", "case": "0610", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "06", "title": "import_rejects_bad_manifest"}
 def test_import_rejects_bad_manifest(
     mock_export_archive: MockExportArchive,
     mock_vault: MockVault,
@@ -219,6 +225,7 @@ def test_import_rejects_bad_manifest(
 
 
 # TST-INT-611
+# TRACE: {"suite": "INT", "case": "0611", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "07", "title": "export_excludes_secrets"}
 def test_export_excludes_secrets(
     mock_export_archive: MockExportArchive,
     mock_vault: MockVault,
@@ -274,6 +281,7 @@ def test_export_excludes_secrets(
 # ---------------------------------------------------------------------------
 
 # TST-INT-612
+# TRACE: {"suite": "INT", "case": "0612", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "08", "title": "vault_query_include_content_default"}
 def test_vault_query_include_content_default(
     mock_vault_query: MockVaultQuery,
 ):
@@ -305,6 +313,7 @@ def test_vault_query_include_content_default(
 
 
 # TST-INT-613
+# TRACE: {"suite": "INT", "case": "0613", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "09", "title": "vault_query_pagination_wire_format"}
 def test_vault_query_pagination_wire_format(
     mock_vault_query: MockVaultQuery,
 ):
@@ -341,6 +350,7 @@ def test_vault_query_pagination_wire_format(
 # ---------------------------------------------------------------------------
 
 # TST-INT-614
+# TRACE: {"suite": "INT", "case": "0614", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "10", "title": "hybrid_search_relevance_formula"}
 def test_hybrid_search_relevance_formula(
     mock_hybrid_search: MockHybridSearch,
 ):
@@ -371,6 +381,7 @@ def test_hybrid_search_relevance_formula(
 # ---------------------------------------------------------------------------
 
 # TST-INT-615
+# TRACE: {"suite": "INT", "case": "0615", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "11", "title": "task_queue_dead_letter_after_3_failures"}
 def test_task_queue_dead_letter_after_3_failures(
     mock_task_queue: MockTaskQueue,
 ):
@@ -413,6 +424,7 @@ def test_task_queue_dead_letter_after_3_failures(
 
 
 # TST-INT-616
+# TRACE: {"suite": "INT", "case": "0616", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "12", "title": "task_queue_watchdog_5min_timeout"}
 def test_task_queue_watchdog_5min_timeout(
     mock_task_queue: MockTaskQueue,
 ):
@@ -440,6 +452,7 @@ def test_task_queue_watchdog_5min_timeout(
 # ---------------------------------------------------------------------------
 
 # TST-INT-617
+# TRACE: {"suite": "INT", "case": "0617", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "13", "title": "scratchpad_auto_expires_24h"}
 def test_scratchpad_auto_expires_24h(
     mock_scratchpad: MockScratchpad,
 ):
@@ -497,6 +510,7 @@ def test_scratchpad_auto_expires_24h(
 # ---------------------------------------------------------------------------
 
 # TST-INT-618
+# TRACE: {"suite": "INT", "case": "0618", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "14", "title": "hkdf_backup_and_archive_key_independent"}
 def test_hkdf_backup_and_archive_key_independent(
     mock_hkdf: MockHKDFKeyManager,
 ):
@@ -515,6 +529,7 @@ def test_hkdf_backup_and_archive_key_independent(
 
 
 # TST-INT-619
+# TRACE: {"suite": "INT", "case": "0619", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "15", "title": "hkdf_sync_and_trust_keys"}
 def test_hkdf_sync_and_trust_keys(
     mock_hkdf: MockHKDFKeyManager,
 ):
@@ -537,6 +552,7 @@ def test_hkdf_sync_and_trust_keys(
 # ---------------------------------------------------------------------------
 
 # TST-INT-620
+# TRACE: {"suite": "INT", "case": "0620", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "16", "title": "argon2id_default_parameters"}
 def test_argon2id_default_parameters():
     """M15: Argon2id defaults — 128MB, 3 iter, 4 parallel."""
     params = Argon2idParams()
@@ -563,6 +579,7 @@ def test_argon2id_default_parameters():
 # ---------------------------------------------------------------------------
 
 # TST-INT-621
+# TRACE: {"suite": "INT", "case": "0621", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "17", "title": "kv_store_cursor_survives_brain_restart"}
 def test_kv_store_cursor_survives_brain_restart(
     mock_kv_store: MockKVStore,
 ):
@@ -611,6 +628,7 @@ def test_kv_store_cursor_survives_brain_restart(
 # ---------------------------------------------------------------------------
 
 # TST-INT-622
+# TRACE: {"suite": "INT", "case": "0622", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "18", "title": "restricted_persona_audit_entry_schema"}
 def test_restricted_persona_audit_entry_schema(
     mock_audit_log: MockAuditLog,
 ):
@@ -684,6 +702,7 @@ def test_restricted_persona_audit_entry_schema(
 # ---------------------------------------------------------------------------
 
 # TST-INT-623
+# TRACE: {"suite": "INT", "case": "0623", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "19", "title": "voice_memo_transcript_only"}
 def test_voice_memo_transcript_only(
     mock_vault: MockVault,
 ):
@@ -734,6 +753,7 @@ def test_voice_memo_transcript_only(
 
 
 # TST-INT-624
+# TRACE: {"suite": "INT", "case": "0624", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "20", "title": "fiduciary_override_beats_regex"}
 def test_fiduciary_override_beats_regex(
     mock_classifier: MockSilenceClassifier,
 ):
@@ -771,6 +791,7 @@ def test_fiduciary_override_beats_regex(
 
 
 # TST-INT-625
+# TRACE: {"suite": "INT", "case": "0625", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "21", "title": "subject_patterns_produce_thin_records"}
 def test_subject_patterns_produce_thin_records(
     mock_classifier: MockSilenceClassifier,
 ):
@@ -808,6 +829,7 @@ def test_subject_patterns_produce_thin_records(
 
 
 # TST-INT-626
+# TRACE: {"suite": "INT", "case": "0626", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "22", "title": "backfill_pauses_for_user_query"}
 def test_backfill_pauses_for_user_query():
     """M22: Backfill pauses and resumes; cursor unchanged after resume."""
     from tests.integration.mocks import MockGmailConnector, OAuthToken
@@ -860,6 +882,7 @@ def test_backfill_pauses_for_user_query():
 
 
 # TST-INT-627
+# TRACE: {"suite": "INT", "case": "0627", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "23", "title": "cold_archive_passthrough_no_vault_write"}
 def test_cold_archive_passthrough_no_vault_write(
     mock_vault: MockVault,
 ):
@@ -883,6 +906,7 @@ def test_cold_archive_passthrough_no_vault_write(
 
 
 # TST-INT-628
+# TRACE: {"suite": "INT", "case": "0628", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "24", "title": "openclaw_recovery_exact_cursor"}
 def test_openclaw_recovery_exact_cursor():
     """M24: Resume from exact cursor after outage."""
     from tests.integration.mocks import MockKVStore
@@ -924,6 +948,7 @@ def test_openclaw_recovery_exact_cursor():
 
 
 # TST-INT-629
+# TRACE: {"suite": "INT", "case": "0629", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "25", "title": "phone_connector_client_token_auth"}
 def test_phone_connector_client_token_auth(
     mock_service_auth: MockServiceAuth,
 ):
@@ -960,6 +985,7 @@ def test_phone_connector_client_token_auth(
 # ---------------------------------------------------------------------------
 
 # TST-INT-630
+# TRACE: {"suite": "INT", "case": "0630", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "26", "title": "attestation_lexicon_field_validation"}
 def test_attestation_lexicon_field_validation():
     """M26: Missing fields rejected, rating range 0-100.
 
@@ -1062,6 +1088,7 @@ def test_attestation_lexicon_field_validation():
 
 
 # TST-INT-631
+# TRACE: {"suite": "INT", "case": "0631", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "27", "title": "appview_censorship_detection"}
 def test_appview_censorship_detection():
     """M27: Count mismatch between two AppViews triggers alert."""
     appview_a = MockAppView()
@@ -1115,6 +1142,7 @@ def test_appview_censorship_detection():
 
 
 # TST-INT-632
+# TRACE: {"suite": "INT", "case": "0632", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "28", "title": "pds_spot_check_downgrades_appview"}
 def test_pds_spot_check_downgrades_appview(
     mock_verification_layer: MockVerificationLayer,
 ):
@@ -1150,6 +1178,7 @@ def test_pds_spot_check_downgrades_appview(
 
 
 # TST-INT-633
+# TRACE: {"suite": "INT", "case": "0633", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "29", "title": "tombstone_invalid_signature_rejected"}
 def test_tombstone_invalid_signature_rejected(
     mock_trust_network: MockTrustNetwork,
     mock_identity: MockIdentity,
@@ -1206,6 +1235,7 @@ def test_tombstone_invalid_signature_rejected(
 
 
 # TST-INT-634
+# TRACE: {"suite": "INT", "case": "0634", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "30", "title": "merkle_root_deterministic_inclusion_proof"}
 def test_merkle_root_deterministic_inclusion_proof(
     mock_timestamp_anchor: MockTimestampAnchor,
 ):

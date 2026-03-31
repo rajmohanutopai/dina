@@ -37,6 +37,7 @@ class TestDigitalEstate:
     # -----------------------------------------------------------------
     # TST-E2E-043  SSS Custodian Recovery
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0043", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "01", "title": "sss_custodian_recovery"}
     def test_sss_custodian_recovery(self, don_alonso: HomeNode) -> None:
         # TST-E2E-043
         """Submit SSS shares one by one. With 2 of 3 required shares the
@@ -89,6 +90,7 @@ class TestDigitalEstate:
     # -----------------------------------------------------------------
     # TST-E2E-044  Beneficiary Key Delivery
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0044", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "02", "title": "beneficiary_key_delivery"}
     def test_beneficiary_key_delivery(
         self,
         don_alonso: HomeNode,
@@ -229,6 +231,7 @@ class TestDigitalEstate:
     # -----------------------------------------------------------------
     # TST-E2E-045  Destruction Gated on Delivery
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0045", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "03", "title": "destruction_gated_on_delivery"}
     def test_destruction_gated_on_delivery(
         self,
         fresh_don_alonso: HomeNode,
@@ -349,6 +352,7 @@ class TestDigitalEstate:
     # -----------------------------------------------------------------
     # TST-E2E-046  SSS Recovery with Physical Shares
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0046", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "04", "title": "sss_recovery_with_physical_shares"}
     def test_sss_recovery_with_physical_shares(
         self,
         don_alonso: HomeNode,

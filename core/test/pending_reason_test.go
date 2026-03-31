@@ -106,6 +106,7 @@ func newSQLitePendingReasonStore(t *testing.T) *sqlite.PendingReasonStore {
 	return sqlite.NewPendingReasonStore(adapter.Pool())
 }
 
+// TRACE: {"suite": "CORE", "case": "1102", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "01", "title": "PendingReason_SQLite_SecondApprovalExtendsExpiry"}
 func TestPendingReason_SQLite_SecondApprovalExtendsExpiry(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -157,6 +158,7 @@ func TestPendingReason_SQLite_SecondApprovalExtendsExpiry(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "1103", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "01", "title": "PendingReason_SQLite_CallerBinding"}
 func TestPendingReason_SQLite_CallerBinding(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -192,6 +194,7 @@ func TestPendingReason_SQLite_CallerBinding(t *testing.T) {
 	testutil.RequireEqual(t, r.CallerDID, "did:key:agent1")
 }
 
+// TRACE: {"suite": "CORE", "case": "1104", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "01", "title": "PendingReason_SQLite_NotFoundReturnsNil"}
 func TestPendingReason_SQLite_NotFoundReturnsNil(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -203,6 +206,7 @@ func TestPendingReason_SQLite_NotFoundReturnsNil(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "1105", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "04", "scenario": "01", "title": "PendingReason_SQLite_CompleteLifecycle"}
 func TestPendingReason_SQLite_CompleteLifecycle(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -238,6 +242,7 @@ func TestPendingReason_SQLite_CompleteLifecycle(t *testing.T) {
 	testutil.RequireEqual(t, r.Result, result)
 }
 
+// TRACE: {"suite": "CORE", "case": "1106", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "01", "title": "PendingReason_SQLite_DeniedStatus"}
 func TestPendingReason_SQLite_DeniedStatus(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -272,6 +277,7 @@ func TestPendingReason_SQLite_DeniedStatus(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "1107", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "06", "scenario": "01", "title": "PendingReason_SQLite_GetByApprovalIDFiltersNonPending"}
 func TestPendingReason_SQLite_GetByApprovalIDFiltersNonPending(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -311,6 +317,7 @@ func TestPendingReason_SQLite_GetByApprovalIDFiltersNonPending(t *testing.T) {
 	testutil.RequireEqual(t, records[0].RequestID, "reason-b")
 }
 
+// TRACE: {"suite": "CORE", "case": "1108", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "07", "scenario": "01", "title": "PendingReason_SQLite_SweepExpiresPendingEntries"}
 func TestPendingReason_SQLite_SweepExpiresPendingEntries(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -362,6 +369,7 @@ func TestPendingReason_SQLite_SweepExpiresPendingEntries(t *testing.T) {
 	testutil.RequireEqual(t, r.Status, domain.ReasonPendingApproval)
 }
 
+// TRACE: {"suite": "CORE", "case": "1109", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "08", "scenario": "01", "title": "PendingReason_SQLite_SweepDeletesOldCompletedEntries"}
 func TestPendingReason_SQLite_SweepDeletesOldCompletedEntries(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -401,6 +409,7 @@ func TestPendingReason_SQLite_SweepDeletesOldCompletedEntries(t *testing.T) {
 	_ = count
 }
 
+// TRACE: {"suite": "CORE", "case": "1110", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "09", "scenario": "01", "title": "PendingReason_SQLite_SweepSkipsResumingEntries"}
 func TestPendingReason_SQLite_SweepSkipsResumingEntries(t *testing.T) {
 	store := newSQLitePendingReasonStore(t)
 	ctx := context.Background()
@@ -443,6 +452,7 @@ func TestPendingReason_SQLite_SweepSkipsResumingEntries(t *testing.T) {
 // Mock store tests (contract semantics)
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1111", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "10", "scenario": "01", "title": "PendingReason_CreateAndGetByID"}
 func TestPendingReason_CreateAndGetByID(t *testing.T) {
 	store := newMockPendingReasonStore()
 	ctx := context.Background()
@@ -466,6 +476,7 @@ func TestPendingReason_CreateAndGetByID(t *testing.T) {
 	testutil.RequireEqual(t, r.Status, domain.ReasonPendingApproval)
 }
 
+// TRACE: {"suite": "CORE", "case": "1112", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "11", "scenario": "01", "title": "PendingReason_CallerBinding"}
 func TestPendingReason_CallerBinding(t *testing.T) {
 	store := newMockPendingReasonStore()
 	ctx := context.Background()
@@ -493,6 +504,7 @@ func TestPendingReason_CallerBinding(t *testing.T) {
 	testutil.RequireNotNil(t, r)
 }
 
+// TRACE: {"suite": "CORE", "case": "1113", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "12", "scenario": "01", "title": "PendingReason_GetByApprovalID"}
 func TestPendingReason_GetByApprovalID(t *testing.T) {
 	store := newMockPendingReasonStore()
 	ctx := context.Background()
@@ -516,6 +528,7 @@ func TestPendingReason_GetByApprovalID(t *testing.T) {
 	testutil.RequireEqual(t, records[0].RequestID, "reason-1")
 }
 
+// TRACE: {"suite": "CORE", "case": "1114", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "13", "scenario": "01", "title": "PendingReason_SecondApprovalCycle"}
 func TestPendingReason_SecondApprovalCycle(t *testing.T) {
 	store := newMockPendingReasonStore()
 	ctx := context.Background()
@@ -563,6 +576,7 @@ func TestPendingReason_SecondApprovalCycle(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "1115", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "14", "scenario": "01", "title": "PendingReason_DeniedStatus"}
 func TestPendingReason_DeniedStatus(t *testing.T) {
 	store := newMockPendingReasonStore()
 	ctx := context.Background()
@@ -586,6 +600,7 @@ func TestPendingReason_DeniedStatus(t *testing.T) {
 	testutil.RequireEqual(t, r.Error, "user denied")
 }
 
+// TRACE: {"suite": "CORE", "case": "1116", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "15", "scenario": "01", "title": "PendingReason_CompleteWithResult"}
 func TestPendingReason_CompleteWithResult(t *testing.T) {
 	store := newMockPendingReasonStore()
 	ctx := context.Background()

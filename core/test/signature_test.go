@@ -86,6 +86,7 @@ func sha256Hex(data []byte) string {
 // Valid Signature
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1274", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "01", "title": "Signature_28_ValidSignature_Accepted"}
 func TestSignature_28_ValidSignature_Accepted(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -99,6 +100,7 @@ func TestSignature_28_ValidSignature_Accepted(t *testing.T) {
 	testutil.RequireEqual(t, identity, "device-sig-001")
 }
 
+// TRACE: {"suite": "CORE", "case": "1275", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "01", "title": "Signature_28_ValidSignature_EmptyBody"}
 func TestSignature_28_ValidSignature_EmptyBody(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -115,6 +117,7 @@ func TestSignature_28_ValidSignature_EmptyBody(t *testing.T) {
 // Invalid Signature
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1276", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "01", "title": "Signature_28_InvalidSignature_Rejected"}
 func TestSignature_28_InvalidSignature_Rejected(t *testing.T) {
 	tv, _, _, did := newSignatureTestValidator(t)
 
@@ -127,6 +130,7 @@ func TestSignature_28_InvalidSignature_Rejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1277", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "01", "title": "Signature_28_WrongKey_Rejected"}
 func TestSignature_28_WrongKey_Rejected(t *testing.T) {
 	tv, _, _, did := newSignatureTestValidator(t)
 
@@ -140,6 +144,7 @@ func TestSignature_28_WrongKey_Rejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1278", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "01", "title": "Signature_28_TamperedBody_Rejected"}
 func TestSignature_28_TamperedBody_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -153,6 +158,7 @@ func TestSignature_28_TamperedBody_Rejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1279", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "01", "title": "Signature_28_TamperedPath_Rejected"}
 func TestSignature_28_TamperedPath_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -165,6 +171,7 @@ func TestSignature_28_TamperedPath_Rejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1280", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "07", "scenario": "01", "title": "Signature_28_TamperedMethod_Rejected"}
 func TestSignature_28_TamperedMethod_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -182,6 +189,7 @@ func TestSignature_28_TamperedMethod_Rejected(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1223
+// TRACE: {"suite": "CORE", "case": "1281", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "08", "scenario": "01", "title": "Signature_28_ExpiredTimestamp_Rejected"}
 func TestSignature_28_ExpiredTimestamp_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -197,6 +205,7 @@ func TestSignature_28_ExpiredTimestamp_Rejected(t *testing.T) {
 }
 
 // TST-CORE-1224
+// TRACE: {"suite": "CORE", "case": "1282", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "09", "scenario": "01", "title": "Signature_28_FutureTimestamp_Rejected"}
 func TestSignature_28_FutureTimestamp_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -211,6 +220,7 @@ func TestSignature_28_FutureTimestamp_Rejected(t *testing.T) {
 	testutil.RequireContains(t, err.Error(), "timestamp")
 }
 
+// TRACE: {"suite": "CORE", "case": "1283", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "10", "scenario": "01", "title": "Signature_28_WithinWindow_Accepted"}
 func TestSignature_28_WithinWindow_Accepted(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -226,6 +236,7 @@ func TestSignature_28_WithinWindow_Accepted(t *testing.T) {
 }
 
 // TST-CORE-1225
+// TRACE: {"suite": "CORE", "case": "1284", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "11", "scenario": "01", "title": "Signature_28_InvalidTimestampFormat_Rejected"}
 func TestSignature_28_InvalidTimestampFormat_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -242,6 +253,7 @@ func TestSignature_28_InvalidTimestampFormat_Rejected(t *testing.T) {
 // Unknown / Revoked Device
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1285", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "12", "scenario": "01", "title": "Signature_28_UnknownDID_Rejected"}
 func TestSignature_28_UnknownDID_Rejected(t *testing.T) {
 	tv, _, priv, _ := newSignatureTestValidator(t)
 
@@ -254,6 +266,7 @@ func TestSignature_28_UnknownDID_Rejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1286", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "13", "scenario": "01", "title": "Signature_28_RevokedDevice_Rejected"}
 func TestSignature_28_RevokedDevice_Rejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -273,6 +286,7 @@ func TestSignature_28_RevokedDevice_Rejected(t *testing.T) {
 // Signature Encoding
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1287", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "14", "scenario": "01", "title": "Signature_28_MalformedSignatureHex_Rejected"}
 func TestSignature_28_MalformedSignatureHex_Rejected(t *testing.T) {
 	tv, _, _, did := newSignatureTestValidator(t)
 
@@ -288,6 +302,7 @@ func TestSignature_28_MalformedSignatureHex_Rejected(t *testing.T) {
 // Pairing with Ed25519 Public Key
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1288", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "15", "scenario": "01", "title": "Pairing_28_CompletePairingWithKey_Success"}
 func TestPairing_28_CompletePairingWithKey_Success(t *testing.T) {
 	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -315,6 +330,7 @@ func TestPairing_28_CompletePairingWithKey_Success(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "1289", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "16", "scenario": "01", "title": "Pairing_28_CompletePairingWithKey_InvalidCode"}
 func TestPairing_28_CompletePairingWithKey_InvalidCode(t *testing.T) {
 	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -327,6 +343,7 @@ func TestPairing_28_CompletePairingWithKey_InvalidCode(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1290", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "17", "scenario": "01", "title": "Pairing_28_CompletePairingWithKey_InvalidMultibase"}
 func TestPairing_28_CompletePairingWithKey_InvalidMultibase(t *testing.T) {
 	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -339,6 +356,7 @@ func TestPairing_28_CompletePairingWithKey_InvalidMultibase(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1291", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "18", "scenario": "01", "title": "Pairing_28_CompletePairingWithKey_CodeAlreadyUsed"}
 func TestPairing_28_CompletePairingWithKey_CodeAlreadyUsed(t *testing.T) {
 	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -363,6 +381,7 @@ func TestPairing_28_CompletePairingWithKey_CodeAlreadyUsed(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TRACE: {"suite": "CORE", "case": "1292", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "19", "scenario": "01", "title": "Pairing_28_CompletePairingWithKey_DeviceAppearsInList"}
 func TestPairing_28_CompletePairingWithKey_DeviceAppearsInList(t *testing.T) {
 	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -398,6 +417,7 @@ func TestPairing_28_CompletePairingWithKey_DeviceAppearsInList(t *testing.T) {
 // Middleware Integration (Ed25519 → Bearer Fallback)
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1293", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "20", "scenario": "01", "title": "Signature_28_MockValidator_FallsBackToBearerToken"}
 func TestSignature_28_MockValidator_FallsBackToBearerToken(t *testing.T) {
 	// Verify the real Auth.Handler middleware: when X-DID headers are absent,
 	// the middleware falls back to Bearer token auth via IdentifyToken.
@@ -439,6 +459,7 @@ func TestSignature_28_MockValidator_FallsBackToBearerToken(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1129
+// TRACE: {"suite": "CORE", "case": "1294", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "08", "title": "AgentRevocationTakesImmediateEffect"}
 func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 	// Requirement (§34.2):
 	//   When an agent DID is revoked, the revocation must take immediate effect.
@@ -452,6 +473,7 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 	//   4. Revocation is immediate — no delay between revoke and rejection
 	//   5. Re-registration after revocation restores access (contrast)
 
+	// TRACE: {"suite": "CORE", "case": "1295", "section": "34", "sectionName": "Thesis: Loyalty", "title": "valid_before_revocation_rejected_after"}
 	t.Run("valid_before_revocation_rejected_after", func(t *testing.T) {
 		tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -480,6 +502,7 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		testutil.RequireContains(t, err.Error(), "revoked")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1296", "section": "34", "sectionName": "Thesis: Loyalty", "title": "revocation_does_not_affect_other_agents"}
 	t.Run("revocation_does_not_affect_other_agents", func(t *testing.T) {
 		// Register two agents.
 		tv := auth.NewDefaultTokenValidator()
@@ -516,6 +539,7 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1297", "section": "34", "sectionName": "Thesis: Loyalty", "title": "revocation_is_immediate_no_cache_delay"}
 	t.Run("revocation_is_immediate_no_cache_delay", func(t *testing.T) {
 		tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -538,6 +562,7 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		testutil.RequireContains(t, err.Error(), "revoked")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1298", "section": "34", "sectionName": "Thesis: Loyalty", "title": "multiple_endpoints_all_rejected_after_revocation"}
 	t.Run("multiple_endpoints_all_rejected_after_revocation", func(t *testing.T) {
 		tv, _, priv, did := newSignatureTestValidator(t)
 

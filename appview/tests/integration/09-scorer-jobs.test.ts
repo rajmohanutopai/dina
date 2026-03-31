@@ -132,6 +132,7 @@ async function insertSubjectScore(
 // §9.1 Refresh Profiles — Incremental / Fix 9 (IT-SC-001..010) — 10 tests
 // ---------------------------------------------------------------------------
 describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0446", "section": "01", "sectionName": "General", "title": "IT-SC-001: Fix 9: only dirty profiles processed"}
   it('IT-SC-001: Fix 9: only dirty profiles processed', async () => {
     // Create 5 dirty and 5 clean profiles
     for (let i = 0; i < 5; i++) {
@@ -156,6 +157,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0447", "section": "01", "sectionName": "General", "title": "IT-SC-002: Fix 9: clean profiles not updated"}
   it('IT-SC-002: Fix 9: clean profiles not updated', async () => {
     const oldDate = new Date('2025-01-01T00:00:00Z')
     await insertProfile('did:plc:clean', { needsRecalc: false, computedAt: oldDate })
@@ -167,6 +169,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     expect(p.computedAt.getTime()).toBe(oldDate.getTime())
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0448", "section": "01", "sectionName": "General", "title": "IT-SC-003: Fix 9: dirty flag flipped to false after processing"}
   it('IT-SC-003: Fix 9: dirty flag flipped to false after processing', async () => {
     await insertProfile('did:plc:dirty', { needsRecalc: true, computedAt: new Date(0) })
 
@@ -178,6 +181,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     expect(p.computedAt.getTime()).toBeGreaterThan(Date.now() - 10000)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0449", "section": "01", "sectionName": "General", "title": "IT-SC-004: Fix 9: BATCH_SIZE respected"}
   it('IT-SC-004: Fix 9: BATCH_SIZE respected', async () => {
     // We cannot easily test 10,000 profiles, but we verify the contract:
     // Insert more than a reasonable test batch and confirm the function runs
@@ -193,6 +197,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     expect(result.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0450", "section": "01", "sectionName": "General", "title": "IT-SC-005: Fix 9: overflow detection"}
   it('IT-SC-005: Fix 9: overflow detection', async () => {
     // The batch size is 5000, we just verify the job handles multiple profiles
     // Insert a small set and check they are all processed
@@ -206,6 +211,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     expect(remaining.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0451", "section": "01", "sectionName": "General", "title": "IT-SC-006: no dirty profiles \u2192 no-op"}
   it('IT-SC-006: no dirty profiles → no-op', async () => {
     // All profiles clean
     await insertProfile('did:plc:clean1', { needsRecalc: false })
@@ -215,6 +221,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     await expect(refreshProfiles(db)).resolves.toBeUndefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0452", "section": "01", "sectionName": "General", "title": "IT-SC-007: new DID \u2192 profile created by dirty flag"}
   it('IT-SC-007: new DID → profile created by dirty flag', async () => {
     // Insert a profile via the markDirty pattern (needsRecalc = true, computedAt = epoch)
     await insertProfile('did:plc:new', { needsRecalc: true, computedAt: new Date(0) })
@@ -226,6 +233,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     expect(p.overallTrustScore).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0453", "section": "01", "sectionName": "General", "title": "IT-SC-008: profile fields computed correctly"}
   it('IT-SC-008: profile fields computed correctly', async () => {
     // DID with attestations about it
     const testDid = 'did:plc:scored'
@@ -270,6 +278,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     expect(p.overallTrustScore).toBeGreaterThan(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0454", "section": "01", "sectionName": "General", "title": "IT-SC-009: overallTrustScore computed via computeTrustScore"}
   it('IT-SC-009: overallTrustScore computed via computeTrustScore', async () => {
     const testDid = 'did:plc:trusttest'
     await insertProfile(testDid, { needsRecalc: true, computedAt: new Date(0) })
@@ -288,6 +297,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
     expect(p.overallTrustScore).toBeLessThanOrEqual(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0455", "section": "01", "sectionName": "General", "title": "IT-SC-010: error in one profile doesn\\"}
   it('IT-SC-010: error in one profile doesn\'t stop batch', async () => {
     // Insert multiple dirty profiles, all should be processed despite any individual issues
     for (let i = 0; i < 5; i++) {
@@ -307,6 +317,7 @@ describe('§9.1 Refresh Profiles — Incremental (Fix 9)', () => {
 // §9.2 Refresh Subject Scores — Incremental / Fix 9 (IT-SC-011..016) — 6 tests
 // ---------------------------------------------------------------------------
 describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0456", "section": "01", "sectionName": "General", "title": "IT-SC-011: Fix 9: only dirty subjects processed"}
   it('IT-SC-011: Fix 9: only dirty subjects processed', async () => {
     const sub1 = 'sub_dirty1'
     const sub2 = 'sub_dirty2'
@@ -332,6 +343,7 @@ describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
     expect(s3.weightedScore).toBeCloseTo(0.9)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0457", "section": "01", "sectionName": "General", "title": "IT-SC-012: Fix 9: dirty flag flipped"}
   it('IT-SC-012: Fix 9: dirty flag flipped', async () => {
     const subId = 'sub_flip'
     await insertSubject(subId)
@@ -344,6 +356,7 @@ describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
     expect(s.computedAt.getTime()).toBeGreaterThan(Date.now() - 10000)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0458", "section": "01", "sectionName": "General", "title": "IT-SC-013: subject score aggregation"}
   it('IT-SC-013: subject score aggregation', async () => {
     // Subject with 8 positive, 2 negative attestations
     const subId = 'sub_agg'
@@ -378,6 +391,7 @@ describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
     expect(s.weightedScore).toBeGreaterThan(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0459", "section": "01", "sectionName": "General", "title": "IT-SC-014: dimension summary aggregation"}
   it('IT-SC-014: dimension summary aggregation', async () => {
     const subId = 'sub_dim'
     await insertSubject(subId)
@@ -406,6 +420,7 @@ describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
     expect(dimSummary.quality.exceeded).toBe(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0460", "section": "01", "sectionName": "General", "title": "IT-SC-015: attestation velocity computed"}
   it('IT-SC-015: attestation velocity computed', async () => {
     const subId = 'sub_velocity'
     await insertSubject(subId)
@@ -434,6 +449,7 @@ describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
     expect(s.attestationVelocity).toBeLessThanOrEqual(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0461", "section": "01", "sectionName": "General", "title": "IT-SC-016: verified attestation count"}
   it('IT-SC-016: verified attestation count', async () => {
     const subId = 'sub_verified'
     await insertSubject(subId)
@@ -464,6 +480,7 @@ describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
 // §9.3 Trust Score Convergence / Fix 12 (IT-SC-017..021) — 5 tests
 // ---------------------------------------------------------------------------
 describe('§9.3 Trust Score Convergence (Fix 12)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0462", "section": "01", "sectionName": "General", "title": "IT-SC-017: Fix 12: iterative scoring converges within 5 ticks"}
   it('IT-SC-017: Fix 12: iterative scoring converges within 5 ticks', async () => {
     // Network of 10 DIDs, run refreshProfiles repeatedly
     for (let i = 0; i < 10; i++) {
@@ -499,6 +516,7 @@ describe('§9.3 Trust Score Convergence (Fix 12)', () => {
     expect(maxDelta).toBeLessThan(0.05)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0463", "section": "01", "sectionName": "General", "title": "IT-SC-018: Fix 12: unvouched sybils \u2192 zero weight"}
   it('IT-SC-018: Fix 12: unvouched sybils → zero weight', async () => {
     // 10 sybil DIDs with no vouches all attest about a subject
     const subId = 'sub_sybil_test'
@@ -526,6 +544,7 @@ describe('§9.3 Trust Score Convergence (Fix 12)', () => {
     expect(p.overallTrustScore!).toBeLessThan(0.3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0464", "section": "01", "sectionName": "General", "title": "IT-SC-019: Fix 12: one real vouch breaks sybil ceiling"}
   it('IT-SC-019: Fix 12: one real vouch breaks sybil ceiling', async () => {
     const subId = 'sub_vouch_break'
     await insertSubject(subId, { did: 'did:plc:vb_target' })
@@ -560,6 +579,7 @@ describe('§9.3 Trust Score Convergence (Fix 12)', () => {
     expect(p.totalAttestationsAbout).toBe(6) // 5 sybil + 1 real
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0465", "section": "01", "sectionName": "General", "title": "IT-SC-020: Fix 12: damping factor prevents collapse"}
   it('IT-SC-020: Fix 12: damping factor prevents collapse', async () => {
     // Profile with no inputs at all
     await insertProfile('did:plc:empty', { needsRecalc: true, computedAt: new Date(0) })
@@ -573,6 +593,7 @@ describe('§9.3 Trust Score Convergence (Fix 12)', () => {
     expect(p.overallTrustScore).toBeGreaterThanOrEqual(0.015)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0466", "section": "01", "sectionName": "General", "title": "IT-SC-021: Fix 12: vouch-gating \u2014 scored but unvouched = zero"}
   it('IT-SC-021: Fix 12: vouch-gating — scored but unvouched = zero', async () => {
     // DID has trust score 0.8 but zero vouches
     const subId = 'sub_vouchgate'
@@ -604,6 +625,7 @@ describe('§9.3 Trust Score Convergence (Fix 12)', () => {
 // §9.4 Detect Coordination (IT-SC-022..025) — 4 tests
 // ---------------------------------------------------------------------------
 describe('§9.4 Detect Coordination', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0467", "section": "01", "sectionName": "General", "title": "IT-SC-022: temporal burst detected"}
   it('IT-SC-022: temporal burst detected', async () => {
     // 10 different DIDs attest about the same subject within 1 hour, same sentiment
     const subId = 'sub_coord'
@@ -628,6 +650,7 @@ describe('§9.4 Detect Coordination', () => {
     expect(event.involvedDids.length).toBeGreaterThanOrEqual(3) // SYBIL_MIN_CLUSTER_SIZE
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0468", "section": "01", "sectionName": "General", "title": "IT-SC-023: normal traffic not flagged"}
   it('IT-SC-023: normal traffic not flagged', async () => {
     // 2 attestations from different DIDs (below SYBIL_MIN_CLUSTER_SIZE = 3)
     const subId = 'sub_normal'
@@ -650,6 +673,7 @@ describe('§9.4 Detect Coordination', () => {
     expect(events.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0469", "section": "01", "sectionName": "General", "title": "IT-SC-024: coordination window \u2014 48 hours"}
   it('IT-SC-024: coordination window — 48 hours', async () => {
     // Events outside 48-hour window should not be considered
     const subId = 'sub_window'
@@ -672,6 +696,7 @@ describe('§9.4 Detect Coordination', () => {
     expect(events.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0470", "section": "01", "sectionName": "General", "title": "IT-SC-025: coordination flags propagated to profiles"}
   it('IT-SC-025: coordination flags propagated to profiles', async () => {
     // Coordination is detected, verify anomaly event created
     const subId = 'sub_propflag'
@@ -703,6 +728,7 @@ describe('§9.4 Detect Coordination', () => {
 // §9.5 Detect Sybil (IT-SC-026..028) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§9.5 Detect Sybil', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0471", "section": "01", "sectionName": "General", "title": "IT-SC-026: sybil cluster \u2014 minimum 3 DIDs"}
   it('IT-SC-026: sybil cluster — minimum 3 DIDs', async () => {
     // 3 quarantined DIDs with mutual trust edges
     for (let i = 0; i < 3; i++) {
@@ -730,6 +756,7 @@ describe('§9.5 Detect Sybil', () => {
     expect(events[0].involvedDids.length).toBeGreaterThanOrEqual(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0472", "section": "01", "sectionName": "General", "title": "IT-SC-027: 2 correlated DIDs \u2014 below threshold"}
   it('IT-SC-027: 2 correlated DIDs — below threshold', async () => {
     // Only 2 quarantined DIDs with mutual edges — below SYBIL_MIN_CLUSTER_SIZE = 3
     await insertProfile('did:plc:pair0', { needsRecalc: false, coordinationFlagCount: 1 })
@@ -751,6 +778,7 @@ describe('§9.5 Detect Sybil', () => {
     expect(events.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0473", "section": "01", "sectionName": "General", "title": "IT-SC-028: quarantined DIDs accelerate detection"}
   it('IT-SC-028: quarantined DIDs accelerate detection', async () => {
     // DIDs with coordinationFlagCount > 0 are included in sybil analysis
     // Non-quarantined DIDs are not checked
@@ -787,6 +815,7 @@ describe('§9.5 Detect Sybil', () => {
 // §9.6 Process Tombstones (IT-SC-029..030) — 2 tests
 // ---------------------------------------------------------------------------
 describe('§9.6 Process Tombstones', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0474", "section": "01", "sectionName": "General", "title": "IT-SC-029: tombstone patterns aggregated per DID"}
   it('IT-SC-029: tombstone patterns aggregated per DID', async () => {
     const testDid = 'did:plc:tombstone_author'
     await insertProfile(testDid, { needsRecalc: false })
@@ -810,6 +839,7 @@ describe('§9.6 Process Tombstones', () => {
     expect(p.disputedThenDeletedCount).toBe(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0475", "section": "01", "sectionName": "General", "title": "IT-SC-030: tombstone threshold \u2192 trust penalty"}
   it('IT-SC-030: tombstone threshold → trust penalty', async () => {
     const testDid = 'did:plc:tomb_penalty'
     await insertProfile(testDid, { needsRecalc: false, overallTrustScore: 0.8 })
@@ -841,6 +871,7 @@ describe('§9.6 Process Tombstones', () => {
 // §9.7 Decay Scores (IT-SC-031..032) — 2 tests
 // ---------------------------------------------------------------------------
 describe('§9.7 Decay Scores', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0476", "section": "01", "sectionName": "General", "title": "IT-SC-031: old scores decayed"}
   it('IT-SC-031: old scores decayed', async () => {
     // Subject with no recent activity — computedAt 60 days ago
     const oldDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
@@ -871,6 +902,7 @@ describe('§9.7 Decay Scores', () => {
     expect(p.overallTrustScore).toBeCloseTo(0.7 * 0.995, 2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0477", "section": "01", "sectionName": "General", "title": "IT-SC-032: recent scores not decayed"}
   it('IT-SC-032: recent scores not decayed', async () => {
     // Subject with fresh computedAt (today)
     const subId = 'sub_fresh'
@@ -903,6 +935,7 @@ describe('§9.7 Decay Scores', () => {
 // §9.8 Cleanup Expired (IT-SC-033..035) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§9.8 Cleanup Expired', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0478", "section": "01", "sectionName": "General", "title": "IT-SC-033: expired delegations removed"}
   it('IT-SC-033: expired delegations removed', async () => {
     const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000) // yesterday
 
@@ -923,6 +956,7 @@ describe('§9.8 Cleanup Expired', () => {
     expect(remaining.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0479", "section": "01", "sectionName": "General", "title": "IT-SC-034: expired review requests removed"}
   it('IT-SC-034: expired review requests removed', async () => {
     const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000) // yesterday
 
@@ -942,6 +976,7 @@ describe('§9.8 Cleanup Expired', () => {
     expect(remaining.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0480", "section": "01", "sectionName": "General", "title": "IT-SC-035: non-expired records untouched"}
   it('IT-SC-035: non-expired records untouched', async () => {
     const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // next week
 
@@ -980,6 +1015,7 @@ describe('§9.8 Cleanup Expired', () => {
 // §9.9 Refresh Reviewer Stats (IT-SC-036..038) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§9.9 Refresh Reviewer Stats', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0481", "section": "01", "sectionName": "General", "title": "IT-SC-036: reviewer stats computed from attestations"}
   it('IT-SC-036: reviewer stats computed from attestations', async () => {
     const reviewerDid = 'did:plc:reviewer'
     await insertProfile(reviewerDid, { needsRecalc: true, computedAt: new Date(0) })
@@ -1017,6 +1053,7 @@ describe('§9.9 Refresh Reviewer Stats', () => {
     expect(p.revocationCount).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0482", "section": "01", "sectionName": "General", "title": "IT-SC-037: reviewer stats \u2014 agent detection"}
   it('IT-SC-037: reviewer stats — agent detection', async () => {
     const agentDid = 'did:plc:agent'
     await insertProfile(agentDid, { needsRecalc: true, computedAt: new Date(0) })
@@ -1038,6 +1075,7 @@ describe('§9.9 Refresh Reviewer Stats', () => {
     expect(p.evidenceRate).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0483", "section": "01", "sectionName": "General", "title": "IT-SC-038: reviewer stats \u2014 active domains extracted"}
   it('IT-SC-038: reviewer stats — active domains extracted', async () => {
     const reviewerDid = 'did:plc:domreviewer'
     await insertProfile(reviewerDid, { needsRecalc: true, computedAt: new Date(0) })
@@ -1061,6 +1099,7 @@ describe('§9.9 Refresh Reviewer Stats', () => {
 // §9.10 Refresh Domain Scores (IT-SC-039..041) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§9.10 Refresh Domain Scores', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0484", "section": "01", "sectionName": "General", "title": "IT-SC-039: domain scores computed per DID per domain"}
   it('IT-SC-039: domain scores computed per DID per domain', async () => {
     const testDid = 'did:plc:domscored'
     await insertProfile(testDid, { needsRecalc: false, overallTrustScore: 0.6 })
@@ -1109,6 +1148,7 @@ describe('§9.10 Refresh Domain Scores', () => {
     expect(techScore[0].attestationCount).toBe(5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0485", "section": "01", "sectionName": "General", "title": "IT-SC-040: domain score uses domain-specific attestations only"}
   it('IT-SC-040: domain score uses domain-specific attestations only', async () => {
     const testDid = 'did:plc:domspecific'
     await insertProfile(testDid, { needsRecalc: false, overallTrustScore: 0.6 })
@@ -1145,6 +1185,7 @@ describe('§9.10 Refresh Domain Scores', () => {
     expect(foodScore.needsRecalc).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0486", "section": "01", "sectionName": "General", "title": "IT-SC-041: domain scores \u2014 DID with no domain attestations"}
   it('IT-SC-041: domain scores — DID with no domain attestations', async () => {
     const testDid = 'did:plc:nodom'
     await insertProfile(testDid, { needsRecalc: false, overallTrustScore: 0.5 })
@@ -1179,6 +1220,7 @@ describe('§9.10 Refresh Domain Scores', () => {
 // §9.6+ Additional Tombstone Tests (AppView Fixes)
 // ---------------------------------------------------------------------------
 describe('§9.6+ Additional Tombstone Tests (AppView Fixes)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0487", "section": "01", "sectionName": "General", "title": "IT-SC-042: MEDIUM-08: process-tombstones sets coordinationFlagCount idempotently"}
   it('IT-SC-042: MEDIUM-08: process-tombstones sets coordinationFlagCount idempotently', async () => {
     // Create a DID profile and some tombstones
     await insertProfile('did:plc:tomb1', { needsRecalc: false, coordinationFlagCount: 0 })
@@ -1220,6 +1262,7 @@ describe('§9.6+ Additional Tombstone Tests (AppView Fixes)', () => {
 // §9.5+ Additional Sybil Detection Tests (AppView Fixes)
 // ---------------------------------------------------------------------------
 describe('§9.5+ Additional Sybil Detection Tests (AppView Fixes)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0488", "section": "01", "sectionName": "General", "title": "IT-SC-043: MEDIUM-07: detect-sybil resolves DIDs via subjects table join"}
   it('IT-SC-043: MEDIUM-07: detect-sybil resolves DIDs via subjects table join', async () => {
     // Create a flag targeting a subject (not a DID directly)
     await insertSubject('sub-sybil1', { did: 'did:plc:target1', name: 'Sybil Target' })
@@ -1249,6 +1292,7 @@ describe('§9.5+ Additional Sybil Detection Tests (AppView Fixes)', () => {
 // §9.1+ Additional Profile Tests (AppView Fixes)
 // ---------------------------------------------------------------------------
 describe('§9.1+ Additional Profile Tests (AppView Fixes)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0489", "section": "01", "sectionName": "General", "title": "IT-SC-044: HIGH-10: refresh-profiles uses verifications table for isVerified"}
   it('IT-SC-044: HIGH-10: refresh-profiles uses verifications table for isVerified', async () => {
     // Create a DID profile and attestation
     await insertProfile('did:plc:verified', { needsRecalc: true })

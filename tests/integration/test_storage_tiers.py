@@ -46,6 +46,7 @@ class TestTier0IdentityVault:
     """Tier 0 holds the root keypair, BIP-39 mnemonic, and SLIP-0010 derivation."""
 
 # TST-INT-204
+    # TRACE: {"suite": "INT", "case": "0204", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "01", "title": "root_keypair_encrypted_at_rest"}
     def test_root_keypair_encrypted_at_rest(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -84,6 +85,7 @@ class TestTier0IdentityVault:
         )
 
 # TST-INT-182
+    # TRACE: {"suite": "INT", "case": "0182", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "02", "title": "bip39_recovery_mnemonic_exists"}
     def test_bip39_recovery_mnemonic_exists(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -115,6 +117,7 @@ class TestTier0IdentityVault:
         assert other_consumer_key != consumer_key
 
 # TST-INT-197
+    # TRACE: {"suite": "INT", "case": "0197", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "03", "title": "bip32_derivation_produces_child_keys"}
     def test_bip32_derivation_produces_child_keys(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -131,6 +134,7 @@ class TestTier0IdentityVault:
         assert health_key != mock_identity.root_private_key
 
 # TST-INT-207
+    # TRACE: {"suite": "INT", "case": "0207", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "04", "title": "cryptographically_unlinkable_personas"}
     def test_cryptographically_unlinkable_personas(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -169,6 +173,7 @@ class TestTier0IdentityVault:
         assert other_consumer.derived_key != consumer.derived_key
 
 # TST-INT-183
+    # TRACE: {"suite": "INT", "case": "0183", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "05", "title": "root_key_stored_in_tier_0"}
     def test_root_key_stored_in_tier_0(
         self, mock_vault: MockVault, mock_identity: MockIdentity
     ) -> None:
@@ -189,6 +194,7 @@ class TestTier0IdentityVault:
             assert mock_vault.retrieve(tier=tier, key="root_key") is None
 
 # TST-INT-195
+    # TRACE: {"suite": "INT", "case": "0195", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "06", "title": "device_key_derivation"}
     def test_device_key_derivation(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -221,6 +227,7 @@ class TestEncryptionVerification:
     SQLITE_MAGIC = b"SQLite format 3\x00"
 
 # TST-INT-190
+    # TRACE: {"suite": "INT", "case": "0190", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "01", "title": "encrypted_vault_has_no_sqlite_header"}
     def test_encrypted_vault_has_no_sqlite_header(
         self, mock_vault: MockVault, mock_identity: MockIdentity
     ) -> None:
@@ -242,6 +249,7 @@ class TestEncryptionVerification:
         assert len(header) == 16
 
 # TST-INT-201
+    # TRACE: {"suite": "INT", "case": "0201", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "02", "title": "all_persona_vaults_encrypted"}
     def test_all_persona_vaults_encrypted(
         self, mock_vault: MockVault, mock_identity: MockIdentity
     ) -> None:
@@ -260,6 +268,7 @@ class TestEncryptionVerification:
             )
 
 # TST-INT-189
+    # TRACE: {"suite": "INT", "case": "0189", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "03", "title": "empty_vault_would_fail_check"}
     def test_empty_vault_would_fail_check(
         self, mock_vault: MockVault
     ) -> None:
@@ -281,6 +290,7 @@ class TestTier1Vault:
     """Tier 1 is the personal vault: encrypted, FTS5, per-persona partition."""
 
 # TST-INT-119
+    # TRACE: {"suite": "INT", "case": "0119", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "01", "title": "data_encrypted_with_persona_key"}
     def test_data_encrypted_with_persona_key(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -325,6 +335,7 @@ class TestTier1Vault:
         assert retrieved == encrypted
 
 # TST-INT-188
+    # TRACE: {"suite": "INT", "case": "0188", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "02", "title": "fts5_search_returns_matching_keys"}
     def test_fts5_search_returns_matching_keys(
         self, mock_vault: MockVault
     ) -> None:
@@ -363,6 +374,7 @@ class TestTier1Vault:
         assert "note_beta" not in results
 
 # TST-INT-217
+    # TRACE: {"suite": "INT", "case": "0217", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "03", "title": "fts5_search_case_insensitive"}
     def test_fts5_search_case_insensitive(
         self, mock_vault: MockVault
     ) -> None:
@@ -374,6 +386,7 @@ class TestTier1Vault:
         assert mock_vault.search_fts("Miller") == ["doc_1"]
 
 # TST-INT-198
+    # TRACE: {"suite": "INT", "case": "0198", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "04", "title": "per_persona_partition_isolation"}
     def test_per_persona_partition_isolation(
         self, mock_vault: MockVault
     ) -> None:
@@ -403,6 +416,7 @@ class TestTier1Vault:
         assert "hobby" not in fin_partition
 
 # TST-INT-211
+    # TRACE: {"suite": "INT", "case": "0211", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "05", "title": "partition_returns_copy_not_reference"}
     def test_partition_returns_copy_not_reference(
         self, mock_vault: MockVault
     ) -> None:
@@ -419,6 +433,7 @@ class TestTier1Vault:
         assert original == "val1"
 
 # TST-INT-187
+    # TRACE: {"suite": "INT", "case": "0187", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "06", "title": "multiple_entries_same_persona"}
     def test_multiple_entries_same_persona(
         self, mock_vault: MockVault
     ) -> None:
@@ -443,6 +458,7 @@ class TestTier4Staging:
     """Tier 4 is ephemeral staging: drafts and payment intents, auto-expire."""
 
 # TST-INT-175
+    # TRACE: {"suite": "INT", "case": "0175", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "04", "scenario": "01", "title": "drafts_stored_in_staging"}
     def test_drafts_stored_in_staging(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -463,6 +479,7 @@ class TestTier4Staging:
         assert not retrieved.sent
 
 # TST-INT-213
+    # TRACE: {"suite": "INT", "case": "0213", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "04", "scenario": "02", "title": "auto_expire_72h"}
     def test_auto_expire_72h(self, mock_staging: MockStagingTier) -> None:
         """Drafts auto-expire after 72 hours (259200 seconds)."""
         now = time.time()
@@ -493,6 +510,7 @@ class TestTier4Staging:
         assert expired_count == 1
 
 # TST-INT-206
+    # TRACE: {"suite": "INT", "case": "0206", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "04", "scenario": "03", "title": "payment_intents_stored"}
     def test_payment_intents_stored(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -526,6 +544,7 @@ class TestTier4Staging:
         assert mock_staging.get("pay_nonexistent") is None
 
 # TST-INT-561
+    # TRACE: {"suite": "INT", "case": "0561", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "04", "scenario": "04", "title": "payment_intent_also_expires"}
     def test_payment_intent_also_expires(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -550,6 +569,7 @@ class TestTier4Staging:
         assert mock_staging.get("pay_expire") is None
 
 # TST-INT-562
+    # TRACE: {"suite": "INT", "case": "0562", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "04", "scenario": "05", "title": "multiple_items_in_staging"}
     def test_multiple_items_in_staging(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -578,6 +598,7 @@ class TestTier4Staging:
         assert expired == 8
 
 # TST-INT-563
+    # TRACE: {"suite": "INT", "case": "0563", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "04", "scenario": "06", "title": "staging_get_returns_none_for_missing"}
     def test_staging_get_returns_none_for_missing(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -593,6 +614,7 @@ class TestTier5DeepArchive:
     """Tier 5 is deep archive: encrypted, immutable, but deletable."""
 
 # TST-INT-216
+    # TRACE: {"suite": "INT", "case": "0216", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "01", "title": "encrypted_snapshots"}
     def test_encrypted_snapshots(self, mock_vault: MockVault) -> None:
         """Vault snapshots are created for archival purposes."""
         # Pre-condition: empty vault snapshot has tiers but no data in tier 1
@@ -622,6 +644,7 @@ class TestTier5DeepArchive:
         assert len(snapshot["tiers"].get(2, {})) == 0
 
 # TST-INT-209
+    # TRACE: {"suite": "INT", "case": "0209", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "02", "title": "immutable_archive"}
     def test_immutable_archive(self, mock_vault: MockVault) -> None:
         """Archived data in Tier 5 is stored and cannot be accidentally
         overwritten by a Tier 1 store.
@@ -659,6 +682,7 @@ class TestTier5DeepArchive:
         assert as_dict(mock_vault.retrieve(tier=5, key="archive_2025"))["records"] == 1200
 
 # TST-INT-123
+    # TRACE: {"suite": "INT", "case": "0123", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "03", "title": "right_to_delete_still_works"}
     def test_right_to_delete_still_works(
         self, mock_vault: MockVault
     ) -> None:
@@ -679,6 +703,7 @@ class TestTier5DeepArchive:
         assert mock_vault.retrieve(tier=5, key="personal_history") is None
 
 # TST-INT-178
+    # TRACE: {"suite": "INT", "case": "0178", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "04", "title": "delete_nonexistent_returns_false"}
     def test_delete_nonexistent_returns_false(
         self, mock_vault: MockVault
     ) -> None:
@@ -687,6 +712,7 @@ class TestTier5DeepArchive:
         assert result is False
 
 # TST-INT-208
+    # TRACE: {"suite": "INT", "case": "0208", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "05", "title": "delete_removes_from_all_partitions_and_fts"}
     def test_delete_removes_from_all_partitions_and_fts(
         self, mock_vault: MockVault
     ) -> None:
@@ -708,6 +734,7 @@ class TestTier5DeepArchive:
                                    persona=PersonaType.HEALTH) is None
 
 # TST-INT-184
+    # TRACE: {"suite": "INT", "case": "0184", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "06", "title": "snapshot_is_point_in_time"}
     def test_snapshot_is_point_in_time(self, mock_vault: MockVault) -> None:
         """A snapshot captures the vault state at the moment it is taken.
 
@@ -731,6 +758,7 @@ class TestTier5DeepArchive:
         assert "after_snap" not in snapshot["tiers"][1]
 
 # TST-INT-125
+    # TRACE: {"suite": "INT", "case": "0125", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "05", "scenario": "07", "title": "archive_with_persona_encryption"}
     def test_archive_with_persona_encryption(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -773,21 +801,25 @@ class TestSQLiteConcurrentAccess:
     # --- PRAGMA contract ---
 
 # TST-INT-202
+    # TRACE: {"suite": "INT", "case": "0202", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "01", "title": "wal_mode_configured"}
     def test_wal_mode_configured(self, mock_vault: MockVault) -> None:
         """Vault must use WAL journal mode for concurrent read access."""
         assert mock_vault.PRAGMAS["journal_mode"] == "WAL"
 
 # TST-INT-564
+    # TRACE: {"suite": "INT", "case": "0564", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "02", "title": "busy_timeout_configured"}
     def test_busy_timeout_configured(self, mock_vault: MockVault) -> None:
         """busy_timeout must be set to avoid immediate SQLITE_BUSY errors."""
         assert mock_vault.PRAGMAS["busy_timeout"] == 5000
 
 # TST-INT-122
+    # TRACE: {"suite": "INT", "case": "0122", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "03", "title": "synchronous_normal"}
     def test_synchronous_normal(self, mock_vault: MockVault) -> None:
         """synchronous=NORMAL is safe in WAL mode and faster than FULL."""
         assert mock_vault.PRAGMAS["synchronous"] == "NORMAL"
 
 # TST-INT-203
+    # TRACE: {"suite": "INT", "case": "0203", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "04", "title": "foreign_keys_on"}
     def test_foreign_keys_on(self, mock_vault: MockVault) -> None:
         """Foreign keys must be enforced to prevent orphaned data."""
         assert mock_vault.PRAGMAS["foreign_keys"] == "ON"
@@ -795,6 +827,7 @@ class TestSQLiteConcurrentAccess:
     # --- Single-writer pattern ---
 
 # TST-INT-210
+    # TRACE: {"suite": "INT", "case": "0210", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "05", "title": "single_write_increments_tx_count"}
     def test_single_write_increments_tx_count(self, mock_vault: MockVault) -> None:
         """Each individual store() is one transaction."""
         mock_vault.store(1, "key_a", "val_a")
@@ -803,6 +836,7 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._tx_count == 2
 
 # TST-INT-199
+    # TRACE: {"suite": "INT", "case": "0199", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "06", "title": "reads_never_blocked_by_writes"}
     def test_reads_never_blocked_by_writes(self, mock_vault: MockVault) -> None:
         """Reads use the read pool and succeed even during writes.
 
@@ -841,6 +875,7 @@ class TestSQLiteConcurrentAccess:
     # --- Batch ingestion ---
 
 # TST-INT-565
+    # TRACE: {"suite": "INT", "case": "0565", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "07", "title": "batch_store_one_transaction"}
     def test_batch_store_one_transaction(self, mock_vault: MockVault) -> None:
         """store_batch() writes N items in a single transaction."""
         items = [(f"batch_{i}", {"data": i}) for i in range(50)]
@@ -851,6 +886,7 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._tx_count == 1      # but only 1 transaction
 
 # TST-INT-124
+    # TRACE: {"suite": "INT", "case": "0124", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "08", "title": "batch_store_emits_notification"}
     def test_batch_store_emits_notification(self, mock_vault: MockVault) -> None:
         """Each batch emits one brain notification (not one per item)."""
         items = [(f"notif_{i}", {"data": i}) for i in range(100)]
@@ -862,6 +898,7 @@ class TestSQLiteConcurrentAccess:
         assert notif["persona"] == PersonaType.PROFESSIONAL
 
 # TST-INT-566
+    # TRACE: {"suite": "INT", "case": "0566", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "09", "title": "batch_data_readable_after_commit"}
     def test_batch_data_readable_after_commit(self, mock_vault: MockVault) -> None:
         """All items in a batch are readable after the batch commits."""
         items = [(f"read_{i}", f"value_{i}") for i in range(10)]
@@ -874,6 +911,7 @@ class TestSQLiteConcurrentAccess:
             ) == f"value_{i}"
 
 # TST-INT-567
+    # TRACE: {"suite": "INT", "case": "0567", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "10", "title": "batch_size_is_100"}
     def test_batch_size_is_100(self, mock_vault: MockVault) -> None:
         """Default batch size for ingestion is 100 items."""
         assert mock_vault.BATCH_SIZE == 100
@@ -881,6 +919,7 @@ class TestSQLiteConcurrentAccess:
     # --- Connector batch ingestion ---
 
 # TST-INT-218
+    # TRACE: {"suite": "INT", "case": "0218", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "11", "title": "connector_batch_ingest_uses_batches"}
     def test_connector_batch_ingest_uses_batches(
         self, mock_vault: MockVault
     ) -> None:
@@ -904,6 +943,7 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._batch_notifications[2]["count"] == 50
 
 # TST-INT-568
+    # TRACE: {"suite": "INT", "case": "0568", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "12", "title": "connector_batch_ingest_small_set"}
     def test_connector_batch_ingest_small_set(
         self, mock_vault: MockVault
     ) -> None:
@@ -933,6 +973,7 @@ class TestSQLiteConcurrentAccess:
 
 # TST-INT-569
     @pytest.mark.slow
+    # TRACE: {"suite": "INT", "case": "0569", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "06", "scenario": "13", "title": "initial_gmail_sync_transaction_count"}
     def test_initial_gmail_sync_transaction_count(
         self, mock_vault: MockVault
     ) -> None:
@@ -959,6 +1000,7 @@ class TestDataFlowBoundaries:
     """Data flows between Brain, Core, and clients follow strict boundaries."""
 
 # TST-INT-264
+    # TRACE: {"suite": "INT", "case": "0264", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "01", "title": "ingestion_brain_mcp_core"}
     def test_ingestion_brain_mcp_core(
         self,
         mock_go_core: MockGoCore,
@@ -995,6 +1037,7 @@ class TestDataFlowBoundaries:
 
 # TST-INT-269
     @pytest.mark.slow
+    # TRACE: {"suite": "INT", "case": "0269", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "02", "title": "batch_ingestion_5000_email_initial_sync"}
     def test_batch_ingestion_5000_email_initial_sync(
         self, mock_vault: MockVault
     ) -> None:
@@ -1032,6 +1075,7 @@ class TestDataFlowBoundaries:
         assert mock_vault.retrieve(1, "init_5000") is None
 
 # TST-INT-270
+    # TRACE: {"suite": "INT", "case": "0270", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "07", "scenario": "03", "title": "batch_ingestion_concurrent_reads_unblocked"}
     def test_batch_ingestion_concurrent_reads_unblocked(
         self, mock_vault: MockVault
     ) -> None:
@@ -1063,6 +1107,7 @@ class TestStagingAreaLifecycle:
     """Staging area (Tier 4) manages drafts through their lifecycle."""
 
 # TST-INT-271
+    # TRACE: {"suite": "INT", "case": "0271", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "01", "title": "draft_lifecycle_create_review_promote_discard"}
     def test_draft_lifecycle_create_review_promote_discard(
         self, mock_staging: MockStagingTier, mock_vault: MockVault
     ) -> None:
@@ -1141,6 +1186,7 @@ class TestStagingAreaLifecycle:
             "Promoted draft must persist in vault after staging cleanup"
 
 # TST-INT-272
+    # TRACE: {"suite": "INT", "case": "0272", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "08", "scenario": "02", "title": "staging_area_72_hour_expiry"}
     def test_staging_area_72_hour_expiry(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -1184,6 +1230,7 @@ class TestEmbeddingAndSearch:
     """Embedding, FTS, and multi-step search patterns."""
 
 # TST-INT-273
+    # TRACE: {"suite": "INT", "case": "0273", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "09", "scenario": "01", "title": "embedding_via_local_llama"}
     def test_embedding_via_local_llama(
         self,
         mock_llm_router: MockLLMRouter,
@@ -1207,6 +1254,7 @@ class TestEmbeddingAndSearch:
         assert len(embed_entries) == 2
 
 # TST-INT-278
+    # TRACE: {"suite": "INT", "case": "0278", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "09", "scenario": "02", "title": "fts5_available_during_reindexing"}
     def test_fts5_available_during_reindexing(
         self, mock_vault: MockVault
     ) -> None:
@@ -1238,6 +1286,7 @@ class TestEmbeddingAndSearch:
 
 # TST-INT-279
     @pytest.mark.slow
+    # TRACE: {"suite": "INT", "case": "0279", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "09", "scenario": "03", "title": "reindex_scale_100k_items"}
     def test_reindex_scale_100k_items(
         self, mock_vault: MockVault
     ) -> None:
@@ -1265,6 +1314,7 @@ class TestEmbeddingAndSearch:
         assert "scale_500" in results
 
 # TST-INT-283
+    # TRACE: {"suite": "INT", "case": "0283", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "09", "scenario": "04", "title": "agentic_multi_step_search"}
     def test_agentic_multi_step_search(
         self,
         mock_vault: MockVault,
@@ -1308,6 +1358,7 @@ class TestEmbeddingAndSearch:
         assert "Reasoned answer" in answer
 
 # TST-INT-284
+    # TRACE: {"suite": "INT", "case": "0284", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "09", "scenario": "05", "title": "fast_path_vs_brain_path_routing"}
     def test_fast_path_vs_brain_path_routing(
         self,
         mock_llm_router: MockLLMRouter,
@@ -1340,6 +1391,7 @@ class TestComponentBoundaries:
     external APIs, Brain never talks to clients directly."""
 
 # TST-INT-285
+    # TRACE: {"suite": "INT", "case": "0285", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "10", "scenario": "01", "title": "brain_never_opens_sqlite"}
     def test_brain_never_opens_sqlite(
         self,
         mock_brain: MockPythonBrain,
@@ -1368,6 +1420,7 @@ class TestComponentBoundaries:
         assert not hasattr(mock_brain, "vault")
 
 # TST-INT-287
+    # TRACE: {"suite": "INT", "case": "0287", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "10", "scenario": "02", "title": "core_never_calls_external_apis"}
     def test_core_never_calls_external_apis(
         self,
         mock_go_core: MockGoCore,
@@ -1390,6 +1443,7 @@ class TestComponentBoundaries:
             assert "https://" not in endpoint
 
 # TST-INT-288
+    # TRACE: {"suite": "INT", "case": "0288", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "10", "scenario": "03", "title": "brain_never_talks_to_clients_directly"}
     def test_brain_never_talks_to_clients_directly(
         self,
         mock_brain: MockPythonBrain,
@@ -1430,6 +1484,7 @@ class TestComponentBoundaries:
         assert sent.tier == SilenceTier.TIER_2_SOLICITED
 
 # TST-INT-289
+    # TRACE: {"suite": "INT", "case": "0289", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "10", "scenario": "04", "title": "llama_is_stateless"}
     def test_llama_is_stateless(
         self,
         mock_llm_router: MockLLMRouter,
@@ -1456,6 +1511,7 @@ class TestComponentBoundaries:
         assert target_1 == target_2
 
 # TST-INT-295
+    # TRACE: {"suite": "INT", "case": "0295", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "10", "scenario": "05", "title": "reminder_loop_missed_reminder_on_reboot"}
     def test_reminder_loop_missed_reminder_on_reboot(
         self,
         mock_vault: MockVault,

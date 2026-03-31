@@ -92,6 +92,7 @@ def llm_router():
 
 # TST-BRAIN-345
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0345", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "01", "title": "impulsive_spending_detection"}
 async def test_deferred_17_1_1_impulsive_spending_detection(guardian) -> None:
     """SS17.1.1: Impulsive spending detection.
 
@@ -122,6 +123,7 @@ async def test_deferred_17_1_1_impulsive_spending_detection(guardian) -> None:
 
 # TST-BRAIN-346
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0346", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "02", "title": "emotional_email_detection"}
 async def test_deferred_17_1_2_emotional_email_detection(guardian) -> None:
     """SS17.1.2: Emotional email detection.
 
@@ -147,6 +149,7 @@ async def test_deferred_17_1_2_emotional_email_detection(guardian) -> None:
 
 # TST-BRAIN-347
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0347", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "03", "title": "time_of_day_no_flag"}
 async def test_deferred_17_1_3_time_of_day_no_flag(guardian) -> None:
     """SS17.1.3: Time-of-day context -- normal hours, within budget.
 
@@ -175,6 +178,7 @@ async def test_deferred_17_1_3_time_of_day_no_flag(guardian) -> None:
 
 # TST-BRAIN-348
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0348", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "a_1_offline_on_device_llm"}
 async def test_deferred_17_2a_1_offline_on_device_llm() -> None:
     """SS17.2a.1: Rich client routes to on-device LLM when offline.
 
@@ -210,6 +214,7 @@ async def test_deferred_17_2a_1_offline_on_device_llm() -> None:
 
 # TST-BRAIN-349
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0349", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "a_2_fallback_to_home_node"}
 async def test_deferred_17_2a_2_fallback_to_home_node(llm_router) -> None:
     """SS17.2a.2: On-device LLM fallback to Home Node.
 
@@ -230,6 +235,7 @@ async def test_deferred_17_2a_2_fallback_to_home_node(llm_router) -> None:
 
 # TST-BRAIN-350
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0350", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "a_3_model_version_mismatch"}
 async def test_deferred_17_2a_3_model_version_mismatch(llm_router) -> None:
     """SS17.2a.3: On-device LLM model mismatch.
 
@@ -263,6 +269,7 @@ async def test_deferred_17_2a_3_model_version_mismatch(llm_router) -> None:
 
 # TST-BRAIN-351
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0351", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "b_1_indirect_person_reference"}
 async def test_deferred_17_2b_1_indirect_person_reference(pii_scrubber) -> None:
     """SS17.2b.1: Indirect person reference.
 
@@ -299,6 +306,7 @@ async def test_deferred_17_2b_1_indirect_person_reference(pii_scrubber) -> None:
 
 # TST-BRAIN-352
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0352", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "b_2_coded_language"}
 async def test_deferred_17_2b_2_coded_language() -> None:
     """SS17.2b.2: Coded language.
 
@@ -332,6 +340,7 @@ async def test_deferred_17_2b_2_coded_language() -> None:
 
 # TST-BRAIN-353
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0353", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "b_3_paraphrased_pii"}
 async def test_deferred_17_2b_3_paraphrased_pii() -> None:
     """SS17.2b.3: Paraphrased PII.
 
@@ -370,6 +379,7 @@ async def test_deferred_17_2b_3_paraphrased_pii() -> None:
 # TST-BRAIN-354
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0354", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "b_4_tier3_latency"}
 async def test_deferred_17_2b_4_tier3_latency() -> None:
     """SS17.2b.4: Tier 3 latency.
 
@@ -408,6 +418,7 @@ async def test_deferred_17_2b_4_tier3_latency() -> None:
 
 # TST-BRAIN-355
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0355", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "b_5_tier3_absent_no_llama"}
 async def test_deferred_17_2b_5_tier3_absent_no_llama(pii_scrubber) -> None:
     """SS17.2b.5: Tier 3 absent (no llama).
 
@@ -460,6 +471,7 @@ async def test_deferred_17_2b_5_tier3_absent_no_llama(pii_scrubber) -> None:
 
 # TST-BRAIN-356
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0356", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "b_6_gemma_3n_e2b"}
 async def test_deferred_17_2b_6_gemma_3n_e2b(pii_scrubber) -> None:
     """SS17.2b.6: Phase 1 -- Gemma 3n E2B.
 
@@ -478,6 +490,7 @@ async def test_deferred_17_2b_6_gemma_3n_e2b(pii_scrubber) -> None:
 
 # TST-BRAIN-357
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0357", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "b_7_functiongemma_270m"}
 async def test_deferred_17_2b_7_functiongemma_270m(pii_scrubber) -> None:
     """SS17.2b.7: Phase 1 fallback -- FunctionGemma 270M.
 
@@ -500,6 +513,7 @@ async def test_deferred_17_2b_7_functiongemma_270m(pii_scrubber) -> None:
 
 # TST-BRAIN-358
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0358", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "01", "title": "enclave_attestation"}
 async def test_deferred_17_3_1_enclave_attestation(guardian) -> None:
     """SS17.3.1: Enclave attestation.
 
@@ -530,6 +544,7 @@ async def test_deferred_17_3_1_enclave_attestation(guardian) -> None:
 
 # TST-BRAIN-359
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0359", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "02", "title": "ram_inspection_impossible"}
 async def test_deferred_17_3_2_ram_inspection_impossible() -> None:
     """SS17.3.2: RAM inspection impossible.
 
@@ -553,6 +568,7 @@ async def test_deferred_17_3_2_ram_inspection_impossible() -> None:
 
 # TST-BRAIN-360
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0360", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "03", "title": "enclave_sealed_keys"}
 async def test_deferred_17_3_3_enclave_sealed_keys() -> None:
     """SS17.3.3: Enclave-sealed keys.
 
@@ -579,6 +595,7 @@ async def test_deferred_17_3_3_enclave_sealed_keys() -> None:
 
 
 # TST-BRAIN-420
+# TRACE: {"suite": "BRAIN", "case": "0420", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "04", "scenario": "01", "title": "estate_recovery_queue_tasks"}
 def test_deferred_17_4_1_estate_recovery_queue_tasks() -> None:
     """SS17.4.1: Brain queues non-critical tasks during estate recovery.
 
@@ -601,6 +618,7 @@ def test_deferred_17_4_1_estate_recovery_queue_tasks() -> None:
 
 
 # TST-BRAIN-421
+# TRACE: {"suite": "BRAIN", "case": "0421", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "04", "scenario": "02", "title": "zkp_credential_verification"}
 def test_deferred_17_4_2_zkp_credential_verification() -> None:
     """SS17.4.2: Brain verifies Ring 2+ ZKP credentials for agent trust.
 
@@ -623,6 +641,7 @@ def test_deferred_17_4_2_zkp_credential_verification() -> None:
 
 # TST-BRAIN-422
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0422", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "04", "scenario": "03", "title": "sss_recovery_coordination"}
 async def test_deferred_17_4_3_sss_recovery_coordination(guardian) -> None:
     """SS17.4.3: Brain coordinates SSS custodian recovery via DIDComm.
 

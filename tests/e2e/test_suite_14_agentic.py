@@ -100,6 +100,7 @@ class TestAgenticBehavior:
 
     @pytest.mark.slow
     @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
+    # TRACE: {"suite": "E2E", "case": "0075", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "01", "title": "llm_available_in_docker"}
     def test_llm_available_in_docker(self, docker_services) -> None:
         """E2E-14.1 Verify Gemini provider is available in Docker Brain.
 
@@ -117,6 +118,7 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-076 ----------------------------------------------------------
 
+    # TRACE: {"suite": "E2E", "case": "0076", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "02", "title": "bank_fraud_always_interrupts"}
     def test_bank_fraud_always_interrupts(self, docker_services) -> None:
         """E2E-14.2 Bank fraud alert ALWAYS classified as fiduciary (Tier 1).
 
@@ -146,6 +148,7 @@ class TestAgenticBehavior:
 
     @pytest.mark.slow
     @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
+    # TRACE: {"suite": "E2E", "case": "0077", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "03", "title": "youtube_recommendation_never_interrupts"}
     def test_youtube_recommendation_never_interrupts(
         self, docker_services,
     ) -> None:
@@ -175,6 +178,7 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-078 ----------------------------------------------------------
 
+    # TRACE: {"suite": "E2E", "case": "0078", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "04", "title": "transfer_money_always_high_risk"}
     def test_transfer_money_always_high_risk(self, docker_services) -> None:
         """E2E-14.4 transfer_money is ALWAYS HIGH risk regardless of LLM.
 
@@ -204,6 +208,7 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-079 ----------------------------------------------------------
 
+    # TRACE: {"suite": "E2E", "case": "0079", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "05", "title": "search_always_safe"}
     def test_search_always_safe(self, docker_services) -> None:
         """E2E-14.5 search is ALWAYS SAFE risk regardless of LLM.
 
@@ -229,6 +234,7 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-080 ----------------------------------------------------------
 
+    # TRACE: {"suite": "E2E", "case": "0080", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "06", "title": "pii_detected_by_scrubber"}
     def test_pii_detected_by_scrubber(self, docker_services) -> None:
         """E2E-14.6 PII is detected by the Brain's Tier 2 NER scrubber.
 
@@ -261,6 +267,7 @@ class TestAgenticBehavior:
 
     @pytest.mark.slow
     @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
+    # TRACE: {"suite": "E2E", "case": "0081", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "07", "title": "unknown_action_gets_valid_risk"}
     def test_unknown_action_gets_valid_risk(self, docker_services) -> None:
         """E2E-14.7 Unknown actions get LLM classification with valid risk.
 
@@ -294,6 +301,7 @@ class TestAgenticBehavior:
 
     @pytest.mark.slow
     @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
+    # TRACE: {"suite": "E2E", "case": "0082", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "08", "title": "llm_reason_returns_metadata"}
     def test_llm_reason_returns_metadata(self, docker_services) -> None:
         """E2E-14.8 LLM reason returns model name and token counts.
 
@@ -334,6 +342,7 @@ class TestAgenticBehavior:
         not _HAS_OPENROUTER_KEY,
         reason="OPENROUTER_API_KEY not set — skipping OpenRouter test",
     )
+    # TRACE: {"suite": "E2E", "case": "0007", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "09", "title": "openrouter_reason_returns_metadata"}
     def test_openrouter_reason_returns_metadata(self, docker_services) -> None:
         """E2E-14.9 OpenRouter provider returns content and metadata.
 

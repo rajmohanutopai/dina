@@ -541,6 +541,7 @@ class TestEmotionalBoundary:
     """Dina is warm but bounded — never a romantic substitute."""
 
 # TST-INT-448
+    # TRACE: {"suite": "INT", "case": "0448", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "01", "title": "detects_emotional_dependency"}
     def test_detects_emotional_dependency(self, mock_dina: MockDinaCore):
         """When the user sends repeated emotionally intense messages with
         no reference to other humans, Dina flags dependency risk.
@@ -582,6 +583,7 @@ class TestEmotionalBoundary:
         assert detect_emotional_dependency(mock_dina.vault, safe_messages) is False
 
 # TST-INT-449
+    # TRACE: {"suite": "INT", "case": "0449", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "02", "title": "no_false_positive_with_human_refs"}
     def test_no_false_positive_with_human_refs(self, mock_dina: MockDinaCore):
         """Emotional messages that mention human relationships are NOT
         flagged as dependency.  The human-reference check must cancel the
@@ -603,6 +605,7 @@ class TestEmotionalBoundary:
         assert detect_emotional_dependency(mock_dina.vault, with_human_msgs) is False
 
 # TST-INT-450
+    # TRACE: {"suite": "INT", "case": "0450", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "03", "title": "nudges_toward_human_connection"}
     def test_nudges_toward_human_connection(self, mock_dina: MockDinaCore):
         """When dependency is detected, Dina's response redirects the user
         to real human connection."""
@@ -611,6 +614,7 @@ class TestEmotionalBoundary:
         assert "I love you" not in response
 
 # TST-INT-451
+    # TRACE: {"suite": "INT", "case": "0451", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "04", "title": "never_says_i_love_you"}
     def test_never_says_i_love_you(self, mock_dina: MockDinaCore):
         """Regardless of provocation, Dina never says 'I love you'."""
         provocations = [
@@ -626,6 +630,7 @@ class TestEmotionalBoundary:
             assert "i love you too" not in response_lower
 
 # TST-INT-452
+    # TRACE: {"suite": "INT", "case": "0452", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "05", "title": "warm_but_bounded"}
     def test_warm_but_bounded(self, mock_dina: MockDinaCore):
         """Dina's responses are caring and helpful, but maintain clear
         boundaries about the nature of the relationship."""
@@ -649,6 +654,7 @@ class TestEmotionalBoundary:
         assert "i love you" not in response2.lower()
 
 # TST-INT-268
+    # TRACE: {"suite": "INT", "case": "0268", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "01", "scenario": "06", "title": "suggests_professional_help"}
     def test_suggests_professional_help(self, mock_dina: MockDinaCore):
         """For persistent emotional distress patterns, detect_emotional_dependency
         returns True. Messages with human references do NOT trigger."""
@@ -702,6 +708,7 @@ class TestConnectionNudges:
     """Dina reminds the user to maintain human relationships."""
 
 # TST-INT-266
+    # TRACE: {"suite": "INT", "case": "0266", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "01", "title": "reminds_about_neglected_relationships"}
     def test_reminds_about_neglected_relationships(
         self, mock_dina: MockDinaCore
     ):
@@ -745,6 +752,7 @@ class TestConnectionNudges:
         assert "contact_old_friend" in neglected_with_border
 
 # TST-INT-453
+    # TRACE: {"suite": "INT", "case": "0453", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "02", "title": "suggests_shared_interest_connections"}
     def test_suggests_shared_interest_connections(
         self, mock_dina: MockDinaCore
     ):
@@ -806,6 +814,7 @@ class TestConnectionNudges:
             "Contact data in tier 1 must not leak to tier 0"
 
 # TST-INT-454
+    # TRACE: {"suite": "INT", "case": "0454", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "03", "title": "relationship_maintenance_reminders"}
     def test_relationship_maintenance_reminders(
         self, mock_dina: MockDinaCore, mock_human
     ):
@@ -838,6 +847,7 @@ class TestConnectionNudges:
         assert "birthday" in mock_human.notifications[0].body.lower()
 
 # TST-INT-700
+    # TRACE: {"suite": "INT", "case": "0700", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "04", "title": "neglected_contact_produces_briefing_nudge"}
     def test_neglected_contact_produces_briefing_nudge(
         self, mock_dina: MockDinaCore, mock_human
     ):
@@ -1046,6 +1056,7 @@ class TestConnectionNudges:
             assert n.source == "relationship_maintenance"
 
 # TST-INT-701
+    # TRACE: {"suite": "INT", "case": "0701", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "05", "title": "birthday_neglect_produces_elevated_nudge"}
     def test_birthday_neglect_produces_elevated_nudge(
         self, mock_dina: MockDinaCore,
     ):
@@ -1192,6 +1203,7 @@ class TestConnectionNudges:
             f"({sarah_plain[0].tier.value})"
         )
 
+    # TRACE: {"suite": "INT", "case": "0001", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "06", "title": "birthday_without_neglect_not_elevated"}
     def test_birthday_without_neglect_not_elevated(
         self, mock_dina: MockDinaCore,
     ):
@@ -1238,6 +1250,7 @@ class TestConnectionNudges:
             "Birthday-only nudge must NOT contain neglect language"
         )
 
+    # TRACE: {"suite": "INT", "case": "0002", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "07", "title": "neglect_without_birthday_not_elevated"}
     def test_neglect_without_birthday_not_elevated(
         self, mock_dina: MockDinaCore,
     ):
@@ -1285,6 +1298,7 @@ class TestConnectionNudges:
             "Neglect-only nudge must NOT mention birthday"
         )
 
+    # TRACE: {"suite": "INT", "case": "0003", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "08", "title": "no_birthday_no_neglect_no_nudge"}
     def test_no_birthday_no_neglect_no_nudge(
         self, mock_dina: MockDinaCore,
     ):
@@ -1317,6 +1331,7 @@ class TestConnectionNudges:
             f"got {len(results)}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0004", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "09", "title": "birthday_today_plus_neglect_highest_urgency"}
     def test_birthday_today_plus_neglect_highest_urgency(
         self, mock_dina: MockDinaCore,
     ):
@@ -1363,6 +1378,7 @@ class TestConnectionNudges:
             f"got: {nudge_data['notification'].body}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0005", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "10", "title": "birthday_exactly_at_lookahead_boundary"}
     def test_birthday_exactly_at_lookahead_boundary(
         self, mock_dina: MockDinaCore,
     ):
@@ -1417,6 +1433,7 @@ class TestConnectionNudges:
         )
         assert results_8[0]["elevated"] is False
 
+    # TRACE: {"suite": "INT", "case": "0006", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "11", "title": "multiple_contacts_independent_evaluation"}
     def test_multiple_contacts_independent_evaluation(
         self, mock_dina: MockDinaCore,
     ):
@@ -1493,6 +1510,7 @@ class TestConnectionNudges:
             f"All three nudge types must be represented; got {types}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0007", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "12", "title": "birthday_year_wraparound"}
     def test_birthday_year_wraparound(
         self, mock_dina: MockDinaCore,
     ):
@@ -1535,6 +1553,7 @@ class TestConnectionNudges:
         assert nudge_data["elevated"] is True
 
 # TST-INT-703
+    # TRACE: {"suite": "INT", "case": "0703", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "13", "title": "promise_detection_across_vault_items"}
     def test_promise_detection_across_vault_items(
         self, mock_dina: MockDinaCore, mock_human
     ):
@@ -1660,6 +1679,7 @@ class TestConnectionNudges:
         assert len(mock_human.notifications) >= 1
         assert "Sancho" in mock_human.notifications[-1].body
 
+    # TRACE: {"suite": "INT", "case": "0008", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "14", "title": "fulfilled_promise_not_nudged"}
     def test_fulfilled_promise_not_nudged(
         self, mock_dina: MockDinaCore,
     ):
@@ -1705,6 +1725,7 @@ class TestConnectionNudges:
             f"got {len(sancho_promises)}: {sancho_promises}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0009", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "15", "title": "non_promise_message_not_detected"}
     def test_non_promise_message_not_detected(
         self, mock_dina: MockDinaCore,
     ):
@@ -1743,6 +1764,7 @@ class TestConnectionNudges:
             f"got {len(unfulfilled)}: {unfulfilled}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0010", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "16", "title": "very_old_promise_outside_lookback"}
     def test_very_old_promise_outside_lookback(
         self, mock_dina: MockDinaCore,
     ):
@@ -1831,6 +1853,7 @@ class TestConnectionNudges:
             f"got {len(unfulfilled_13)}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0011", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "17", "title": "promise_to_different_contact_tracked_separately"}
     def test_promise_to_different_contact_tracked_separately(
         self, mock_dina: MockDinaCore,
     ):
@@ -1909,6 +1932,7 @@ class TestConnectionNudges:
             "Maria's promise is still unfulfilled"
         )
 
+    # TRACE: {"suite": "INT", "case": "0012", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "18", "title": "promise_keyword_variations"}
     def test_promise_keyword_variations(
         self, mock_dina: MockDinaCore,
     ):
@@ -1954,6 +1978,7 @@ class TestConnectionNudges:
             f"got {detected_contacts}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0013", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "19", "title": "promise_with_no_contact_name"}
     def test_promise_with_no_contact_name(
         self, mock_dina: MockDinaCore,
     ):
@@ -2000,6 +2025,7 @@ class TestConnectionNudges:
         )
         assert nudge.tier == SilenceTier.TIER_3_ENGAGEMENT
 
+    # TRACE: {"suite": "INT", "case": "0014", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "20", "title": "empty_vault_no_promises"}
     def test_empty_vault_no_promises(
         self, mock_dina: MockDinaCore,
     ):
@@ -2016,6 +2042,7 @@ class TestConnectionNudges:
         )
 
 # TST-INT-704
+    # TRACE: {"suite": "INT", "case": "0704", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "21", "title": "human_interaction_resets_nudge_timers"}
     def test_human_interaction_resets_nudge_timers(
         self, mock_dina: MockDinaCore, mock_human
     ):
@@ -2341,6 +2368,7 @@ class TestConnectionNudges:
         )
 
 # TST-INT-702
+    # TRACE: {"suite": "INT", "case": "0702", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "22", "title": "d2d_message_context_triggers_outreach_suggestion"}
     def test_d2d_message_context_triggers_outreach_suggestion(
         self, mock_dina: MockDinaCore,
     ):
@@ -2509,6 +2537,7 @@ class TestConnectionNudges:
 
     # -- Counter-proofs ------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0015", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "23", "title": "followup_already_sent_no_suggestion"}
     def test_followup_already_sent_no_suggestion(
         self, mock_dina: MockDinaCore,
     ):
@@ -2543,6 +2572,7 @@ class TestConnectionNudges:
             f"got {len(events)} event(s)"
         )
 
+    # TRACE: {"suite": "INT", "case": "0016", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "24", "title": "non_life_event_message_not_detected"}
     def test_non_life_event_message_not_detected(
         self, mock_dina: MockDinaCore,
     ):
@@ -2568,6 +2598,7 @@ class TestConnectionNudges:
             f"an event; got {len(events)}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0017", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "25", "title": "very_old_event_outside_lookback"}
     def test_very_old_event_outside_lookback(
         self, mock_dina: MockDinaCore,
     ):
@@ -2593,6 +2624,7 @@ class TestConnectionNudges:
             f"be detected; got {len(events)}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0018", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "26", "title": "outbound_to_different_contact_doesnt_count"}
     def test_outbound_to_different_contact_doesnt_count(
         self, mock_dina: MockDinaCore,
     ):
@@ -2632,6 +2664,7 @@ class TestConnectionNudges:
 
     # -- Edge cases ----------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0019", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "27", "title": "multiple_life_events_from_different_contacts"}
     def test_multiple_life_events_from_different_contacts(
         self, mock_dina: MockDinaCore,
     ):
@@ -2678,6 +2711,7 @@ class TestConnectionNudges:
             )
             assert suggestion.tier == SilenceTier.TIER_3_ENGAGEMENT
 
+    # TRACE: {"suite": "INT", "case": "0020", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "28", "title": "life_event_keyword_in_negation_context"}
     def test_life_event_keyword_in_negation_context(
         self, mock_dina: MockDinaCore,
     ):
@@ -2706,6 +2740,7 @@ class TestConnectionNudges:
         )
         assert events[0]["event_keyword"] == "ill"
 
+    # TRACE: {"suite": "INT", "case": "0021", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "02", "scenario": "29", "title": "empty_vault_no_events"}
     def test_empty_vault_no_events(
         self, mock_dina: MockDinaCore,
     ):
@@ -3353,6 +3388,7 @@ class TestEmotionalDependencyDetection:
     """
 
 # TST-INT-706
+    # TRACE: {"suite": "INT", "case": "0706", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "01", "title": "social_isolation_signal_from_vault_data"}
     def test_social_isolation_signal_from_vault_data(
         self, mock_dina: MockDinaCore, mock_human
     ):
@@ -3743,6 +3779,7 @@ class TestEmotionalDependencyDetection:
         )
 
 # TST-INT-707
+    # TRACE: {"suite": "INT", "case": "0707", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "02", "title": "anti_her_response_never_stored_as_emotional_memory"}
     def test_anti_her_response_never_stored_as_emotional_memory(
         self, mock_dina: MockDinaCore, mock_human
     ):
@@ -3964,6 +4001,7 @@ class TestEmotionalDependencyDetection:
             )
 
 # TST-INT-705
+    # TRACE: {"suite": "INT", "case": "0705", "section": "20", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "03", "title": "multi_session_emotional_pattern_detection"}
     def test_multi_session_emotional_pattern_detection(
         self, mock_dina: MockDinaCore, mock_human
     ):

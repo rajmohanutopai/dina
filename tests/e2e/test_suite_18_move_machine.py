@@ -31,6 +31,7 @@ class TestMoveMachine:
     for machine migration."""
 
 # TST-E2E-102
+    # TRACE: {"suite": "E2E", "case": "0102", "section": "18", "sectionName": "Move Machine", "subsection": "01", "scenario": "01", "title": "export_import_restores_data"}
     def test_export_import_restores_data(
         self,
         don_alonso: HomeNode,
@@ -186,6 +187,7 @@ class TestMoveMachine:
         )
 
 # TST-E2E-103
+    # TRACE: {"suite": "E2E", "case": "0103", "section": "18", "sectionName": "Move Machine", "subsection": "01", "scenario": "02", "title": "mnemonic_recovery_identity_only"}
     def test_mnemonic_recovery_identity_only(
         self,
         don_alonso: HomeNode,
@@ -258,6 +260,7 @@ class TestMoveMachine:
         )
 
 # TST-E2E-104
+    # TRACE: {"suite": "E2E", "case": "0104", "section": "18", "sectionName": "Move Machine", "subsection": "01", "scenario": "03", "title": "import_requires_device_repairing"}
     def test_import_requires_device_repairing(
         self,
         don_alonso: HomeNode,

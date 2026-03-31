@@ -35,6 +35,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-531
+// TRACE: {"suite": "CORE", "case": "0178", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "01", "title": "HealthyBrain"}
 func TestBrainClient_11_1_1_HealthyBrain(t *testing.T) {
 	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -60,6 +61,7 @@ func TestBrainClient_11_1_1_HealthyBrain(t *testing.T) {
 }
 
 // TST-CORE-532
+// TRACE: {"suite": "CORE", "case": "0179", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "02", "title": "BrainTimeout"}
 func TestBrainClient_11_1_2_BrainTimeout(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -90,6 +92,7 @@ func TestBrainClient_11_1_2_BrainTimeout(t *testing.T) {
 
 // TST-CORE-533
 // TST-CORE-1045 Circuit breaker tracks /healthz failures
+// TRACE: {"suite": "CORE", "case": "0180", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "03", "title": "CircuitBreakerOpens"}
 func TestBrainClient_11_1_3_CircuitBreakerOpens(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -115,6 +118,7 @@ func TestBrainClient_11_1_3_CircuitBreakerOpens(t *testing.T) {
 }
 
 // TST-CORE-534
+// TRACE: {"suite": "CORE", "case": "0181", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "04", "title": "CircuitBreakerHalfOpen"}
 func TestBrainClient_11_1_4_CircuitBreakerHalfOpen(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -143,6 +147,7 @@ func TestBrainClient_11_1_4_CircuitBreakerHalfOpen(t *testing.T) {
 }
 
 // TST-CORE-535
+// TRACE: {"suite": "CORE", "case": "0182", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "05", "title": "CircuitBreakerCloses"}
 func TestBrainClient_11_1_5_CircuitBreakerCloses(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -177,6 +182,7 @@ func TestBrainClient_11_1_5_CircuitBreakerCloses(t *testing.T) {
 }
 
 // TST-CORE-536
+// TRACE: {"suite": "CORE", "case": "0183", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "06", "title": "BrainCrashRecovery"}
 func TestBrainClient_11_1_6_BrainCrashRecovery(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -218,6 +224,7 @@ func TestBrainClient_11_1_6_BrainCrashRecovery(t *testing.T) {
 
 // TST-CORE-537
 // TST-CORE-1044 TST-CORE-1004 BrainClient health check hits /healthz
+// TRACE: {"suite": "CORE", "case": "0184", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "02", "scenario": "01", "title": "BrainHealthy"}
 func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 	// Dedicated httptest.Server that always returns 200 on /healthz.
 	// Avoids shared mockBrainServer atomic counter state issues.
@@ -250,6 +257,7 @@ func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 }
 
 // TST-CORE-538
+// TRACE: {"suite": "CORE", "case": "0185", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "02", "scenario": "02", "title": "BrainUnhealthy"}
 func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
 	// Dedicated httptest.Server that always returns 503 on /healthz.
 	// Avoids shared mockBrainServer atomic counter state issues.
@@ -272,6 +280,7 @@ func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
 }
 
 // TST-CORE-539
+// TRACE: {"suite": "CORE", "case": "0186", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "02", "scenario": "03", "title": "BrainRecovery"}
 func TestBrainClient_11_2_3_BrainRecovery(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -303,6 +312,7 @@ func TestBrainClient_11_2_3_BrainRecovery(t *testing.T) {
 }
 
 // TST-CORE-540
+// TRACE: {"suite": "CORE", "case": "0187", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "02", "scenario": "04", "title": "WatchdogInterval"}
 func TestBrainClient_11_2_4_WatchdogInterval(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -333,6 +343,7 @@ func TestBrainClient_11_2_4_WatchdogInterval(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-843
+// TRACE: {"suite": "CORE", "case": "0188", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "03", "scenario": "01", "title": "SendEventToBrain"}
 func TestBrainClient_11_3_1_SendEventToBrain(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -354,6 +365,7 @@ func TestBrainClient_11_3_1_SendEventToBrain(t *testing.T) {
 }
 
 // TST-CORE-844
+// TRACE: {"suite": "CORE", "case": "0189", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "03", "scenario": "02", "title": "BrainReturnsError"}
 func TestBrainClient_11_3_2_BrainReturnsError(t *testing.T) {
 	mock := &testutil.MockBrainClient{
 		ProcessErr: testutil.ErrNotImplemented,
@@ -367,6 +379,7 @@ func TestBrainClient_11_3_2_BrainReturnsError(t *testing.T) {
 }
 
 // TST-CORE-845
+// TRACE: {"suite": "CORE", "case": "0190", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "07", "title": "BrainReturnsMalformedJSON"}
 func TestBrainClient_11_1_7_BrainReturnsMalformedJSON(t *testing.T) {
 	// Dedicated httptest.Server that returns 200 with malformed JSON body.
 	// ProcessEvent returns raw bytes without parsing, so it should succeed
@@ -407,6 +420,7 @@ func TestBrainClient_11_1_7_BrainReturnsMalformedJSON(t *testing.T) {
 }
 
 // TST-CORE-846
+// TRACE: {"suite": "CORE", "case": "0191", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "08", "title": "ConcurrentRequests"}
 func TestBrainClient_11_1_8_ConcurrentRequests(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
@@ -441,6 +455,7 @@ func TestBrainClient_11_1_8_ConcurrentRequests(t *testing.T) {
 }
 
 // TST-CORE-847
+// TRACE: {"suite": "CORE", "case": "0192", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "09", "title": "EmptyURLReturnsError"}
 func TestBrainClient_11_1_9_EmptyURLReturnsError(t *testing.T) {
 	// Construct a BrainClient with an empty URL — must return error on
 	// any operation rather than silently failing or panicking.
@@ -468,6 +483,7 @@ func TestBrainClient_11_1_9_EmptyURLReturnsError(t *testing.T) {
 }
 
 // TST-CORE-848
+// TRACE: {"suite": "CORE", "case": "0193", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "10", "title": "ConnectionPooling"}
 func TestBrainClient_11_1_10_ConnectionPooling(t *testing.T) {
 	// Create a dedicated test server that tracks unique TCP connections
 	// via the ConnState callback. We use NewUnstartedServer so that the
@@ -528,6 +544,7 @@ func TestBrainClient_11_1_10_ConnectionPooling(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-849
+// TRACE: {"suite": "CORE", "case": "0194", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "11", "title": "MockHealthSuccess"}
 func TestBrainClient_11_1_11_MockHealthSuccess(t *testing.T) {
 	// Use a dedicated httptest.Server that always returns 200 on /healthz
 	// to test the real BrainClient.Health() code path without shared state issues.
@@ -551,6 +568,7 @@ func TestBrainClient_11_1_11_MockHealthSuccess(t *testing.T) {
 }
 
 // TST-CORE-850
+// TRACE: {"suite": "CORE", "case": "0195", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "01", "scenario": "12", "title": "MockHealthFailure"}
 func TestBrainClient_11_1_12_MockHealthFailure(t *testing.T) {
 	// Use a dedicated httptest.Server that always returns 503 on /healthz
 	// to test the real BrainClient.Health() failure + recordFailure() path.
@@ -586,12 +604,14 @@ func TestBrainClient_11_1_12_MockHealthFailure(t *testing.T) {
 // TST-CORE-531, TST-CORE-532, TST-CORE-533, TST-CORE-534, TST-CORE-535, TST-CORE-536
 // Overview: table-driven end-to-end circuit breaker state machine test
 // using realBrainClient backed by mockBrainServer.
+// TRACE: {"suite": "CORE", "case": "0196", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "subsection": "19", "scenario": "01", "title": "BrainClient_11_Overview"}
 func TestBrainClient_11_Overview(t *testing.T) {
 	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
 	// Each subtest resets the circuit breaker to ensure isolation.
 
+	// TRACE: {"suite": "CORE", "case": "0197", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "title": "healthy"}
 	t.Run("healthy", func(t *testing.T) {
 		// TST-CORE-531: healthy brain returns a response.
 		impl.ResetForTest()
@@ -602,6 +622,7 @@ func TestBrainClient_11_Overview(t *testing.T) {
 		testutil.RequireEqual(t, impl.CircuitState(), "closed")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0198", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "title": "timeout"}
 	t.Run("timeout", func(t *testing.T) {
 		// TST-CORE-532: brain returns non-2xx → error, failure recorded.
 		impl.ResetForTest()
@@ -610,6 +631,7 @@ func TestBrainClient_11_Overview(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0199", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "title": "cb_open"}
 	t.Run("cb_open", func(t *testing.T) {
 		// TST-CORE-533: after maxFailures consecutive errors, circuit opens.
 		impl.ResetForTest()
@@ -624,6 +646,7 @@ func TestBrainClient_11_Overview(t *testing.T) {
 		testutil.RequireFalse(t, impl.IsAvailable(), "circuit should be open after consecutive failures")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0200", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "title": "cb_half_open"}
 	t.Run("cb_half_open", func(t *testing.T) {
 		// TST-CORE-534: after cooldown, circuit transitions to half-open.
 		impl.ResetForTest()
@@ -640,6 +663,7 @@ func TestBrainClient_11_Overview(t *testing.T) {
 		testutil.RequireEqual(t, impl.CircuitState(), "half-open")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0201", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "title": "cb_close"}
 	t.Run("cb_close", func(t *testing.T) {
 		// TST-CORE-535: a successful call after half-open closes the circuit.
 		impl.ResetForTest()
@@ -663,6 +687,7 @@ func TestBrainClient_11_Overview(t *testing.T) {
 		testutil.RequireEqual(t, impl.CircuitState(), "closed")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0202", "section": "11", "sectionName": "Brain Client & Circuit Breaker", "title": "crash_recovery"}
 	t.Run("crash_recovery", func(t *testing.T) {
 		// TST-CORE-536: after circuit opens, brain recovers → circuit closes.
 		impl.ResetForTest()
@@ -696,8 +721,10 @@ func TestBrainClient_11_Overview(t *testing.T) {
 // Core→Brain: /api/v1/process accepts {task_id, type, payload}.
 // Requirement: Core's TaskEvent must serialize with snake_case JSON field names
 // (task_id, type, payload) and Brain must accept them on /api/v1/process.
+// TRACE: {"suite": "CORE", "case": "0203", "section": "30", "sectionName": "Test System Quality", "subsection": "03", "scenario": "04", "title": "ProcessAcceptsSnakeCaseFields"}
 func TestContract_30_3_4_ProcessAcceptsSnakeCaseFields(t *testing.T) {
 	// Sub-test 1: Verify TaskEvent JSON serialization uses snake_case.
+	// TRACE: {"suite": "CORE", "case": "0204", "section": "30", "sectionName": "Test System Quality", "title": "json_serialization_snake_case"}
 	t.Run("json_serialization_snake_case", func(t *testing.T) {
 		event := domain.TaskEvent{
 			TaskID:  "task-contract-001",
@@ -737,6 +764,7 @@ func TestContract_30_3_4_ProcessAcceptsSnakeCaseFields(t *testing.T) {
 	})
 
 	// Sub-test 2: Verify round-trip JSON deserialization.
+	// TRACE: {"suite": "CORE", "case": "0205", "section": "30", "sectionName": "Test System Quality", "title": "json_deserialization_round_trip"}
 	t.Run("json_deserialization_round_trip", func(t *testing.T) {
 		jsonPayload := `{"task_id":"task-rt-001","type":"process","payload":{"key":"value"}}`
 		var event domain.TaskEvent
@@ -755,6 +783,7 @@ func TestContract_30_3_4_ProcessAcceptsSnakeCaseFields(t *testing.T) {
 	})
 
 	// Sub-test 3: Verify BrainClient.Process() sends to /api/v1/process and brain accepts it.
+	// TRACE: {"suite": "CORE", "case": "0206", "section": "30", "sectionName": "Test System Quality", "title": "brain_accepts_process_event"}
 	t.Run("brain_accepts_process_event", func(t *testing.T) {
 		var receivedFields map[string]interface{}
 		contractServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -810,7 +839,9 @@ func TestContract_30_3_4_ProcessAcceptsSnakeCaseFields(t *testing.T) {
 // the mock brain must serve /healthz and must reject /v1/health with 404.
 // BrainClient.Health() must call /healthz correctly.
 // TST-CORE-1006: Negative assertions for old contracts (/v1/health → 404).
+// TRACE: {"suite": "CORE", "case": "0207", "section": "30", "sectionName": "Test System Quality", "subsection": "05", "scenario": "02", "title": "MockBrainServesHealthz"}
 func TestContract_30_5_2_MockBrainServesHealthz(t *testing.T) {
+	// TRACE: {"suite": "CORE", "case": "0208", "section": "30", "sectionName": "Test System Quality", "title": "healthz_returns_200"}
 	t.Run("healthz_returns_200", func(t *testing.T) {
 		// Create a dedicated mock brain that serves only /healthz.
 		healthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -829,6 +860,7 @@ func TestContract_30_5_2_MockBrainServesHealthz(t *testing.T) {
 		testutil.RequireNoError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0209", "section": "30", "sectionName": "Test System Quality", "title": "old_v1_health_endpoint_rejected"}
 	t.Run("old_v1_health_endpoint_rejected", func(t *testing.T) {
 		// Verify the mock brain does NOT serve the deprecated /v1/health endpoint.
 		// This is the old contract that was migrated to /healthz.
@@ -862,6 +894,7 @@ func TestContract_30_5_2_MockBrainServesHealthz(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0210", "section": "30", "sectionName": "Test System Quality", "title": "brain_unhealthy_returns_error"}
 	t.Run("brain_unhealthy_returns_error", func(t *testing.T) {
 		// When brain's /healthz returns non-200, BrainClient.Health() must return error.
 		unhealthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -878,6 +911,7 @@ func TestContract_30_5_2_MockBrainServesHealthz(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0211", "section": "30", "sectionName": "Test System Quality", "title": "mock_brain_contract_completeness"}
 	t.Run("mock_brain_contract_completeness", func(t *testing.T) {
 		// Verify the mockBrainServer in wiring_test.go serves exactly the
 		// expected routes: /healthz, /api/v1/process, and /api/v1/reason.
@@ -961,6 +995,7 @@ func createTestServiceKey(t *testing.T) (*servicekey.ServiceKey, string) {
 // must be rejected. This test validates Core's side of the boundary: the
 // BrainClient uses Ed25519 signing exclusively and never sends Bearer tokens.
 // A mock Brain server enforces the Ed25519-only policy, rejecting Bearer auth.
+// TRACE: {"suite": "CORE", "case": "0212", "section": "30", "sectionName": "Test System Quality", "subsection": "02", "scenario": "04", "title": "ClientTokenDeniedOnBrainInternalEndpoints"}
 func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T) {
 	// --- Mock Brain server that enforces Ed25519-only auth ---
 	// This server mirrors the real Brain's auth policy (brain/src/dina_brain/app.py):
@@ -1014,6 +1049,7 @@ func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T)
 
 	sk, _ := createTestServiceKey(t)
 
+	// TRACE: {"suite": "CORE", "case": "0213", "section": "30", "sectionName": "Test System Quality", "title": "signed_brainclient_sends_ed25519_headers"}
 	t.Run("signed_brainclient_sends_ed25519_headers", func(t *testing.T) {
 		// A BrainClient with a service key must send Ed25519 headers
 		// on every request. Verify ProcessEvent includes X-DID, X-Timestamp, X-Signature.
@@ -1039,6 +1075,7 @@ func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0214", "section": "30", "sectionName": "Test System Quality", "title": "signed_brainclient_never_sends_bearer_token"}
 	t.Run("signed_brainclient_never_sends_bearer_token", func(t *testing.T) {
 		// Even with a service key, the BrainClient must NOT send
 		// Authorization: Bearer headers. Bearer is for admin UI only.
@@ -1067,6 +1104,7 @@ func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0215", "section": "30", "sectionName": "Test System Quality", "title": "bearer_token_rejected_by_brain_policy"}
 	t.Run("bearer_token_rejected_by_brain_policy", func(t *testing.T) {
 		// Verify the Brain's auth policy: a request with Bearer token
 		// and WITHOUT Ed25519 headers must be rejected with 401.
@@ -1089,6 +1127,7 @@ func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0216", "section": "30", "sectionName": "Test System Quality", "title": "unsigned_brainclient_rejected_by_brain_policy"}
 	t.Run("unsigned_brainclient_rejected_by_brain_policy", func(t *testing.T) {
 		// A BrainClient without a service key (nil) sends no auth headers.
 		// The Brain MUST reject with 401 — no anonymous access to /api/*.
@@ -1102,6 +1141,7 @@ func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0217", "section": "30", "sectionName": "Test System Quality", "title": "ed25519_did_matches_service_identity"}
 	t.Run("ed25519_did_matches_service_identity", func(t *testing.T) {
 		// The X-DID header must contain a valid did:key identifier
 		// derived from the service key, not an arbitrary string.
@@ -1150,6 +1190,7 @@ func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T)
 //   - It validates field names, route paths, authentication requirements, and
 //     response model structure — all specified in the contract, not the impl
 
+// TRACE: {"suite": "CORE", "case": "0218", "section": "30", "sectionName": "Test System Quality", "subsection": "03", "scenario": "02", "title": "RealBrainFastAPIAppContract"}
 func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 	root := findBrainRoot(t)
 
@@ -1159,6 +1200,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 	reasonPy := readBrainFile(t, root, "src/dina_brain/routes/reason.py")
 	piiPy := readBrainFile(t, root, "src/dina_brain/routes/pii.py")
 
+	// TRACE: {"suite": "CORE", "case": "0219", "section": "30", "sectionName": "Test System Quality", "title": "create_app_returns_fastapi_with_sub_mounts"}
 	t.Run("create_app_returns_fastapi_with_sub_mounts", func(t *testing.T) {
 		// The composition root must define create_app() → FastAPI and mount
 		// the brain API sub-app at /api and admin at /admin.
@@ -1170,6 +1212,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0220", "section": "30", "sectionName": "Test System Quality", "title": "healthz_endpoint_unauthenticated"}
 	t.Run("healthz_endpoint_unauthenticated", func(t *testing.T) {
 		// Brain must expose /healthz without authentication on the master app.
 		// Core probes this for liveness checks.
@@ -1187,6 +1230,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0221", "section": "30", "sectionName": "Test System Quality", "title": "process_endpoint_contract"}
 	t.Run("process_endpoint_contract", func(t *testing.T) {
 		// Brain must expose POST /v1/process accepting ProcessEventRequest.
 		// Core sends: {task_id, type, payload, persona_id, source, ...}
@@ -1210,6 +1254,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0222", "section": "30", "sectionName": "Test System Quality", "title": "reason_endpoint_contract"}
 	t.Run("reason_endpoint_contract", func(t *testing.T) {
 		// Brain must expose POST /v1/reason accepting ReasonRequest.
 		// Core sends: {prompt, persona_id, persona_tier, provider, ...}
@@ -1233,6 +1278,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0223", "section": "30", "sectionName": "Test System Quality", "title": "pii_scrub_endpoint_contract"}
 	t.Run("pii_scrub_endpoint_contract", func(t *testing.T) {
 		// Brain must expose POST /v1/pii/scrub accepting {text}.
 		// Core delegates Tier 2 PII scrubbing to Brain's spaCy/Presidio NER.
@@ -1252,6 +1298,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0224", "section": "30", "sectionName": "Test System Quality", "title": "brain_api_sub_app_requires_ed25519_auth"}
 	t.Run("brain_api_sub_app_requires_ed25519_auth", func(t *testing.T) {
 		// All /api/* endpoints must require Ed25519 service key authentication.
 		// The brain app.py must set up signature verification middleware.
@@ -1263,6 +1310,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0225", "section": "30", "sectionName": "Test System Quality", "title": "brain_module_isolation_enforced"}
 	t.Run("brain_module_isolation_enforced", func(t *testing.T) {
 		// dina_brain must never import from dina_admin. This prevents
 		// privilege escalation: brain API endpoints should not access admin functionality.
@@ -1294,6 +1342,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0226", "section": "30", "sectionName": "Test System Quality", "title": "process_response_includes_decision_fields"}
 	t.Run("process_response_includes_decision_fields", func(t *testing.T) {
 		// ProcessEventResponse must include fields for the Agent Safety Layer:
 		// decision, approved, requires_approval, risk.
@@ -1306,6 +1355,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0227", "section": "30", "sectionName": "Test System Quality", "title": "docs_disabled_in_production"}
 	t.Run("docs_disabled_in_production", func(t *testing.T) {
 		// OpenAPI docs must be disabled in production (SEC-LOW-01).
 		// Only enabled in development/test mode.
@@ -1318,6 +1368,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0228", "section": "30", "sectionName": "Test System Quality", "title": "brain_never_touches_sqlite"}
 	t.Run("brain_never_touches_sqlite", func(t *testing.T) {
 		// Brain is an untrusted tenant — it must NEVER directly access SQLite.
 		// All vault access goes through Core's HTTP API. Verify no sqlite3

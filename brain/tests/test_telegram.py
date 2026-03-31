@@ -133,6 +133,7 @@ def _last_reply_text(mock_channel):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0133", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "01", "title": "start_allowed_user_gets_paired"}
 async def test_start_allowed_user_gets_paired(service, mock_core):
     """Allowed user sending /start should be paired and welcomed."""
     update = _make_update(user_id=111, text="/start")
@@ -152,6 +153,7 @@ async def test_start_allowed_user_gets_paired(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0134", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "02", "title": "start_unknown_user_rejected"}
 async def test_start_unknown_user_rejected(service):
     """Unknown user sending /start should get a polite rejection."""
     update = _make_update(user_id=999, text="/start")
@@ -166,6 +168,7 @@ async def test_start_unknown_user_rejected(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0135", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "03", "title": "start_already_paired_user"}
 async def test_start_already_paired_user(service):
     """Already-paired user gets a different message."""
     service._paired_users.add(111)
@@ -184,6 +187,7 @@ async def test_start_already_paired_user(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0136", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "04", "title": "ask_from_allowed_user_calls_guardian"}
 async def test_ask_from_allowed_user_calls_guardian(service, mock_guardian):
     """/ask from an allowed user should forward the question to Guardian."""
     service._paired_users.add(111)
@@ -204,6 +208,7 @@ async def test_ask_from_allowed_user_calls_guardian(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0137", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "05", "title": "ask_from_unknown_user_rejected"}
 async def test_ask_from_unknown_user_rejected(service, mock_guardian):
     """/ask from an unknown user should not reach Guardian."""
     update = _make_update(user_id=999, text="/ask hello")
@@ -217,6 +222,7 @@ async def test_ask_from_unknown_user_rejected(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0138", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "06", "title": "ask_empty_text_shows_usage"}
 async def test_ask_empty_text_shows_usage(service, mock_guardian):
     """/ask with no text should show usage hint."""
     service._paired_users.add(111)
@@ -231,6 +237,7 @@ async def test_ask_empty_text_shows_usage(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0139", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "07", "title": "ask_auto_pairs_allowed_user"}
 async def test_ask_auto_pairs_allowed_user(service, mock_core):
     """/ask from an allowed but unpaired user should auto-pair them."""
     # User 111 is allowed but not yet paired.
@@ -246,6 +253,7 @@ async def test_ask_auto_pairs_allowed_user(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0140", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "08", "title": "ask_guardian_error_sends_friendly_reply"}
 async def test_ask_guardian_error_sends_friendly_reply(service, mock_guardian):
     """/ask when Guardian raises should return a friendly error message."""
     service._paired_users.add(111)
@@ -261,6 +269,7 @@ async def test_ask_guardian_error_sends_friendly_reply(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0141", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "09", "title": "ask_strips_command_prefix"}
 async def test_ask_strips_command_prefix(service, mock_guardian):
     """/ask strips the command prefix before sending to Guardian."""
     service._paired_users.add(111)
@@ -279,6 +288,7 @@ async def test_ask_strips_command_prefix(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0142", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "10", "title": "remember_ingests_to_staging"}
 async def test_remember_ingests_to_staging(service, mock_core):
     """/remember should ingest the note to staging pipeline."""
     service._paired_users.add(111)
@@ -297,6 +307,7 @@ async def test_remember_ingests_to_staging(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0143", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "11", "title": "remember_polls_staging_status"}
 async def test_remember_polls_staging_status(service, mock_core):
     """/remember polls staging_status for result after ingest."""
     service._paired_users.add(111)
@@ -316,6 +327,7 @@ async def test_remember_polls_staging_status(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0144", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "12", "title": "remember_stored_reply"}
 async def test_remember_stored_reply(service, mock_core):
     """/remember returns 'Stored in *persona* vault.' on success."""
     service._paired_users.add(111)
@@ -333,6 +345,7 @@ async def test_remember_stored_reply(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0145", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "13", "title": "remember_needs_approval_reply"}
 async def test_remember_needs_approval_reply(service, mock_core):
     """/remember returns 'Needs approval' when persona needs unlock."""
     service._paired_users.add(111)
@@ -350,6 +363,7 @@ async def test_remember_needs_approval_reply(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0146", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "14", "title": "remember_empty_text_shows_usage"}
 async def test_remember_empty_text_shows_usage(service, mock_guardian):
     """/remember with no text should show usage hint."""
     service._paired_users.add(111)
@@ -365,6 +379,7 @@ async def test_remember_empty_text_shows_usage(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0147", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "15", "title": "remember_from_unknown_user_rejected"}
 async def test_remember_from_unknown_user_rejected(service):
     """/remember from an unknown user should get a rejection."""
     update = _make_update(user_id=999, text="/remember something")
@@ -377,6 +392,7 @@ async def test_remember_from_unknown_user_rejected(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0148", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "16", "title": "remember_ingest_failure_sends_error_reply"}
 async def test_remember_ingest_failure_sends_error_reply(service, mock_core):
     """/remember ingest failure sends a friendly error reply."""
     service._paired_users.add(111)
@@ -391,6 +407,7 @@ async def test_remember_ingest_failure_sends_error_reply(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0149", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "17", "title": "remember_auto_pairs_allowed_user"}
 async def test_remember_auto_pairs_allowed_user(service, mock_core):
     """/remember from an allowed but unpaired user should auto-pair them."""
     assert 111 not in service._paired_users
@@ -411,6 +428,7 @@ async def test_remember_auto_pairs_allowed_user(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0150", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "18", "title": "dm_plain_message_shows_command_hints"}
 async def test_dm_plain_message_shows_command_hints(service, mock_guardian):
     """Plain DM from an allowed user should NOT go to Guardian.
 
@@ -432,6 +450,7 @@ async def test_dm_plain_message_shows_command_hints(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0151", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "19", "title": "dm_plain_message_not_stored"}
 async def test_dm_plain_message_not_stored(service, mock_core):
     """Plain DM messages must NOT be stored in vault (no staging_ingest call)."""
     service._paired_users.add(111)
@@ -446,6 +465,7 @@ async def test_dm_plain_message_not_stored(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0152", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "20", "title": "dm_from_unknown_user_rejected"}
 async def test_dm_from_unknown_user_rejected(service, mock_guardian):
     """DM from an unknown user should not reach Guardian."""
     update = _make_update(user_id=999, text="Hello")
@@ -459,6 +479,7 @@ async def test_dm_from_unknown_user_rejected(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0153", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "21", "title": "dm_auto_pairs_allowed_user"}
 async def test_dm_auto_pairs_allowed_user(service, mock_core):
     """Allowed but unpaired user sending any DM should be auto-paired."""
     # User 111 is allowed but not yet in paired set.
@@ -480,6 +501,7 @@ async def test_dm_auto_pairs_allowed_user(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0154", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "22", "title": "group_message_with_mention_processed"}
 async def test_group_message_with_mention_processed(service, mock_guardian):
     """Group message mentioning @bot should be processed."""
     service._paired_users.add(111)
@@ -502,6 +524,7 @@ async def test_group_message_with_mention_processed(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0155", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "23", "title": "group_message_without_mention_ignored"}
 async def test_group_message_without_mention_ignored(service, mock_guardian):
     """Group message without @bot mention should be ignored."""
     update = _make_update(
@@ -519,6 +542,7 @@ async def test_group_message_without_mention_ignored(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0156", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "24", "title": "group_message_disallowed_group_ignored"}
 async def test_group_message_disallowed_group_ignored(service, mock_guardian):
     """Message in a non-allowlisted group should be ignored."""
     update = _make_update(
@@ -541,6 +565,7 @@ async def test_group_message_disallowed_group_ignored(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0157", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "25", "title": "load_paired_users_from_kv"}
 async def test_load_paired_users_from_kv(service, mock_core):
     """Paired users should be loaded from Core KV on startup."""
     mock_core.get_kv = AsyncMock(return_value=json.dumps([111, 333]))
@@ -551,6 +576,7 @@ async def test_load_paired_users_from_kv(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0158", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "26", "title": "load_paired_users_empty_kv"}
 async def test_load_paired_users_empty_kv(service, mock_core):
     """Empty KV should result in empty paired set (no error)."""
     mock_core.get_kv = AsyncMock(return_value=None)
@@ -561,6 +587,7 @@ async def test_load_paired_users_empty_kv(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0159", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "27", "title": "load_paired_users_kv_error"}
 async def test_load_paired_users_kv_error(service, mock_core):
     """KV error should be handled gracefully (empty set)."""
     mock_core.get_kv = AsyncMock(side_effect=Exception("connection refused"))
@@ -576,6 +603,7 @@ async def test_load_paired_users_kv_error(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0160", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "28", "title": "send_nudge"}
 async def test_send_nudge(service, mock_bot):
     """send_nudge should call bot.send_message."""
     await service.send_nudge(111, "Reminder: meeting at 3pm")
@@ -590,6 +618,7 @@ async def test_send_nudge(service, mock_bot):
 
 @pytest.mark.asyncio
 # TST-BRAIN-813
+# TRACE: {"suite": "BRAIN", "case": "0813", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "29", "title": "plain_dm_message_not_stored_via_staging"}
 async def test_plain_dm_message_not_stored_via_staging(service, mock_core, mock_guardian):
     """Plain DM messages are NOT staged — Telegram questions are read-only.
 
@@ -614,6 +643,7 @@ async def test_plain_dm_message_not_stored_via_staging(service, mock_core, mock_
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0161", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "30", "title": "config_telegram_fields"}
 def test_config_telegram_fields():
     """Config should parse Telegram env vars."""
     import os
@@ -632,6 +662,7 @@ def test_config_telegram_fields():
     assert cfg.telegram_allowed_groups == frozenset({-1001, -1002})
 
 
+# TRACE: {"suite": "BRAIN", "case": "0162", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "31", "title": "config_no_telegram_token"}
 def test_config_no_telegram_token():
     """Config should set telegram_token=None when env var is missing."""
     import os
@@ -656,6 +687,7 @@ def test_config_no_telegram_token():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0163", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "32", "title": "adapter_start_stop"}
 async def test_adapter_start_stop():
     """Adapter start/stop should call Application lifecycle methods."""
     with patch("src.adapter.telegram_bot.Application") as MockApp:
@@ -708,6 +740,7 @@ async def test_adapter_start_stop():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0164", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "33", "title": "adapter_start_invalid_token_raises_telegram_error"}
 async def test_adapter_start_invalid_token_raises_telegram_error():
     """Adapter.start() should raise TelegramError on bad token."""
     from src.adapter.telegram_bot import TelegramBotAdapter
@@ -725,6 +758,7 @@ async def test_adapter_start_invalid_token_raises_telegram_error():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0165", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "34", "title": "adapter_send_message_error_raises_telegram_error"}
 async def test_adapter_send_message_error_raises_telegram_error():
     """Adapter.send_message() should raise TelegramError on failure."""
     from src.adapter.telegram_bot import TelegramBotAdapter
@@ -743,6 +777,7 @@ async def test_adapter_send_message_error_raises_telegram_error():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0166", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "35", "title": "adapter_stop_error_handled_gracefully"}
 async def test_adapter_stop_error_handled_gracefully():
     """Adapter.stop() should not raise even if internal stop fails."""
     from src.adapter.telegram_bot import TelegramBotAdapter
@@ -768,6 +803,7 @@ async def test_adapter_stop_error_handled_gracefully():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0167", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "36", "title": "handle_message_no_effective_user"}
 async def test_handle_message_no_effective_user(service, mock_guardian):
     """Update with no effective_user should be silently ignored."""
     update = _make_update()
@@ -780,6 +816,7 @@ async def test_handle_message_no_effective_user(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0168", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "37", "title": "handle_message_no_message_text"}
 async def test_handle_message_no_message_text(service, mock_guardian):
     """Update with no message text should be silently ignored."""
     update = _make_update()
@@ -792,6 +829,7 @@ async def test_handle_message_no_message_text(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0169", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "38", "title": "handle_message_empty_message"}
 async def test_handle_message_empty_message(service, mock_guardian):
     """Update with message=None should be silently ignored."""
     update = _make_update()
@@ -804,6 +842,7 @@ async def test_handle_message_empty_message(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0170", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "39", "title": "handle_start_no_effective_user"}
 async def test_handle_start_no_effective_user(service):
     """Handle /start with no effective_user should be silently ignored."""
     update = _make_update()
@@ -815,6 +854,7 @@ async def test_handle_start_no_effective_user(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0171", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "40", "title": "handle_start_no_effective_chat"}
 async def test_handle_start_no_effective_chat(service):
     """Handle /start with no effective_chat should be silently ignored."""
     update = _make_update()
@@ -830,6 +870,7 @@ async def test_handle_start_no_effective_chat(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0172", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "41", "title": "ask_guardian_error_sends_error_reply"}
 async def test_ask_guardian_error_sends_error_reply(service, mock_guardian):
     """If Guardian raises during /ask, user should get a friendly error message."""
     service._paired_users.add(111)
@@ -847,6 +888,7 @@ async def test_ask_guardian_error_sends_error_reply(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0173", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "42", "title": "ask_empty_response_not_sent"}
 async def test_ask_empty_response_not_sent(service, mock_guardian):
     """Guardian returning empty content/response should not send a reply."""
     service._paired_users.add(111)
@@ -866,6 +908,7 @@ async def test_ask_empty_response_not_sent(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0174", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "43", "title": "ask_content_field_takes_precedence_over_response"}
 async def test_ask_content_field_takes_precedence_over_response(service, mock_guardian):
     """_extract_response should prefer 'content' field over 'response' field."""
     service._paired_users.add(111)
@@ -883,6 +926,7 @@ async def test_ask_content_field_takes_precedence_over_response(service, mock_gu
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0175", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "44", "title": "ask_response_field_fallback"}
 async def test_ask_response_field_fallback(service, mock_guardian):
     """_extract_response falls back to 'response' when 'content' is absent."""
     service._paired_users.add(111)
@@ -900,6 +944,7 @@ async def test_ask_response_field_fallback(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0176", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "45", "title": "ask_dict_response_extracted"}
 async def test_ask_dict_response_extracted(service, mock_guardian):
     """Guardian returning a dict 'response' should extract text correctly."""
     service._paired_users.add(111)
@@ -922,6 +967,7 @@ async def test_ask_dict_response_extracted(service, mock_guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0177", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "46", "title": "vault_store_failure_does_not_crash"}
 async def test_vault_store_failure_does_not_crash(service, mock_core, mock_guardian):
     """/ask should still return Guardian's response even if vault is unavailable."""
     service._paired_users.add(111)
@@ -944,6 +990,7 @@ async def test_vault_store_failure_does_not_crash(service, mock_core, mock_guard
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0178", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "47", "title": "pair_kv_failure_still_pairs_in_memory"}
 async def test_pair_kv_failure_still_pairs_in_memory(service, mock_core):
     """If KV write fails during pairing, user should still be paired in memory."""
     mock_core.set_kv = AsyncMock(side_effect=Exception("KV unreachable"))
@@ -965,6 +1012,7 @@ async def test_pair_kv_failure_still_pairs_in_memory(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0179", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "48", "title": "send_nudge_no_bot_set"}
 async def test_send_nudge_no_bot_set():
     """send_nudge with no bot set should silently do nothing."""
     svc = TelegramService(
@@ -981,6 +1029,7 @@ async def test_send_nudge_no_bot_set():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0180", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "49", "title": "multiple_users_pair_independently"}
 async def test_multiple_users_pair_independently(service, mock_core):
     """Two different allowed users should pair independently."""
     context, _mock_ch = _make_context()
@@ -1006,6 +1055,7 @@ async def test_multiple_users_pair_independently(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0181", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "50", "title": "supergroup_message_with_mention"}
 async def test_supergroup_message_with_mention(service, mock_guardian):
     """Supergroup messages with mention should reach the reply path."""
     service._paired_users.add(111)
@@ -1028,6 +1078,7 @@ async def test_supergroup_message_with_mention(service, mock_guardian):
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0182", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "51", "title": "adapter_satisfies_port_protocol"}
 def test_adapter_satisfies_port_protocol():
     """TelegramBotAdapter should satisfy the TelegramBot protocol."""
     from src.port.telegram import TelegramBot
@@ -1045,6 +1096,7 @@ def test_adapter_satisfies_port_protocol():
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0183", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "52", "title": "config_allowed_users_with_spaces"}
 def test_config_allowed_users_with_spaces():
     """Spaces in DINA_TELEGRAM_ALLOWED_USERS should be handled."""
     import os
@@ -1060,6 +1112,7 @@ def test_config_allowed_users_with_spaces():
     assert cfg.telegram_allowed_users == frozenset({111, 222, 333})
 
 
+# TRACE: {"suite": "BRAIN", "case": "0184", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "53", "title": "config_allowed_users_with_invalid_entries"}
 def test_config_allowed_users_with_invalid_entries():
     """Non-numeric entries in allowed users should be silently skipped."""
     import os
@@ -1081,6 +1134,7 @@ def test_config_allowed_users_with_invalid_entries():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0185", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "54", "title": "send_approval_prompt_sends_to_all_paired"}
 async def test_send_approval_prompt_sends_to_all_paired(service, mock_bot):
     """send_approval_prompt sends an inline-keyboard message to each paired user."""
     service._paired_users = {111, 222}
@@ -1105,6 +1159,7 @@ async def test_send_approval_prompt_sends_to_all_paired(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0186", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "55", "title": "send_approval_prompt_includes_inline_keyboard"}
 async def test_send_approval_prompt_includes_inline_keyboard(service, mock_bot):
     """Approval prompt must include an InlineKeyboardMarkup with approve/deny buttons."""
     from telegram import InlineKeyboardMarkup
@@ -1133,6 +1188,7 @@ async def test_send_approval_prompt_includes_inline_keyboard(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0187", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "56", "title": "send_approval_prompt_escapes_markdown"}
 async def test_send_approval_prompt_escapes_markdown(service, mock_bot):
     """Markdown special chars in reason/agent fields are escaped."""
     service._paired_users = {111}
@@ -1153,6 +1209,7 @@ async def test_send_approval_prompt_escapes_markdown(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0188", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "57", "title": "send_approval_prompt_no_bot"}
 async def test_send_approval_prompt_no_bot(service):
     """No-op when bot is not set."""
     service._bot = None
@@ -1162,6 +1219,7 @@ async def test_send_approval_prompt_no_bot(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0189", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "58", "title": "send_approval_prompt_no_paired_users"}
 async def test_send_approval_prompt_no_paired_users(service, mock_bot):
     """No-op when no users are paired."""
     service._paired_users = set()
@@ -1170,6 +1228,7 @@ async def test_send_approval_prompt_no_paired_users(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0190", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "59", "title": "send_approval_prompt_skips_empty_approval"}
 async def test_send_approval_prompt_skips_empty_approval(service, mock_bot):
     """send_approval_prompt returns early when id or persona is missing."""
     service._paired_users = {111}
@@ -1190,6 +1249,7 @@ async def test_send_approval_prompt_skips_empty_approval(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0191", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "60", "title": "send_approval_prompt_send_failure_logged"}
 async def test_send_approval_prompt_send_failure_logged(service, mock_bot):
     """Send failure is logged but does not raise."""
     service._paired_users = {111}
@@ -1199,6 +1259,7 @@ async def test_send_approval_prompt_send_failure_logged(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0192", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "61", "title": "send_approval_prompt_lazy_loads_paired_users"}
 async def test_send_approval_prompt_lazy_loads_paired_users(service, mock_bot, mock_core):
     """send_approval_prompt retries load_paired_users when _paired_users is empty."""
     # Start with no paired users (simulates startup race).
@@ -1214,6 +1275,7 @@ async def test_send_approval_prompt_lazy_loads_paired_users(service, mock_bot, m
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0193", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "62", "title": "handle_approval_response_approve"}
 async def test_handle_approval_response_approve(service, mock_core):
     """'approve <id>' calls core.approve_request and returns success."""
     result = await service.handle_approval_response("approve apr-001")
@@ -1226,6 +1288,7 @@ async def test_handle_approval_response_approve(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0194", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "63", "title": "handle_approval_response_deny"}
 async def test_handle_approval_response_deny(service, mock_core):
     """'deny <id>' calls core.deny_request and returns success."""
     result = await service.handle_approval_response("deny apr-002")
@@ -1236,6 +1299,7 @@ async def test_handle_approval_response_deny(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0195", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "64", "title": "handle_approval_response_approve_failure"}
 async def test_handle_approval_response_approve_failure(service, mock_core):
     """Approve failure returns generic error (BS4: no internal details leaked)."""
     mock_core.approve_request = AsyncMock(side_effect=Exception("not found"))
@@ -1247,6 +1311,7 @@ async def test_handle_approval_response_approve_failure(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0196", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "65", "title": "handle_approval_response_not_a_command"}
 async def test_handle_approval_response_not_a_command(service):
     """Non-command text returns None."""
     result = await service.handle_approval_response("hello world")
@@ -1254,6 +1319,7 @@ async def test_handle_approval_response_not_a_command(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0197", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "66", "title": "handle_approval_response_case_insensitive"}
 async def test_handle_approval_response_case_insensitive(service, mock_core):
     """Commands are case-insensitive."""
     result = await service.handle_approval_response("  Approve APR-003  ")
@@ -1267,6 +1333,7 @@ async def test_handle_approval_response_case_insensitive(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0198", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "67", "title": "handle_approval_response_approve_single"}
 async def test_handle_approval_response_approve_single(service, mock_core):
     """'approve-single <id>' calls core.approve_request with scope=single."""
     result = await service.handle_approval_response("approve-single apr-010")
@@ -1279,6 +1346,7 @@ async def test_handle_approval_response_approve_single(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0199", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "68", "title": "handle_approval_response_approve_single_failure"}
 async def test_handle_approval_response_approve_single_failure(service, mock_core):
     """approve-single failure returns generic error (BS4: no details leaked)."""
     mock_core.approve_request = AsyncMock(side_effect=Exception("expired"))
@@ -1290,6 +1358,7 @@ async def test_handle_approval_response_approve_single_failure(service, mock_cor
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0200", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "69", "title": "approval_prompt_shows_three_button_options"}
 async def test_approval_prompt_shows_three_button_options(service, mock_bot):
     """Approval prompt InlineKeyboardMarkup must have approve, approve-single, and deny."""
     from telegram import InlineKeyboardMarkup
@@ -1319,6 +1388,7 @@ async def test_approval_prompt_shows_three_button_options(service, mock_bot):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0201", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "70", "title": "handle_callback_query_approve"}
 async def test_handle_callback_query_approve(service, mock_core):
     """Inline keyboard Approve button calls approve_request and edits the message."""
     update = MagicMock()
@@ -1345,6 +1415,7 @@ async def test_handle_callback_query_approve(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0202", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "71", "title": "handle_callback_query_deny"}
 async def test_handle_callback_query_deny(service, mock_core):
     """Inline keyboard Deny button calls deny_request and edits the message."""
     update = MagicMock()
@@ -1368,6 +1439,7 @@ async def test_handle_callback_query_deny(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0203", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "72", "title": "handle_callback_query_approve_single"}
 async def test_handle_callback_query_approve_single(service, mock_core):
     """Inline keyboard Approve (once) button calls approve_request with scope=single."""
     update = MagicMock()
@@ -1390,6 +1462,7 @@ async def test_handle_callback_query_approve_single(service, mock_core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0204", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "73", "title": "handle_callback_query_no_query"}
 async def test_handle_callback_query_no_query(service):
     """handle_callback_query is a no-op when callback_query is None."""
     update = MagicMock()
@@ -1401,6 +1474,7 @@ async def test_handle_callback_query_no_query(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0205", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "74", "title": "handle_callback_query_no_data"}
 async def test_handle_callback_query_no_data(service):
     """handle_callback_query is a no-op when callback_query.data is None."""
     update = MagicMock()
@@ -1416,6 +1490,7 @@ async def test_handle_callback_query_no_data(service):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0206", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "75", "title": "handle_callback_query_edit_failure_propagates"}
 async def test_handle_callback_query_edit_failure_propagates(service, mock_core):
     """If ch.edit raises, the exception propagates (no silent swallow)."""
     update = MagicMock()

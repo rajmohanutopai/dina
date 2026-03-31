@@ -28,6 +28,7 @@ class TestConnectorFailure:
     backfill resume after interruption."""
 
 # TST-E2E-105
+    # TRACE: {"suite": "E2E", "case": "0105", "section": "19", "sectionName": "Connector Failure", "subsection": "01", "scenario": "01", "title": "openclaw_outage_degrades_recovers"}
     def test_openclaw_outage_degrades_recovers(
         self,
         don_alonso: HomeNode,
@@ -110,6 +111,7 @@ class TestConnectorFailure:
         assert len(recovery_result["emails"]) == 10
 
 # TST-E2E-106
+    # TRACE: {"suite": "E2E", "case": "0106", "section": "19", "sectionName": "Connector Failure", "subsection": "01", "scenario": "02", "title": "telegram_credential_expiry"}
     def test_telegram_credential_expiry(
         self,
         don_alonso: HomeNode,
@@ -180,6 +182,7 @@ class TestConnectorFailure:
         )
 
 # TST-E2E-107
+    # TRACE: {"suite": "E2E", "case": "0107", "section": "19", "sectionName": "Connector Failure", "subsection": "01", "scenario": "03", "title": "fast_sync_backfill_resume"}
     def test_fast_sync_backfill_resume(
         self,
         don_alonso: HomeNode,

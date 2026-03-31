@@ -19,6 +19,7 @@ class TestCartHandover:
     """Real API tests for REL-020: irreversible-action invariants."""
 
     # REL-020
+    # TRACE: {"suite": "REL", "case": "0020", "section": "20", "sectionName": "Cart Handover", "subsection": "01", "scenario": "01", "title": "rel_020_email_draft_stored_not_sent"}
     def test_rel_020_email_draft_stored_not_sent(self, api: httpx.Client) -> None:
         """Email draft is stored in vault, never auto-sent."""
         draft_id = f"drf_{uuid.uuid4().hex[:8]}"
@@ -56,6 +57,7 @@ class TestCartHandover:
         assert found, f"Draft {stored_id} not found in vault query"
 
     # REL-020
+    # TRACE: {"suite": "REL", "case": "0020", "section": "20", "sectionName": "Cart Handover", "subsection": "01", "scenario": "02", "title": "rel_020_purchase_intent_stored_not_executed"}
     def test_rel_020_purchase_intent_stored_not_executed(
         self, api: httpx.Client,
     ) -> None:
@@ -98,6 +100,7 @@ class TestCartHandover:
         assert found, f"Purchase intent {stored_id} not found in vault"
 
     # REL-020
+    # TRACE: {"suite": "REL", "case": "0020", "section": "20", "sectionName": "Cart Handover", "subsection": "01", "scenario": "03", "title": "rel_020_transfer_money_requires_approval"}
     def test_rel_020_transfer_money_requires_approval(
         self, core_url, auth_headers,
     ) -> None:
@@ -124,6 +127,7 @@ class TestCartHandover:
         )
 
     # REL-020
+    # TRACE: {"suite": "REL", "case": "0020", "section": "20", "sectionName": "Cart Handover", "subsection": "01", "scenario": "04", "title": "rel_020_vault_tracks_draft_type"}
     def test_rel_020_vault_tracks_draft_type(self, api: httpx.Client) -> None:
         """Vault correctly stores and returns email_draft type."""
         api.post("/v1/vault/store", json={

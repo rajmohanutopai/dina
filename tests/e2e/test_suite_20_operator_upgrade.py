@@ -32,6 +32,7 @@ class TestOperatorUpgrade:
     verified upgrade flows."""
 
 # TST-E2E-108
+    # TRACE: {"suite": "E2E", "case": "0108", "section": "20", "sectionName": "Operator Upgrade", "subsection": "01", "scenario": "01", "title": "rerun_install_no_identity_rotation"}
     def test_rerun_install_no_identity_rotation(
         self,
         don_alonso: HomeNode,
@@ -105,6 +106,7 @@ class TestOperatorUpgrade:
         assert fresh.setup_complete is True
 
 # TST-E2E-109
+    # TRACE: {"suite": "E2E", "case": "0109", "section": "20", "sectionName": "Operator Upgrade", "subsection": "01", "scenario": "02", "title": "locked_node_admin_journey"}
     def test_locked_node_admin_journey(
         self,
         don_alonso: HomeNode,
@@ -202,6 +204,7 @@ class TestOperatorUpgrade:
         ), "persona_unlock must create a system-generated audit entry"
 
 # TST-E2E-110
+    # TRACE: {"suite": "E2E", "case": "0110", "section": "20", "sectionName": "Operator Upgrade", "subsection": "01", "scenario": "03", "title": "verified_upgrade_requires_operator_action"}
     def test_verified_upgrade_requires_operator_action(
         self,
         don_alonso: HomeNode,

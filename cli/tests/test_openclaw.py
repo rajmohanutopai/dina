@@ -66,12 +66,14 @@ def _event(name, payload=None):
 
 class TestOpenClawClient:
 
+    # TRACE: {"suite": "CLI", "case": "0015", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "01", "title": "ws_url_conversion"}
     def test_ws_url_conversion(self):
         c = OpenClawClient("http://localhost:3000", token="t")
         assert c._ws_url() == "ws://localhost:3000/ws"
         c2 = OpenClawClient("https://gw.example.com", token="t")
         assert c2._ws_url() == "wss://gw.example.com/ws"
 
+    # TRACE: {"suite": "CLI", "case": "0016", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "02", "title": "health_reachable"}
     def test_health_reachable(self):
         factory, mock = _mock_ws([
             _challenge(),
@@ -93,17 +95,20 @@ class TestOpenClawClient:
         assert connect["device"]["id"] == "did:key:z6MkTest"
         assert connect["device"]["type"] == "cli"
 
+    # TRACE: {"suite": "CLI", "case": "0017", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "03", "title": "health_not_ok"}
     def test_health_not_ok(self):
         factory, _ = _mock_ws([_challenge(), _res("1"), _res("2", {"status": "degraded"})])
         with patch("dina_cli.openclaw.ws_connect", side_effect=factory):
             c = OpenClawClient("http://localhost:3000", token="t")
             assert c.health() is False
 
+    # TRACE: {"suite": "CLI", "case": "0018", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "04", "title": "health_unreachable"}
     def test_health_unreachable(self):
         with patch("dina_cli.openclaw.ws_connect", side_effect=OSError("refused")):
             c = OpenClawClient("http://localhost:3000", token="t")
             assert c.health() is False
 
+    # TRACE: {"suite": "CLI", "case": "0019", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "05", "title": "connect_with_challenge_signing"}
     def test_connect_with_challenge_signing(self):
         """When sign_fn is provided, device block includes signed identity."""
         signed_bytes = b"\x01\x02\x03"
@@ -127,6 +132,7 @@ class TestOpenClawClient:
         assert device["nonce"] == "challenge-nonce-xyz"
         assert "signedAt" in device
 
+    # TRACE: {"suite": "CLI", "case": "0020", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "06", "title": "connect_without_signing"}
     def test_connect_without_signing(self):
         """Without sign_fn, device block has no signature fields."""
         factory, mock = _mock_ws([_challenge(), _res("1"), _res("2", {"status": "ok"})])
@@ -139,6 +145,7 @@ class TestOpenClawClient:
         assert "signature" not in device
         assert "publicKey" not in device
 
+    # TRACE: {"suite": "CLI", "case": "0021", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "07", "title": "run_task_full_protocol"}
     def test_run_task_full_protocol(self):
         factory, mock = _mock_ws([
             _challenge(),
@@ -163,6 +170,7 @@ class TestOpenClawClient:
         assert mock.sent[2]["method"] == "agent.wait"
         assert mock.sent[2]["params"]["runId"] == "run-123"
 
+    # TRACE: {"suite": "CLI", "case": "0022", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "08", "title": "run_task_terminal_event"}
     def test_run_task_terminal_event(self):
         factory, _ = _mock_ws([
             _challenge(), _res("1"), _res("2", {"runId": "r"}),
@@ -172,6 +180,7 @@ class TestOpenClawClient:
             result = OpenClawClient("http://localhost:3000", token="t").run_task("test")
         assert result == {"ok": True}
 
+    # TRACE: {"suite": "CLI", "case": "0023", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "09", "title": "run_task_agent_failed"}
     def test_run_task_agent_failed(self):
         factory, _ = _mock_ws([
             _challenge(), _res("1"), _res("2", {"runId": "r"}),
@@ -181,6 +190,7 @@ class TestOpenClawClient:
             with pytest.raises(OpenClawError, match="failed.*LLM quota"):
                 OpenClawClient("http://localhost:3000", token="t").run_task("test")
 
+    # TRACE: {"suite": "CLI", "case": "0024", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "10", "title": "run_task_cancelled"}
     def test_run_task_cancelled(self):
         factory, _ = _mock_ws([
             _challenge(), _res("1"), _res("2", {"runId": "r"}),
@@ -190,17 +200,20 @@ class TestOpenClawClient:
             with pytest.raises(OpenClawError, match="cancelled"):
                 OpenClawClient("http://localhost:3000", token="t").run_task("test")
 
+    # TRACE: {"suite": "CLI", "case": "0025", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "11", "title": "run_task_connection_refused"}
     def test_run_task_connection_refused(self):
         with patch("dina_cli.openclaw.ws_connect", side_effect=OSError("refused")):
             with pytest.raises(OpenClawError, match="unreachable"):
                 OpenClawClient("http://localhost:3000", token="t").run_task("test")
 
+    # TRACE: {"suite": "CLI", "case": "0026", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "12", "title": "run_task_timeout"}
     def test_run_task_timeout(self):
         factory, _ = _mock_ws([_challenge(), _res("1"), _res("2", {"runId": "r"})])
         with patch("dina_cli.openclaw.ws_connect", side_effect=factory):
             with pytest.raises(OpenClawError, match="timed out"):
                 OpenClawClient("http://localhost:3000", token="t", timeout=1).run_task("test")
 
+    # TRACE: {"suite": "CLI", "case": "0027", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "13", "title": "run_task_idempotency_key"}
     def test_run_task_idempotency_key(self):
         factory, mock = _mock_ws([
             _challenge(), _res("1"), _res("2", {"runId": "r"}), _res("3", {}),
@@ -209,12 +222,14 @@ class TestOpenClawClient:
             OpenClawClient("http://localhost:3000", token="t").run_task("test", idempotency_key="k1")
         assert mock.sent[1]["params"]["idempotencyKey"] == "k1"
 
+    # TRACE: {"suite": "CLI", "case": "0028", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "14", "title": "run_task_bad_challenge"}
     def test_run_task_bad_challenge(self):
         factory, _ = _mock_ws([_event("error", {"message": "unauthorized"})])
         with patch("dina_cli.openclaw.ws_connect", side_effect=factory):
             with pytest.raises(OpenClawError, match="connect.challenge"):
                 OpenClawClient("http://localhost:3000", token="t").run_task("test")
 
+    # TRACE: {"suite": "CLI", "case": "0029", "section": "04", "sectionName": "OpenClaw", "subsection": "02", "scenario": "15", "title": "run_task_rpc_error"}
     def test_run_task_rpc_error(self):
         factory, _ = _mock_ws([_challenge(), _res("1"), _res_err("2", "rate limited")])
         with patch("dina_cli.openclaw.ws_connect", side_effect=factory):

@@ -32,6 +32,7 @@ class TestQuietDina:
     """
 
 # TST-E2E-099
+    # TRACE: {"suite": "E2E", "case": "0099", "section": "17", "sectionName": "Quiet Dina", "subsection": "01", "scenario": "01", "title": "mixed_tier_interrupt_notify_queue"}
     def test_mixed_tier_interrupt_notify_queue(
         self,
         don_alonso: HomeNode,
@@ -156,6 +157,7 @@ class TestQuietDina:
         node.dnd_active = False
 
 # TST-E2E-100
+    # TRACE: {"suite": "E2E", "case": "0100", "section": "17", "sectionName": "Quiet Dina", "subsection": "01", "scenario": "02", "title": "daily_briefing_summarizes_queued"}
     def test_daily_briefing_summarizes_queued(
         self,
         don_alonso: HomeNode,
@@ -225,6 +227,7 @@ class TestQuietDina:
         node.dnd_active = False
 
 # TST-E2E-101
+    # TRACE: {"suite": "E2E", "case": "0101", "section": "17", "sectionName": "Quiet Dina", "subsection": "01", "scenario": "03", "title": "briefing_regenerates_after_crash"}
     def test_briefing_regenerates_after_crash(
         self,
         don_alonso: HomeNode,

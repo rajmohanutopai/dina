@@ -20,6 +20,7 @@ import (
 // ==========================================================================
 
 // TST-CORE-862
+// TRACE: {"suite": "CORE", "case": "1341", "section": "26", "sectionName": "Client Sync Protocol", "subsection": "01", "scenario": "01", "title": "ClientSendsCheckpoint_CoreReturnsChangedItems"}
 func TestSync_26_1_ClientSendsCheckpoint_CoreReturnsChangedItems(t *testing.T) {
 	mgr := dinasync.NewClientSyncManager()
 
@@ -55,6 +56,7 @@ func TestSync_26_1_ClientSendsCheckpoint_CoreReturnsChangedItems(t *testing.T) {
 }
 
 // TST-CORE-863
+// TRACE: {"suite": "CORE", "case": "1342", "section": "26", "sectionName": "Client Sync Protocol", "subsection": "02", "scenario": "01", "title": "NewVaultItem_PushedToConnectedClients"}
 func TestSync_26_2_NewVaultItem_PushedToConnectedClients(t *testing.T) {
 	mgr := dinasync.NewClientSyncManager()
 
@@ -100,6 +102,7 @@ func TestSync_26_2_NewVaultItem_PushedToConnectedClients(t *testing.T) {
 }
 
 // TST-CORE-864
+// TRACE: {"suite": "CORE", "case": "1343", "section": "26", "sectionName": "Client Sync Protocol", "subsection": "03", "scenario": "01", "title": "ConflictResolution_LastWriteWins"}
 func TestSync_26_3_ConflictResolution_LastWriteWins(t *testing.T) {
 	mgr := dinasync.NewClientSyncManager()
 
@@ -146,6 +149,7 @@ func TestSync_26_3_ConflictResolution_LastWriteWins(t *testing.T) {
 }
 
 // TST-CORE-865
+// TRACE: {"suite": "CORE", "case": "1344", "section": "26", "sectionName": "Client Sync Protocol", "subsection": "04", "scenario": "01", "title": "ThinClient_QueryViaWebSocket"}
 func TestSync_26_4_ThinClient_QueryViaWebSocket(t *testing.T) {
 	// Fresh ClientSyncManager — no shared state.
 	impl := dinasync.NewClientSyncManager()
@@ -199,6 +203,7 @@ func TestSync_26_4_ThinClient_QueryViaWebSocket(t *testing.T) {
 }
 
 // TST-CORE-866
+// TRACE: {"suite": "CORE", "case": "1345", "section": "26", "sectionName": "Client Sync Protocol", "subsection": "05", "scenario": "01", "title": "BackupBlobStoreDestination"}
 func TestSync_26_5_BackupBlobStoreDestination(t *testing.T) {
 	// §26.5: Backup scheduling to blob store, configurable frequency.
 
@@ -246,6 +251,7 @@ func TestSync_26_5_BackupBlobStoreDestination(t *testing.T) {
 }
 
 // TST-CORE-867
+// TRACE: {"suite": "CORE", "case": "1346", "section": "26", "sectionName": "Client Sync Protocol", "subsection": "06", "scenario": "01", "title": "NewDeviceFullSync"}
 func TestSync_26_6_NewDeviceFullSync(t *testing.T) {
 	mgr := dinasync.NewClientSyncManager()
 
@@ -277,6 +283,7 @@ func TestSync_26_6_NewDeviceFullSync(t *testing.T) {
 }
 
 // TST-CORE-868
+// TRACE: {"suite": "CORE", "case": "1347", "section": "26", "sectionName": "Client Sync Protocol", "subsection": "07", "scenario": "01", "title": "OfflineQueueSyncsOnReconnect"}
 func TestSync_26_7_OfflineQueueSyncsOnReconnect(t *testing.T) {
 	// Connection drop: client queues changes, syncs on reconnect.
 	impl := realClientSyncManager

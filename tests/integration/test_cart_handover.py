@@ -35,6 +35,7 @@ class TestCartHandover:
     """Dina recommends; the human buys. Money never flows through Dina."""
 
 # TST-INT-293
+    # TRACE: {"suite": "INT", "case": "0293", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "recommends_but_user_buys"}
     def test_recommends_but_user_buys(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_review_bot: MockReviewBot,
@@ -67,6 +68,7 @@ class TestCartHandover:
         assert "ThinkPad" in retrieved.recommendation
 
 # TST-INT-296
+    # TRACE: {"suite": "INT", "case": "0296", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "02", "title": "never_holds_payment_info"}
     def test_never_holds_payment_info(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -118,6 +120,7 @@ class TestCartHandover:
         assert stored.amount == 5000.0
 
 # TST-INT-455
+    # TRACE: {"suite": "INT", "case": "0455", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "03", "title": "handover_with_link"}
     def test_handover_with_link(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_review_bot: MockReviewBot,
@@ -152,6 +155,7 @@ class TestCartHandover:
         assert retrieved.executed is False
 
 # TST-INT-456
+    # TRACE: {"suite": "INT", "case": "0456", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "04", "title": "multiple_options_presented"}
     def test_multiple_options_presented(
         self, mock_dina: MockDinaCore, mock_review_bot: MockReviewBot,
     ) -> None:
@@ -195,6 +199,7 @@ class TestCartHandover:
         assert scores == sorted(scores, reverse=True)
 
 # TST-INT-457
+    # TRACE: {"suite": "INT", "case": "0457", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "05", "title": "impulse_purchase_protection"}
     def test_impulse_purchase_protection(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -221,6 +226,7 @@ class TestCartHandover:
         assert intent.risk_level == ActionRisk.HIGH
 
 # TST-INT-458
+    # TRACE: {"suite": "INT", "case": "0458", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "06", "title": "deceptive_ad_detection"}
     def test_deceptive_ad_detection(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:

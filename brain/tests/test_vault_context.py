@@ -93,6 +93,7 @@ class TestToolExecutor:
     """Tests for individual tool execution."""
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0240", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "01", "title": "list_personas"}
     async def test_list_personas(self, tool_executor, mock_core_client):
         """list_personas returns personas with preview summaries."""
         mock_core_client.search_vault.return_value = [
@@ -109,6 +110,7 @@ class TestToolExecutor:
         assert "Chronic lower back pain" in personal["recent_summaries"]
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0241", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "02", "title": "list_personas_empty_vault"}
     async def test_list_personas_empty_vault(self, tool_executor, mock_core_client):
         """list_personas with empty vaults shows zero items."""
         mock_core_client.search_vault.return_value = []
@@ -118,6 +120,7 @@ class TestToolExecutor:
         assert personal["recent_summaries"] == []
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0242", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "03", "title": "browse_vault_returns_items"}
     async def test_browse_vault_returns_items(self, tool_executor, mock_core_client):
         """browse_vault returns recent items without search query."""
         mock_core_client.search_vault.return_value = [
@@ -129,6 +132,7 @@ class TestToolExecutor:
         assert result["items"][0]["summary"] == "Chronic lower back pain"
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0243", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "04", "title": "browse_vault_locked_persona"}
     async def test_browse_vault_locked_persona(self, tool_executor, mock_core_client):
         """browse_vault on locked persona returns note."""
         from src.domain.errors import PersonaLockedError
@@ -138,12 +142,14 @@ class TestToolExecutor:
         assert "locked" in result.get("note", "").lower()
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0244", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "05", "title": "browse_vault_missing_persona"}
     async def test_browse_vault_missing_persona(self, tool_executor):
         """browse_vault without persona returns error."""
         result = await tool_executor.execute("browse_vault", {})
         assert "error" in result
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0245", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "06", "title": "search_vault_returns_items"}
     async def test_search_vault_returns_items(self, tool_executor, mock_core_client):
         """search_vault returns items from the specified persona."""
         mock_core_client.search_vault.return_value = [
@@ -160,6 +166,7 @@ class TestToolExecutor:
         )
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0246", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "07", "title": "search_vault_caps_results"}
     async def test_search_vault_caps_results(self, tool_executor, mock_core_client):
         """search_vault caps results at _MAX_ITEMS_PER_QUERY."""
         mock_core_client.search_vault.return_value = [
@@ -172,6 +179,7 @@ class TestToolExecutor:
         assert len(result["items"]) <= 5
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0247", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "08", "title": "search_vault_locked_persona"}
     async def test_search_vault_locked_persona(self, tool_executor, mock_core_client):
         """Locked persona returns empty items with note."""
         from src.domain.errors import PersonaLockedError
@@ -183,18 +191,21 @@ class TestToolExecutor:
         assert "locked" in result.get("note", "").lower()
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0248", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "09", "title": "search_vault_missing_params"}
     async def test_search_vault_missing_params(self, tool_executor):
         """Missing persona/query returns error."""
         result = await tool_executor.execute("search_vault", {})
         assert "error" in result
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0249", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "10", "title": "unknown_tool"}
     async def test_unknown_tool(self, tool_executor):
         """Unknown tool name returns error."""
         result = await tool_executor.execute("nonexistent_tool", {})
         assert "error" in result
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0250", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "11", "title": "list_personas_failure"}
     async def test_list_personas_failure(self, tool_executor, mock_core_client):
         """Core down → list_personas returns error."""
         mock_core_client.list_personas.side_effect = Exception("core down")
@@ -203,6 +214,7 @@ class TestToolExecutor:
         assert result["personas"] == []
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0251", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "12", "title": "was_enriched_tracking"}
     async def test_was_enriched_tracking(self, tool_executor, mock_core_client):
         """was_enriched is True after a search_vault returns results."""
         assert not tool_executor.was_enriched
@@ -216,6 +228,7 @@ class TestToolExecutor:
         assert tool_executor.was_enriched
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0252", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "13", "title": "tools_called_history"}
     async def test_tools_called_history(self, tool_executor, mock_core_client):
         """tools_called tracks all executed tool calls."""
         await tool_executor.execute("list_personas", {})
@@ -239,6 +252,7 @@ class TestReasoningAgent:
     """Tests for the agentic reasoning loop."""
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0253", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "01", "title": "simple_response_no_tools"}
     async def test_simple_response_no_tools(self, reasoning_agent, mock_llm_router):
         """LLM responds with text immediately → no tool calls."""
         mock_llm_router.route.return_value = _make_text_response(
@@ -250,6 +264,7 @@ class TestReasoningAgent:
         assert result["tools_called"] == []
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0254", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "02", "title": "agentic_loop_list_then_search"}
     async def test_agentic_loop_list_then_search(
         self, reasoning_agent, mock_llm_router, mock_core_client,
     ):
@@ -285,6 +300,7 @@ class TestReasoningAgent:
         assert mock_llm_router.route.call_count == 3
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0255", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "03", "title": "parallel_tool_calls"}
     async def test_parallel_tool_calls(
         self, reasoning_agent, mock_llm_router, mock_core_client,
     ):
@@ -318,6 +334,7 @@ class TestReasoningAgent:
         assert mock_llm_router.route.call_count == 3
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0256", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "04", "title": "max_turns_exceeded"}
     async def test_max_turns_exceeded(
         self, reasoning_agent, mock_llm_router, mock_core_client,
     ):
@@ -335,6 +352,7 @@ class TestReasoningAgent:
         assert mock_llm_router.route.call_count <= 7
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0257", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "05", "title": "tool_messages_sent_to_llm"}
     async def test_tool_messages_sent_to_llm(
         self, reasoning_agent, mock_llm_router, mock_core_client,
     ):
@@ -359,6 +377,7 @@ class TestReasoningAgent:
         assert messages[3]["role"] == "tool_response"
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0258", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "06", "title": "tools_passed_to_llm"}
     async def test_tools_passed_to_llm(
         self, reasoning_agent, mock_llm_router,
     ):
@@ -371,6 +390,7 @@ class TestReasoningAgent:
         assert call_kwargs.kwargs.get("tools") is not None
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0259", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "07", "title": "discovery_first_flow"}
     async def test_discovery_first_flow(
         self, reasoning_agent, mock_llm_router, mock_core_client,
     ):
@@ -431,6 +451,7 @@ class TestReasoningAgent:
         assert tools == ["list_personas", "browse_vault", "search_vault"]
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0260", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "08", "title": "llm_failure_propagates"}
     async def test_llm_failure_propagates(
         self, reasoning_agent, mock_llm_router,
     ):
@@ -449,6 +470,7 @@ class TestVaultContextAssembler:
     """Tests for the backward-compatible VaultContextAssembler wrapper."""
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0261", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "enrich_returns_tuple"}
     async def test_enrich_returns_tuple(self, vault_assembler, mock_llm_router):
         """enrich() returns (content, was_enriched) tuple."""
         mock_llm_router.route.return_value = _make_text_response("enriched answer")
@@ -457,6 +479,7 @@ class TestVaultContextAssembler:
         assert isinstance(was_enriched, bool)
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0262", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "enrich_with_vault_data"}
     async def test_enrich_with_vault_data(
         self, vault_assembler, mock_llm_router, mock_core_client,
     ):
@@ -482,6 +505,7 @@ class TestVaultContextAssembler:
         assert "health" in content.lower()
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0263", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "03", "title": "enrich_no_tools_passthrough"}
     async def test_enrich_no_tools_passthrough(
         self, vault_assembler, mock_llm_router,
     ):
@@ -493,6 +517,7 @@ class TestVaultContextAssembler:
         assert not was_enriched
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0264", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "04", "title": "reason_returns_full_result"}
     async def test_reason_returns_full_result(
         self, vault_assembler, mock_llm_router,
     ):
@@ -513,6 +538,7 @@ class TestVaultContextAssembler:
 class TestToolDeclarations:
     """Tests for tool declaration schemas."""
 
+    # TRACE: {"suite": "BRAIN", "case": "0265", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "04", "scenario": "01", "title": "vault_tools_defined"}
     def test_vault_tools_defined(self):
         """VAULT_TOOLS contains expected tool declarations."""
         from src.service.vault_context import VAULT_TOOLS
@@ -521,6 +547,7 @@ class TestToolDeclarations:
         assert "browse_vault" in names
         assert "search_vault" in names
 
+    # TRACE: {"suite": "BRAIN", "case": "0266", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "04", "scenario": "02", "title": "search_vault_has_required_params"}
     def test_search_vault_has_required_params(self):
         """search_vault tool requires persona and query."""
         from src.service.vault_context import VAULT_TOOLS
@@ -530,6 +557,7 @@ class TestToolDeclarations:
         assert "persona" in search_tool["parameters"]["required"]
         assert "query" in search_tool["parameters"]["required"]
 
+    # TRACE: {"suite": "BRAIN", "case": "0267", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "04", "scenario": "03", "title": "gemini_tools_build"}
     def test_gemini_tools_build(self):
         """_build_gemini_tools creates google.genai Tool objects."""
         from src.service.vault_context import _build_gemini_tools
@@ -548,6 +576,7 @@ class TestUserOriginPropagation:
     """Verify user_origin propagates from ToolExecutor to Core calls."""
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0268", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "01", "title": "search_vault_passes_user_origin"}
     async def test_search_vault_passes_user_origin(self, mock_core_client):
         """search_vault forwards user_origin to Core HTTP client."""
         from src.service.vault_context import ToolExecutor
@@ -563,6 +592,7 @@ class TestUserOriginPropagation:
         )
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0269", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "02", "title": "get_full_content_passes_user_origin"}
     async def test_get_full_content_passes_user_origin(self, mock_core_client):
         """get_full_content forwards user_origin to Core HTTP client."""
         from src.service.vault_context import ToolExecutor
@@ -580,6 +610,7 @@ class TestUserOriginPropagation:
         )
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0270", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "03", "title": "list_personas_passes_user_origin"}
     async def test_list_personas_passes_user_origin(self, mock_core_client):
         """list_personas preview calls pass user_origin to search_vault."""
         from src.service.vault_context import ToolExecutor
@@ -597,6 +628,7 @@ class TestUserOriginPropagation:
             (len(call_kwargs) > 1 and "admin" in str(call_kwargs))
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0271", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "04", "title": "no_user_origin_sends_empty"}
     async def test_no_user_origin_sends_empty(self, mock_core_client):
         """Without user_origin, empty string is sent (backward compat)."""
         from src.service.vault_context import ToolExecutor

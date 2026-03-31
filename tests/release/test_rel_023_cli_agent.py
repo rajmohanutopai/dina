@@ -18,6 +18,7 @@ class TestCLIAgentIntegration:
     """Tests for REL-023: CLI + external agent via Docker."""
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "01", "title": "rel_023_agent_can_store_data"}
     def test_rel_023_agent_can_store_data(
         self, release_services, agent_paired, agent_session,
     ) -> None:
@@ -34,6 +35,7 @@ class TestCLIAgentIntegration:
         )
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "02", "title": "rel_023_agent_can_ask_data"}
     def test_rel_023_agent_can_ask_data(
         self, release_services, agent_paired, agent_session,
     ) -> None:
@@ -88,6 +90,7 @@ class TestCLIAgentIntegration:
             )
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "03", "title": "rel_023_agent_validates_safe_action"}
     def test_rel_023_agent_validates_safe_action(
         self, release_services, agent_paired, agent_session,
     ) -> None:
@@ -102,6 +105,7 @@ class TestCLIAgentIntegration:
         assert "id" in data
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "04", "title": "rel_023_agent_validates_risky_action"}
     def test_rel_023_agent_validates_risky_action(
         self, release_services, agent_paired, agent_session,
     ) -> None:
@@ -117,6 +121,7 @@ class TestCLIAgentIntegration:
         assert "id" in data
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "05", "title": "rel_023_agent_can_scrub_pii"}
     def test_rel_023_agent_can_scrub_pii(
         self, release_services, agent_paired,
     ) -> None:
@@ -139,6 +144,7 @@ class TestCLIAgentIntegration:
         )
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "06", "title": "rel_023_agent_can_stage_draft"}
     def test_rel_023_agent_can_stage_draft(
         self, release_services, agent_paired,
     ) -> None:
@@ -155,6 +161,7 @@ class TestCLIAgentIntegration:
         assert "draft_id" in data
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "07", "title": "rel_023_agent_can_sign_data"}
     def test_rel_023_agent_can_sign_data(
         self, release_services, agent_paired,
     ) -> None:
@@ -170,6 +177,7 @@ class TestCLIAgentIntegration:
         assert len(data["signature"]) == 128  # 64 bytes hex
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "08", "title": "rel_023_agent_can_view_audit"}
     def test_rel_023_agent_can_view_audit(
         self, release_services, agent_paired,
     ) -> None:
@@ -180,6 +188,7 @@ class TestCLIAgentIntegration:
         assert isinstance(data, list)
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "09", "title": "rel_023_agent_validate_status_polling"}
     def test_rel_023_agent_validate_status_polling(
         self, release_services, agent_paired, agent_session,
     ) -> None:
@@ -206,6 +215,7 @@ class TestCLIAgentIntegration:
             assert "status" in status_data
 
     # REL-023
+    # TRACE: {"suite": "REL", "case": "0023", "section": "23", "sectionName": "CLI Agent", "subsection": "01", "scenario": "10", "title": "rel_023_unpaired_agent_rejected"}
     def test_rel_023_unpaired_agent_rejected(
         self, release_services, core_url, auth_headers,
     ) -> None:

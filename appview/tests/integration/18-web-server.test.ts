@@ -26,6 +26,7 @@ import { GetAttestationsParams } from '@/api/xrpc/get-attestations.js'
  */
 
 describe('18 Web Server (HIGH-09)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0614", "section": "01", "sectionName": "General", "title": "IT-WEB-001: HIGH-09: /health endpoint contract"}
   it('IT-WEB-001: HIGH-09: /health endpoint contract', () => {
     // The server returns { status: 'ok' } for GET /health
     // We verify the expected response shape
@@ -33,6 +34,7 @@ describe('18 Web Server (HIGH-09)', () => {
     expect(healthResponse.status).toBe('ok')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0615", "section": "01", "sectionName": "General", "title": "IT-WEB-002: HIGH-09: resolve route validates params via ResolveParams"}
   it('IT-WEB-002: HIGH-09: resolve route validates params via ResolveParams', () => {
     // The server uses ResolveParams.parse(queryParams) for /xrpc/com.dina.trust.resolve
     const valid = ResolveParams.safeParse({
@@ -44,6 +46,7 @@ describe('18 Web Server (HIGH-09)', () => {
     expect(invalid.success).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0616", "section": "01", "sectionName": "General", "title": "IT-WEB-003: HIGH-09: search route validates params via SearchParams"}
   it('IT-WEB-003: HIGH-09: search route validates params via SearchParams', () => {
     // The server uses SearchParams.parse(queryParams) for /xrpc/com.dina.trust.search
     const valid = SearchParams.safeParse({ q: 'test' })
@@ -54,6 +57,7 @@ describe('18 Web Server (HIGH-09)', () => {
     expect(invalid.success).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0617", "section": "01", "sectionName": "General", "title": "IT-WEB-004: HIGH-09: all 5 XRPC routes have valid param schemas"}
   it('IT-WEB-004: HIGH-09: all 5 XRPC routes have valid param schemas', () => {
     // Verify all route param schemas exist and are parseable
     const schemas = [
@@ -72,6 +76,7 @@ describe('18 Web Server (HIGH-09)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0618", "section": "01", "sectionName": "General", "title": "IT-WEB-005: HIGH-09: unknown XRPC method returns error shape"}
   it('IT-WEB-005: HIGH-09: unknown XRPC method returns error shape', () => {
     // The server returns { error: 'InvalidRequest', message: ... } for unknown methods
     // We verify the expected error response shape

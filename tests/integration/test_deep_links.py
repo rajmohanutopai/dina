@@ -30,6 +30,7 @@ class TestDeepLinkDefault:
     """Every verdict links back to the original source with attribution."""
 
 # TST-INT-459
+    # TRACE: {"suite": "INT", "case": "0459", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "verdict_includes_source_attribution"}
     def test_verdict_includes_source_attribution(
         self, mock_review_bot: MockReviewBot
     ):
@@ -49,6 +50,7 @@ class TestDeepLinkDefault:
         assert "youtube.com" in expert_source["source_url"]
 
 # TST-INT-292
+    # TRACE: {"suite": "INT", "case": "0292", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "02", "title": "deep_link_to_timestamp"}
     def test_deep_link_to_timestamp(self, mock_review_bot: MockReviewBot):
         """Deep link contains a timestamp parameter (t=260 -> 4:20) so the
         user lands at the exact moment in the video."""
@@ -61,6 +63,7 @@ class TestDeepLinkDefault:
         assert "04:20" in expert["deep_link_context"] or "4:20" in expert["deep_link_context"]
 
 # TST-INT-460
+    # TRACE: {"suite": "INT", "case": "0460", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "03", "title": "creator_gets_traffic"}
     def test_creator_gets_traffic(self, mock_review_bot: MockReviewBot):
         """The deep link goes to the creator's platform (YouTube), not to
         an intermediary aggregator. The creator earns the view."""
@@ -76,6 +79,7 @@ class TestDeepLinkDefault:
         assert "aggregator" not in expert["deep_link"]
 
 # TST-INT-461
+    # TRACE: {"suite": "INT", "case": "0461", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "04", "title": "multiple_sources_credited"}
     def test_multiple_sources_credited(self, mock_review_bot: MockReviewBot):
         """When a product has multiple expert reviews, all are credited
         with individual deep links."""
@@ -105,6 +109,7 @@ class TestDeepLinkOverride:
     """User can control deep-link behavior."""
 
 # TST-INT-462
+    # TRACE: {"suite": "INT", "case": "0462", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "01", "title": "user_can_disable_deep_links"}
     def test_user_can_disable_deep_links(
         self, mock_dina: MockDinaCore, mock_review_bot: MockReviewBot
     ):
@@ -136,6 +141,7 @@ class TestDeepLinkOverride:
         assert pref_enabled["enabled"] is True
 
 # TST-INT-463
+    # TRACE: {"suite": "INT", "case": "0463", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "02", "title": "default_is_enabled"}
     def test_default_is_enabled(self, mock_dina: MockDinaCore):
         """By default, deep links are enabled — no preference entry means on."""
         pref = mock_dina.vault.retrieve(0, "pref_deep_links")
@@ -147,6 +153,7 @@ class TestDeepLinkOverride:
         assert default_enabled is True
 
 # TST-INT-464
+    # TRACE: {"suite": "INT", "case": "0464", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "03", "title": "custom_prioritization"}
     def test_custom_prioritization(
         self,
         mock_dina: MockDinaCore,
@@ -406,6 +413,7 @@ class TestAttributionPipeline:
     """
 
 # TST-INT-691
+    # TRACE: {"suite": "INT", "case": "0691", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "01", "title": "attribution_survives_brain_core_pipeline"}
     def test_attribution_survives_brain_core_pipeline(
         self, mock_dina: MockDinaCore
     ):
@@ -469,6 +477,7 @@ class TestAttributionPipeline:
                 f"Field '{field}' was mutated during Brain→Core round-trip"
             )
 
+    # TRACE: {"suite": "INT", "case": "0036", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "02", "title": "empty_attribution_fields_not_injected"}
     def test_empty_attribution_fields_not_injected(
         self, mock_dina: MockDinaCore
     ):
@@ -502,6 +511,7 @@ class TestAttributionPipeline:
             "Empty deep_link_context must remain empty — Core must not inject values"
         )
 
+    # TRACE: {"suite": "INT", "case": "0037", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "03", "title": "unicode_creator_name_survives_round_trip"}
     def test_unicode_creator_name_survives_round_trip(
         self, mock_dina: MockDinaCore
     ):
@@ -529,6 +539,7 @@ class TestAttributionPipeline:
             "Noise cancellation comparison — très bon résultat"
         ), "Unicode in deep_link_context must survive round-trip"
 
+    # TRACE: {"suite": "INT", "case": "0038", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "04", "title": "multiple_recommendations_coexist"}
     def test_multiple_recommendations_coexist(
         self, mock_dina: MockDinaCore
     ):
@@ -575,6 +586,7 @@ class TestAttributionPipeline:
         assert retrieved_a["sponsored"] is False
         assert retrieved_b["sponsored"] is True
 
+    # TRACE: {"suite": "INT", "case": "0039", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "05", "title": "non_attribution_fields_survive"}
     def test_non_attribution_fields_survive(
         self, mock_dina: MockDinaCore
     ):
@@ -605,6 +617,7 @@ class TestAttributionPipeline:
             "product_id must survive Brain→Core pipeline"
         )
 
+    # TRACE: {"suite": "INT", "case": "0040", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "06", "title": "very_long_deep_link_survives_storage"}
     def test_very_long_deep_link_survives_storage(
         self, mock_dina: MockDinaCore
     ):
@@ -634,6 +647,7 @@ class TestAttributionPipeline:
         )
         assert len(retrieved["deep_link"]) > 1000
 
+    # TRACE: {"suite": "INT", "case": "0041", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "07", "title": "sponsored_false_explicitly_stored"}
     def test_sponsored_false_explicitly_stored(
         self, mock_dina: MockDinaCore
     ):
@@ -677,6 +691,7 @@ class TestAttributionPipeline:
         # Ensure they are actually different values, not both truthy/falsy
         assert retrieved_unspon["sponsored"] != retrieved_spon["sponsored"]
 
+    # TRACE: {"suite": "INT", "case": "0042", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "08", "title": "nested_dict_in_verdict_survives_round_trip"}
     def test_nested_dict_in_verdict_survives_round_trip(
         self, mock_dina: MockDinaCore
     ):
@@ -720,6 +735,7 @@ class TestAttributionPipeline:
         assert retrieved["verdict"]["scores"]["value"] == 9.5
 
 # TST-INT-694
+    # TRACE: {"suite": "INT", "case": "0694", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "09", "title": "provenance_immutable_after_storage"}
     def test_provenance_immutable_after_storage(
         self, mock_dina: MockDinaCore
     ):
@@ -1012,6 +1028,7 @@ class TestSponsoredMetadataPreserved:
     # ------------------------------------------------------------------
 
 # TST-INT-692
+    # TRACE: {"suite": "INT", "case": "0692", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "01", "title": "sponsored_true_preserved_through_pipeline"}
     def test_sponsored_true_preserved_through_pipeline(
         self, mock_dina: MockDinaCore
     ):
@@ -1092,6 +1109,7 @@ class TestSponsoredMetadataPreserved:
     # Counter-proof 1: sponsored=False not flipped to True
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0043", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "02", "title": "sponsored_false_not_flipped_to_true"}
     def test_sponsored_false_not_flipped_to_true(
         self, mock_dina: MockDinaCore
     ):
@@ -1137,6 +1155,7 @@ class TestSponsoredMetadataPreserved:
     # Counter-proof 2: sponsored field cannot be stripped by update
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0044", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "03", "title": "sponsored_field_cannot_be_stripped_by_update"}
     def test_sponsored_field_cannot_be_stripped_by_update(
         self, mock_dina: MockDinaCore
     ):
@@ -1189,6 +1208,7 @@ class TestSponsoredMetadataPreserved:
     # Counter-proof 3: unsponsored and sponsored coexist correctly
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0045", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "04", "title": "unsponsored_and_sponsored_coexist_correctly"}
     def test_unsponsored_and_sponsored_coexist_correctly(
         self, mock_dina: MockDinaCore
     ):
@@ -1254,6 +1274,7 @@ class TestSponsoredMetadataPreserved:
     # Counter-proof 4: sponsored disclosure independent of rating
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0046", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "05", "title": "sponsored_disclosure_independent_of_rating"}
     def test_sponsored_disclosure_independent_of_rating(
         self, mock_dina: MockDinaCore
     ):
@@ -1308,6 +1329,7 @@ class TestSponsoredMetadataPreserved:
     # Edge case 1: sponsored=None vs sponsored=False
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0047", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "06", "title": "sponsored_none_vs_false"}
     def test_sponsored_none_vs_false(self, mock_dina: MockDinaCore):
         """Edge case: ``sponsored: None`` must be distinguishable from
         ``sponsored: False``.  Both states have distinct meaning:
@@ -1366,6 +1388,7 @@ class TestSponsoredMetadataPreserved:
     # Edge case 2: sponsored with empty source_url
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0048", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "07", "title": "sponsored_with_empty_source_url"}
     def test_sponsored_with_empty_source_url(self, mock_dina: MockDinaCore):
         """Edge case: even when other attribution fields are weak (empty
         ``source_url``), the ``sponsored`` flag must still be preserved.
@@ -1404,6 +1427,7 @@ class TestSponsoredMetadataPreserved:
     # Edge case 3: multiple sponsored items all preserved
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0049", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "04", "scenario": "08", "title": "multiple_sponsored_items_all_preserved"}
     def test_multiple_sponsored_items_all_preserved(
         self, mock_dina: MockDinaCore
     ):
@@ -1485,6 +1509,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # ------------------------------------------------------------------
 
 # TST-INT-693
+    # TRACE: {"suite": "INT", "case": "0693", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "01", "title": "unattributed_item_rejected_at_brain_boundary"}
     def test_unattributed_item_rejected_at_brain_boundary(
         self, mock_dina: MockDinaCore
     ):
@@ -1554,6 +1579,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Counter-proof: valid recommendation IS stored successfully
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0050", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "02", "title": "valid_recommendation_stored_successfully"}
     def test_valid_recommendation_stored_successfully(
         self, mock_dina: MockDinaCore
     ):
@@ -1596,6 +1622,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Counter-proof: source_url present but creator_name missing
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0051", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "03", "title": "source_url_present_but_creator_name_missing_also_blocked"}
     def test_source_url_present_but_creator_name_missing_also_blocked(
         self, mock_dina: MockDinaCore
     ):
@@ -1637,6 +1664,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # when Brain validation is bypassed (direct store)
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0052", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "04", "title": "core_accepts_unattributed_item_when_stored_directly"}
     def test_core_accepts_unattributed_item_when_stored_directly(
         self, mock_dina: MockDinaCore
     ):
@@ -1680,6 +1708,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Edge case: source_url is empty string ""
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0053", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "05", "title": "empty_string_source_url_rejected"}
     def test_empty_string_source_url_rejected(
         self, mock_dina: MockDinaCore
     ):
@@ -1713,6 +1742,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Edge case: source_url is whitespace only
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0054", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "06", "title": "whitespace_only_source_url_rejected"}
     def test_whitespace_only_source_url_rejected(
         self, mock_dina: MockDinaCore
     ):
@@ -1744,6 +1774,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Edge case: source_url is None
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0055", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "07", "title": "none_source_url_rejected"}
     def test_none_source_url_rejected(self, mock_dina: MockDinaCore):
         """Edge case: source_url is explicitly set to None.
         Must be rejected — None is not a valid URL."""
@@ -1773,6 +1804,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Edge case: both source_url AND creator_name missing
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0056", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "08", "title": "both_source_url_and_creator_name_missing_reports_two_violations"}
     def test_both_source_url_and_creator_name_missing_reports_two_violations(
         self, mock_dina: MockDinaCore
     ):
@@ -1819,6 +1851,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Edge case: all OTHER fields valid but source_url missing
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0057", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "09", "title": "all_other_fields_valid_but_source_url_missing_still_blocked"}
     def test_all_other_fields_valid_but_source_url_missing_still_blocked(
         self, mock_dina: MockDinaCore
     ):
@@ -1859,6 +1892,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Edge case: empty creator_name with valid source_url
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0058", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "10", "title": "empty_creator_name_with_valid_source_url_blocked"}
     def test_empty_creator_name_with_valid_source_url_blocked(
         self, mock_dina: MockDinaCore
     ):
@@ -1897,6 +1931,7 @@ class TestUnattributedItemRejectedAtBrainBoundary:
     # Edge case: whitespace-only creator_name
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0059", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "11", "title": "whitespace_only_creator_name_rejected"}
     def test_whitespace_only_creator_name_rejected(
         self, mock_dina: MockDinaCore
     ):
@@ -2082,6 +2117,7 @@ class TestExpertCreditedIndividually:
         ]
 
 # TST-INT-724
+    # TRACE: {"suite": "INT", "case": "0724", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "01", "title": "three_experts_credited_individually"}
     def test_three_experts_credited_individually(self):
         """3 expert attestations from 3 different DIDs produce a response
         where each expert is named individually with their own deep link."""
@@ -2120,6 +2156,7 @@ class TestExpertCreditedIndividually:
             "Carol's specific verdict about thermals must be preserved"
         )
 
+    # TRACE: {"suite": "INT", "case": "0060", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "02", "title": "summary_text_names_each_expert"}
     def test_summary_text_names_each_expert(self):
         """The assembled summary_text must contain each expert's name
         individually — not generic language."""
@@ -2137,6 +2174,7 @@ class TestExpertCreditedIndividually:
             "Summary text must name Carol Nguyen individually"
         )
 
+    # TRACE: {"suite": "INT", "case": "0061", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "03", "title": "no_generic_phrases_in_summary"}
     def test_no_generic_phrases_in_summary(self):
         """Counter-proof: the summary must NOT contain generic anonymous
         phrases that erase individual attribution."""
@@ -2163,6 +2201,7 @@ class TestExpertCreditedIndividually:
                 f"Got: {result.summary_text!r}"
             )
 
+    # TRACE: {"suite": "INT", "case": "0062", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "04", "title": "each_deep_link_preserved_individually"}
     def test_each_deep_link_preserved_individually(self):
         """Counter-proof: each expert's deep_link is distinct and preserved
         in their individual credit — not merged into a single link."""
@@ -2183,6 +2222,7 @@ class TestExpertCreditedIndividually:
         assert "youtube.com" in credits_by_name["Bob Martinez"].deep_link
         assert "carol-hardware.net" in credits_by_name["Carol Nguyen"].deep_link
 
+    # TRACE: {"suite": "INT", "case": "0063", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "05", "title": "same_expert_did_grouped_under_one_credit"}
     def test_same_expert_did_grouped_under_one_credit(self):
         """Edge case: two attestations from the SAME expert DID are grouped
         under a single credit entry — not duplicated."""
@@ -2252,6 +2292,7 @@ class TestExpertCreditedIndividually:
         assert "Dave Park" in result.summary_text
         assert "Eve Thompson" in result.summary_text
 
+    # TRACE: {"suite": "INT", "case": "0064", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "06", "title": "expert_with_empty_verdict_still_credited"}
     def test_expert_with_empty_verdict_still_credited(self):
         """Edge case: an expert with an empty verdict dict still gets
         individual credit — their name and link must appear."""
@@ -2311,6 +2352,7 @@ class TestExpertCreditedIndividually:
         )
         assert "Grace Kim" in result.summary_text
 
+    # TRACE: {"suite": "INT", "case": "0065", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "07", "title": "creator_name_missing_falls_back_to_did"}
     def test_creator_name_missing_falls_back_to_did(self):
         """Edge case: when creator_name is empty, the expert_did is used
         as the name — never a generic label."""
@@ -2347,6 +2389,7 @@ class TestExpertCreditedIndividually:
         assert "unknown" not in summary_lower
         assert "anonymous" not in summary_lower
 
+    # TRACE: {"suite": "INT", "case": "0066", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "08", "title": "single_attestation_still_individual"}
     def test_single_attestation_still_individual(self):
         """Edge case: even a single attestation must be credited individually
         by name — the assembly logic must not special-case singletons into
@@ -2492,6 +2535,7 @@ class TestAttributionViolation:
     # TST-INT-725 — primary test
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0725", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "01", "title": "missing_creator_name_triggers_violation_and_trust_penalty"}
     def test_missing_creator_name_triggers_violation_and_trust_penalty(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2603,6 +2647,7 @@ class TestAttributionViolation:
     # Edge case: empty string creator_name
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0067", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "02", "title": "empty_string_creator_name_is_also_a_violation"}
     def test_empty_string_creator_name_is_also_a_violation(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2645,6 +2690,7 @@ class TestAttributionViolation:
     # Edge case: whitespace-only creator_name
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0068", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "03", "title": "whitespace_only_creator_name_is_a_violation"}
     def test_whitespace_only_creator_name_is_a_violation(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2687,6 +2733,7 @@ class TestAttributionViolation:
     # Multiple violations compound the penalty
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0069", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "04", "title": "multiple_violations_compound_penalty"}
     def test_multiple_violations_compound_penalty(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2743,6 +2790,7 @@ class TestAttributionViolation:
     # Counter-proof: compliant bot score unchanged
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0070", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "05", "title": "compliant_bot_score_unchanged"}
     def test_compliant_bot_score_unchanged(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2793,6 +2841,7 @@ class TestAttributionViolation:
     # Repeated violations degrade to floor
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0071", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "06", "title": "repeated_violations_degrade_trust_to_floor"}
     def test_repeated_violations_degrade_trust_to_floor(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2837,6 +2886,7 @@ class TestAttributionViolation:
     # Routing reflects degraded trust across multiple bots
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0072", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "07", "title": "routing_reflects_degraded_trust_across_multiple_bots"}
     def test_routing_reflects_degraded_trust_across_multiple_bots(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2905,6 +2955,7 @@ class TestAttributionViolation:
     # Edge case: empty candidate list
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0073", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "08", "title": "routing_with_empty_candidate_list"}
     def test_routing_with_empty_candidate_list(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -2917,6 +2968,7 @@ class TestAttributionViolation:
     # Edge case: no recommendations means no violations
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0074", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "09", "title": "no_recommendations_means_no_violations"}
     def test_no_recommendations_means_no_violations(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -3098,6 +3150,7 @@ class TestSponsorshipCannotDistortRanking:
     # ------------------------------------------------------------------
 
 # TST-INT-733
+    # TRACE: {"suite": "INT", "case": "0733", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "01", "title": "sponsorship_cannot_distort_ranking_order"}
     def test_sponsorship_cannot_distort_ranking_order(self):
         """Product A is sponsored (trust 0.6), Product B is unsponsored
         (trust 0.9).  Product B must rank above Product A because trust
@@ -3172,6 +3225,7 @@ class TestSponsorshipCannotDistortRanking:
     #                   sponsored high-trust
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0075", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "02", "title": "unsponsored_low_trust_still_ranked_below_sponsored_high_trust"}
     def test_unsponsored_low_trust_still_ranked_below_sponsored_high_trust(
         self,
     ):
@@ -3222,6 +3276,7 @@ class TestSponsorshipCannotDistortRanking:
     # Counter-proof 2: equal trust scores — sponsored does not break tie
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0076", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "03", "title": "equal_trust_scores_sponsored_does_not_break_tie"}
     def test_equal_trust_scores_sponsored_does_not_break_tie(self):
         """Counter-proof: two products with identical trust_score, one
         sponsored, one not.  The ordering must be stable (original list
@@ -3284,6 +3339,7 @@ class TestSponsorshipCannotDistortRanking:
     # Counter-proof 3: all sponsored still ranked by trust
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0077", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "04", "title": "all_sponsored_still_ranked_by_trust"}
     def test_all_sponsored_still_ranked_by_trust(self):
         """Counter-proof: when ALL products are sponsored, the ranking
         must still be purely by trust_score.  Sponsorship is universal
@@ -3341,6 +3397,7 @@ class TestSponsorshipCannotDistortRanking:
     # Edge case 1: five products mixed sponsorship ranked by trust
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0078", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "05", "title": "five_products_mixed_sponsorship_ranked_by_trust"}
     def test_five_products_mixed_sponsorship_ranked_by_trust(self):
         """Edge case: 5 products with various trust scores and mixed
         sponsorship flags.  The entire list must be sorted strictly by
@@ -3414,6 +3471,7 @@ class TestSponsorshipCannotDistortRanking:
     # Edge case 2: sponsored flag preserved after ranking
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0079", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "06", "title": "sponsored_flag_preserved_after_ranking"}
     def test_sponsored_flag_preserved_after_ranking(self):
         """Edge case: after ranking, each item's sponsored flag must
         exactly match the original input — ranking must not strip,
@@ -3482,6 +3540,7 @@ class TestSponsorshipCannotDistortRanking:
     # Edge case 3: zero trust score products ranked last
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0080", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "07", "title": "zero_trust_score_products_ranked_last"}
     def test_zero_trust_score_products_ranked_last(self):
         """Edge case: products with trust_score 0.0 must always rank
         last regardless of sponsorship status.  A sponsored product
@@ -3547,6 +3606,7 @@ class TestSponsorshipCannotDistortRanking:
     # Edge case 4: single product ranking
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0081", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "08", "title": "single_product_ranking"}
     def test_single_product_ranking(self):
         """Edge case: only 1 product.  Rank is trivially correct.  The
         sponsored flag must be preserved."""
@@ -3717,6 +3777,7 @@ class TestDeepLinkEndToEnd:
     # ------------------------------------------------------------------
 
 # TST-INT-723
+    # TRACE: {"suite": "INT", "case": "0723", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "01", "title": "deep_link_preserved_appview_to_user"}
     def test_deep_link_preserved_appview_to_user(
         self, mock_dina: MockDinaCore
     ):
@@ -3801,6 +3862,7 @@ class TestDeepLinkEndToEnd:
     # Counter-proof 1: deep_link not rewritten to intermediary
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0082", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "02", "title": "deep_link_not_rewritten_to_intermediary"}
     def test_deep_link_not_rewritten_to_intermediary(
         self, mock_dina: MockDinaCore
     ):
@@ -3850,6 +3912,7 @@ class TestDeepLinkEndToEnd:
     # Counter-proof 2: multiple attestations each preserve their deep_link
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0083", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "03", "title": "multiple_attestations_each_preserve_deep_link"}
     def test_multiple_attestations_each_preserve_deep_link(
         self, mock_dina: MockDinaCore
     ):
@@ -3929,6 +3992,7 @@ class TestDeepLinkEndToEnd:
     # Counter-proof 3: deep_link_context not lost in assembly
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0084", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "04", "title": "deep_link_context_not_lost_in_assembly"}
     def test_deep_link_context_not_lost_in_assembly(
         self, mock_dina: MockDinaCore
     ):
@@ -3988,6 +4052,7 @@ class TestDeepLinkEndToEnd:
     # Edge case 1: deep_link with complex query params preserved
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0085", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "05", "title": "deep_link_with_query_params_preserved"}
     def test_deep_link_with_query_params_preserved(
         self, mock_dina: MockDinaCore
     ):
@@ -4036,6 +4101,7 @@ class TestDeepLinkEndToEnd:
     # Edge case 2: empty deep_link falls back to source_url
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0086", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "06", "title": "deep_link_empty_still_has_source_url"}
     def test_deep_link_empty_still_has_source_url(
         self, mock_dina: MockDinaCore
     ):
@@ -4085,6 +4151,7 @@ class TestDeepLinkEndToEnd:
     # Edge case 3: unicode in deep_link_context preserved
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0087", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "07", "title": "unicode_in_deep_link_context_preserved"}
     def test_unicode_in_deep_link_context_preserved(
         self, mock_dina: MockDinaCore
     ):

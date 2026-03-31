@@ -49,6 +49,7 @@ class TestSecurityAdversarial:
     and data sovereignty."""
 
 # TST-E2E-065
+    # TRACE: {"suite": "E2E", "case": "0065", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "01", "title": "ddos_rate_limiting"}
     def test_ddos_rate_limiting(
         self,
         don_alonso: HomeNode,
@@ -96,6 +97,7 @@ class TestSecurityAdversarial:
         assert don_alonso.check_rate_limit(attacker_ip) is True
 
 # TST-E2E-066
+    # TRACE: {"suite": "E2E", "case": "0066", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "02", "title": "dead_drop_abuse_prevention"}
     def test_dead_drop_abuse_prevention(
         self,
         don_alonso: HomeNode,
@@ -165,6 +167,7 @@ class TestSecurityAdversarial:
         don_alonso.spool_max_bytes = original_spool_max
 
 # TST-E2E-067
+    # TRACE: {"suite": "E2E", "case": "0067", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "03", "title": "replay_attack_prevention"}
     def test_replay_attack_prevention(
         self,
         don_alonso: HomeNode,
@@ -222,6 +225,7 @@ class TestSecurityAdversarial:
         assert fresh_result.get("status") != "duplicate"
 
 # TST-E2E-068
+    # TRACE: {"suite": "E2E", "case": "0068", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "04", "title": "cross_persona_violation"}
     def test_cross_persona_violation(
         self,
         don_alonso: HomeNode,
@@ -286,6 +290,7 @@ class TestSecurityAdversarial:
         assert search_intent["approved"] is True
 
 # TST-E2E-069
+    # TRACE: {"suite": "E2E", "case": "0069", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "05", "title": "oversized_payload_rejection"}
     def test_oversized_payload_rejection(
         self,
         malicious_bot: MockMaliciousBot,
@@ -314,6 +319,7 @@ class TestSecurityAdversarial:
         assert len(small_payload) <= max_payload_bytes
 
 # TST-E2E-070
+    # TRACE: {"suite": "E2E", "case": "0070", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "06", "title": "log_exfiltration_prevention"}
     def test_log_exfiltration_prevention(
         self,
         don_alonso: HomeNode,
@@ -381,6 +387,7 @@ class TestSecurityAdversarial:
         assert "123 Main Street" not in sanitized
 
 # TST-E2E-071
+    # TRACE: {"suite": "E2E", "case": "0071", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "07", "title": "token_brute_force"}
     def test_token_brute_force(
         self,
         don_alonso: HomeNode,
@@ -481,6 +488,7 @@ class TestSecurityAdversarial:
         )
 
 # TST-E2E-072
+    # TRACE: {"suite": "E2E", "case": "0072", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "08", "title": "did_spoofing"}
     def test_did_spoofing(
         self,
         don_alonso: HomeNode,
@@ -628,6 +636,7 @@ class TestSecurityAdversarial:
         )
 
 # TST-E2E-073
+    # TRACE: {"suite": "E2E", "case": "0073", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "09", "title": "relay_cannot_read_content"}
     def test_relay_cannot_read_content(
         self,
         don_alonso: HomeNode,
@@ -713,6 +722,7 @@ class TestSecurityAdversarial:
             _mock_decrypt(msg.encrypted_payload, relay_key)
 
 # TST-E2E-074
+    # TRACE: {"suite": "E2E", "case": "0074", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "10", "title": "data_sovereignty_on_disk"}
     def test_data_sovereignty_on_disk(
         self,
         don_alonso: HomeNode,

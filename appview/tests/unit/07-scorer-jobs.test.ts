@@ -116,12 +116,14 @@ describe('SS7.1 Scheduler', () => {
     startScheduler(mockDb)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0263", "section": "01", "sectionName": "General", "title": "UT-SCH-001: all 9 jobs registered"}
   it('UT-SCH-001: all 9 jobs registered', () => {
     // Description: startScheduler called
     // Expected: 9 cron.schedule calls made
     expect(cronScheduleCalls).toHaveLength(9)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0264", "section": "01", "sectionName": "General", "title": "UT-SCH-002: refresh-profiles runs every 5 min"}
   it('UT-SCH-002: refresh-profiles runs every 5 min', () => {
     // Description: Job schedule
     // Expected: schedule = "*/5 * * * *"
@@ -129,12 +131,14 @@ describe('SS7.1 Scheduler', () => {
     expect(cronScheduleCalls[0].schedule).toBe('*/5 * * * *')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0265", "section": "01", "sectionName": "General", "title": "UT-SCH-003: refresh-subject-scores runs every 5 min"}
   it('UT-SCH-003: refresh-subject-scores runs every 5 min', () => {
     // Description: Job schedule
     // Expected: schedule = "*/5 * * * *"
     expect(cronScheduleCalls[1].schedule).toBe('*/5 * * * *')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0266", "section": "01", "sectionName": "General", "title": "UT-SCH-004: detect-coordination runs every 30 min"}
   it('UT-SCH-004: detect-coordination runs every 30 min', () => {
     // Description: Job schedule
     // Expected: schedule = "*/30 * * * *"
@@ -142,6 +146,7 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0267", "section": "01", "sectionName": "General", "title": "UT-SCH-005: detect-sybil runs every 6 hours"}
   it('UT-SCH-005: detect-sybil runs every 6 hours', () => {
     // Description: Job schedule
     // Expected: schedule = "0 */6 * * *"
@@ -149,6 +154,7 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0268", "section": "01", "sectionName": "General", "title": "UT-SCH-006: decay-scores runs daily at 3 AM"}
   it('UT-SCH-006: decay-scores runs daily at 3 AM', () => {
     // Description: Job schedule
     // Expected: schedule = "0 3 * * *"
@@ -156,6 +162,7 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0269", "section": "01", "sectionName": "General", "title": "UT-SCH-007: cleanup-expired runs daily at 4 AM"}
   it('UT-SCH-007: cleanup-expired runs daily at 4 AM', () => {
     // Description: Job schedule
     // Expected: schedule = "0 4 * * *"
@@ -163,6 +170,7 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0270", "section": "01", "sectionName": "General", "title": "UT-SCH-008: refresh-reviewer-stats runs every 15 min"}
   it('UT-SCH-008: refresh-reviewer-stats runs every 15 min', () => {
     // Description: Job schedule
     // Expected: schedule = "*/15 * * * *"
@@ -170,6 +178,7 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0271", "section": "01", "sectionName": "General", "title": "UT-SCH-009: refresh-domain-scores runs every hour"}
   it('UT-SCH-009: refresh-domain-scores runs every hour', () => {
     // Description: Job schedule
     // Expected: schedule = "0 * * * *"
@@ -177,6 +186,7 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0272", "section": "01", "sectionName": "General", "title": "UT-SCH-010: process-tombstones runs every 10 min"}
   it('UT-SCH-010: process-tombstones runs every 10 min', () => {
     // Description: Job schedule
     // Expected: schedule = "*/10 * * * *"
@@ -184,6 +194,7 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0273", "section": "01", "sectionName": "General", "title": "UT-SCH-011: job error -> caught and logged"}
   it('UT-SCH-011: job error -> caught and logged', async () => {
     // Description: Handler throws error
     // Expected: Error logged, no process crash
@@ -201,6 +212,7 @@ describe('SS7.1 Scheduler', () => {
     )
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0274", "section": "01", "sectionName": "General", "title": "UT-SCH-012: job duration tracked"}
   it('UT-SCH-012: job duration tracked', async () => {
     // Description: Handler completes successfully
     // Expected: Histogram metric recorded with duration
@@ -215,6 +227,7 @@ describe('SS7.1 Scheduler', () => {
     )
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0275", "section": "01", "sectionName": "General", "title": "UT-SCH-013: job error metric incremented"}
   it('UT-SCH-013: job error metric incremented', async () => {
     // Description: Handler throws
     // Expected: scorer.job.errors counter incremented
@@ -248,6 +261,7 @@ describe('SS7.2 Decay Scores', () => {
     return original * Math.pow(0.5, daysSince / HALFLIFE)
   }
 
+  // TRACE: {"suite": "APPVIEW", "case": "0276", "section": "01", "sectionName": "General", "title": "UT-DS-001: recent attestation -- no decay"}
   it('UT-DS-001: recent attestation -- no decay', () => {
     // Description: attestation from 1 day ago
     // Expected: Weight approximately unchanged
@@ -257,6 +271,7 @@ describe('SS7.2 Decay Scores', () => {
     expect(weight).toBeLessThanOrEqual(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0277", "section": "01", "sectionName": "General", "title": "UT-DS-002: old attestation -- decayed"}
   it('UT-DS-002: old attestation -- decayed', () => {
     // Description: Attestation from 365 days ago
     // Expected: Weight significantly reduced
@@ -266,6 +281,7 @@ describe('SS7.2 Decay Scores', () => {
     expect(weight).toBeGreaterThan(0.1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0278", "section": "01", "sectionName": "General", "title": "UT-DS-003: halflife calculation"}
   it('UT-DS-003: halflife calculation', () => {
     // Description: At exactly SENTIMENT_HALFLIFE_DAYS
     // Expected: Weight = ~50% of original
@@ -274,6 +290,7 @@ describe('SS7.2 Decay Scores', () => {
     expect(weight).toBeCloseTo(0.5, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0279", "section": "01", "sectionName": "General", "title": "UT-DS-004: very old attestation -- near zero"}
   it('UT-DS-004: very old attestation -- near zero', () => {
     // Description: Attestation from 1000 days ago
     // Expected: Weight near zero but not exactly zero

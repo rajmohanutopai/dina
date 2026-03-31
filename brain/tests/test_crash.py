@@ -47,6 +47,7 @@ def _make_exception_with_traceback(
 
 # TST-BRAIN-320
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0320", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "01", "scenario": "01", "title": "catchall_wraps_guardian"}
 async def test_crash_13_1_catchall_wraps_guardian(mock_core_client) -> None:
     """SS13.1: Catch-all wraps guardian loop.
 
@@ -65,6 +66,7 @@ async def test_crash_13_1_catchall_wraps_guardian(mock_core_client) -> None:
 
 # TST-BRAIN-321
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0321", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "02", "scenario": "01", "title": "stdout_sanitized_oneliner"}
 async def test_crash_13_2_stdout_sanitized_oneliner(capsys) -> None:
     """SS13.2: Stdout -- sanitized one-liner only.
 
@@ -87,6 +89,7 @@ async def test_crash_13_2_stdout_sanitized_oneliner(capsys) -> None:
 
 # TST-BRAIN-322
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0322", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "03", "scenario": "01", "title": "vault_full_traceback"}
 async def test_crash_13_3_vault_full_traceback(mock_core_client) -> None:
     """SS13.3: Vault -- full traceback stored.
 
@@ -113,6 +116,7 @@ async def test_crash_13_3_vault_full_traceback(mock_core_client) -> None:
 
 # TST-BRAIN-323
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0323", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "04", "scenario": "01", "title": "traceback_never_written_to_file"}
 async def test_crash_13_4_traceback_never_written_to_file(
     mock_core_client, tmp_path, monkeypatch,
 ) -> None:
@@ -140,6 +144,7 @@ async def test_crash_13_4_traceback_never_written_to_file(
 
 # TST-BRAIN-324
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0324", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "05", "scenario": "01", "title": "task_id_correlated"}
 async def test_crash_13_5_task_id_correlated(mock_core_client) -> None:
     """SS13.5: Task ID correlated.
 
@@ -165,6 +170,7 @@ async def test_crash_13_5_task_id_correlated(mock_core_client) -> None:
 
 # TST-BRAIN-325
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0325", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "06", "scenario": "01", "title": "crash_handler_reraises"}
 async def test_crash_13_6_crash_handler_reraises(mock_core_client) -> None:
     """SS13.6: Crash handler re-raises after logging + vault write.
 
@@ -206,6 +212,7 @@ async def test_crash_13_6_crash_handler_reraises(mock_core_client) -> None:
 
 # TST-BRAIN-326
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0326", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "07", "scenario": "01", "title": "core_unreachable"}
 async def test_crash_13_7_core_unreachable() -> None:
     """SS13.7: Core unreachable during crash.
 
@@ -237,6 +244,7 @@ async def test_crash_13_7_core_unreachable() -> None:
 
 
 # TST-BRAIN-418
+# TRACE: {"suite": "BRAIN", "case": "0418", "section": "13", "sectionName": "Crash Traceback Safety", "subsection": "08", "scenario": "01", "title": "logging_audit_no_pii"}
 def test_crash_13_8_logging_audit_no_pii() -> None:
     """§13.8: Logging audit -- no sqlite3 imports in brain source.
 

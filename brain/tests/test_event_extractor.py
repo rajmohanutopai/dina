@@ -26,6 +26,7 @@ def extractor(core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0040", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "01", "title": "invoice_date_creates_payment_reminder"}
 async def test_invoice_date_creates_payment_reminder(extractor, core):
     """Invoice with explicit date → payment_due reminder."""
     item = {
@@ -46,6 +47,7 @@ async def test_invoice_date_creates_payment_reminder(extractor, core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0041", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "02", "title": "appointment_creates_reminder"}
 async def test_appointment_creates_reminder(extractor, core):
     """Appointment with date → appointment reminder."""
     item = {
@@ -63,6 +65,7 @@ async def test_appointment_creates_reminder(extractor, core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0042", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "03", "title": "no_dates_no_reminders"}
 async def test_no_dates_no_reminders(extractor, core):
     """Content without explicit dates → no reminders."""
     item = {
@@ -76,6 +79,7 @@ async def test_no_dates_no_reminders(extractor, core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0043", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "04", "title": "birthday_with_date_creates_reminder"}
 async def test_birthday_with_date_creates_reminder(extractor, core):
     """Birthday with explicit date → birthday reminder."""
     item = {
@@ -91,6 +95,7 @@ async def test_birthday_with_date_creates_reminder(extractor, core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0044", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "05", "title": "source_lineage_present"}
 async def test_source_lineage_present(extractor, core):
     """Reminder includes source lineage fields."""
     item = {
@@ -109,6 +114,7 @@ async def test_source_lineage_present(extractor, core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0045", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "06", "title": "birthday_without_date_skipped"}
 async def test_birthday_without_date_skipped(extractor, core):
     """Birthday without explicit date → no reminder (date required)."""
     item = {
@@ -123,6 +129,7 @@ async def test_birthday_without_date_skipped(extractor, core):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0046", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "07", "title": "reminder_payload_valid_for_core"}
 async def test_reminder_payload_valid_for_core(extractor, core):
     """Reminder payload must be accepted by Core handler.
 

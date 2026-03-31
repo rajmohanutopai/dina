@@ -22,6 +22,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-639
+// TRACE: {"suite": "CORE", "case": "0006", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "01", "scenario": "01", "title": "VaultQueryExposed"}
 func TestAPIContract_18_1_VaultQueryExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -42,6 +43,7 @@ func TestAPIContract_18_1_VaultQueryExposed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-640
+// TRACE: {"suite": "CORE", "case": "0007", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "02", "scenario": "01", "title": "VaultStoreExposed"}
 func TestAPIContract_18_2_VaultStoreExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -62,6 +64,7 @@ func TestAPIContract_18_2_VaultStoreExposed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-641
+// TRACE: {"suite": "CORE", "case": "0008", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "03", "scenario": "01", "title": "DIDSignAdminOnly"}
 func TestAPIContract_18_3_DIDSignAdminOnly(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -84,6 +87,7 @@ func TestAPIContract_18_3_DIDSignAdminOnly(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-642
+// TRACE: {"suite": "CORE", "case": "0009", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "04", "scenario": "01", "title": "DIDVerifyExposed"}
 func TestAPIContract_18_4_DIDVerifyExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -104,6 +108,7 @@ func TestAPIContract_18_4_DIDVerifyExposed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-643
+// TRACE: {"suite": "CORE", "case": "0010", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "05", "scenario": "01", "title": "PIIScrubExposed"}
 func TestAPIContract_18_5_PIIScrubExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -133,6 +138,7 @@ func TestAPIContract_18_5_PIIScrubExposed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-644
+// TRACE: {"suite": "CORE", "case": "0011", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "06", "scenario": "01", "title": "NotifyExposed"}
 func TestAPIContract_18_6_NotifyExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -162,6 +168,7 @@ func TestAPIContract_18_6_NotifyExposed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-645
+// TRACE: {"suite": "CORE", "case": "0012", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "07", "scenario": "01", "title": "AllBrainEndpointsAcceptToken"}
 func TestAPIContract_18_7_AllBrainEndpointsAcceptToken(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -189,6 +196,7 @@ func TestAPIContract_18_7_AllBrainEndpointsAcceptToken(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-646
+// TRACE: {"suite": "CORE", "case": "0013", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "08", "scenario": "01", "title": "ExactAPIServiceMatch"}
 func TestAPIContract_18_8_ExactAPIServiceMatch(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -222,6 +230,7 @@ func TestAPIContract_18_8_ExactAPIServiceMatch(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-647
+// TRACE: {"suite": "CORE", "case": "0014", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "09", "scenario": "01", "title": "MsgSendExposed"}
 func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -251,6 +260,7 @@ func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-648
+// TRACE: {"suite": "CORE", "case": "0015", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "10", "scenario": "01", "title": "TrustQueryExposed"}
 func TestAPIContract_18_10_TrustQueryExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
@@ -267,6 +277,7 @@ func TestAPIContract_18_10_TrustQueryExposed(t *testing.T) {
 }
 
 // TST-CORE-906
+// TRACE: {"suite": "CORE", "case": "0016", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "11", "scenario": "01", "title": "VaultCrashMissingFieldsRejected"}
 func TestAPIContract_18_11_VaultCrashMissingFieldsRejected(t *testing.T) {
 	// /v1/vault/crash rejects requests missing required fields (error, traceback).
 	impl := realErrorHandler
@@ -296,6 +307,7 @@ func TestAPIContract_18_11_VaultCrashMissingFieldsRejected(t *testing.T) {
 }
 
 // TST-CORE-907
+// TRACE: {"suite": "CORE", "case": "0017", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "12", "scenario": "01", "title": "VaultQueryResponseSchema"}
 func TestAPIContract_18_12_VaultQueryResponseSchema(t *testing.T) {
 	// Vault query full response schema (id, type, persona, summary, relevance, pagination).
 	impl := realVaultAPI
@@ -333,6 +345,7 @@ func TestAPIContract_18_12_VaultQueryResponseSchema(t *testing.T) {
 }
 
 // TST-CORE-908
+// TRACE: {"suite": "CORE", "case": "0018", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "13", "scenario": "01", "title": "VaultStoreResponseIDFormat"}
 func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
 	// Vault store response ID format (vault_ prefix) + uniqueness.
 	impl := realVaultAPI
@@ -381,6 +394,7 @@ func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
 }
 
 // TST-CORE-909
+// TRACE: {"suite": "CORE", "case": "0019", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "14", "scenario": "01", "title": "VaultQueryMissingPersonaField"}
 func TestAPIContract_18_14_VaultQueryMissingPersonaField(t *testing.T) {
 	// Vault query: missing persona field -> 400 Bad Request.
 	impl := realErrorHandler
@@ -392,6 +406,7 @@ func TestAPIContract_18_14_VaultQueryMissingPersonaField(t *testing.T) {
 }
 
 // TST-CORE-910
+// TRACE: {"suite": "CORE", "case": "0020", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "15", "scenario": "01", "title": "CoreCallsOnlyDocumentedBrainEndpoints"}
 func TestAPIContract_18_15_CoreCallsOnlyDocumentedBrainEndpoints(t *testing.T) {
 	// Core calls only documented brain endpoints.
 	impl := realSecurityAuditor
@@ -408,6 +423,7 @@ func TestAPIContract_18_15_CoreCallsOnlyDocumentedBrainEndpoints(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1016
+// TRACE: {"suite": "CORE", "case": "0021", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "01", "title": "ContractCoreBrainStage"}
 func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 	// Requirements (§30.8, test_issues #9):
 	//   - The `contract-core-brain` CI stage validates that the Core↔Brain
@@ -420,6 +436,7 @@ func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
+	// TRACE: {"suite": "CORE", "case": "0022", "section": "30", "sectionName": "Test System Quality", "title": "all_brain_callable_endpoints_accept_brain_token"}
 	t.Run("all_brain_callable_endpoints_accept_brain_token", func(t *testing.T) {
 		// Every endpoint classified as brain-callable must accept BRAIN_TOKEN.
 		// This is the positive contract: brain CAN call these endpoints.
@@ -447,6 +464,7 @@ func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0023", "section": "30", "sectionName": "Test System Quality", "title": "all_admin_endpoints_reject_brain_token"}
 	t.Run("all_admin_endpoints_reject_brain_token", func(t *testing.T) {
 		// Every admin-only endpoint must reject BRAIN_TOKEN with 403.
 		// This is the negative contract: brain CANNOT call these endpoints.
@@ -477,6 +495,7 @@ func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0024", "section": "30", "sectionName": "Test System Quality", "title": "registered_endpoint_list_is_comprehensive"}
 	t.Run("registered_endpoint_list_is_comprehensive", func(t *testing.T) {
 		// The APIContract must register a comprehensive list of endpoints.
 		// A CI stage must not pass with an incomplete registry.
@@ -511,6 +530,7 @@ func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0025", "section": "30", "sectionName": "Test System Quality", "title": "brain_callable_and_admin_only_are_disjoint"}
 	t.Run("brain_callable_and_admin_only_are_disjoint", func(t *testing.T) {
 		// No endpoint should be both brain-callable AND admin-only.
 		// This is a structural invariant of the authorization model.
@@ -526,6 +546,7 @@ func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0026", "section": "30", "sectionName": "Test System Quality", "title": "health_endpoints_are_brain_callable"}
 	t.Run("health_endpoints_are_brain_callable", func(t *testing.T) {
 		// /healthz and /readyz must be accessible to brain for monitoring.
 		// These are operational endpoints, not admin endpoints.
@@ -539,6 +560,7 @@ func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0027", "section": "30", "sectionName": "Test System Quality", "title": "contract_delegates_to_real_auth_checker"}
 	t.Run("contract_delegates_to_real_auth_checker", func(t *testing.T) {
 		// Anti-tautological: verify the APIContract delegates to the real
 		// auth.AdminEndpointChecker, not a hardcoded list. If the auth

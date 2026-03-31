@@ -44,6 +44,7 @@ class TestStagingIngest:
     """POST /v1/staging/ingest stores items in staging."""
 
     # TST-INT-800
+    # TRACE: {"suite": "INT", "case": "0800", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "01", "title": "ingest_returns_staging_id"}
     def test_ingest_returns_staging_id(self, core) -> None:
         """Ingest returns a staging ID with status 201."""
         item = {
@@ -61,6 +62,7 @@ class TestStagingIngest:
         assert "id" in data
         assert data["id"] != ""
 
+    # TRACE: {"suite": "INT", "case": "0210", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "02", "title": "dedup_same_source_id"}
     def test_dedup_same_source_id(self, core) -> None:
         """Same (connector_id, source, source_id) is a no-op."""
         source_id = f"msg-dedup-{int(time.time())}"
@@ -86,6 +88,7 @@ class TestStagingIngest:
 class TestStagingClaimResolve:
     """Brain claims → classifies → resolves staging items."""
 
+    # TRACE: {"suite": "INT", "case": "0211", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "02", "scenario": "01", "title": "claim_resolve_stored"}
     def test_claim_resolve_stored(self, core) -> None:
         """Claim pending item, resolve to open persona → stored."""
         # Ingest an item.
@@ -201,6 +204,7 @@ class TestConnectorAuth:
             pytest.skip("DINA_TEST_MODE not enabled — cannot register connector key")
         assert resp.status_code == 200, f"register: {resp.text}"
 
+    # TRACE: {"suite": "INT", "case": "0212", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "01", "title": "connector_signed_ingest_succeeds"}
     def test_connector_signed_ingest_succeeds(self):
         """Connector service-key signed POST /v1/staging/ingest succeeds."""
         body = json.dumps({
@@ -225,6 +229,7 @@ class TestConnectorAuth:
         )
         assert resp.json().get("id", "") != ""
 
+    # TRACE: {"suite": "INT", "case": "0213", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "02", "title": "connector_signed_vault_query_denied"}
     def test_connector_signed_vault_query_denied(self):
         """Connector service key cannot access /v1/vault/query."""
         body = json.dumps({
@@ -243,6 +248,7 @@ class TestConnectorAuth:
         )
 
     # TST-INT-801
+    # TRACE: {"suite": "INT", "case": "0801", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "03", "title": "connector_signed_staging_claim_denied"}
     def test_connector_signed_staging_claim_denied(self):
         """Connector service key cannot claim staging items (Brain-only)."""
         body = json.dumps({"limit": 10}).encode()
@@ -262,6 +268,7 @@ class TestConnectorAuth:
 class TestEnrichmentBeforePublish:
     """Verify the enrichment-before-publication invariant."""
 
+    # TRACE: {"suite": "INT", "case": "0214", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "01", "title": "unenriched_resolve_rejected"}
     def test_unenriched_resolve_rejected(self, core) -> None:
         """Resolve with enrichment_status != ready is hard-rejected (400)."""
         source_id = f"msg-nonenrich-{int(time.time())}"
@@ -299,6 +306,7 @@ class TestEnrichmentBeforePublish:
         )
         assert "enrichment_status" in resp.text
 
+    # TRACE: {"suite": "INT", "case": "0215", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "02", "title": "enriched_resolve_succeeds"}
     def test_enriched_resolve_succeeds(self, core) -> None:
         """Resolve with enrichment_status=ready succeeds and item is searchable."""
         source_id = f"msg-enriched-{int(time.time())}"
@@ -358,6 +366,7 @@ class TestEnrichmentBeforePublish:
                 break
         assert found is not None, "enriched item must be searchable"
 
+    # TRACE: {"suite": "INT", "case": "0216", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "03", "title": "enriched_multi_resolve_requires_all_ready"}
     def test_enriched_multi_resolve_requires_all_ready(self, core) -> None:
         """Multi-target resolve rejects if any target lacks enrichment_status=ready."""
         source_id = f"msg-multi-notenrich-{int(time.time())}"
@@ -407,6 +416,7 @@ class TestEnrichmentBeforePublish:
             f"multi-resolve with unenriched target must fail: {resp.status_code} {resp.text}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0217", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "04", "title": "ready_status_with_missing_fields_rejected"}
     def test_ready_status_with_missing_fields_rejected(self, core) -> None:
         """enrichment_status=ready but missing L0/L1/embedding → 400."""
         source_id = f"msg-partial-{int(time.time())}"

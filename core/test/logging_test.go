@@ -26,6 +26,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-689
+// TRACE: {"suite": "CORE", "case": "0929", "section": "21", "sectionName": "Logging Policy", "subsection": "01", "scenario": "01", "title": "GoCoreSlogJSON"}
 func TestLogging_21_1_1_GoCoreSlogJSON(t *testing.T) {
 	// Go core must emit structured JSON log lines with time, level, msg, module fields.
 	impl := realLogAuditor
@@ -54,6 +55,7 @@ func TestLogging_21_1_1_GoCoreSlogJSON(t *testing.T) {
 }
 
 // TST-CORE-690
+// TRACE: {"suite": "CORE", "case": "0930", "section": "21", "sectionName": "Logging Policy", "subsection": "01", "scenario": "02", "title": "PythonBrainStructlogJSON"}
 func TestLogging_21_1_2_PythonBrainStructlogJSON(t *testing.T) {
 	// Python brain must emit structured JSON log lines to stdout.
 	// Verify by reading the actual Python source and checking structlog config,
@@ -94,6 +96,7 @@ func TestLogging_21_1_2_PythonBrainStructlogJSON(t *testing.T) {
 }
 
 // TST-CORE-691
+// TRACE: {"suite": "CORE", "case": "0931", "section": "21", "sectionName": "Logging Policy", "subsection": "01", "scenario": "03", "title": "NoFileLogs"}
 func TestLogging_21_1_3_NoFileLogs(t *testing.T) {
 	// Source audit: Go core must log to os.Stdout only — no file handlers,
 	// no os.OpenFile for logging, no log file paths.
@@ -131,6 +134,7 @@ func TestLogging_21_1_3_NoFileLogs(t *testing.T) {
 }
 
 // TST-CORE-692
+// TRACE: {"suite": "CORE", "case": "0932", "section": "21", "sectionName": "Logging Policy", "subsection": "01", "scenario": "04", "title": "DockerLogRotation"}
 func TestLogging_21_1_4_DockerLogRotation(t *testing.T) {
 	// Docker log rotation must be configured: max 10MB, 3 files.
 	impl := realLogAuditor
@@ -149,6 +153,7 @@ func TestLogging_21_1_4_DockerLogRotation(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-693
+// TRACE: {"suite": "CORE", "case": "0933", "section": "21", "sectionName": "Logging Policy", "subsection": "02", "scenario": "01", "title": "VaultContentNeverLogged"}
 func TestLogging_21_2_1_VaultContentNeverLogged(t *testing.T) {
 	// Vault read/write logs must contain item IDs, counts, latency —
 	// never email bodies, calendar events, or contact details.
@@ -169,6 +174,7 @@ func TestLogging_21_2_1_VaultContentNeverLogged(t *testing.T) {
 }
 
 // TST-CORE-694
+// TRACE: {"suite": "CORE", "case": "0934", "section": "21", "sectionName": "Logging Policy", "subsection": "02", "scenario": "02", "title": "UserQueriesNeverLogged"}
 func TestLogging_21_2_2_UserQueriesNeverLogged(t *testing.T) {
 	// Client queries must not appear in logs — only persona, type, result count.
 	impl := realLogAuditor
@@ -186,6 +192,7 @@ func TestLogging_21_2_2_UserQueriesNeverLogged(t *testing.T) {
 }
 
 // TST-CORE-695
+// TRACE: {"suite": "CORE", "case": "0935", "section": "21", "sectionName": "Logging Policy", "subsection": "02", "scenario": "03", "title": "BrainReasoningNeverLogged"}
 func TestLogging_21_2_3_BrainReasoningNeverLogged(t *testing.T) {
 	// Brain reasoning output must not appear in logs — only task_id, step, duration.
 	impl := realLogAuditor
@@ -198,6 +205,7 @@ func TestLogging_21_2_3_BrainReasoningNeverLogged(t *testing.T) {
 }
 
 // TST-CORE-696
+// TRACE: {"suite": "CORE", "case": "0936", "section": "21", "sectionName": "Logging Policy", "subsection": "02", "scenario": "04", "title": "NaClPlaintextNeverLogged"}
 func TestLogging_21_2_4_NaClPlaintextNeverLogged(t *testing.T) {
 	// Decrypted DIDComm message content must never appear in logs.
 	impl := realLogAuditor
@@ -215,6 +223,7 @@ func TestLogging_21_2_4_NaClPlaintextNeverLogged(t *testing.T) {
 }
 
 // TST-CORE-697
+// TRACE: {"suite": "CORE", "case": "0937", "section": "21", "sectionName": "Logging Policy", "subsection": "02", "scenario": "05", "title": "PassphraseNeverLogged"}
 func TestLogging_21_2_5_PassphraseNeverLogged(t *testing.T) {
 	// Login attempt logs must show event, ip, success — never the passphrase.
 	impl := realLogAuditor
@@ -232,6 +241,7 @@ func TestLogging_21_2_5_PassphraseNeverLogged(t *testing.T) {
 }
 
 // TST-CORE-698
+// TRACE: {"suite": "CORE", "case": "0938", "section": "21", "sectionName": "Logging Policy", "subsection": "02", "scenario": "06", "title": "APITokensNeverLogged"}
 func TestLogging_21_2_6_APITokensNeverLogged(t *testing.T) {
 	// BRAIN_TOKEN and CLIENT_TOKEN values must never appear in logs.
 	impl := realLogAuditor
@@ -253,6 +263,7 @@ func TestLogging_21_2_6_APITokensNeverLogged(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-699
+// TRACE: {"suite": "CORE", "case": "0939", "section": "21", "sectionName": "Logging Policy", "subsection": "03", "scenario": "01", "title": "CIBannedLogQuery"}
 func TestLogging_21_3_1_CIBannedLogQuery(t *testing.T) {
 	// CI must catch log.*query= pattern in code.
 	impl := realLogAuditor
@@ -279,6 +290,7 @@ func TestLogging_21_3_1_CIBannedLogQuery(t *testing.T) {
 }
 
 // TST-CORE-700
+// TRACE: {"suite": "CORE", "case": "0940", "section": "21", "sectionName": "Logging Policy", "subsection": "03", "scenario": "02", "title": "CIBannedLogContent"}
 func TestLogging_21_3_2_CIBannedLogContent(t *testing.T) {
 	// CI must catch log.*content= pattern in code.
 	impl := realLogAuditor
@@ -291,6 +303,7 @@ func TestLogging_21_3_2_CIBannedLogContent(t *testing.T) {
 }
 
 // TST-CORE-701
+// TRACE: {"suite": "CORE", "case": "0941", "section": "21", "sectionName": "Logging Policy", "subsection": "03", "scenario": "03", "title": "CIBannedLogBody"}
 func TestLogging_21_3_3_CIBannedLogBody(t *testing.T) {
 	// CI must catch log.*body= pattern in code.
 	impl := realLogAuditor
@@ -316,6 +329,7 @@ func TestLogging_21_3_3_CIBannedLogBody(t *testing.T) {
 }
 
 // TST-CORE-702
+// TRACE: {"suite": "CORE", "case": "0942", "section": "21", "sectionName": "Logging Policy", "subsection": "03", "scenario": "04", "title": "CIBannedLogPlaintext"}
 func TestLogging_21_3_4_CIBannedLogPlaintext(t *testing.T) {
 	// CI must catch log.*plaintext= pattern in code.
 	impl := realLogAuditor
@@ -328,6 +342,7 @@ func TestLogging_21_3_4_CIBannedLogPlaintext(t *testing.T) {
 }
 
 // TST-CORE-703
+// TRACE: {"suite": "CORE", "case": "0943", "section": "21", "sectionName": "Logging Policy", "subsection": "03", "scenario": "05", "title": "CIBannedFStringUserData"}
 func TestLogging_21_3_5_CIBannedFStringUserData(t *testing.T) {
 	// CI must catch f-string with user data in Python log calls.
 	impl := realLogAuditor
@@ -340,6 +355,7 @@ func TestLogging_21_3_5_CIBannedFStringUserData(t *testing.T) {
 }
 
 // TST-CORE-704
+// TRACE: {"suite": "CORE", "case": "0944", "section": "21", "sectionName": "Logging Policy", "subsection": "03", "scenario": "06", "title": "NoSpaCyNEROnLogLines"}
 func TestLogging_21_3_6_NoSpaCyNEROnLogLines(t *testing.T) {
 	// PII scrubbing is for data path to cloud LLMs, not log output.
 	// The log auditor uses simple pattern matching, not NER.
@@ -372,6 +388,7 @@ func TestLogging_21_3_6_NoSpaCyNEROnLogLines(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-705
+// TRACE: {"suite": "CORE", "case": "0945", "section": "21", "sectionName": "Logging Policy", "subsection": "04", "scenario": "01", "title": "CrashStdoutSanitizedOneLiner"}
 func TestLogging_21_4_1_CrashStdoutSanitizedOneLiner(t *testing.T) {
 	// Brain crash stdout must show only a sanitized one-liner, no traceback, no variable values.
 	impl := realLogAuditor
@@ -396,6 +413,7 @@ RuntimeError: test error`
 }
 
 // TST-CORE-706
+// TRACE: {"suite": "CORE", "case": "0946", "section": "21", "sectionName": "Logging Policy", "subsection": "04", "scenario": "02", "title": "CrashFullTracebackToVault"}
 func TestLogging_21_4_2_CrashFullTracebackToVault(t *testing.T) {
 	// Full traceback.format_exc() must be sent to POST core:8100/api/v1/vault/crash — encrypted at rest.
 	impl := realCrashLogger
@@ -440,6 +458,7 @@ RuntimeError: test error`
 }
 
 // TST-CORE-707
+// TRACE: {"suite": "CORE", "case": "0947", "section": "21", "sectionName": "Logging Policy", "subsection": "04", "scenario": "03", "title": "CatchAllWrapsMainLoop"}
 func TestLogging_21_4_3_CatchAllWrapsMainLoop(t *testing.T) {
 	impl := logging.NewLogAuditor()
 	testutil.RequireImplementation(t, impl, "LogAuditor")
@@ -474,6 +493,7 @@ RuntimeError: connection lost`
 }
 
 // TST-CORE-708
+// TRACE: {"suite": "CORE", "case": "0948", "section": "21", "sectionName": "Logging Policy", "subsection": "04", "scenario": "04", "title": "CrashHandlerSendsTaskID"}
 func TestLogging_21_4_4_CrashHandlerSendsTaskID(t *testing.T) {
 	impl := observability.NewCrashLogger()
 	testutil.RequireImplementation(t, impl, "CrashLogger")
@@ -502,6 +522,7 @@ func TestLogging_21_4_4_CrashHandlerSendsTaskID(t *testing.T) {
 }
 
 // TST-CORE-709
+// TRACE: {"suite": "CORE", "case": "0949", "section": "21", "sectionName": "Logging Policy", "subsection": "04", "scenario": "05", "title": "CrashHandlerReRaises"}
 func TestLogging_21_4_5_CrashHandlerReRaises(t *testing.T) {
 	// After logging + vault write, crash handler must re-raise to let Docker restart policy trigger.
 	impl := realLogAuditor
@@ -520,6 +541,7 @@ SystemExit: fatal`
 }
 
 // TST-CORE-929
+// TRACE: {"suite": "CORE", "case": "0950", "section": "21", "sectionName": "Logging Policy", "subsection": "04", "scenario": "06", "title": "SpoolFileNaming_ULIDFormat"}
 func TestLogging_21_4_6_SpoolFileNaming_ULIDFormat(t *testing.T) {
 	// Spool file naming uses ULID format.
 	impl := realInboxManager

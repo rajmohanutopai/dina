@@ -19,6 +19,7 @@ import (
 
 // TST-ADV-026: Different persona names produce different DEKs from same master seed.
 // Architecture §5: "Per-persona DEK isolation — HKDF with different info strings."
+// TRACE: {"suite": "CORE", "case": "0251", "section": "29", "sectionName": "Adversarial & Security", "subsection": "06", "scenario": "01", "title": "HKDFCrossPersona"}
 func TestAdv_29_6_HKDFCrossPersona(t *testing.T) {
 	deriver := dinacrypto.NewHKDFKeyDeriver()
 	masterSeed := make([]byte, 64) // simulated BIP-39 seed
@@ -57,6 +58,7 @@ func TestAdv_29_6_HKDFCrossPersona(t *testing.T) {
 // TST-CORE-965
 // TST-ADV-027: Same persona + same seed + different user_salt → different DEKs.
 // Architecture §5: "user_salt uniqueness — two nodes with same mnemonic get different DEKs."
+// TRACE: {"suite": "CORE", "case": "0252", "section": "29", "sectionName": "Adversarial & Security", "subsection": "06", "scenario": "01", "title": "HKDFUserSalt"}
 func TestAdv_29_6_HKDFUserSalt(t *testing.T) {
 	deriver := dinacrypto.NewHKDFKeyDeriver()
 	masterSeed := make([]byte, 64)
@@ -84,6 +86,7 @@ func TestAdv_29_6_HKDFUserSalt(t *testing.T) {
 // TST-CORE-966
 // TST-ADV-028: HKDF determinism — same inputs always produce same DEK.
 // Architecture §5: "Deterministic recovery — same mnemonic → same DEKs."
+// TRACE: {"suite": "CORE", "case": "0253", "section": "29", "sectionName": "Adversarial & Security", "subsection": "06", "scenario": "01", "title": "HKDFDeterminism"}
 func TestAdv_29_6_HKDFDeterminism(t *testing.T) {
 	deriver := dinacrypto.NewHKDFKeyDeriver()
 	masterSeed := make([]byte, 64)
@@ -105,6 +108,7 @@ func TestAdv_29_6_HKDFDeterminism(t *testing.T) {
 // TST-CORE-969
 // TST-ADV-029: Non-hardened derivation path is rejected.
 // Architecture §6: "Only hardened derivation is allowed for Ed25519."
+// TRACE: {"suite": "CORE", "case": "0254", "section": "29", "sectionName": "Adversarial & Security", "subsection": "07", "scenario": "01", "title": "SLIP0010NonHardened"}
 func TestAdv_29_7_SLIP0010NonHardened(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	seed := make([]byte, 64)
@@ -122,6 +126,7 @@ func TestAdv_29_7_SLIP0010NonHardened(t *testing.T) {
 // TST-CORE-970
 // TST-ADV-030: BIP-44 purpose 44' is explicitly forbidden.
 // Architecture §6: "Purpose 9999' namespace isolation — 44' strictly forbidden."
+// TRACE: {"suite": "CORE", "case": "0255", "section": "29", "sectionName": "Adversarial & Security", "subsection": "07", "scenario": "01", "title": "SLIP0010BIP44Forbidden"}
 func TestAdv_29_7_SLIP0010BIP44Forbidden(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	seed := make([]byte, 64)
@@ -139,6 +144,7 @@ func TestAdv_29_7_SLIP0010BIP44Forbidden(t *testing.T) {
 // TST-CORE-971
 // TST-ADV-031: Sibling hardened paths produce unrelated keypairs.
 // Architecture §6: "Hardened derivation unlinkability — siblings cannot be derived from each other."
+// TRACE: {"suite": "CORE", "case": "0256", "section": "29", "sectionName": "Adversarial & Security", "subsection": "07", "scenario": "01", "title": "SLIP0010SiblingUnlink"}
 func TestAdv_29_7_SLIP0010SiblingUnlink(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	seed := make([]byte, 64)
@@ -191,6 +197,7 @@ func TestAdv_29_7_SLIP0010SiblingUnlink(t *testing.T) {
 
 // TST-ADV-032: KeyDeriver.DerivePersonaDEK produces different keys per persona.
 // Architecture §5: "each persona gets its own HKDF-derived DEK."
+// TRACE: {"suite": "CORE", "case": "0257", "section": "29", "sectionName": "Adversarial & Security", "subsection": "06", "scenario": "01", "title": "KeyDeriverPersonaDEK"}
 func TestAdv_29_6_KeyDeriverPersonaDEK(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	kd := dinacrypto.NewKeyDeriver(slip)
@@ -231,6 +238,7 @@ func TestAdv_29_6_KeyDeriverPersonaDEK(t *testing.T) {
 // TST-CORE-968
 // TST-ADV-033: DeriveSigningKey at different persona indices produces independent Ed25519 keys.
 // Architecture §6: "each persona gets its own signing key at m/9999'/1'/<index>'/<gen>'."
+// TRACE: {"suite": "CORE", "case": "0258", "section": "29", "sectionName": "Adversarial & Security", "subsection": "06", "scenario": "01", "title": "KeyDeriverSigningKey"}
 func TestAdv_29_6_KeyDeriverSigningKey(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	kd := dinacrypto.NewKeyDeriver(slip)
@@ -284,6 +292,7 @@ func TestAdv_29_6_KeyDeriverSigningKey(t *testing.T) {
 // Architecture §5: "each persona is a separate encrypted database file with its own DEK."
 // The HKDF info string includes the persona name, ensuring different personas derive
 // completely different keys even from the same master seed.
+// TRACE: {"suite": "CORE", "case": "0259", "section": "29", "sectionName": "Adversarial & Security", "subsection": "06", "scenario": "04", "title": "KeyDeriverPersonaDEKIsolation"}
 func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	kd := dinacrypto.NewKeyDeriver(slip)
@@ -294,6 +303,7 @@ func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 		seed[i] = byte(i + 1)
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0260", "section": "29", "sectionName": "Adversarial & Security", "title": "three_personas_all_pairs_distinct_and_32_bytes"}
 	t.Run("three_personas_all_pairs_distinct_and_32_bytes", func(t *testing.T) {
 		// Requirement: DerivePersonaDEK for 3 personas → all DEKs distinct.
 		// Also verify each DEK is exactly 32 bytes (AES-256 key size).
@@ -328,6 +338,7 @@ func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0261", "section": "29", "sectionName": "Adversarial & Security", "title": "determinism_same_seed_and_persona_yields_identical_DEK"}
 	t.Run("determinism_same_seed_and_persona_yields_identical_DEK", func(t *testing.T) {
 		// Requirement: HKDF is deterministic — same inputs produce identical output.
 		// Without this, vault unlock would produce a different DEK and data would be lost.
@@ -345,6 +356,7 @@ func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0262", "section": "29", "sectionName": "Adversarial & Security", "title": "version_isolation_v1_and_v2_produce_different_DEKs"}
 	t.Run("version_isolation_v1_and_v2_produce_different_DEKs", func(t *testing.T) {
 		// Requirement: version tag in HKDF info string ensures v1 and v2 are different.
 		// This is required for vault re-encryption during migration.
@@ -367,6 +379,7 @@ func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0263", "section": "29", "sectionName": "Adversarial & Security", "title": "empty_seed_returns_error"}
 	t.Run("empty_seed_returns_error", func(t *testing.T) {
 		// Requirement: derivation from empty seed must fail — not silently return zeros.
 		p, _ := domain.NewPersonaName("general")
@@ -380,6 +393,7 @@ func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0264", "section": "29", "sectionName": "Adversarial & Security", "title": "positive_control_different_seeds_produce_different_key_sets"}
 	t.Run("positive_control_different_seeds_produce_different_key_sets", func(t *testing.T) {
 		// Contrast check: two different master seeds produce entirely different DEK sets.
 		// Without this, the test passes even if DerivePersonaDEK ignores the seed.

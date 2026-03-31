@@ -36,6 +36,7 @@ from tests.integration.mocks import (
 # ---------------------------------------------------------------------------
 
 # TST-INT-590
+# TRACE: {"suite": "INT", "case": "0590", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "01", "title": "plaintext_only_in_memory_never_at_rest"}
 def test_plaintext_only_in_memory_never_at_rest(
     mock_vault: MockVault, mock_identity: MockIdentity
 ):
@@ -63,6 +64,7 @@ def test_plaintext_only_in_memory_never_at_rest(
 
 
 # TST-INT-591
+# TRACE: {"suite": "INT", "case": "0591", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "02", "title": "export_archive_encrypted_aes256gcm"}
 def test_export_archive_encrypted_aes256gcm(
     mock_vault: MockVault, mock_identity: MockIdentity,
     mock_backup_manager: MockBackupManager,
@@ -97,6 +99,7 @@ def test_export_archive_encrypted_aes256gcm(
 # ---------------------------------------------------------------------------
 
 # TST-INT-592
+# TRACE: {"suite": "INT", "case": "0592", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "03", "title": "core_makes_zero_external_api_calls"}
 def test_core_makes_zero_external_api_calls(
     mock_go_core: MockGoCore,
 ):
@@ -141,6 +144,7 @@ def test_core_makes_zero_external_api_calls(
 # ---------------------------------------------------------------------------
 
 # TST-INT-593
+# TRACE: {"suite": "INT", "case": "0593", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "04", "title": "sss_share_rotation_preserves_master_key"}
 def test_sss_share_rotation_preserves_master_key(
     mock_sss_manager: MockSSSManager, mock_identity: MockIdentity,
 ):
@@ -181,6 +185,7 @@ def test_sss_share_rotation_preserves_master_key(
 
 
 # TST-INT-594
+# TRACE: {"suite": "INT", "case": "0594", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "05", "title": "sss_shard_per_custodian_nacl_encryption"}
 def test_sss_shard_per_custodian_nacl_encryption(
     mock_sss_manager: MockSSSManager,
 ):
@@ -224,6 +229,7 @@ def test_sss_shard_per_custodian_nacl_encryption(
 
 
 # TST-INT-595
+# TRACE: {"suite": "INT", "case": "0595", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "06", "title": "sss_recovery_manifest_on_pds"}
 def test_sss_recovery_manifest_on_pds(
     mock_sss_manager: MockSSSManager, mock_identity: MockIdentity,
 ):
@@ -269,6 +275,7 @@ def test_sss_recovery_manifest_on_pds(
 # ---------------------------------------------------------------------------
 
 # TST-INT-596
+# TRACE: {"suite": "INT", "case": "0596", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "07", "title": "bot_query_contains_no_user_did"}
 def test_bot_query_contains_no_user_did(
     mock_bot_sanitizer: MockBotQuerySanitizer,
 ):
@@ -311,6 +318,7 @@ def test_bot_query_contains_no_user_did(
 
 
 # TST-INT-597
+# TRACE: {"suite": "INT", "case": "0597", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "08", "title": "query_sanitization_strips_persona_data"}
 def test_query_sanitization_strips_persona_data(
     mock_bot_sanitizer: MockBotQuerySanitizer,
 ):
@@ -351,6 +359,7 @@ def test_query_sanitization_strips_persona_data(
 
 
 # TST-INT-598
+# TRACE: {"suite": "INT", "case": "0598", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "09", "title": "bot_post_query_wire_format"}
 def test_bot_post_query_wire_format(
     mock_review_bot: MockReviewBot,
 ):
@@ -402,6 +411,7 @@ def test_bot_post_query_wire_format(
 # ---------------------------------------------------------------------------
 
 # TST-INT-599
+# TRACE: {"suite": "INT", "case": "0599", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "10", "title": "telegram_connector_bot_api_with_token"}
 def test_telegram_connector_bot_api_with_token(
     mock_telegram_connector: MockTelegramConnector,
 ):
@@ -437,6 +447,7 @@ def test_telegram_connector_bot_api_with_token(
 # ---------------------------------------------------------------------------
 
 # TST-INT-600
+# TRACE: {"suite": "INT", "case": "0600", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "11", "title": "outcome_report_payload_matches_architecture_spec"}
 def test_outcome_report_payload_matches_architecture_spec():
     """Architecture §8: Outcome report payload must include all required fields:
     reporter_trust_ring, reporter_age_days, product_id, purchase_verified,
@@ -477,6 +488,7 @@ def test_outcome_report_payload_matches_architecture_spec():
 
 
 # TST-INT-601
+# TRACE: {"suite": "INT", "case": "0601", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "12", "title": "appview_phase1_single_go_binary_postgresql"}
 def test_appview_phase1_single_go_binary_postgresql():
     """Architecture §8: Phase 1 AppView is a single Go binary + PostgreSQL 16
     + pg_trgm. Sharding, ScyllaDB, Kafka deferred to Phase 3+.
@@ -535,6 +547,7 @@ def test_appview_phase1_single_go_binary_postgresql():
 # ---------------------------------------------------------------------------
 
 # TST-INT-602
+# TRACE: {"suite": "INT", "case": "0602", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "13", "title": "encrypted_snapshots_and_restore"}
 def test_encrypted_snapshots_and_restore(
     mock_vault: MockVault, mock_identity: MockIdentity,
     mock_backup_manager: MockBackupManager,
@@ -576,6 +589,7 @@ def test_encrypted_snapshots_and_restore(
 # ---------------------------------------------------------------------------
 
 # TST-INT-603
+# TRACE: {"suite": "INT", "case": "0603", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "14", "title": "deepgram_nova3_websocket_stt_with_fallback"}
 def test_deepgram_nova3_websocket_stt_with_fallback(
     mock_stt_router: MockSTTRouter,
 ):
@@ -606,6 +620,7 @@ def test_deepgram_nova3_websocket_stt_with_fallback(
 
 
 # TST-INT-604
+# TRACE: {"suite": "INT", "case": "0604", "section": "17", "sectionName": "Architecture Validation", "subsection": "01", "scenario": "15", "title": "stt_available_in_all_deployment_profiles"}
 def test_stt_available_in_all_deployment_profiles(
     mock_stt_router: MockSTTRouter,
 ):

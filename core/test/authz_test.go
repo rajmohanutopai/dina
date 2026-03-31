@@ -88,6 +88,7 @@ func doSignedRequest(handler http.Handler, method, path string) *httptest.Respon
 // TST-CORE-1097
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0144", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "01", "title": "BrainServiceKeyOnDIDSign_Forbidden"}
 func TestAuthz_1_6_1_BrainServiceKeyOnDIDSign_Forbidden(t *testing.T) {
 	// TST-CORE-1097: Service signature auth on /v1/did/sign → forbidden
 	// Requirement: Brain (service key auth) must be denied access to /v1/did/sign.
@@ -116,6 +117,7 @@ func TestAuthz_1_6_1_BrainServiceKeyOnDIDSign_Forbidden(t *testing.T) {
 // TST-CORE-1098
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0145", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "02", "title": "ClientTokenOnDIDSign_Allowed"}
 func TestAuthz_1_6_2_ClientTokenOnDIDSign_Allowed(t *testing.T) {
 	handler := buildTestHandler()
 
@@ -131,6 +133,7 @@ func TestAuthz_1_6_2_ClientTokenOnDIDSign_Allowed(t *testing.T) {
 // TST-CORE-1099
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0146", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "03", "title": "BrainServiceKeyOnVaultQuery_Allowed"}
 func TestAuthz_1_6_3_BrainServiceKeyOnVaultQuery_Allowed(t *testing.T) {
 	handler := buildTestHandler()
 
@@ -146,6 +149,7 @@ func TestAuthz_1_6_3_BrainServiceKeyOnVaultQuery_Allowed(t *testing.T) {
 // TST-CORE-1100
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0147", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "04", "title": "BrainServiceKeyOnAdminEndpoints_Forbidden"}
 func TestAuthz_1_6_4_BrainServiceKeyOnAdminEndpoints_Forbidden(t *testing.T) {
 	handler := buildTestHandler()
 
@@ -175,6 +179,7 @@ func TestAuthz_1_6_4_BrainServiceKeyOnAdminEndpoints_Forbidden(t *testing.T) {
 // TST-CORE-1101
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0148", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "05", "title": "ClientTokenOnAllEndpoints_Allowed"}
 func TestAuthz_1_6_5_ClientTokenOnAllEndpoints_Allowed(t *testing.T) {
 	handler := buildTestHandler()
 
@@ -206,6 +211,7 @@ func TestAuthz_1_6_5_ClientTokenOnAllEndpoints_Allowed(t *testing.T) {
 // TST-CORE-1102
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0149", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "06", "title": "BrainServiceKeyOnAllowedPaths_OK"}
 func TestAuthz_1_6_6_BrainServiceKeyOnAllowedPaths_OK(t *testing.T) {
 	handler := buildTestHandler()
 
@@ -234,6 +240,7 @@ func TestAuthz_1_6_6_BrainServiceKeyOnAllowedPaths_OK(t *testing.T) {
 // TST-CORE-1103
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0150", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "07", "title": "UnauthenticatedPublicPaths_PassThrough"}
 func TestAuthz_1_6_7_UnauthenticatedPublicPaths_PassThrough(t *testing.T) {
 	// Build a chain with only the authz middleware (no auth middleware)
 	// to verify that requests without token_kind in context pass through.
@@ -262,6 +269,7 @@ func TestAuthz_1_6_7_UnauthenticatedPublicPaths_PassThrough(t *testing.T) {
 // TST-CORE-1104
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0151", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "08", "title": "ExplicitContextTokenKind"}
 func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 	authzMW := middleware.NewAuthzMiddleware(checker)
@@ -273,6 +281,7 @@ func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 
 	handler := authzMW(echoHandler)
 
+	// TRACE: {"suite": "CORE", "case": "0152", "section": "01", "sectionName": "Authentication & Authorization", "title": "brain_on_admin_path"}
 	t.Run("brain_on_admin_path", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/did/sign", nil)
 		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "service")
@@ -287,6 +296,7 @@ func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0153", "section": "01", "sectionName": "Authentication & Authorization", "title": "client_on_admin_path"}
 	t.Run("client_on_admin_path", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/did/sign", nil)
 		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "client")
@@ -300,6 +310,7 @@ func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0154", "section": "01", "sectionName": "Authentication & Authorization", "title": "brain_on_vault_query"}
 	t.Run("brain_on_vault_query", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/query", nil)
 		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "service")
@@ -314,6 +325,7 @@ func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0155", "section": "01", "sectionName": "Authentication & Authorization", "title": "unknown_kind_on_any_path"}
 	t.Run("unknown_kind_on_any_path", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/query", nil)
 		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "unknown")
@@ -333,6 +345,7 @@ func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-990 TST-CORE-1123 TST-CORE-1022
+// TRACE: {"suite": "CORE", "case": "0156", "section": "30", "sectionName": "Test System Quality", "subsection": "02", "scenario": "01", "title": "MatrixEveryAdminEndpointRejectsServiceSigAuth"}
 func TestAuthz_30_2_MatrixEveryAdminEndpointRejectsServiceSigAuth(t *testing.T) {
 	// Requirement: Service Signature Auth (brain service keys) must be rejected
 	// on EVERY admin endpoint with 403 Forbidden. This is a comprehensive matrix
@@ -421,6 +434,7 @@ func TestAuthz_30_2_MatrixEveryAdminEndpointRejectsServiceSigAuth(t *testing.T) 
 		"/v1/task/ack",
 	}
 	for _, path := range positiveControls {
+		// TRACE: {"suite": "CORE", "case": "0157", "section": "30", "sectionName": "Test System Quality", "title": "positive_control_"}
 		t.Run("positive_control_"+path[4:], func(t *testing.T) {
 			rr := doSignedRequest(handler, http.MethodPost, path)
 			if rr.Code == http.StatusForbidden {
@@ -439,10 +453,12 @@ func TestAuthz_30_2_MatrixEveryAdminEndpointRejectsServiceSigAuth(t *testing.T) 
 // The expected behavior: 401 Unauthorized with JSON error body.
 // ==========================================================================
 
+// TRACE: {"suite": "CORE", "case": "0158", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "01", "title": "MissingAndMalformedAuthorizationHeader"}
 func TestAuth_1_1_MissingAndMalformedAuthorizationHeader(t *testing.T) {
 	handler := buildTestHandler()
 	protectedPath := "/v1/vault/query"
 
+	// TRACE: {"suite": "CORE", "case": "0159", "section": "01", "sectionName": "Authentication & Authorization", "title": "missing_Authorization_header_returns_401"}
 	t.Run("missing_Authorization_header_returns_401", func(t *testing.T) {
 		// TST-CORE-002: No Authorization header at all on a protected endpoint.
 		// Requirement: 401 Unauthorized when no auth headers are present.
@@ -462,6 +478,7 @@ func TestAuth_1_1_MissingAndMalformedAuthorizationHeader(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0160", "section": "01", "sectionName": "Authentication & Authorization", "title": "malformed_header_Basic_instead_of_Bearer_returns_401"}
 	t.Run("malformed_header_Basic_instead_of_Bearer_returns_401", func(t *testing.T) {
 		// TST-CORE-003: Authorization header uses "Basic" scheme instead of "Bearer".
 		// The middleware only accepts "Bearer " prefix.
@@ -479,6 +496,7 @@ func TestAuth_1_1_MissingAndMalformedAuthorizationHeader(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0161", "section": "01", "sectionName": "Authentication & Authorization", "title": "wrong_Bearer_token_value_returns_401"}
 	t.Run("wrong_Bearer_token_value_returns_401", func(t *testing.T) {
 		// TST-CORE-004: Valid Bearer format but invalid token value.
 		// The token doesn't match any registered client token.
@@ -493,6 +511,7 @@ func TestAuth_1_1_MissingAndMalformedAuthorizationHeader(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0162", "section": "01", "sectionName": "Authentication & Authorization", "title": "empty_Bearer_value_returns_401"}
 	t.Run("empty_Bearer_value_returns_401", func(t *testing.T) {
 		// TST-CORE-005: "Authorization: Bearer " with nothing after it.
 		rr := doRequest(handler, http.MethodPost, protectedPath, "")
@@ -503,6 +522,7 @@ func TestAuth_1_1_MissingAndMalformedAuthorizationHeader(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0163", "section": "01", "sectionName": "Authentication & Authorization", "title": "Bearer_with_leading_trailing_whitespace_returns_401"}
 	t.Run("Bearer_with_leading_trailing_whitespace_returns_401", func(t *testing.T) {
 		// TST-CORE-006: Token with extra whitespace should not match any stored token.
 		req := httptest.NewRequest(http.MethodPost, protectedPath, nil)
@@ -517,6 +537,7 @@ func TestAuth_1_1_MissingAndMalformedAuthorizationHeader(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0164", "section": "01", "sectionName": "Authentication & Authorization", "title": "positive_control_valid_client_token_accepted"}
 	t.Run("positive_control_valid_client_token_accepted", func(t *testing.T) {
 		// Contrast check: valid client token must be accepted.
 		// Without this, the test passes if the middleware rejects everything.
@@ -526,6 +547,7 @@ func TestAuth_1_1_MissingAndMalformedAuthorizationHeader(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0165", "section": "01", "sectionName": "Authentication & Authorization", "title": "positive_control_public_path_no_header_accepted"}
 	t.Run("positive_control_public_path_no_header_accepted", func(t *testing.T) {
 		// Contrast check: public paths don't require any auth.
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)

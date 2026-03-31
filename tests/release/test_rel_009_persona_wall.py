@@ -15,6 +15,7 @@ class TestPersonaWall:
     """Real API tests for REL-009: persona isolation."""
 
     # REL-009
+    # TRACE: {"suite": "REL", "case": "0009", "section": "09", "sectionName": "Persona Wall", "subsection": "01", "scenario": "01", "title": "rel_009_cross_persona_data_isolated"}
     def test_rel_009_cross_persona_data_isolated(
         self, core_url, auth_headers,
     ) -> None:
@@ -73,6 +74,7 @@ class TestPersonaWall:
             )
 
     # REL-009
+    # TRACE: {"suite": "REL", "case": "0009", "section": "09", "sectionName": "Persona Wall", "subsection": "01", "scenario": "02", "title": "rel_009_pii_scrubbed_via_api"}
     def test_rel_009_pii_scrubbed_via_api(
         self, core_url, auth_headers,
     ) -> None:
@@ -99,6 +101,7 @@ class TestPersonaWall:
         )
 
     # REL-009
+    # TRACE: {"suite": "REL", "case": "0009", "section": "09", "sectionName": "Persona Wall", "subsection": "01", "scenario": "03", "title": "rel_009_restricted_persona_requires_unlock"}
     def test_rel_009_restricted_persona_requires_unlock(
         self, core_url, auth_headers,
     ) -> None:
@@ -129,6 +132,7 @@ class TestPersonaWall:
         )
 
     # REL-009
+    # TRACE: {"suite": "REL", "case": "0009", "section": "09", "sectionName": "Persona Wall", "subsection": "01", "scenario": "04", "title": "rel_009_persona_list_returns_all"}
     def test_rel_009_persona_list_returns_all(
         self, core_url, auth_headers,
     ) -> None:

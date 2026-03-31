@@ -21,6 +21,7 @@ class TestFreshInstall:
     """Real Docker tests for REL-001: install and startup validation."""
 
     # REL-001
+    # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "01", "title": "rel_001_install_script_exists_and_executable"}
     def test_rel_001_install_script_exists_and_executable(self) -> None:
         """install.sh exists and is executable."""
         install = PROJECT_ROOT / "install.sh"
@@ -28,12 +29,14 @@ class TestFreshInstall:
         assert install.stat().st_mode & 0o111, "install.sh not executable"
 
     # REL-001
+    # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "02", "title": "rel_001_run_script_exists"}
     def test_rel_001_run_script_exists(self) -> None:
         """run.sh exists."""
         run_sh = PROJECT_ROOT / "run.sh"
         assert run_sh.exists(), "run.sh missing"
 
     # REL-001
+    # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "03", "title": "rel_001_docker_compose_valid"}
     def test_rel_001_docker_compose_valid(self) -> None:
         """docker-compose.yml parses without errors."""
         result = subprocess.run(
@@ -46,6 +49,7 @@ class TestFreshInstall:
         )
 
     # REL-001
+    # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "04", "title": "rel_001_core_healthy_after_start"}
     def test_rel_001_core_healthy_after_start(self, core_url) -> None:
         """Core healthz returns 200 with valid status field."""
         resp = httpx.get(f"{core_url}/healthz", timeout=5)
@@ -56,6 +60,7 @@ class TestFreshInstall:
         )
 
     # REL-001
+    # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "05", "title": "rel_001_brain_healthy_after_start"}
     def test_rel_001_brain_healthy_after_start(self, brain_url) -> None:
         """Brain healthz returns 200 with valid status field."""
         resp = httpx.get(f"{brain_url}/healthz", timeout=5)
@@ -66,6 +71,7 @@ class TestFreshInstall:
         )
 
     # REL-001
+    # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "06", "title": "rel_001_did_generated_on_first_boot"}
     def test_rel_001_did_generated_on_first_boot(
         self, core_url, auth_headers,
     ) -> None:

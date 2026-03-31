@@ -137,6 +137,7 @@ async function insertFlag(opts: {
 // 17.1 Ingest to Page
 // ---------------------------------------------------------------------------
 describe('17.1 Ingest to Page', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0603", "section": "01", "sectionName": "General", "title": "IT-E2E-001: attestation -> ingester -> DB -> scorer -> API -> page"}
   it('IT-E2E-001: attestation -> ingester -> DB -> scorer -> API -> page', async () => {
     const authorDid = 'did:plc:e2e001author'
     const subjectDid = 'did:plc:e2e001subject'
@@ -176,6 +177,7 @@ describe('17.1 Ingest to Page', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0604", "section": "01", "sectionName": "General", "title": "IT-E2E-002: vouch -> trust edge -> graph query"}
   it('IT-E2E-002: vouch -> trust edge -> graph query', async () => {
     const voucher = 'did:plc:e2e002voucher'
     const vouchee = 'did:plc:e2e002vouchee'
@@ -206,6 +208,7 @@ describe('17.1 Ingest to Page', () => {
     expect(Number(edges[0].weight)).toBe(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0605", "section": "01", "sectionName": "General", "title": "IT-E2E-003: disputed delete -> tombstone -> profile penalty"}
   it('IT-E2E-003: disputed delete -> tombstone -> profile penalty', async () => {
     const authorDid = 'did:plc:e2e003author'
     const subjectDid = 'did:plc:e2e003subject'
@@ -260,6 +263,7 @@ describe('17.1 Ingest to Page', () => {
     expect((attResult as any).rows.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0606", "section": "01", "sectionName": "General", "title": "IT-E2E-004: subject merge -> canonical resolution"}
   it('IT-E2E-004: subject merge -> canonical resolution', async () => {
     const author1 = 'did:plc:e2e004auth1'
     const author2 = 'did:plc:e2e004auth2'
@@ -320,6 +324,7 @@ describe('17.1 Ingest to Page', () => {
     expect((betaSubjects as any).rows.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0607", "section": "01", "sectionName": "General", "title": "IT-E2E-005: search flow"}
   it('IT-E2E-005: search flow', async () => {
     // Insert 10 attestations with varied text
     for (let i = 0; i < 10; i++) {
@@ -365,6 +370,7 @@ describe('17.1 Ingest to Page', () => {
 // 17.2 Subject Page
 // ---------------------------------------------------------------------------
 describe('17.2 Subject Page', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0608", "section": "01", "sectionName": "General", "title": "IT-E2E-006: subject page renders"}
   it('IT-E2E-006: subject page renders', async () => {
     // Subject with 5 attestations — verify data exists via API
     const subjectDid = 'did:plc:e2e006subject'
@@ -399,6 +405,7 @@ describe('17.2 Subject Page', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0609", "section": "01", "sectionName": "General", "title": "IT-E2E-007: subject page shows score"}
   it('IT-E2E-007: subject page shows score', async () => {
     const subjectDid = 'did:plc:e2e007subject'
 
@@ -426,6 +433,7 @@ describe('17.2 Subject Page', () => {
     expect(['high', 'moderate', 'low', 'very-low', 'unknown']).toContain(response.trustLevel)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0610", "section": "01", "sectionName": "General", "title": "IT-E2E-008: subject page shows dimensions"}
   it('IT-E2E-008: subject page shows dimensions', async () => {
     const subjectDid = 'did:plc:e2e008subject'
 
@@ -471,6 +479,7 @@ describe('17.2 Subject Page', () => {
 // 17.3 Search Flow
 // ---------------------------------------------------------------------------
 describe('17.3 Search Flow', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0611", "section": "01", "sectionName": "General", "title": "IT-E2E-009: search page -- text query"}
   it('IT-E2E-009: search page -- text query', async () => {
     // Insert attestations with specific searchable text
     const terms = ['darshini tiffin spot', 'pizza place downtown', 'darshini masala dosa']
@@ -497,6 +506,7 @@ describe('17.3 Search Flow', () => {
     expect(results.results.length).toBe(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0612", "section": "01", "sectionName": "General", "title": "IT-E2E-010: search page -- filter by category"}
   it('IT-E2E-010: search page -- filter by category', async () => {
     // Insert attestations with different categories
     const categories = ['service', 'product', 'service', 'product', 'service']
@@ -528,6 +538,7 @@ describe('17.3 Search Flow', () => {
     expect(productResults.results.length).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0613", "section": "01", "sectionName": "General", "title": "IT-E2E-011: search page -- pagination"}
   it('IT-E2E-011: search page -- pagination', async () => {
     // Insert > 25 attestations
     for (let i = 0; i < 30; i++) {

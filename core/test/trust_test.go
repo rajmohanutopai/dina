@@ -19,6 +19,7 @@ import (
 // Trust Cache — In-Memory Operations
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1812", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "Gatekeeper_6_CacheUpsertAndLookup"}
 func TestGatekeeper_6_CacheUpsertAndLookup(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
@@ -43,6 +44,7 @@ func TestGatekeeper_6_CacheUpsertAndLookup(t *testing.T) {
 	testutil.RequireTrue(t, got.Relationship == "contact", "relationship should match")
 }
 
+// TRACE: {"suite": "CORE", "case": "1813", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "Gatekeeper_6_CacheLookupNotFound"}
 func TestGatekeeper_6_CacheLookupNotFound(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
@@ -51,6 +53,7 @@ func TestGatekeeper_6_CacheLookupNotFound(t *testing.T) {
 	testutil.RequireTrue(t, got == nil, "entry should be nil for unknown DID")
 }
 
+// TRACE: {"suite": "CORE", "case": "1814", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "Gatekeeper_6_CacheList"}
 func TestGatekeeper_6_CacheList(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
@@ -68,6 +71,7 @@ func TestGatekeeper_6_CacheList(t *testing.T) {
 	testutil.RequireTrue(t, len(list) == 3, "should have 3 entries")
 }
 
+// TRACE: {"suite": "CORE", "case": "1815", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "04", "scenario": "01", "title": "Gatekeeper_6_CacheRemove"}
 func TestGatekeeper_6_CacheRemove(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
@@ -80,6 +84,7 @@ func TestGatekeeper_6_CacheRemove(t *testing.T) {
 	testutil.RequireTrue(t, got == nil, "removed entry should not be found")
 }
 
+// TRACE: {"suite": "CORE", "case": "1816", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "05", "scenario": "01", "title": "Gatekeeper_6_CacheUpsertOverwrites"}
 func TestGatekeeper_6_CacheUpsertOverwrites(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
@@ -92,6 +97,7 @@ func TestGatekeeper_6_CacheUpsertOverwrites(t *testing.T) {
 	testutil.RequireTrue(t, got.TrustRing == 3, "ring should be updated to 3")
 }
 
+// TRACE: {"suite": "CORE", "case": "1817", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "06", "scenario": "01", "title": "Gatekeeper_6_CacheStats"}
 func TestGatekeeper_6_CacheStats(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
@@ -121,6 +127,7 @@ func (m *mockContactLookup) IsContact(did string) bool {
 	return ok
 }
 
+// TRACE: {"suite": "CORE", "case": "1818", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "07", "scenario": "01", "title": "Gatekeeper_6_IngressBlockedContactDrop"}
 func TestGatekeeper_6_IngressBlockedContactDrop(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
@@ -132,6 +139,7 @@ func TestGatekeeper_6_IngressBlockedContactDrop(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressDrop, "blocked contact should be dropped")
 }
 
+// TRACE: {"suite": "CORE", "case": "1819", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "08", "scenario": "01", "title": "Gatekeeper_6_IngressTrustedContactAccept"}
 func TestGatekeeper_6_IngressTrustedContactAccept(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
@@ -143,6 +151,7 @@ func TestGatekeeper_6_IngressTrustedContactAccept(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "trusted contact should be accepted")
 }
 
+// TRACE: {"suite": "CORE", "case": "1820", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "09", "scenario": "01", "title": "Gatekeeper_6_IngressVerifiedContactAccept"}
 func TestGatekeeper_6_IngressVerifiedContactAccept(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
@@ -154,6 +163,7 @@ func TestGatekeeper_6_IngressVerifiedContactAccept(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "verified contact should be accepted")
 }
 
+// TRACE: {"suite": "CORE", "case": "1821", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "10", "scenario": "01", "title": "Gatekeeper_6_IngressHighScoreCacheQuarantineV1"}
 func TestGatekeeper_6_IngressHighScoreCacheQuarantineV1(t *testing.T) {
 	// D2D v1: trust cache no longer grants acceptance — only explicit contacts pass.
 	// A high-score non-contact is quarantined.
@@ -169,6 +179,7 @@ func TestGatekeeper_6_IngressHighScoreCacheQuarantineV1(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "v1: high-score non-contact should be quarantined")
 }
 
+// TRACE: {"suite": "CORE", "case": "1822", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "11", "scenario": "01", "title": "Gatekeeper_6_IngressLowScoreCacheQuarantine"}
 func TestGatekeeper_6_IngressLowScoreCacheQuarantine(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
@@ -182,6 +193,7 @@ func TestGatekeeper_6_IngressLowScoreCacheQuarantine(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "low-score cached DID should be quarantined")
 }
 
+// TRACE: {"suite": "CORE", "case": "1823", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "12", "scenario": "01", "title": "Gatekeeper_6_IngressUnknownDIDQuarantine"}
 func TestGatekeeper_6_IngressUnknownDIDQuarantine(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{}}
@@ -191,6 +203,7 @@ func TestGatekeeper_6_IngressUnknownDIDQuarantine(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "unknown DID should be quarantined")
 }
 
+// TRACE: {"suite": "CORE", "case": "1824", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "13", "scenario": "01", "title": "Gatekeeper_6_IngressEmptyDIDQuarantine"}
 func TestGatekeeper_6_IngressEmptyDIDQuarantine(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{}}
@@ -200,6 +213,7 @@ func TestGatekeeper_6_IngressEmptyDIDQuarantine(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "empty DID should be quarantined")
 }
 
+// TRACE: {"suite": "CORE", "case": "1825", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "14", "scenario": "01", "title": "Gatekeeper_6_IngressBoundaryScoreQuarantineV1"}
 func TestGatekeeper_6_IngressBoundaryScoreQuarantineV1(t *testing.T) {
 	// D2D v1: trust cache no longer grants acceptance — only explicit contacts pass.
 	// A boundary-score non-contact is quarantined.
@@ -215,6 +229,7 @@ func TestGatekeeper_6_IngressBoundaryScoreQuarantineV1(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "v1: boundary-score non-contact should be quarantined")
 }
 
+// TRACE: {"suite": "CORE", "case": "1826", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "15", "scenario": "01", "title": "Gatekeeper_6_IngressJustBelowBoundaryQuarantineV1"}
 func TestGatekeeper_6_IngressJustBelowBoundaryQuarantineV1(t *testing.T) {
 	// D2D v1: trust cache no longer grants acceptance — only explicit contacts pass.
 	cache := trustadapter.NewInMemoryCache()
@@ -233,6 +248,7 @@ func TestGatekeeper_6_IngressJustBelowBoundaryQuarantineV1(t *testing.T) {
 // Trust Service — Contact Takes Priority Over Cache
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1827", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "16", "scenario": "01", "title": "Gatekeeper_6_IngressBlockedOverridesCache"}
 func TestGatekeeper_6_IngressBlockedOverridesCache(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	// DID has high trust in cache but is blocked in contacts
@@ -249,6 +265,7 @@ func TestGatekeeper_6_IngressBlockedOverridesCache(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressDrop, "blocked contact overrides high cache score")
 }
 
+// TRACE: {"suite": "CORE", "case": "1828", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "17", "scenario": "01", "title": "Gatekeeper_6_IngressTrustedOverridesLowCache"}
 func TestGatekeeper_6_IngressTrustedOverridesLowCache(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	// DID has low trust in cache but is trusted in contacts
@@ -269,6 +286,7 @@ func TestGatekeeper_6_IngressTrustedOverridesLowCache(t *testing.T) {
 // Trust Resolver — Empty AppView URL
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1829", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "18", "scenario": "01", "title": "Gatekeeper_6_ResolverNoAppViewReturnsNil"}
 func TestGatekeeper_6_ResolverNoAppViewReturnsNil(t *testing.T) {
 	resolver := trustadapter.NewResolver("")
 
@@ -285,6 +303,7 @@ func TestGatekeeper_6_ResolverNoAppViewReturnsNil(t *testing.T) {
 // Trust Domain Types — Validation
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1830", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "19", "scenario": "01", "title": "Gatekeeper_6_DomainValidRings"}
 func TestGatekeeper_6_DomainValidRings(t *testing.T) {
 	testutil.RequireTrue(t, domain.ValidTrustRings[1], "ring 1 should be valid")
 	testutil.RequireTrue(t, domain.ValidTrustRings[2], "ring 2 should be valid")
@@ -293,6 +312,7 @@ func TestGatekeeper_6_DomainValidRings(t *testing.T) {
 	testutil.RequireTrue(t, !domain.ValidTrustRings[4], "ring 4 should be invalid")
 }
 
+// TRACE: {"suite": "CORE", "case": "1831", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "20", "scenario": "01", "title": "Gatekeeper_6_DomainValidRelationships"}
 func TestGatekeeper_6_DomainValidRelationships(t *testing.T) {
 	testutil.RequireTrue(t, domain.ValidRelationships["contact"], "contact should be valid")
 	testutil.RequireTrue(t, domain.ValidRelationships["frequent"], "frequent should be valid")
@@ -302,6 +322,7 @@ func TestGatekeeper_6_DomainValidRelationships(t *testing.T) {
 	testutil.RequireTrue(t, !domain.ValidRelationships["friend"], "friend should be invalid")
 }
 
+// TRACE: {"suite": "CORE", "case": "1832", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "21", "scenario": "01", "title": "Gatekeeper_6_DomainIngressDecisionConstants"}
 func TestGatekeeper_6_DomainIngressDecisionConstants(t *testing.T) {
 	testutil.RequireTrue(t, domain.IngressAccept == "accept", "IngressAccept should be 'accept'")
 	testutil.RequireTrue(t, domain.IngressQuarantine == "quarantine", "IngressQuarantine should be 'quarantine'")

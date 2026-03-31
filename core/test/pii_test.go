@@ -16,6 +16,7 @@ var piiCtx = context.Background()
 // ---------- §5 PII Scrubber — Tier 1 Go Regex (18 scenarios) ----------
 
 // TST-CORE-343
+// TRACE: {"suite": "CORE", "case": "1121", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "01", "scenario": "01", "title": "EmailDetection"}
 func TestPII_5_1_EmailDetection(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -27,6 +28,7 @@ func TestPII_5_1_EmailDetection(t *testing.T) {
 }
 
 // TST-CORE-344
+// TRACE: {"suite": "CORE", "case": "1122", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "02", "scenario": "01", "title": "PhoneDetection"}
 func TestPII_5_2_PhoneDetection(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -38,6 +40,7 @@ func TestPII_5_2_PhoneDetection(t *testing.T) {
 }
 
 // TST-CORE-345
+// TRACE: {"suite": "CORE", "case": "1123", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "03", "scenario": "01", "title": "SSNDetection"}
 func TestPII_5_3_SSNDetection(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -49,6 +52,7 @@ func TestPII_5_3_SSNDetection(t *testing.T) {
 }
 
 // TST-CORE-346
+// TRACE: {"suite": "CORE", "case": "1124", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "04", "scenario": "01", "title": "CreditCardDetection"}
 func TestPII_5_4_CreditCardDetection(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -60,6 +64,7 @@ func TestPII_5_4_CreditCardDetection(t *testing.T) {
 }
 
 // TST-CORE-355
+// TRACE: {"suite": "CORE", "case": "1125", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "05", "scenario": "01", "title": "MultipleEmails"}
 func TestPII_5_5_MultipleEmails(t *testing.T) {
 	impl := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -88,6 +93,7 @@ func TestPII_5_5_MultipleEmails(t *testing.T) {
 }
 
 // TST-CORE-348
+// TRACE: {"suite": "CORE", "case": "1126", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "06", "scenario": "01", "title": "NoPII"}
 func TestPII_5_6_NoPII(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -99,6 +105,7 @@ func TestPII_5_6_NoPII(t *testing.T) {
 }
 
 // TST-CORE-349
+// TRACE: {"suite": "CORE", "case": "1127", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "07", "scenario": "01", "title": "MixedPII"}
 func TestPII_5_7_MixedPII(t *testing.T) {
 	impl := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -121,6 +128,7 @@ func TestPII_5_7_MixedPII(t *testing.T) {
 }
 
 // TST-CORE-776
+// TRACE: {"suite": "CORE", "case": "1128", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "08", "scenario": "01", "title": "AddressDetection"}
 func TestPII_5_8_AddressDetection(t *testing.T) {
 	// Fresh instance — no shared state.
 	scrubber := piipkg.NewScrubber()
@@ -151,6 +159,7 @@ func TestPII_5_8_AddressDetection(t *testing.T) {
 }
 
 // TST-CORE-777
+// TRACE: {"suite": "CORE", "case": "1129", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "09", "scenario": "01", "title": "TableDriven"}
 func TestPII_5_9_TableDriven(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
@@ -178,6 +187,7 @@ func TestPII_5_9_TableDriven(t *testing.T) {
 }
 
 // TST-CORE-352
+// TRACE: {"suite": "CORE", "case": "1130", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "10", "scenario": "01", "title": "LatencyUnder1ms"}
 func TestPII_5_10_LatencyUnder1ms(t *testing.T) {
 	// Fresh scrubber — no shared state.
 	impl := piipkg.NewScrubber()
@@ -215,6 +225,7 @@ func TestPII_5_10_LatencyUnder1ms(t *testing.T) {
 }
 
 // TST-CORE-353
+// TRACE: {"suite": "CORE", "case": "1131", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "11", "scenario": "01", "title": "AddCustomPattern"}
 func TestPII_5_11_AddCustomPattern(t *testing.T) {
 	impl := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -243,6 +254,7 @@ func TestPII_5_11_AddCustomPattern(t *testing.T) {
 }
 
 // TST-CORE-778
+// TRACE: {"suite": "CORE", "case": "1132", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "12", "scenario": "01", "title": "EmptyInput"}
 func TestPII_5_12_EmptyInput(t *testing.T) {
 	impl := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -263,6 +275,7 @@ func TestPII_5_12_EmptyInput(t *testing.T) {
 }
 
 // TST-CORE-355
+// TRACE: {"suite": "CORE", "case": "1133", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "13", "scenario": "01", "title": "NumberedTokensUnique"}
 func TestPII_5_13_NumberedTokensUnique(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -275,6 +288,7 @@ func TestPII_5_13_NumberedTokensUnique(t *testing.T) {
 }
 
 // TST-CORE-359
+// TRACE: {"suite": "CORE", "case": "1134", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "14", "scenario": "01", "title": "IndianPhoneNumber"}
 func TestPII_5_14_IndianPhoneNumber(t *testing.T) {
 	// Fresh scrubber — no shared state.
 	impl := piipkg.NewScrubber()
@@ -311,6 +325,7 @@ func TestPII_5_14_IndianPhoneNumber(t *testing.T) {
 }
 
 // TST-CORE-779
+// TRACE: {"suite": "CORE", "case": "1135", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "15", "scenario": "01", "title": "EmailInURL"}
 func TestPII_5_15_EmailInURL(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
@@ -341,6 +356,7 @@ func TestPII_5_15_EmailInURL(t *testing.T) {
 }
 
 // TST-CORE-780
+// TRACE: {"suite": "CORE", "case": "1136", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "16", "scenario": "01", "title": "ConsecutivePIISameType"}
 func TestPII_5_16_ConsecutivePIISameType(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
@@ -365,6 +381,7 @@ func TestPII_5_16_ConsecutivePIISameType(t *testing.T) {
 }
 
 // TST-CORE-781
+// TRACE: {"suite": "CORE", "case": "1137", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "17", "scenario": "01", "title": "SQLInjectionInInput"}
 func TestPII_5_17_SQLInjectionInInput(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
@@ -396,6 +413,7 @@ func TestPII_5_17_SQLInjectionInInput(t *testing.T) {
 }
 
 // TST-CORE-782
+// TRACE: {"suite": "CORE", "case": "1138", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "18", "scenario": "01", "title": "UnicodeTextSafe"}
 func TestPII_5_18_UnicodeTextSafe(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 
@@ -424,6 +442,7 @@ func TestPII_5_18_UnicodeTextSafe(t *testing.T) {
 }
 
 // TST-CORE-347
+// TRACE: {"suite": "CORE", "case": "1139", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "19", "scenario": "01", "title": "IPAddressDetection"}
 func TestPII_5_19_IPAddressDetection(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -448,6 +467,7 @@ func TestPII_5_19_IPAddressDetection(t *testing.T) {
 }
 
 // TST-CORE-350
+// TRACE: {"suite": "CORE", "case": "1140", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "20", "scenario": "01", "title": "PIIAtStringBoundaries"}
 func TestPII_5_20_PIIAtStringBoundaries(t *testing.T) {
 	impl := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -480,6 +500,7 @@ func TestPII_5_20_PIIAtStringBoundaries(t *testing.T) {
 }
 
 // TST-CORE-351
+// TRACE: {"suite": "CORE", "case": "1141", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "21", "scenario": "01", "title": "UnicodeInternationalFormats"}
 func TestPII_5_21_UnicodeInternationalFormats(t *testing.T) {
 	// §5.21: International phone number formats must be detected and scrubbed.
 	// Fresh scrubber to avoid shared state.
@@ -509,6 +530,7 @@ func TestPII_5_21_UnicodeInternationalFormats(t *testing.T) {
 }
 
 // TST-CORE-354
+// TRACE: {"suite": "CORE", "case": "1142", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "22", "scenario": "01", "title": "BankAccountNumber"}
 func TestPII_5_22_BankAccountNumber(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
@@ -530,6 +552,7 @@ func TestPII_5_22_BankAccountNumber(t *testing.T) {
 }
 
 // TST-CORE-356
+// TRACE: {"suite": "CORE", "case": "1143", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "23", "scenario": "01", "title": "ReplacementMapReturned"}
 func TestPII_5_23_ReplacementMapReturned(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
@@ -559,6 +582,7 @@ func TestPII_5_23_ReplacementMapReturned(t *testing.T) {
 }
 
 // TST-CORE-357
+// TRACE: {"suite": "CORE", "case": "1144", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "24", "scenario": "01", "title": "ReplacementMapRoundTrip"}
 func TestPII_5_24_ReplacementMapRoundTrip(t *testing.T) {
 	scrubber := piipkg.NewScrubber()
 	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
@@ -586,6 +610,7 @@ func TestPII_5_24_ReplacementMapRoundTrip(t *testing.T) {
 }
 
 // TST-CORE-358
+// TRACE: {"suite": "CORE", "case": "1145", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "16", "scenario": "01", "title": "NoFalsePositivesOnNumbers"}
 func TestPII_5_16_NoFalsePositivesOnNumbers(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -597,6 +622,7 @@ func TestPII_5_16_NoFalsePositivesOnNumbers(t *testing.T) {
 }
 
 // TST-CORE-886
+// TRACE: {"suite": "CORE", "case": "1146", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "26", "scenario": "01", "title": "DeSanitizeEndpoint_RestoresTokensFromMap"}
 func TestPII_5_26_DeSanitizeEndpoint_RestoresTokensFromMap(t *testing.T) {
 	// PII de-sanitization endpoint — restores tokens from replacement map.
 	scrubber := realPIIScrubber
@@ -614,6 +640,7 @@ func TestPII_5_26_DeSanitizeEndpoint_RestoresTokensFromMap(t *testing.T) {
 }
 
 // TST-CORE-887
+// TRACE: {"suite": "CORE", "case": "1147", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "27", "scenario": "01", "title": "ScrubEndpoint_NoOutboundNetworkCalls"}
 func TestPII_5_27_ScrubEndpoint_NoOutboundNetworkCalls(t *testing.T) {
 	// §5.27: PII scrubber must be fully local — regex-only, no network calls.
 	// Verify by code audit: scrubber source must not import net/http or make outbound calls.
@@ -658,6 +685,7 @@ func TestPII_5_27_ScrubEndpoint_NoOutboundNetworkCalls(t *testing.T) {
 }
 
 // TST-CORE-888
+// TRACE: {"suite": "CORE", "case": "1148", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "28", "scenario": "01", "title": "SensitivePersona_MandatoryPIIScrubBeforeCloudLLM"}
 func TestPII_5_28_SensitivePersona_MandatoryPIIScrubBeforeCloudLLM(t *testing.T) {
 	// Fresh scrubber for isolation.
 	impl := piipkg.NewScrubber()

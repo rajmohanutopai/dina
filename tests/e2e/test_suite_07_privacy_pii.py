@@ -32,6 +32,7 @@ class TestPrivacyPII:
     # -----------------------------------------------------------------
     # TST-E2E-035  Full 3-Tier PII Pipeline
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0035", "section": "07", "sectionName": "Privacy & PII", "subsection": "01", "scenario": "01", "title": "full_3_tier_pii_pipeline"}
     def test_full_3_tier_pii_pipeline(self, don_alonso: HomeNode) -> None:
         # TST-E2E-035
         """Query containing PII (name, email, org) is fully scrubbed before
@@ -176,6 +177,7 @@ class TestPrivacyPII:
     # -----------------------------------------------------------------
     # TST-E2E-036  Entity Vault Lifecycle
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0036", "section": "07", "sectionName": "Privacy & PII", "subsection": "01", "scenario": "02", "title": "entity_vault_lifecycle"}
     def test_entity_vault_lifecycle(self, don_alonso: HomeNode) -> None:
         # TST-E2E-036
         """Entity Vault lifecycle: create → scrub → LLM → rehydrate → destroy.
@@ -297,6 +299,7 @@ class TestPrivacyPII:
     # -----------------------------------------------------------------
     # TST-E2E-037  Prompt Injection Neutralisation
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0037", "section": "07", "sectionName": "Privacy & PII", "subsection": "01", "scenario": "03", "title": "prompt_injection_neutralisation"}
     def test_prompt_injection_neutralisation(
         self,
         don_alonso: HomeNode,
@@ -441,6 +444,7 @@ class TestPrivacyPII:
     # -----------------------------------------------------------------
     # TST-E2E-038  PII Scrubbing Always Local
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0038", "section": "07", "sectionName": "Privacy & PII", "subsection": "01", "scenario": "04", "title": "pii_scrubbing_always_local"}
     def test_pii_scrubbing_always_local(
         self,
         don_alonso: HomeNode,

@@ -38,6 +38,7 @@ var authCtx = context.Background()
 // --------------------------------------------------------------------------
 
 // TST-CORE-001 — Service key authentication via Ed25519 signatures.
+// TRACE: {"suite": "CORE", "case": "0032", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "01", "title": "ServiceKeyAuth"}
 func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 	tv := auth.NewDefaultTokenValidator()
 	testutil.RequireImplementation(t, tv, "TokenValidator")
@@ -48,6 +49,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 	brainDID := "did:key:zTestBrainKey"
 	tv.RegisterServiceKey(brainDID, []byte(pub), "brain")
 
+	// TRACE: {"suite": "CORE", "case": "0033", "section": "01", "sectionName": "Authentication & Authorization", "title": "1_ValidSignature"}
 	t.Run("1_ValidSignature", func(t *testing.T) {
 		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		nonce := testNonce()
@@ -63,6 +65,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 		testutil.RequireEqual(t, identity, "brain")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0034", "section": "01", "sectionName": "Authentication & Authorization", "title": "2_WrongSignature"}
 	t.Run("2_WrongSignature", func(t *testing.T) {
 		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body := []byte(`{"event":"test"}`)
@@ -70,6 +73,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0035", "section": "01", "sectionName": "Authentication & Authorization", "title": "3_UnknownDID"}
 	t.Run("3_UnknownDID", func(t *testing.T) {
 		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body := []byte(`{}`)
@@ -77,6 +81,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0036", "section": "01", "sectionName": "Authentication & Authorization", "title": "4_ExpiredTimestamp"}
 	t.Run("4_ExpiredTimestamp", func(t *testing.T) {
 		ts := time.Now().UTC().Add(-10 * time.Minute).Format("2006-01-02T15:04:05Z")
 		nonce := testNonce()
@@ -90,6 +95,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0037", "section": "01", "sectionName": "Authentication & Authorization", "title": "5_BearerTokenNoLongerReturnsService"}
 	t.Run("5_BearerTokenNoLongerReturnsService", func(t *testing.T) {
 		// Bearer tokens should NOT return TokenService — services use signatures now.
 		kind, _, err := tv.IdentifyToken(testutil.TestBrainToken)
@@ -101,6 +107,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 	// Requirement: `Authorization: Bearer ` (empty value after "Bearer ") must be rejected.
 	// After middleware strips "Bearer " prefix, the token is "". IdentifyToken("")
 	// must return an error — empty tokens cannot authenticate anyone.
+	// TRACE: {"suite": "CORE", "case": "0038", "section": "01", "sectionName": "Authentication & Authorization", "title": "6_EmptyBearerValue"}
 	t.Run("6_EmptyBearerValue", func(t *testing.T) {
 		// Empty string is what middleware extracts from "Authorization: Bearer "
 		kind, identity, err := tv.IdentifyToken("")
@@ -110,6 +117,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 	})
 
 	// Additional: whitespace-only Bearer value should also be rejected.
+	// TRACE: {"suite": "CORE", "case": "0039", "section": "01", "sectionName": "Authentication & Authorization", "title": "7_WhitespaceOnlyBearerValue"}
 	t.Run("7_WhitespaceOnlyBearerValue", func(t *testing.T) {
 		kind, _, err := tv.IdentifyToken("   ")
 		testutil.RequireError(t, err)
@@ -118,6 +126,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 }
 
 // TST-CORE-007 — Missing token file is now silently ignored (service keys replace it).
+// TRACE: {"suite": "CORE", "case": "0040", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "07", "title": "MissingTokenFileIgnored"}
 func TestAuth_1_1_7_MissingTokenFileIgnored(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -140,6 +149,7 @@ func TestAuth_1_1_7_MissingTokenFileIgnored(t *testing.T) {
 }
 
 // TST-CORE-008 — Empty token file is now silently ignored (service keys replace it).
+// TRACE: {"suite": "CORE", "case": "0041", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "08", "title": "EmptyTokenFileIgnored"}
 func TestAuth_1_1_8_EmptyTokenFileIgnored(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -155,6 +165,7 @@ func TestAuth_1_1_8_EmptyTokenFileIgnored(t *testing.T) {
 }
 
 // TST-CORE-009 — Client token timing attack resistance.
+// TRACE: {"suite": "CORE", "case": "0042", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "09", "title": "TimingAttackResistance"}
 func TestAuth_1_1_9_TimingAttackResistance(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -176,6 +187,7 @@ func TestAuth_1_1_9_TimingAttackResistance(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-010, TST-CORE-011, TST-CORE-012, TST-CORE-013, TST-CORE-014, TST-CORE-015, TST-CORE-016
+// TRACE: {"suite": "CORE", "case": "0043", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "01", "title": "ClientToken"}
 func TestAuth_1_2_ClientToken(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
 	impl := realTokenValidator
@@ -230,6 +242,7 @@ func TestAuth_1_2_ClientToken(t *testing.T) {
 }
 
 // TST-CORE-013
+// TRACE: {"suite": "CORE", "case": "0044", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "04", "title": "ClientTokenOnBrainEndpoint"}
 func TestAuth_1_2_4_ClientTokenOnBrainEndpoint(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
 	impl := realTokenValidator
@@ -251,6 +264,7 @@ func TestAuth_1_2_4_ClientTokenOnBrainEndpoint(t *testing.T) {
 }
 
 // TST-CORE-014 — Random bearer tokens must not be accepted.
+// TRACE: {"suite": "CORE", "case": "0045", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "05", "title": "UnknownTokenRejected"}
 func TestAuth_1_2_5_UnknownTokenRejected(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -262,6 +276,7 @@ func TestAuth_1_2_5_UnknownTokenRejected(t *testing.T) {
 }
 
 // TST-CORE-015
+// TRACE: {"suite": "CORE", "case": "0046", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "06", "title": "ConcurrentDeviceSessions"}
 func TestAuth_1_2_6_ConcurrentDeviceSessions(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
 	impl := realTokenValidator
@@ -287,6 +302,7 @@ func TestAuth_1_2_6_ConcurrentDeviceSessions(t *testing.T) {
 }
 
 // TST-CORE-016
+// TRACE: {"suite": "CORE", "case": "0047", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "02", "scenario": "07", "title": "ClientTokenConstantTime"}
 func TestAuth_1_2_7_ClientTokenConstantTime(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
 	impl := realTokenValidator
@@ -310,11 +326,13 @@ func TestAuth_1_2_7_ClientTokenConstantTime(t *testing.T) {
 // TST-CORE-017, TST-CORE-018, TST-CORE-019, TST-CORE-020, TST-CORE-021, TST-CORE-022, TST-CORE-023
 // TST-CORE-024, TST-CORE-025, TST-CORE-026, TST-CORE-027, TST-CORE-028, TST-CORE-029, TST-CORE-030
 // TST-CORE-031, TST-CORE-032, TST-CORE-033, TST-CORE-034, TST-CORE-035, TST-CORE-036, TST-CORE-037
+// TRACE: {"suite": "CORE", "case": "0048", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "01", "title": "BrowserSession"}
 func TestAuth_1_3_BrowserSession(t *testing.T) {
 	// var impl testutil.SessionManager = realsession.NewManager(...)
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
+	// TRACE: {"suite": "CORE", "case": "0049", "section": "01", "sectionName": "Authentication & Authorization", "title": "1_LoginCorrectPassphrase"}
 	t.Run("1_LoginCorrectPassphrase", func(t *testing.T) {  // TST-CORE-017
 		// Correct Argon2id passphrase match → Set-Cookie + redirect.
 		// In integration: POST /login with correct passphrase → 302 + Set-Cookie.
@@ -348,6 +366,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0050", "section": "01", "sectionName": "Authentication & Authorization", "title": "2_LoginWrongPassphrase"}
 	t.Run("2_LoginWrongPassphrase", func(t *testing.T) {  // TST-CORE-018
 		// Wrong passphrase → 401, no cookie.
 		// At integration level: POST /login with wrong passphrase → 401.
@@ -357,6 +376,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		_ = impl // passphrase validation is upstream of SessionManager
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0051", "section": "01", "sectionName": "Authentication & Authorization", "title": "3_SessionCookieBearerTranslation"}
 	t.Run("3_SessionCookieBearerTranslation", func(t *testing.T) {  // TST-CORE-019
 		// Session cookie → gateway injects Bearer token for downstream handlers.
 		sessionID, _, err := impl.Create(authCtx, "device-001")
@@ -366,6 +386,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		testutil.RequireEqual(t, deviceID, "device-001")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0052", "section": "01", "sectionName": "Authentication & Authorization", "title": "4_ExpiredSessionCookie"}
 	t.Run("4_ExpiredSessionCookie", func(t *testing.T) {  // TST-CORE-020
 		// Session that has exceeded TTL → 401 redirect.
 		// Implementation must honour TTL. This test verifies Validate
@@ -381,6 +402,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		// Integration test should use a short TTL and sleep/mock-clock.
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0053", "section": "01", "sectionName": "Authentication & Authorization", "title": "5_CSRFMissingHeader"}
 	t.Run("5_CSRFMissingHeader", func(t *testing.T) {  // TST-CORE-021
 		// POST without X-CSRF-Token header → 403.
 		sessionID, _, err := impl.Create(authCtx, "device-001")
@@ -390,6 +412,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		testutil.RequireFalse(t, ok, "empty CSRF token should be rejected")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0054", "section": "01", "sectionName": "Authentication & Authorization", "title": "6_CSRFMismatch"}
 	t.Run("6_CSRFMismatch", func(t *testing.T) {  // TST-CORE-022
 		// Wrong CSRF token → 403.
 		sessionID, _, err := impl.Create(authCtx, "device-001")
@@ -399,6 +422,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		testutil.RequireFalse(t, ok, "wrong CSRF token should be rejected")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0055", "section": "01", "sectionName": "Authentication & Authorization", "title": "7_SessionFixationResistance"}
 	t.Run("7_SessionFixationResistance", func(t *testing.T) {  // TST-CORE-023
 		// New session ID must be issued on each login — never reuse.
 		s1, _, err := impl.Create(authCtx, "device-001")
@@ -410,6 +434,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0056", "section": "01", "sectionName": "Authentication & Authorization", "title": "8_ConcurrentBrowserSessions"}
 	t.Run("8_ConcurrentBrowserSessions", func(t *testing.T) {  // TST-CORE-024
 		// Two browser sessions for the same device should both be valid.
 		s1, _, err := impl.Create(authCtx, "device-001")
@@ -426,6 +451,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		testutil.RequireEqual(t, d2, "device-001")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0057", "section": "01", "sectionName": "Authentication & Authorization", "title": "9_Logout"}
 	t.Run("9_Logout", func(t *testing.T) {  // TST-CORE-025
 		// Destroy session → cookie cleared, session invalidated.
 		sessionID, _, err := impl.Create(authCtx, "device-001")
@@ -438,6 +464,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0058", "section": "01", "sectionName": "Authentication & Authorization", "title": "10_CookieAttributes"}
 	t.Run("10_CookieAttributes", func(t *testing.T) {  // TST-CORE-026
 		// HttpOnly, Secure, SameSite=Strict.
 		// This is an integration-level check: the HTTP response must set
@@ -451,6 +478,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		// Integration: parse Set-Cookie header for HttpOnly, Secure, SameSite=Strict.
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0059", "section": "01", "sectionName": "Authentication & Authorization", "title": "11_LoginRateLimit5PerMinPerIP"}
 	t.Run("11_LoginRateLimit5PerMinPerIP", func(t *testing.T) {  // TST-CORE-027
 		// 6th login attempt from the same IP within 1 minute → 429.
 		// This is an integration/middleware test. At unit level, we document
@@ -459,6 +487,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		_ = impl // rate limiting is middleware, not SessionManager
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0060", "section": "01", "sectionName": "Authentication & Authorization", "title": "12_SessionStorageInMemory"}
 	t.Run("12_SessionStorageInMemory", func(t *testing.T) {  // TST-CORE-028
 		// Sessions are stored in memory only. A restart invalidates all sessions.
 		// At unit level: create a session, "restart" (new manager instance),
@@ -473,12 +502,14 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		// After restart (new instance): impl2.Validate(sessionID) → error.
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0061", "section": "01", "sectionName": "Authentication & Authorization", "title": "13_SessionTTLConfigurable"}
 	t.Run("13_SessionTTLConfigurable", func(t *testing.T) {  // TST-CORE-029
 		// DINA_SESSION_TTL env var is honoured for session expiry.
 		// Integration: set DINA_SESSION_TTL=2, create session, wait 3s, validate → error.
 		_ = impl // TTL configuration is at init time, tested in integration
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0062", "section": "01", "sectionName": "Authentication & Authorization", "title": "14_SessionIDGeneration"}
 	t.Run("14_SessionIDGeneration", func(t *testing.T) {  // TST-CORE-030
 		// Session ID must be 32 bytes from crypto/rand (64 hex chars).
 		sessionID, _, err := impl.Create(authCtx, "device-001")
@@ -489,12 +520,14 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0063", "section": "01", "sectionName": "Authentication & Authorization", "title": "15_CookieMaxAgeMatchesTTL"}
 	t.Run("15_CookieMaxAgeMatchesTTL", func(t *testing.T) {  // TST-CORE-031
 		// Max-Age on the Set-Cookie header must match the configured session TTL.
 		// Integration-level check: parse Max-Age from Set-Cookie header.
 		_ = impl // cookie Max-Age is set by HTTP handler
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0064", "section": "01", "sectionName": "Authentication & Authorization", "title": "16_SuccessfulLogin302"}
 	t.Run("16_SuccessfulLogin302", func(t *testing.T) {  // TST-CORE-032
 		// Successful login returns HTTP 302 redirect to /admin.
 		// Integration: POST /login → 302, Location: /admin.
@@ -506,6 +539,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		// Integration: check response status 302, Location header = "/admin".
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0065", "section": "01", "sectionName": "Authentication & Authorization", "title": "17_LoginPageGoEmbed"}
 	t.Run("17_LoginPageGoEmbed", func(t *testing.T) {  // TST-CORE-033
 		// Static login HTML is served from embed.FS, not from disk.
 		// Integration: GET /login returns HTML with correct content-type.
@@ -513,6 +547,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		_ = impl
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0066", "section": "01", "sectionName": "Authentication & Authorization", "title": "18_DeviceAppBearerPassthrough"}
 	t.Run("18_DeviceAppBearerPassthrough", func(t *testing.T) {  // TST-CORE-034
 		// A device app sends a Bearer token directly on /admin/* endpoints.
 		// The session gateway must pass it through without requiring a cookie.
@@ -520,18 +555,21 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		_ = impl // tested at middleware/integration level
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0067", "section": "01", "sectionName": "Authentication & Authorization", "title": "19_NoCookieShowsLoginPage"}
 	t.Run("19_NoCookieShowsLoginPage", func(t *testing.T) {  // TST-CORE-035
 		// Request to /admin without a session cookie → serve login page (not 401).
 		// Integration: GET /admin without Cookie → 200 with login HTML.
 		_ = impl // HTTP handler level
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0068", "section": "01", "sectionName": "Authentication & Authorization", "title": "20_ConvenienceModeAdminPassphrase"}
 	t.Run("20_ConvenienceModeAdminPassphrase", func(t *testing.T) {  // TST-CORE-036
 		// Even in convenience mode, admin access requires passphrase auth.
 		// Integration: set DINA_MODE=convenience, POST /login still required.
 		_ = impl // config + middleware level
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0069", "section": "01", "sectionName": "Authentication & Authorization", "title": "21_BrainNeverSeesCookies"}
 	t.Run("21_BrainNeverSeesCookies", func(t *testing.T) {  // TST-CORE-037
 		// No Cookie header is proxied to the brain sidecar.
 		// Integration: verify that brain-bound requests have Cookie stripped.
@@ -545,11 +583,13 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 
 // TST-CORE-038, TST-CORE-039, TST-CORE-040, TST-CORE-041, TST-CORE-042, TST-CORE-043, TST-CORE-044
 // TST-CORE-045, TST-CORE-046
+// TRACE: {"suite": "CORE", "case": "0070", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "01", "title": "AuthSurface"}
 func TestAuth_1_4_AuthSurface(t *testing.T) {
 	// var tokenImpl testutil.TokenValidator = realauth.NewTokenValidator(...)
 	tokenImpl := realTokenValidator
 	testutil.RequireImplementation(t, tokenImpl, "TokenValidator")
 
+	// TRACE: {"suite": "CORE", "case": "0071", "section": "01", "sectionName": "Authentication & Authorization", "title": "1_NoThirdAuthMechanism"}
 	t.Run("1_NoThirdAuthMechanism", func(t *testing.T) {  // TST-CORE-038
 		// Only BRAIN_TOKEN and CLIENT_TOKEN are accepted. No API keys,
 		// no OAuth tokens, no JWTs from external IdPs.
@@ -559,6 +599,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0072", "section": "01", "sectionName": "Authentication & Authorization", "title": "2_UnknownAuthSchemeIgnored"}
 	t.Run("2_UnknownAuthSchemeIgnored", func(t *testing.T) {  // TST-CORE-039
 		// "ApiKey xyz123" in Authorization header → 401.
 		// At unit level: IdentifyToken with an unknown token → error.
@@ -566,6 +607,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0073", "section": "01", "sectionName": "Authentication & Authorization", "title": "3_ExternalJWTRejected"}
 	t.Run("3_ExternalJWTRejected", func(t *testing.T) {  // TST-CORE-040
 		// JWT from an external IdP is not accepted.
 		fakeJWT := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.fakesig"
@@ -573,6 +615,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0074", "section": "01", "sectionName": "Authentication & Authorization", "title": "4_NoPluginEndpoints"}
 	t.Run("4_NoPluginEndpoints", func(t *testing.T) {  // TST-CORE-041
 		// No /v1/plugins or other undocumented endpoints exist.
 		// var serverImpl testutil.Server = realserver.New(...)
@@ -587,6 +630,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0075", "section": "01", "sectionName": "Authentication & Authorization", "title": "5_UnregisteredTokenRejected"}
 	t.Run("5_UnregisteredTokenRejected", func(t *testing.T) {  // TST-CORE-042
 		// Tokens not registered as client tokens are rejected.
 		// Brain auth now uses Ed25519 signatures, not bearer tokens.
@@ -595,6 +639,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		testutil.RequireEqual(t, kind, domain.TokenUnknown)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0076", "section": "01", "sectionName": "Authentication & Authorization", "title": "6_ClientTokenIdentified"}
 	t.Run("6_ClientTokenIdentified", func(t *testing.T) {  // TST-CORE-043
 		// Registered client tokens are identified correctly.
 		kind, _, err := tokenImpl.IdentifyToken(testutil.TestClientToken)
@@ -602,6 +647,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		testutil.RequireEqual(t, kind, domain.TokenClient)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0077", "section": "01", "sectionName": "Authentication & Authorization", "title": "7_RandomTokenRejected"}
 	t.Run("7_RandomTokenRejected", func(t *testing.T) {  // TST-CORE-044
 		// Random tokens on any path → 401.
 		kind, _, err := tokenImpl.IdentifyToken("random-unregistered-token-value")
@@ -609,6 +655,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		testutil.RequireEqual(t, kind, domain.TokenUnknown)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0078", "section": "01", "sectionName": "Authentication & Authorization", "title": "8_ClientTokenFullAccess"}
 	t.Run("8_ClientTokenFullAccess", func(t *testing.T) {  // TST-CORE-045
 		// CLIENT_TOKEN grants access to all non-brain endpoints (vault, admin, etc.).
 		kind, deviceID, err := tokenImpl.IdentifyToken(testutil.TestClientToken)
@@ -621,6 +668,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		// /v1/admin/*, /v1/identity/*, etc.
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0079", "section": "01", "sectionName": "Authentication & Authorization", "title": "9_CoreNeverCallsExternalAPIs"}
 	t.Run("9_CoreNeverCallsExternalAPIs", func(t *testing.T) {  // TST-CORE-046
 		// dina-core must never make outbound HTTP calls during auth.
 		// This is a design invariant: all auth is local (token file + SHA-256
@@ -641,6 +689,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 
 // TST-CORE-047, TST-CORE-048, TST-CORE-049, TST-CORE-050, TST-CORE-051, TST-CORE-052, TST-CORE-053
 // TST-CORE-054, TST-CORE-055
+// TRACE: {"suite": "CORE", "case": "0080", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "01", "title": "CompromisedBrain"}
 func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 	// These tests verify that a compromised brain (holding only a service key)
 	// cannot escalate to privileged operations. Each test confirms the
@@ -653,6 +702,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 	// through the gatekeeper, which checks intent.AgentDID = "brain".
 	_ = tokenImpl
 
+	// TRACE: {"suite": "CORE", "case": "0081", "section": "01", "sectionName": "Authentication & Authorization", "title": "1_BrainAccessesOpenPersona"}
 	t.Run("1_BrainAccessesOpenPersona", func(t *testing.T) {  // TST-CORE-047
 		// BRAIN_TOKEN + open persona → 200 (allowed).
 		// var gk testutil.Gatekeeper = realgk.New(...)
@@ -670,6 +720,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireTrue(t, decision.Allowed, "brain should access open persona")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0082", "section": "01", "sectionName": "Authentication & Authorization", "title": "2_BrainCannotAccessLocked"}
 	t.Run("2_BrainCannotAccessLocked", func(t *testing.T) {  // TST-CORE-048
 		// BRAIN_TOKEN on a locked persona → 403.
 		gk := realGatekeeper
@@ -686,6 +737,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireFalse(t, decision.Allowed, "brain must not access locked persona")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0083", "section": "01", "sectionName": "Authentication & Authorization", "title": "3_RestrictedCreatesAuditTrail"}
 	t.Run("3_RestrictedCreatesAuditTrail", func(t *testing.T) {  // TST-CORE-049
 		// Accessing a restricted persona creates an audit entry + notification.
 		gk := realGatekeeper
@@ -703,6 +755,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireTrue(t, decision.Audit, "restricted access must create audit entry")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0084", "section": "01", "sectionName": "Authentication & Authorization", "title": "4_BrainCannotCallDIDSign"}
 	t.Run("4_BrainCannotCallDIDSign", func(t *testing.T) {  // TST-CORE-050
 		// Brain must not be able to invoke DID signing operations.
 		gk := realGatekeeper
@@ -717,6 +770,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireFalse(t, decision.Allowed, "brain must not call DID sign")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0085", "section": "01", "sectionName": "Authentication & Authorization", "title": "5_BrainCannotCallDIDRotate"}
 	t.Run("5_BrainCannotCallDIDRotate", func(t *testing.T) {  // TST-CORE-051
 		// Brain must not be able to rotate DID keys.
 		gk := realGatekeeper
@@ -731,6 +785,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireFalse(t, decision.Allowed, "brain must not call DID rotate")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0086", "section": "01", "sectionName": "Authentication & Authorization", "title": "6_BrainCannotCallVaultBackup"}
 	t.Run("6_BrainCannotCallVaultBackup", func(t *testing.T) {  // TST-CORE-052
 		// Brain must not be able to trigger vault backups.
 		gk := realGatekeeper
@@ -745,6 +800,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireFalse(t, decision.Allowed, "brain must not call vault backup")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0087", "section": "01", "sectionName": "Authentication & Authorization", "title": "7_BrainCannotCallPersonaUnlock"}
 	t.Run("7_BrainCannotCallPersonaUnlock", func(t *testing.T) {  // TST-CORE-053
 		// Brain must not be able to unlock personas.
 		gk := realGatekeeper
@@ -760,6 +816,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireFalse(t, decision.Allowed, "brain must not unlock personas")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0088", "section": "01", "sectionName": "Authentication & Authorization", "title": "8_BrainCannotBypassPIIScrubber"}
 	t.Run("8_BrainCannotBypassPIIScrubber", func(t *testing.T) {  // TST-CORE-054
 		// PII scrubbing runs in the core pipeline, not in brain.
 		// Brain cannot bypass it because it never sees raw data.
@@ -773,6 +830,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		testutil.RequireFalse(t, allowed, "PII must not pass through egress to brain")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0089", "section": "01", "sectionName": "Authentication & Authorization", "title": "9_BrainCannotAccessRawVaultFiles"}
 	t.Run("9_BrainCannotAccessRawVaultFiles", func(t *testing.T) {  // TST-CORE-055
 		// Brain has no SQLite file mounted — it only communicates via HTTP API.
 		// Verify the Gatekeeper denies any file-level vault operations for brain.
@@ -807,6 +865,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-017
+// TRACE: {"suite": "CORE", "case": "0090", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "01", "title": "LoginCorrectPassphrase"}
 func TestAuth_1_3_1_LoginCorrectPassphrase(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -836,6 +895,7 @@ func TestAuth_1_3_1_LoginCorrectPassphrase(t *testing.T) {
 }
 
 // TST-CORE-018
+// TRACE: {"suite": "CORE", "case": "0091", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "02", "title": "LoginWrongPassphrase"}
 func TestAuth_1_3_2_LoginWrongPassphrase(t *testing.T) {
 	pv := realPassphraseVerifier
 	testutil.RequireImplementation(t, pv, "PassphraseVerifier")
@@ -859,6 +919,7 @@ func TestAuth_1_3_2_LoginWrongPassphrase(t *testing.T) {
 // TST-CORE-019
 // LOW-17: ProxyRequest was removed because it leaked BRAIN_TOKEN into responses.
 // This test now verifies the method no longer exists on the interface.
+// TRACE: {"suite": "CORE", "case": "0092", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "03", "title": "SessionCookieToBearerTranslation"}
 func TestAuth_1_3_3_SessionCookieToBearerTranslation(t *testing.T) {
 	// Session cookie → bearer translation: Create produces sessionID (the cookie
 	// value); Validate translates it back to the authenticated deviceID (the
@@ -898,6 +959,7 @@ func TestAuth_1_3_3_SessionCookieToBearerTranslation(t *testing.T) {
 }
 
 // TST-CORE-020
+// TRACE: {"suite": "CORE", "case": "0093", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "04", "title": "ExpiredSessionCookie"}
 func TestAuth_1_3_4_ExpiredSessionCookie(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -916,6 +978,7 @@ func TestAuth_1_3_4_ExpiredSessionCookie(t *testing.T) {
 }
 
 // TST-CORE-021
+// TRACE: {"suite": "CORE", "case": "0094", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "05", "title": "CSRFMissingHeader"}
 func TestAuth_1_3_5_CSRFMissingHeader(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -935,6 +998,7 @@ func TestAuth_1_3_5_CSRFMissingHeader(t *testing.T) {
 }
 
 // TST-CORE-022
+// TRACE: {"suite": "CORE", "case": "0095", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "06", "title": "CSRFMismatch"}
 func TestAuth_1_3_6_CSRFMismatch(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -954,6 +1018,7 @@ func TestAuth_1_3_6_CSRFMismatch(t *testing.T) {
 }
 
 // TST-CORE-023
+// TRACE: {"suite": "CORE", "case": "0096", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "07", "title": "SessionFixationResistance"}
 func TestAuth_1_3_7_SessionFixationResistance(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -971,6 +1036,7 @@ func TestAuth_1_3_7_SessionFixationResistance(t *testing.T) {
 }
 
 // TST-CORE-024
+// TRACE: {"suite": "CORE", "case": "0097", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "08", "title": "ConcurrentBrowserSessions"}
 func TestAuth_1_3_8_ConcurrentBrowserSessions(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -1006,6 +1072,7 @@ func TestAuth_1_3_8_ConcurrentBrowserSessions(t *testing.T) {
 }
 
 // TST-CORE-025
+// TRACE: {"suite": "CORE", "case": "0098", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "09", "title": "Logout"}
 func TestAuth_1_3_9_Logout(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -1030,6 +1097,7 @@ func TestAuth_1_3_9_Logout(t *testing.T) {
 }
 
 // TST-CORE-026
+// TRACE: {"suite": "CORE", "case": "0099", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "10", "title": "CookieAttributes"}
 func TestAuth_1_3_10_CookieAttributes(t *testing.T) {
 	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
@@ -1047,6 +1115,7 @@ func TestAuth_1_3_10_CookieAttributes(t *testing.T) {
 }
 
 // TST-CORE-027
+// TRACE: {"suite": "CORE", "case": "0100", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "11", "title": "LoginRateLimit"}
 func TestAuth_1_3_11_LoginRateLimit(t *testing.T) {
 	rl := realRateLimiter
 	testutil.RequireImplementation(t, rl, "RateLimiter")
@@ -1073,6 +1142,7 @@ func TestAuth_1_3_11_LoginRateLimit(t *testing.T) {
 }
 
 // TST-CORE-028
+// TRACE: {"suite": "CORE", "case": "0101", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "12", "title": "SessionStorageLostOnRestart"}
 func TestAuth_1_3_12_SessionStorageLostOnRestart(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -1103,6 +1173,7 @@ func TestAuth_1_3_12_SessionStorageLostOnRestart(t *testing.T) {
 }
 
 // TST-CORE-029
+// TRACE: {"suite": "CORE", "case": "0102", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "13", "title": "SessionTTLConfigurable"}
 func TestAuth_1_3_13_SessionTTLConfigurable(t *testing.T) {
 	// Create a session manager with a 1-second TTL.
 	shortTTL := auth.NewSessionManager(1)
@@ -1131,6 +1202,7 @@ func TestAuth_1_3_13_SessionTTLConfigurable(t *testing.T) {
 }
 
 // TST-CORE-030
+// TRACE: {"suite": "CORE", "case": "0103", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "14", "title": "SessionIDGeneration"}
 func TestAuth_1_3_14_SessionIDGeneration(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -1166,6 +1238,7 @@ func TestAuth_1_3_14_SessionIDGeneration(t *testing.T) {
 }
 
 // TST-CORE-031
+// TRACE: {"suite": "CORE", "case": "0104", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "15", "title": "CookieMaxAgeMatchesTTL"}
 func TestAuth_1_3_15_CookieMaxAgeMatchesTTL(t *testing.T) {
 	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
@@ -1180,6 +1253,7 @@ func TestAuth_1_3_15_CookieMaxAgeMatchesTTL(t *testing.T) {
 }
 
 // TST-CORE-032
+// TRACE: {"suite": "CORE", "case": "0105", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "16", "title": "SuccessfulLogin302Redirect"}
 func TestAuth_1_3_16_SuccessfulLogin302Redirect(t *testing.T) {
 	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
@@ -1194,6 +1268,7 @@ func TestAuth_1_3_16_SuccessfulLogin302Redirect(t *testing.T) {
 }
 
 // TST-CORE-033
+// TRACE: {"suite": "CORE", "case": "0106", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "17", "title": "LoginPageGoEmbed"}
 func TestAuth_1_3_17_LoginPageGoEmbed(t *testing.T) {
 	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
@@ -1213,6 +1288,7 @@ func TestAuth_1_3_17_LoginPageGoEmbed(t *testing.T) {
 }
 
 // TST-CORE-034
+// TRACE: {"suite": "CORE", "case": "0107", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "18", "title": "DeviceBearerPassthrough"}
 func TestAuth_1_3_18_DeviceBearerPassthrough(t *testing.T) {
 	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
@@ -1225,6 +1301,7 @@ func TestAuth_1_3_18_DeviceBearerPassthrough(t *testing.T) {
 }
 
 // TST-CORE-035
+// TRACE: {"suite": "CORE", "case": "0108", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "19", "title": "NoCookieShowsLoginPage"}
 func TestAuth_1_3_19_NoCookieShowsLoginPage(t *testing.T) {
 	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
@@ -1243,6 +1320,7 @@ func TestAuth_1_3_19_NoCookieShowsLoginPage(t *testing.T) {
 }
 
 // TST-CORE-036
+// TRACE: {"suite": "CORE", "case": "0109", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "20", "title": "ConvenienceModeAdminPassphrase"}
 func TestAuth_1_3_20_ConvenienceModeAdminPassphrase(t *testing.T) {
 	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
@@ -1265,6 +1343,7 @@ func TestAuth_1_3_20_ConvenienceModeAdminPassphrase(t *testing.T) {
 
 // TST-CORE-037
 // LOW-17: ProxyRequest was removed because it leaked BRAIN_TOKEN into responses.
+// TRACE: {"suite": "CORE", "case": "0110", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "03", "scenario": "21", "title": "BrainNeverSeesCookies"}
 func TestAuth_1_3_21_BrainNeverSeesCookies(t *testing.T) {
 	// Source audit: the vulnerable ProxyRequest function must not exist in auth.go.
 	src, err := os.ReadFile("../internal/adapter/auth/auth.go")
@@ -1301,6 +1380,7 @@ func TestAuth_1_3_21_BrainNeverSeesCookies(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-038
+// TRACE: {"suite": "CORE", "case": "0111", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "01", "title": "NoThirdAuthMechanism"}
 func TestAuth_1_4_1_NoThirdAuthMechanism(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -1328,6 +1408,7 @@ func TestAuth_1_4_1_NoThirdAuthMechanism(t *testing.T) {
 }
 
 // TST-CORE-039
+// TRACE: {"suite": "CORE", "case": "0112", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "02", "title": "UnknownSchemeIgnored"}
 func TestAuth_1_4_2_UnknownSchemeIgnored(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -1354,6 +1435,7 @@ func TestAuth_1_4_2_UnknownSchemeIgnored(t *testing.T) {
 }
 
 // TST-CORE-040
+// TRACE: {"suite": "CORE", "case": "0113", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "03", "title": "ExternalJWTRejected"}
 func TestAuth_1_4_3_ExternalJWTRejected(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -1366,6 +1448,7 @@ func TestAuth_1_4_3_ExternalJWTRejected(t *testing.T) {
 }
 
 // TST-CORE-041
+// TRACE: {"suite": "CORE", "case": "0114", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "04", "title": "NoPluginEndpoints"}
 func TestAuth_1_4_4_NoPluginEndpoints(t *testing.T) {
 	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
@@ -1413,6 +1496,7 @@ func TestAuth_1_4_4_NoPluginEndpoints(t *testing.T) {
 }
 
 // TST-CORE-042
+// TRACE: {"suite": "CORE", "case": "0115", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "05", "title": "UnregisteredTokenRejected"}
 func TestAuth_1_4_5_UnregisteredTokenRejected(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -1425,6 +1509,7 @@ func TestAuth_1_4_5_UnregisteredTokenRejected(t *testing.T) {
 }
 
 // TST-CORE-043
+// TRACE: {"suite": "CORE", "case": "0116", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "06", "title": "IdentifyTokenFallback"}
 func TestAuth_1_4_6_IdentifyTokenFallback(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -1440,6 +1525,7 @@ func TestAuth_1_4_6_IdentifyTokenFallback(t *testing.T) {
 }
 
 // TST-CORE-044
+// TRACE: {"suite": "CORE", "case": "0117", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "07", "title": "IsAdminEndpointAllowlist"}
 func TestAuth_1_4_7_IsAdminEndpointAllowlist(t *testing.T) {
 	checker := realAdminEndpointChecker
 	testutil.RequireImplementation(t, checker, "AdminEndpointChecker")
@@ -1479,6 +1565,7 @@ func TestAuth_1_4_7_IsAdminEndpointAllowlist(t *testing.T) {
 }
 
 // TST-CORE-045
+// TRACE: {"suite": "CORE", "case": "0118", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "08", "title": "ClientTokenFullAccess"}
 func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 	checker := realAdminEndpointChecker
 	testutil.RequireImplementation(t, checker, "AdminEndpointChecker")
@@ -1536,6 +1623,7 @@ func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 }
 
 // TST-CORE-AUTH-PERSONA-BLIND-001
+// TRACE: {"suite": "CORE", "case": "0119", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "09", "title": "DeviceScopedBlockedFromVault"}
 func TestAuth_1_4_9_DeviceScopedBlockedFromVault(t *testing.T) {
 	// Agents (device-scoped) must NOT have direct vault access.
 	// They interact via Brain (/api/v1/ask) only.
@@ -1562,6 +1650,7 @@ func TestAuth_1_4_9_DeviceScopedBlockedFromVault(t *testing.T) {
 }
 
 // TST-CORE-AUTH-PERSONA-BLIND-002
+// TRACE: {"suite": "CORE", "case": "0120", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "10", "title": "AdminStillAccessesVault"}
 func TestAuth_1_4_10_AdminStillAccessesVault(t *testing.T) {
 	// Admin-scoped clients still have full vault access.
 	checker := auth.NewAdminEndpointChecker()
@@ -1584,6 +1673,7 @@ func TestAuth_1_4_10_AdminStillAccessesVault(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TST-CORE-AUTH-SVC-001
+// TRACE: {"suite": "CORE", "case": "0121", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "01", "title": "BrainServiceAllowlist"}
 func TestAuth_1_5_1_BrainServiceAllowlist(t *testing.T) {
 	// Brain service can access vault, messaging, PII, sessions.
 	// Brain CANNOT access admin, pairing, export, signing.
@@ -1620,6 +1710,7 @@ func TestAuth_1_5_1_BrainServiceAllowlist(t *testing.T) {
 }
 
 // TST-CORE-AUTH-SVC-002
+// TRACE: {"suite": "CORE", "case": "0122", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "02", "title": "AdminServiceAllowlist"}
 func TestAuth_1_5_2_AdminServiceAllowlist(t *testing.T) {
 	// Admin service can access persona management, devices, export, pairing.
 	// Admin CANNOT access vault data, messaging, PII scrubbing.
@@ -1655,6 +1746,7 @@ func TestAuth_1_5_2_AdminServiceAllowlist(t *testing.T) {
 }
 
 // TST-CORE-AUTH-SVC-003
+// TRACE: {"suite": "CORE", "case": "0123", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "03", "title": "ConnectorServiceAllowlist"}
 func TestAuth_1_5_3_ConnectorServiceAllowlist(t *testing.T) {
 	// Connectors can only ingest to staging and ACK tasks. No vault access.
 	checker := auth.NewAdminEndpointChecker()
@@ -1689,6 +1781,7 @@ func TestAuth_1_5_3_ConnectorServiceAllowlist(t *testing.T) {
 }
 
 // TST-CORE-AUTH-SVC-004
+// TRACE: {"suite": "CORE", "case": "0124", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "04", "title": "UnknownServiceDenied"}
 func TestAuth_1_5_4_UnknownServiceDenied(t *testing.T) {
 	// Unknown service IDs are denied on all paths (fail-closed).
 	checker := auth.NewAdminEndpointChecker()
@@ -1707,6 +1800,7 @@ func TestAuth_1_5_4_UnknownServiceDenied(t *testing.T) {
 }
 
 // TST-CORE-AUTH-SVC-005
+// TRACE: {"suite": "CORE", "case": "0125", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "05", "title": "ServiceIsolationCrossCheck"}
 func TestAuth_1_5_5_ServiceIsolationCrossCheck(t *testing.T) {
 	// Prove that Brain and Admin have disjoint critical paths.
 	// Brain can vault/query but NOT persona/unlock.
@@ -1733,6 +1827,7 @@ func TestAuth_1_5_5_ServiceIsolationCrossCheck(t *testing.T) {
 
 // TST-CORE-AUTH-SVC-006 Runtime end-to-end: register admin service key,
 // sign request, verify per-service authz admits admin paths and blocks brain paths.
+// TRACE: {"suite": "CORE", "case": "0126", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "06", "title": "RuntimeServiceKeyIsolation"}
 func TestAuth_1_5_6_RuntimeServiceKeyIsolation(t *testing.T) {
 	tv := auth.NewTokenValidator(map[string]string{})
 
@@ -1790,6 +1885,7 @@ func TestAuth_1_5_6_RuntimeServiceKeyIsolation(t *testing.T) {
 }
 
 // TST-CORE-046
+// TRACE: {"suite": "CORE", "case": "0127", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "04", "scenario": "09", "title": "CoreNeverCallsExternalAPIs"}
 func TestAuth_1_4_9_CoreNeverCallsExternalAPIs(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -1816,6 +1912,7 @@ func TestAuth_1_4_9_CoreNeverCallsExternalAPIs(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-047
+// TRACE: {"suite": "CORE", "case": "0128", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "01", "title": "BrainAccessesOpenPersona"}
 func TestAuth_1_5_1_BrainAccessesOpenPersona(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -1845,6 +1942,7 @@ func TestAuth_1_5_1_BrainAccessesOpenPersona(t *testing.T) {
 }
 
 // TST-CORE-048
+// TRACE: {"suite": "CORE", "case": "0129", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "02", "title": "BrainCannotAccessLocked"}
 func TestAuth_1_5_2_BrainCannotAccessLocked(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -1877,6 +1975,7 @@ func TestAuth_1_5_2_BrainCannotAccessLocked(t *testing.T) {
 }
 
 // TST-CORE-049
+// TRACE: {"suite": "CORE", "case": "0130", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "03", "title": "RestrictedCreatesDetectionTrail"}
 func TestAuth_1_5_3_RestrictedCreatesDetectionTrail(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -1899,6 +1998,7 @@ func TestAuth_1_5_3_RestrictedCreatesDetectionTrail(t *testing.T) {
 }
 
 // TST-CORE-050
+// TRACE: {"suite": "CORE", "case": "0131", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "04", "title": "BrainCannotCallDIDSign"}
 func TestAuth_1_5_4_BrainCannotCallDIDSign(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -1913,6 +2013,7 @@ func TestAuth_1_5_4_BrainCannotCallDIDSign(t *testing.T) {
 }
 
 // TST-CORE-051
+// TRACE: {"suite": "CORE", "case": "0132", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "05", "title": "BrainCannotCallDIDRotate"}
 func TestAuth_1_5_5_BrainCannotCallDIDRotate(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -1940,6 +2041,7 @@ func TestAuth_1_5_5_BrainCannotCallDIDRotate(t *testing.T) {
 }
 
 // TST-CORE-052
+// TRACE: {"suite": "CORE", "case": "0133", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "06", "title": "BrainCannotCallVaultBackup"}
 func TestAuth_1_5_6_BrainCannotCallVaultBackup(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -1954,6 +2056,7 @@ func TestAuth_1_5_6_BrainCannotCallVaultBackup(t *testing.T) {
 }
 
 // TST-CORE-053
+// TRACE: {"suite": "CORE", "case": "0134", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "07", "title": "BrainCannotCallPersonaUnlock"}
 func TestAuth_1_5_7_BrainCannotCallPersonaUnlock(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -1969,6 +2072,7 @@ func TestAuth_1_5_7_BrainCannotCallPersonaUnlock(t *testing.T) {
 }
 
 // TST-CORE-054
+// TRACE: {"suite": "CORE", "case": "0135", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "08", "title": "BrainCannotBypassPIIScrubber"}
 func TestAuth_1_5_8_BrainCannotBypassPIIScrubber(t *testing.T) {
 	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
@@ -2000,6 +2104,7 @@ func TestAuth_1_5_8_BrainCannotBypassPIIScrubber(t *testing.T) {
 }
 
 // TST-CORE-055
+// TRACE: {"suite": "CORE", "case": "0136", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "05", "scenario": "09", "title": "BrainCannotAccessRawVaultFiles"}
 func TestAuth_1_5_9_BrainCannotAccessRawVaultFiles(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
@@ -2046,6 +2151,7 @@ func TestAuth_1_5_9_BrainCannotAccessRawVaultFiles(t *testing.T) {
 // TestAuth_1_6_9_ConcurrentTokenValidation verifies that concurrent RegisterClientToken
 // and ValidateClientToken calls do not trigger a data race on the internal
 // clientTokens map. Run with `go test -race` to detect races.
+// TRACE: {"suite": "CORE", "case": "0137", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "06", "scenario": "09", "title": "ConcurrentTokenValidation"}
 func TestAuth_1_6_9_ConcurrentTokenValidation(t *testing.T) {
 	// Use a fresh tokenValidator to avoid interference with other tests.
 	tv := auth.NewDefaultTokenValidator()
@@ -2129,10 +2235,12 @@ func TestAuth_1_6_9_ConcurrentTokenValidation(t *testing.T) {
 // concurrent access from multiple HTTP handler goroutines.
 // ==========================================================================
 
+// TRACE: {"suite": "CORE", "case": "0138", "section": "01", "sectionName": "Authentication & Authorization", "subsection": "01", "scenario": "05", "title": "ConcurrentTokenValidationThreadSafe"}
 func TestAuth_1_1_5_ConcurrentTokenValidationThreadSafe(t *testing.T) {
 	tv := auth.NewDefaultTokenValidator()
 	// The default validator has TestClientToken pre-registered.
 
+	// TRACE: {"suite": "CORE", "case": "0139", "section": "01", "sectionName": "Authentication & Authorization", "title": "100_goroutines_validate_same_valid_token_all_succeed"}
 	t.Run("100_goroutines_validate_same_valid_token_all_succeed", func(t *testing.T) {
 		// All 100 goroutines validate the same valid client token.
 		// Every single one must succeed with the same result.
@@ -2165,6 +2273,7 @@ func TestAuth_1_1_5_ConcurrentTokenValidationThreadSafe(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0140", "section": "01", "sectionName": "Authentication & Authorization", "title": "100_goroutines_validate_invalid_token_all_reject"}
 	t.Run("100_goroutines_validate_invalid_token_all_reject", func(t *testing.T) {
 		// All goroutines validate an invalid token. Every one must get an error.
 		const goroutines = 100
@@ -2188,6 +2297,7 @@ func TestAuth_1_1_5_ConcurrentTokenValidationThreadSafe(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0141", "section": "01", "sectionName": "Authentication & Authorization", "title": "concurrent_mixed_valid_and_invalid_tokens"}
 	t.Run("concurrent_mixed_valid_and_invalid_tokens", func(t *testing.T) {
 		// Half goroutines validate a valid token, half validate an invalid token.
 		// Each must get the correct result for its input.
@@ -2225,6 +2335,7 @@ func TestAuth_1_1_5_ConcurrentTokenValidationThreadSafe(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0142", "section": "01", "sectionName": "Authentication & Authorization", "title": "concurrent_registration_and_validation"}
 	t.Run("concurrent_registration_and_validation", func(t *testing.T) {
 		// Register new tokens while simultaneously validating existing ones.
 		// Both operations must complete without races.
@@ -2259,6 +2370,7 @@ func TestAuth_1_1_5_ConcurrentTokenValidationThreadSafe(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0143", "section": "01", "sectionName": "Authentication & Authorization", "title": "positive_control_sequential_validation_works"}
 	t.Run("positive_control_sequential_validation_works", func(t *testing.T) {
 		// Contrast check: sequential validation produces correct results.
 		// Without this, the test passes if IdentifyToken always fails.

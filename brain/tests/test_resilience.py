@@ -33,6 +33,7 @@ from .factories import make_event
 
 # TST-BRAIN-302
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0302", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "01", "scenario": "01", "title": "unhandled_exception"}
 async def test_resilience_11_1_unhandled_exception() -> None:
     """SS11.1: Unhandled exception in guardian -- LLM returns unexpected format.
 
@@ -79,6 +80,7 @@ async def test_resilience_11_1_unhandled_exception() -> None:
 
 # TST-BRAIN-303
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0303", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "02", "scenario": "01", "title": "memory_leak_detection"}
 async def test_resilience_11_2_memory_leak_detection() -> None:
     """SS11.2: Memory leak detection -- stable usage over time.
 
@@ -122,6 +124,7 @@ async def test_resilience_11_2_memory_leak_detection() -> None:
 
 # TST-BRAIN-304
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0304", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "03", "scenario": "01", "title": "graceful_shutdown"}
 async def test_resilience_11_3_graceful_shutdown() -> None:
     """SS11.3: Graceful shutdown -- SIGTERM received.
 
@@ -145,6 +148,7 @@ async def test_resilience_11_3_graceful_shutdown() -> None:
 
 # TST-BRAIN-305
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0305", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "04", "scenario": "01", "title": "startup_dependency_check"}
 async def test_resilience_11_4_startup_dependency_check() -> None:
     """SS11.4: Core unreachable -- GuardianLoop degrades gracefully.
 
@@ -192,6 +196,7 @@ async def test_resilience_11_4_startup_dependency_check() -> None:
 
 
 # TST-BRAIN-306
+# TRACE: {"suite": "BRAIN", "case": "0306", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "05", "scenario": "01", "title": "spacy_model_missing"}
 def test_resilience_11_5_spacy_model_missing() -> None:
     """SS11.5: spaCy model missing -- startup fails with clear error.
 
@@ -221,6 +226,7 @@ def test_resilience_11_5_spacy_model_missing() -> None:
 
 # TST-BRAIN-307
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0307", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "06", "scenario": "01", "title": "concurrent_requests"}
 async def test_resilience_11_6_concurrent_requests() -> None:
     """SS11.6: Concurrent request handling -- 50 simultaneous requests.
 
@@ -266,6 +272,7 @@ async def test_resilience_11_6_concurrent_requests() -> None:
 
 
 # TST-BRAIN-417
+# TRACE: {"suite": "BRAIN", "case": "0417", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "07", "scenario": "01", "title": "startup_waits_for_core"}
 def test_resilience_11_7_startup_waits_for_core() -> None:
     """SS11.7: Brain startup waits for core readiness.
 
@@ -290,6 +297,7 @@ def test_resilience_11_7_startup_waits_for_core() -> None:
 
 # TST-BRAIN-415
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0415", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "08", "scenario": "01", "title": "sharing_policy_invalid_did"}
 async def test_resilience_11_8_sharing_policy_invalid_did() -> None:
     """SS11.8: Brain validates contact DID before applying sharing policy.
 
@@ -329,6 +337,7 @@ async def test_resilience_11_8_sharing_policy_invalid_did() -> None:
 
 
 # TST-BRAIN-464
+# TRACE: {"suite": "BRAIN", "case": "0464", "section": "11", "sectionName": "Error Handling & Resilience", "subsection": "09", "scenario": "01", "title": "error_hierarchy"}
 def test_resilience_11_9_error_hierarchy() -> None:
     """All brain errors inherit from DinaError."""
     errors = [

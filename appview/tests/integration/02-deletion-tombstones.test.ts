@@ -43,6 +43,7 @@ beforeEach(async () => {
 // §2.1 Deletion — Undisputed Clean Delete (IT-DEL-001..003) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§2.1 Deletion — Undisputed Clean Delete', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0357", "section": "01", "sectionName": "General", "title": "IT-DEL-001: clean delete \u2014 no disputes, no tombstone"}
   it('IT-DEL-001: clean delete — no disputes, no tombstone', async () => {
     // Create an attestation
     const collection = 'com.dina.trust.attestation'
@@ -84,6 +85,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
     expect(tombstone).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0358", "section": "01", "sectionName": "General", "title": "IT-DEL-002: clean delete \u2014 trust edge removed"}
   it('IT-DEL-002: clean delete — trust edge removed', async () => {
     // Create a vouch (which creates a trust edge)
     const collection = 'com.dina.trust.vouch'
@@ -117,6 +119,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
     expect(edgesAfter).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0359", "section": "01", "sectionName": "General", "title": "IT-DEL-003: clean delete metrics"}
   it('IT-DEL-003: clean delete metrics', async () => {
     // Create an attestation and delete it (undisputed)
     const collection = 'com.dina.trust.attestation'
@@ -159,6 +162,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
 // §2.2 Deletion — Disputed Delete / Tombstone Created (IT-DEL-004..012) — 9 tests
 // ---------------------------------------------------------------------------
 describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0360", "section": "01", "sectionName": "General", "title": "IT-DEL-004: disputed \u2014 has report \u2192 tombstone"}
   it('IT-DEL-004: disputed — has report → tombstone', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del004'
@@ -205,6 +209,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone[0].reportCount).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0361", "section": "01", "sectionName": "General", "title": "IT-DEL-005: disputed \u2014 has dispute reply \u2192 tombstone"}
   it('IT-DEL-005: disputed — has dispute reply → tombstone', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del005'
@@ -252,6 +257,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone[0].disputeReplyCount).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0362", "section": "01", "sectionName": "General", "title": "IT-DEL-006: disputed \u2014 has suspicious reaction \u2192 tombstone"}
   it('IT-DEL-006: disputed — has suspicious reaction → tombstone', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del006'
@@ -297,6 +303,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone[0].suspiciousReactionCount).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0363", "section": "01", "sectionName": "General", "title": "IT-DEL-007: tombstone preserves metadata"}
   it('IT-DEL-007: tombstone preserves metadata', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del007'
@@ -348,6 +355,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone[0].originalCreatedAt).toBeInstanceOf(Date)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0364", "section": "01", "sectionName": "General", "title": "IT-DEL-008: tombstone \u2014 durationDays calculated"}
   it('IT-DEL-008: tombstone — durationDays calculated', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del008'
@@ -396,6 +404,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone[0].durationDays).toBeLessThanOrEqual(11)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0365", "section": "01", "sectionName": "General", "title": "IT-DEL-009: tombstone \u2014 hadEvidence flag"}
   it('IT-DEL-009: tombstone — hadEvidence flag', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del009'
@@ -442,6 +451,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone[0].hadEvidence).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0366", "section": "01", "sectionName": "General", "title": "IT-DEL-010: tombstone \u2014 hadCosignature flag"}
   it('IT-DEL-010: tombstone — hadCosignature flag', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del010'
@@ -488,6 +498,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone[0].hadCosignature).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0367", "section": "01", "sectionName": "General", "title": "IT-DEL-011: tombstone \u2014 record still deleted"}
   it('IT-DEL-011: tombstone — record still deleted', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del011'
@@ -536,6 +547,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     expect(tombstone).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0368", "section": "01", "sectionName": "General", "title": "IT-DEL-012: tombstone metrics"}
   it('IT-DEL-012: tombstone metrics', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'del012'
@@ -597,6 +609,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 // §2.3 Deletion — Multi-Table Correctness / Fix 13 (IT-DEL-013..020) — 8 tests
 // ---------------------------------------------------------------------------
 describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0369", "section": "01", "sectionName": "General", "title": "IT-DEL-013: Fix 13: delete vouch \u2192 queries vouches table"}
   it('IT-DEL-013: Fix 13: delete vouch → queries vouches table', async () => {
     const collection = 'com.dina.trust.vouch'
     const rkey = 'del013'
@@ -646,6 +659,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(tombstone[0].recordType).toBe('vouch')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0370", "section": "01", "sectionName": "General", "title": "IT-DEL-014: Fix 13: delete flag \u2192 queries flags table"}
   it('IT-DEL-014: Fix 13: delete flag → queries flags table', async () => {
     const collection = 'com.dina.trust.flag'
     const rkey = 'del014'
@@ -695,6 +709,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(tombstone[0].recordType).toBe('flag')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0371", "section": "01", "sectionName": "General", "title": "IT-DEL-015: Fix 13: delete endorsement \u2192 queries endorsements table"}
   it('IT-DEL-015: Fix 13: delete endorsement → queries endorsements table', async () => {
     const collection = 'com.dina.trust.endorsement'
     const rkey = 'del015'
@@ -744,6 +759,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(tombstone[0].recordType).toBe('endorsement')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0372", "section": "01", "sectionName": "General", "title": "IT-DEL-016: Fix 13: delete reply \u2192 queries replies table"}
   it('IT-DEL-016: Fix 13: delete reply → queries replies table', async () => {
     const collection = 'com.dina.trust.reply'
     const rkey = 'del016'
@@ -794,6 +810,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(tombstone[0].recordType).toBe('reply')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0373", "section": "01", "sectionName": "General", "title": "IT-DEL-017: Fix 13: delete delegation \u2192 queries delegations table"}
   it('IT-DEL-017: Fix 13: delete delegation → queries delegations table', async () => {
     const collection = 'com.dina.trust.delegation'
     const rkey = 'del017'
@@ -851,6 +868,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(edgesAfter).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0374", "section": "01", "sectionName": "General", "title": "IT-DEL-018: Fix 13: delete report \u2192 queries report_records table"}
   it('IT-DEL-018: Fix 13: delete report → queries report_records table', async () => {
     const collection = 'com.dina.trust.reportRecord'
     const rkey = 'del018'
@@ -900,6 +918,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(tombstone[0].recordType).toBe('reportRecord')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0375", "section": "01", "sectionName": "General", "title": "IT-DEL-019: Fix 13: each deleted handler type \u2192 row actually removed"}
   it('IT-DEL-019: Fix 13: each deleted handler type → row actually removed', async () => {
     // Create one record of each type and delete it
     const recordTypes = [
@@ -981,6 +1000,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0376", "section": "01", "sectionName": "General", "title": "IT-DEL-020: Fix 13: wrong table would miss tombstone"}
   it('IT-DEL-020: Fix 13: wrong table would miss tombstone', async () => {
     // Regression guard: vouch deletion must check vouches table, not attestations.
     // If we used the wrong table, the delete would still work (since uri doesn't exist

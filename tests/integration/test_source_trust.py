@@ -46,6 +46,7 @@ def _post(core, path, body=None):
 class TestProvenanceStorage:
     """Store items with provenance fields and verify round-trip."""
 
+    # TRACE: {"suite": "INT", "case": "0205", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "01", "title": "store_with_full_provenance"}
     def test_store_with_full_provenance(self, core) -> None:
         """All 6 provenance fields are stored and returned."""
         item = {
@@ -79,6 +80,7 @@ class TestProvenanceStorage:
         assert data.get("confidence") == "high"
         assert data.get("retrieval_policy") == "normal"
 
+    # TRACE: {"suite": "INT", "case": "0206", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "02", "title": "store_with_contradicts"}
     def test_store_with_contradicts(self, core) -> None:
         """contradicts field is stored and returned."""
         item = {
@@ -111,6 +113,7 @@ class TestProvenanceStorage:
 class TestRetrievalPolicyFiltering:
     """Default search excludes quarantine + briefing_only."""
 
+    # TRACE: {"suite": "INT", "case": "0207", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "01", "title": "default_search_excludes_quarantine_and_briefing"}
     def test_default_search_excludes_quarantine_and_briefing(self, core) -> None:
         """Store normal, caveated, quarantine, briefing_only items.
         Default search returns only normal + caveated.
@@ -142,6 +145,7 @@ class TestRetrievalPolicyFiltering:
         assert not any("quarantine" in s for s in summaries), f"quarantine leaked: {summaries}"
         assert not any("briefing" in s for s in summaries), f"briefing leaked: {summaries}"
 
+    # TRACE: {"suite": "INT", "case": "0208", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "02", "title": "include_all_returns_everything"}
     def test_include_all_returns_everything(self, core) -> None:
         """With include_all=true, all policies are returned."""
         tag = f"incall-{int(time.time())}"
@@ -169,6 +173,7 @@ class TestRetrievalPolicyFiltering:
 class TestUserWriteDefaults:
     """Direct user writes get self/high/normal defaults."""
 
+    # TRACE: {"suite": "INT", "case": "0209", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "01", "title": "store_without_provenance_gets_defaults"}
     def test_store_without_provenance_gets_defaults(self, core) -> None:
         """Storing without provenance fields defaults to self/high/normal (admin caller)."""
         item = {

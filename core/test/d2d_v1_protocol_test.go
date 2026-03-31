@@ -28,6 +28,7 @@ func testMultibaseKey() string {
 // Phase 3.1: EvaluateIngress contacts-only behavior
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0452", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_ExplicitContactAccepted"}
 func TestD2D_V1_IngressContactsOnly_ExplicitContactAccepted(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
@@ -39,6 +40,7 @@ func TestD2D_V1_IngressContactsOnly_ExplicitContactAccepted(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "explicit contact should be accepted")
 }
 
+// TRACE: {"suite": "CORE", "case": "0453", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_NonContactQuarantined"}
 func TestD2D_V1_IngressContactsOnly_NonContactQuarantined(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	// Add high trust score in cache but NOT as contact.
@@ -54,6 +56,7 @@ func TestD2D_V1_IngressContactsOnly_NonContactQuarantined(t *testing.T) {
 		"v1: non-contact quarantined regardless of trust cache score")
 }
 
+// TRACE: {"suite": "CORE", "case": "0454", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_BlockedContactDropped"}
 func TestD2D_V1_IngressContactsOnly_BlockedContactDropped(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
@@ -65,6 +68,7 @@ func TestD2D_V1_IngressContactsOnly_BlockedContactDropped(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressDrop, "blocked contact should be dropped")
 }
 
+// TRACE: {"suite": "CORE", "case": "0455", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_EmptyDIDQuarantined"}
 func TestD2D_V1_IngressContactsOnly_EmptyDIDQuarantined(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{}}
@@ -74,6 +78,7 @@ func TestD2D_V1_IngressContactsOnly_EmptyDIDQuarantined(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "empty DID should be quarantined")
 }
 
+// TRACE: {"suite": "CORE", "case": "0456", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_UnknownTrustLevelAccepted"}
 func TestD2D_V1_IngressContactsOnly_UnknownTrustLevelAccepted(t *testing.T) {
 	// A contact with trust_level="unknown" is still an explicit contact.
 	cache := trustadapter.NewInMemoryCache()
@@ -133,6 +138,7 @@ func (m *mockScenarioPolicyForTransport) SetDefaultPolicies(_ context.Context, _
 	return nil
 }
 
+// TRACE: {"suite": "CORE", "case": "0457", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "01", "title": "D2D_V1_SendMessage_ContactGateBlocksNonContact"}
 func TestD2D_V1_SendMessage_ContactGateBlocksNonContact(t *testing.T) {
 	svc := service.NewTransportService(
 		&mockPassthroughEncryptor{}, &mockTestIdentitySigner{},
@@ -156,6 +162,7 @@ func TestD2D_V1_SendMessage_ContactGateBlocksNonContact(t *testing.T) {
 		"error should be ErrNotAContact, got: "+err.Error())
 }
 
+// TRACE: {"suite": "CORE", "case": "0458", "section": "07", "sectionName": "Transport Layer", "subsection": "07", "scenario": "01", "title": "D2D_V1_SendMessage_ScenarioGateDenyByDefault"}
 func TestD2D_V1_SendMessage_ScenarioGateDenyByDefault(t *testing.T) {
 	resolver := newMockTestDIDResolver()
 	resolver.docs["did:plc:friend"] = &domain.DIDDocument{
@@ -195,6 +202,7 @@ func TestD2D_V1_SendMessage_ScenarioGateDenyByDefault(t *testing.T) {
 		"error should be ErrEgressBlocked, got: "+err.Error())
 }
 
+// TRACE: {"suite": "CORE", "case": "0459", "section": "07", "sectionName": "Transport Layer", "subsection": "08", "scenario": "01", "title": "D2D_V1_SendMessage_ScenarioGateExplicitOnceBlocked"}
 func TestD2D_V1_SendMessage_ScenarioGateExplicitOnceBlocked(t *testing.T) {
 	resolver := newMockTestDIDResolver()
 	resolver.docs["did:plc:friend"] = &domain.DIDDocument{
@@ -234,6 +242,7 @@ func TestD2D_V1_SendMessage_ScenarioGateExplicitOnceBlocked(t *testing.T) {
 		"error should be ErrEgressBlocked for explicit_once, got: "+err.Error())
 }
 
+// TRACE: {"suite": "CORE", "case": "0460", "section": "07", "sectionName": "Transport Layer", "subsection": "09", "scenario": "01", "title": "D2D_V1_SendMessage_StandingPolicyAllowed"}
 func TestD2D_V1_SendMessage_StandingPolicyAllowed(t *testing.T) {
 	resolver := newMockTestDIDResolver()
 	resolver.docs["did:plc:friend"] = &domain.DIDDocument{
@@ -278,6 +287,7 @@ func TestD2D_V1_SendMessage_StandingPolicyAllowed(t *testing.T) {
 // Phase 3.4: Strict v1 type enforcement on send and receive
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0461", "section": "07", "sectionName": "Transport Layer", "subsection": "10", "scenario": "01", "title": "D2D_V1_HandleSend_RejectsNonV1Type"}
 func TestD2D_V1_HandleSend_RejectsNonV1Type(t *testing.T) {
 	// Verify that non-v1 types are rejected by type check before SendMessage.
 	// This is implicitly tested by the fact that SendMessage also checks v1 types,
@@ -290,6 +300,7 @@ func TestD2D_V1_HandleSend_RejectsNonV1Type(t *testing.T) {
 		"dina/estate/notify should NOT be in V1MessageFamilies (v2+)")
 }
 
+// TRACE: {"suite": "CORE", "case": "0462", "section": "07", "sectionName": "Transport Layer", "subsection": "11", "scenario": "01", "title": "D2D_V1_HandleSend_AcceptsV1Type"}
 func TestD2D_V1_HandleSend_AcceptsV1Type(t *testing.T) {
 	for mt := range domain.V1MessageFamilies {
 		testutil.RequireTrue(t, domain.V1MessageFamilies[mt],
@@ -297,6 +308,7 @@ func TestD2D_V1_HandleSend_AcceptsV1Type(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0463", "section": "07", "sectionName": "Transport Layer", "subsection": "12", "scenario": "01", "title": "D2D_V1_SendMessage_NonV1TypeRejected"}
 func TestD2D_V1_SendMessage_NonV1TypeRejected(t *testing.T) {
 	resolver := newMockTestDIDResolver()
 	resolver.docs["did:plc:friend"] = &domain.DIDDocument{
@@ -343,6 +355,7 @@ func TestD2D_V1_SendMessage_NonV1TypeRejected(t *testing.T) {
 // Phase 3.4: Sweeper benign drop for unknown types
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0464", "section": "07", "sectionName": "Transport Layer", "subsection": "13", "scenario": "01", "title": "D2D_V1_MsgTypeToScenario_AllV1Covered"}
 func TestD2D_V1_MsgTypeToScenario_AllV1Covered(t *testing.T) {
 	for mt := range domain.V1MessageFamilies {
 		scenario := domain.MsgTypeToScenario(mt)
@@ -351,6 +364,7 @@ func TestD2D_V1_MsgTypeToScenario_AllV1Covered(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0465", "section": "07", "sectionName": "Transport Layer", "subsection": "14", "scenario": "01", "title": "D2D_V1_MsgTypeToScenario_LegacyReturnsEmpty"}
 func TestD2D_V1_MsgTypeToScenario_LegacyReturnsEmpty(t *testing.T) {
 	testutil.RequireTrue(t, domain.MsgTypeToScenario(domain.MessageTypeQuery) == "",
 		"legacy types should return empty scenario")
@@ -360,6 +374,7 @@ func TestD2D_V1_MsgTypeToScenario_LegacyReturnsEmpty(t *testing.T) {
 // Phase 5: Scenario-driven staging
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0466", "section": "07", "sectionName": "Transport Layer", "subsection": "15", "scenario": "01", "title": "D2D_V1_D2DMemoryTypes_OnlyRelationshipAndTrust"}
 func TestD2D_V1_D2DMemoryTypes_OnlyRelationshipAndTrust(t *testing.T) {
 	// Only social.update and trust.vouch.response produce vault items.
 	testutil.RequireTrue(t, domain.D2DMemoryTypes[domain.MsgTypeSocialUpdate] == "relationship_note",
@@ -378,6 +393,7 @@ func TestD2D_V1_D2DMemoryTypes_OnlyRelationshipAndTrust(t *testing.T) {
 	testutil.RequireTrue(t, !hasCoordReq, "coordination.request should NOT produce vault items")
 }
 
+// TRACE: {"suite": "CORE", "case": "0467", "section": "07", "sectionName": "Transport Layer", "subsection": "16", "scenario": "01", "title": "D2D_V1_ScenarioTier_Constants"}
 func TestD2D_V1_ScenarioTier_Constants(t *testing.T) {
 	testutil.RequireTrue(t, domain.ScenarioStandingPolicy == "standing_policy",
 		"ScenarioStandingPolicy value should be 'standing_policy'")
@@ -387,6 +403,7 @@ func TestD2D_V1_ScenarioTier_Constants(t *testing.T) {
 		"ScenarioDenyByDefault value should be 'deny_by_default'")
 }
 
+// TRACE: {"suite": "CORE", "case": "0468", "section": "07", "sectionName": "Transport Layer", "subsection": "17", "scenario": "01", "title": "D2D_V1_SafetyAlwaysPassesInbound"}
 func TestD2D_V1_SafetyAlwaysPassesInbound(t *testing.T) {
 	// Verify safety scenario constant.
 	scenario := domain.MsgTypeToScenario(domain.MsgTypeSafetyAlert)
