@@ -97,6 +97,7 @@ It groups by `section` + `sectionName`, counts by `suite`, and links to `case` f
 | 22 | Voice STT Integration |
 | 23 | Code Review Fix Verification |
 | 24 | Architecture Review Coverage |
+| 25 | Channel Parity & Resilience |
 
 ### CORE
 | Section | Name |

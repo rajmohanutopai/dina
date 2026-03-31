@@ -321,6 +321,61 @@ class TestWizardVerification:
         assert len(done) == 1
 
 
+class TestWizardBlueskyChannel:
+    """Bluesky messaging channel path."""
+
+    # TRACE: {"suite": "INST", "case": "0103", "section": "01", "sectionName": "Wizard", "subsection": "08", "scenario": "01", "title": "bluesky_channel_full_flow"}
+    def test_bluesky_channel_full_flow(self, tmp_path: Path) -> None:
+        """Selecting Bluesky (choice 2) collects handle, password, owner, resolves DID."""
+        answers = [
+            {"field": "identity_choice", "value": "1"},
+            {"field": "recovery_ack", "value": "ok"},
+            {"field": "passphrase", "value": "testpass123"},
+            {"field": "passphrase_confirm", "value": "testpass123"},
+            {"field": "startup_mode", "value": "2"},           # Server mode
+            {"field": "owner_name", "value": "Rajmohan"},
+            {"field": "channel_choice", "value": "2"},         # Bluesky
+            {"field": "bluesky_handle", "value": "my-dina.bsky.social"},
+            {"field": "bluesky_password", "value": "app-password-123"},
+            {"field": "bluesky_owner", "value": "rajmohan.bsky.social"},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
+        ]
+
+        # Mock DID resolution (urllib.request.urlopen in wizard.py ~line 400)
+        fake_did_response = io.BytesIO(json.dumps({"did": "did:plc:abc123testowner"}).encode())
+        fake_did_response.status = 200
+
+        stdin_lines = "\n".join(json.dumps(a) for a in answers) + "\n"
+        fake_stdin = io.StringIO(stdin_lines)
+        fake_stdout = io.StringIO()
+
+        with patch("sys.stdin", fake_stdin), patch("sys.stdout", fake_stdout), \
+             patch.dict("os.environ", {"DINA_SKIP_MNEMONIC_VERIFY": "1"}), \
+             patch("scripts.installer.wizard._validate_api_key", return_value=(True, "")), \
+             patch("urllib.request.urlopen", return_value=fake_did_response):
+            from scripts.installer.wizard import run_wizard
+            run_wizard(tmp_path)
+
+        output = fake_stdout.getvalue()
+        messages = []
+        for line in output.strip().split("\n"):
+            if line.strip():
+                messages.append(json.loads(line))
+
+        # Should complete successfully
+        done_msgs = [m for m in messages if m.get("type") == "done"]
+        assert len(done_msgs) == 1
+        assert done_msgs[0]["result"]["seed_wrapped"] is True
+
+        # .env should contain Bluesky config, not Telegram
+        env_content = (tmp_path / ".env").read_text()
+        assert "DINA_BSKY_HANDLE=my-dina.bsky.social" in env_content
+        assert "DINA_BSKY_PASSWORD=app-password-123" in env_content
+        assert "DINA_BSKY_OWNER_DID=did:plc:abc123testowner" in env_content
+        assert "DINA_TELEGRAM_TOKEN" not in env_content
+
+
 class TestWizardIdempotentConfig:
     """Re-run skips owner name, Telegram, and LLM if already in .env."""
 

@@ -124,6 +124,7 @@ def test_remember_json():
     data = json.loads(result.output)
     assert data["status"] == "processing"
     mc.remember.assert_called_once()
+    assert mc.remember.call_args.kwargs.get("session") == "ses_test"
 
 
 # TST-CLI-029
@@ -133,6 +134,8 @@ def test_remember_human():
     mc.remember.return_value = {"id": "abc12345", "status": "processing"}
     result = _invoke(["remember", "--session", "ses_test", "Buy milk"], mock_client=mc)
     assert result.exit_code == 0
+    mc.remember.assert_called_once()
+    assert mc.remember.call_args.kwargs.get("session") == "ses_test"
 
 
 # TST-CLI-030
@@ -312,6 +315,7 @@ def test_validate_approved():
     data = json.loads(result.output)
     assert data["status"] == "approved"
     assert data["id"].startswith("val_")
+    assert mc.process_event.call_args.kwargs.get("session") == "ses_test"
 
 
 # TST-CLI-034

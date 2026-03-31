@@ -9254,8 +9254,8 @@ def test_analyze_trust_density_zero_when_unscoped():
 
 
 # TST-BRAIN-562
-# TRACE: {"suite": "BRAIN", "case": "0562", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "141", "title": "apply_density_enforcement_zero_injects_disclosure"}
-def test_apply_density_enforcement_zero_injects_disclosure():
+# TRACE: {"suite": "BRAIN", "case": "0562", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "141", "title": "density_enforcement_zero_passes_through_clean"}
+def test_density_enforcement_zero_passes_through_clean():
     """SS19.2: Zero-tier enforcement handles zero-trust content.
 
     The disclosure prefix ("Note: no verified data...") was removed —
