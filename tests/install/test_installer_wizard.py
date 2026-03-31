@@ -61,8 +61,11 @@ class TestWizardNewIdentity:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},           # Server mode
             {"field": "owner_name", "value": "Rajmohan"},
-            {"field": "telegram_choice", "value": "2"},        # Skip
-            {"field": "llm_selection", "value": "6"},          # Skip LLM
+            {"field": "channel_choice", "value": "1"},        # Telegram
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},          # Gemini
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         messages = _run_wizard_with_answers(tmp_path, answers)
 
@@ -93,8 +96,11 @@ class TestWizardNewIdentity:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "1"},           # Maximum
             {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         messages = _run_wizard_with_answers(tmp_path, answers)
 
@@ -125,8 +131,11 @@ class TestWizardRestore:
             {"field": "passphrase_confirm", "value": "newpass12345"},
             {"field": "startup_mode", "value": "2"},
             {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         messages = _run_wizard_with_answers(restore_dir, answers)
 
@@ -152,8 +161,11 @@ class TestWizardValidation:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},
             {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         messages = _run_wizard_with_answers(tmp_path, answers)
 
@@ -175,8 +187,11 @@ class TestWizardValidation:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},
             {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         messages = _run_wizard_with_answers(tmp_path, answers)
 
@@ -199,8 +214,11 @@ class TestWizardIdempotent:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},
             {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         _run_wizard_with_answers(tmp_path, answers1)
         seed_before = (tmp_path / "secrets" / "wrapped_seed.bin").read_bytes()
@@ -211,8 +229,11 @@ class TestWizardIdempotent:
         # LLM was skipped (no API keys in .env), so wizard asks again.
         answers2 = [
             {"field": "owner_name", "value": "NewName"},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},          # Skip LLM again
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},          # Skip LLM again
         ]
         messages2 = _run_wizard_with_answers(tmp_path, answers2)
 
@@ -241,7 +262,9 @@ class TestWizardLLMProviders:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},
             {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
             {"field": "llm_selection", "value": "1"},          # Gemini
             {"field": "api_key_GEMINI_API_KEY", "value": "AIzaSyTestKey123"},
         ]
@@ -272,8 +295,11 @@ class TestWizardVerification:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},
             {"field": "owner_name", "value": ""},
-            {"field": "telegram_choice", "value": "2"},
-            {"field": "llm_selection", "value": "6"},
+            {"field": "channel_choice", "value": "1"},
+            {"field": "telegram_token", "value": "123456:TEST"},
+            {"field": "telegram_user_id", "value": ""},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         # skip_verify=False so wizard reads verification_done
         msgs = _run_wizard_with_answers(tmp_path, answers, skip_verify=False)
@@ -300,10 +326,11 @@ class TestWizardIdempotentConfig:
             {"field": "passphrase_confirm", "value": "testpass123"},
             {"field": "startup_mode", "value": "2"},
             {"field": "owner_name", "value": "Raj"},
-            {"field": "telegram_choice", "value": "1"},
+            {"field": "channel_choice", "value": "1"},
             {"field": "telegram_token", "value": "123456:ABC-DEF"},
             {"field": "telegram_user_id", "value": ""},
-            {"field": "llm_selection", "value": "6"},
+            {"field": "llm_selection", "value": "1"},
+            {"field": "api_key_GEMINI_API_KEY", "value": "test-key-123"},
         ]
         _run_wizard_with_answers(tmp_path, answers1)
 
@@ -311,18 +338,16 @@ class TestWizardIdempotentConfig:
         assert "DINA_OWNER_NAME=Raj" in env
         assert "DINA_TELEGRAM_TOKEN=123456:ABC-DEF" in env
 
-        # Re-run — should NOT ask for owner_name or telegram
-        # Only LLM is asked (no API keys in .env)
-        answers2 = [
-            {"field": "llm_selection", "value": "6"},
-        ]
+        # Re-run — should NOT ask for owner_name or channel
+        # Only LLM is asked if no API keys in .env (but we wrote one above)
+        answers2 = []
         msgs2 = _run_wizard_with_answers(tmp_path, answers2)
 
-        # No owner_name or telegram prompts
+        # No owner_name or channel prompts
         owner_prompts = [m for m in msgs2 if m.get("field") == "owner_name"]
-        telegram_prompts = [m for m in msgs2 if m.get("field") == "telegram_choice"]
+        channel_prompts = [m for m in msgs2 if m.get("field") == "channel_choice"]
         assert len(owner_prompts) == 0, "Should not re-ask owner name"
-        assert len(telegram_prompts) == 0, "Should not re-ask Telegram"
+        assert len(channel_prompts) == 0, "Should not re-ask channel"
 
         done = [m for m in msgs2 if m.get("type") == "done"]
         assert len(done) == 1

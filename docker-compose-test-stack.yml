@@ -46,6 +46,7 @@ x-core-env: &core-env
   DINA_APPVIEW_URL: http://appview-web:3000
   DINA_PLC_URL: http://plc:2582
   DINA_PDS_URL: http://pds:3000
+  DINA_KNOWN_PEERS_MODE: legacy
 
 # -- Brain service base (Python sidecar) --
 x-brain-base: &brain-base

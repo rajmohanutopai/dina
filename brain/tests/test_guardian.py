@@ -9115,12 +9115,13 @@ def test_analyze_trust_density_zero_when_unscoped():
 
 # TST-BRAIN-562
 def test_apply_density_enforcement_zero_injects_disclosure():
-    """SS19.2: Zero-tier enforcement injects honest disclosure.
+    """SS19.2: Zero-tier enforcement handles zero-trust content.
 
-    Requirement: When density_meta has tier=zero and inject_disclosure=True,
-    _apply_density_enforcement prepends "Note: no verified data..." prefix.
-    Fabrication stripping is now the guard scan LLM's job (sentence removal),
-    not density enforcement's.
+    The disclosure prefix ("Note: no verified data...") was removed —
+    the LLM's search_trust_network tool now handles disclosure naturally.
+    Zero-tier enforcement still strips fabricated trust claims and
+    hallucinated numeric scores, and still corrects locked-persona
+    "no data" claims to "data inaccessible".
     """
     from src.service.guardian import GuardianLoop
 
@@ -9138,28 +9139,33 @@ def test_apply_density_enforcement_zero_injects_disclosure():
     # sentences removed, only honest content remains).
     clean_content = "I don't have specific trust data for this vendor."
 
+    # No disclosure prefix injected — LLM handles disclosure via tool output.
     result = GuardianLoop._apply_density_enforcement(
         clean_content, density_meta, [],
         inject_disclosure=True,
     )
-
-    # Must inject honest disclosure.
-    import re
-    no_data_pat = re.compile(
-        r"no verified|no trust|no data|not available", re.IGNORECASE
-    )
-    assert no_data_pat.search(result), (
-        f"Zero-tier enforcement must inject honest 'no verified data' "
-        f"disclosure. Got: {result!r}"
+    assert result == clean_content, (
+        f"Zero-tier with clean content should pass through unchanged "
+        f"(disclosure removed). Got: {result!r}"
     )
 
-    # When inject_disclosure=False, no prefix added.
+    # inject_disclosure=False also passes through unchanged.
     result_no_disc = GuardianLoop._apply_density_enforcement(
         clean_content, density_meta, [],
         inject_disclosure=False,
     )
     assert result_no_disc == clean_content, (
         f"inject_disclosure=False must not add prefix. Got: {result_no_disc!r}"
+    )
+
+    # Fabricated trust claims ARE still stripped even without disclosure.
+    fabricated_content = "The trust network data shows a verified rating of 4.5/5."
+    result_fab = GuardianLoop._apply_density_enforcement(
+        fabricated_content, density_meta, [],
+        inject_disclosure=True,
+    )
+    assert "trust network data" not in result_fab.lower(), (
+        f"Fabricated trust claims must still be stripped. Got: {result_fab!r}"
     )
 
     # Locked persona correction: "no data" → "data inaccessible".

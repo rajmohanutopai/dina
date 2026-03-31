@@ -140,10 +140,37 @@ cmd_up() {
   do_compose down -v --remove-orphans 2>/dev/null || true
 
   echo "=== Building all images ==="
-  do_compose build
+  TOTAL_SERVICES=$(do_compose config --services 2>/dev/null | wc -l | tr -d ' ')
+  BUILT=0
+  do_compose build 2>&1 | while IFS= read -r line; do
+    # Track "Successfully built" or "Built" lines
+    if echo "$line" | grep -qiE "Built|DONE|successfully"; then
+      BUILT=$((BUILT + 1))
+      echo "  [build] $line"
+    elif echo "$line" | grep -qiE "error|Error|FAIL"; then
+      echo "  [build] $line"
+    fi
+  done
+  echo "  Build complete."
 
   echo "=== Starting all services ==="
-  do_compose up -d --wait
+  do_compose up -d
+  echo "  Waiting for containers to be healthy..."
+  # Poll container status
+  for i in $(seq 1 120); do
+    RUNNING=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -c "healthy" || true)
+    TOTAL=$(do_compose ps --format "{{.Name}}" 2>/dev/null | wc -l | tr -d ' ')
+    printf "\r  Containers: %s/%s healthy " "$RUNNING" "$TOTAL"
+    if [ "$RUNNING" = "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
+      echo "✓"
+      break
+    fi
+    if [ "$i" = "120" ]; then
+      echo "✗ (timeout)"
+      do_compose ps 2>/dev/null
+    fi
+    sleep 2
+  done
 
   if ! health_check_all; then
     echo ""

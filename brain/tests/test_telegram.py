@@ -109,6 +109,24 @@ def _make_update(
     return update
 
 
+def _make_context():
+    """Build a mock context with a TelegramChannel in user_data.
+
+    Returns (context, mock_channel) so tests can assert on mock_channel.send.
+    The TelegramService handlers call ``ch = self._ch(context)`` which reads
+    ``context.user_data["channel"]``, then ``await ch.send(BotResponse(...))``.
+    """
+    mock_channel = AsyncMock()
+    context = MagicMock()
+    context.user_data = {"channel": mock_channel}
+    return context, mock_channel
+
+
+def _last_reply_text(mock_channel):
+    """Extract the text from the last ch.send(BotResponse(...)) call."""
+    return mock_channel.send.call_args[0][0].text
+
+
 # ---------------------------------------------------------------------------
 # /start pairing tests
 # ---------------------------------------------------------------------------
@@ -118,12 +136,12 @@ def _make_update(
 async def test_start_allowed_user_gets_paired(service, mock_core):
     """Allowed user sending /start should be paired and welcomed."""
     update = _make_update(user_id=111, text="/start")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_start(update, context)
 
-    update.message.reply_text.assert_called_once()
-    reply_text = update.message.reply_text.call_args[0][0]
+    mock_ch.send.assert_called_once()
+    reply_text = _last_reply_text(mock_ch)
     assert "Welcome" in reply_text
     assert 111 in service._paired_users
     # Pairing persisted to KV.
@@ -137,12 +155,12 @@ async def test_start_allowed_user_gets_paired(service, mock_core):
 async def test_start_unknown_user_rejected(service):
     """Unknown user sending /start should get a polite rejection."""
     update = _make_update(user_id=999, text="/start")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_start(update, context)
 
-    update.message.reply_text.assert_called_once()
-    reply_text = update.message.reply_text.call_args[0][0]
+    mock_ch.send.assert_called_once()
+    reply_text = _last_reply_text(mock_ch)
     assert "Sorry" in reply_text
     assert 999 not in service._paired_users
 
@@ -152,11 +170,11 @@ async def test_start_already_paired_user(service):
     """Already-paired user gets a different message."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="/start")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_start(update, context)
 
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "already paired" in reply_text
 
 
@@ -170,7 +188,7 @@ async def test_ask_from_allowed_user_calls_guardian(service, mock_guardian):
     """/ask from an allowed user should forward the question to Guardian."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="/ask What is my FD status?")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
@@ -181,19 +199,20 @@ async def test_ask_from_allowed_user_calls_guardian(service, mock_guardian):
     assert event["source"] == "telegram"
 
     # Reply was sent with the content field from Guardian.
-    update.message.reply_text.assert_called_once_with("Hello from Dina!")
+    mock_ch.send.assert_called_once()
+    assert _last_reply_text(mock_ch) == "Hello from Dina!"
 
 
 @pytest.mark.asyncio
 async def test_ask_from_unknown_user_rejected(service, mock_guardian):
     """/ask from an unknown user should not reach Guardian."""
     update = _make_update(user_id=999, text="/ask hello")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
     mock_guardian.process_event.assert_not_called()
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "don't recognise" in reply_text
 
 
@@ -202,12 +221,12 @@ async def test_ask_empty_text_shows_usage(service, mock_guardian):
     """/ask with no text should show usage hint."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="/ask")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
     mock_guardian.process_event.assert_not_called()
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "Usage" in reply_text
 
 
@@ -218,7 +237,7 @@ async def test_ask_auto_pairs_allowed_user(service, mock_core):
     assert 111 not in service._paired_users
 
     update = _make_update(user_id=111, text="/ask hello")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
@@ -232,12 +251,12 @@ async def test_ask_guardian_error_sends_friendly_reply(service, mock_guardian):
     service._paired_users.add(111)
     mock_guardian.process_event = AsyncMock(side_effect=RuntimeError("LLM timeout"))
     update = _make_update(user_id=111, text="/ask crash me")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
-    update.message.reply_text.assert_called_once()
-    reply_text = update.message.reply_text.call_args[0][0]
+    mock_ch.send.assert_called_once()
+    reply_text = _last_reply_text(mock_ch)
     assert "went wrong" in reply_text or "try again" in reply_text
 
 
@@ -246,7 +265,7 @@ async def test_ask_strips_command_prefix(service, mock_guardian):
     """/ask strips the command prefix before sending to Guardian."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="/ask  What time is it?  ")
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
@@ -264,7 +283,7 @@ async def test_remember_ingests_to_staging(service, mock_core):
     """/remember should ingest the note to staging pipeline."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="/remember My FD rate is 7.8%")
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
@@ -286,7 +305,7 @@ async def test_remember_polls_staging_status(service, mock_core):
         return_value={"status": "stored", "persona": "finance"}
     )
     update = _make_update(user_id=111, text="/remember test note")
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
@@ -304,11 +323,11 @@ async def test_remember_stored_reply(service, mock_core):
         return_value={"status": "stored", "persona": "finance"}
     )
     update = _make_update(user_id=111, text="/remember note text")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "Stored" in reply_text
     assert "finance" in reply_text
 
@@ -321,11 +340,11 @@ async def test_remember_needs_approval_reply(service, mock_core):
         return_value={"status": "needs_approval", "persona": "health"}
     )
     update = _make_update(user_id=111, text="/remember my HbA1c is 5.8")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "Needs approval" in reply_text
     assert "health" in reply_text
 
@@ -335,13 +354,13 @@ async def test_remember_empty_text_shows_usage(service, mock_guardian):
     """/remember with no text should show usage hint."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="/remember")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
     mock_core_obj = service._core
     mock_core_obj.staging_ingest.assert_not_called()
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "Usage" in reply_text
 
 
@@ -349,11 +368,11 @@ async def test_remember_empty_text_shows_usage(service, mock_guardian):
 async def test_remember_from_unknown_user_rejected(service):
     """/remember from an unknown user should get a rejection."""
     update = _make_update(user_id=999, text="/remember something")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "don't recognise" in reply_text
 
 
@@ -363,11 +382,11 @@ async def test_remember_ingest_failure_sends_error_reply(service, mock_core):
     service._paired_users.add(111)
     mock_core.staging_ingest = AsyncMock(side_effect=Exception("core down"))
     update = _make_update(user_id=111, text="/remember test")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "couldn't save" in reply_text or "Sorry" in reply_text
 
 
@@ -379,7 +398,7 @@ async def test_remember_auto_pairs_allowed_user(service, mock_core):
         return_value={"status": "stored", "persona": "personal"}
     )
     update = _make_update(user_id=111, text="/remember auto pair me")
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_remember(update, context)
 
@@ -399,7 +418,7 @@ async def test_dm_plain_message_shows_command_hints(service, mock_guardian):
     """
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="Hello Dina")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -407,7 +426,7 @@ async def test_dm_plain_message_shows_command_hints(service, mock_guardian):
     mock_guardian.process_event.assert_not_called()
 
     # User gets command hints.
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "/ask" in reply_text
     assert "/remember" in reply_text
 
@@ -417,7 +436,7 @@ async def test_dm_plain_message_not_stored(service, mock_core):
     """Plain DM messages must NOT be stored in vault (no staging_ingest call)."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="Random message")
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -430,12 +449,12 @@ async def test_dm_plain_message_not_stored(service, mock_core):
 async def test_dm_from_unknown_user_rejected(service, mock_guardian):
     """DM from an unknown user should not reach Guardian."""
     update = _make_update(user_id=999, text="Hello")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
     mock_guardian.process_event.assert_not_called()
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "don't recognise" in reply_text
 
 
@@ -446,7 +465,7 @@ async def test_dm_auto_pairs_allowed_user(service, mock_core):
     assert 111 not in service._paired_users
 
     update = _make_update(user_id=111, text="First message")
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -470,7 +489,7 @@ async def test_group_message_with_mention_processed(service, mock_guardian):
         chat_type="group",
         text="@dina_test_bot what time is it?",
     )
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -479,7 +498,7 @@ async def test_group_message_with_mention_processed(service, mock_guardian):
     # Guardian is NOT called directly from handle_message — only from handle_ask.
     # Verify the bot mention was stripped (service didn't crash, reply was sent).
     # At minimum: no exception raised, and the @mention processing ran.
-    update.message.reply_text.assert_called()
+    mock_ch.send.assert_called()
 
 
 @pytest.mark.asyncio
@@ -491,12 +510,12 @@ async def test_group_message_without_mention_ignored(service, mock_guardian):
         chat_type="group",
         text="just chatting among friends",
     )
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
     mock_guardian.process_event.assert_not_called()
-    update.message.reply_text.assert_not_called()
+    mock_ch.send.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -508,12 +527,12 @@ async def test_group_message_disallowed_group_ignored(service, mock_guardian):
         chat_type="supergroup",
         text="@dina_test_bot hello",
     )
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
     mock_guardian.process_event.assert_not_called()
-    update.message.reply_text.assert_not_called()
+    mock_ch.send.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -579,7 +598,7 @@ async def test_plain_dm_message_not_stored_via_staging(service, mock_core, mock_
     """
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="Store this?")
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -753,7 +772,7 @@ async def test_handle_message_no_effective_user(service, mock_guardian):
     """Update with no effective_user should be silently ignored."""
     update = _make_update()
     update.effective_user = None
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -765,7 +784,7 @@ async def test_handle_message_no_message_text(service, mock_guardian):
     """Update with no message text should be silently ignored."""
     update = _make_update()
     update.message.text = None
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -777,7 +796,7 @@ async def test_handle_message_empty_message(service, mock_guardian):
     """Update with message=None should be silently ignored."""
     update = _make_update()
     update.message = None
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
@@ -789,7 +808,7 @@ async def test_handle_start_no_effective_user(service):
     """Handle /start with no effective_user should be silently ignored."""
     update = _make_update()
     update.effective_user = None
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_start(update, context)
     # No exception, no reply.
@@ -800,7 +819,7 @@ async def test_handle_start_no_effective_chat(service):
     """Handle /start with no effective_chat should be silently ignored."""
     update = _make_update()
     update.effective_chat = None
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_start(update, context)
 
@@ -818,12 +837,12 @@ async def test_ask_guardian_error_sends_error_reply(service, mock_guardian):
         side_effect=RuntimeError("LLM timeout")
     )
     update = _make_update(user_id=111, text="/ask Crash me")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
-    update.message.reply_text.assert_called()
-    reply_text = update.message.reply_text.call_args[0][0]
+    mock_ch.send.assert_called()
+    reply_text = _last_reply_text(mock_ch)
     assert "went wrong" in reply_text or "try again" in reply_text
 
 
@@ -836,13 +855,13 @@ async def test_ask_empty_response_not_sent(service, mock_guardian):
         "response": "",
     })
     update = _make_update(user_id=111, text="/ask Hello")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
-    # reply_text should not be called for an empty response.
-    calls = [c for c in update.message.reply_text.call_args_list
-             if c[0][0] == ""]
+    # ch.send should not be called for an empty response.
+    calls = [c for c in mock_ch.send.call_args_list
+             if c[0][0].text == ""]
     assert len(calls) == 0
 
 
@@ -855,11 +874,12 @@ async def test_ask_content_field_takes_precedence_over_response(service, mock_gu
         "response": "From response field",
     })
     update = _make_update(user_id=111, text="/ask Hello")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
-    update.message.reply_text.assert_called_once_with("From content field")
+    mock_ch.send.assert_called_once()
+    assert _last_reply_text(mock_ch) == "From content field"
 
 
 @pytest.mark.asyncio
@@ -871,11 +891,12 @@ async def test_ask_response_field_fallback(service, mock_guardian):
         "response": "Fallback answer",
     })
     update = _make_update(user_id=111, text="/ask Hello")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
-    update.message.reply_text.assert_called_once_with("Fallback answer")
+    mock_ch.send.assert_called_once()
+    assert _last_reply_text(mock_ch) == "Fallback answer"
 
 
 @pytest.mark.asyncio
@@ -887,11 +908,12 @@ async def test_ask_dict_response_extracted(service, mock_guardian):
         "response": {"text": "structured answer", "confidence": 0.9},
     })
     update = _make_update(user_id=111, text="/ask Hello")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_ask(update, context)
 
-    update.message.reply_text.assert_called_once_with("structured answer")
+    mock_ch.send.assert_called_once()
+    assert _last_reply_text(mock_ch) == "structured answer"
 
 
 # ---------------------------------------------------------------------------
@@ -905,14 +927,15 @@ async def test_vault_store_failure_does_not_crash(service, mock_core, mock_guard
     service._paired_users.add(111)
     mock_core.store_vault_item = AsyncMock(side_effect=Exception("vault down"))
     update = _make_update(user_id=111, text="/ask Store this")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     # Should not raise.
     await service.handle_ask(update, context)
 
     # Guardian still processed the /ask.
     mock_guardian.process_event.assert_called_once()
-    update.message.reply_text.assert_called_once_with("Hello from Dina!")
+    mock_ch.send.assert_called_once()
+    assert _last_reply_text(mock_ch) == "Hello from Dina!"
 
 
 # ---------------------------------------------------------------------------
@@ -925,14 +948,14 @@ async def test_pair_kv_failure_still_pairs_in_memory(service, mock_core):
     """If KV write fails during pairing, user should still be paired in memory."""
     mock_core.set_kv = AsyncMock(side_effect=Exception("KV unreachable"))
     update = _make_update(user_id=222, text="/start")
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_start(update, context)
 
     # Paired in memory despite KV failure.
     assert 222 in service._paired_users
     # User still gets the welcome message.
-    reply_text = update.message.reply_text.call_args[0][0]
+    reply_text = _last_reply_text(mock_ch)
     assert "Welcome" in reply_text
 
 
@@ -960,7 +983,7 @@ async def test_send_nudge_no_bot_set():
 @pytest.mark.asyncio
 async def test_multiple_users_pair_independently(service, mock_core):
     """Two different allowed users should pair independently."""
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     update1 = _make_update(user_id=111, text="/start")
     await service.handle_start(update1, context)
@@ -992,12 +1015,12 @@ async def test_supergroup_message_with_mention(service, mock_guardian):
         chat_type="supergroup",
         text="@dina_test_bot help me",
     )
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_message(update, context)
 
     # Message was processed (bot mention stripped, command hints sent).
-    update.message.reply_text.assert_called()
+    mock_ch.send.assert_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1307,7 +1330,7 @@ async def test_handle_callback_query_approve(service, mock_core):
     query.message.edit_text = AsyncMock()
     query.message.reply_text = AsyncMock()
     update.callback_query = query
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_callback_query(update, context)
 
@@ -1315,9 +1338,9 @@ async def test_handle_callback_query_approve(service, mock_core):
     mock_core.approve_request.assert_awaited_once_with(
         "apr-cb-001", scope="session", granted_by="telegram",
     )
-    # Original message edited to include result.
-    query.message.edit_text.assert_awaited_once()
-    edited_text = query.message.edit_text.call_args[0][0]
+    # Original message edited via channel.
+    mock_ch.edit.assert_called_once()
+    edited_text = mock_ch.edit.call_args[0][0].text
     assert "✅" in edited_text
 
 
@@ -1333,14 +1356,14 @@ async def test_handle_callback_query_deny(service, mock_core):
     query.message.edit_text = AsyncMock()
     query.message.reply_text = AsyncMock()
     update.callback_query = query
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_callback_query(update, context)
 
     query.answer.assert_awaited_once()
     mock_core.deny_request.assert_awaited_once_with("apr-cb-002")
-    query.message.edit_text.assert_awaited_once()
-    edited_text = query.message.edit_text.call_args[0][0]
+    mock_ch.edit.assert_called_once()
+    edited_text = mock_ch.edit.call_args[0][0].text
     assert "🚫" in edited_text
 
 
@@ -1356,14 +1379,14 @@ async def test_handle_callback_query_approve_single(service, mock_core):
     query.message.edit_text = AsyncMock()
     query.message.reply_text = AsyncMock()
     update.callback_query = query
-    context = MagicMock()
+    context, mock_ch = _make_context()
 
     await service.handle_callback_query(update, context)
 
     mock_core.approve_request.assert_awaited_once_with(
         "apr-cb-003", scope="single", granted_by="telegram",
     )
-    query.message.edit_text.assert_awaited_once()
+    mock_ch.edit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1371,7 +1394,7 @@ async def test_handle_callback_query_no_query(service):
     """handle_callback_query is a no-op when callback_query is None."""
     update = MagicMock()
     update.callback_query = None
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     # Should not raise.
     await service.handle_callback_query(update, context)
@@ -1385,7 +1408,7 @@ async def test_handle_callback_query_no_data(service):
     query.data = None
     query.answer = AsyncMock()
     update.callback_query = query
-    context = MagicMock()
+    context, _mock_ch = _make_context()
 
     await service.handle_callback_query(update, context)
 
@@ -1393,22 +1416,20 @@ async def test_handle_callback_query_no_data(service):
 
 
 @pytest.mark.asyncio
-async def test_handle_callback_query_edit_failure_falls_back_to_reply(service, mock_core):
-    """If edit_text fails, callback handler sends a new reply instead."""
+async def test_handle_callback_query_edit_failure_propagates(service, mock_core):
+    """If ch.edit raises, the exception propagates (no silent swallow)."""
     update = MagicMock()
     query = MagicMock()
     query.data = "approve apr-cb-edit-fail"
     query.answer = AsyncMock()
     query.message = MagicMock()
     query.message.text = "original"
-    query.message.edit_text = AsyncMock(side_effect=Exception("message not modified"))
-    query.message.reply_text = AsyncMock()
     update.callback_query = query
-    context = MagicMock()
+    context, mock_ch = _make_context()
+    mock_ch.edit = AsyncMock(side_effect=Exception("message not modified"))
 
-    await service.handle_callback_query(update, context)
+    with pytest.raises(Exception, match="message not modified"):
+        await service.handle_callback_query(update, context)
 
-    # Fallback: new reply sent.
-    query.message.reply_text.assert_awaited_once()
-    reply_text = query.message.reply_text.call_args[0][0]
-    assert "✅" in reply_text
+    # Approve still went through before the edit failed.
+    mock_core.approve_request.assert_awaited_once()

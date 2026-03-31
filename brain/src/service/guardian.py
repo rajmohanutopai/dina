@@ -2018,7 +2018,7 @@ class GuardianLoop:
                 "kind": kind,
                 "source": source,
                 "persona": persona,
-                "vault_context_used": bool(personal_context),
+                "vault_context_used": False,
             },
         }
 

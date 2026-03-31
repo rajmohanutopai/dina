@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ...infra.trace import trace_store
+try:
+    from ...infra.trace import trace_store
+except ImportError:
+    from infra.trace import trace_store
 
 router = APIRouter()
 

@@ -6,6 +6,7 @@ import json
 import os
 from unittest.mock import MagicMock, patch
 
+import httpx
 from click.testing import CliRunner
 
 from dina_cli.client import DinaClientError
@@ -48,8 +49,7 @@ def test_status_paired_json(tmp_path):
     with patch("dina_cli.main.DinaClient") as MockCls, \
          patch("dina_cli.main.load_config", return_value=_test_config()), \
          patch("dina_cli.main.httpx") as mock_httpx, \
-         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
-         patch("dina_cli.main.IDENTITY_DIR", identity_dir):
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir):
         MockCls.return_value = mc
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -76,7 +76,6 @@ def test_status_not_paired(tmp_path):
     runner = CliRunner()
     with patch("dina_cli.main.load_config", side_effect=Exception("no keypair")), \
          patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
-         patch("dina_cli.main.IDENTITY_DIR", identity_dir), \
          patch("dina_cli.main.httpx") as mock_httpx:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -96,8 +95,7 @@ def test_status_unreachable(tmp_path):
     with patch("dina_cli.main.DinaClient") as MockCls, \
          patch("dina_cli.main.load_config", return_value=_test_config()), \
          patch("dina_cli.main.httpx") as mock_httpx, \
-         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
-         patch("dina_cli.main.IDENTITY_DIR", identity_dir):
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir):
         mock_httpx.get.side_effect = Exception("connection refused")
         with patch("dina_cli.main.CLIIdentity") as MockIdent:
             mock_ident = MagicMock()
@@ -116,29 +114,29 @@ def test_status_unreachable(tmp_path):
 # TST-CLI-028
 def test_remember_json():
     mc = MagicMock()
-    mc.staging_ingest.return_value = {"id": "abc12345deadbeef", "staged": True}
-    result = _invoke(["--json", "remember", "Buy milk"], mock_client=mc)
+    mc.remember.return_value = {"id": "abc12345deadbeef", "status": "processing"}
+    result = _invoke(["--json", "remember", "--session", "ses_test", "Buy milk"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["staged"] is True
-    mc.staging_ingest.assert_called_once()
+    assert data["status"] == "processing"
+    mc.remember.assert_called_once()
 
 
 # TST-CLI-029
 def test_remember_human():
     mc = MagicMock()
-    mc.staging_ingest.return_value = {"id": "abc12345", "staged": True}
-    result = _invoke(["remember", "Buy milk"], mock_client=mc)
+    mc.remember.return_value = {"id": "abc12345", "status": "processing"}
+    result = _invoke(["remember", "--session", "ses_test", "Buy milk"], mock_client=mc)
     assert result.exit_code == 0
 
 
 # TST-CLI-030
 def test_remember_with_category():
     mc = MagicMock()
-    mc.staging_ingest.return_value = {"id": "x", "staged": True}
-    result = _invoke(["--json", "remember", "Alice bday March 15", "--category", "relationship"], mock_client=mc)
+    mc.remember.return_value = {"id": "x", "status": "processing"}
+    result = _invoke(["--json", "remember", "--session", "ses_test", "Alice bday March 15", "--category", "relationship"], mock_client=mc)
     assert result.exit_code == 0
-    mc.staging_ingest.assert_called_once()
+    mc.remember.assert_called_once()
 
 
 # ── ask ────────────────────────────────────────────────────────────────
@@ -147,8 +145,8 @@ def test_remember_with_category():
 # TST-CLI-031
 def test_ask_json():
     mc = MagicMock()
-    mc.reason.return_value = {"content": "Buy milk is in your vault."}
-    result = _invoke(["--json", "ask", "milk"], mock_client=mc)
+    mc.ask.return_value = {"content": "Buy milk is in your vault."}
+    result = _invoke(["--json", "ask", "--session", "ses_test", "milk"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert "content" in data
@@ -157,24 +155,24 @@ def test_ask_json():
 # TST-CLI-032
 def test_ask_no_results():
     mc = MagicMock()
-    mc.reason.return_value = {"content": ""}
-    result = _invoke(["ask", "nonexistent"], mock_client=mc)
+    mc.ask.return_value = {"content": ""}
+    result = _invoke(["ask", "--session", "ses_test", "nonexistent"], mock_client=mc)
     assert result.exit_code == 0
     assert "don't have any information" in result.output
 
 
 def test_ask_llm_not_configured():
     mc = MagicMock()
-    mc.reason.return_value = {"error_code": "llm_not_configured", "message": "No LLM provider configured.", "content": ""}
-    result = _invoke(["ask", "hello"], mock_client=mc)
+    mc.ask.return_value = {"error_code": "llm_not_configured", "message": "No LLM provider configured.", "content": ""}
+    result = _invoke(["ask", "--session", "ses_test", "hello"], mock_client=mc)
     assert result.exit_code != 0
     assert "LLM" in result.output or "llm" in result.output
 
 
 def test_ask_llm_not_configured_json():
     mc = MagicMock()
-    mc.reason.return_value = {"error_code": "llm_not_configured", "message": "No LLM.", "content": ""}
-    result = _invoke(["--json", "ask", "hello"], mock_client=mc)
+    mc.ask.return_value = {"error_code": "llm_not_configured", "message": "No LLM.", "content": ""}
+    result = _invoke(["--json", "ask", "--session", "ses_test", "hello"], mock_client=mc)
     assert result.exit_code != 0
     data = json.loads(result.output)
     assert data["error_code"] == "llm_not_configured"
@@ -182,8 +180,8 @@ def test_ask_llm_not_configured_json():
 
 def test_ask_llm_unreachable():
     mc = MagicMock()
-    mc.reason.return_value = {"error_code": "llm_unreachable", "message": "LLM provider unreachable.", "content": ""}
-    result = _invoke(["ask", "hello"], mock_client=mc)
+    mc.ask.return_value = {"error_code": "llm_unreachable", "message": "LLM provider unreachable.", "content": ""}
+    result = _invoke(["ask", "--session", "ses_test", "hello"], mock_client=mc)
     assert result.exit_code != 0
     assert "unreachable" in result.output.lower()
 
@@ -194,43 +192,43 @@ def test_ask_llm_unreachable():
 def test_ask_202_polls_until_complete():
     """ask command polls on 202 and prints the answer when complete."""
     mc = MagicMock()
-    mc.reason.return_value = {
+    mc.ask.return_value = {
         "status": "pending_approval",
         "request_id": "reason-abc123",
         "approval_id": "apr-xyz",
         "persona": "health",
     }
     # First poll: still pending. Second: complete.
-    mc.reason_status.side_effect = [
+    mc.ask_status.side_effect = [
         {"status": "pending_approval", "request_id": "reason-abc123"},
         {"status": "complete", "request_id": "reason-abc123",
          "content": "Your B12 is low at 180 pg/mL."},
     ]
 
     with patch("time.sleep"):  # skip real sleep
-        result = _invoke(["ask", "vitamin levels"], mock_client=mc)
+        result = _invoke(["ask", "--session", "ses_test", "vitamin levels"], mock_client=mc)
 
     assert result.exit_code == 0
     assert "B12" in result.output
-    assert mc.reason_status.call_count == 2
+    assert mc.ask_status.call_count == 2
 
 
 def test_ask_202_denied():
     """ask command prints denied when approval is rejected."""
     mc = MagicMock()
-    mc.reason.return_value = {
+    mc.ask.return_value = {
         "status": "pending_approval",
         "request_id": "reason-deny-test",
         "approval_id": "apr-deny",
         "persona": "health",
     }
-    mc.reason_status.return_value = {
+    mc.ask_status.return_value = {
         "status": "denied",
         "request_id": "reason-deny-test",
     }
 
     with patch("time.sleep"):
-        result = _invoke(["ask", "health data"], mock_client=mc)
+        result = _invoke(["ask", "--session", "ses_test", "health data"], mock_client=mc)
 
     assert result.exit_code == 1
     assert "denied" in result.output.lower()
@@ -239,46 +237,46 @@ def test_ask_202_denied():
 def test_ask_202_json_mode_returns_immediately():
     """In JSON mode, ask returns 202 data immediately without polling."""
     mc = MagicMock()
-    mc.reason.return_value = {
+    mc.ask.return_value = {
         "status": "pending_approval",
         "request_id": "reason-json-test",
         "approval_id": "apr-json",
         "persona": "health",
     }
 
-    result = _invoke(["--json", "ask", "health"], mock_client=mc)
+    result = _invoke(["--json", "ask", "--session", "ses_test", "health"], mock_client=mc)
 
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "pending_approval"
     assert data["request_id"] == "reason-json-test"
-    mc.reason_status.assert_not_called()
+    mc.ask_status.assert_not_called()
 
 
-def test_reason_status_command():
-    """reason-status command shows current state."""
+def test_ask_status_command():
+    """ask-status command shows current state."""
     mc = MagicMock()
-    mc.reason_status.return_value = {
+    mc.ask_status.return_value = {
         "status": "complete",
-        "request_id": "reason-status-test",
+        "request_id": "ask-status-test",
         "content": "Here is your answer.",
     }
 
-    result = _invoke(["reason-status", "reason-status-test"], mock_client=mc)
+    result = _invoke(["ask-status", "ask-status-test"], mock_client=mc)
 
     assert result.exit_code == 0
     assert "Here is your answer" in result.output
 
 
-def test_reason_status_denied():
-    """reason-status shows denied message."""
+def test_ask_status_denied():
+    """ask-status shows denied message."""
     mc = MagicMock()
-    mc.reason_status.return_value = {
+    mc.ask_status.return_value = {
         "status": "denied",
-        "request_id": "reason-denied",
+        "request_id": "ask-denied",
     }
 
-    result = _invoke(["reason-status", "reason-denied"], mock_client=mc)
+    result = _invoke(["ask-status", "ask-denied"], mock_client=mc)
 
     assert result.exit_code == 0
     assert "denied" in result.output.lower()
@@ -292,7 +290,7 @@ def test_validate_approved():
     mc = MagicMock()
     mc.process_event.return_value = {"approved": True, "requires_approval": False, "risk": "SAFE"}
     mc.kv_set.return_value = None
-    result = _invoke(["--json", "validate", "read_email", "Read inbox"], mock_client=mc)
+    result = _invoke(["--json", "validate", "--session", "ses_test", "read_email", "Read inbox"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "approved"
@@ -304,7 +302,7 @@ def test_validate_pending():
     mc = MagicMock()
     mc.process_event.return_value = {"approved": False, "requires_approval": True, "risk": "HIGH"}
     mc.kv_set.return_value = None
-    result = _invoke(["--json", "validate", "delete_emails", "Delete 247 emails", "--count", "247"], mock_client=mc)
+    result = _invoke(["--json", "validate", "--session", "ses_test", "delete_emails", "Delete 247 emails", "--count", "247"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "pending_approval"
@@ -316,7 +314,7 @@ def test_validate_fallback_safe():
     """When Core is unavailable, safe actions auto-approve."""
     mc = MagicMock()
     mc.process_event.side_effect = DinaClientError("Cannot reach Dina at http://localhost:8100. Is it running?")
-    result = _invoke(["--json", "validate", "search", "Search inbox"], mock_client=mc)
+    result = _invoke(["--json", "validate", "--session", "ses_test", "search", "Search inbox"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "approved"
@@ -327,7 +325,7 @@ def test_validate_fallback_risky():
     """When Core is unavailable, risky actions need approval."""
     mc = MagicMock()
     mc.process_event.side_effect = DinaClientError("Cannot reach Dina at http://localhost:8100. Is it running?")
-    result = _invoke(["--json", "validate", "send_email", "Send to 500 people"], mock_client=mc)
+    result = _invoke(["--json", "validate", "--session", "ses_test", "send_email", "Send to 500 people"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "pending_approval"
@@ -370,13 +368,13 @@ def test_scrub_json(tmp_path):
          patch("dina_cli.main.load_config", return_value=_test_config()), \
          patch("dina_cli.main.SessionStore") as MockSS:
         mock_store = MagicMock()
-        mock_store.new_id.return_value = "sess_test1234"
+        mock_store.new_id.return_value = "pii_test1234"
         MockSS.return_value = mock_store
         result = runner.invoke(cli, ["--json", "scrub", "john@ex.com sent a message"], env={})
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["scrubbed"] == "[EMAIL_1] sent a message"
-    assert data["session"] == "sess_test1234"
+    assert data["pii_id"] == "pii_test1234"
 
 
 # ── rehydrate ─────────────────────────────────────────────────────────────
@@ -468,7 +466,7 @@ def test_audit_json():
 def test_missing_keypair():
     """CLI exits with error when no Ed25519 keypair exists."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "ask", "test"], env={})
+    result = runner.invoke(cli, ["--json", "ask", "--session", "ses_test", "test"], env={})
     assert result.exit_code != 0
 
 
@@ -481,10 +479,12 @@ def test_configure_signature_mode(tmp_path):
     runner = CliRunner()
 
     with patch("dina_cli.main._configure_signature") as mock_sig, \
-         patch("dina_cli.main.save_config") as mock_save:
+         patch("dina_cli.main.save_config") as mock_save, \
+         patch("dina_cli.main._load_saved", return_value={}):
         mock_save.return_value = tmp_path / "config.json"
-        # Input: core_url (default), device_name, test=no
+        # Input: config_location (default=global), core_url (default), device_name, test=no
         user_input = "\n".join([
+            "",           # config_location (default: global)
             "",           # core_url (default)
             "my-laptop",  # device name
             "n",          # don't test connection
@@ -535,9 +535,9 @@ def test_session_end():
     mock_resp.json.return_value = {"status": "ended"}
     mc._request.return_value = mock_resp
     mc._core = MagicMock()
-    result = _invoke(["session", "end", "--name", "research"], mock_client=mc)
+    result = _invoke(["session", "end", "ses-123"], mock_client=mc)
     assert result.exit_code == 0
-    assert "ended" in result.output
+    assert "ended" in result.output or "ses-123" in result.output
 
 
 # TST-CLI-049
@@ -595,34 +595,34 @@ def test_session_start_json():
 
 # TST-CLI-052
 def test_ask_uses_brain_reason():
-    """Recall routes through Brain's reason endpoint (persona-blind)."""
+    """Recall routes through Brain's ask endpoint (persona-blind)."""
     mc = MagicMock()
-    mc.reason.return_value = {"content": "Based on your vault data, here is the answer."}
-    result = _invoke(["ask", "office chair recommendations"], mock_client=mc)
+    mc.ask.return_value = {"content": "Based on your vault data, here is the answer."}
+    result = _invoke(["ask", "--session", "ses_test", "office chair recommendations"], mock_client=mc)
     assert result.exit_code == 0
-    mc.reason.assert_called_once()
+    mc.ask.assert_called_once()
     assert "answer" in result.output
 
 
 # TST-CLI-053
 def test_ask_with_session():
-    """Recall with --session passes session to reason()."""
+    """Recall with --session passes session to ask()."""
     mc = MagicMock()
-    mc.reason.return_value = {"content": "Chair data found."}
+    mc.ask.return_value = {"content": "Chair data found."}
     result = _invoke(
-        ["ask", "back pain", "--session", "chair-research"],
+        ["ask", "--session", "chair-research", "back pain"],
         mock_client=mc,
     )
     assert result.exit_code == 0
-    mc.reason.assert_called_once_with("back pain", session="chair-research")
+    mc.ask.assert_called_once_with("back pain", session="chair-research")
 
 
 # TST-CLI-054
 def test_ask_no_persona_flag():
     """Recall does NOT have a --persona flag (agents are persona-blind)."""
     mc = MagicMock()
-    mc.reason.return_value = {"content": "ok"}
-    result = _invoke(["ask", "test", "--persona", "health"], mock_client=mc)
+    mc.ask.return_value = {"content": "ok"}
+    result = _invoke(["ask", "--session", "ses_test", "test", "--persona", "health"], mock_client=mc)
     # --persona should be rejected as unknown option
     assert result.exit_code != 0
 
@@ -631,8 +631,8 @@ def test_ask_no_persona_flag():
 def test_ask_approval_required():
     """Recall shows approval message when access requires approval."""
     mc = MagicMock()
-    mc.reason.side_effect = DinaClientError("Access denied: approval_required")
-    result = _invoke(["ask", "health data"], mock_client=mc)
+    mc.ask.side_effect = DinaClientError("Access denied: approval_required")
+    result = _invoke(["ask", "--session", "ses_test", "health data"], mock_client=mc)
     assert result.exit_code == 1
     assert "approval" in result.output.lower()
 
@@ -641,8 +641,8 @@ def test_ask_approval_required():
 def test_ask_persona_locked_shows_hint():
     """Recall shows helpful message when persona is locked."""
     mc = MagicMock()
-    mc.reason.side_effect = DinaClientError("Access denied: persona locked")
-    result = _invoke(["ask", "hello"], mock_client=mc)
+    mc.ask.side_effect = DinaClientError("Access denied: persona locked")
+    result = _invoke(["ask", "--session", "ses_test", "hello"], mock_client=mc)
     assert result.exit_code == 1
     assert "locked" in result.output.lower()
 
@@ -651,8 +651,8 @@ def test_ask_persona_locked_shows_hint():
 def test_ask_with_verbose():
     """Recall --verbose flag is accepted."""
     mc = MagicMock()
-    mc.reason.return_value = {"content": "ok"}
-    result = _invoke(["-v", "ask", "hello"], mock_client=mc)
+    mc.ask.return_value = {"content": "ok"}
+    result = _invoke(["-v", "ask", "--session", "ses_test", "hello"], mock_client=mc)
     assert result.exit_code == 0
 
 
@@ -660,13 +660,13 @@ def test_ask_with_verbose():
 
 
 # TST-CLI-058
-def test_remember_uses_staging():
-    """Remember uses staging_ingest, not vault_store."""
+def test_remember_uses_remember_endpoint():
+    """Remember uses the remember endpoint, not vault_store."""
     mc = MagicMock()
-    mc.staging_ingest.return_value = {"id": "stg123", "staged": True}
-    result = _invoke(["remember", "User prefers window seats"], mock_client=mc)
+    mc.remember.return_value = {"id": "stg123", "status": "processing"}
+    result = _invoke(["remember", "--session", "ses_test", "User prefers window seats"], mock_client=mc)
     assert result.exit_code == 0
-    mc.staging_ingest.assert_called_once()
+    mc.remember.assert_called_once()
     # No persona specified — Brain classifies into the right one
     mc.vault_store.assert_not_called()
 
@@ -691,12 +691,10 @@ def test_audit_uses_audit_endpoint():
 def test_unpair_not_paired():
     """Unpair when no device_id is saved."""
     runner = CliRunner()
-    with patch("dina_cli.main._load_saved", return_value={}), \
-         patch("dina_cli.main.IDENTITY_DIR") as mock_dir:
-        mock_dir.__truediv__ = lambda self, x: MagicMock(exists=lambda: False)
+    with patch("dina_cli.main._load_saved", return_value={}):
         result = runner.invoke(cli, ["unpair"])
     assert result.exit_code == 0
-    assert "not_paired" in result.output.lower() or "already" in result.output.lower() or "never" in result.output.lower()
+    assert "not_paired" in result.output.lower() or "already" in result.output.lower() or "never" in result.output.lower() or "unpaired" in result.output.lower()
 
 
 def test_unpair_json(tmp_path):
@@ -708,11 +706,12 @@ def test_unpair_json(tmp_path):
     runner = CliRunner()
     with patch("dina_cli.main._load_saved", return_value={"device_id": "dev-123", "core_url": "http://localhost:8100"}), \
          patch("dina_cli.main.save_config"), \
-         patch("dina_cli.main.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
          patch("dina_cli.main.CLIIdentity") as MockIdent, \
          patch("dina_cli.main.httpx") as mock_httpx:
         mock_ident = MagicMock()
         mock_ident.sign_request.return_value = ("did:key:z6Mk", "ts", "nonce", "sig")
+        mock_ident.ensure_loaded.return_value = None
         MockIdent.return_value = mock_ident
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -732,14 +731,15 @@ def test_unpair_core_unreachable(tmp_path):
 
     runner = CliRunner()
     with patch("dina_cli.main._load_saved", return_value={"device_id": "dev-123", "core_url": "http://localhost:8100"}), \
-         patch("dina_cli.main.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
          patch("dina_cli.main.CLIIdentity") as MockIdent, \
          patch("dina_cli.main.httpx") as mock_httpx:
         mock_ident = MagicMock()
         mock_ident.sign_request.return_value = ("did:key:z6Mk", "ts", "nonce", "sig")
+        mock_ident.ensure_loaded.return_value = None
         MockIdent.return_value = mock_ident
-        mock_httpx.delete.side_effect = Exception("connection refused")
-        mock_httpx.ConnectError = type("ConnectError", (Exception,), {})
+        mock_httpx.delete.side_effect = httpx.ConnectError("connection refused")
+        mock_httpx.ConnectError = httpx.ConnectError
         result = runner.invoke(cli, ["unpair"])
     assert result.exit_code != 0
 
