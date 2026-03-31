@@ -2,7 +2,7 @@
 
 Generated: 2026-03-31
 
-Naming spec: `test[_]TST_<SUITE>_<NNNN>_<description>` -- regex: `TST_[A-Z]+_\d{4}`
+Naming spec: see docs/TEST_SPEC.md — TRACE comment on line above test function
 
 Status: TAGGED (has plan ID), PENDING (needs migration)
 

@@ -156,12 +156,14 @@ cmd_up() {
   echo "=== Starting all services ==="
   do_compose up -d
   echo "  Waiting for containers to be healthy..."
-  # Poll container status
+  # Poll only containers that HAVE healthchecks (not all containers).
+  # Services without healthchecks (keygen init containers, etc.) are excluded.
   for i in $(seq 1 120); do
-    RUNNING=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -c "healthy" || true)
+    HEALTHY=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -c "healthy" || true)
+    WITH_HC=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -cE "healthy|unhealthy|starting" || true)
     TOTAL=$(do_compose ps --format "{{.Name}}" 2>/dev/null | wc -l | tr -d ' ')
-    printf "\r  Containers: %s/%s healthy " "$RUNNING" "$TOTAL"
-    if [ "$RUNNING" = "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
+    printf "\r  Containers: %s/%s healthy (%s total) " "$HEALTHY" "$WITH_HC" "$TOTAL"
+    if [ "$HEALTHY" = "$WITH_HC" ] && [ "$WITH_HC" -gt 0 ]; then
       echo "✓"
       break
     fi

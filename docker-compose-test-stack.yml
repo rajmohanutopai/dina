@@ -46,6 +46,11 @@ x-core-env: &core-env
   DINA_APPVIEW_URL: http://appview-web:3000
   DINA_PLC_URL: http://plc:2582
   DINA_PDS_URL: http://pds:3000
+  # Legacy KNOWN_PEERS for D2D: test actors use synthetic DIDs with
+  # pre-shared seed hex for Ed25519 key derivation. The fake PLC has
+  # the DIDs but not the #dina_signing verification methods (those
+  # require PLC update with rotation key, which keygen containers
+  # don't do). Production uses PLC resolution; tests use KNOWN_PEERS.
   DINA_KNOWN_PEERS_MODE: legacy
 
 # -- Brain service base (Python sidecar) --
