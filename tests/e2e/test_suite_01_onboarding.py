@@ -205,9 +205,10 @@ class TestFirstRunOnboarding:
 
         msg = sender.send_d2d(
             to_did=node.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 10,
             },
         )
@@ -244,8 +245,8 @@ class TestFirstRunOnboarding:
         sender2.first_run_setup("visitor2@example.com", "pass_v2")
         sender2.send_d2d(
             to_did=node.did,
-            message_type="dina/social/arrival",
-            payload={"type": "dina/social/arrival", "eta_minutes": 5},
+            message_type="presence.signal",
+            payload={"type": "presence.signal", "status": "arriving", "eta_minutes": 5},
         )
 
         assert len(laptop.ws_messages) == laptop_count_before, (

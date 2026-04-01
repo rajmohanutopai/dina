@@ -1401,7 +1401,7 @@ def prescan_e2e_sections(test_dir: Path) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# E2E Docker lifecycle (docker-compose-e2e.yml — 4 Core+Brain pairs)
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -1419,136 +1419,6 @@ def _load_dotenv() -> dict[str, str]:
             key, _, val = line.partition("=")
             extra[key.strip()] = val.strip()
     return extra
-
-
-def _start_e2e_docker(*, restart: bool = False) -> float:
-    """Start 4-node E2E Docker stack. Returns startup time in seconds.
-
-    If all 4 Brain containers are already healthy, skips rebuild to avoid
-    disrupting a running stack.  Pass ``restart=True`` to force teardown
-    and rebuild.
-    """
-    import time as _time
-
-    import httpx
-
-    _ensure_client_token()
-    t0 = _time.monotonic()
-
-    # Load .env for API keys (GOOGLE_API_KEY, OPENROUTER_API_KEY, etc.)
-    dotenv = _load_dotenv()
-    for key in ("GOOGLE_API_KEY", "OPENROUTER_API_KEY", "OPENROUTER_MODEL",
-                "ANTHROPIC_API_KEY", "DINA_CLOUD_LLM"):
-        if key in dotenv and key not in os.environ:
-            os.environ[key] = dotenv[key]
-
-    compose_file = str(PROJECT_ROOT / "docker-compose-e2e.yml")
-    e2e_project = "dina-e2e"
-
-    actors = {
-        "alonso": 19200, "sancho": 19201,
-        "chairmaker": 19202, "albert": 19203,
-    }
-
-    # Tear down first if --restart requested
-    if restart:
-        print("  Tearing down existing E2E stack (--restart)...", file=sys.stderr,
-              flush=True)
-        subprocess.run(
-            ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
-            capture_output=True,
-            timeout=60,
-        )
-
-    # Check if all containers are already healthy
-    all_healthy = not restart  # skip check when restarting
-    if all_healthy:
-        for actor, port in actors.items():
-            try:
-                resp = httpx.get(f"http://localhost:{port}/healthz", timeout=3)
-                if not resp.is_success:
-                    all_healthy = False
-                    break
-            except Exception:
-                all_healthy = False
-                break
-
-    we_started = False
-    if all_healthy:
-        # Never reuse stale containers — tear down and rebuild with current code.
-        print("  E2E Docker stack found — tearing down for fresh rebuild...",
-              file=sys.stderr, flush=True)
-        subprocess.run(
-            ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
-            capture_output=True, timeout=60,
-        )
-        all_healthy = False
-
-    if not all_healthy:
-        we_started = True
-        print("  Starting E2E Docker stack (4 actors)...", file=sys.stderr,
-              flush=True)
-        # Bust Docker layer cache so current source is always used.
-        for src_dir in [PROJECT_ROOT / "brain" / "src", PROJECT_ROOT / "core" / "cmd"]:
-            sentinel = src_dir / ".build-sentinel"
-            sentinel.write_text(f"{_time.time()}\n")
-        e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "-d"]
-        if os.environ.get("DINA_SKIP_DOCKER_BUILD") != "1":
-            e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "--build", "-d"]
-        result = subprocess.run(
-            e2e_up,
-            capture_output=True,
-            timeout=300,
-            text=True,
-        )
-        if result.returncode != 0:
-            # Print the actual Docker error for diagnosis
-            stderr_tail = (result.stderr or "").strip().split("\n")[-20:]
-            raise RuntimeError(
-                f"docker compose up failed (exit {result.returncode}):\n"
-                + "\n".join(stderr_tail)
-            )
-
-        # Wait for all containers to become healthy (in parallel)
-        from concurrent.futures import ThreadPoolExecutor as _TPE
-        from concurrent.futures import as_completed as _asc
-        with _TPE(max_workers=len(actors)) as pool:
-            futs = {
-                pool.submit(
-                    _wait_for_health,
-                    f"http://localhost:{port}/healthz",
-                    f"brain-{actor}",
-                    180,
-                ): actor
-                for actor, port in actors.items()
-            }
-            for fut in _asc(futs):
-                fut.result()
-
-    elapsed = _time.monotonic() - t0
-    print(
-        f"  E2E stack healthy: 4 actors × (Core+Brain)"
-        f"  ({_fmt_startup_time(elapsed)})",
-        file=sys.stderr,
-    )
-
-    # Set env so E2E tests detect Docker mode
-    os.environ["DINA_E2E"] = "docker"
-
-    # Only tear down if we started the stack (don't kill pre-existing containers)
-    if we_started:
-        def _stop() -> None:
-            print("\n  Stopping E2E Docker stack...", file=sys.stderr, flush=True)
-            subprocess.run(
-                ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
-                capture_output=True,
-                timeout=60,
-            )
-            print("  E2E Docker stack stopped.", file=sys.stderr)
-
-        _register_cleanup(_stop)
-
-    return elapsed
 
 
 def run_suite(

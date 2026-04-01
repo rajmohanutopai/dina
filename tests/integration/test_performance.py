@@ -316,9 +316,9 @@ class TestLatency:
 
             # Simulate PII scrub before sending to cloud
             scrubbed, _map = mock_dina.go_core.pii_scrub(
-                f"Rajmohan wants complex analysis #{i}"
+                f"Contact rajmohan@email.com for complex analysis #{i}"
             )
-            assert "Rajmohan" not in scrubbed
+            assert "rajmohan@email.com" not in scrubbed
 
             # Brain processes the query
             result = mock_dina.brain.process({

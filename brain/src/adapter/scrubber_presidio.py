@@ -65,15 +65,12 @@ SAFE_ENTITIES: frozenset[str] = frozenset({
 })
 
 # Entity types that Presidio should scrub. Two categories:
-# 1. NER entities: names, organizations, locations (regex can't catch)
-# 2. Government/financial IDs: Aadhaar, PAN, SSN, etc. (Presidio custom recognizers)
+# Structured PII only — names, orgs, and locations are intentionally NOT scrubbed.
+# Only government/financial IDs and contact identifiers are replaced.
 # Excluded: DATE, TIME, MONEY, QUANTITY, PRODUCT — non-identifying.
+# Excluded: PERSON, ORG, LOCATION/GPE/LOC/FAC — names pass through by design.
 SCRUB_ENTITIES: frozenset[str] = frozenset({
-    # NER entities
-    "PERSON",
-    "ORGANIZATION", "ORG",
-    "LOCATION", "GPE", "LOC", "FAC",
-    # Structured PII (Presidio custom recognizers)
+    # Structured PII (Presidio custom recognizers + regex)
     "EMAIL_ADDRESS",
     "PHONE_NUMBER", "IN_PHONE_NUMBER",
     "CREDIT_CARD",
@@ -534,8 +531,10 @@ class PresidioScrubber:
             start, end = result.start, result.end
             value = text[start:end]
 
-            # Skip entities embedded in URLs.
-            if self._overlaps_url(start, end, url_spans):
+            # Skip entities embedded in URLs (but not emails — the domain
+            # part of an email triggers the URL regex, and we still want
+            # to scrub the full email address).
+            if entity_type != "EMAIL_ADDRESS" and self._overlaps_url(start, end, url_spans):
                 continue
 
             # Skip very short entities (<= 2 chars).
@@ -693,6 +692,10 @@ class PresidioScrubber:
 
     def detect(self, text: str, language: str = "en") -> list[dict]:
         """Detect PII entities without replacing them.
+
+        Unlike scrub(), detect() reports ALL entity types including
+        PERSON, ORG, and LOCATION. This is used by Guardian for medical
+        disclosure gating — detection for policy decisions, not replacement.
 
         Returns a list of dicts with keys ``type`` and ``value``.
         """

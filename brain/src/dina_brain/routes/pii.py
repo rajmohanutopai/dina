@@ -1,8 +1,8 @@
-"""POST /v1/pii/scrub endpoint — Tier 2 NER-based PII scrubbing.
+"""POST /v1/pii/scrub endpoint — Tier 2 structured PII scrubbing.
 
-Exposes the Brain's PII scrubber (spaCy NER) for direct invocation.
-This enables integration tests and external callers to exercise
-Tier 2 scrubbing independently of the full reason pipeline.
+Exposes the Brain's PII scrubber (Presidio patterns) for direct invocation.
+Scrubs structured PII only (emails, phones, govt IDs). Names, orgs, and
+locations pass through unchanged.
 
 Maps to Brain TEST_PLAN SS3 (PII Scrubber) and SS10 (API Endpoints).
 
@@ -61,10 +61,11 @@ def set_scrubber(scrubber: Any) -> None:
 
 @router.post("/v1/pii/scrub", response_model=ScrubResponse)
 async def scrub_pii(request: ScrubRequest) -> ScrubResponse:
-    """Scrub PII from the provided text using Tier 2 NER.
+    """Scrub structured PII from the provided text.
 
-    If no scrubber is available (spaCy not installed), returns
-    the text unchanged with an empty entity list.
+    Uses Presidio pattern recognizers (emails, phones, govt IDs).
+    Names, orgs, and locations pass through unchanged.
+    Returns 503 if Presidio is unavailable.
 
     Returns
     -------

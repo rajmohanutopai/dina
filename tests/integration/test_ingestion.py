@@ -960,23 +960,21 @@ class TestCoreBrainBoundary:
         # Brain must scrub before sending to cloud LLM
         scrubbed, replacement_map = scrubber.scrub(raw_text)
 
-        # Scrubbed text must not contain any PII
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in scrubbed
+        assert "Sancho" in scrubbed
         assert "rajmohan@email.com" not in scrubbed
-        assert "Sancho" not in scrubbed
         assert "123 Main Street" not in scrubbed
 
-        # Placeholders are present instead
-        assert "[PERSON_1]" in scrubbed
+        # Structured PII placeholders are present
         assert "[EMAIL_1]" in scrubbed
-        assert "[PERSON_2]" in scrubbed
         assert "[ADDRESS_1]" in scrubbed
 
         # Validate the scrubbed text is clean
         assert scrubber.validate_clean(scrubbed) is True
 
-        # After LLM response, Brain can restore PII locally
-        llm_response = "Schedule follow-up with [PERSON_1] at [ADDRESS_1]"
+        # After LLM response, Brain can restore structured PII locally
+        llm_response = "Schedule follow-up with Rajmohan at [ADDRESS_1]"
         restored = scrubber.desanitize(llm_response, replacement_map)
         assert "Rajmohan" in restored
         assert "123 Main Street" in restored

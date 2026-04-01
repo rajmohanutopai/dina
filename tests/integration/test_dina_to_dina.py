@@ -696,10 +696,10 @@ class TestSharingPolicyAndEgress:
         sancho_identity: MockIdentity,
         mock_scrubber: MockPIIScrubber,
     ) -> None:
-        """All outbound D2D messages are scrubbed for PII before sending.
-        Names, emails, phone numbers, and other PII must be replaced with
-        opaque tokens so that even if intercepted, no real identity leaks."""
-        # Build a message that accidentally contains PII
+        """All outbound D2D messages have structured PII scrubbed before sending.
+        Emails, phone numbers, addresses etc. must be replaced with opaque tokens.
+        Names pass through intentionally."""
+        # Build a message that contains structured PII
         raw_payload_text = (
             "Rajmohan will arrive at 5pm. "
             "Contact him at rajmohan@email.com or +91-9876543210."
@@ -708,25 +708,18 @@ class TestSharingPolicyAndEgress:
         # Scrub the payload before sending
         scrubbed_text, replacements = mock_scrubber.scrub(raw_payload_text)
 
-        # PII must be gone from the scrubbed text
-        assert "Rajmohan" not in scrubbed_text
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in scrubbed_text
         assert "rajmohan@email.com" not in scrubbed_text
         assert "+91-9876543210" not in scrubbed_text
 
-        # Replacement map captures the original PII values.
-        # In Docker mode the real scrubber's token-reconstruction heuristic
-        # may produce a different set of tokens/values than the mock, so we
-        # verify the text was scrubbed (above) and check the map only in
-        # mock mode where it is fully deterministic.
+        # Replacement map captures the structured PII values.
         from tests.integration.conftest import DOCKER_MODE as _DM
         if not _DM:
             pii_values = set(replacements.values())
-            assert "Rajmohan" in pii_values
             assert "rajmohan@email.com" in pii_values
-            assert len(replacements) >= 3
+            assert len(replacements) >= 2
         else:
-            # In Docker mode, at least email and phone should be detected
-            # by Go Core's regex tier. The name may or may not appear.
             assert len(replacements) >= 1 or scrubbed_text != raw_payload_text, \
                 "Real scrubber must alter the text or report replacements"
 
@@ -745,10 +738,10 @@ class TestSharingPolicyAndEgress:
         sent = mock_dina.p2p.send(msg)
         assert sent is True
 
-        # Verify the message on the wire has no PII
+        # Verify the message on the wire has no structured PII
         received = mock_dina.p2p.receive()
         assert received is not None
-        assert "Rajmohan" not in received.payload["text"]
+        assert "rajmohan@email.com" not in received.payload["text"]
 
 # TST-INT-053
     # TRACE: {"suite": "INT", "case": "0053", "section": "03", "sectionName": "Dina-to-Dina Communication", "subsection": "04", "scenario": "03", "title": "egress_audit_trail"}

@@ -1908,74 +1908,28 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 
 	mainPy := readProjectFile(t, root, "brain/src/main.py")
 
-	// TRACE: {"suite": "CORE", "case": "1507", "section": "30", "sectionName": "Test System Quality", "title": "spacy_scrubber_class_documents_exception_behavior"}
-	t.Run("spacy_scrubber_class_documents_exception_behavior", func(t *testing.T) {
-		// The _SpacyScrubber.__init__ docstring must document that it raises
-		// ImportError or OSError. This is the contract that create_app() relies
-		// on for its try/except degradation path.
-		scrubberDocRe := regexp.MustCompile(`class\s+_SpacyScrubber`)
-		if !scrubberDocRe.MatchString(mainPy) {
-			t.Fatal("brain/src/main.py must define _SpacyScrubber class")
-		}
-		// Must document the exception types in docstring or comments.
-		if !strings.Contains(mainPy, "ImportError") || !strings.Contains(mainPy, "OSError") {
-			t.Fatal("_SpacyScrubber must document ImportError (spacy not installed) and " +
-				"OSError (model not downloaded) as possible failure modes")
+	// TRACE: {"suite": "CORE", "case": "1507", "section": "30", "sectionName": "Test System Quality", "title": "no_spacy_fallback_presidio_or_none"}
+	t.Run("no_spacy_fallback_presidio_or_none", func(t *testing.T) {
+		// Structured PII scrubbing requires Presidio. There is no spaCy
+		// fallback — spaCy NER alone cannot detect emails, phones, or
+		// govt IDs. Without Presidio, scrubber is None and Go Core Tier 1
+		// regex handles basic PII.
+		if strings.Contains(mainPy, "_SpacyScrubber") {
+			t.Fatal("brain/src/main.py must NOT define _SpacyScrubber — " +
+				"no spaCy-only fallback (it cannot detect structured PII)")
 		}
 	})
 
-	// TRACE: {"suite": "CORE", "case": "1508", "section": "30", "sectionName": "Test System Quality", "title": "spacy_load_inside_init_not_module_level"}
-	t.Run("spacy_load_inside_init_not_module_level", func(t *testing.T) {
-		// spaCy import and model loading must happen inside __init__, NOT at
-		// module level. Module-level loading would crash the entire Brain
-		// on import, before create_app() has a chance to catch the error.
-		// The import must be lazy (inside __init__ or inside create_app).
-		lines := strings.Split(mainPy, "\n")
+	// TRACE: {"suite": "CORE", "case": "1509", "section": "30", "sectionName": "Test System Quality", "title": "scrubber_presidio_or_none"}
+	t.Run("scrubber_presidio_or_none", func(t *testing.T) {
+		// The scrubber construction is Presidio-only:
+		// 1. Try Presidio (structured PII: emails, phones, govt IDs)
+		// 2. Fall back to None (Go Core Tier 1 regex only)
+		// No spaCy fallback — it can't detect structured PII.
 
-		// Check that "import spacy" is NOT at the top level (outside class/def).
-		for i, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "import spacy" || trimmed == "from spacy import" {
-				// Check if we're inside a function or class body (indented).
-				if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-					t.Fatalf("line %d: `import spacy` at module level would crash Brain "+
-						"when spaCy is not installed — must be lazy (inside __init__ or function)", i+1)
-				}
-			}
-		}
-	})
-
-	// TRACE: {"suite": "CORE", "case": "1509", "section": "30", "sectionName": "Test System Quality", "title": "scrubber_fallback_chain_presidio_then_spacy_then_none"}
-	t.Run("scrubber_fallback_chain_presidio_then_spacy_then_none", func(t *testing.T) {
-		// The scrubber construction must follow a specific fallback chain:
-		// 1. Try Presidio (enterprise-grade, best quality)
-		// 2. Try spaCy (good enough, lighter weight)
-		// 3. Fall back to None (Tier 1 regex only, Go Core handles basic PII)
-		// This ordering ensures the best available scrubber is used.
-
-		// Verify Presidio is tried first.
+		// Verify Presidio is tried.
 		if !strings.Contains(mainPy, "PresidioScrubber") {
-			t.Fatal("must try PresidioScrubber first (enterprise-grade PII scrubbing)")
-		}
-		// Verify spaCy is the second fallback.
-		if !strings.Contains(mainPy, "_SpacyScrubber()") {
-			t.Fatal("must try _SpacyScrubber as fallback when Presidio unavailable")
-		}
-
-		// Verify the ordering: Presidio try block must come before spaCy try block.
-		presidioLine := -1
-		spacyLine := -1
-		for i, line := range strings.Split(mainPy, "\n") {
-			if strings.Contains(line, "PresidioScrubber()") {
-				presidioLine = i
-			}
-			if strings.Contains(line, "_SpacyScrubber()") {
-				spacyLine = i
-			}
-		}
-		if presidioLine >= 0 && spacyLine >= 0 && presidioLine >= spacyLine {
-			t.Fatalf("PresidioScrubber (line %d) must be tried BEFORE _SpacyScrubber (line %d)",
-				presidioLine+1, spacyLine+1)
+			t.Fatal("must try PresidioScrubber (structured PII scrubbing)")
 		}
 	})
 

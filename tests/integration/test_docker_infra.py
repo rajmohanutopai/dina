@@ -461,7 +461,7 @@ class TestHealthAndLogs:
     def test_brain_crash_stdout_no_pii(
         self, mock_crash_log: MockCrashLog, mock_scrubber: MockPIIScrubber
     ) -> None:
-        """Brain crash output sent to stdout contains no PII."""
+        """Brain crash output sent to stdout contains no structured PII."""
         raw_error = "Error processing Rajmohan's email at rajmohan@email.com"
         scrubbed, replacements = mock_scrubber.scrub(raw_error)
 
@@ -474,9 +474,10 @@ class TestHealthAndLogs:
         recent = mock_crash_log.get_recent(1)
         sanitized = recent[0]["sanitized_line"]
 
-        assert "Rajmohan" not in sanitized
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in sanitized
         assert "rajmohan@email.com" not in sanitized
-        assert "[PERSON_1]" in sanitized or "[EMAIL_1]" in sanitized
+        assert "[EMAIL_1]" in sanitized
 
     # TST-INT-106
     # TRACE: {"suite": "INT", "case": "0106", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "13", "title": "docker_log_rotation_configured"}

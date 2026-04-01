@@ -16,8 +16,8 @@ import (
 
 // ==========================================================================
 // PII Handler — Tier 1 + Tier 2 chained scrubbing
-// Tests the HandleScrub endpoint which chains regex (Tier 1) → Brain NER
-// (Tier 2) and handles graceful degradation.
+// Tests the HandleScrub endpoint which chains regex (Tier 1) → Brain
+// structured PII patterns (Tier 2) and handles graceful degradation.
 // ==========================================================================
 
 // --- Mock implementations ---

@@ -50,29 +50,19 @@ def presidio_scrubber():
 
 @pytest.fixture
 def spacy_scrubber():
-    """Real SpacyScrubber — skips the entire test if spaCy is unavailable.
+    """PresidioScrubber — skips if Presidio is unavailable.
 
-    Kept for backward compatibility with existing tests.
-    Falls through to PresidioScrubber first.
+    Structured PII scrubbing requires Presidio. No spaCy-only fallback
+    (spaCy NER alone can't detect emails, phones, or govt IDs).
     """
-    try:
-        pytest.importorskip("presidio_analyzer")
-        from src.adapter.scrubber_presidio import PresidioScrubber
+    pytest.importorskip("presidio_analyzer")
+    from src.adapter.scrubber_presidio import PresidioScrubber
 
-        scrubber = PresidioScrubber()
+    scrubber = PresidioScrubber()
+    try:
         scrubber._ensure_analyzer()
-        return scrubber
     except Exception:
-        pass
-
-    spacy = pytest.importorskip("spacy")
-    from src.adapter.scrubber_spacy import SpacyScrubber
-
-    scrubber = SpacyScrubber()
-    try:
-        scrubber._ensure_nlp()
-    except Exception:
-        pytest.skip("spaCy en_core_web_sm model not installed")
+        pytest.skip("Presidio or spaCy en_core_web_sm not available")
     return scrubber
 
 
@@ -120,58 +110,83 @@ def entity_vault(mock_scrubber, mock_core):
 # TST-BRAIN-091
 # TRACE: {"suite": "BRAIN", "case": "0091", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "01", "title": "person_name_detection"}
 def test_pii_3_1_1_person_name_detection(spacy_scrubber) -> None:
-    """SS3.1.1: 'John Smith' detected and replaced (Faker name or tag)."""
-    text = make_pii_text(include=("person",))
+    """SS3.1.1: Person names pass through unchanged (not structured PII).
+
+    Names (PERSON) are no longer scrubbed — only structured PII
+    (emails, phones, credit cards, govt IDs) is replaced.
+    Verify the scrubber still works by including an email.
+    """
+    text = make_pii_text(include=("person", "email"))
     assert "John Smith" in text
+    assert "john@example.com" in text
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
+    # Person names must pass through unchanged.
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 1
-    assert person_entities[0]["value"] == "John Smith"
-    assert "John Smith" not in scrubbed
+    assert len(person_entities) == 0, (
+        f"PERSON entities should not be scrubbed, got: {person_entities}"
+    )
+    assert "John Smith" in scrubbed, "Person name must pass through unchanged"
 
-    # Verify entity contract: each entity must have type, value, and token
-    for ent in person_entities:
-        assert "type" in ent
-        assert "value" in ent
-        assert "token" in ent, "Entity must include a 'token' replacement field"
-        assert ent["token"], "Token cannot be empty"
-        # The replacement token must appear in the scrubbed text
-        assert ent["token"] in scrubbed, (
-            f"Token {ent['token']!r} must appear in scrubbed output"
-        )
+    # Structured PII (email) must still be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "john@example.com" not in scrubbed, "Email must be scrubbed"
 
 
 # TST-BRAIN-092
 # TRACE: {"suite": "BRAIN", "case": "0092", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "02", "title": "organization_detection"}
 def test_pii_3_1_2_organization_detection(spacy_scrubber) -> None:
-    """SS3.1.2: 'Google Inc.' detected and replaced."""
-    text = make_pii_text(include=("org",))
+    """SS3.1.2: Organisation names pass through unchanged (not structured PII).
+
+    ORG entities are no longer scrubbed — only structured PII is replaced.
+    Verify the scrubber still works by including an email.
+    """
+    text = make_pii_text(include=("org", "email"))
     assert "Google Inc." in text
+    assert "john@example.com" in text
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
+    # Org names must pass through unchanged.
     org_entities = [e for e in entities if e["type"] == "ORG"]
-    assert len(org_entities) >= 1
-    assert any("Google" in e["value"] for e in org_entities)
-    # Real PII must be gone — replaced with Faker company or tag.
-    assert "Google" not in scrubbed
+    assert len(org_entities) == 0, (
+        f"ORG entities should not be scrubbed, got: {org_entities}"
+    )
+    assert "Google" in scrubbed, "Org name must pass through unchanged"
+
+    # Structured PII (email) must still be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "john@example.com" not in scrubbed, "Email must be scrubbed"
 
 
 # TST-BRAIN-093
 # TRACE: {"suite": "BRAIN", "case": "0093", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "03", "title": "location_detection"}
 def test_pii_3_1_3_location_detection(spacy_scrubber) -> None:
-    """SS3.1.3: 'San Francisco, CA' detected and replaced."""
-    text = make_pii_text(include=("location",))
+    """SS3.1.3: Location names pass through unchanged (not structured PII).
+
+    LOC/GPE entities are no longer scrubbed — only structured PII is replaced.
+    Verify the scrubber still works by including a phone number.
+    """
+    text = make_pii_text(include=("location", "phone"))
     assert "San Francisco" in text
+    assert "555-123-4567" in text
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    loc_entities = [e for e in entities if e["type"] == "LOC"]
-    assert len(loc_entities) >= 1
-    assert any("San Francisco" in e["value"] or "CA" in e["value"] for e in loc_entities)
-    assert "San Francisco" not in scrubbed
+    # Location names must pass through unchanged.
+    loc_entities = [e for e in entities if e["type"] in ("LOC", "GPE")]
+    assert len(loc_entities) == 0, (
+        f"LOC/GPE entities should not be scrubbed, got: {loc_entities}"
+    )
+    assert "San Francisco" in scrubbed, "Location must pass through unchanged"
+
+    # Structured PII (phone) must still be scrubbed.
+    phone_entities = [e for e in entities if e["type"] in ("PHONE", "PHONE_NUMBER")]
+    assert len(phone_entities) >= 1, f"Phone must be detected, got: {entities}"
+    assert "555-123-4567" not in scrubbed, "Phone must be scrubbed"
 
 
 # TST-BRAIN-094
@@ -200,16 +215,31 @@ def test_pii_3_1_4_date_with_context(spacy_scrubber) -> None:
 # TST-BRAIN-095
 # TRACE: {"suite": "BRAIN", "case": "0095", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "05", "title": "multiple_entities"}
 def test_pii_3_1_5_multiple_entities(spacy_scrubber) -> None:
-    """SS3.1.5: Multiple entity types in one text all numbered uniquely."""
-    text = "John from Google in NYC"
+    """SS3.1.5: Names/orgs/locations pass through; structured PII scrubbed.
+
+    PERSON, ORG, LOC/GPE are no longer scrubbed. Add structured PII
+    (email + phone) to verify the scrubber still works and tokens are unique.
+    """
+    text = "John from Google in NYC emailed john@example.com and called 555-123-4567"
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # At minimum, multiple entities should be detected.
-    assert len(entities) >= 2
+    # Names, orgs, locations must pass through.
+    assert "John" in scrubbed, "Person name must pass through"
+    assert "Google" in scrubbed, "Org name must pass through"
+    assert "NYC" in scrubbed, "Location must pass through"
+
+    # Structured PII must be scrubbed.
+    assert len(entities) >= 1, f"Structured PII must be detected, got: {entities}"
     # Each entity should have a unique token.
     tokens = [e["token"] for e in entities]
     assert len(tokens) == len(set(tokens)), "Tokens must be unique"
+    # No PERSON/ORG/LOC in the entity list.
+    ner_types = {"PERSON", "ORG", "LOC", "GPE", "FAC", "ORGANIZATION", "LOCATION"}
+    for ent in entities:
+        assert ent["type"] not in ner_types, (
+            f"NER entity {ent['type']} should not be in scrubbed entities"
+        )
 
 
 # TST-BRAIN-096
@@ -228,15 +258,25 @@ def test_pii_3_1_6_no_entities(spacy_scrubber) -> None:
 # TST-BRAIN-097
 # TRACE: {"suite": "BRAIN", "case": "0097", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "07", "title": "ambiguous_entity"}
 def test_pii_3_1_7_ambiguous_entity(spacy_scrubber) -> None:
-    """SS3.1.7: 'Apple' recognized as ORG in 'Apple released a new phone' context."""
-    text = "Apple released a new phone"
+    """SS3.1.7: 'Apple' (ORG) passes through unchanged — orgs are not scrubbed.
+
+    Add structured PII (email) to verify the scrubber still works.
+    """
+    text = "Apple released a new phone, contact press@apple.com"
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
+    # ORG entities pass through unchanged.
     org_entities = [e for e in entities if e["type"] == "ORG"]
-    assert len(org_entities) >= 1
-    assert org_entities[0]["value"] == "Apple"
-    assert "Apple" not in scrubbed
+    assert len(org_entities) == 0, (
+        f"ORG entities should not be scrubbed, got: {org_entities}"
+    )
+    assert "Apple" in scrubbed, "Org name must pass through unchanged"
+
+    # Structured PII (email) must still be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "press@apple.com" not in scrubbed, "Email must be scrubbed"
 
 
 # TST-BRAIN-098
@@ -254,18 +294,28 @@ def test_pii_3_1_8_entity_in_url(spacy_scrubber) -> None:
 # TST-BRAIN-099
 # TRACE: {"suite": "BRAIN", "case": "0099", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "09", "title": "non_english_text"}
 def test_pii_3_1_9_non_english_text(spacy_scrubber) -> None:
-    """SS3.1.9: Non-English text handled best-effort with en_core_web_sm."""
-    text = "Francois from Paris"
+    """SS3.1.9: Non-English text handled best-effort — names/locations pass through.
+
+    Locations (GPE/LOC) and person names (PERSON) are no longer scrubbed.
+    Verify non-English input does not crash and that structured PII
+    (email) is still scrubbed.
+    """
+    text = "Francois from Paris emailed francois@example.com"
 
     # Must not crash on non-English input.
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # "Paris" is commonly detected as GPE/LOC even by the English model.
+    # Location names pass through unchanged.
     loc_entities = [e for e in entities if e["type"] in ("LOC", "GPE")]
-    assert len(loc_entities) >= 1, (
-        f"'Paris' should be detected as LOC/GPE by en_core_web_sm, got: {entities}"
+    assert len(loc_entities) == 0, (
+        f"LOC/GPE entities should not be scrubbed, got: {loc_entities}"
     )
-    assert "Paris" not in scrubbed, "Detected location must be scrubbed"
+    assert "Paris" in scrubbed, "Location must pass through unchanged"
+
+    # Structured PII (email) must still be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "francois@example.com" not in scrubbed, "Email must be scrubbed"
 
 
 # TST-BRAIN-100
@@ -298,48 +348,67 @@ def test_pii_3_1_10_medical_terms(spacy_scrubber) -> None:
 # TST-BRAIN-101
 # TRACE: {"suite": "BRAIN", "case": "0101", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "11", "title": "multiple_same_type"}
 def test_pii_3_1_11_multiple_same_type(spacy_scrubber) -> None:
-    """SS3.1.11: Multiple entities of the same type get unique replacements."""
-    text = "John Smith met Jane Doe at Google and Meta"
+    """SS3.1.11: Person/org names pass through; structured PII still scrubbed.
+
+    PERSON and ORG are no longer scrubbed. Add structured PII (emails)
+    to verify unique token numbering still works.
+    """
+    text = (
+        "John Smith met Jane Doe at Google and Meta. "
+        "Emails: john@example.com and jane@example.com"
+    )
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
+    # Person and org names must pass through unchanged.
     person_entities = [e for e in entities if e["type"] == "PERSON"]
     org_entities = [e for e in entities if e["type"] == "ORG"]
-
-    # Must detect at least 2 persons — mandatory, not conditional
-    assert len(person_entities) >= 2, (
-        f"Expected at least 2 PERSON entities, got {len(person_entities)}: {entities}"
+    assert len(person_entities) == 0, (
+        f"PERSON entities should not be scrubbed, got: {person_entities}"
     )
-    assert "John Smith" not in scrubbed
-    assert "Jane Doe" not in scrubbed
-    # The two replacements must have different tokens
-    assert person_entities[0]["token"] != person_entities[1]["token"]
-
-    # Must detect at least 1 org
-    assert len(org_entities) >= 1, (
-        f"Expected at least 1 ORG entity, got {len(org_entities)}: {entities}"
+    assert len(org_entities) == 0, (
+        f"ORG entities should not be scrubbed, got: {org_entities}"
     )
-    assert "Google" not in scrubbed
+    assert "John Smith" in scrubbed, "Person name must pass through"
+    assert "Jane Doe" in scrubbed, "Person name must pass through"
+    assert "Google" in scrubbed, "Org name must pass through"
+
+    # Structured PII (emails) must be scrubbed with unique tokens.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 2, (
+        f"Expected at least 2 EMAIL entities, got {len(email_entities)}: {entities}"
+    )
+    assert "john@example.com" not in scrubbed
+    assert "jane@example.com" not in scrubbed
+    # The two email replacements must have different tokens.
+    assert email_entities[0]["token"] != email_entities[1]["token"]
 
 
 # TST-BRAIN-102
 # TRACE: {"suite": "BRAIN", "case": "0102", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "12", "title": "replacement_map_accumulates"}
 def test_pii_3_1_12_replacement_map_accumulates(spacy_scrubber) -> None:
-    """SS3.1.12: Tier 2 entities accumulate with sequential numbering."""
-    text = make_pii_text(include=("email", "person"))
-    expected_entities = make_pii_entities(types=("email", "person"))
+    """SS3.1.12: Structured PII entities accumulate with sequential numbering.
 
-    # Verify factory produces both types.
-    tokens = [e["token"] for e in expected_entities]
-    assert "[EMAIL_1]" in tokens
-    assert "[PERSON_1]" in tokens
+    PERSON is no longer scrubbed, so only EMAIL (structured PII) appears
+    in the entity list. Person names pass through unchanged.
+    """
+    text = make_pii_text(include=("email", "person"))
 
     # Presidio/spaCy Tier 2 processes the text.
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # Tier 2 should detect PERSON at minimum (emails are Tier 1 regex).
+    # Person names pass through — not in entity list.
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 1
+    assert len(person_entities) == 0, (
+        f"PERSON entities should not be scrubbed, got: {person_entities}"
+    )
+    assert "John Smith" in scrubbed, "Person name must pass through unchanged"
+
+    # Email (structured PII) must be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "john@example.com" not in scrubbed, "Email must be scrubbed"
+
     # Verify each entity has the required keys.
     for ent in entities:
         assert "type" in ent
@@ -350,21 +419,26 @@ def test_pii_3_1_12_replacement_map_accumulates(spacy_scrubber) -> None:
 # TST-BRAIN-103
 # TRACE: {"suite": "BRAIN", "case": "0103", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "01", "scenario": "13", "title": "address_detection"}
 def test_pii_3_1_13_address_detection(spacy_scrubber) -> None:
-    """SS3.1.13: Street address detected and replaced."""
-    text = "Lives at 42 Baker Street, London"
+    """SS3.1.13: Location names pass through unchanged (not structured PII).
+
+    LOC/GPE entities are no longer scrubbed. Add structured PII (email)
+    to verify the scrubber still works.
+    """
+    text = "Lives at 42 Baker Street, London. Email: tenant@example.com"
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # spaCy must detect "London" as a location entity (LOC or GPE)
+    # Location names must pass through unchanged.
     loc_entities = [e for e in entities if e["type"] in ("LOC", "GPE")]
-    assert len(loc_entities) >= 1, (
-        f"'London' must be detected as LOC/GPE by spaCy, got: {entities}"
+    assert len(loc_entities) == 0, (
+        f"LOC/GPE entities should not be scrubbed, got: {loc_entities}"
     )
-    # Detected location values must be replaced in scrubbed output
-    for loc in loc_entities:
-        assert loc["value"] not in scrubbed, (
-            f"Location '{loc['value']}' must be scrubbed from output"
-        )
+    assert "London" in scrubbed, "Location must pass through unchanged"
+
+    # Structured PII (email) must still be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "tenant@example.com" not in scrubbed, "Email must be scrubbed"
 
 
 # ---------------------------------------------------------------------------
@@ -470,33 +544,42 @@ def test_pii_3_1_17_gliner_scrub_medical(presidio_scrubber_with_gliner) -> None:
 # TST-BRAIN-104
 # TRACE: {"suite": "BRAIN", "case": "0104", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "01", "title": "email_plus_person"}
 def test_pii_3_2_1_email_plus_person(spacy_scrubber) -> None:
-    """SS3.2.1: Email (Tier 1 regex) + person name (Tier 2 NER) both scrubbed."""
+    """SS3.2.1: Email (structured PII) scrubbed; person name passes through."""
     text = "Email john@example.com, from John Smith"
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # NER should detect at least PERSON. Email is a Tier 1 concern.
+    # Person names pass through unchanged.
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 1
-    assert "John Smith" not in scrubbed
+    assert len(person_entities) == 0, (
+        f"PERSON entities should not be scrubbed, got: {person_entities}"
+    )
+    assert "John Smith" in scrubbed, "Person name must pass through unchanged"
+
+    # Email (structured PII) must be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "john@example.com" not in scrubbed, "Email must be scrubbed"
 
 
 # TST-BRAIN-105
 # TRACE: {"suite": "BRAIN", "case": "0105", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "02", "title": "phone_plus_location"}
 def test_pii_3_2_2_phone_plus_location(spacy_scrubber) -> None:
-    """SS3.2.2: Phone number (Tier 1) + location (Tier 2) — both must be scrubbed."""
+    """SS3.2.2: Phone number (structured PII) scrubbed; location passes through."""
     text = "Call +1-415-555-1234 in San Francisco"
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # Tier 2: location must be detected and removed
-    loc_entities = [e for e in entities if e["type"] == "LOC"]
-    assert len(loc_entities) >= 1
-    assert "San Francisco" not in scrubbed
+    # Location names pass through unchanged.
+    loc_entities = [e for e in entities if e["type"] in ("LOC", "GPE")]
+    assert len(loc_entities) == 0, (
+        f"LOC/GPE entities should not be scrubbed, got: {loc_entities}"
+    )
+    assert "San Francisco" in scrubbed, "Location must pass through unchanged"
 
-    # Tier 1: phone number must be detected and removed
+    # Phone number (structured PII) must be scrubbed.
     phone_entities = [e for e in entities if e["type"] in ("PHONE", "PHONE_NUMBER")]
-    assert len(phone_entities) >= 1, "phone entity not detected — Tier 1 scrubbing gap"
+    assert len(phone_entities) >= 1, "phone entity not detected — structured PII scrubbing gap"
     assert "415-555-1234" not in scrubbed, "phone number not removed from scrubbed output"
 
 
@@ -539,12 +622,23 @@ def test_pii_3_2_4_batch_performance(spacy_scrubber) -> None:
 # TST-BRAIN-108
 # TRACE: {"suite": "BRAIN", "case": "0108", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "05", "title": "full_pipeline_to_cloud"}
 def test_pii_3_2_5_full_pipeline_to_cloud(spacy_scrubber) -> None:
-    """SS3.2.5: Cloud LLM receives only tokens, never raw PII."""
-    text = make_pii_text(include=("person", "org", "location"))
+    """SS3.2.5: Cloud LLM receives only tokens for structured PII, never raw values.
+
+    Names/orgs/locations pass through unchanged. Only structured PII
+    (email, phone, SSN) is replaced with tokens.
+    """
+    text = make_pii_text(include=("person", "org", "location", "email", "phone"))
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # None of the raw PII values should remain in the scrubbed text.
+    # Names, orgs, locations must pass through (not structured PII).
+    assert "John Smith" in scrubbed, "Person name must pass through"
+    assert "Google" in scrubbed, "Org name must pass through"
+    assert "San Francisco" in scrubbed, "Location must pass through"
+
+    # Structured PII must be detected and scrubbed.
+    assert len(entities) >= 1, f"Structured PII must be detected, got: {entities}"
+    # None of the structured PII values should remain in the scrubbed text.
     for ent in entities:
         assert ent["value"] not in scrubbed, (
             f"Raw PII '{ent['value']}' leaked into scrubbed text"
@@ -902,18 +996,30 @@ def test_pii_3_3_11_cloud_sees_topics_not_identities(entity_vault) -> None:
 # TST-BRAIN-413
 # TRACE: {"suite": "BRAIN", "case": "0413", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "02", "scenario": "07", "title": "include_content_pii_scrub"}
 def test_pii_3_2_7_include_content_pii_scrub(spacy_scrubber) -> None:
-    """SS3.2.7: include_content=true triggers brain PII scrub on body_text."""
-    vault_response = {"body_text": "Email from John Smith at Google Inc."}
+    """SS3.2.7: include_content=true triggers brain PII scrub on body_text.
+
+    Names and orgs pass through unchanged. Structured PII (email) is scrubbed.
+    """
+    vault_response = {"body_text": "Email from John Smith at Google Inc. via john@google.com"}
 
     scrubbed_text, entities = spacy_scrubber.scrub(vault_response["body_text"])
 
+    # Person and org names pass through unchanged.
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 1, (
-        f"PERSON entity must be detected for 'John Smith', got: {entities}"
+    org_entities = [e for e in entities if e["type"] == "ORG"]
+    assert len(person_entities) == 0, (
+        f"PERSON entities should not be scrubbed, got: {person_entities}"
     )
-    assert "John Smith" not in scrubbed_text, (
-        "Original PII must be scrubbed from body_text"
+    assert len(org_entities) == 0, (
+        f"ORG entities should not be scrubbed, got: {org_entities}"
     )
+    assert "John Smith" in scrubbed_text, "Person name must pass through"
+    assert "Google" in scrubbed_text, "Org name must pass through"
+
+    # Structured PII (email) must be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "john@google.com" not in scrubbed_text, "Email must be scrubbed"
 
 
 # ---------------------------------------------------------------------------
@@ -1556,82 +1662,100 @@ def test_pii_3_8_6_eu_swift_bic(presidio_scrubber) -> None:
 # TST-BRAIN-450
 # TRACE: {"suite": "BRAIN", "case": "0450", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "01", "title": "faker_natural_language"}
 def test_pii_3_9_1_faker_natural_language(presidio_scrubber) -> None:
-    """SS3.9.1: Person names replaced with realistic Faker names, not tags."""
+    """SS3.9.1: Person/org names pass through; structured PII uses Faker replacements.
+
+    PERSON and ORG are no longer scrubbed. Verify structured PII (email)
+    is replaced with a Faker-generated token (not a bare tag).
+    """
     faker = pytest.importorskip("faker")
-    text = "Dr. Sharma at Apollo Hospital"
+    text = "Dr. Sharma at Apollo Hospital emailed sharma@apollo.com"
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
+    # Person and org names pass through unchanged.
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 1
-    # The replacement should NOT be a tag like <PERSON_1>.
-    assert "<PERSON_" not in scrubbed
-    # The real name should be gone.
-    assert "Sharma" not in scrubbed
-    # The replacement should look like a real name (contains a space
-    # or a period — Faker names are like "John Smith" or "Dr. John Smith").
-    fake_name = person_entities[0]["token"]
-    assert len(fake_name) > 3, f"Fake name too short: {fake_name}"
+    assert len(person_entities) == 0, (
+        f"PERSON entities should not be scrubbed, got: {person_entities}"
+    )
+    assert "Sharma" in scrubbed, "Person name must pass through"
+    assert "Apollo" in scrubbed, "Org name must pass through"
+
+    # Structured PII (email) must be scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Email must be detected, got: {entities}"
+    assert "sharma@apollo.com" not in scrubbed, "Email must be scrubbed"
 
 
 # TST-BRAIN-451
 # TRACE: {"suite": "BRAIN", "case": "0451", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "02", "title": "faker_consistency"}
 def test_pii_3_9_2_faker_consistency(presidio_scrubber) -> None:
-    """SS3.9.2: Same real value maps to same fake within one scrub() call."""
+    """SS3.9.2: Same structured PII value maps to same token within one scrub() call.
+
+    PERSON names pass through unchanged. Test consistency with structured
+    PII (email) appearing twice.
+    """
     faker = pytest.importorskip("faker")
-    # Use sentence structure where both occurrences produce identical spans.
-    text = "John Smith went out. Later John Smith came back."
+    text = "Email john@example.com first. Then email john@example.com again."
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
-    person_entities = [e for e in entities if e["type"] == "PERSON"]
-    same_value = [e for e in person_entities if e["value"] == "John Smith"]
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    same_value = [e for e in email_entities if e["value"] == "john@example.com"]
     assert len(same_value) >= 2, (
-        f"Presidio must detect both occurrences of 'John Smith', "
-        f"got {len(same_value)} matches: {person_entities}"
+        f"Presidio must detect both occurrences of 'john@example.com', "
+        f"got {len(same_value)} matches: {email_entities}"
     )
-    # Both occurrences of "John Smith" should get the same fake.
+    # Both occurrences should get the same token.
     assert same_value[0]["token"] == same_value[1]["token"], (
-        "Same real value must map to same fake token within one scrub() call"
+        "Same real value must map to same token within one scrub() call"
     )
 
 
 # TST-BRAIN-452
 # TRACE: {"suite": "BRAIN", "case": "0452", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "03", "title": "faker_different"}
 def test_pii_3_9_3_faker_different(presidio_scrubber) -> None:
-    """SS3.9.3: Different real values get different fakes."""
+    """SS3.9.3: Different structured PII values get different tokens.
+
+    PERSON names pass through unchanged. Test with multiple emails.
+    """
     faker = pytest.importorskip("faker")
-    text = "John Smith met Jane Doe at Google and Meta"
+    text = "Email john@example.com and jane@example.com for details"
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
-    person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 2, (
-        f"Must detect at least 2 PERSON entities, got {len(person_entities)}: {person_entities}"
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 2, (
+        f"Must detect at least 2 EMAIL entities, got {len(email_entities)}: {email_entities}"
     )
-    # Different persons must get different tokens.
-    assert person_entities[0]["token"] != person_entities[1]["token"], (
-        "Different persons must get distinct tokens"
+    # Different emails must get different tokens.
+    assert email_entities[0]["token"] != email_entities[1]["token"], (
+        "Different emails must get distinct tokens"
     )
-    # Different persons must have different values.
-    assert person_entities[0]["value"] != person_entities[1]["value"], (
-        "Different persons must have distinct original values"
+    # Different emails must have different values.
+    assert email_entities[0]["value"] != email_entities[1]["value"], (
+        "Different emails must have distinct original values"
     )
 
 
 # TST-BRAIN-453
 # TRACE: {"suite": "BRAIN", "case": "0453", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "04", "title": "faker_rehydrate_roundtrip"}
 def test_pii_3_9_4_faker_rehydrate_roundtrip(presidio_scrubber) -> None:
-    """SS3.9.4: Full round-trip: scrub with fakes -> rehydrate -> original."""
+    """SS3.9.4: Full round-trip: scrub structured PII -> rehydrate -> original.
+
+    Names pass through unchanged. Structured PII (email) is scrubbed
+    then rehydrated back to original.
+    """
     faker = pytest.importorskip("faker")
-    text = "Dr. Sharma at Apollo Hospital said your A1C is 11.2"
+    text = "Dr. Sharma at Apollo Hospital emailed sharma@apollo.com about A1C 11.2"
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
-    # Scrubbed text should have fake names, not real ones.
-    assert "Sharma" not in scrubbed
+    # Names pass through unchanged.
+    assert "Sharma" in scrubbed, "Person name must pass through"
+    # Structured PII must be scrubbed.
+    assert "sharma@apollo.com" not in scrubbed, "Email must be scrubbed"
 
-    # Rehydrate should restore originals.
+    # Rehydrate should restore structured PII originals.
     rehydrated = presidio_scrubber.rehydrate(scrubbed, entities)
 
     for ent in entities:
@@ -1643,7 +1767,11 @@ def test_pii_3_9_4_faker_rehydrate_roundtrip(presidio_scrubber) -> None:
 # TST-BRAIN-454
 # TRACE: {"suite": "BRAIN", "case": "0454", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "05", "title": "opaque_tokens"}
 def test_pii_3_9_5_opaque_tokens() -> None:
-    """SS3.9.5: Presidio uses opaque [TYPE_N] tokens for exact-match rehydration."""
+    """SS3.9.5: Presidio uses opaque [TYPE_N] tokens for structured PII.
+
+    PERSON names pass through unchanged. Verify opaque token format
+    with structured PII (email).
+    """
     pytest.importorskip("presidio_analyzer")
     from src.adapter.scrubber_presidio import PresidioScrubber
 
@@ -1653,51 +1781,70 @@ def test_pii_3_9_5_opaque_tokens() -> None:
     except Exception:
         pytest.skip("Presidio not available")
 
-    text = "John Smith works at Google"
+    text = "John Smith works at Google, email john@google.com"
     scrubbed, entities = scrubber.scrub(text)
 
-    person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 1, (
-        f"PERSON entity must be detected for 'John Smith', got: {entities}"
+    # Person names pass through unchanged.
+    assert "John Smith" in scrubbed, "Person name must pass through"
+
+    # Structured PII (email) must use opaque [TYPE_N] format.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, (
+        f"EMAIL_ADDRESS entity must be detected, got: {entities}"
     )
     # Should use opaque [TYPE_N] format for exact-match rehydration.
-    assert person_entities[0]["token"].startswith("["), (
-        f"Token must start with '[', got: {person_entities[0]['token']}"
+    assert email_entities[0]["token"].startswith("["), (
+        f"Token must start with '[', got: {email_entities[0]['token']}"
     )
-    assert person_entities[0]["token"].endswith("]"), (
-        f"Token must end with ']', got: {person_entities[0]['token']}"
+    assert email_entities[0]["token"].endswith("]"), (
+        f"Token must end with ']', got: {email_entities[0]['token']}"
     )
-    # Counter-proof: original name must NOT appear in scrubbed text
-    assert "John Smith" not in scrubbed, "Original PII must be replaced"
+    # Counter-proof: original email must NOT appear in scrubbed text
+    assert "john@google.com" not in scrubbed, "Original PII must be replaced"
 
 
 # TST-BRAIN-455
 # TRACE: {"suite": "BRAIN", "case": "0455", "section": "03", "sectionName": "PII Scrubber (Tier 2)", "subsection": "09", "scenario": "06", "title": "org_opaque_token"}
 def test_pii_3_9_6_org_opaque_token(presidio_scrubber) -> None:
-    """SS3.9.6: Organizations replaced with opaque [ORG_N] tokens."""
-    text = "She works at Google Inc."
+    """SS3.9.6: Org names pass through; structured PII uses opaque tokens.
+
+    ORG entities are no longer scrubbed. Verify structured PII (email)
+    uses opaque [TYPE_N] token format.
+    """
+    text = "She works at Google Inc. Email: hr@google.com"
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
+    # Org names pass through unchanged.
     org_entities = [e for e in entities if e["type"] == "ORG"]
-    assert len(org_entities) >= 1, f"ORG entity must be detected, got: {entities}"
+    assert len(org_entities) == 0, (
+        f"ORG entities should not be scrubbed, got: {org_entities}"
+    )
+    assert "Google" in scrubbed, "Org name must pass through unchanged"
 
-    org = org_entities[0]
+    # Structured PII (email) must be scrubbed with opaque token.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"EMAIL entity must be detected, got: {entities}"
+
+    email = email_entities[0]
 
     # Entity contract: type, value, token fields
-    assert org["value"] == "Google Inc.", f"Expected 'Google Inc.', got {org['value']!r}"
-    assert "token" in org, "Entity must include 'token' field"
-    assert org["token"], "Token cannot be empty"
+    assert email["value"] == "hr@google.com", f"Expected 'hr@google.com', got {email['value']!r}"
+    assert "token" in email, "Entity must include 'token' field"
+    assert email["token"], "Token cannot be empty"
 
-    # Token must use opaque [ORG_N] format
-    assert org["token"].startswith("[ORG_"), (
-        f"Token should use [ORG_N] format, got {org['token']!r}"
+    # Token must use opaque [TYPE_N] format
+    assert email["token"].startswith("["), (
+        f"Token should start with '[', got {email['token']!r}"
+    )
+    assert email["token"].endswith("]"), (
+        f"Token should end with ']', got {email['token']!r}"
     )
 
-    # Original org name removed from scrubbed text
-    assert "Google" not in scrubbed
+    # Original email removed from scrubbed text
+    assert "hr@google.com" not in scrubbed
 
     # Token appears in scrubbed text as the replacement
-    assert org["token"] in scrubbed, (
-        f"Token {org['token']!r} must appear in scrubbed text"
+    assert email["token"] in scrubbed, (
+        f"Token {email['token']!r} must appear in scrubbed text"
     )

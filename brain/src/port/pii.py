@@ -16,20 +16,19 @@ from typing import Protocol, runtime_checkable
 class PIIScrubber(Protocol):
     """Synchronous PII detection and scrubbing interface.
 
-    Presidio wraps spaCy NER and adds structured PII detection,
-    configurable entity filtering, and India-specific recognizers.
+    Scrubs structured PII only: emails, phones, credit cards, govt IDs,
+    medical identifiers. Names, organisations, and locations pass through
+    unchanged — they are not replaced.
 
-    SAFE entities (DATE, TIME, MONEY, PERCENT, NORP, etc.) are
-    never scrubbed — they are essential for LLM reasoning and do
-    not identify anyone.
-
-    All methods are synchronous because NER inference is CPU-bound
-    and already fast enough for single-request latency targets (100
+    All methods are synchronous because detection is CPU-bound and
+    already fast enough for single-request latency targets (100
     chunks < 5 s).
     """
 
     def scrub(self, text: str) -> tuple[str, list[dict]]:
-        """Detect and replace PII entities with sequential tokens.
+        """Detect and replace structured PII entities with sequential tokens.
+
+        Names, organisations, and locations are NOT scrubbed.
 
         Returns:
             A tuple of ``(scrubbed_text, entities)`` where *entities*
@@ -37,11 +36,10 @@ class PIIScrubber(Protocol):
 
         Example::
 
-            scrubbed, ents = scrubber.scrub("Dr. Sharma at Apollo Hospital")
-            # scrubbed == "<PERSON_1> at <ORG_1>"
+            scrubbed, ents = scrubber.scrub("Dr. Sharma at rajmohan@email.com")
+            # scrubbed == "Dr. Sharma at [EMAIL_1]"
             # ents == [
-            #     {"type": "PERSON", "value": "Dr. Sharma", "token": "<PERSON_1>"},
-            #     {"type": "ORG", "value": "Apollo Hospital", "token": "<ORG_1>"},
+            #     {"type": "EMAIL_ADDRESS", "value": "rajmohan@email.com", "token": "[EMAIL_1]"},
             # ]
         """
         ...

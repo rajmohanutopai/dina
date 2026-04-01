@@ -410,9 +410,11 @@ class TestProductResearchPurchase:
         # Don Alonso sends commerce inquiry to ChairMaker
         msg = don_alonso.send_d2d(
             to_did=chairmaker.did,
-            message_type="dina/commerce/inquiry",
+            message_type="coordination.request",
             payload={
-                "type": "dina/commerce/inquiry",
+                "type": "coordination.request",
+                "action": "ask_availability",
+                "context": "Herman Miller Aeron inquiry",
                 "product": "Herman Miller Aeron",
                 "buyer_persona": "consumer",
                 # NOTE: No personal name, no health data, no financial details
@@ -429,7 +431,7 @@ class TestProductResearchPurchase:
             "Commerce payload must contain the product inquiry"
         )
         assert msg.payload.get("buyer_persona") == "consumer"
-        assert msg.payload.get("type") == "dina/commerce/inquiry"
+        assert msg.payload.get("type") == "coordination.request"
 
         # ------------------------------------------------------------------
         # 2. Persona gating: no personal/health/financial data leaked
@@ -457,7 +459,7 @@ class TestProductResearchPurchase:
         chairmaker_recv = chairmaker.get_audit_entries("d2d_receive")
         commerce_recvs = [
             e for e in chairmaker_recv
-            if e.details.get("type") == "dina/commerce/inquiry"
+            if e.details.get("type") == "coordination.request"
             and e.details.get("from_did") == don_alonso.did
         ]
         assert len(commerce_recvs) == 1, (
@@ -483,7 +485,7 @@ class TestProductResearchPurchase:
         commerce_sends = [
             e for e in send_audits
             if e.details.get("contact_did") == chairmaker.did
-            and e.details.get("type") == "dina/commerce/inquiry"
+            and e.details.get("type") == "coordination.request"
         ]
         assert len(commerce_sends) == 1, (
             f"Expected exactly 1 commerce send audit, got {len(commerce_sends)}"

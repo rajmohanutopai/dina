@@ -72,20 +72,21 @@ class TestQuietDina:
         # -- Tier 2: Solicited -- notification delivered (DND off) ---------
         ws_before_t2 = len(device.ws_messages)
         tier2_result = node._brain_process(
-            "dina/social/arrival",
+            "presence.signal",
             {
                 "user_requested": True,
+                "status": "arriving",
                 "eta_minutes": 10,
                 "text": "Sancho is arriving",
             },
             from_did="did:plc:sancho",
         )
         tier2_class = node._classify_silence(
-            "dina/social/arrival",
-            {"user_requested": True, "eta_minutes": 10},
+            "presence.signal",
+            {"user_requested": True, "status": "arriving", "eta_minutes": 10},
         )
         assert tier2_class == SilenceTier.TIER_2_SOLICITED, (
-            "Social arrival event must be Tier 2"
+            "Presence signal event must be Tier 2"
         )
         # Tier 2 events must be pushed to devices (not queued)
         assert tier2_result.get("status") == "ok"
@@ -111,15 +112,15 @@ class TestQuietDina:
         )
 
         # -- DND queuing: non-fiduciary arrivals queued during DND ---------
-        # Note: "dina/social/arrival" is classified as TIER_2 (prefix match),
+        # Note: "presence.signal" is classified as TIER_2 (v1 solicited type),
         # but DND queues ALL non-fiduciary arrivals, proving the DND gate.
         node.dnd_active = True
         ws_before_dnd = len(device.ws_messages)
         briefing_before = len(node.briefing_queue)
 
         dnd_result = node._brain_process(
-            "dina/social/arrival",
-            {"eta_minutes": 30, "text": "Newsletter digest available"},
+            "presence.signal",
+            {"status": "arriving", "eta_minutes": 30, "text": "Newsletter digest available"},
             from_did="did:plc:sancho",
         )
         assert dnd_result["status"] == "queued_for_briefing", (
@@ -175,8 +176,8 @@ class TestQuietDina:
         # DND queues non-fiduciary arrivals in briefing_queue.
         for i in range(5):
             result = node._brain_process(
-                "dina/social/arrival",
-                {"eta_minutes": (i + 1) * 5, "text": f"Visitor {i} arriving"},
+                "presence.signal",
+                {"status": "arriving", "eta_minutes": (i + 1) * 5, "text": f"Visitor {i} arriving"},
                 from_did=f"did:plc:visitor_{i}",
             )
             assert result["status"] == "queued_for_briefing", (
@@ -263,8 +264,8 @@ class TestQuietDina:
         # Also queue arrivals via real _brain_process during DND
         for i in range(4):
             result = node._brain_process(
-                "dina/social/arrival",
-                {"eta_minutes": (i + 1) * 10, "text": f"daily tip #{i}"},
+                "presence.signal",
+                {"status": "arriving", "eta_minutes": (i + 1) * 10, "text": f"daily tip #{i}"},
                 from_did=f"did:plc:feed_{i}",
             )
             assert result["status"] == "queued_for_briefing"

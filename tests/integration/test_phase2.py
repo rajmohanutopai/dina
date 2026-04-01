@@ -108,7 +108,7 @@ class TestClientSync:
         scrubbed, replacements = mock_dina.go_core.pii_scrub(
             "Rajmohan at rajmohan@email.com"
         )
-        assert "Rajmohan" not in scrubbed
+        assert "rajmohan@email.com" not in scrubbed
         assert len(replacements) >= 1
 
         # Counter-proof: client is still offline — queuing works, not pushing
@@ -683,7 +683,8 @@ class TestLocalLLMProfiles:
         # PII scrubbing still works via regex patterns (no LLM needed)
         text = "Rajmohan lives at 123 Main Street"
         scrubbed, _ = mock_scrubber.scrub(text)
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional), addresses scrubbed
+        assert "Rajmohan" in scrubbed
         assert "123 Main Street" not in scrubbed
         assert mock_scrubber.validate_clean(scrubbed)
 

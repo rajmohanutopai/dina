@@ -513,11 +513,10 @@ class MockStagingTier:
 class MockPIIScrubber:
     """PII scrubbing with replacement map and de-sanitizer."""
 
-    # PII patterns to detect and replace
+    # PII patterns to detect and replace.
+    # Names are intentionally NOT scrubbed — only structured PII
+    # (emails, phones, addresses, financial identifiers) is replaced.
     PII_PATTERNS: dict[str, str] = {
-        "Rajmohan": "[PERSON_1]",
-        "Sancho": "[PERSON_2]",
-        "Maria": "[PERSON_3]",
         "rajmohan@email.com": "[EMAIL_1]",
         "sancho@email.com": "[EMAIL_2]",
         "+91-9876543210": "[PHONE_1]",

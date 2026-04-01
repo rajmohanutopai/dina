@@ -134,15 +134,13 @@ class TestMemoryPrivacy:
             "Budget from contact_sancho vault entry."
         )
 
-        # PII scrubber strips personal data before it leaves the node
+        # PII scrubber strips structured PII before it leaves the node
         scrubbed, replacements = scrubber.scrub(raw_context)
 
-        # Verify PII was actually removed
-        assert "Rajmohan" not in scrubbed
-        assert "Sancho" not in scrubbed
+        # Names pass through (intentional), structured PII removed
+        assert "Rajmohan" in scrubbed
+        assert "Sancho" in scrubbed
         assert "sancho@email.com" not in scrubbed
-        assert "[PERSON_1]" in scrubbed
-        assert "[PERSON_2]" in scrubbed
         assert "[EMAIL_2]" in scrubbed
 
         # Only the scrubbed query goes to the bot
@@ -150,9 +148,7 @@ class TestMemoryPrivacy:
         assert len(mock_review_bot.queries) == 1
         sent_query = str(mock_review_bot.queries[0])
 
-        # Counter-proof: raw PII must NOT appear in what the bot received
-        assert "Rajmohan" not in sent_query
-        assert "Sancho" not in sent_query
+        # Counter-proof: structured PII must NOT appear in what the bot received
         assert "sancho@email.com" not in sent_query
 
         # But the product intent survived scrubbing

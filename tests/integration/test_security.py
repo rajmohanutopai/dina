@@ -761,8 +761,8 @@ class TestDataAtRest:
         raw_text = "Rajmohan at rajmohan@email.com called +91-9876543210"
         scrubbed, replacements = mock_dina.go_core.pii_scrub(raw_text)
 
-        # The scrubbed text has no PII
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in scrubbed
         assert "rajmohan@email.com" not in scrubbed
         assert "+91-9876543210" not in scrubbed
 

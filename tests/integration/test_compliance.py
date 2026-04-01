@@ -43,9 +43,6 @@ from tests.integration.mocks import (
 # -----------------------------------------------------------------------
 
 PII_PATTERNS = [
-    "Rajmohan",
-    "Sancho",
-    "Maria",
     "rajmohan@email.com",
     "sancho@email.com",
     "+91-9876543210",
@@ -162,9 +159,8 @@ class TestPIIInLogs:
                 f"PII '{pii}' found in sanitized_line field"
             )
 
-        # Verify placeholders are present (format may vary — token or faker name)
+        # Verify structured PII placeholders (email/phone/address scrubbed)
         assert "rajmohan@email.com" not in entry["error"]
-        assert "Rajmohan" not in entry["error"]
 
 
 # -----------------------------------------------------------------------
@@ -201,14 +197,11 @@ class TestAuditTrail:
         # 3. DID sign
         sig = mock_dina.go_core.did_sign(b"audit payload")
 
-        # 4. PII scrub — uses real PII to verify scrubbing
-        scrubbed, pii_map = mock_dina.go_core.pii_scrub("Rajmohan audit test")
-        assert "Rajmohan" not in scrubbed, "PII must be scrubbed from output"
-        # In Docker mode the real scrubber may scrub successfully but the
-        # token-reconstruction heuristic in RealPIIScrubber can miss entity
-        # tokens, leaving pii_map empty even though the text was scrubbed.
-        # The primary proof is that the PII string is absent from the output.
-        # pii_map is a secondary signal that works in mock mode.
+        # 4. PII scrub — uses structured PII to verify scrubbing
+        scrubbed, pii_map = mock_dina.go_core.pii_scrub(
+            "Rajmohan at rajmohan@email.com audit test"
+        )
+        assert "rajmohan@email.com" not in scrubbed, "Email must be scrubbed"
         from tests.integration.conftest import DOCKER_MODE as _DM
         if not _DM:
             assert len(pii_map) > 0, "Scrubber must report replacements"

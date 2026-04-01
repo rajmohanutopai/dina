@@ -522,10 +522,10 @@ class RealVault(MockVault):
 # ---------------------------------------------------------------------------
 
 class RealPIIScrubber:
-    """Two-tier PII scrubber using real Go Core + Brain APIs.
+    """Structured PII scrubber using real Go Core + Brain APIs.
 
-    Tier 1: Go Core regex (POST /v1/pii/scrub) — emails, phones, SSNs, etc.
-    Tier 2: Brain NER (POST /api/v1/pii/scrub) — person names, orgs, locations.
+    Scrubs structured PII only: emails, phones, credit cards, govt IDs.
+    Names, organisations, and locations pass through unchanged.
 
     Returns the same (scrubbed_text, {token: original}) format as MockPIIScrubber
     for test compatibility.
@@ -543,7 +543,7 @@ class RealPIIScrubber:
         return {}
 
     def scrub(self, text: str) -> tuple[str, dict[str, str]]:
-        """Two-tier scrub: Go Core regex then Brain NER.
+        """Two-tier scrub: Go Core regex then Brain structured PII patterns.
 
         Returns (scrubbed_text, {token: original_value}).
         """
@@ -573,7 +573,7 @@ class RealPIIScrubber:
                     replacement_map[token] = value
                     self._known_pii.add(value)
 
-        # Tier 2: Brain NER (processes Tier 1 output)
+        # Tier 2: Brain structured PII patterns (processes Tier 1 output)
         resp2 = _try_request(
             "post", f"{self._brain_url}/api/v1/pii/scrub",
             json={"text": scrubbed}, headers=self._headers(),
@@ -586,7 +586,7 @@ class RealPIIScrubber:
             # (security fix — values must not leave Brain over HTTP).
             # Recover original values by finding what each token replaced
             # in the pre-Tier2 text (scrubbed = Tier 1 output).
-            pre_tier2 = scrubbed  # text before Brain NER
+            pre_tier2 = scrubbed  # text before Brain Tier 2
             for ent in data.get("entities") or []:
                 token = ent.get("token", "")
                 if token and token in tier2_scrubbed and token not in pre_tier2:

@@ -1,7 +1,7 @@
 """Shared pytest fixtures for Dina E2E tests — Docker-only.
 
 The entire E2E suite requires DINA_E2E=docker and running Docker
-containers (docker-compose-e2e.yml).  Each actor gets its own
+containers (docker-compose-test-stack.yml).  Each actor gets its own
 Core+Brain container pair.  test_status.py manages the Docker lifecycle.
 
 All actor fixtures (Don Alonso, Sancho, ChairMaker, Albert) create
@@ -57,18 +57,26 @@ from tests.e2e.real_d2d import RealD2DNetwork
 # Docker services (session-scoped)
 # ---------------------------------------------------------------------------
 
+def pytest_configure(config):
+    """Fail immediately if E2E tests are collected without Docker.
+
+    E2E tests MUST run against real Docker containers — there is no
+    mock fallback.  Set DINA_E2E=docker and run prepare_non_unit_env.sh up.
+    """
+    if not DOCKER_MODE:
+        raise pytest.UsageError(
+            "E2E tests require Docker. Set DINA_E2E=docker and run "
+            "./prepare_non_unit_env.sh up first."
+        )
+
+
 @pytest.fixture(scope="session")
 def docker_services():
     """Locate the pre-started test stack for E2E testing.
 
     Session-scoped. Reads .test-stack.json written by prepare_non_unit_env.sh.
     Does NOT manage Docker lifecycle — just verifies services are healthy.
-
-    Skips the entire E2E suite when DINA_E2E != 'docker'.
     """
-    if not DOCKER_MODE:
-        pytest.skip("E2E tests require Docker (DINA_E2E=docker)")
-
     svc = TestStackServices()
     svc.assert_ready()
     yield svc

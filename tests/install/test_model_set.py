@@ -167,6 +167,10 @@ class TestModelSetInteractive:
         child.expect("heavy:", timeout=10)
         child.sendline("")
 
+        # Embedding prompt — press Enter to keep
+        child.expect("Embedding", timeout=10)
+        child.sendline("")
+
         child.expect(pexpect.EOF, timeout=10)
         child.close()
         assert child.exitstatus == 0
@@ -194,6 +198,10 @@ class TestModelSetInteractive:
         child.expect("heavy:", timeout=10)
         child.sendline("")
 
+        # Embedding prompt — press Enter to keep
+        child.expect("Embedding", timeout=10)
+        child.sendline("")
+
         child.expect(pexpect.EOF, timeout=10)
         child.close()
         assert child.exitstatus == 0
@@ -203,7 +211,7 @@ class TestModelSetInteractive:
 
     # TRACE: {"suite": "INST", "case": "0077", "section": "07", "sectionName": "Model Config", "subsection": "02", "scenario": "03", "title": "interactive_keep_all"}
     def test_interactive_keep_all(self, model_dir: Path) -> None:
-        """Press Enter for all three — no changes."""
+        """Press Enter for all four (lite/primary/heavy/embed) — no changes."""
         import pexpect
 
         before = _read_defaults(model_dir)
@@ -218,6 +226,9 @@ class TestModelSetInteractive:
         child.expect("primary:", timeout=10)
         child.sendline("")
         child.expect("heavy:", timeout=10)
+        child.sendline("")
+        # Embedding model prompt added after lite/primary/heavy
+        child.expect("Embedding", timeout=10)
         child.sendline("")
 
         child.expect(pexpect.EOF, timeout=10)
@@ -248,10 +259,12 @@ class TestModelSetInteractive:
         child.expect("lite:", timeout=10)
         child.sendline("gemini/gemini-2.5-flash")
 
-        # Keep primary and heavy
+        # Keep primary, heavy, and embed
         child.expect("primary:", timeout=10)
         child.sendline("")
         child.expect("heavy:", timeout=10)
+        child.sendline("")
+        child.expect("Embedding", timeout=10)
         child.sendline("")
 
         # Should prompt for Gemini API key
@@ -268,7 +281,7 @@ class TestModelSetInteractive:
 
     # TRACE: {"suite": "INST", "case": "0079", "section": "07", "sectionName": "Model Config", "subsection": "02", "scenario": "05", "title": "interactive_change_all_three"}
     def test_interactive_change_all_three(self, model_dir: Path) -> None:
-        """Change all three roles in one pass."""
+        """Change all three roles in one pass (keep embed as default)."""
         import pexpect
 
         child = pexpect.spawn(
@@ -282,6 +295,9 @@ class TestModelSetInteractive:
         child.sendline("claude/claude-sonnet-4-6")
         child.expect("heavy:", timeout=10)
         child.sendline("openai/gpt-5.4")
+        # Keep embed as default
+        child.expect("Embedding", timeout=10)
+        child.sendline("")
 
         child.expect(pexpect.EOF, timeout=10)
         child.close()

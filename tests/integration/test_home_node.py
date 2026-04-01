@@ -131,12 +131,13 @@ class TestSidecarPattern:
     def test_core_exposes_pii_scrub(
         self, mock_go_core: MockGoCore
     ) -> None:
-        """Go Core exposes /v1/pii/scrub for PII removal."""
+        """Go Core exposes /v1/pii/scrub for structured PII removal."""
         scrubbed, replacements = mock_go_core.pii_scrub(
             "Rajmohan at rajmohan@email.com"
         )
 
-        assert "Rajmohan" not in scrubbed
+        # Names pass through, structured PII scrubbed
+        assert "Rajmohan" in scrubbed
         assert "rajmohan@email.com" not in scrubbed
         assert any(
             c["endpoint"] == "/v1/pii/scrub" for c in mock_go_core.api_calls
@@ -223,8 +224,8 @@ class TestSidecarPattern:
         sig = mock_dina.go_core.did_sign(b"still working")
         assert mock_dina.go_core.did_verify(b"still working", sig) is True
 
-        scrubbed, _ = mock_dina.go_core.pii_scrub("Rajmohan test")
-        assert "Rajmohan" not in scrubbed
+        scrubbed, _ = mock_dina.go_core.pii_scrub("Rajmohan at rajmohan@email.com")
+        assert "rajmohan@email.com" not in scrubbed
 
         notification = Notification(
             tier=SilenceTier.TIER_1_FIDUCIARY,
@@ -1429,9 +1430,9 @@ class TestOnboarding:
         result = dina.brain.process({"type": "test", "content": "hello"})
         assert result["processed"] is True
 
-        # PII scrub — both name and email should be redacted
+        # PII scrub — structured PII (email) should be redacted, name passes through
         scrubbed, replacements = dina.go_core.pii_scrub("Rajmohan at rajmohan@email.com")
-        assert "Rajmohan" not in scrubbed
+        assert "Rajmohan" in scrubbed  # names pass through (intentional)
         assert "rajmohan@email.com" not in scrubbed
         assert len(replacements) > 0  # replacements map was populated
 
@@ -1801,10 +1802,9 @@ class TestPIIScrubberPipeline:
         self,
         mock_scrubber: MockPIIScrubber,
     ) -> None:
-        """PII scrubber processes text through Tier 1 (direct pattern match)
-        and Tier 2 (NER-based) scrubbing. Both tiers work together: Tier 1
-        catches known patterns (emails, phones, names), and Tier 2 catches
-        remaining named entities. The result is fully sanitized text."""
+        """PII scrubber processes text through Tier 1 (direct pattern match).
+        Names are intentionally not scrubbed — only structured PII
+        (emails, phones, addresses, financial identifiers) is replaced."""
         # Input with multiple PII types
         raw_text = (
             "Dear Rajmohan, your order confirmation has been sent to "
@@ -1815,22 +1815,22 @@ class TestPIIScrubberPipeline:
         # Tier 1: direct pattern scrub
         scrubbed, replacements = mock_scrubber.scrub(raw_text)
 
-        # All known PII patterns must be replaced
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional)
+        assert "Rajmohan" in scrubbed
+        # Structured PII must be replaced
         assert "rajmohan@email.com" not in scrubbed
         assert "+91-9876543210" not in scrubbed
         assert "123 Main Street" not in scrubbed
         assert "4111-2222-3333-4444" not in scrubbed
 
-        # All PII values have corresponding replacements
-        assert "Rajmohan" in replacements.values()
+        # Structured PII values have corresponding replacements
         assert "rajmohan@email.com" in replacements.values()
         assert "+91-9876543210" in replacements.values()
         assert "123 Main Street" in replacements.values()
         assert "4111-2222-3333-4444" in replacements.values()
 
-        # At least 5 PII items were replaced (NER may find more)
-        assert len(replacements) >= 5
+        # 4 structured PII items were replaced
+        assert len(replacements) >= 4
 
         # The scrubbed text passes validation
         assert mock_scrubber.validate_clean(scrubbed)
@@ -1838,7 +1838,7 @@ class TestPIIScrubberPipeline:
         # Scrub log records the operation
         assert len(mock_scrubber.scrub_log) == 1
         log_entry = mock_scrubber.scrub_log[0]
-        assert log_entry["replacements"] == 5
+        assert log_entry["replacements"] == 4
         assert log_entry["scrubbed_length"] < log_entry["original_length"]
 
 # TST-INT-080
@@ -1847,49 +1847,44 @@ class TestPIIScrubberPipeline:
         self,
         mock_scrubber: MockPIIScrubber,
     ) -> None:
-        """PII is replaced with opaque tokens before sending to the LLM.
+        """Structured PII is replaced with opaque tokens before sending to LLM.
         When the LLM response arrives, the tokens are rehydrated back to
-        the original PII values using the replacement map. This ensures
-        the user sees natural text while the LLM never sees real PII."""
+        the original values using the replacement map."""
         # Original user query
         user_query = (
             "Send an email to Rajmohan at rajmohan@email.com about the meeting."
         )
 
-        # Step 1: Scrub PII before sending to LLM
+        # Step 1: Scrub structured PII before sending to LLM
         scrubbed_query, replacement_map = mock_scrubber.scrub(user_query)
-        assert "Rajmohan" not in scrubbed_query
+        # Names pass through (intentional)
+        assert "Rajmohan" in scrubbed_query
         assert "rajmohan@email.com" not in scrubbed_query
 
-        # Scrubbed text should pass validate_clean (no residual PII)
+        # Scrubbed text should pass validate_clean (no residual structured PII)
         assert mock_scrubber.validate_clean(scrubbed_query), \
             "Scrubbed text must pass PII validation before LLM send"
 
-        # Replacement map captures original PII values (format-agnostic)
+        # Replacement map captures structured PII values
         pii_values = set(replacement_map.values())
-        assert "Rajmohan" in pii_values
         assert "rajmohan@email.com" in pii_values
 
         # Step 2: Simulate LLM response using actual tokens from replacement map
-        person_token = next(k for k, v in replacement_map.items() if v == "Rajmohan")
         email_token = next(k for k, v in replacement_map.items() if v == "rajmohan@email.com")
         llm_response = (
-            f"I've drafted an email to {person_token} at {email_token} "
+            f"I've drafted an email to Rajmohan at {email_token} "
             "regarding the meeting. Would you like to review it?"
         )
 
-        # Verify the LLM response contains tokens, not real PII
-        assert person_token in llm_response
+        # Verify the LLM response contains tokens for structured PII
         assert email_token in llm_response
-        assert "Rajmohan" not in llm_response
 
         # Step 3: Desanitize the LLM response to restore PII for user display
         rehydrated = mock_scrubber.desanitize(llm_response, replacement_map)
 
-        # The user sees natural text with real names
+        # The user sees natural text with real email restored
         assert "Rajmohan" in rehydrated
         assert "rajmohan@email.com" in rehydrated
-        assert person_token not in rehydrated
         assert email_token not in rehydrated
 
         # Round-trip integrity: the rehydrated text reads naturally
@@ -1910,28 +1905,25 @@ class TestPIIScrubberPipeline:
         mock_scrubber: MockPIIScrubber,
     ) -> None:
         """When Tier 3 (LLM-based presidio) is unavailable, the scrubber
-        proceeds with Tier 1 (direct match) and Tier 2 (NER) only. The
-        system degrades gracefully -- it does not fail or skip scrubbing
-        entirely. Known patterns are still caught; only novel or ambiguous
-        PII might slip through Tier 1+2 alone."""
+        proceeds with Tier 1 (direct match) only. Known structured PII
+        patterns are still caught. Names are intentionally not scrubbed."""
         # Simulate Tier 3 being unavailable (no LLM presidio configured)
         tier3_available = False
 
-        # Text with known PII (caught by Tier 1) and potential novel PII
+        # Text with known structured PII
         raw_text = (
             "Rajmohan confirmed the meeting. Contact: rajmohan@email.com. "
             "His Aadhaar is XXXX-XXXX-1234."
         )
 
-        # Scrub with Tier 1+2 only (Tier 3 is down)
+        # Scrub with Tier 1 only (Tier 3 is down)
         scrubbed, replacements = mock_scrubber.scrub(raw_text)
 
-        # Known patterns from Tier 1+2 are caught
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional), structured PII caught
+        assert "Rajmohan" in scrubbed
         assert "rajmohan@email.com" not in scrubbed
 
-        # All caught PII values are in the replacement map
-        assert "Rajmohan" in replacements.values()
+        # Structured PII values are in the replacement map
         assert "rajmohan@email.com" in replacements.values()
 
         # Tier 3 absence is noted but scrubbing still works

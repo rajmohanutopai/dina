@@ -221,10 +221,11 @@ class TestAntiHer:
         # ------------------------------------------------------------------
         msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "My mother had a fall last week. She's in the hospital.",
+                "category": "life_event",
                 "context_flags": ["life_event", "illness"],
             },
         )
@@ -329,10 +330,11 @@ class TestAntiHer:
         # ------------------------------------------------------------------
         follow_up = don_alonso.send_d2d(
             to_did=sancho.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "Hey Sancho, how is your mother doing? I hope she's recovering.",
+                "category": "context",
             },
         )
         assert follow_up.msg_id.startswith("msg_"), (
@@ -955,10 +957,11 @@ class TestAntiHer:
         # Simulate Don Alonso sending the PDF.
         pdf_msg = node.send_d2d(
             to_did=sancho.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "Here's the architecture PDF we discussed!",
+                "category": "context",
                 "attachment": "architecture_patterns.pdf",
             },
         )

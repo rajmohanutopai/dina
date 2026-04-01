@@ -49,8 +49,8 @@ def create_brain_app(
     sync_engine:
         SyncEngine instance for ingestion pipeline access.
     scrubber:
-        PII scrubber instance (Tier 2 NER).  Optional — if None,
-        the ``/v1/pii/scrub`` endpoint returns text unchanged.
+        PII scrubber instance (Presidio structured PII patterns).
+        Optional — if None, ``/v1/pii/scrub`` returns 503.
     core_public_key:
         Core's Ed25519 public key for verifying signed requests.
     Returns

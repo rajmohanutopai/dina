@@ -402,16 +402,16 @@ def test_entity_vault_destroyed_after_rehydration(
     mock_scrubber: MockPIIScrubber,
 ):
     """Entity vault (replacement map) is cleared after rehydration."""
-    original = "Rajmohan lives at 123 Main Street"
+    original = "Rajmohan lives at 123 Main Street, contact rajmohan@email.com"
     scrubbed, entity_vault = mock_scrubber.scrub(original)
 
-    # Verify scrub produced a non-empty vault
+    # Verify scrub produced a non-empty vault (address + email)
     assert len(entity_vault) > 0, "Entity vault should have replacements"
 
     # Rehydrate (desanitize)
     restored = mock_scrubber.desanitize(scrubbed, entity_vault)
-    assert "Rajmohan" in restored
     assert "123 Main Street" in restored
+    assert "rajmohan@email.com" in restored
 
     # Clear the entity vault after use (application-level responsibility)
     entity_vault.clear()
@@ -421,7 +421,7 @@ def test_entity_vault_destroyed_after_rehydration(
 
     # Attempting desanitize with empty vault should return scrubbed text
     still_scrubbed = mock_scrubber.desanitize(scrubbed, entity_vault)
-    assert "Rajmohan" not in still_scrubbed, (
+    assert "rajmohan@email.com" not in still_scrubbed, (
         "Without entity vault, PII tokens should remain in place"
     )
 

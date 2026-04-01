@@ -54,7 +54,7 @@ func (h *PIIHandler) HandleScrub(w http.ResponseWriter, r *http.Request) {
 	scrubbed := t1.Scrubbed
 	entities := t1.Entities
 
-	// Tier 2: Brain spaCy NER (names, orgs, locations).
+	// Tier 2: Brain structured PII (patterns-only, no NER name scrubbing).
 	// Runs on Tier 1 output so already-replaced tokens are not re-detected.
 	// Graceful degradation: if Brain is unavailable, return Tier 1 only.
 	if h.Brain != nil {

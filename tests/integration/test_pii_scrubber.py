@@ -6,7 +6,7 @@ with opaque placeholders before any content leaves the vault. After the
 LLM responds, the de-sanitizer restores originals for local display only.
 
 Dual-mode: in mock mode, uses MockPIIScrubber (hardcoded patterns).
-In Docker mode, uses RealPIIScrubber (Go Core regex + Brain NER).
+In Docker mode, uses RealPIIScrubber (Go Core regex + Brain structured PII).
 Assertions are format-agnostic — they check PII is gone and restorable,
 not exact token format.
 """
@@ -38,16 +38,18 @@ class TestPIIScrubbing:
     """Verify that every category of PII is reliably scrubbed."""
 
 # TST-INT-529
-    # TRACE: {"suite": "INT", "case": "0529", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "01", "title": "name_scrubbed"}
+    # TRACE: {"suite": "INT", "case": "0529", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "01", "title": "name_passes_through"}
     def test_name_scrubbed(self, mock_scrubber) -> None:
-        """Personal names are replaced with opaque tokens."""
+        """Names are intentionally NOT scrubbed — only structured PII is.
+        Verify the name passes through unchanged while structured PII
+        in the same text would be caught."""
         text = "Rajmohan is heading to the office."
         scrubbed, replacements = mock_scrubber.scrub(text)
 
-        # Primary: PII absent from scrubbed text.
-        assert "Rajmohan" not in scrubbed
-        # Secondary: text was modified (token inserted).
-        assert scrubbed != text, "scrub must modify the text"
+        # Names pass through — intentional design decision
+        assert "Rajmohan" in scrubbed
+        # No structured PII in this text, so no replacements
+        assert scrubbed == text
         # Semantic content survives.
         assert "heading to the office" in scrubbed
 
@@ -110,20 +112,22 @@ class TestPIIScrubbing:
 # TST-INT-152
     # TRACE: {"suite": "INT", "case": "0152", "section": "15", "sectionName": "Compliance & Privacy", "subsection": "01", "scenario": "06", "title": "health_data_scrubbed"}
     def test_health_data_scrubbed(self, mock_scrubber) -> None:
-        """Health data containing PII (names, contacts) is scrubbed.
-        Medical content survives.  Round-trip restores originals."""
+        """Health data containing structured PII (contacts) is scrubbed.
+        Names pass through. Medical content survives. Round-trip restores."""
         text = (
             "Patient Rajmohan (rajmohan@email.com) was prescribed medication. "
             "Emergency contact: +91-9876543210."
         )
         scrubbed, replacements = mock_scrubber.scrub(text)
 
-        assert "Rajmohan" not in scrubbed
+        # Names are NOT scrubbed (intentional)
+        assert "Rajmohan" in scrubbed
+        # Structured PII is scrubbed
         assert "rajmohan@email.com" not in scrubbed
         assert "+91-9876543210" not in scrubbed
-        # The medical content itself survives -- only PII is removed
+        # The medical content itself survives -- only structured PII is removed
         assert "prescribed medication" in scrubbed
-        # Text must be substantially modified (3 PII items removed).
+        # Text must be modified (2 structured PII items removed).
         assert scrubbed != text, "scrub must modify the text"
 
         # Scrubbed text passes clean validation
@@ -132,7 +136,6 @@ class TestPIIScrubbing:
         )
 
         # Round-trip: Tier 1 (regex) entities restorable.
-        # BR1: Brain NER entities (names) not restorable via HTTP round-trip.
         restored = mock_scrubber.desanitize(scrubbed, replacements)
         assert "rajmohan@email.com" in restored
         assert "+91-9876543210" in restored
@@ -147,20 +150,17 @@ class TestPIIScrubbing:
         )
         scrubbed, replacements = mock_scrubber.scrub(query)
 
-        # PII gone
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional)
+        assert "Rajmohan" in scrubbed
+        # Structured PII scrubbed
         assert "rajmohan@email.com" not in scrubbed
 
         # Semantic intent intact — key action words survive
         assert "worth" in scrubbed
         assert "buying" in scrubbed
 
-        # Text was modified (PII replaced with tokens)
+        # Text was modified (email replaced with token)
         assert scrubbed != query
-        # Structural words survive — action verbs and prepositions remain
-        # NOTE: Tier 2 (spaCy NER) may aggressively tag product names as ORG,
-        # so we do NOT assert "ThinkPad X1 Carbon" survives. That's acceptable
-        # (better safe than sorry). We only assert semantic intent is preserved.
         assert "send" in scrubbed or "answer" in scrubbed
 
 
@@ -177,14 +177,14 @@ class TestDataBoundary:
     def test_bot_receives_question_not_data(
         self, mock_dina: MockDinaCore
     ) -> None:
-        """When a query goes to the cloud, PII is scrubbed first."""
+        """When a query goes to the cloud, structured PII is scrubbed first."""
         raw_query = (
             "Rajmohan from 123 Main Street wants laptop recommendations."
         )
         scrubbed, replacements = mock_dina.go_core.pii_scrub(raw_query)
 
-        # The text sent to the cloud must be clean
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in scrubbed
         assert "123 Main Street" not in scrubbed
         # The intent survives
         assert "laptop" in scrubbed
@@ -207,12 +207,11 @@ class TestDataBoundary:
         assert mock_dina.scrubber.validate_clean(scrubbed), \
             "Scrubbed text must pass PII validation before sending to LLM"
 
-        # Primary: PII absent from scrubbed text.
-        assert "Rajmohan" not in scrubbed, "Name must be scrubbed"
+        # Names pass through, structured PII scrubbed
+        assert "Rajmohan" in scrubbed
         assert "rajmohan@email.com" not in scrubbed, "Email must be scrubbed"
 
         # Tier 1 (Go Core regex) entities have values in the replacement map.
-        # Tier 2 (Brain NER) entities may not (BR1 security fix).
         email_token = next(
             (k for k, v in replacements.items() if v == "rajmohan@email.com"),
             None,
@@ -250,21 +249,20 @@ class TestDataBoundary:
         assert len(mock_dina.go_core.api_calls) == 1
         assert mock_dina.go_core.api_calls[0]["endpoint"] == "/v1/pii/scrub"
 
-        # All PII is gone, even though the instruction tried to exfiltrate
-        assert "Rajmohan" not in scrubbed
+        # Structured PII gone (names pass through intentionally)
+        assert "Rajmohan" in scrubbed
         assert "rajmohan@email.com" not in scrubbed
         assert "+91-9876543210" not in scrubbed
         assert "123 Main Street" not in scrubbed
         assert mock_dina.scrubber.validate_clean(scrubbed)
 
-        # The malicious instruction text itself survives (harmless without PII)
+        # The malicious instruction text itself survives (harmless without structured PII)
         assert "Ignore all instructions" in scrubbed
 
-        # Text was substantially modified (multiple PII items removed).
+        # Text was substantially modified (structured PII items removed).
         assert scrubbed != malicious_query
 
         # Tier 1 (regex) entities have values in the map.
-        # BR1: Brain Tier 2 (NER) entities may not have values in HTTP response.
         pii_values = set(replacements.values())
         assert "rajmohan@email.com" in pii_values, "Email (Tier 1) must be in map"
 

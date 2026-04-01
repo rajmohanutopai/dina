@@ -275,7 +275,7 @@ class TestSilenceUnderStress:
             {
                 "from_did": unknown_did,
                 "text": urgent_text,
-                "message_type": "dina/social/message",
+                "message_type": "social.update",
                 "sender_ring": TrustRing.RING_1_UNVERIFIED.value,
                 "sender_verified": False,
                 "sender_known": False,
@@ -366,10 +366,11 @@ class TestSilenceUnderStress:
         # Sancho sends the same urgent text via D2D.
         trusted_msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": urgent_text,
+                "category": "context",
                 "context_flags": ["urgent", "security"],
             },
         )
@@ -384,7 +385,7 @@ class TestSilenceUnderStress:
             {
                 "from_did": sancho.did,
                 "text": urgent_text,
-                "message_type": "dina/social/message",
+                "message_type": "social.update",
                 "sender_ring": TrustRing.RING_2_VERIFIED.value,
                 "sender_verified": True,
                 "sender_known": True,

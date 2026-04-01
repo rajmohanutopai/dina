@@ -3334,24 +3334,15 @@ class TestNotificationPIIScrubbing:
     def test_fiduciary_notification_pii_scrubbed(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
-        """Fiduciary event with doctor name + personal PII → Brain classifies
-        → Core scrubs PII → pushes scrubbed notification.
+        """Fiduciary event with structured PII → Brain classifies
+        → Core scrubs structured PII → pushes scrubbed notification.
 
-        Push notification text must contain ``[PERSON_1]``, ``[PHONE_1]``,
-        and ``[DOCTOR_1]`` — never raw 'Rajmohan', '+91-9876543210', or
-        'Dr. Sharma'.
+        Names pass through (intentional). Phone numbers and other
+        structured PII are replaced with opaque tokens.
         """
-        # -- Setup: add "Dr. Sharma" as a recognizable PII entity --
-        extra_scrubber = MockPIIScrubber(
-            extra_patterns={"Dr. Sharma": "[DOCTOR_1]"},
-        )
-        mock_dina.scrubber = extra_scrubber
-        mock_dina.go_core._scrubber = extra_scrubber
-
-        # The event content contains three PII items:
-        #   "Rajmohan"        -> [PERSON_1]  (default pattern)
+        # The event content contains structured PII:
         #   "+91-9876543210"  -> [PHONE_1]   (default pattern)
-        #   "Dr. Sharma"      -> [DOCTOR_1]  (extra pattern)
+        # Names (Rajmohan, Dr. Sharma) are NOT scrubbed.
         # The word "emergency" triggers fiduciary classification.
         fiduciary_content = (
             "Emergency: Dr. Sharma has updated Rajmohan's prescription "
@@ -3370,8 +3361,7 @@ class TestNotificationPIIScrubbing:
             human=mock_human,
         )
 
-        # -- Requirement 1: classified as fiduciary (PII scrubbing must NOT
-        #    alter classification — classification uses original content) --
+        # -- Requirement 1: classified as fiduciary --
         assert result["tier"] == SilenceTier.TIER_1_FIDUCIARY, (
             "Event with 'emergency' keyword must be classified as fiduciary "
             "regardless of PII scrubbing"
@@ -3383,39 +3373,23 @@ class TestNotificationPIIScrubbing:
         )
         assert result["queued"] is False
 
-        # -- Requirement 3: the pushed notification body does NOT contain raw PII --
+        # -- Requirement 3: structured PII scrubbed, names pass through --
         pushed_body = result["notification"].body
-        assert "Rajmohan" not in pushed_body, (
-            "Raw PII 'Rajmohan' must NOT appear in the pushed notification body"
-        )
         assert "+91-9876543210" not in pushed_body, (
             "Raw PII '+91-9876543210' must NOT appear in the pushed notification body"
         )
-        assert "Dr. Sharma" not in pushed_body, (
-            "Raw PII 'Dr. Sharma' must NOT appear in the pushed notification body"
-        )
+        # Names pass through (intentional)
+        assert "Rajmohan" in pushed_body
 
-        # -- Requirement 4: the pushed body DOES contain placeholders --
-        assert "[PERSON_1]" in pushed_body, (
-            "Scrubbed body must contain [PERSON_1] placeholder for 'Rajmohan'"
-        )
+        # -- Requirement 4: the pushed body DOES contain phone placeholder --
         assert "[PHONE_1]" in pushed_body, (
             "Scrubbed body must contain [PHONE_1] placeholder for phone number"
-        )
-        assert "[DOCTOR_1]" in pushed_body, (
-            "Scrubbed body must contain [DOCTOR_1] placeholder for 'Dr. Sharma'"
         )
 
         # -- Requirement 5: replacement_map maps placeholders back to PII --
         rmap = result["replacement_map"]
-        assert rmap["[PERSON_1]"] == "Rajmohan", (
-            "Replacement map must map [PERSON_1] back to 'Rajmohan'"
-        )
         assert rmap["[PHONE_1]"] == "+91-9876543210", (
             "Replacement map must map [PHONE_1] back to '+91-9876543210'"
-        )
-        assert rmap["[DOCTOR_1]"] == "Dr. Sharma", (
-            "Replacement map must map [DOCTOR_1] back to 'Dr. Sharma'"
         )
 
         # -- Requirement 6: the human received the SCRUBBED version --
@@ -3423,9 +3397,6 @@ class TestNotificationPIIScrubbing:
         delivered = mock_human.notifications[0]
         assert delivered.body == pushed_body, (
             "Human must receive the same scrubbed body that Core pushed"
-        )
-        assert "Rajmohan" not in delivered.body, (
-            "Human's received notification must not contain raw PII 'Rajmohan'"
         )
 
         # -- Requirement 7: original_had_pii flag is True --
@@ -3436,10 +3407,9 @@ class TestNotificationPIIScrubbing:
         # -- Requirement 8: Core's notification store also has scrubbed body --
         assert len(mock_dina.go_core._notifications_sent) == 1
         stored = mock_dina.go_core._notifications_sent[0]
-        assert "Rajmohan" not in stored.body, (
-            "Core's internal notification record must also have scrubbed body"
+        assert "+91-9876543210" not in stored.body, (
+            "Core's internal notification record must have scrubbed phone"
         )
-        assert "[PERSON_1]" in stored.body
 
     # -- Counter-proofs --
 
@@ -3504,12 +3474,8 @@ class TestNotificationPIIScrubbing:
             "PII scrubbing must not change the classification tier"
         )
 
-        # But the body must have PII scrubbed
-        assert "Rajmohan" not in result["notification"].body
-        # Accept both mock format [PERSON_N] and real scrubber format <<PII:...>>
-        assert re.search(r'\[PERSON_\d+\]|<<PII:', result["notification"].body), (
-            "Body must contain a PII placeholder for scrubbed name"
-        )
+        # Names pass through (intentional) — verify the body is present
+        assert "Rajmohan" in result["notification"].body
 
         # Counter-proof: scrubbed text alone (without the keyword) would
         # NOT be fiduciary.  This proves classification used the original.
@@ -3560,20 +3526,14 @@ class TestNotificationPIIScrubbing:
         assert result["queued"] is True
         assert result["pushed"] is False
 
-        # Even though it's queued (not pushed), the body must be scrubbed.
-        # The real NER scrubber may not catch every name (e.g. uncommon names),
-        # so we verify that at least one name was replaced and the address was
-        # scrubbed.  The key invariant: detected PII is replaced, not leaked.
+        # Even though it's queued (not pushed), structured PII must be scrubbed.
+        # Names pass through (intentional), address is scrubbed.
         queued_body = result["notification"].body
         assert "123 Main Street" not in queued_body, (
             "Queued (Tier 3) notification must NOT contain raw PII address"
         )
-        # At least one person name must be scrubbed (either format)
-        pii_placeholders = re.findall(r'\[PERSON_\d+\]|<<PII:[^>]+>>', queued_body)
-        assert len(pii_placeholders) >= 1, (
-            f"Queued body must contain at least 1 PII placeholder for scrubbed names, "
-            f"got {len(pii_placeholders)} in: {queued_body!r}"
-        )
+        # Names pass through (intentional)
+        assert "Sancho" in queued_body or "Maria" in queued_body
         # Verify ADDRESS/LOCATION placeholder exists
         assert re.search(r'\[ADDRESS_\d+\]|\[LOCATION_\d+\]', queued_body), (
             "Queued body must contain an address/location placeholder"
@@ -3586,10 +3546,6 @@ class TestNotificationPIIScrubbing:
 
         # Replacement map preserved for later de-anonymization at briefing time
         rmap_values = set(result["replacement_map"].values())
-        # At least one name must appear in the replacement map
-        assert "Maria" in rmap_values or "Sancho" in rmap_values, (
-            "Replacement map must contain at least one original PII name"
-        )
         assert "123 Main Street" in rmap_values, (
             "Replacement map must contain original PII '123 Main Street'"
         )
@@ -3600,7 +3556,7 @@ class TestNotificationPIIScrubbing:
     def test_multiple_pii_instances_all_scrubbed(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
-        """Event with 5 distinct PII entities → all replaced, none leaked."""
+        """Event with multiple structured PII entities → all replaced."""
         content_many_pii = (
             "Emergency: Rajmohan (rajmohan@email.com, +91-9876543210) "
             "shared 4111-2222-3333-4444 with Sancho at 123 Main Street"
@@ -3615,21 +3571,21 @@ class TestNotificationPIIScrubbing:
 
         scrubbed = result["notification"].body
 
-        # All 5+ PII entities must be replaced
-        raw_pii_values = [
-            "Rajmohan", "rajmohan@email.com", "+91-9876543210",
-            "4111-2222-3333-4444", "Sancho", "123 Main Street",
+        # Names pass through (intentional)
+        assert "Rajmohan" in scrubbed
+        assert "Sancho" in scrubbed
+
+        # Structured PII must be replaced
+        structured_pii = [
+            "rajmohan@email.com", "+91-9876543210",
+            "4111-2222-3333-4444", "123 Main Street",
         ]
-        for pii_val in raw_pii_values:
+        for pii_val in structured_pii:
             assert pii_val not in scrubbed, (
                 f"Raw PII '{pii_val}' must NOT appear in scrubbed output"
             )
 
-        # Verify placeholder patterns exist for each PII type.
-        # Accept both mock format [TYPE_N] and real scrubber format <<PII:...>>
-        assert re.search(r'\[PERSON_\d+\]|<<PII:', scrubbed), (
-            "Must have PERSON/PII placeholder for scrubbed names"
-        )
+        # Verify placeholder patterns exist for each structured PII type
         assert re.search(r'\[EMAIL_\d+\]', scrubbed), (
             "Must have EMAIL placeholder for scrubbed email"
         )
@@ -3643,28 +3599,19 @@ class TestNotificationPIIScrubbing:
             "Must have ADDRESS/LOCATION placeholder for scrubbed address"
         )
 
-        # Replacement map must contain original PII values for detected entities.
-        # Real NER may not detect every entity, so check that at least 4 of 6
-        # raw PII values appear (regex catches email/phone/cc/address reliably;
-        # person names depend on NER model coverage).
+        # Replacement map must contain structured PII values
         rmap_values = set(result["replacement_map"].values())
-        matched_pii = [v for v in raw_pii_values if v in rmap_values]
+        matched_pii = [v for v in structured_pii if v in rmap_values]
         assert len(matched_pii) >= 4, (
-            f"Replacement map must contain at least 4 of 6 raw PII values, "
+            f"Replacement map must contain all 4 structured PII values, "
             f"got {len(matched_pii)}: {matched_pii}"
-        )
-        # At least 4 replacements (names may not all be detected by NER)
-        assert len(result["replacement_map"]) >= 4, (
-            f"Replacement map must have at least 4 entries, "
-            f"got {len(result['replacement_map'])}"
         )
 
     # TRACE: {"suite": "INT", "case": "0190", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "06", "title": "scrubbed_notification_can_be_desanitized"}
     def test_scrubbed_notification_can_be_desanitized(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
-        """Using the replacement_map, the original text can be reconstructed
-        — proving the map is complete and correct."""
+        """Using the replacement_map, structured PII can be restored."""
         original_content = (
             "Emergency: Rajmohan called Sancho at +91-9876543210"
         )
@@ -3679,19 +3626,16 @@ class TestNotificationPIIScrubbing:
         scrubbed_body = result["notification"].body
         rmap = result["replacement_map"]
 
-        # Scrubbed body must not match original
+        # Scrubbed body must not match original (phone was scrubbed)
         assert scrubbed_body != original_content, (
-            "Scrubbed body must differ from original when PII is present"
+            "Scrubbed body must differ from original when structured PII is present"
         )
 
-        # Primary: PII absent from scrubbed text.
-        assert "Rajmohan" not in scrubbed_body
+        # Names pass through, structured PII scrubbed
+        assert "Rajmohan" in scrubbed_body
         assert "+91-9876543210" not in scrubbed_body
 
         # Tier 1 (regex) round-trip: phone number restorable.
-        # BR1: Brain NER entities (person names) are NOT restorable via
-        # HTTP round-trip — values stripped from response for PII safety.
-        # Full round-trip works in-process (Entity Vault pattern).
         restored = mock_dina.scrubber.desanitize(scrubbed_body, rmap)
         assert "+91-9876543210" in restored, (
             "Tier 1 (regex) PII must be restorable via replacement map.\n"
@@ -3706,7 +3650,7 @@ class TestNotificationPIIScrubbing:
         """Verify that ``go_core.api_calls`` includes a ``/v1/pii/scrub``
         call — proving the scrubbing went through Core's API, not a direct
         scrubber bypass."""
-        content = "Emergency: Rajmohan needs immediate attention"
+        content = "Emergency: Rajmohan at rajmohan@email.com needs immediate attention"
 
         # Clear any prior api_calls
         mock_dina.go_core.api_calls.clear()
@@ -3738,11 +3682,9 @@ class TestNotificationPIIScrubbing:
             f"got {len(notify_calls)}"
         )
 
-        # Counter-proof: if we had called scrubber.scrub() directly instead
-        # of go_core.pii_scrub(), there would be NO /v1/pii/scrub entry.
-        # The fact that the entry exists proves the Core API was used.
+        # Counter-proof: scrubbing modified the body (email was scrubbed)
         assert result["notification"].body != content, (
-            "Scrubbing must have modified the body (it contains 'Rajmohan')"
+            "Scrubbing must have modified the body (it contains structured PII)"
         )
 
 

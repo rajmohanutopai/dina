@@ -483,8 +483,8 @@ class TestResilienceRecovery:
             msg_id="msg_disk_full_001",
             from_did="did:plc:sender",
             to_did=node.did,
-            message_type="test",
-            payload={"data": "will not fit"},
+            message_type="presence.signal",
+            payload={"status": "arriving", "data": "will not fit"},
             encrypted_payload=large_payload,
         ))
         assert result["status"] == "429"
@@ -496,8 +496,8 @@ class TestResilienceRecovery:
             msg_id="msg_disk_full_002",
             from_did="did:plc:sender",
             to_did=node.did,
-            message_type="test",
-            payload={"data": "fits"},
+            message_type="presence.signal",
+            payload={"status": "arriving", "data": "fits"},
             encrypted_payload=small_payload,
         ))
         assert result_small["status"] == "202"
@@ -522,8 +522,8 @@ class TestResilienceRecovery:
             msg_id="msg_disk_full_003",
             from_did="did:plc:sender",
             to_did=node.did,
-            message_type="test",
-            payload={"data": "now it fits"},
+            message_type="presence.signal",
+            payload={"status": "arriving", "data": "now it fits"},
             encrypted_payload=large_payload,
         ))
         assert result_after["status"] == "202"

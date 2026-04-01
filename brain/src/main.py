@@ -85,60 +85,10 @@ if not _is_dev and os.environ.get("DINA_TEST_MODE", "").lower() == "true":
     _is_dev = True
 
 
-_SAFE_ENTITIES: frozenset[str] = frozenset({
-    "DATE", "TIME", "MONEY", "PERCENT", "QUANTITY",
-    "ORDINAL", "CARDINAL", "NORP", "EVENT",
-    "WORK_OF_ART", "LAW", "PRODUCT", "LANGUAGE",
-})
 
-
-class _SpacyScrubber:
-    """Tier 2 PII scrubbing via spaCy NER.
-
-    Only scrubs PII-relevant entity types (PERSON, ORG, GPE, LOC, FAC).
-    SAFE_ENTITIES (DATE, TIME, MONEY, PRODUCT, CARDINAL, etc.) pass
-    through unchanged — they are essential for LLM reasoning and do
-    not identify anyone.
-    """
-
-    def __init__(self) -> None:
-        """Load the spaCy model.  Raises ImportError or OSError if missing."""
-        import spacy  # noqa: F401
-        self._nlp = spacy.load("en_core_web_sm")
-
-    def scrub(self, text: str) -> tuple[str, list[dict]]:
-        """Scrub PII entities using spaCy NER."""
-        doc = self._nlp(text)
-        entities: list[dict] = []
-        scrubbed = text
-        counters: dict[str, int] = {}
-
-        for ent in doc.ents:
-            ent_type = ent.label_
-            if ent_type in _SAFE_ENTITIES:
-                continue
-            if len(ent.text.strip()) <= 2:
-                continue
-            count = counters.get(ent_type, 0) + 1
-            counters[ent_type] = count
-            token = f"[{ent_type}_{count}]"
-            entities.append({
-                "type": ent_type,
-                "value": ent.text,
-                "token": token,
-            })
-            scrubbed = scrubbed.replace(ent.text, token, 1)
-
-        return scrubbed, entities
-
-    def detect(self, text: str) -> list[dict]:
-        """Detect PII entities without replacing them."""
-        doc = self._nlp(text)
-        return [
-            {"type": ent.label_, "value": ent.text}
-            for ent in doc.ents
-            if ent.label_ not in _SAFE_ENTITIES and len(ent.text.strip()) > 2
-        ]
+# No spaCy fallback scrubber. Structured PII scrubbing requires Presidio.
+# Without Presidio, Brain's Tier 2 is unavailable — Go Core Tier 1 regex
+# (emails, phones, SSN) still runs on the Go side before Brain sees the text.
 
 
 # ---------------------------------------------------------------------------
@@ -349,40 +299,22 @@ def create_app() -> FastAPI:
     # HIGH-03: Track validated MCP server names for sync_engine.register_source()
     _mcp_source_names = list(mcp_commands.keys())
 
-    # PII scrubber — prefer PresidioScrubber, fall back to spaCy, then None.
+    # PII scrubber — Presidio only (structured PII: emails, phones, govt IDs).
+    # No spaCy fallback — without Presidio, Brain Tier 2 is unavailable.
+    # Go Core Tier 1 regex still catches emails/phones on the Go side.
     scrubber: object | None = None
     scrubber_tier = "none"
-    # F13: Use specific exception types for diagnostic clarity.
     try:
         from .adapter.scrubber_presidio import PresidioScrubber
         scrubber = PresidioScrubber()
         scrubber_tier = "presidio"
         log.info("brain.scrubber.presidio.loaded")
-    except ImportError:
-        log.info("brain.scrubber.presidio.not_installed")
-        try:
-            scrubber = _SpacyScrubber()
-            scrubber_tier = "spacy"
-            log.info("brain.scrubber.spacy.fallback")
-        except (ImportError, OSError) as exc:
-            log.warning(
-                "brain.scrubber.unavailable",
-                extra={"error": type(exc).__name__, "detail": str(exc)},
-            )
-            scrubber = None
-    except (OSError, RuntimeError) as exc:
-        log.warning("brain.scrubber.presidio.init_failed",
-                     extra={"error": type(exc).__name__, "detail": str(exc)})
-        try:
-            scrubber = _SpacyScrubber()
-            scrubber_tier = "spacy"
-            log.info("brain.scrubber.spacy.fallback")
-        except (ImportError, OSError) as exc2:
-            log.warning(
-                "brain.scrubber.unavailable",
-                extra={"error": type(exc2).__name__, "detail": str(exc2)},
-            )
-            scrubber = None
+    except (ImportError, OSError, RuntimeError) as exc:
+        log.warning(
+            "brain.scrubber.unavailable",
+            extra={"error": type(exc).__name__, "detail": str(exc)},
+        )
+        scrubber = None
     if scrubber_tier != "presidio":
         log.warning(
             "brain.scrubber.degraded",

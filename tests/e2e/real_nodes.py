@@ -153,7 +153,7 @@ def _api_request(
 
 
 # ---------------------------------------------------------------------------
-# RealPIIScrubber — chains Go Core Tier 1 regex + Brain Tier 2 NER
+# RealPIIScrubber — chains Go Core Tier 1 regex + Brain Tier 2 structured PII
 # ---------------------------------------------------------------------------
 
 class RealPIIScrubber(MockPIIScrubber):
@@ -315,7 +315,7 @@ class RealPIIScrubber(MockPIIScrubber):
         return result, replacements
 
     def scrub_full(self, text: str) -> tuple[str, dict[str, str]]:
-        """Full pipeline: Tier 1 (Go Core regex) + Tier 2 (Brain NER).
+        """Full pipeline: Tier 1 (Go Core regex) + Tier 2 (Brain structured PII).
 
         Chains both tiers and merges the entity vaults.
         Falls back to mock if either tier fails (tier-level fallback

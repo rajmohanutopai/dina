@@ -80,9 +80,10 @@ class TestMultiDeviceSync:
         # Sancho sends a D2D arrival message to Don Alonso
         sancho.send_d2d(
             node.did,
-            "dina/social/arrival",
+            "presence.signal",
             {
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 15,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -183,9 +184,10 @@ class TestMultiDeviceSync:
             node.set_test_clock(disconnect_time + i + 1)
             sender.send_d2d(
                 to_did=node.did,
-                message_type="dina/social/arrival",
+                message_type="presence.signal",
                 payload={
-                    "type": "dina/social/arrival",
+                    "type": "presence.signal",
+                    "status": "arriving",
                     "eta_minutes": 10 + i,
                 },
             )
