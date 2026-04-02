@@ -240,10 +240,16 @@ class DinaClient:
 
     # -- Key/Value ---------------------------------------------------------
 
-    def kv_get(self, key: str) -> str | None:
+    def kv_get(self, key: str, session: str = "") -> str | None:
         """Get a KV value by key. Returns None if the key does not exist."""
+        extra = {}
+        if session:
+            extra["X-Session"] = session
         try:
-            resp = self._request(self._core, "GET", f"/v1/vault/kv/{key}")
+            resp = self._request(
+                self._core, "GET", f"/v1/vault/kv/{key}",
+                headers=extra if extra else None,
+            )
             data = resp.json()
             return data.get("value") if isinstance(data, dict) else resp.text
         except DinaClientError as exc:
@@ -251,14 +257,17 @@ class DinaClient:
                 return None
             raise
 
-    def kv_set(self, key: str, value: str) -> None:
-        """Set a KV value."""
+    def kv_set(self, key: str, value: str, session: str = "") -> None:
+        """Set a KV value. Pass session for agent-scoped writes."""
+        extra = {"Content-Type": "text/plain"}
+        if session:
+            extra["X-Session"] = session
         self._request(
             self._core,
             "PUT",
             f"/v1/vault/kv/{key}",
             content=value,
-            headers={"Content-Type": "text/plain"},
+            headers=extra,
         )
 
     # -- PII ---------------------------------------------------------------

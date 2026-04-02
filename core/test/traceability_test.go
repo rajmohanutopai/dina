@@ -3867,21 +3867,20 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
-	// TRACE: {"suite": "CORE", "case": "1601", "section": "30", "sectionName": "Test System Quality", "title": "e2e_conftest_skips_without_docker"}
-	t.Run("e2e_conftest_skips_without_docker", func(t *testing.T) {
-		// The E2E conftest.py must skip the entire suite when DINA_E2E != 'docker'.
+	// TRACE: {"suite": "CORE", "case": "1601", "section": "30", "sectionName": "Test System Quality", "title": "e2e_conftest_fails_without_docker"}
+	t.Run("e2e_conftest_fails_without_docker", func(t *testing.T) {
+		// The E2E conftest.py must fail hard when DINA_E2E != 'docker'.
 		// E2E tests CANNOT run without Docker containers — there is no mock fallback.
-		// This is a safety guard: running E2E without Docker would produce
-		// confusing failures or false passes.
+		// pytest.UsageError prevents silent execution without Docker.
 		conftest := readProjectFile(t, root, filepath.Join("tests", "e2e", "conftest.py"))
 
 		if !strings.Contains(conftest, "DINA_E2E") {
 			t.Fatal("E2E conftest.py must check DINA_E2E env var")
 		}
 
-		// Must call pytest.skip when Docker is not available.
-		if !strings.Contains(conftest, "pytest.skip") {
-			t.Fatal("E2E conftest.py must call pytest.skip when DINA_E2E != 'docker' — " +
+		// Must raise UsageError (hard fail) when Docker is not available.
+		if !strings.Contains(conftest, "pytest.UsageError") {
+			t.Fatal("E2E conftest.py must raise pytest.UsageError when DINA_E2E != 'docker' — " +
 				"E2E tests cannot run without Docker containers")
 		}
 	})

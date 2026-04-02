@@ -44,24 +44,67 @@ do_compose() {
 
 health_check_all() {
   local FAILED=0
-  echo "=== Health checks ==="
-  wait_healthy "alonso-core (19100)"     "http://localhost:19100/healthz" || FAILED=1
-  wait_healthy "sancho-core (19300)"     "http://localhost:19300/healthz" || FAILED=1
-  wait_healthy "chairmaker-core (19500)" "http://localhost:19500/healthz" || FAILED=1
-  wait_healthy "albert-core (19700)"     "http://localhost:19700/healthz" || FAILED=1
-  wait_healthy "alonso-brain (19200)"    "http://localhost:19200/healthz" || FAILED=1
-  wait_healthy "sancho-brain (19400)"    "http://localhost:19400/healthz" || FAILED=1
-  wait_healthy "chairmaker-brain (19600)" "http://localhost:19600/healthz" || FAILED=1
-  wait_healthy "albert-brain (19800)"    "http://localhost:19800/healthz" || FAILED=1
-  wait_healthy "plc (2582)"             "http://localhost:2582/healthz" || FAILED=1
-  wait_healthy "pds (2583)"             "http://localhost:2583/xrpc/_health" || FAILED=1
-  wait_healthy "appview (3001)"         "http://localhost:3001/health" || FAILED=1
-  wait_tcp     "postgres (5433)"        "localhost" 5433 || FAILED=1
+  local CHECKED=0
+  local TOTAL=12
+  local FAIL_LIST=""
+
+  _check() {
+    local name="$1" url="$2" retries="${3:-30}"
+    for i in $(seq 1 "$retries"); do
+      if curl -sf "$url" > /dev/null 2>&1; then
+        CHECKED=$((CHECKED + 1))
+        printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+        return 0
+      fi
+      sleep 1
+    done
+    CHECKED=$((CHECKED + 1))
+    FAIL_LIST="$FAIL_LIST $name"
+    FAILED=1
+    printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+    return 1
+  }
+  _check_tcp() {
+    local name="$1" host="$2" port="$3" retries="${4:-30}"
+    for i in $(seq 1 "$retries"); do
+      if python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('$host',$port)); s.close()" 2>/dev/null; then
+        CHECKED=$((CHECKED + 1))
+        printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+        return 0
+      fi
+      sleep 1
+    done
+    CHECKED=$((CHECKED + 1))
+    FAIL_LIST="$FAIL_LIST $name"
+    FAILED=1
+    printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+    return 1
+  }
+
+  printf "  Health checks: 0/%s " "$TOTAL"
+  _check "alonso-core"     "http://localhost:19100/healthz" || true
+  _check "sancho-core"     "http://localhost:19300/healthz" || true
+  _check "chairmaker-core" "http://localhost:19500/healthz" || true
+  _check "albert-core"     "http://localhost:19700/healthz" || true
+  _check "alonso-brain"    "http://localhost:19200/healthz" || true
+  _check "sancho-brain"    "http://localhost:19400/healthz" || true
+  _check "chairmaker-brain" "http://localhost:19600/healthz" || true
+  _check "albert-brain"    "http://localhost:19800/healthz" || true
+  _check "plc"             "http://localhost:2582/healthz" || true
+  _check "pds"             "http://localhost:2583/xrpc/_health" || true
+  _check "appview"         "http://localhost:3001/health" || true
+  _check_tcp "postgres"    "localhost" 5433 || true
+
+  if [ "$FAILED" -eq 0 ]; then
+    printf "\r  Health checks: %s/%s ✓                    \n" "$TOTAL" "$TOTAL"
+  else
+    printf "\r  Health checks: FAILED —%s\n" "$FAIL_LIST"
+  fi
   return $FAILED
 }
 
 extract_keys() {
-  echo "=== Extracting service keys ==="
+  printf "  Extracting service keys... "
   rm -rf "$KEY_DIR"
   for actor in alonso sancho chairmaker albert; do
     for role in core brain; do
@@ -72,11 +115,10 @@ extract_keys() {
         > "$dir/${role}_ed25519_private.pem" 2>/dev/null || true
     done
   done
-  echo "  Keys extracted to $KEY_DIR/"
+  echo "done"
 }
 
 write_manifest() {
-  echo "=== Writing manifest ==="
   cat > "$MANIFEST" <<MANIFEST
 {
   "project": "$PROJECT",
@@ -136,40 +178,51 @@ USAGE
 # ---------------------------------------------------------------------------
 
 cmd_up() {
-  echo "=== Tearing down any existing test stack ==="
-  do_compose down -v --remove-orphans 2>/dev/null || true
+  # --- Tear down ---
+  printf "  Tearing down existing stack... "
+  do_compose down -v --remove-orphans >/dev/null 2>&1 || true
+  echo "done"
 
-  echo "=== Building all images ==="
-  TOTAL_SERVICES=$(do_compose config --services 2>/dev/null | wc -l | tr -d ' ')
-  BUILT=0
-  do_compose build 2>&1 | while IFS= read -r line; do
-    # Track "Successfully built" or "Built" lines
-    if echo "$line" | grep -qiE "Built|DONE|successfully"; then
-      BUILT=$((BUILT + 1))
-      echo "  [build] $line"
-    elif echo "$line" | grep -qiE "error|Error|FAIL"; then
-      echo "  [build] $line"
-    fi
-  done
-  echo "  Build complete."
+  # --- Build ---
+  printf "  Building images... "
+  BUILD_LOG=$(mktemp)
+  if ! do_compose build >"$BUILD_LOG" 2>&1; then
+    echo "FAILED"
+    echo "  Build errors:"
+    grep -iE "error|FAIL" "$BUILD_LOG" | tail -20 | sed 's/^/    /'
+    rm -f "$BUILD_LOG"
+    exit 1
+  fi
+  IMAGES_BUILT=$(grep -ciE " Built$" "$BUILD_LOG" || true)
+  rm -f "$BUILD_LOG"
+  echo "done ($IMAGES_BUILT images)"
 
-  echo "=== Starting all services ==="
-  do_compose up -d
-  echo "  Waiting for containers to be healthy..."
-  # Poll only containers that HAVE healthchecks (not all containers).
-  # Services without healthchecks (keygen init containers, etc.) are excluded.
+  # --- Start ---
+  printf "  Starting services... "
+  START_LOG=$(mktemp)
+  if ! do_compose up -d >"$START_LOG" 2>&1; then
+    echo "FAILED"
+    tail -10 "$START_LOG" | sed 's/^/    /'
+    rm -f "$START_LOG"
+    exit 1
+  fi
+  rm -f "$START_LOG"
+  echo "done"
+
+  # --- Wait for healthy (in-place progress) ---
   for i in $(seq 1 120); do
     HEALTHY=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -c "healthy" || true)
     WITH_HC=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -cE "healthy|unhealthy|starting" || true)
     TOTAL=$(do_compose ps --format "{{.Name}}" 2>/dev/null | wc -l | tr -d ' ')
-    printf "\r  Containers: %s/%s healthy (%s total) " "$HEALTHY" "$WITH_HC" "$TOTAL"
+    printf "\r  Waiting for healthy: %s/%s containers (%s total) " "$HEALTHY" "$WITH_HC" "$TOTAL"
     if [ "$HEALTHY" = "$WITH_HC" ] && [ "$WITH_HC" -gt 0 ]; then
-      echo "✓"
+      printf "\r  Waiting for healthy: %s/%s containers (%s total) ✓\n" "$HEALTHY" "$WITH_HC" "$TOTAL"
       break
     fi
     if [ "$i" = "120" ]; then
-      echo "✗ (timeout)"
+      printf "\r  Waiting for healthy: %s/%s containers — TIMEOUT\n" "$HEALTHY" "$WITH_HC"
       do_compose ps 2>/dev/null
+      exit 1
     fi
     sleep 2
   done
@@ -187,11 +240,11 @@ cmd_up() {
 }
 
 cmd_down() {
-  echo "=== Tearing down test stack ==="
-  do_compose down -v --remove-orphans
+  printf "  Tearing down test stack... "
+  do_compose down -v --remove-orphans >/dev/null 2>&1 || true
   rm -f "$MANIFEST"
   rm -rf "$KEY_DIR"
-  echo "=== Stack removed (images kept for faster rebuild) ==="
+  echo "done"
 }
 
 cmd_purge() {

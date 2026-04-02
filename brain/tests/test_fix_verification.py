@@ -770,7 +770,12 @@ def test_fix_19_8_5_presidio_primary():
 # TST-BRAIN-492
 # TRACE: {"suite": "BRAIN", "case": "0492", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "06", "title": "spacy_fallback"}
 def test_fix_19_8_6_spacy_fallback():
-    """Fallback to SpacyScrubber when Presidio unavailable."""
+    """SpacyScrubber only scrubs structured PII (no PERSON/ORG/LOC).
+
+    Names, orgs, and locations pass through unchanged. The spaCy fallback
+    is intentionally limited — without Presidio, only DATE/NORP entities
+    are replaced. This test verifies the policy is enforced.
+    """
     try:
         import spacy
         spacy.load("en_core_web_sm")
@@ -783,24 +788,16 @@ def test_fix_19_8_6_spacy_fallback():
     text = "John Smith works at Google in San Francisco"
     scrubbed, entities = scrubber.scrub(text)
 
-    # Must detect PII entities
-    assert len(entities) > 0, "SpacyScrubber should detect PII entities"
-    entity_types = {e["type"] for e in entities}
-    assert entity_types & {"PERSON", "ORG", "LOC"}, (
-        f"Expected PERSON/ORG/LOC in {entity_types}"
+    # Names, orgs, locations pass through (structured PII only policy)
+    assert "John Smith" in scrubbed, "Person names must pass through"
+    assert "Google" in scrubbed, "Org names must pass through"
+    assert "San Francisco" in scrubbed, "Location names must pass through"
+
+    # No PERSON/ORG/LOC entities should be reported by scrub()
+    ner_types = {e["type"] for e in entities} & {"PERSON", "ORG", "LOC"}
+    assert len(ner_types) == 0, (
+        f"scrub() must not report PERSON/ORG/LOC, got: {ner_types}"
     )
-
-    # Scrubbed text must not contain original PII values
-    assert "John Smith" not in scrubbed
-    # Scrubbed text must contain replacement tokens
-    assert "[PERSON_1]" in scrubbed
-
-    # Each entity must have type, value, token keys
-    for ent in entities:
-        assert "type" in ent
-        assert "value" in ent
-        assert "token" in ent
-        assert ent["token"] in scrubbed
 
 
 # TST-BRAIN-493

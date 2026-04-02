@@ -522,22 +522,23 @@ async def test_mcp_6_2_5_untrusted_source_higher_scrutiny(intent_classifier) -> 
 # TST-BRAIN-236
 # TRACE: {"suite": "BRAIN", "case": "0236", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "06", "title": "agent_response_pii_leakage_check"}
 def test_mcp_6_2_6_agent_response_pii_leakage_check(pii_scrubber) -> None:
-    """SS6.2.6: Agent response is scanned for PII leakage before delivery to user."""
+    """SS6.2.6: Agent response is scanned for structured PII leakage."""
     response_text = "Dr. Sharma's records at john@example.com"
 
     scrubbed, entities = pii_scrubber.scrub(response_text)
 
-    # Must detect PII in the agent response.
-    person_entities = [e for e in entities if e["type"] == "PERSON"]
-    assert len(person_entities) >= 1, (
-        f"Agent response PII leakage check must detect PERSON, got: {entities}"
+    # Structured PII (email) must be detected and scrubbed.
+    email_entities = [e for e in entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, (
+        f"Agent response must detect EMAIL, got: {entities}"
     )
-    assert "Dr. Sharma" not in scrubbed, "PII must be removed from scrubbed output"
+    assert "john@example.com" not in scrubbed, "Email must be scrubbed"
+    # Names pass through (structured PII only policy)
+    assert "Dr. Sharma" in scrubbed, "Names pass through unchanged"
 
     # Counter-proof: clean response has no PII.
     clean_scrubbed, clean_entities = pii_scrubber.scrub("The battery lasts 8 hours")
-    person_clean = [e for e in clean_entities if e["type"] == "PERSON"]
-    assert len(person_clean) == 0, "Clean text should have no PERSON entities"
+    assert len(clean_entities) == 0, "Clean text should have no entities"
 
 
 # TST-BRAIN-237
@@ -1105,25 +1106,26 @@ def test_mcp_6_1_8_bot_trust_scores_tracking() -> None:
 # TST-BRAIN-395
 # TRACE: {"suite": "BRAIN", "case": "0395", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "17", "title": "bot_response_pii_validation"}
 def test_mcp_6_2_17_bot_response_pii_validation() -> None:
-    """SS6.2.17: Bot response with leaked PII detected and scrubbed."""
+    """SS6.2.17: Bot response with leaked structured PII detected and scrubbed.
+
+    Names pass through (structured PII only). Email is scrubbed.
+    """
+    pytest.importorskip("presidio_analyzer")
+    from src.adapter.scrubber_presidio import PresidioScrubber
     try:
-        from src.adapter.scrubber_spacy import SpacyScrubber
-        scrubber = SpacyScrubber()
-        # Force load to check availability
-        scrubber._ensure_nlp()
+        scrubber = PresidioScrubber()
+        scrubber._ensure_analyzer()
     except Exception:
-        pytest.skip("spaCy scrubber not available")
+        pytest.skip("Presidio scrubber not available")
 
     bot_response = make_bot_response(
-        content="Contact John Smith for the best deal in San Francisco"
+        content="Contact John Smith at john@example.com for the best deal"
     )
     scrubbed_text, scrub_entities = scrubber.scrub(bot_response["content"])
 
-    # PII must be detected and scrubbed from bot response
-    assert len(scrub_entities) > 0, f"Expected PII entities, got none from: {bot_response['content']}"
-    entity_types = {e["type"] for e in scrub_entities}
-    assert "PERSON" in entity_types, f"Expected PERSON in {entity_types}"
-    # Original PII must be removed
-    assert "John Smith" not in scrubbed_text
-    # Replacement tokens must be present
-    assert "[PERSON_1]" in scrubbed_text
+    # Structured PII (email) must be detected and scrubbed
+    email_entities = [e for e in scrub_entities if e["type"] == "EMAIL"]
+    assert len(email_entities) >= 1, f"Expected EMAIL entity, got: {scrub_entities}"
+    assert "john@example.com" not in scrubbed_text, "Email must be scrubbed"
+    # Names pass through
+    assert "John Smith" in scrubbed_text, "Names pass through unchanged"

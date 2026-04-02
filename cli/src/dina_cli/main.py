@@ -435,7 +435,7 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
 
         # Store decision in KV for polling via validate-status
         decision = {"status": status, "action": action, "description": description}
-        client.kv_set(f"approval:{val_id}", json.dumps(decision))
+        client.kv_set(f"approval:{val_id}", json.dumps(decision), session=session)
 
         output: dict = {"status": status, "id": val_id}
         if status == "pending_approval":
@@ -455,7 +455,7 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
             # Store fallback decision in KV so validate-status can poll it
             decision = {"status": status, "action": action, "description": description}
             try:
-                client.kv_set(f"approval:{val_id}", json.dumps(decision))
+                client.kv_set(f"approval:{val_id}", json.dumps(decision), session=session)
             except DinaClientError:
                 pass  # Core KV also unavailable — still return the decision
             output = {"status": status, "id": val_id}
@@ -521,13 +521,14 @@ def validate_actions(ctx: click.Context) -> None:
 
 @cli.command("validate-status")
 @click.argument("val_id")
+@click.option("--session", default="", help="Session ID (same as validate)")
 @click.pass_context
-def validate_status(ctx: click.Context, val_id: str) -> None:
+def validate_status(ctx: click.Context, val_id: str, session: str) -> None:
     """Poll approval status for a pending action."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        raw = client.kv_get(f"approval:{val_id}")
+        raw = client.kv_get(f"approval:{val_id}", session=session)
         if raw is None:
             print_error_with_trace(f"Approval {val_id} not found", json_mode, client.req_id)
             ctx.exit(1)

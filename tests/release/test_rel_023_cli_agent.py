@@ -203,8 +203,10 @@ class TestCLIAgentIntegration:
         val_id = data.get("id", "")
         assert val_id
 
-        # Poll status
-        result = release_services.agent_exec("validate-status", val_id)
+        # Poll status (session required for agent KV access)
+        result = release_services.agent_exec(
+            "validate-status", "--session", agent_session, val_id,
+        )
         assert result.returncode == 0, f"validate-status failed: {result.stderr}"
         status_data = json.loads(result.stdout)
         # Response may wrap the decision in a "value" field (KV store format)

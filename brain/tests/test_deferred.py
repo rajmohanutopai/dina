@@ -273,9 +273,9 @@ async def test_deferred_17_2a_3_model_version_mismatch(llm_router) -> None:
 async def test_deferred_17_2b_1_indirect_person_reference(pii_scrubber) -> None:
     """SS17.2b.1: Indirect person reference.
 
-    "The CEO of [ORG_1] who wrote a novel about AI in 2017"
-    Phase 2+: LLM NER not yet implemented. Verify text contains the
-    indirect reference pattern and that the scrubber interface is callable.
+    Names and orgs pass through unchanged (structured PII only).
+    Verify the scrubber is callable and doesn't crash on indirect references.
+    Phase 2+: LLM NER may detect implicit references like "the CEO".
     """
     try:
         from src.adapter.scrubber_spacy import SpacyScrubber
@@ -289,19 +289,8 @@ async def test_deferred_17_2b_1_indirect_person_reference(pii_scrubber) -> None:
     assert isinstance(scrubbed, str)
     assert isinstance(entities, list)
 
-    # Tier 2 NER should detect at least "Acme Corp" as ORG
-    org_entities = [e for e in entities if e["type"] == "ORG"]
-    assert len(org_entities) >= 1, (
-        f"ORG entity must be detected for 'Acme Corp', got: {entities}"
-    )
-    # Original org name must be replaced in scrubbed text
-    for ent in org_entities:
-        assert ent["value"] not in scrubbed, (
-            f"Original PII '{ent['value']}' must not appear in scrubbed text"
-        )
-        assert ent["token"] in scrubbed, (
-            f"Replacement token '{ent['token']}' must appear in scrubbed text"
-        )
+    # Orgs pass through unchanged (structured PII only policy)
+    assert "Acme Corp" in scrubbed, "Org names must pass through unchanged"
 
 
 # TST-BRAIN-352
@@ -310,9 +299,9 @@ async def test_deferred_17_2b_1_indirect_person_reference(pii_scrubber) -> None:
 async def test_deferred_17_2b_2_coded_language() -> None:
     """SS17.2b.2: Coded language.
 
-    "The guy from that Bangalore company" -- Tier 2 NER should detect
-    at least "Bangalore" as a location (GPE).  Phase 2+ will add LLM NER
-    for implicit references like "the guy".
+    Locations pass through unchanged (structured PII only).
+    Verify the scrubber is callable and doesn't crash on location references.
+    Phase 2+: LLM NER may detect implicit references like "the guy".
     """
     try:
         from src.adapter.scrubber_spacy import SpacyScrubber
@@ -320,22 +309,14 @@ async def test_deferred_17_2b_2_coded_language() -> None:
         pytest.skip("spaCy model not available")
 
     scrubber = SpacyScrubber()
-    # "Bangalore, India" gives spaCy enough context to classify as GPE (not PERSON).
     text = "The guy from that company in Bangalore, India"
 
     scrubbed, entities = scrubber.scrub(text)
     assert isinstance(scrubbed, str)
     assert isinstance(entities, list)
 
-    # Tier 2 NER should detect "Bangalore" as GPE/LOC
-    loc_entities = [e for e in entities if e["type"] in ("GPE", "LOC")]
-    assert len(loc_entities) >= 1, (
-        f"GPE/LOC entity must be detected for 'Bangalore', got: {entities}"
-    )
-    for ent in loc_entities:
-        assert ent["value"] not in scrubbed, (
-            f"Original PII '{ent['value']}' must not appear in scrubbed text"
-        )
+    # Locations pass through unchanged (structured PII only policy)
+    assert "Bangalore" in scrubbed, "Location names must pass through unchanged"
 
 
 # TST-BRAIN-353
