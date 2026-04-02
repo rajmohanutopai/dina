@@ -597,6 +597,7 @@ func main() {
 	// KNOWN_PEERS: legacy dev/test-only mechanism. Disabled by default.
 	// Production uses PLC directory for DID resolution.
 	// Enable with DINA_KNOWN_PEERS_MODE=legacy for internal testing only.
+	var knownPeerDocs [][2]string
 	if os.Getenv("DINA_KNOWN_PEERS_MODE") == "legacy" {
 		didResolver.SetTTL(365 * 24 * time.Hour)
 		if peers := os.Getenv("DINA_KNOWN_PEERS"); peers != "" {
@@ -639,6 +640,7 @@ func main() {
 					`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"%s"}],`+
 					`"service":[{"id":"%s#msg","type":"DinaMsgBox","serviceEndpoint":"%s"}]`+
 					`}`, did, did, did, pubKeyMultibase, did, endpoint)
+				knownPeerDocs = append(knownPeerDocs, [2]string{did, doc})
 				didResolver.AddDocument(did, []byte(doc))
 			}
 		}
@@ -654,10 +656,15 @@ func main() {
 		}
 		return raw, nil
 	})
-	didResolver.SetTTL(10 * time.Minute) // cache PLC results, not forever
-	// Re-add KNOWN_PEERS with long TTL (they don't expire).
-	// The global TTL is now 10min for PLC results, but KNOWN_PEERS
-	// are pre-populated and refreshed on each restart.
+	// Cache TTL: 10 minutes for PLC-resolved DIDs.
+	didResolver.SetTTL(10 * time.Minute)
+	// Re-add KNOWN_PEERS so their fetchedAt is reset with the new TTL.
+	// This makes them valid for another 10 minutes from now. The health
+	// loop refreshes them periodically in production; in test stacks
+	// they survive the entire test run because tests complete in <10min.
+	for _, kp := range knownPeerDocs {
+		didResolver.AddDocument(kp[0], []byte(kp[1]))
+	}
 
 	didResolverPort := transport.NewDIDResolverPort(didResolver)
 	// SQLite-backed durable outbox (survives restarts). Falls back to in-memory

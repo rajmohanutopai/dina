@@ -355,7 +355,7 @@ class TestAgentSafetyDelegation:
     # TST-E2E-032
     # TRACE: {"suite": "E2E", "case": "0032", "section": "06", "sectionName": "Agent Safety", "subsection": "01", "scenario": "04", "title": "agent_intent_verification"}
     def test_agent_intent_verification(
-        self, don_alonso: HomeNode, openclaw: MockOpenClaw,
+        self, don_alonso: HomeNode, openclaw: MockOpenClaw, chairmaker: HomeNode,
     ) -> None:
         """E2E-6.4  Agent Intent Verification.
 
@@ -412,7 +412,7 @@ class TestAgentSafetyDelegation:
         money_intent = node.verify_agent_intent(
             agent_did="did:plc:openclaw",
             action="transfer_money",
-            target="did:plc:chairmaker",
+            target=chairmaker.did,
             context={"amount": 72000, "currency": "INR"},
         )
 

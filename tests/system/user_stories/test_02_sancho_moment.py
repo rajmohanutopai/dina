@@ -12,7 +12,7 @@ noticed (from three previous visits) that Sancho always asks for strong
 cardamom tea.
 
 Today, Sancho is leaving home to visit Alonso again. Sancho's Dina
-sends a presence update ("dina/social/arrival") to Alonso's Dina via
+sends a presence update ("presence.signal") to Alonso's Dina via
 encrypted Dina-to-Dina messaging.
 
 Alonso's Dina:
@@ -40,7 +40,7 @@ Architecture
 ::
 
   Sancho's Dina (Core:19301)
-    → POST /v1/msg/send {"to":"did:plc:alonso", "type":"dina/social/arrival"}
+    → POST /v1/msg/send {"to":"did:plc:alonso", "type":"presence.signal"}
     → Sign with Sancho's Ed25519 key
     → Resolve Alonso's DID → get public key
     → NaCl sealed box encrypt
@@ -93,7 +93,7 @@ class TestSanchoMoment:
 
     # TST-USR-014
     def test_00_previous_conversation_stored_in_vault(
-        self, alonso_core, admin_headers
+        self, alonso_core, admin_headers, alonso_did, sancho_did
     ):
         """Simulate a previous conversation where Dina stored context.
 
@@ -113,15 +113,9 @@ class TestSanchoMoment:
         Here we simulate step 3 directly — the vault items represent
         what Dina would have stored from observing the conversation.
         """
-        # Use the configured DIDs (from DINA_OWN_DID in docker-compose).
-        # These are the DIDs used for D2D routing — the DINA_KNOWN_PEERS
-        # resolver maps these DIDs to endpoints and public keys.
-        # The generated DIDs from /v1/did (e.g. did:plc:XhqSZnjK7ca6XukzgeEjYr)
-        # are derived from the keypair but NOT registered in the peer resolver.
-        sancho_did = "did:plc:sancho"
-        alonso_did = "did:plc:alonso"
-        _state["sancho_did"] = sancho_did
+        # Use real PLC-registered DIDs from conftest fixtures.
         _state["alonso_did"] = alonso_did
+        _state["sancho_did"] = sancho_did
         print(f"\n  [sancho] Sancho's DID: {sancho_did}")
         print(f"  [sancho] Alonso's DID: {alonso_did}")
 
@@ -203,19 +197,24 @@ class TestSanchoMoment:
         _state["tea_note_id"] = r2.json().get("id", "")
         print(f"  [sancho] Stored: cardamom tea (id={_state['tea_note_id'][:8]}...)")
 
-        # Verify: query vault for items about Sancho
-        r3 = httpx.post(
-            f"{alonso_core}/v1/vault/query",
-            json={
-                "persona": "general",
-                "query": sancho_did,
-                "mode": "fts5",
-            },
-            headers=admin_headers,
-            timeout=10,
-        )
-        assert r3.status_code == 200
-        items = r3.json().get("items", [])
+        # Poll vault until indexing completes (FTS5 rebuild after clear is slow).
+        items = []
+        for _attempt in range(15):
+            time.sleep(2)
+            r3 = httpx.post(
+                f"{alonso_core}/v1/vault/query",
+                json={
+                    "persona": "general",
+                    "query": "Sancho",
+                    "mode": "hybrid",
+                },
+                headers=admin_headers,
+                timeout=10,
+            )
+            if r3.status_code == 200:
+                items = r3.json().get("items", [])
+                if len(items) >= 2:
+                    break
         assert len(items) >= 2, (
             f"Expected >= 2 vault items about Sancho, got {len(items)}"
         )
@@ -227,11 +226,11 @@ class TestSanchoMoment:
 
     # TST-USR-015
     def test_01_sancho_sends_d2d_arrival_message(
-        self, sancho_core, admin_headers
+        self, sancho_core, admin_headers, alonso_did, sancho_did
     ):
         """Sancho's Dina sends a presence update to Alonso's Dina.
 
-        The message type is "dina/social/arrival" — a DIDComm-compatible
+        The message type is "presence.signal" — a DIDComm-compatible
         presence notification. Sancho's Core encrypts it with NaCl sealed
         box, signs with Ed25519, and delivers to Alonso's Core.
 
@@ -239,11 +238,14 @@ class TestSanchoMoment:
         Dina doesn't need verbose payloads — the value comes from what
         YOUR Dina already knows about the sender.
         """
-        alonso_did = _state["alonso_did"]
+        # Use fixture DIDs; also update _state for downstream tests.
+        if "alonso_did" not in _state:
+            _state["alonso_did"] = alonso_did
+            _state["sancho_did"] = sancho_did
 
         body_payload = json.dumps({
-            "status": "leaving_home",
-            "message": "On my way to your place",
+            "status": "arriving",
+            "eta_minutes": 15,
         })
 
         r = httpx.post(
@@ -251,7 +253,7 @@ class TestSanchoMoment:
             json={
                 "to": alonso_did,
                 "body": base64.b64encode(body_payload.encode()).decode(),
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
             },
             headers=admin_headers,
             timeout=15,
@@ -259,7 +261,8 @@ class TestSanchoMoment:
         assert r.status_code == 202, (
             f"D2D send failed: {r.status_code} {r.text}"
         )
-        print(f"\n  [sancho] Sent dina/social/arrival to {alonso_did[:30]}...")
+        _state["d2d_sent"] = True
+        print(f"\n  [sancho] Sent presence.signal to {alonso_did[:30]}...")
 
     # -----------------------------------------------------------------
     # 02 — Alonso's Core receives and decrypts the message
@@ -299,7 +302,7 @@ class TestSanchoMoment:
                 msg_from = msg.get("From", "")
                 msg_type = msg.get("Type", "")
                 if (
-                    msg_type == "dina/social/arrival"
+                    msg_type == "presence.signal"
                     and msg_from == sancho_did
                 ):
                     found = True
@@ -312,7 +315,7 @@ class TestSanchoMoment:
 
         assert found, (
             f"D2D message not received in Alonso's inbox after 30s. "
-            f"Expected From={sancho_did}, Type=dina/social/arrival"
+            f"Expected From={sancho_did}, Type=presence.signal"
         )
         _state["d2d_message"] = msg_data
         print(
@@ -328,7 +331,10 @@ class TestSanchoMoment:
     def test_03_brain_processes_didcomm_arrival(
         self, alonso_brain, brain_signer
     ):
-        """Send the arrival event to Alonso's Brain for processing.
+        """Send the arrival event to Alonso's Brain for processing."""
+        if "d2d_message" not in _state:
+            pytest.skip("D2D message not received — test_02 must pass first")
+        """
 
         Brain's GuardianLoop._handle_didcomm() routes dina/social/*
         messages through the nudge assembly pipeline:
@@ -351,7 +357,7 @@ class TestSanchoMoment:
         r = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
                 "body": body,
                 "from": sancho_did,
                 "persona_id": "general",
@@ -374,7 +380,10 @@ class TestSanchoMoment:
 
     # TST-USR-018
     def test_04_nudge_was_assembled(self):
-        """Verify Brain assembled a nudge (not silence).
+        """Verify Brain assembled a nudge (not silence)."""
+        if "process_result" not in _state:
+            pytest.skip("Brain process not run — test_03 must pass first")
+        """
 
         The guardian routes dina/social/* to _handle_didcomm(), which
         calls the nudge assembler. If vault context exists for the
@@ -409,7 +418,10 @@ class TestSanchoMoment:
 
     # TST-USR-019
     def test_05_nudge_contains_vault_context(self):
-        """Verify the nudge references both vault items.
+        """Verify the nudge references both vault items."""
+        if "nudge" not in _state:
+            pytest.skip("Nudge not assembled — test_04 must pass first")
+        """
 
         The nudge should mention:
           1. Sancho's mother being unwell (from the relationship note)

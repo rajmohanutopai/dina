@@ -300,7 +300,7 @@ class TestD2DMessaging:
     """Real encrypted D2D messaging between alonso and sancho containers."""
 
     def test_send_alonso_to_sancho(
-        self, alonso_core, sancho_core, brain_headers
+        self, alonso_core, sancho_core, brain_headers, sancho_did
     ):
         """Alonso sends a D2D message to Sancho — verify inbox grows."""
         pre_r = httpx.get(
@@ -316,7 +316,7 @@ class TestD2DMessaging:
 
         send_r = httpx.post(
             f"{alonso_core}/v1/msg/send",
-            json={"to": "did:plc:sancho", "body": body, "type": "test/greeting"},
+            json={"to": sancho_did, "body": body, "type": "test/greeting"},
             headers=brain_headers,
             timeout=10,
         )
@@ -334,7 +334,7 @@ class TestD2DMessaging:
         assert post_count > pre_count, "Sancho did not receive the message"
 
     def test_send_sancho_to_alonso(
-        self, alonso_core, sancho_core, brain_headers
+        self, alonso_core, sancho_core, brain_headers, alonso_did
     ):
         """Bidirectional: Sancho sends to Alonso."""
         pre_r = httpx.get(
@@ -350,7 +350,7 @@ class TestD2DMessaging:
 
         send_r = httpx.post(
             f"{sancho_core}/v1/msg/send",
-            json={"to": "did:plc:alonso", "body": body, "type": "test/greeting"},
+            json={"to": alonso_did, "body": body, "type": "test/greeting"},
             headers=brain_headers,
             timeout=10,
         )
@@ -510,11 +510,11 @@ class TestContacts:
         )
         assert r.status_code in (200, 201)
 
-    def test_list_contacts(self, alonso_core, admin_headers):
+    def test_list_contacts(self, alonso_core, admin_headers, sancho_did):
         # Ensure at least one contact exists
         httpx.post(
             f"{alonso_core}/v1/contacts",
-            json={"did": "did:plc:sancho", "name": "Sancho", "trust_level": "trusted"},
+            json={"did": sancho_did, "name": "Sancho", "trust_level": "trusted"},
             headers=admin_headers,
             timeout=5,
         )
@@ -530,16 +530,16 @@ class TestContacts:
         assert isinstance(contacts, list)
         assert len(contacts) > 0
 
-    def test_set_sharing_policy(self, alonso_core, admin_headers):
+    def test_set_sharing_policy(self, alonso_core, admin_headers, sancho_did):
         # Ensure contact exists first
         httpx.post(
             f"{alonso_core}/v1/contacts",
-            json={"did": "did:plc:sancho", "name": "Sancho", "trust_level": "trusted"},
+            json={"did": sancho_did, "name": "Sancho", "trust_level": "trusted"},
             headers=admin_headers,
             timeout=5,
         )
         r = httpx.put(
-            f"{alonso_core}/v1/contacts/did:plc:sancho/policy",
+            f"{alonso_core}/v1/contacts/{sancho_did}/policy",
             json={"allowed_fields": ["name", "interests"], "blocked_fields": ["financial"]},
             headers=admin_headers,
             timeout=5,
@@ -617,10 +617,10 @@ class TestAuthEnforcement:
 class TestAppViewTrustQueries:
     """Trust network queries against real AppView + Postgres."""
 
-    def test_resolve_did(self, appview):
+    def test_resolve_did(self, appview, alonso_did):
         r = httpx.get(
             f"{appview}/xrpc/com.dina.trust.resolve",
-            params={"did": "did:plc:alonso"},
+            params={"did": alonso_did},
             timeout=5,
         )
         # 200 with data, or 400/404 if endpoint expects different params
@@ -636,18 +636,18 @@ class TestAppViewTrustQueries:
         # generated column; full-text search requires a proper migration.
         assert r.status_code in (200, 400, 500)
 
-    def test_get_profile(self, appview):
+    def test_get_profile(self, appview, alonso_did):
         r = httpx.get(
             f"{appview}/xrpc/com.dina.trust.getProfile",
-            params={"did": "did:plc:alonso"},
+            params={"did": alonso_did},
             timeout=5,
         )
         assert r.status_code in (200, 400, 404)
 
-    def test_get_attestations(self, appview):
+    def test_get_attestations(self, appview, alonso_did):
         r = httpx.get(
             f"{appview}/xrpc/com.dina.trust.getAttestations",
-            params={"authorDid": "did:plc:alonso", "limit": 10},
+            params={"authorDid": alonso_did, "limit": 10},
             timeout=5,
         )
         assert r.status_code in (200, 400, 404)
@@ -821,14 +821,14 @@ class TestFullPipeline:
         )
 
     def test_trust_edge_created_for_did_attestation(
-        self, pds_url, pds_account, pds_auth_headers, system_services
+        self, pds_url, pds_account, pds_auth_headers, system_services, sancho_did
     ):
         """Positive attestation about a DID creates a trust_edge in Postgres.
 
         The ingester creates trust edges only for positive sentiment + DID subjects.
         """
         did, _ = pds_account
-        target_did = "did:plc:sancho"
+        target_did = sancho_did
         now = datetime.now(timezone.utc).isoformat()
 
         create_r = httpx.post(

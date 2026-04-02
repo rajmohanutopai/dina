@@ -36,6 +36,7 @@ class TestQuietDina:
     def test_mixed_tier_interrupt_notify_queue(
         self,
         don_alonso: HomeNode,
+        sancho: HomeNode,
     ) -> None:
         """E2E-17.1 Mixed-tier event routing: interrupt, notify, queue.
 
@@ -79,7 +80,7 @@ class TestQuietDina:
                 "eta_minutes": 10,
                 "text": "Sancho is arriving",
             },
-            from_did="did:plc:sancho",
+            from_did=sancho.did,
         )
         tier2_class = node._classify_silence(
             "presence.signal",
@@ -121,7 +122,7 @@ class TestQuietDina:
         dnd_result = node._brain_process(
             "presence.signal",
             {"status": "arriving", "eta_minutes": 30, "text": "Newsletter digest available"},
-            from_did="did:plc:sancho",
+            from_did=sancho.did,
         )
         assert dnd_result["status"] == "queued_for_briefing", (
             "Non-fiduciary arrivals must be queued during DND"

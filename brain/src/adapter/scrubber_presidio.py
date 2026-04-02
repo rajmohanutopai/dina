@@ -637,6 +637,12 @@ class PresidioScrubber:
             if entity_type in ner_entities or entity_type in SAFE_ENTITIES:
                 continue
 
+            # Only scrub known structured PII types — same whitelist as full scrub.
+            # This prevents false positives from Presidio built-in recognizers
+            # (e.g. US_DRIVER_LICENSE matching Indian license number formats).
+            if entity_type not in SCRUB_ENTITIES:
+                continue
+
             start, end = result.start, result.end
             value = text[start:end]
 

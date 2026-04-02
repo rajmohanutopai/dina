@@ -97,9 +97,11 @@ _HEALTH_RESULT_KEYWORDS = re.compile(
 _MAX_BRIEFING_ITEMS = 500
 
 # Persona tiers that require an audit annotation in the briefing (SS18.3).
-# Items from these tiers surface restricted data — the user must know that
+# Items from these tiers surface sensitive data — the user must know that
 # their briefing accessed a protected persona.
-_AUDITABLE_PERSONA_TIERS = frozenset({"restricted", "locked"})
+# 4-tier model: default, standard, sensitive, locked.
+# Legacy "restricted" maps to "sensitive".
+_AUDITABLE_PERSONA_TIERS = frozenset({"sensitive", "locked", "restricted"})
 
 # Trust-relevance gate for density analysis (SS19.2).
 # Only run vault density analysis when the query is about products, trust,
@@ -2135,10 +2137,14 @@ class GuardianLoop:
         requesting_agent = payload.get("requesting_agent", "unknown_agent")
         target_persona = payload.get("target_persona", "")
         reason = payload.get("reason", "")
-        # Fail-closed: default to restricted if tier not provided.
-        tier = (payload.get("source_persona_tier", "restricted") or "restricted").strip().lower()
-        if tier not in ("open", "restricted", "locked"):
-            tier = "restricted"
+        # Fail-closed: default to sensitive if tier not provided.
+        # 4-tier model: default, standard, sensitive, locked.
+        # Legacy mapping: open → default, restricted → sensitive.
+        tier = (payload.get("source_persona_tier", "sensitive") or "sensitive").strip().lower()
+        _TIER_MIGRATION = {"open": "default", "restricted": "sensitive"}
+        tier = _TIER_MIGRATION.get(tier, tier)
+        if tier not in ("default", "standard", "sensitive", "locked"):
+            tier = "sensitive"
 
         if not source_persona or not query:
             return {
@@ -2149,11 +2155,11 @@ class GuardianLoop:
 
         disclosure_id = f"disc-{uuid4().hex[:12]}"
 
-        # Deterministic tier gate — restricted/locked always blocks auto-disclosure.
-        blocked = tier in ("restricted", "locked")
+        # Deterministic tier gate — sensitive/locked always blocks auto-disclosure.
+        blocked = tier in ("sensitive", "locked")
 
         if not blocked:
-            # Open tier — still generate proposal but mark as non-blocked.
+            # Default/standard tier — still generate proposal but mark as non-blocked.
             pass
 
         # Query source vault for relevant items.

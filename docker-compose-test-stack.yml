@@ -46,12 +46,6 @@ x-core-env: &core-env
   DINA_APPVIEW_URL: http://appview-web:3000
   DINA_PLC_URL: http://plc:2582
   DINA_PDS_URL: http://pds:3000
-  # Legacy KNOWN_PEERS for D2D: test actors use synthetic DIDs with
-  # pre-shared seed hex for Ed25519 key derivation. The fake PLC has
-  # the DIDs but not the #dina_signing verification methods (those
-  # require PLC update with rotation key, which keygen containers
-  # don't do). Production uses PLC resolution; tests use KNOWN_PEERS.
-  DINA_KNOWN_PEERS_MODE: legacy
 
 # -- Brain service base (Python sidecar) --
 x-brain-base: &brain-base
@@ -326,11 +320,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://alonso-brain:8200
       DINA_MASTER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
-      DINA_OWN_DID: "did:plc:alonso"
+      DINA_MSGBOX_URL: http://alonso-core:8100
       DINA_PDS_HANDLE: "alonso.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "alonso@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
       DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
     volumes:
       - alonso-data:/data
@@ -371,11 +364,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://sancho-brain:8200
       DINA_MASTER_SEED: "0202020202020202020202020202020202020202020202020202020202020202"
-      DINA_OWN_DID: "did:plc:sancho"
+      DINA_MSGBOX_URL: http://sancho-core:8100
       DINA_PDS_HANDLE: "sancho.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "sancho@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
     volumes:
       - sancho-data:/data
@@ -416,11 +408,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://chairmaker-brain:8200
       DINA_MASTER_SEED: "0303030303030303030303030303030303030303030303030303030303030303"
-      DINA_OWN_DID: "did:plc:chairmaker"
+      DINA_MSGBOX_URL: http://chairmaker-core:8100
       DINA_PDS_HANDLE: "chairmaker.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "chairmaker@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://albert-core:8100"
     volumes:
       - chairmaker-data:/data
@@ -461,11 +452,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://albert-brain:8200
       DINA_MASTER_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
-      DINA_OWN_DID: "did:plc:albert"
+      DINA_MSGBOX_URL: http://albert-core:8100
       DINA_PDS_HANDLE: "albert.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "albert@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100"
     volumes:
       - albert-data:/data

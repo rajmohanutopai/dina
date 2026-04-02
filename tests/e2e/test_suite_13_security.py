@@ -323,6 +323,7 @@ class TestSecurityAdversarial:
     def test_log_exfiltration_prevention(
         self,
         don_alonso: HomeNode,
+        sancho: HomeNode,
     ) -> None:
         """E2E-13.6 Log Exfiltration Prevention.
 
@@ -339,7 +340,7 @@ class TestSecurityAdversarial:
         # Trigger operations that generate audit/log entries
         don_alonso.vault_query("general", "contact_info")
         don_alonso.send_d2d(
-            "did:plc:sancho",
+            sancho.did,
             "presence.signal",
             {"status": "here", "text": "Meeting at 123 Main Street, call me at +91-9876543210"},
         )
@@ -726,6 +727,7 @@ class TestSecurityAdversarial:
     def test_data_sovereignty_on_disk(
         self,
         don_alonso: HomeNode,
+        sancho: HomeNode,
     ) -> None:
         """E2E-13.10 Data Sovereignty on Disk.
 
@@ -775,7 +777,7 @@ class TestSecurityAdversarial:
 
         spool_msg = D2DMessage(
             msg_id=f"spool_test_{uuid.uuid4().hex[:8]}",
-            from_did="did:plc:sancho",
+            from_did=sancho.did,
             to_did=don_alonso.did,
             message_type="presence.signal",
             payload={"status": "arriving", "text": sensitive_text},

@@ -3,8 +3,8 @@
 Verify Dina-to-Dina encrypted messaging works between two separate
 Core+Brain nodes running in the release Docker stack.
 
-Node A: alonso-core (did:plc:alonso)
-Node B: sancho-core (did:plc:sancho)
+Node A: alonso-core (real PLC-registered DID)
+Node B: sancho-core (real PLC-registered DID)
 
 Execution class: Harness.
 """

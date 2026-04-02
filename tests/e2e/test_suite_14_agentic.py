@@ -179,7 +179,7 @@ class TestAgenticBehavior:
     # -- TST-E2E-078 ----------------------------------------------------------
 
     # TRACE: {"suite": "E2E", "case": "0078", "section": "14", "sectionName": "Agentic", "subsection": "01", "scenario": "04", "title": "transfer_money_always_high_risk"}
-    def test_transfer_money_always_high_risk(self, docker_services) -> None:
+    def test_transfer_money_always_high_risk(self, docker_services, chairmaker) -> None:
         """E2E-14.4 transfer_money is ALWAYS HIGH risk regardless of LLM.
 
         Invariant: the deterministic gate classifies transfer_money as
@@ -192,7 +192,7 @@ class TestAgenticBehavior:
             {
                 "type": "agent_intent",
                 "action": "transfer_money",
-                "target": "did:plc:chairmaker",
+                "target": chairmaker.did,
                 "agent_did": "did:plc:openclaw",
             },
         )

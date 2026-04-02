@@ -110,7 +110,7 @@ PERSONAS = list(PERSONA_TIERS.keys())
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_personas(system_services, admin_headers, brain_headers):
+def setup_personas(system_services, admin_headers, brain_headers, alonso_did, sancho_did):
     """Create and unlock personas on both Core nodes, clear vaults."""
     for actor in ("alonso", "sancho"):
         base = system_services.core_url(actor)
@@ -184,14 +184,32 @@ def setup_personas(system_services, admin_headers, brain_headers):
             except Exception:
                 pass
 
+    # Register contacts between actors so D2D messaging works.
+    contacts = [
+        ("alonso", sancho_did, "sancho"),
+        ("sancho", alonso_did, "alonso"),
+    ]
+    for actor, contact_did, contact_name in contacts:
+        base = system_services.core_url(actor)
+        try:
+            httpx.post(
+                f"{base}/v1/contacts",
+                json={"did": contact_did, "name": contact_name},
+                headers=admin_headers,
+                timeout=10,
+            )
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # AppView data seeding
 # ---------------------------------------------------------------------------
 
-def _seed_appview(dsn: str) -> dict:
+def _seed_appview(dsn: str, alonso_did: str, sancho_did: str) -> dict:
     """Insert test data directly into AppView Postgres.
 
+    Uses the real PLC-registered DIDs for both actors.
     Returns dict of created IDs for test assertions.
     """
     try:
@@ -213,8 +231,8 @@ def _seed_appview(dsn: str) -> dict:
     ids["subject_sancho"] = subj_sancho
 
     for sid, name, did in [
-        (subj_alonso, "Don Alonso", "did:plc:alonso"),
-        (subj_sancho, "Sancho Panza", "did:plc:sancho"),
+        (subj_alonso, "Don Alonso", alonso_did),
+        (subj_sancho, "Sancho Panza", sancho_did),
     ]:
         cur.execute(
             """INSERT INTO subjects (id, name, subject_type, did, identifiers_json, needs_recalc, created_at, updated_at)
@@ -224,7 +242,7 @@ def _seed_appview(dsn: str) -> dict:
         )
 
     # DID profiles
-    for did, score in [("did:plc:alonso", 0.85), ("did:plc:sancho", 0.72)]:
+    for did, score in [(alonso_did, 0.85), (sancho_did, 0.72)]:
         cur.execute(
             """INSERT INTO did_profiles (did, needs_recalc, total_attestations_about, positive_about, overall_trust_score, computed_at)
                VALUES (%s, false, 5, 4, %s, %s)
@@ -233,14 +251,14 @@ def _seed_appview(dsn: str) -> dict:
         )
 
     # Attestations
-    att1_uri = f"at://did:plc:alonso/com.dina.trust.attestation/{uuid.uuid4().hex[:12]}"
-    att2_uri = f"at://did:plc:sancho/com.dina.trust.attestation/{uuid.uuid4().hex[:12]}"
+    att1_uri = f"at://{alonso_did}/com.dina.trust.attestation/{uuid.uuid4().hex[:12]}"
+    att2_uri = f"at://{sancho_did}/com.dina.trust.attestation/{uuid.uuid4().hex[:12]}"
     ids["attestation_1"] = att1_uri
     ids["attestation_2"] = att2_uri
 
     for uri, author, subj_id, sentiment in [
-        (att1_uri, "did:plc:alonso", subj_sancho, "positive"),
-        (att2_uri, "did:plc:sancho", subj_alonso, "positive"),
+        (att1_uri, alonso_did, subj_sancho, "positive"),
+        (att2_uri, sancho_did, subj_alonso, "positive"),
     ]:
         cur.execute(
             """INSERT INTO attestations (uri, author_did, cid, subject_id, subject_ref_raw, category, sentiment, record_created_at, indexed_at, search_content)
@@ -258,8 +276,8 @@ def _seed_appview(dsn: str) -> dict:
 
     # Trust edges (schema: id, from_did, to_did, edge_type, weight, source_uri, created_at)
     for src, tgt, kind, uri in [
-        ("did:plc:alonso", "did:plc:sancho", "vouch", att1_uri),
-        ("did:plc:sancho", "did:plc:alonso", "attestation", att2_uri),
+        (alonso_did, sancho_did, "vouch", att1_uri),
+        (sancho_did, alonso_did, "attestation", att2_uri),
     ]:
         edge_id = f"edge_{uuid.uuid4().hex[:12]}"
         cur.execute(
@@ -293,11 +311,11 @@ def _clear_appview(dsn: str) -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def seed_appview(system_services):
+def seed_appview(system_services, alonso_did, sancho_did):
     """Seed AppView Postgres with test trust data."""
     dsn = system_services.postgres_dsn
     _clear_appview(dsn)
-    ids = _seed_appview(dsn)
+    ids = _seed_appview(dsn, alonso_did, sancho_did)
     yield ids
     _clear_appview(dsn)
 
@@ -305,6 +323,18 @@ def seed_appview(system_services):
 # ---------------------------------------------------------------------------
 # URL shortcuts
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def alonso_did(system_services) -> str:
+    """Real PLC-registered DID for Alonso, fetched from Core API."""
+    return system_services.actor_did("alonso")
+
+
+@pytest.fixture(scope="session")
+def sancho_did(system_services) -> str:
+    """Real PLC-registered DID for Sancho, fetched from Core API."""
+    return system_services.actor_did("sancho")
+
 
 @pytest.fixture(scope="session")
 def alonso_core(system_services):

@@ -112,6 +112,37 @@ class TestStackServices:
             timeout=30,
         )
 
+    # --- Actor DIDs (dynamic, from real PLC-registered identities) ---
+
+    def actor_did(self, actor: str, retries: int = 30, delay: float = 2.0) -> str:
+        """Fetch the real DID for an actor from its Core /v1/did endpoint.
+
+        Core registers its DID via PLC on first call to /v1/did.  This
+        may take a few seconds after container start, so we retry with
+        a configurable backoff.  Returns the ``did:plc:...`` string.
+        """
+        import time
+
+        url = self.core_url(actor)
+        last_err = ""
+        for attempt in range(retries):
+            try:
+                headers = {"Authorization": f"Bearer {self.client_token}"}
+                resp = httpx.get(f"{url}/v1/did", headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    did = data.get("did") or data.get("id") or ""
+                    if did.startswith("did:"):
+                        return did
+                last_err = f"status={resp.status_code} body={resp.text[:200]}"
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                last_err = str(exc)
+            time.sleep(delay)
+        raise RuntimeError(
+            f"Could not fetch DID for actor '{actor}' from {url}/v1/did "
+            f"after {retries} attempts: {last_err}"
+        )
+
     # --- Actors ---
 
     @property

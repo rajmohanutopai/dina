@@ -157,12 +157,10 @@ def plc_directory() -> MockPLCDirectory:
 @pytest.fixture(scope="session")
 def d2d_network(docker_services) -> MockD2DNetwork:
     """D2D delivery between Home Nodes via real Go Core HTTP calls."""
-    did_to_core_url = {
-        "did:plc:alonso": docker_services.core_url("alonso"),
-        "did:plc:sancho": docker_services.core_url("sancho"),
-        "did:plc:chairmaker": docker_services.core_url("chairmaker"),
-        "did:plc:albert": docker_services.core_url("albert"),
-    }
+    did_to_core_url = {}
+    for actor in ["alonso", "sancho", "chairmaker", "albert"]:
+        did = docker_services.actor_did(actor)
+        did_to_core_url[did] = docker_services.core_url(actor)
     return RealD2DNetwork(did_to_core_url, docker_services.client_token)
 
 
@@ -222,12 +220,17 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
     PII scrubbing, DID signing, device pairing all hit real APIs).
     Brain API calls use Ed25519 signing.
     """
+    alonso_did = docker_services.actor_did("alonso")
+    sancho_did = docker_services.actor_did("sancho")
+    albert_did = docker_services.actor_did("albert")
+    chairmaker_did = docker_services.actor_did("chairmaker")
+
     node = RealHomeNode(
         core_url=docker_services.core_url("alonso"),
         brain_url=docker_services.brain_url("alonso"),
         client_token=docker_services.client_token,
         core_private_key_pem=_core_private_keys.get("alonso"),
-        did="did:plc:alonso",
+        did=alonso_did,
         display_name="Don Alonso",
         trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
         plc=plc_directory,
@@ -252,17 +255,17 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
     laptop = node.pair_device(code2, DeviceType.RICH_CLIENT)
 
     # Contacts — pushes to real Go Core via POST /v1/contacts
-    node.add_contact("did:plc:sancho", "Sancho", TrustRing.RING_2_VERIFIED)
+    node.add_contact(sancho_did, "Sancho", TrustRing.RING_2_VERIFIED)
     node.add_contact("did:plc:drcarl", "Dr. Carl", TrustRing.RING_2_VERIFIED)
-    node.add_contact("did:plc:albert", "Albert", TrustRing.RING_2_VERIFIED)
-    node.add_contact("did:plc:chairmaker", "ChairMaker", TrustRing.RING_3_SKIN_IN_GAME)
+    node.add_contact(albert_did, "Albert", TrustRing.RING_2_VERIFIED)
+    node.add_contact(chairmaker_did, "ChairMaker", TrustRing.RING_3_SKIN_IN_GAME)
 
     # Sharing policies
-    node.set_sharing_policy("did:plc:sancho",
+    node.set_sharing_policy(sancho_did,
                             presence="eta_only", context="full",
                             availability="free_busy", preferences="full")
     node.set_sharing_policy("did:plc:drcarl", health="full")
-    node.set_sharing_policy("did:plc:chairmaker", preferences="summary")
+    node.set_sharing_policy(chairmaker_did, preferences="summary")
 
     # Pre-populate vault with context
     node.vault_store("general", "sancho_last_visit",
@@ -278,7 +281,7 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
     node.set_estate_plan(EstatePlan(
         beneficiaries=[
             EstateBeneficiary(
-                did="did:plc:albert",
+                did=albert_did,
                 personas=["general", "health"],
                 access_level="full_decrypt",
             ),
@@ -297,12 +300,15 @@ def sancho(plc_directory, d2d_network, docker_services, _core_private_keys) -> H
 
     RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
     """
+    sancho_did = docker_services.actor_did("sancho")
+    alonso_did = docker_services.actor_did("alonso")
+
     node = RealHomeNode(
         core_url=docker_services.core_url("sancho"),
         brain_url=docker_services.brain_url("sancho"),
         client_token=docker_services.client_token,
         core_private_key_pem=_core_private_keys.get("sancho"),
-        did="did:plc:sancho",
+        did=sancho_did,
         display_name="Sancho",
         trust_ring=TrustRing.RING_2_VERIFIED,
         plc=plc_directory,
@@ -317,9 +323,9 @@ def sancho(plc_directory, d2d_network, docker_services, _core_private_keys) -> H
     node.pair_device(code, DeviceType.RICH_CLIENT)
 
     # Contacts — pushes to real Go Core via POST /v1/contacts
-    node.add_contact("did:plc:alonso", "Don Alonso", TrustRing.RING_2_VERIFIED)
+    node.add_contact(alonso_did, "Don Alonso", TrustRing.RING_2_VERIFIED)
 
-    node.set_sharing_policy("did:plc:alonso",
+    node.set_sharing_policy(alonso_did,
                             presence="eta_only", context="full",
                             preferences="full")
 
@@ -338,12 +344,14 @@ def chairmaker(plc_directory, d2d_network, docker_services, _core_private_keys) 
 
     RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
     """
+    chairmaker_did = docker_services.actor_did("chairmaker")
+
     node = RealHomeNode(
         core_url=docker_services.core_url("chairmaker"),
         brain_url=docker_services.brain_url("chairmaker"),
         client_token=docker_services.client_token,
         core_private_key_pem=_core_private_keys.get("chairmaker"),
-        did="did:plc:chairmaker",
+        did=chairmaker_did,
         display_name="ChairMaker",
         trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
         plc=plc_directory,
@@ -368,12 +376,15 @@ def albert(plc_directory, d2d_network, docker_services, _core_private_keys) -> H
 
     RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
     """
+    albert_did = docker_services.actor_did("albert")
+    alonso_did = docker_services.actor_did("alonso")
+
     node = RealHomeNode(
         core_url=docker_services.core_url("albert"),
         brain_url=docker_services.brain_url("albert"),
         client_token=docker_services.client_token,
         core_private_key_pem=_core_private_keys.get("albert"),
-        did="did:plc:albert",
+        did=albert_did,
         display_name="Albert",
         trust_ring=TrustRing.RING_2_VERIFIED,
         plc=plc_directory,
@@ -383,7 +394,7 @@ def albert(plc_directory, d2d_network, docker_services, _core_private_keys) -> H
     node.first_run_setup("albert@example.com", "passphrase_albert")
 
     # Contacts — pushes to real Go Core via POST /v1/contacts
-    node.add_contact("did:plc:alonso", "Don Alonso", TrustRing.RING_2_VERIFIED)
+    node.add_contact(alonso_did, "Don Alonso", TrustRing.RING_2_VERIFIED)
 
     return node
 

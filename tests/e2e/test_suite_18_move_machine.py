@@ -35,6 +35,7 @@ class TestMoveMachine:
     def test_export_import_restores_data(
         self,
         don_alonso: HomeNode,
+        sancho: HomeNode,
         plc_directory: MockPLCDirectory,
         d2d_network: MockD2DNetwork,
     ) -> None:
@@ -176,7 +177,7 @@ class TestMoveMachine:
         assert len(empty) == 0, "Non-existent item must return empty"
 
         # -- Verify contacts restored --------------------------------------
-        assert "did:plc:sancho" in fresh.contacts
+        assert sancho.did in fresh.contacts
 
         # -- Verify personal persona items also restored -------------------
         fresh_personal = fresh.personas.get("general")

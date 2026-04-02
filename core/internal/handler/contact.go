@@ -67,7 +67,13 @@ func (h *ContactHandler) HandleAddContact(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.Contacts.Add(r.Context(), req.DID, req.Name, req.TrustLevel); err != nil {
+	// Default trust_level to "unknown" — CHECK constraint requires a valid value.
+	trustLevel := req.TrustLevel
+	if trustLevel == "" {
+		trustLevel = "unknown"
+	}
+
+	if err := h.Contacts.Add(r.Context(), req.DID, req.Name, trustLevel); err != nil {
 		http.Error(w, `{"error":"failed to add contact"}`, http.StatusInternalServerError)
 		return
 	}
