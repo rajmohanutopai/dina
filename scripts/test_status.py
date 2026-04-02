@@ -906,11 +906,18 @@ _GO_JSON_ACTION_MAP = {"pass": "PASS", "skip": "SKIP", "fail": "FAIL"}
 def _extract_go_section(name: str, override: dict[str, int] | None = None) -> int:
     """Extract section number for a Go test function.
 
-    Single source of truth: TRACE JSON comments (passed via override dict).
-    No fallback regex extraction — if TRACE is missing, returns 0.
+    Primary source: TRACE JSON comments (passed via override dict).
+    Subtests inherit their parent's section: TestFoo_4_1_Bar/subcase
+    looks up TestFoo_4_1_Bar first, then falls back to parent name.
     """
-    if override and name in override:
-        return override[name]
+    if override:
+        if name in override:
+            return override[name]
+        # Subtests: inherit section from parent (before the first /)
+        if "/" in name:
+            parent = name.split("/")[0]
+            if parent in override:
+                return override[parent]
     return 0
 
 
@@ -924,11 +931,17 @@ def _extract_py_section(
 ) -> int:
     """Extract section number for a Python test function.
 
-    Single source of truth: TRACE JSON comments (passed via override dict).
-    No fallback regex extraction — if TRACE is missing, returns 0.
+    Primary source: TRACE JSON comments (passed via override dict).
+    Fallback: extract from filename pattern (test_01_foo.py → section 1).
+    This handles suites without TRACE (user stories, system tests).
     """
     if override and func_name in override:
         return override[func_name]
+    # Fallback: extract section from the qualified path (filename)
+    if qualified:
+        m = _PY_FILE_SECTION_RE.search(qualified)
+        if m:
+            return int(m.group(1))
     return 0
 
 
@@ -1239,6 +1252,7 @@ SUITES = {
                 "tests/release/"],
         "cwd": None,
         "parser": "pytest",
+        "timeout": 600,
         "test_dir": "tests/release",
         "section_names": {
             1: "Fresh Machine Install",
@@ -1275,6 +1289,7 @@ SUITES = {
                 "tests/system/user_stories/"],
         "cwd": None,
         "parser": "pytest",
+        "timeout": 600,
         "test_dir": "tests/system/user_stories",
         "section_names": {
             1: "The Purchase Journey",

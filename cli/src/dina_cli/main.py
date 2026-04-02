@@ -409,7 +409,6 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     config = ctx.obj["config"]
-    val_id = f"val_{uuid.uuid4().hex[:8]}"
 
     try:
         result = client.process_event({
@@ -425,6 +424,7 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
         }, session=session)
         approved = result.get("approved", False)
         requires = result.get("requires_approval", False)
+        proposal_id = result.get("proposal_id", "")
 
         if approved and not requires:
             status = "approved"
@@ -433,13 +433,11 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
         else:
             status = "denied"
 
-        # Store decision in KV for polling via validate-status
-        decision = {"status": status, "action": action, "description": description}
-        client.kv_set(f"approval:{val_id}", json.dumps(decision), session=session)
-
-        output: dict = {"status": status, "id": val_id}
-        if status == "pending_approval":
-            output["dashboard_url"] = f"{config.core_url}/approvals/{val_id}"
+        output: dict = {"status": status}
+        if proposal_id:
+            output["id"] = proposal_id
+        if status == "pending_approval" and proposal_id:
+            output["dashboard_url"] = f"{config.core_url}/approvals/{proposal_id}"
         if result.get("risk"):
             output["risk"] = result["risk"]
 
@@ -452,15 +450,8 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
                 status = "approved"
             else:
                 status = "pending_approval"
-            # Store fallback decision in KV so validate-status can poll it
-            decision = {"status": status, "action": action, "description": description}
-            try:
-                client.kv_set(f"approval:{val_id}", json.dumps(decision), session=session)
-            except DinaClientError:
-                pass  # Core KV also unavailable — still return the decision
-            output = {"status": status, "id": val_id}
+            output: dict = {"status": status}
             if status == "pending_approval":
-                output["dashboard_url"] = f"{config.core_url}/approvals/{val_id}"
                 output["note"] = "Guardian unavailable — conservative fallback"
             print_result_with_trace(output, json_mode, client.req_id)
         else:
@@ -520,22 +511,21 @@ def validate_actions(ctx: click.Context) -> None:
 
 
 @cli.command("validate-status")
-@click.argument("val_id")
+@click.argument("proposal_id")
 @click.option("--session", default="", help="Session ID (same as validate)")
 @click.pass_context
-def validate_status(ctx: click.Context, val_id: str, session: str) -> None:
-    """Poll approval status for a pending action."""
+def validate_status(ctx: click.Context, proposal_id: str, session: str) -> None:
+    """Poll approval status for a pending action.
+
+    Uses the proposal_id returned by `dina validate` to query the real
+    Guardian proposal lifecycle (not a static KV snapshot).
+    """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        raw = client.kv_get(f"approval:{val_id}", session=session)
-        if raw is None:
-            print_error_with_trace(f"Approval {val_id} not found", json_mode, client.req_id)
-            ctx.exit(1)
-            return
-        decision = json.loads(raw)
-        decision["id"] = val_id
-        print_result_with_trace(decision, json_mode, client.req_id)
+        result = client.get_proposal_status(proposal_id, session=session)
+        result.setdefault("id", proposal_id)
+        print_result_with_trace(result, json_mode, client.req_id)
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)

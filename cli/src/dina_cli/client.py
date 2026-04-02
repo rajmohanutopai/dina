@@ -340,6 +340,19 @@ class DinaClient:
         )
         return resp.json()
 
+    def get_proposal_status(self, proposal_id: str, session: str = "") -> dict:
+        """Poll proposal status via Core's intent proposal endpoint."""
+        extra = {}
+        if session:
+            extra["X-Session"] = session
+        resp = self._request(
+            self._core,
+            "GET",
+            f"/v1/intent/proposals/{proposal_id}/status",
+            headers=extra if extra else None,
+        )
+        return resp.json()
+
     # -- Sessions --------------------------------------------------------------
 
     def session_start(self, name: str) -> dict:

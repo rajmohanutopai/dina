@@ -309,26 +309,30 @@ def test_ask_status_denied():
 def test_validate_approved():
     mc = MagicMock()
     mc.process_event.return_value = {"approved": True, "requires_approval": False, "risk": "SAFE"}
-    mc.kv_set.return_value = None
     result = _invoke(["--json", "validate", "--session", "ses_test", "read_email", "Read inbox"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "approved"
-    assert data["id"].startswith("val_")
     assert mc.process_event.call_args.kwargs.get("session") == "ses_test"
+    # No KV write — validate uses proposal lifecycle, not KV snapshots
+    mc.kv_set.assert_not_called()
 
 
 # TST-CLI-034
 # TRACE: {"suite": "CLI", "case": "0034", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "18", "title": "validate_pending"}
 def test_validate_pending():
     mc = MagicMock()
-    mc.process_event.return_value = {"approved": False, "requires_approval": True, "risk": "HIGH"}
-    mc.kv_set.return_value = None
+    mc.process_event.return_value = {
+        "approved": False, "requires_approval": True, "risk": "HIGH",
+        "proposal_id": "prop_abc123",
+    }
     result = _invoke(["--json", "validate", "--session", "ses_test", "delete_emails", "Delete 247 emails", "--count", "247"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "pending_approval"
+    assert data["id"] == "prop_abc123"
     assert "dashboard_url" in data
+    assert "prop_abc123" in data["dashboard_url"]
 
 
 # TST-CLI-035
@@ -362,20 +366,23 @@ def test_validate_fallback_risky():
 # TRACE: {"suite": "CLI", "case": "0037", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "21", "title": "validate_status_found"}
 def test_validate_status_found():
     mc = MagicMock()
-    mc.kv_get.return_value = json.dumps({"status": "approved", "action": "read_email"})
-    result = _invoke(["--json", "validate-status", "val_abc12345"], mock_client=mc)
+    mc.get_proposal_status.return_value = {
+        "id": "prop_abc123", "status": "approved",
+        "action": "read_email", "kind": "intent",
+    }
+    result = _invoke(["--json", "validate-status", "prop_abc123"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "approved"
-    assert data["id"] == "val_abc12345"
+    assert data["id"] == "prop_abc123"
 
 
 # TST-CLI-038
 # TRACE: {"suite": "CLI", "case": "0038", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "22", "title": "validate_status_not_found"}
 def test_validate_status_not_found():
     mc = MagicMock()
-    mc.kv_get.return_value = None
-    result = _invoke(["--json", "validate-status", "val_missing"], mock_client=mc)
+    mc.get_proposal_status.side_effect = DinaClientError("HTTP 404: proposal not found")
+    result = _invoke(["--json", "validate-status", "prop_missing"], mock_client=mc)
     assert result.exit_code != 0
 
 
