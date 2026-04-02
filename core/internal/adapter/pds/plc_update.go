@@ -60,6 +60,86 @@ func init() {
 	}
 }
 
+// EnsurePLCGenesis checks if a DID exists on PLC. If not, it registers
+// a genesis operation with the rotation key, Ed25519 verification method,
+// and MsgBox service. This bootstraps DIDs from DINA_OWN_DID on PLC
+// directories that don't have them yet (e.g. local test PLC).
+// EnsurePLCGenesis checks if a DID exists on PLC. If not, it registers
+// a genesis operation. rotationDIDKey is the did:key for the rotation key.
+func EnsurePLCGenesis(ctx context.Context, plcURL, did string, rotationKey *atcrypto.PrivateKeyK256, rotationDIDKey, ed25519DIDKey, msgboxURL string) {
+	if plcURL == "" || did == "" {
+		return
+	}
+
+	// Check if DID already exists on PLC.
+	checkURL := fmt.Sprintf("%s/%s", plcURL, did)
+	resp, err := http.Get(checkURL)
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == 200 {
+			return // Already registered.
+		}
+	}
+
+	slog.Info("PLC genesis: DID not found on PLC, registering", "did", did, "plc", plcURL)
+
+	// Build genesis operation.
+	op := plcOperationJSON{
+		Type:         "plc_operation",
+		RotationKeys: []string{rotationDIDKey},
+		VerificationMethods: map[string]string{
+			"atproto":      ed25519DIDKey,
+			"dina_signing": ed25519DIDKey,
+		},
+		AlsoKnownAs: []string{},
+		Services: map[string]PLCService{
+			"dina_messaging": {Type: "DinaDirectHTTPS", Endpoint: msgboxURL + "/msg"},
+		},
+		Prev: nil,
+	}
+
+	// DAG-CBOR encode → sign → base64url encode sig.
+	unsignedCBOR, err := dagCBOREncMode.Marshal(map[string]interface{}{
+		"type":                op.Type,
+		"rotationKeys":        op.RotationKeys,
+		"verificationMethods": op.VerificationMethods,
+		"alsoKnownAs":         op.AlsoKnownAs,
+		"services":            op.Services,
+		"prev":                op.Prev,
+	})
+	if err != nil {
+		slog.Warn("PLC genesis: CBOR encode failed", "error", err)
+		return
+	}
+
+	sig, err := rotationKey.HashAndSign(unsignedCBOR)
+	if err != nil {
+		slog.Warn("PLC genesis: signing failed", "error", err)
+		return
+	}
+	op.Sig = base64.RawURLEncoding.EncodeToString(sig)
+
+	// Submit to PLC.
+	body, _ := json.Marshal(op)
+	submitResp, err := http.Post(
+		fmt.Sprintf("%s/%s", plcURL, did),
+		"application/json",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		slog.Warn("PLC genesis: submit failed", "error", err)
+		return
+	}
+	defer submitResp.Body.Close()
+	respBody, _ := io.ReadAll(submitResp.Body)
+
+	if submitResp.StatusCode == 200 || submitResp.StatusCode == 201 {
+		slog.Info("PLC genesis: DID registered", "did", did)
+	} else {
+		slog.Warn("PLC genesis: registration failed", "status", submitResp.StatusCode, "body", truncate(string(respBody), 200))
+	}
+}
+
 // UpdatePLCDocument fetches the current PLC document, adds the given
 // services and verification methods, signs with the rotation key, and
 // submits the update. Pass nil for addVerificationMethods to skip.

@@ -320,8 +320,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://alonso-brain:8200
       DINA_MASTER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
+      DINA_OWN_DID: "did:plc:3fpz6jamoucy3piu2a3gfn7l"
       DINA_MSGBOX_URL: http://alonso-core:8100
-      DINA_PDS_HANDLE: "alonso.test"
+      DINA_PDS_HANDLE: "alonso-test.pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "alonso@test.dina.local"
       DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
@@ -364,8 +365,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://sancho-brain:8200
       DINA_MASTER_SEED: "0202020202020202020202020202020202020202020202020202020202020202"
+      DINA_OWN_DID: "did:plc:o3avaoil3bh3jlygfzem2wny"
       DINA_MSGBOX_URL: http://sancho-core:8100
-      DINA_PDS_HANDLE: "sancho.test"
+      DINA_PDS_HANDLE: "sancho-test.pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "sancho@test.dina.local"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
@@ -408,8 +410,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://chairmaker-brain:8200
       DINA_MASTER_SEED: "0303030303030303030303030303030303030303030303030303030303030303"
+      DINA_OWN_DID: "did:plc:raub7xzfyhn4eepvqc6hz4lv"
       DINA_MSGBOX_URL: http://chairmaker-core:8100
-      DINA_PDS_HANDLE: "chairmaker.test"
+      DINA_PDS_HANDLE: "chairmaker-test.pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "chairmaker@test.dina.local"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://albert-core:8100"
@@ -452,8 +455,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://albert-brain:8200
       DINA_MASTER_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
+      DINA_OWN_DID: "did:plc:xn32dwwlg7srezubz2ajqgew"
       DINA_MSGBOX_URL: http://albert-core:8100
-      DINA_PDS_HANDLE: "albert.test"
+      DINA_PDS_HANDLE: "albert-test.pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "albert@test.dina.local"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100"

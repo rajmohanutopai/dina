@@ -115,14 +115,21 @@ class TestStackServices:
     # --- Actor DIDs (dynamic, from real PLC-registered identities) ---
 
     def actor_did(self, actor: str, retries: int = 30, delay: float = 2.0) -> str:
-        """Fetch the real DID for an actor from its Core /v1/did endpoint.
+        """Return the real PLC-registered DID for an actor.
 
-        Core registers its DID via PLC on first call to /v1/did.  This
-        may take a few seconds after container start, so we retry with
-        a configurable backoff.  Returns the ``did:plc:...`` string.
+        Reads from the permanent fixture file first (instant, no network).
+        Falls back to Core API if fixture is missing or actor not found.
         """
-        import time
+        # Fast path: read from committed fixture file
+        fixture_path = Path(__file__).resolve().parent.parent / "fixtures" / "test_actors.json"
+        if fixture_path.exists():
+            import json as _json
+            actors = _json.loads(fixture_path.read_text()).get("actors", {})
+            if actor in actors:
+                return actors[actor]["did"]
 
+        # Fallback: fetch from running Core (for first-time setup)
+        import time
         url = self.core_url(actor)
         last_err = ""
         for attempt in range(retries):

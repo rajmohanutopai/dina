@@ -1,0 +1,39 @@
+{
+  "_comment": "Permanent test actor identities on real PLC. Do not edit.",
+  "_pds_url": "https://pds.dinakernel.com",
+  "_plc_url": "https://plc.directory",
+  "actors": {
+    "alonso": {
+      "did": "did:plc:3fpz6jamoucy3piu2a3gfn7l",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "handle": "alonso-test.pds.dinakernel.com",
+      "display_name": "Don Alonso",
+      "core_port": 19100,
+      "brain_port": 19200
+    },
+    "sancho": {
+      "did": "did:plc:o3avaoil3bh3jlygfzem2wny",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "handle": "sancho-test.pds.dinakernel.com",
+      "display_name": "Sancho",
+      "core_port": 19300,
+      "brain_port": 19400
+    },
+    "chairmaker": {
+      "did": "did:plc:raub7xzfyhn4eepvqc6hz4lv",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "handle": "chairmaker-test.pds.dinakernel.com",
+      "display_name": "ChairMaker",
+      "core_port": 19500,
+      "brain_port": 19600
+    },
+    "albert": {
+      "did": "did:plc:xn32dwwlg7srezubz2ajqgew",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "handle": "albert-test.pds.dinakernel.com",
+      "display_name": "Albert",
+      "core_port": 19700,
+      "brain_port": 19800
+    }
+  }
+}

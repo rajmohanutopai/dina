@@ -196,7 +196,13 @@ async def did_log_audit(did: str) -> JSONResponse:
     audit = []
     for op, ts in zip(entry["operations"], entry["timestamps"]):
         cid = _fake_cid(json.dumps(op, sort_keys=True).encode())
-        audit.append({"cid": cid, "createdAt": ts, "nullified": False})
+        audit.append({
+            "did": did,
+            "operation": op,
+            "cid": cid,
+            "createdAt": ts,
+            "nullified": False,
+        })
     return JSONResponse(content=audit)
 
 

@@ -154,10 +154,11 @@ Usage: ./prepare_non_unit_env.sh [command]
 
 Commands:
   up        Build, start, health-check, extract keys, write manifest (default)
-  down      Tear down the test stack and remove volumes (images kept)
+  down      Tear down (preserves PDS/PLC identity volumes)
+  down-all  Tear down and remove ALL volumes (wipes identities — needs re-setup)
   purge     Tear down and remove all images (including postgres, pds, etc.)
   purge-dina  Tear down and remove only Dina images (keep postgres, pds, plc)
-  restart   Tear down then bring up fresh
+  restart   Tear down then bring up fresh (preserves identities)
   status    Health-check all services (no start/stop)
   keys      Re-extract service keys from running containers
   logs      Show last 50 lines from all containers
@@ -166,10 +167,10 @@ Commands:
 
 Examples:
   ./prepare_non_unit_env.sh up           # bring up the stack
-  ./prepare_non_unit_env.sh down         # tear down
+  ./prepare_non_unit_env.sh down         # tear down (identity preserved)
+  ./prepare_non_unit_env.sh down-all     # tear down + wipe ALL volumes
   ./prepare_non_unit_env.sh status       # check health
   ./prepare_non_unit_env.sh logs         # view logs
-  ./prepare_non_unit_env.sh purge-dina   # remove Dina images (keep infra)
 USAGE
 }
 
@@ -179,8 +180,10 @@ USAGE
 
 cmd_up() {
   # --- Tear down ---
+  # Stop containers but PRESERVE ALL volumes (identity + PDS/PLC data).
+  # Vault content is cleared via API after startup (setup_personas in conftest).
   printf "  Tearing down existing stack... "
-  do_compose down -v --remove-orphans >/dev/null 2>&1 || true
+  do_compose down --remove-orphans >/dev/null 2>&1 || true
   echo "done"
 
   # --- Build ---
@@ -234,13 +237,83 @@ cmd_up() {
     exit 1
   fi
 
+  # Seed the local PLC with real DIDs from the fixture file.
+  # Each Core uses DINA_OWN_DID (a real did:plc), but the local PLC
+  # is ephemeral. We register minimal DID documents so the PLC resolver
+  # can find endpoints and keys for D2D routing.
+  seed_plc
+
   extract_keys
   write_manifest
   echo "=== Test stack ready ==="
 }
 
+seed_plc() {
+  local FIXTURE="tests/fixtures/test_actors.json"
+  if [ ! -f "$FIXTURE" ]; then
+    echo "  WARNING: $FIXTURE not found — skipping PLC seed"
+    return
+  fi
+
+  printf "  Seeding PLC with test actor DIDs... "
+  python3 - "$FIXTURE" <<'PYEOF'
+import json, sys, time
+import httpx
+
+fixture = json.load(open(sys.argv[1]))
+plc_url = "http://localhost:2582"
+
+# Wait for PLC to be ready
+for _ in range(10):
+    try:
+        r = httpx.get(f"{plc_url}/healthz", timeout=3)
+        if r.status_code == 200:
+            break
+    except Exception:
+        pass
+    time.sleep(1)
+
+# Wait for Cores to register their DIDs + update PLC
+# (UpdatePLCDocument runs async in goroutine at startup)
+time.sleep(5)
+
+# Check which DIDs are already on PLC (from UpdatePLCDocument)
+registered = 0
+for name, actor in fixture.get("actors", {}).items():
+    did = actor["did"]
+    r = httpx.get(f"{plc_url}/{did}", timeout=5)
+    if r.status_code == 200:
+        registered += 1
+
+if registered == len(fixture.get("actors", {})):
+    print(f"done ({registered} DIDs already registered)")
+    sys.exit(0)
+
+# If not all registered, wait longer for Core's async PLC update
+time.sleep(10)
+registered = 0
+for name, actor in fixture.get("actors", {}).items():
+    did = actor["did"]
+    r = httpx.get(f"{plc_url}/{did}", timeout=5)
+    if r.status_code == 200:
+        registered += 1
+    else:
+        print(f"\n    WARNING: {name} ({did}) not on PLC")
+
+print(f"done ({registered}/{len(fixture['actors'])} DIDs)")
+PYEOF
+}
+
 cmd_down() {
-  printf "  Tearing down test stack... "
+  printf "  Tearing down test stack (preserving volumes)... "
+  do_compose down --remove-orphans >/dev/null 2>&1 || true
+  rm -f "$MANIFEST"
+  rm -rf "$KEY_DIR"
+  echo "done"
+}
+
+cmd_down_all() {
+  printf "  Tearing down test stack (removing ALL volumes)... "
   do_compose down -v --remove-orphans >/dev/null 2>&1 || true
   rm -f "$MANIFEST"
   rm -rf "$KEY_DIR"
@@ -309,6 +382,7 @@ START_TIME=$SECONDS
 case "$CMD" in
   up)       cmd_up ;;
   down)     cmd_down ;;
+  down-all) cmd_down_all ;;
   purge)      cmd_purge ;;
   purge-dina) cmd_purge_dina ;;
   restart)    cmd_restart ;;

@@ -498,10 +498,15 @@ func main() {
 			}
 		}
 
+		// Apply DINA_OWN_DID override before PLC update so pre-registered
+		// DIDs (from fixture) are used for UpdatePLCDocument.
+		if cfg.OwnDID != "" && ownDID == "" {
+			ownDID = cfg.OwnDID
+			slog.Info("Using DINA_OWN_DID (pre-registered)", "did", ownDID)
+		}
+
 		// Update PLC directory with MsgBox service and Ed25519 key so other
 		// nodes can discover this node's D2D endpoint and encrypt messages.
-		// PDS creates the DID with only #atproto (secp256k1) — we add
-		// #dina_messaging service and the Ed25519 verification method.
 		if ownDID != "" && msgboxURL != "" {
 			rotKey, rotErr := k256Mgr.GenerateOrLoad()
 			if rotErr != nil {
@@ -512,7 +517,15 @@ func main() {
 				multicodecKey := append([]byte{0xed, 0x01}, ed25519PubKey...)
 				ed25519DIDKey := "did:key:z" + base58.Encode(multicodecKey)
 
+				// Build rotation key did:key for PLC genesis bootstrap.
+				rotDIDKey, _ := k256Mgr.PublicDIDKey()
+
 				go func() {
+					// Bootstrap: if DID isn't on PLC yet (e.g. test stack with
+					// DINA_OWN_DID pointing to a real DID), register a genesis
+					// document so UpdatePLCDocument has something to update.
+					pds.EnsurePLCGenesis(context.Background(), plcURL, ownDID, rotKey, rotDIDKey, ed25519DIDKey, msgboxURL)
+
 					if err := pds.UpdatePLCDocument(
 						context.Background(), plcURL, ownDID, rotKey,
 						map[string]pds.PLCService{
