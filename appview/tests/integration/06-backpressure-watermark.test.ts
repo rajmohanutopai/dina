@@ -26,6 +26,7 @@ describe('§6.1 Backpressure (Fix 5)', () => {
     mockWs = { pause: vi.fn(), resume: vi.fn(), readyState: 1 } as any
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0411", "section": "01", "sectionName": "General", "title": "IT-BP-001: Fix 5: burst of 5000 events \u2192 bounded queue"}
   it('IT-BP-001: Fix 5: burst of 5000 events → bounded queue', async () => {
     // Use a slow processFn to create backpressure
     const slowProcessFn = async (item: QueueItem) => {
@@ -52,6 +53,7 @@ describe('§6.1 Backpressure (Fix 5)', () => {
     expect(accepted).toBeGreaterThan(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0412", "section": "01", "sectionName": "General", "title": "IT-BP-002: Fix 5: ws.pause() called at threshold"}
   it('IT-BP-002: Fix 5: ws.pause() called at threshold', async () => {
     // Very slow processFn so queue fills up
     const slowProcessFn = async (item: QueueItem) => {
@@ -71,6 +73,7 @@ describe('§6.1 Backpressure (Fix 5)', () => {
     expect(mockWs.pause).toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0413", "section": "01", "sectionName": "General", "title": "IT-BP-003: Fix 5: ws.resume() at 50% drain"}
   it('IT-BP-003: Fix 5: ws.resume() at 50% drain', async () => {
     let resolvers: (() => void)[] = []
     const controlledProcessFn = async (item: QueueItem) => {
@@ -110,6 +113,7 @@ describe('§6.1 Backpressure (Fix 5)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0414", "section": "01", "sectionName": "General", "title": "IT-BP-004: Fix 5: all events eventually processed"}
   it('IT-BP-004: Fix 5: all events eventually processed', async () => {
     const localProcessed: QueueItem[] = []
     const fastProcessFn = async (item: QueueItem) => {
@@ -138,6 +142,7 @@ describe('§6.1 Backpressure (Fix 5)', () => {
     expect(localProcessed.length).toBe(accepted)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0415", "section": "01", "sectionName": "General", "title": "IT-BP-005: Fix 5: memory bounded"}
   it('IT-BP-005: Fix 5: memory bounded', async () => {
     // Push 10,000 events — verify no crash / no OOM
     const fastProcessFn = async (item: QueueItem) => {
@@ -170,6 +175,7 @@ describe('§6.1 Backpressure (Fix 5)', () => {
 // §6.2 Low Watermark Cursor / Fix 7 (IT-LW-001..005) — 5 tests
 // ---------------------------------------------------------------------------
 describe('§6.2 Low Watermark Cursor (Fix 7)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0416", "section": "01", "sectionName": "General", "title": "IT-LW-001: Fix 7: slow event + fast event \u2192 cursor = slow - 1"}
   it('IT-LW-001: Fix 7: slow event + fast event → cursor = slow - 1', async () => {
     let resolvers: Map<number, () => void> = new Map()
     const controlledProcessFn = async (item: QueueItem) => {
@@ -204,6 +210,7 @@ describe('§6.2 Low Watermark Cursor (Fix 7)', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0417", "section": "01", "sectionName": "General", "title": "IT-LW-002: Fix 7: all events complete \u2192 cursor = highestSeen"}
   it('IT-LW-002: Fix 7: all events complete → cursor = highestSeen', async () => {
     const processedItems: QueueItem[] = []
     const fastProcessFn = async (item: QueueItem) => {
@@ -228,6 +235,7 @@ describe('§6.2 Low Watermark Cursor (Fix 7)', () => {
     expect(processedItems.length).toBe(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0418", "section": "01", "sectionName": "General", "title": "IT-LW-003: Fix 7: crash mid-processing \u2192 replay from low watermark"}
   it('IT-LW-003: Fix 7: crash mid-processing → replay from low watermark', async () => {
     let resolvers: Map<number, () => void> = new Map()
     const controlledProcessFn = async (item: QueueItem) => {
@@ -260,6 +268,7 @@ describe('§6.2 Low Watermark Cursor (Fix 7)', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0419", "section": "01", "sectionName": "General", "title": "IT-LW-004: Fix 7: replay from low watermark \u2192 no data loss"}
   it('IT-LW-004: Fix 7: replay from low watermark → no data loss', async () => {
     const processedTimestamps = new Set<number>()
     const processFn = async (item: QueueItem) => {
@@ -294,6 +303,7 @@ describe('§6.2 Low Watermark Cursor (Fix 7)', () => {
     expect(processedTimestamps.has(5000)).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0420", "section": "01", "sectionName": "General", "title": "IT-LW-005: Fix 7: graceful shutdown saves low watermark"}
   it('IT-LW-005: Fix 7: graceful shutdown saves low watermark', async () => {
     let resolvers: Map<number, () => void> = new Map()
     const controlledProcessFn = async (item: QueueItem) => {

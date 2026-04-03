@@ -32,6 +32,7 @@ class TestSensitivePersonas:
     # -----------------------------------------------------------------
     # TST-E2E-039  Health Entity Vault
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0039", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "01", "title": "health_entity_vault"}
     def test_health_entity_vault(self, don_alonso: HomeNode) -> None:
         # TST-E2E-039
         """Query the /health persona (restricted tier). Access is logged,
@@ -157,6 +158,7 @@ class TestSensitivePersonas:
     # -----------------------------------------------------------------
     # TST-E2E-040  Financial Persona Lock/Unlock/TTL
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0040", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "02", "title": "financial_persona_lock_unlock_ttl"}
     def test_financial_persona_lock_unlock_ttl(
         self,
         don_alonso: HomeNode,
@@ -223,6 +225,7 @@ class TestSensitivePersonas:
     # -----------------------------------------------------------------
     # TST-E2E-041  Cross-Persona Isolation
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0041", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "03", "title": "cross_persona_isolation"}
     def test_cross_persona_isolation(
         self,
         don_alonso: HomeNode,
@@ -375,6 +378,7 @@ class TestSensitivePersonas:
     # -----------------------------------------------------------------
     # TST-E2E-042  Cloud LLM Consent for Sensitive Personas
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0042", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "04", "title": "cloud_llm_consent_for_sensitive_personas"}
     def test_cloud_llm_consent_for_sensitive_personas(
         self,
         don_alonso: HomeNode,

@@ -58,6 +58,7 @@ async function insertProfile(did: string, overallTrustScore: number | null = nul
 // §8.1 One-Hop Queries (IT-GR-001..005) — 5 tests
 // ---------------------------------------------------------------------------
 describe('§8.1 One-Hop Queries', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0426", "section": "01", "sectionName": "General", "title": "IT-GR-001: direct trust edge exists \u2192 shortestPath = 1"}
   it('IT-GR-001: direct trust edge exists → shortestPath = 1', async () => {
     // A vouches for B, query A→B
     await insertProfile('did:plc:a', 0.5)
@@ -71,6 +72,7 @@ describe('§8.1 One-Hop Queries', () => {
     expect(bNode!.depth).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0427", "section": "01", "sectionName": "General", "title": "IT-GR-002: no direct edge \u2192 shortestPath != 1"}
   it('IT-GR-002: no direct edge → shortestPath != 1', async () => {
     // A has no edge to B
     await insertProfile('did:plc:a', 0.5)
@@ -82,6 +84,7 @@ describe('§8.1 One-Hop Queries', () => {
     expect(bNode).toBeUndefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0428", "section": "01", "sectionName": "General", "title": "IT-GR-003: trusted attestors \u2014 1 hop"}
   it('IT-GR-003: trusted attestors — 1 hop', async () => {
     // A trusts B via edge
     await insertProfile('did:plc:a', 0.5)
@@ -96,6 +99,7 @@ describe('§8.1 One-Hop Queries', () => {
     expect(bNode!.trustScore).toBeCloseTo(0.8)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0429", "section": "01", "sectionName": "General", "title": "IT-GR-004: trusted attestors \u2014 limit by MAX_EDGES_PER_HOP"}
   it('IT-GR-004: trusted attestors — limit by MAX_EDGES_PER_HOP', async () => {
     // A trusts 600 DIDs — only MAX_EDGES_PER_HOP (500) should be returned per hop query
     await insertProfile('did:plc:a', 0.5)
@@ -114,6 +118,7 @@ describe('§8.1 One-Hop Queries', () => {
     expect(outgoing.length).toBeLessThanOrEqual(CONSTANTS.MAX_EDGES_PER_HOP)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0430", "section": "01", "sectionName": "General", "title": "IT-GR-005: trusted attestors \u2014 only non-revoked edges counted"}
   it('IT-GR-005: trusted attestors — only non-revoked edges counted', async () => {
     // A trusts B and C, but this tests edge existence (trust_edges don't have revoked)
     // We verify that only the edges that exist in trust_edges are returned
@@ -134,6 +139,7 @@ describe('§8.1 One-Hop Queries', () => {
 // §8.2 Two-Hop Queries (IT-GR-006..009) — 4 tests
 // ---------------------------------------------------------------------------
 describe('§8.2 Two-Hop Queries', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0431", "section": "01", "sectionName": "General", "title": "IT-GR-006: two-hop path exists \u2192 shortestPath = 2"}
   it('IT-GR-006: two-hop path exists → shortestPath = 2', async () => {
     // A→C, C→B (no A→B)
     await insertProfile('did:plc:a', 0.5)
@@ -148,6 +154,7 @@ describe('§8.2 Two-Hop Queries', () => {
     expect(bNode!.depth).toBe(2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0432", "section": "01", "sectionName": "General", "title": "IT-GR-007: prefers 1-hop over 2-hop"}
   it('IT-GR-007: prefers 1-hop over 2-hop', async () => {
     // A→B direct AND A→C→B
     await insertProfile('did:plc:a', 0.5)
@@ -164,6 +171,7 @@ describe('§8.2 Two-Hop Queries', () => {
     expect(bNode!.depth).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0433", "section": "01", "sectionName": "General", "title": "IT-GR-008: no 2-hop path \u2192 node not in graph"}
   it('IT-GR-008: no 2-hop path → node not in graph', async () => {
     // A→C, but no path to B within 2 hops
     await insertProfile('did:plc:a', 0.5)
@@ -178,6 +186,7 @@ describe('§8.2 Two-Hop Queries', () => {
     expect(bNode).toBeUndefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0434", "section": "01", "sectionName": "General", "title": "IT-GR-009: 2-hop fan-out capped at MAX_EDGES_PER_HOP"}
   it('IT-GR-009: 2-hop fan-out capped at MAX_EDGES_PER_HOP', async () => {
     // A has 1000 outbound edges — only 500 should be explored
     await insertProfile('did:plc:a', 0.5)
@@ -203,6 +212,7 @@ describe('§8.2 Two-Hop Queries', () => {
 // §8.3 Mutual Connections (IT-GR-010..012) — 3 tests
 // ---------------------------------------------------------------------------
 describe('§8.3 Mutual Connections', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0435", "section": "01", "sectionName": "General", "title": "IT-GR-010: mutual connections \u2014 simple case"}
   it('IT-GR-010: mutual connections — simple case', async () => {
     // A→C, B→C => C is mutual between A and B
     await insertProfile('did:plc:a', 0.5)
@@ -225,6 +235,7 @@ describe('§8.3 Mutual Connections', () => {
     expect(mutual[0]).toBe('did:plc:c')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0436", "section": "01", "sectionName": "General", "title": "IT-GR-011: mutual connections \u2014 zero"}
   it('IT-GR-011: mutual connections — zero', async () => {
     // A→C, B→D — no shared connections
     await insertProfile('did:plc:a', 0.5)
@@ -244,6 +255,7 @@ describe('§8.3 Mutual Connections', () => {
     expect(mutual.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0437", "section": "01", "sectionName": "General", "title": "IT-GR-012: mutual connections \u2014 multiple"}
   it('IT-GR-012: mutual connections — multiple', async () => {
     // A→C, A→D, A→E, B→C, B→D => 2 mutual (C, D)
     await insertProfile('did:plc:a', 0.5)
@@ -274,6 +286,7 @@ describe('§8.3 Mutual Connections', () => {
 // §8.4 Super-Node Protection / Fix 3 + Fix 4 (IT-GR-013..020) — 8 tests
 // ---------------------------------------------------------------------------
 describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0438", "section": "01", "sectionName": "General", "title": "IT-GR-013: Fix 3: super-node fan-out capped"}
   it('IT-GR-013: Fix 3: super-node fan-out capped', async () => {
     // DID with 10,000 outbound edges — query should still complete in bounded time
     // Insert a large number of edges
@@ -302,6 +315,7 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     expect(elapsed).toBeLessThan(5000)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0439", "section": "01", "sectionName": "General", "title": "IT-GR-014: Fix 3: statement timeout \u2192 graceful null"}
   it('IT-GR-014: Fix 3: statement timeout → graceful null', async () => {
     // Use withGraphTimeout with an artificially slow query
     // The timeout is 100ms, so we use pg_sleep to exceed it
@@ -316,6 +330,7 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     expect(result).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0440", "section": "01", "sectionName": "General", "title": "IT-GR-015: Fix 3: rest of resolve response proceeds"}
   it('IT-GR-015: Fix 3: rest of resolve response proceeds', async () => {
     // After graph timeout, other queries on the db still work
     // Simulate a timeout
@@ -337,6 +352,7 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     expect(result.nodes.length).toBe(1) // just the root
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0441", "section": "01", "sectionName": "General", "title": "IT-GR-016: Fix 4: timeout doesn\\"}
   it('IT-GR-016: Fix 4: timeout doesn\'t poison connection pool', async () => {
     // Graph query times out, then run normal queries on the same pool
     const graphResult = await withGraphTimeout(
@@ -357,6 +373,7 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0442", "section": "01", "sectionName": "General", "title": "IT-GR-017: Fix 4: SET LOCAL scoped to transaction"}
   it('IT-GR-017: Fix 4: SET LOCAL scoped to transaction', async () => {
     // After graph timeout, the statement_timeout should NOT persist on the connection
     await withGraphTimeout(
@@ -375,6 +392,7 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     expect(true).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0443", "section": "01", "sectionName": "General", "title": "IT-GR-018: graph visualization \u2014 getGraphAroundDid"}
   it('IT-GR-018: graph visualization — getGraphAroundDid', async () => {
     // DID with 5 outgoing, 3 incoming connections
     await insertProfile('did:plc:center', 0.5)
@@ -401,6 +419,7 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0444", "section": "01", "sectionName": "General", "title": "IT-GR-019: graph visualization \u2014 domain filter"}
   it('IT-GR-019: graph visualization — domain filter', async () => {
     // Insert edges with different domains
     await insertProfile('did:plc:center', 0.5)
@@ -425,6 +444,7 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     expect(techEdges.length).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0445", "section": "01", "sectionName": "General", "title": "IT-GR-020: graph visualization \u2014 depth cap at 2"}
   it('IT-GR-020: graph visualization — depth cap at 2', async () => {
     // Build a chain: A→B→C→D→E (depth 4)
     await insertProfile('did:plc:a', 0.5)

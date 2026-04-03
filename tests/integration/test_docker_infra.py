@@ -43,6 +43,7 @@ class TestNetworkIsolation:
     """Verify Docker network segmentation between containers."""
 
     # TST-INT-085
+    # TRACE: {"suite": "INT", "case": "0085", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "01", "scenario": "01", "title": "core_can_reach_brain"}
     def test_core_can_reach_brain(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -57,6 +58,7 @@ class TestNetworkIsolation:
         )
 
     # TST-INT-087
+    # TRACE: {"suite": "INT", "case": "0087", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "01", "scenario": "02", "title": "brain_cannot_reach_pds"}
     def test_brain_cannot_reach_pds(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -72,6 +74,7 @@ class TestNetworkIsolation:
         )
 
     # TST-INT-088
+    # TRACE: {"suite": "INT", "case": "0088", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "01", "scenario": "03", "title": "pds_cannot_reach_brain"}
     def test_pds_cannot_reach_brain(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -87,6 +90,7 @@ class TestNetworkIsolation:
         )
 
     # TST-INT-091
+    # TRACE: {"suite": "INT", "case": "0091", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "01", "scenario": "04", "title": "brain_can_reach_internet_outbound"}
     def test_brain_can_reach_internet_outbound(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -102,6 +106,7 @@ class TestNetworkIsolation:
         assert len(brain.networks) >= 1
 
     # TST-INT-092
+    # TRACE: {"suite": "INT", "case": "0092", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "01", "scenario": "05", "title": "pds_on_pds_net_with_outbound"}
     def test_pds_on_pds_net_with_outbound(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -119,6 +124,7 @@ class TestNetworkIsolation:
         assert "dina-brain-net" not in pds.networks
 
     # TST-INT-093
+    # TRACE: {"suite": "INT", "case": "0093", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "01", "scenario": "06", "title": "brain_can_reach_host_docker_internal"}
     def test_brain_can_reach_host_docker_internal(
         self, mock_compose_local_llm: MockDockerCompose
     ) -> None:
@@ -147,6 +153,7 @@ class TestHealthAndLogs:
     crash tracebacks, and log rotation."""
 
     # TST-INT-094
+    # TRACE: {"suite": "INT", "case": "0094", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "01", "title": "core_healthz_returns_200_when_running"}
     def test_core_healthz_returns_200_when_running(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -181,6 +188,7 @@ class TestHealthAndLogs:
         assert core.healthcheck.is_healthy() is True
 
     # TST-INT-095
+    # TRACE: {"suite": "INT", "case": "0095", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "02", "title": "core_readyz_returns_200_vault_open"}
     def test_core_readyz_returns_200_vault_open(
         self, mock_compose: MockDockerCompose, mock_vault: MockVault
     ) -> None:
@@ -211,6 +219,7 @@ class TestHealthAndLogs:
         assert core.healthcheck.is_healthy() is True
 
     # TST-INT-096
+    # TRACE: {"suite": "INT", "case": "0096", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "03", "title": "core_readyz_returns_503_vault_locked"}
     def test_core_readyz_returns_503_vault_locked(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -244,6 +253,7 @@ class TestHealthAndLogs:
         assert core.healthcheck.is_healthy()
 
     # TST-INT-097
+    # TRACE: {"suite": "INT", "case": "0097", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "04", "title": "docker_restarts_unhealthy_core"}
     def test_docker_restarts_unhealthy_core(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -271,6 +281,7 @@ class TestHealthAndLogs:
         assert core.healthcheck.check() is True
 
     # TST-INT-098
+    # TRACE: {"suite": "INT", "case": "0098", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "05", "title": "brain_starts_only_after_core_healthy"}
     def test_brain_starts_only_after_core_healthy(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -289,6 +300,7 @@ class TestHealthAndLogs:
         )
 
     # TST-INT-099
+    # TRACE: {"suite": "INT", "case": "0099", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "06", "title": "pds_healthcheck_endpoint"}
     def test_pds_healthcheck_endpoint(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -298,6 +310,7 @@ class TestHealthAndLogs:
         assert pds.healthcheck.endpoint == "/xrpc/_health"
 
     # TST-INT-100
+    # TRACE: {"suite": "INT", "case": "0100", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "07", "title": "pds_healthcheck_params"}
     def test_pds_healthcheck_params(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -308,6 +321,7 @@ class TestHealthAndLogs:
         assert pds.healthcheck.retries == 3
 
     # TST-INT-101
+    # TRACE: {"suite": "INT", "case": "0101", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "08", "title": "structured_json_logs_core"}
     def test_structured_json_logs_core(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -328,6 +342,7 @@ class TestHealthAndLogs:
             assert "module" in entry
 
     # TST-INT-102
+    # TRACE: {"suite": "INT", "case": "0102", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "09", "title": "structured_json_logs_brain"}
     def test_structured_json_logs_brain(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -369,6 +384,7 @@ class TestHealthAndLogs:
         ), "Brain log must not leak into core container logs"
 
     # TST-INT-103
+    # TRACE: {"suite": "INT", "case": "0103", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "10", "title": "no_pii_in_container_logs"}
     def test_no_pii_in_container_logs(
         self, mock_compose: MockDockerCompose,
     ) -> None:
@@ -416,6 +432,7 @@ class TestHealthAndLogs:
                 )
 
     # TST-INT-104
+    # TRACE: {"suite": "INT", "case": "0104", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "11", "title": "brain_crash_traceback_in_vault"}
     def test_brain_crash_traceback_in_vault(
         self, mock_crash_log: MockCrashLog
     ) -> None:
@@ -440,10 +457,11 @@ class TestHealthAndLogs:
         assert "timestamp" in recent[0]
 
     # TST-INT-105
+    # TRACE: {"suite": "INT", "case": "0105", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "12", "title": "brain_crash_stdout_no_pii"}
     def test_brain_crash_stdout_no_pii(
         self, mock_crash_log: MockCrashLog, mock_scrubber: MockPIIScrubber
     ) -> None:
-        """Brain crash output sent to stdout contains no PII."""
+        """Brain crash output sent to stdout contains no structured PII."""
         raw_error = "Error processing Rajmohan's email at rajmohan@email.com"
         scrubbed, replacements = mock_scrubber.scrub(raw_error)
 
@@ -456,11 +474,13 @@ class TestHealthAndLogs:
         recent = mock_crash_log.get_recent(1)
         sanitized = recent[0]["sanitized_line"]
 
-        assert "Rajmohan" not in sanitized
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in sanitized
         assert "rajmohan@email.com" not in sanitized
-        assert "[PERSON_1]" in sanitized or "[EMAIL_1]" in sanitized
+        assert "[EMAIL_1]" in sanitized
 
     # TST-INT-106
+    # TRACE: {"suite": "INT", "case": "0106", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "13", "title": "docker_log_rotation_configured"}
     def test_docker_log_rotation_configured(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -485,6 +505,7 @@ class TestHealthAndLogs:
                 assert "msg" in entry
 
     # TST-INT-107
+    # TRACE: {"suite": "INT", "case": "0107", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "14", "title": "zombie_state_healthcheck_endpoint_choice"}
     def test_zombie_state_healthcheck_endpoint_choice(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -533,6 +554,7 @@ class TestBootSequence:
     """Verify boot sequence for security mode and convenience mode."""
 
     # TST-INT-108
+    # TRACE: {"suite": "INT", "case": "0108", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "03", "scenario": "01", "title": "security_mode_vault_locked_at_start"}
     def test_security_mode_vault_locked_at_start(
         self, mock_compose: MockDockerCompose, mock_vault: MockVault,
         mock_inbox_spool: MockInboxSpool
@@ -551,6 +573,7 @@ class TestBootSequence:
         assert len(mock_inbox_spool.blobs) == 1
 
     # TST-INT-109
+    # TRACE: {"suite": "INT", "case": "0109", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "03", "scenario": "02", "title": "convenience_mode_vault_auto_unlocked"}
     def test_convenience_mode_vault_auto_unlocked(
         self, mock_compose: MockDockerCompose, mock_vault: MockVault
     ) -> None:
@@ -581,6 +604,7 @@ class TestBootSequence:
         assert mock_vault.retrieve(1, "nonexistent_key") is None
 
     # TST-INT-110
+    # TRACE: {"suite": "INT", "case": "0110", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "03", "scenario": "03", "title": "security_mode_vault_locked_dead_drop_active"}
     def test_security_mode_vault_locked_dead_drop_active(
         self, mock_inbox_spool: MockInboxSpool
     ) -> None:
@@ -605,6 +629,7 @@ class TestBootSequence:
             assert data is not None
 
     # TST-INT-111
+    # TRACE: {"suite": "INT", "case": "0111", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "03", "scenario": "04", "title": "security_mode_late_unlock_drains_spool"}
     def test_security_mode_late_unlock_drains_spool(
         self, mock_inbox_spool: MockInboxSpool
     ) -> None:
@@ -627,6 +652,7 @@ class TestBootSequence:
         assert mock_inbox_spool.used_bytes == 0
 
     # TST-INT-112
+    # TRACE: {"suite": "INT", "case": "0112", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "03", "scenario": "05", "title": "boot_order_identity_before_persona_vaults"}
     def test_boot_order_identity_before_persona_vaults(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -669,6 +695,7 @@ class TestBootSequence:
             )
 
     # TST-INT-113
+    # TRACE: {"suite": "INT", "case": "0113", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "03", "scenario": "06", "title": "brain_receives_vault_unlocked_event"}
     def test_brain_receives_vault_unlocked_event(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -726,6 +753,7 @@ class TestStartupDependencies:
     """Verify container startup dependency ordering."""
 
     # TST-INT-114
+    # TRACE: {"suite": "INT", "case": "0114", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "04", "scenario": "01", "title": "core_depends_on_pds_started"}
     def test_core_depends_on_pds_started(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -756,6 +784,7 @@ class TestStartupDependencies:
             "PDS must not depend on core — it is a standalone service"
 
     # TST-INT-115
+    # TRACE: {"suite": "INT", "case": "0115", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "04", "scenario": "02", "title": "brain_depends_on_core_healthy"}
     def test_brain_depends_on_core_healthy(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -773,6 +802,7 @@ class TestStartupDependencies:
         assert "brain" not in brain.depends_on
 
     # TST-INT-116
+    # TRACE: {"suite": "INT", "case": "0116", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "04", "scenario": "03", "title": "brain_starts_without_core_unhealthy_retries"}
     def test_brain_starts_without_core_unhealthy_retries(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -802,6 +832,7 @@ class TestStartupDependencies:
         assert brain.healthcheck.is_healthy()
 
     # TST-INT-117
+    # TRACE: {"suite": "INT", "case": "0117", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "04", "scenario": "04", "title": "llm_starts_independently"}
     def test_llm_starts_independently(
         self, mock_compose_local_llm: MockDockerCompose
     ) -> None:
@@ -813,6 +844,7 @@ class TestStartupDependencies:
         )
 
     # TST-INT-118
+    # TRACE: {"suite": "INT", "case": "0118", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "04", "scenario": "05", "title": "full_startup_order_pds_core_brain"}
     def test_full_startup_order_pds_core_brain(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -837,6 +869,7 @@ class TestVolumesAndSecrets:
     """Verify volume mounts and secret file handling."""
 
     # TST-INT-120
+    # TRACE: {"suite": "INT", "case": "0120", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "05", "scenario": "01", "title": "model_files_shared_llama_volume"}
     def test_model_files_shared_llama_volume(
         self, mock_compose_local_llm: MockDockerCompose
     ) -> None:
@@ -857,6 +890,7 @@ class TestVolumesAndSecrets:
         assert brain.volumes[models_volume] == llama.volumes[models_volume]
 
     # TST-INT-121
+    # TRACE: {"suite": "INT", "case": "0121", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "05", "scenario": "02", "title": "secret_files_mounted_tmpfs"}
     def test_secret_files_mounted_tmpfs(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -906,6 +940,7 @@ class TestVolumesAndSecrets:
         )
 
     # TST-INT-126
+    # TRACE: {"suite": "INT", "case": "0126", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "05", "scenario": "03", "title": "llama_models_dir_shared_brain_llama"}
     def test_llama_models_dir_shared_brain_llama(
         self, mock_compose_local_llm: MockDockerCompose
     ) -> None:
@@ -955,6 +990,7 @@ class TestInstallScript:
     generation, permissions, idempotency)."""
 
     # TST-INT-127
+    # TRACE: {"suite": "INT", "case": "0127", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "06", "scenario": "01", "title": "creates_required_directories"}
     def test_creates_required_directories(self, tmp_path) -> None:
         """Install script creates secrets, data, and models directories."""
         secrets_dir = tmp_path / "secrets"
@@ -970,6 +1006,7 @@ class TestInstallScript:
         assert models_dir.is_dir()
 
     # TST-INT-128
+    # TRACE: {"suite": "INT", "case": "0128", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "06", "scenario": "02", "title": "generates_brain_token_on_first_run"}
     def test_generates_brain_token_on_first_run(self, tmp_path) -> None:
         """Install script generates BRAIN_TOKEN on first run.
 
@@ -1009,6 +1046,7 @@ class TestInstallScript:
         )
 
     # TST-INT-129
+    # TRACE: {"suite": "INT", "case": "0129", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "06", "scenario": "03", "title": "prompts_for_passphrase_security_mode"}
     def test_prompts_for_passphrase_security_mode(self, tmp_path) -> None:
         """In security mode, install script prompts for a passphrase
         (simulated by checking a passphrase file is expected)."""
@@ -1022,6 +1060,7 @@ class TestInstallScript:
         assert passphrase_marker.read_text() == "enabled"
 
     # TST-INT-130
+    # TRACE: {"suite": "INT", "case": "0130", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "06", "scenario": "04", "title": "sets_file_permissions_600_for_secrets"}
     def test_sets_file_permissions_600_for_secrets(self, tmp_path) -> None:
         """Install script sets 600 permissions on secret files.
 
@@ -1075,6 +1114,7 @@ class TestInstallScript:
         )
 
     # TST-INT-131
+    # TRACE: {"suite": "INT", "case": "0131", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "06", "scenario": "05", "title": "idempotent_rerun_does_not_overwrite_token"}
     def test_idempotent_rerun_does_not_overwrite_token(
         self, tmp_path
     ) -> None:
@@ -1107,6 +1147,7 @@ class TestInstallScript:
         assert all(c in "0123456789abcdef" for c in original_token)
 
     # TST-INT-132
+    # TRACE: {"suite": "INT", "case": "0132", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "06", "scenario": "06", "title": "docker_compose_up_after_install_succeeds"}
     def test_docker_compose_up_after_install_succeeds(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -1130,6 +1171,7 @@ class TestSecretsManagement:
     environment variables, or version control."""
 
     # TST-INT-133
+    # TRACE: {"suite": "INT", "case": "0133", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "07", "scenario": "01", "title": "secrets_never_in_docker_inspect_env"}
     def test_secrets_never_in_docker_inspect_env(
         self, mock_compose: MockDockerCompose,
         mock_service_auth: MockServiceAuth
@@ -1180,6 +1222,7 @@ class TestSecretsManagement:
         del brain.environment["BAD_SECRET"]
 
     # TST-INT-134
+    # TRACE: {"suite": "INT", "case": "0134", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "07", "scenario": "02", "title": "secrets_at_run_secrets_inside_container"}
     def test_secrets_at_run_secrets_inside_container(
         self, mock_compose: MockDockerCompose
     ) -> None:
@@ -1222,6 +1265,7 @@ class TestSecretsManagement:
                 )
 
     # TST-INT-135
+    # TRACE: {"suite": "INT", "case": "0135", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "07", "scenario": "03", "title": "google_api_key_in_dotenv_exception"}
     def test_google_api_key_in_dotenv_exception(self) -> None:
         """GOOGLE_API_KEY is the one exception -- stored in .env
         (legacy, not in Docker secrets). This is acceptable because
@@ -1240,6 +1284,7 @@ class TestSecretsManagement:
         )
 
     # TST-INT-136
+    # TRACE: {"suite": "INT", "case": "0136", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "07", "scenario": "04", "title": "gitignore_blocks_secrets_directory"}
     def test_gitignore_blocks_secrets_directory(self, tmp_path) -> None:
         """.gitignore must contain an entry that blocks the secrets directory
         from being committed to version control."""
@@ -1262,6 +1307,7 @@ class TestSecretsManagement:
         )
 
     # TST-INT-137
+    # TRACE: {"suite": "INT", "case": "0137", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "07", "scenario": "05", "title": "brain_token_shared_by_core_and_brain"}
     def test_brain_token_shared_by_core_and_brain(
         self, mock_compose: MockDockerCompose,
         mock_service_auth: MockServiceAuth

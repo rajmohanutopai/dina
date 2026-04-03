@@ -25,6 +25,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-751
+// TRACE: {"suite": "CORE", "case": "0469", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "01", "title": "Ring1UnverifiedDina"}
 func TestDeferred_24_1_1_Ring1UnverifiedDina(t *testing.T) {
 	// New DID with no verification must have trust level: unverified,
 	// very low trust ceiling, small interactions only.
@@ -37,6 +38,7 @@ func TestDeferred_24_1_1_Ring1UnverifiedDina(t *testing.T) {
 }
 
 // TST-CORE-752
+// TRACE: {"suite": "CORE", "case": "0470", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "02", "title": "Ring2VerifiedHumanZKP"}
 func TestDeferred_24_1_2_Ring2VerifiedHumanZKP(t *testing.T) {
 	// User proves valid government ID via ZKP circuit.
 	// Proof that "this is a valid, unique ID number" without revealing number.
@@ -55,6 +57,7 @@ func TestDeferred_24_1_2_Ring2VerifiedHumanZKP(t *testing.T) {
 }
 
 // TST-CORE-753
+// TRACE: {"suite": "CORE", "case": "0471", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "03", "title": "Ring2Phase1Compromise"}
 func TestDeferred_24_1_3_Ring2Phase1Compromise(t *testing.T) {
 	// Phase 1 compromise: Aadhaar e-KYC XML with offline verification.
 	// Processed locally on-device, only yes/no attestation stored.
@@ -73,6 +76,7 @@ func TestDeferred_24_1_3_Ring2Phase1Compromise(t *testing.T) {
 }
 
 // TST-CORE-754
+// TRACE: {"suite": "CORE", "case": "0472", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "04", "title": "Ring2OneIDOneVerifiedDina"}
 func TestDeferred_24_1_4_Ring2OneIDOneVerifiedDina(t *testing.T) {
 	// Attempt second verification with same government ID must be rejected (Sybil prevention).
 	var impl testutil.ZKPVerifier
@@ -90,6 +94,7 @@ func TestDeferred_24_1_4_Ring2OneIDOneVerifiedDina(t *testing.T) {
 }
 
 // TST-CORE-755
+// TRACE: {"suite": "CORE", "case": "0473", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "05", "title": "Ring3SkinInTheGame"}
 func TestDeferred_24_1_5_Ring3SkinInTheGame(t *testing.T) {
 	// W3C Verifiable Credentials from LinkedIn, GitHub, business registration
 	// add trust weight, revealing only what user chooses.
@@ -108,6 +113,7 @@ func TestDeferred_24_1_5_Ring3SkinInTheGame(t *testing.T) {
 }
 
 // TST-CORE-756
+// TRACE: {"suite": "CORE", "case": "0474", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "06", "title": "TrustScoreFormula"}
 func TestDeferred_24_1_6_TrustScoreFormula(t *testing.T) {
 	// Trust score: f(ring_level, time_alive, transaction_anchors, outcome_data,
 	// peer_attestations, credential_count) — composite function.
@@ -122,6 +128,7 @@ func TestDeferred_24_1_6_TrustScoreFormula(t *testing.T) {
 }
 
 // TST-CORE-757
+// TRACE: {"suite": "CORE", "case": "0475", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "07", "title": "TrustLevelAffectsSharingRouting"}
 func TestDeferred_24_1_7_TrustLevelAffectsSharingRouting(t *testing.T) {
 	// Unverified vs Verified contacts get different default sharing policies.
 	var impl testutil.ZKPVerifier
@@ -142,6 +149,7 @@ func TestDeferred_24_1_7_TrustLevelAffectsSharingRouting(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-758
+// TRACE: {"suite": "CORE", "case": "0476", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "01", "title": "SecureEnclaveIOS"}
 func TestDeferred_24_2_1_SecureEnclaveIOS(t *testing.T) {
 	// iOS device: private key generated inside Secure Enclave, never exported.
 	var impl testutil.HSMProvider
@@ -158,6 +166,7 @@ func TestDeferred_24_2_1_SecureEnclaveIOS(t *testing.T) {
 }
 
 // TST-CORE-759
+// TRACE: {"suite": "CORE", "case": "0477", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "02", "title": "StrongBoxAndroid"}
 func TestDeferred_24_2_2_StrongBoxAndroid(t *testing.T) {
 	// Android device: private key generated inside StrongBox Keymaster.
 	var impl testutil.HSMProvider
@@ -170,6 +179,7 @@ func TestDeferred_24_2_2_StrongBoxAndroid(t *testing.T) {
 }
 
 // TST-CORE-760
+// TRACE: {"suite": "CORE", "case": "0478", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "03", "title": "TPMDesktop"}
 func TestDeferred_24_2_3_TPMDesktop(t *testing.T) {
 	// Desktop/server: private key generated via TPM 2.0.
 	var impl testutil.HSMProvider
@@ -182,6 +192,7 @@ func TestDeferred_24_2_3_TPMDesktop(t *testing.T) {
 }
 
 // TST-CORE-761
+// TRACE: {"suite": "CORE", "case": "0479", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "04", "title": "FallbackSoftwareEntropy"}
 func TestDeferred_24_2_4_FallbackSoftwareEntropy(t *testing.T) {
 	// No HSM available: crypto/rand from OS entropy pool — secure but not hardware-isolated.
 	var impl testutil.HSMProvider
@@ -204,6 +215,7 @@ func TestDeferred_24_2_4_FallbackSoftwareEntropy(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-762
+// TRACE: {"suite": "CORE", "case": "0480", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "01", "title": "ArchiveEncryptedWithArchiveKey"}
 func TestDeferred_24_3_1_ArchiveEncryptedWithArchiveKey(t *testing.T) {
 	// Tier 5 snapshot must be encrypted with AES-256-GCM using HKDF("dina:archive:v1") key.
 	var impl testutil.ArchiveManager
@@ -222,6 +234,7 @@ func TestDeferred_24_3_1_ArchiveEncryptedWithArchiveKey(t *testing.T) {
 }
 
 // TST-CORE-763
+// TRACE: {"suite": "CORE", "case": "0481", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "02", "title": "ArchiveContainsCorrectTiers"}
 func TestDeferred_24_3_2_ArchiveContainsCorrectTiers(t *testing.T) {
 	// Archive must contain Tier 0 (identity) + Tier 1 (persona vaults) + Tier 3 (trust/preferences).
 	// Must NOT contain Tier 2 (index/embeddings — regenerable) or Tier 4 (staging — ephemeral).
@@ -253,6 +266,7 @@ func TestDeferred_24_3_2_ArchiveContainsCorrectTiers(t *testing.T) {
 }
 
 // TST-CORE-764
+// TRACE: {"suite": "CORE", "case": "0482", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "03", "title": "WeeklyFrequencyConfigurable"}
 func TestDeferred_24_3_3_WeeklyFrequencyConfigurable(t *testing.T) {
 	// Default weekly, configurable via config.json.
 	var impl testutil.ArchiveManager
@@ -270,6 +284,7 @@ func TestDeferred_24_3_3_WeeklyFrequencyConfigurable(t *testing.T) {
 }
 
 // TST-CORE-765
+// TRACE: {"suite": "CORE", "case": "0483", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "04", "title": "S3GlacierComplianceModeLock"}
 func TestDeferred_24_3_4_S3GlacierComplianceModeLock(t *testing.T) {
 	// S3 Glacier with Compliance Mode Object Lock — even root cannot delete during retention.
 	var impl testutil.ArchiveManager
@@ -287,6 +302,7 @@ func TestDeferred_24_3_4_S3GlacierComplianceModeLock(t *testing.T) {
 }
 
 // TST-CORE-766
+// TRACE: {"suite": "CORE", "case": "0484", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "05", "title": "SovereignUSBLTOTape"}
 func TestDeferred_24_3_5_SovereignUSBLTOTape(t *testing.T) {
 	// Sovereign: push to local drive (USB/LTO tape) — physically unplugged after backup.
 	var impl testutil.ArchiveManager
@@ -304,6 +320,7 @@ func TestDeferred_24_3_5_SovereignUSBLTOTape(t *testing.T) {
 }
 
 // TST-CORE-767
+// TRACE: {"suite": "CORE", "case": "0485", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "06", "title": "ArchiveUselessWithoutKeys"}
 func TestDeferred_24_3_6_ArchiveUselessWithoutKeys(t *testing.T) {
 	// Attacker obtains archive blob — cannot decrypt without master seed.
 	// Uses real AES-256-GCM key wrapping + HKDF key derivation to prove that
@@ -364,6 +381,7 @@ func TestDeferred_24_3_6_ArchiveUselessWithoutKeys(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-768
+// TRACE: {"suite": "CORE", "case": "0486", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "01", "title": "AutoSnapshotEvery15Minutes"}
 func TestDeferred_24_4_1_AutoSnapshotEvery15Minutes(t *testing.T) {
 	// ZFS on /var/lib/dina/vault/ — copy-on-write snapshots, instant, near-zero space cost.
 	var impl testutil.SnapshotManager
@@ -377,6 +395,7 @@ func TestDeferred_24_4_1_AutoSnapshotEvery15Minutes(t *testing.T) {
 }
 
 // TST-CORE-769
+// TRACE: {"suite": "CORE", "case": "0487", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "02", "title": "SnapshotRetentionPolicy"}
 func TestDeferred_24_4_2_SnapshotRetentionPolicy(t *testing.T) {
 	// Retention: 24h of 15-min, 7 days of hourly, 30 days of daily.
 	var impl testutil.SnapshotManager
@@ -388,6 +407,7 @@ func TestDeferred_24_4_2_SnapshotRetentionPolicy(t *testing.T) {
 }
 
 // TST-CORE-770
+// TRACE: {"suite": "CORE", "case": "0488", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "03", "title": "ZFSRollbackRecovery"}
 func TestDeferred_24_4_3_ZFSRollbackRecovery(t *testing.T) {
 	// Corruption detected: `zfs rollback dina/vault@15min_ago` — instant revert.
 	var impl testutil.SnapshotManager
@@ -403,6 +423,7 @@ func TestDeferred_24_4_3_ZFSRollbackRecovery(t *testing.T) {
 }
 
 // TST-CORE-771
+// TRACE: {"suite": "CORE", "case": "0489", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "04", "title": "ManagedHostingPerUserVolumes"}
 func TestDeferred_24_4_4_ManagedHostingPerUserVolumes(t *testing.T) {
 	// Managed hosting: /var/lib/dina/users/<did>/vault/ — separate ZFS datasets per user.
 	var impl testutil.SnapshotManager
@@ -425,6 +446,7 @@ func TestDeferred_24_4_4_ManagedHostingPerUserVolumes(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-772
+// TRACE: {"suite": "CORE", "case": "0490", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "01", "title": "PhoneRecent6MonthsCached"}
 func TestDeferred_24_5_1_PhoneRecent6MonthsCached(t *testing.T) {
 	// Phone: only last 6 months of data cached, encrypted with Client Sync Key.
 	var impl testutil.CacheSyncer
@@ -446,6 +468,7 @@ func TestDeferred_24_5_1_PhoneRecent6MonthsCached(t *testing.T) {
 }
 
 // TST-CORE-773
+// TRACE: {"suite": "CORE", "case": "0491", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "02", "title": "LaptopConfigurableCacheSize"}
 func TestDeferred_24_5_2_LaptopConfigurableCacheSize(t *testing.T) {
 	// Laptop: configurable cache — can be set to "everything" (full vault replica).
 	var impl testutil.CacheSyncer
@@ -461,6 +484,7 @@ func TestDeferred_24_5_2_LaptopConfigurableCacheSize(t *testing.T) {
 }
 
 // TST-CORE-774
+// TRACE: {"suite": "CORE", "case": "0492", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "03", "title": "ThinClientNoLocalCache"}
 func TestDeferred_24_5_3_ThinClientNoLocalCache(t *testing.T) {
 	// Thin client: zero vault data stored locally — WS msgbox only.
 	var impl testutil.CacheSyncer
@@ -481,6 +505,7 @@ func TestDeferred_24_5_3_ThinClientNoLocalCache(t *testing.T) {
 }
 
 // TST-CORE-775
+// TRACE: {"suite": "CORE", "case": "0493", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "04", "title": "CacheEncryptedWithSyncKey"}
 func TestDeferred_24_5_4_CacheEncryptedWithSyncKey(t *testing.T) {
 	// Cache on device must be encrypted with HKDF("dina:sync:v1") — not raw DEKs.
 	var impl testutil.CacheSyncer
@@ -502,6 +527,7 @@ func TestDeferred_24_5_4_CacheEncryptedWithSyncKey(t *testing.T) {
 }
 
 // TST-CORE-931
+// TRACE: {"suite": "CORE", "case": "0494", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "05", "title": "Tier5DeepArchive_EncryptedSnapshot"}
 func TestDeferred_24_5_5_Tier5DeepArchive_EncryptedSnapshot(t *testing.T) {
 	// Tier 5 Deep Archive: encrypted snapshot to cold storage with compliance lock.
 	var impl testutil.ArchiveManager

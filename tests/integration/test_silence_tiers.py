@@ -38,6 +38,7 @@ class TestTier1Fiduciary:
     """Tier 1 events always interrupt -- silence would cause harm."""
 
 # TST-INT-547
+    # TRACE: {"suite": "INT", "case": "0547", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "malicious_contract_interrupts"}
     def test_malicious_contract_interrupts(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -80,6 +81,7 @@ class TestTier1Fiduciary:
         assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
 
 # TST-INT-268
+    # TRACE: {"suite": "INT", "case": "0268", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "02", "title": "phishing_interrupts"}
     def test_phishing_interrupts(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -91,6 +93,7 @@ class TestTier1Fiduciary:
         assert tier == SilenceTier.TIER_1_FIDUCIARY
 
 # TST-INT-548
+    # TRACE: {"suite": "INT", "case": "0548", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "03", "title": "fiduciary_overrides_dnd"}
     def test_fiduciary_overrides_dnd(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -116,6 +119,7 @@ class TestTier1Fiduciary:
         assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
 
 # TST-INT-549
+    # TRACE: {"suite": "INT", "case": "0549", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "04", "title": "financial_fraud_detection"}
     def test_financial_fraud_detection(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -158,6 +162,7 @@ class TestTier2Solicited:
     """Tier 2 events are user-requested notifications."""
 
 # TST-INT-550
+    # TRACE: {"suite": "INT", "case": "0550", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "01", "title": "alarm_notification"}
     def test_alarm_notification(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -166,6 +171,7 @@ class TestTier2Solicited:
         assert tier == SilenceTier.TIER_2_SOLICITED
 
 # TST-INT-551
+    # TRACE: {"suite": "INT", "case": "0551", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "02", "title": "price_alert"}
     def test_price_alert(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -200,6 +206,7 @@ class TestTier2Solicited:
             "User override must take precedence over default classification"
 
 # TST-INT-552
+    # TRACE: {"suite": "INT", "case": "0552", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "03", "title": "respects_timing"}
     def test_respects_timing(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -221,6 +228,7 @@ class TestTier2Solicited:
         assert len(mock_human.notifications) == 1
 
 # TST-INT-553
+    # TRACE: {"suite": "INT", "case": "0553", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "04", "title": "search_results_ready"}
     def test_search_results_ready(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -241,6 +249,7 @@ class TestTier3Engagement:
     """Tier 3 events are saved silently for the daily briefing."""
 
 # TST-INT-554
+    # TRACE: {"suite": "INT", "case": "0554", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "01", "title": "new_video_saved_for_briefing"}
     def test_new_video_saved_for_briefing(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -252,6 +261,7 @@ class TestTier3Engagement:
         assert tier == SilenceTier.TIER_3_ENGAGEMENT
 
 # TST-INT-555
+    # TRACE: {"suite": "INT", "case": "0555", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "02", "title": "flash_sale_saved"}
     def test_flash_sale_saved(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -263,6 +273,7 @@ class TestTier3Engagement:
         assert tier == SilenceTier.TIER_3_ENGAGEMENT
 
 # TST-INT-556
+    # TRACE: {"suite": "INT", "case": "0556", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "03", "title": "daily_briefing_aggregates"}
     def test_daily_briefing_aggregates(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -298,6 +309,7 @@ class TestTier3Engagement:
         )
 
 # TST-INT-557
+    # TRACE: {"suite": "INT", "case": "0557", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "04", "title": "tier_3_never_interrupts"}
     def test_tier_3_never_interrupts(
         self, mock_classifier: MockSilenceClassifier, mock_human: MockHuman
     ) -> None:
@@ -371,6 +383,7 @@ class TestSilenceClassifier:
         ],
     )
 # TST-INT-558
+    # TRACE: {"suite": "INT", "case": "0558", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "04", "scenario": "01", "title": "assigns_correct_tier"}
     def test_assigns_correct_tier(
         self,
         mock_classifier: MockSilenceClassifier,
@@ -383,6 +396,7 @@ class TestSilenceClassifier:
         assert tier == expected_tier
 
 # TST-INT-265
+    # TRACE: {"suite": "INT", "case": "0265", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "04", "scenario": "02", "title": "if_silent_causes_harm_speak"}
     def test_if_silent_causes_harm_speak(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -413,6 +427,7 @@ class TestSilenceClassifier:
         assert fiduciary_logs[-1]["reason"] == "keyword_match"
 
 # TST-INT-559
+    # TRACE: {"suite": "INT", "case": "0559", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "04", "scenario": "03", "title": "user_can_override_tier"}
     def test_user_can_override_tier(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -434,6 +449,7 @@ class TestSilenceClassifier:
         assert len(override_logs) == 1
 
 # TST-INT-560
+    # TRACE: {"suite": "INT", "case": "0560", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "04", "scenario": "04", "title": "context_affects_classification"}
     def test_context_affects_classification(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -517,6 +533,7 @@ class TestFullNotificationPipeline:
     """
 
 # TST-INT-709
+    # TRACE: {"suite": "INT", "case": "0709", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "05", "scenario": "01", "title": "engagement_event_ingestion_briefing_only"}
     def test_engagement_event_ingestion_briefing_only(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -701,6 +718,7 @@ class TestFiduciaryNotificationPipeline:
     """
 
 # TST-INT-708
+    # TRACE: {"suite": "INT", "case": "0708", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "01", "title": "fiduciary_event_ingestion_to_interrupt"}
     def test_fiduciary_event_ingestion_to_interrupt(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -810,6 +828,7 @@ class TestFiduciaryNotificationPipeline:
             "Classification log must record the original event type"
         )
 
+    # TRACE: {"suite": "INT", "case": "0160", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "02", "title": "fiduciary_not_queued_for_briefing"}
     def test_fiduciary_not_queued_for_briefing(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -847,6 +866,7 @@ class TestFiduciaryNotificationPipeline:
         assert len(mock_human.notifications) == 1
         assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
 
+    # TRACE: {"suite": "INT", "case": "0161", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "03", "title": "engagement_event_not_pushed_as_interrupt"}
     def test_engagement_event_not_pushed_as_interrupt(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -897,6 +917,7 @@ class TestFiduciaryNotificationPipeline:
             "/v1/notify must only have been called for the fiduciary event"
         )
 
+    # TRACE: {"suite": "INT", "case": "0162", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "04", "title": "fiduciary_push_logged_in_core_api_calls"}
     def test_fiduciary_push_logged_in_core_api_calls(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -941,6 +962,7 @@ class TestFiduciaryNotificationPipeline:
             "still only 1 call from the fiduciary event"
         )
 
+    # TRACE: {"suite": "INT", "case": "0163", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "05", "title": "user_receives_fiduciary_before_any_engagement"}
     def test_user_receives_fiduciary_before_any_engagement(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -989,6 +1011,7 @@ class TestFiduciaryNotificationPipeline:
             "Engagement notification arrives only at briefing time, after fiduciary"
         )
 
+    # TRACE: {"suite": "INT", "case": "0164", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "06", "title": "multiple_fiduciary_events_all_pushed"}
     def test_multiple_fiduciary_events_all_pushed(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -1068,6 +1091,7 @@ class TestFiduciaryNotificationPipeline:
                 f"Source '{evt_type}' must be preserved in notification"
             )
 
+    # TRACE: {"suite": "INT", "case": "0165", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "07", "title": "fiduciary_event_content_preserved_in_notification"}
     def test_fiduciary_event_content_preserved_in_notification(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -1109,6 +1133,7 @@ class TestFiduciaryNotificationPipeline:
             "WebSocket-pushed notification must preserve full content"
         )
 
+    # TRACE: {"suite": "INT", "case": "0166", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "06", "scenario": "08", "title": "fiduciary_classification_reason_is_keyword_match"}
     def test_fiduciary_classification_reason_is_keyword_match(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -1627,6 +1652,7 @@ class TestClassificationEdgeCases:
     """Edge-case classification scenarios — reclassification, corroboration."""
 
 # TST-INT-731
+    # TRACE: {"suite": "INT", "case": "0731", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "01", "title": "reclassification_on_later_corroboration"}
     def test_reclassification_on_later_corroboration(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -1930,6 +1956,7 @@ class TestClassificationEdgeCases:
         )
 
 # TST-INT-713
+    # TRACE: {"suite": "INT", "case": "0713", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "02", "title": "untrusted_sender_urgency_not_fiduciary"}
     def test_untrusted_sender_urgency_not_fiduciary(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -2035,6 +2062,7 @@ class TestClassificationEdgeCases:
             "be queued for daily briefing only"
         )
 
+    # TRACE: {"suite": "INT", "case": "0167", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "03", "title": "trusted_sender_urgency_is_fiduciary"}
     def test_trusted_sender_urgency_is_fiduciary(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -2091,6 +2119,7 @@ class TestClassificationEdgeCases:
         )
         assert mock_human.notifications[-1].tier == SilenceTier.TIER_1_FIDUCIARY
 
+    # TRACE: {"suite": "INT", "case": "0168", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "04", "title": "untrusted_sender_normal_message_stays_engagement"}
     def test_untrusted_sender_normal_message_stays_engagement(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2132,6 +2161,7 @@ class TestClassificationEdgeCases:
         )
         assert result["original_tier"] == SilenceTier.TIER_3_ENGAGEMENT
 
+    # TRACE: {"suite": "INT", "case": "0169", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "05", "title": "trusted_sender_engagement_not_promoted"}
     def test_trusted_sender_engagement_not_promoted(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2169,6 +2199,7 @@ class TestClassificationEdgeCases:
         assert result["demoted"] is False
         assert result["original_tier"] == SilenceTier.TIER_3_ENGAGEMENT
 
+    # TRACE: {"suite": "INT", "case": "0170", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "06", "title": "borderline_trust_score_threshold"}
     def test_borderline_trust_score_threshold(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2225,6 +2256,7 @@ class TestClassificationEdgeCases:
         )
         assert result_below["demoted"] is True
 
+    # TRACE: {"suite": "INT", "case": "0171", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "07", "title": "untrusted_sender_with_fiduciary_keywords_all_demoted"}
     def test_untrusted_sender_with_fiduciary_keywords_all_demoted(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2274,6 +2306,7 @@ class TestClassificationEdgeCases:
             )
             assert result["original_tier"] == SilenceTier.TIER_1_FIDUCIARY
 
+    # TRACE: {"suite": "INT", "case": "0172", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "08", "title": "unknown_sender_not_in_trust_network"}
     def test_unknown_sender_not_in_trust_network(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2325,6 +2358,7 @@ class TestClassificationEdgeCases:
         )
 
 # TST-INT-715
+    # TRACE: {"suite": "INT", "case": "0715", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "09", "title": "stale_event_demotion"}
     def test_stale_event_demotion(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2395,6 +2429,7 @@ class TestClassificationEdgeCases:
             f"Reason must indicate staleness, got: {result['reason']!r}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0173", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "10", "title": "fresh_fiduciary_event_not_demoted"}
     def test_fresh_fiduciary_event_not_demoted(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2437,6 +2472,7 @@ class TestClassificationEdgeCases:
             f"age_hours must be approximately 0.5, got {result['age_hours']}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0174", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "11", "title": "stale_engagement_stays_engagement"}
     def test_stale_engagement_stays_engagement(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2483,6 +2519,7 @@ class TestClassificationEdgeCases:
         )
         assert result["original_tier"] == SilenceTier.TIER_3_ENGAGEMENT
 
+    # TRACE: {"suite": "INT", "case": "0175", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "12", "title": "stale_solicited_also_demoted"}
     def test_stale_solicited_also_demoted(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2532,6 +2569,7 @@ class TestClassificationEdgeCases:
             "an 8-hour-old price alert is no longer actionable"
         )
 
+    # TRACE: {"suite": "INT", "case": "0176", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "13", "title": "exactly_at_staleness_threshold"}
     def test_exactly_at_staleness_threshold(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2574,6 +2612,7 @@ class TestClassificationEdgeCases:
             "classification"
         )
 
+    # TRACE: {"suite": "INT", "case": "0177", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "14", "title": "just_over_staleness_threshold"}
     def test_just_over_staleness_threshold(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2614,6 +2653,7 @@ class TestClassificationEdgeCases:
             f"got {result['age_hours']:.4f}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0178", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "15", "title": "very_old_event_still_just_engagement"}
     def test_very_old_event_still_just_engagement(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2658,6 +2698,7 @@ class TestClassificationEdgeCases:
         assert abs(result["age_hours"] - 72.0) < 0.01
 
     # TST-INT-804
+    # TRACE: {"suite": "INT", "case": "0804", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "16", "title": "staleness_check_uses_event_timestamp_not_ingestion_time"}
     def test_staleness_check_uses_event_timestamp_not_ingestion_time(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2727,6 +2768,7 @@ class TestClassificationEdgeCases:
         )
 
 # TST-INT-714
+    # TRACE: {"suite": "INT", "case": "0714", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "17", "title": "health_context_elevates_classification"}
     def test_health_context_elevates_classification(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2845,6 +2887,7 @@ class TestClassificationEdgeCases:
             "monitoring and known providers"
         )
 
+    # TRACE: {"suite": "INT", "case": "0179", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "18", "title": "health_event_without_active_monitoring_stays_engagement"}
     def test_health_event_without_active_monitoring_stays_engagement(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2887,6 +2930,7 @@ class TestClassificationEdgeCases:
             f"Reason must indicate inactive monitoring, got: {result['reason']!r}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0180", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "19", "title": "health_event_from_unknown_provider_stays_engagement"}
     def test_health_event_from_unknown_provider_stays_engagement(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2931,6 +2975,7 @@ class TestClassificationEdgeCases:
             f"Reason must indicate unknown provider, got: {result['reason']!r}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0181", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "20", "title": "non_health_event_not_elevated_by_health_context"}
     def test_non_health_event_not_elevated_by_health_context(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -2968,6 +3013,7 @@ class TestClassificationEdgeCases:
         assert result["elevated"] is False
         assert result["health_context_used"] is False
 
+    # TRACE: {"suite": "INT", "case": "0182", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "21", "title": "health_keyword_without_provider_not_elevated"}
     def test_health_keyword_without_provider_not_elevated(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -3017,6 +3063,7 @@ class TestClassificationEdgeCases:
         assert result_unmentioned["elevated"] is False
         assert result_unmentioned["health_context_used"] is False
 
+    # TRACE: {"suite": "INT", "case": "0183", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "22", "title": "multiple_health_keywords_in_content"}
     def test_multiple_health_keywords_in_content(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -3073,6 +3120,7 @@ class TestClassificationEdgeCases:
             )
             assert single_result["elevated"] is True
 
+    # TRACE: {"suite": "INT", "case": "0184", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "23", "title": "health_provider_case_insensitive"}
     def test_health_provider_case_insensitive(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -3138,6 +3186,7 @@ class TestClassificationEdgeCases:
         assert result_mixed["tier"] == SilenceTier.TIER_1_FIDUCIARY
         assert result_mixed["elevated"] is True
 
+    # TRACE: {"suite": "INT", "case": "0185", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "07", "scenario": "24", "title": "already_fiduciary_health_event_stays_fiduciary"}
     def test_already_fiduciary_health_event_stays_fiduciary(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -3281,27 +3330,19 @@ class TestNotificationPIIScrubbing:
     """
 
 # TST-INT-711
+    # TRACE: {"suite": "INT", "case": "0711", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "01", "title": "fiduciary_notification_pii_scrubbed"}
     def test_fiduciary_notification_pii_scrubbed(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
-        """Fiduciary event with doctor name + personal PII → Brain classifies
-        → Core scrubs PII → pushes scrubbed notification.
+        """Fiduciary event with structured PII → Brain classifies
+        → Core scrubs structured PII → pushes scrubbed notification.
 
-        Push notification text must contain ``[PERSON_1]``, ``[PHONE_1]``,
-        and ``[DOCTOR_1]`` — never raw 'Rajmohan', '+91-9876543210', or
-        'Dr. Sharma'.
+        Names pass through (intentional). Phone numbers and other
+        structured PII are replaced with opaque tokens.
         """
-        # -- Setup: add "Dr. Sharma" as a recognizable PII entity --
-        extra_scrubber = MockPIIScrubber(
-            extra_patterns={"Dr. Sharma": "[DOCTOR_1]"},
-        )
-        mock_dina.scrubber = extra_scrubber
-        mock_dina.go_core._scrubber = extra_scrubber
-
-        # The event content contains three PII items:
-        #   "Rajmohan"        -> [PERSON_1]  (default pattern)
+        # The event content contains structured PII:
         #   "+91-9876543210"  -> [PHONE_1]   (default pattern)
-        #   "Dr. Sharma"      -> [DOCTOR_1]  (extra pattern)
+        # Names (Rajmohan, Dr. Sharma) are NOT scrubbed.
         # The word "emergency" triggers fiduciary classification.
         fiduciary_content = (
             "Emergency: Dr. Sharma has updated Rajmohan's prescription "
@@ -3320,8 +3361,7 @@ class TestNotificationPIIScrubbing:
             human=mock_human,
         )
 
-        # -- Requirement 1: classified as fiduciary (PII scrubbing must NOT
-        #    alter classification — classification uses original content) --
+        # -- Requirement 1: classified as fiduciary --
         assert result["tier"] == SilenceTier.TIER_1_FIDUCIARY, (
             "Event with 'emergency' keyword must be classified as fiduciary "
             "regardless of PII scrubbing"
@@ -3333,39 +3373,23 @@ class TestNotificationPIIScrubbing:
         )
         assert result["queued"] is False
 
-        # -- Requirement 3: the pushed notification body does NOT contain raw PII --
+        # -- Requirement 3: structured PII scrubbed, names pass through --
         pushed_body = result["notification"].body
-        assert "Rajmohan" not in pushed_body, (
-            "Raw PII 'Rajmohan' must NOT appear in the pushed notification body"
-        )
         assert "+91-9876543210" not in pushed_body, (
             "Raw PII '+91-9876543210' must NOT appear in the pushed notification body"
         )
-        assert "Dr. Sharma" not in pushed_body, (
-            "Raw PII 'Dr. Sharma' must NOT appear in the pushed notification body"
-        )
+        # Names pass through (intentional)
+        assert "Rajmohan" in pushed_body
 
-        # -- Requirement 4: the pushed body DOES contain placeholders --
-        assert "[PERSON_1]" in pushed_body, (
-            "Scrubbed body must contain [PERSON_1] placeholder for 'Rajmohan'"
-        )
+        # -- Requirement 4: the pushed body DOES contain phone placeholder --
         assert "[PHONE_1]" in pushed_body, (
             "Scrubbed body must contain [PHONE_1] placeholder for phone number"
-        )
-        assert "[DOCTOR_1]" in pushed_body, (
-            "Scrubbed body must contain [DOCTOR_1] placeholder for 'Dr. Sharma'"
         )
 
         # -- Requirement 5: replacement_map maps placeholders back to PII --
         rmap = result["replacement_map"]
-        assert rmap["[PERSON_1]"] == "Rajmohan", (
-            "Replacement map must map [PERSON_1] back to 'Rajmohan'"
-        )
         assert rmap["[PHONE_1]"] == "+91-9876543210", (
             "Replacement map must map [PHONE_1] back to '+91-9876543210'"
-        )
-        assert rmap["[DOCTOR_1]"] == "Dr. Sharma", (
-            "Replacement map must map [DOCTOR_1] back to 'Dr. Sharma'"
         )
 
         # -- Requirement 6: the human received the SCRUBBED version --
@@ -3373,9 +3397,6 @@ class TestNotificationPIIScrubbing:
         delivered = mock_human.notifications[0]
         assert delivered.body == pushed_body, (
             "Human must receive the same scrubbed body that Core pushed"
-        )
-        assert "Rajmohan" not in delivered.body, (
-            "Human's received notification must not contain raw PII 'Rajmohan'"
         )
 
         # -- Requirement 7: original_had_pii flag is True --
@@ -3386,13 +3407,13 @@ class TestNotificationPIIScrubbing:
         # -- Requirement 8: Core's notification store also has scrubbed body --
         assert len(mock_dina.go_core._notifications_sent) == 1
         stored = mock_dina.go_core._notifications_sent[0]
-        assert "Rajmohan" not in stored.body, (
-            "Core's internal notification record must also have scrubbed body"
+        assert "+91-9876543210" not in stored.body, (
+            "Core's internal notification record must have scrubbed phone"
         )
-        assert "[PERSON_1]" in stored.body
 
     # -- Counter-proofs --
 
+    # TRACE: {"suite": "INT", "case": "0186", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "02", "title": "notification_without_pii_passes_through_unchanged"}
     def test_notification_without_pii_passes_through_unchanged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -3417,6 +3438,7 @@ class TestNotificationPIIScrubbing:
             "original_had_pii must be False when no PII was detected"
         )
 
+    # TRACE: {"suite": "INT", "case": "0187", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "03", "title": "classification_unchanged_by_scrubbing"}
     def test_classification_unchanged_by_scrubbing(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -3452,12 +3474,8 @@ class TestNotificationPIIScrubbing:
             "PII scrubbing must not change the classification tier"
         )
 
-        # But the body must have PII scrubbed
-        assert "Rajmohan" not in result["notification"].body
-        # Accept both mock format [PERSON_N] and real scrubber format <<PII:...>>
-        assert re.search(r'\[PERSON_\d+\]|<<PII:', result["notification"].body), (
-            "Body must contain a PII placeholder for scrubbed name"
-        )
+        # Names pass through (intentional) — verify the body is present
+        assert "Rajmohan" in result["notification"].body
 
         # Counter-proof: scrubbed text alone (without the keyword) would
         # NOT be fiduciary.  This proves classification used the original.
@@ -3481,6 +3499,7 @@ class TestNotificationPIIScrubbing:
                 "'security' is NOT PII — it must survive scrubbing"
             )
 
+    # TRACE: {"suite": "INT", "case": "0188", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "04", "title": "pii_in_tier3_engagement_also_scrubbed_before_storage"}
     def test_pii_in_tier3_engagement_also_scrubbed_before_storage(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -3507,20 +3526,14 @@ class TestNotificationPIIScrubbing:
         assert result["queued"] is True
         assert result["pushed"] is False
 
-        # Even though it's queued (not pushed), the body must be scrubbed.
-        # The real NER scrubber may not catch every name (e.g. uncommon names),
-        # so we verify that at least one name was replaced and the address was
-        # scrubbed.  The key invariant: detected PII is replaced, not leaked.
+        # Even though it's queued (not pushed), structured PII must be scrubbed.
+        # Names pass through (intentional), address is scrubbed.
         queued_body = result["notification"].body
         assert "123 Main Street" not in queued_body, (
             "Queued (Tier 3) notification must NOT contain raw PII address"
         )
-        # At least one person name must be scrubbed (either format)
-        pii_placeholders = re.findall(r'\[PERSON_\d+\]|<<PII:[^>]+>>', queued_body)
-        assert len(pii_placeholders) >= 1, (
-            f"Queued body must contain at least 1 PII placeholder for scrubbed names, "
-            f"got {len(pii_placeholders)} in: {queued_body!r}"
-        )
+        # Names pass through (intentional)
+        assert "Sancho" in queued_body or "Maria" in queued_body
         # Verify ADDRESS/LOCATION placeholder exists
         assert re.search(r'\[ADDRESS_\d+\]|\[LOCATION_\d+\]', queued_body), (
             "Queued body must contain an address/location placeholder"
@@ -3533,20 +3546,17 @@ class TestNotificationPIIScrubbing:
 
         # Replacement map preserved for later de-anonymization at briefing time
         rmap_values = set(result["replacement_map"].values())
-        # At least one name must appear in the replacement map
-        assert "Maria" in rmap_values or "Sancho" in rmap_values, (
-            "Replacement map must contain at least one original PII name"
-        )
         assert "123 Main Street" in rmap_values, (
             "Replacement map must contain original PII '123 Main Street'"
         )
 
     # -- Edge cases --
 
+    # TRACE: {"suite": "INT", "case": "0189", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "05", "title": "multiple_pii_instances_all_scrubbed"}
     def test_multiple_pii_instances_all_scrubbed(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
-        """Event with 5 distinct PII entities → all replaced, none leaked."""
+        """Event with multiple structured PII entities → all replaced."""
         content_many_pii = (
             "Emergency: Rajmohan (rajmohan@email.com, +91-9876543210) "
             "shared 4111-2222-3333-4444 with Sancho at 123 Main Street"
@@ -3561,21 +3571,21 @@ class TestNotificationPIIScrubbing:
 
         scrubbed = result["notification"].body
 
-        # All 5+ PII entities must be replaced
-        raw_pii_values = [
-            "Rajmohan", "rajmohan@email.com", "+91-9876543210",
-            "4111-2222-3333-4444", "Sancho", "123 Main Street",
+        # Names pass through (intentional)
+        assert "Rajmohan" in scrubbed
+        assert "Sancho" in scrubbed
+
+        # Structured PII must be replaced
+        structured_pii = [
+            "rajmohan@email.com", "+91-9876543210",
+            "4111-2222-3333-4444", "123 Main Street",
         ]
-        for pii_val in raw_pii_values:
+        for pii_val in structured_pii:
             assert pii_val not in scrubbed, (
                 f"Raw PII '{pii_val}' must NOT appear in scrubbed output"
             )
 
-        # Verify placeholder patterns exist for each PII type.
-        # Accept both mock format [TYPE_N] and real scrubber format <<PII:...>>
-        assert re.search(r'\[PERSON_\d+\]|<<PII:', scrubbed), (
-            "Must have PERSON/PII placeholder for scrubbed names"
-        )
+        # Verify placeholder patterns exist for each structured PII type
         assert re.search(r'\[EMAIL_\d+\]', scrubbed), (
             "Must have EMAIL placeholder for scrubbed email"
         )
@@ -3589,27 +3599,19 @@ class TestNotificationPIIScrubbing:
             "Must have ADDRESS/LOCATION placeholder for scrubbed address"
         )
 
-        # Replacement map must contain original PII values for detected entities.
-        # Real NER may not detect every entity, so check that at least 4 of 6
-        # raw PII values appear (regex catches email/phone/cc/address reliably;
-        # person names depend on NER model coverage).
+        # Replacement map must contain structured PII values
         rmap_values = set(result["replacement_map"].values())
-        matched_pii = [v for v in raw_pii_values if v in rmap_values]
+        matched_pii = [v for v in structured_pii if v in rmap_values]
         assert len(matched_pii) >= 4, (
-            f"Replacement map must contain at least 4 of 6 raw PII values, "
+            f"Replacement map must contain all 4 structured PII values, "
             f"got {len(matched_pii)}: {matched_pii}"
         )
-        # At least 4 replacements (names may not all be detected by NER)
-        assert len(result["replacement_map"]) >= 4, (
-            f"Replacement map must have at least 4 entries, "
-            f"got {len(result['replacement_map'])}"
-        )
 
+    # TRACE: {"suite": "INT", "case": "0190", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "06", "title": "scrubbed_notification_can_be_desanitized"}
     def test_scrubbed_notification_can_be_desanitized(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
-        """Using the replacement_map, the original text can be reconstructed
-        — proving the map is complete and correct."""
+        """Using the replacement_map, structured PII can be restored."""
         original_content = (
             "Emergency: Rajmohan called Sancho at +91-9876543210"
         )
@@ -3624,19 +3626,16 @@ class TestNotificationPIIScrubbing:
         scrubbed_body = result["notification"].body
         rmap = result["replacement_map"]
 
-        # Scrubbed body must not match original
+        # Scrubbed body must not match original (phone was scrubbed)
         assert scrubbed_body != original_content, (
-            "Scrubbed body must differ from original when PII is present"
+            "Scrubbed body must differ from original when structured PII is present"
         )
 
-        # Primary: PII absent from scrubbed text.
-        assert "Rajmohan" not in scrubbed_body
+        # Names pass through, structured PII scrubbed
+        assert "Rajmohan" in scrubbed_body
         assert "+91-9876543210" not in scrubbed_body
 
         # Tier 1 (regex) round-trip: phone number restorable.
-        # BR1: Brain NER entities (person names) are NOT restorable via
-        # HTTP round-trip — values stripped from response for PII safety.
-        # Full round-trip works in-process (Entity Vault pattern).
         restored = mock_dina.scrubber.desanitize(scrubbed_body, rmap)
         assert "+91-9876543210" in restored, (
             "Tier 1 (regex) PII must be restorable via replacement map.\n"
@@ -3644,13 +3643,14 @@ class TestNotificationPIIScrubbing:
             f"  Got:      {restored!r}"
         )
 
+    # TRACE: {"suite": "INT", "case": "0191", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "08", "scenario": "07", "title": "pii_scrub_api_call_logged"}
     def test_pii_scrub_api_call_logged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
         """Verify that ``go_core.api_calls`` includes a ``/v1/pii/scrub``
         call — proving the scrubbing went through Core's API, not a direct
         scrubber bypass."""
-        content = "Emergency: Rajmohan needs immediate attention"
+        content = "Emergency: Rajmohan at rajmohan@email.com needs immediate attention"
 
         # Clear any prior api_calls
         mock_dina.go_core.api_calls.clear()
@@ -3682,11 +3682,9 @@ class TestNotificationPIIScrubbing:
             f"got {len(notify_calls)}"
         )
 
-        # Counter-proof: if we had called scrubber.scrub() directly instead
-        # of go_core.pii_scrub(), there would be NO /v1/pii/scrub entry.
-        # The fact that the entry exists proves the Core API was used.
+        # Counter-proof: scrubbing modified the body (email was scrubbed)
         assert result["notification"].body != content, (
-            "Scrubbing must have modified the body (it contains 'Rajmohan')"
+            "Scrubbing must have modified the body (it contains structured PII)"
         )
 
 
@@ -3906,6 +3904,7 @@ class TestDNDStateRespected:
     # -- Primary test --
 
 # TST-INT-712
+    # TRACE: {"suite": "INT", "case": "0712", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "09", "scenario": "01", "title": "dnd_defers_solicited_notification"}
     def test_dnd_defers_solicited_notification(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4008,6 +4007,7 @@ class TestDNDStateRespected:
 
     # -- Counter-proofs --
 
+    # TRACE: {"suite": "INT", "case": "0192", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "09", "scenario": "02", "title": "fiduciary_event_pushes_through_dnd"}
     def test_fiduciary_event_pushes_through_dnd(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4068,6 +4068,7 @@ class TestDNDStateRespected:
             "Fiduciary events must never appear in the deferred queue"
         )
 
+    # TRACE: {"suite": "INT", "case": "0193", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "09", "scenario": "03", "title": "no_dnd_pushes_solicited_normally"}
     def test_no_dnd_pushes_solicited_normally(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4116,6 +4117,7 @@ class TestDNDStateRespected:
             "No notifications should be deferred when DND is off"
         )
 
+    # TRACE: {"suite": "INT", "case": "0194", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "09", "scenario": "04", "title": "dnd_defers_engagement_too"}
     def test_dnd_defers_engagement_too(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4165,6 +4167,7 @@ class TestDNDStateRespected:
 
     # -- Edge cases --
 
+    # TRACE: {"suite": "INT", "case": "0195", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "09", "scenario": "05", "title": "dnd_toggle_mid_stream"}
     def test_dnd_toggle_mid_stream(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4224,6 +4227,7 @@ class TestDNDStateRespected:
         assert mock_human.notifications[0].body == "Dell XPS 13 dropped to 95K"
         assert mock_human.notifications[1].body == "MacBook Air dropped to 89K"
 
+    # TRACE: {"suite": "INT", "case": "0196", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "09", "scenario": "06", "title": "multiple_deferred_during_dnd"}
     def test_multiple_deferred_during_dnd(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4298,6 +4302,7 @@ class TestDNDStateRespected:
             "Deferred queue must be empty after bulk delivery"
         )
 
+    # TRACE: {"suite": "INT", "case": "0197", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "09", "scenario": "07", "title": "dnd_does_not_lose_notifications"}
     def test_dnd_does_not_lose_notifications(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4512,6 +4517,7 @@ class TestPriorityConflictResolution:
     # -- Primary test (TST-INT-710) --
 
 # TST-INT-710
+    # TRACE: {"suite": "INT", "case": "0710", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "01", "title": "fiduciary_wins_over_engagement_for_same_topic"}
     def test_fiduciary_wins_over_engagement_for_same_topic(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4639,6 +4645,7 @@ class TestPriorityConflictResolution:
 
     # -- Counter-proofs --
 
+    # TRACE: {"suite": "INT", "case": "0198", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "02", "title": "two_engagement_events_no_escalation"}
     def test_two_engagement_events_no_escalation(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4702,6 +4709,7 @@ class TestPriorityConflictResolution:
             "sources report the same topic"
         )
 
+    # TRACE: {"suite": "INT", "case": "0199", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "03", "title": "unrelated_topics_no_conflict"}
     def test_unrelated_topics_no_conflict(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4758,6 +4766,7 @@ class TestPriorityConflictResolution:
         # (Tier 1 from event A), but NOT because of a topic conflict
         assert result["resolved_tier"] == SilenceTier.TIER_1_FIDUCIARY
 
+    # TRACE: {"suite": "INT", "case": "0200", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "04", "title": "solicited_beats_engagement"}
     def test_solicited_beats_engagement(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4820,6 +4829,7 @@ class TestPriorityConflictResolution:
         )
         assert pipeline_result["queued"] is False
 
+    # TRACE: {"suite": "INT", "case": "0201", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "05", "title": "fiduciary_beats_solicited"}
     def test_fiduciary_beats_solicited(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4874,6 +4884,7 @@ class TestPriorityConflictResolution:
 
     # -- Edge cases --
 
+    # TRACE: {"suite": "INT", "case": "0202", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "06", "title": "three_events_same_topic_highest_wins"}
     def test_three_events_same_topic_highest_wins(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4962,6 +4973,7 @@ class TestPriorityConflictResolution:
             SilenceTier.TIER_3_ENGAGEMENT,
         }, "All three tiers must appear in all_classifications"
 
+    # TRACE: {"suite": "INT", "case": "0203", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "07", "title": "single_event_no_conflict"}
     def test_single_event_no_conflict(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -4998,6 +5010,7 @@ class TestPriorityConflictResolution:
         assert result["winning_event"] is event
         assert len(result["all_classifications"]) == 1
 
+    # TRACE: {"suite": "INT", "case": "0204", "section": "21", "sectionName": "Thesis: Silence First", "subsection": "10", "scenario": "08", "title": "same_tier_no_conflict"}
     def test_same_tier_no_conflict(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:

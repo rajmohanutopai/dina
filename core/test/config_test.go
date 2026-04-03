@@ -23,6 +23,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-551
+// TRACE: {"suite": "CORE", "case": "0229", "section": "14", "sectionName": "Configuration", "subsection": "01", "scenario": "01", "title": "LoadFromEnvVars"}
 func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -68,6 +69,7 @@ func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
 }
 
 // TST-CORE-851
+// TRACE: {"suite": "CORE", "case": "0230", "section": "14", "sectionName": "Configuration", "subsection": "07", "scenario": "01", "title": "PartialEnvVars"}
 func TestConfig_14_7_PartialEnvVars(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -97,6 +99,7 @@ func TestConfig_14_7_PartialEnvVars(t *testing.T) {
 }
 
 // TST-CORE-852
+// TRACE: {"suite": "CORE", "case": "0231", "section": "14", "sectionName": "Configuration", "subsection": "08", "scenario": "01", "title": "EnvVarTypeParsing"}
 func TestConfig_14_8_EnvVarTypeParsing(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -122,6 +125,7 @@ func TestConfig_14_8_EnvVarTypeParsing(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-554
+// TRACE: {"suite": "CORE", "case": "0232", "section": "14", "sectionName": "Configuration", "subsection": "02", "scenario": "01", "title": "DefaultValues"}
 func TestConfig_14_2_1_DefaultValues(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -145,6 +149,7 @@ func TestConfig_14_2_1_DefaultValues(t *testing.T) {
 }
 
 // TST-CORE-853
+// TRACE: {"suite": "CORE", "case": "0233", "section": "14", "sectionName": "Configuration", "subsection": "09", "scenario": "01", "title": "DefaultSecurityMode"}
 func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -163,6 +168,7 @@ func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-553 — ClientToken is optional at config-validation layer.
+// TRACE: {"suite": "CORE", "case": "0234", "section": "14", "sectionName": "Configuration", "subsection": "03", "scenario": "01", "title": "EmptyClientTokenAccepted"}
 func TestConfig_14_3_1_EmptyClientTokenAccepted(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -176,6 +182,7 @@ func TestConfig_14_3_1_EmptyClientTokenAccepted(t *testing.T) {
 }
 
 // TST-CORE-555
+// TRACE: {"suite": "CORE", "case": "0235", "section": "14", "sectionName": "Configuration", "subsection": "03", "scenario": "02", "title": "InvalidSecurityMode"}
 func TestConfig_14_3_2_InvalidSecurityMode(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -190,6 +197,7 @@ func TestConfig_14_3_2_InvalidSecurityMode(t *testing.T) {
 }
 
 // TST-CORE-854
+// TRACE: {"suite": "CORE", "case": "0236", "section": "14", "sectionName": "Configuration", "subsection": "10", "scenario": "01", "title": "NegativeSessionTTL"}
 func TestConfig_14_10_NegativeSessionTTL(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -208,6 +216,7 @@ func TestConfig_14_10_NegativeSessionTTL(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-855
+// TRACE: {"suite": "CORE", "case": "0237", "section": "14", "sectionName": "Configuration", "subsection": "11", "scenario": "01", "title": "LoadFromConfigJSON"}
 func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -243,6 +252,7 @@ func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-552
+// TRACE: {"suite": "CORE", "case": "0238", "section": "14", "sectionName": "Configuration", "subsection": "05", "scenario": "01", "title": "LoadClientTokenFromDockerSecret"}
 func TestConfig_14_5_1_LoadClientTokenFromDockerSecret(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -263,6 +273,7 @@ func TestConfig_14_5_1_LoadClientTokenFromDockerSecret(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-856
+// TRACE: {"suite": "CORE", "case": "0239", "section": "14", "sectionName": "Configuration", "subsection": "12", "scenario": "01", "title": "EnvOverridesConfigJSON"}
 func TestConfig_14_12_EnvOverridesConfigJSON(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -285,6 +296,7 @@ func TestConfig_14_12_EnvOverridesConfigJSON(t *testing.T) {
 }
 
 // TST-CORE-857
+// TRACE: {"suite": "CORE", "case": "0240", "section": "14", "sectionName": "Configuration", "subsection": "13", "scenario": "01", "title": "DockerSecretOverridesEnvToken"}
 func TestConfig_14_13_DockerSecretOverridesEnvToken(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
@@ -307,6 +319,7 @@ func TestConfig_14_13_DockerSecretOverridesEnvToken(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-556
+// TRACE: {"suite": "CORE", "case": "0241", "section": "14", "sectionName": "Configuration", "subsection": "06", "scenario": "03", "title": "SpoolMaxEnforcement"}
 func TestConfig_14_6_3_SpoolMaxEnforcement(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -323,6 +336,7 @@ func TestConfig_14_6_3_SpoolMaxEnforcement(t *testing.T) {
 }
 
 // TST-CORE-898
+// TRACE: {"suite": "CORE", "case": "0242", "section": "14", "sectionName": "Configuration", "subsection": "14", "scenario": "01", "title": "AuditLogRetentionConfigurable"}
 func TestConfig_14_14_AuditLogRetentionConfigurable(t *testing.T) {
 	// Audit log retention configurable via config.json (retention_days).
 	// AuditLogRetentionDays field not yet implemented in production Config struct.
@@ -331,6 +345,7 @@ func TestConfig_14_14_AuditLogRetentionConfigurable(t *testing.T) {
 }
 
 // TST-CORE-899
+// TRACE: {"suite": "CORE", "case": "0243", "section": "14", "sectionName": "Configuration", "subsection": "15", "scenario": "01", "title": "CloudLLMConsentFlag"}
 func TestConfig_14_15_CloudLLMConsentFlag(t *testing.T) {
 	// Cloud LLM consent flag stored and enforced before cloud routing.
 	// TEST_PLAN §14.15 expects: consent_cloud_llm=false in config →
@@ -342,6 +357,7 @@ func TestConfig_14_15_CloudLLMConsentFlag(t *testing.T) {
 }
 
 // TST-CORE-900
+// TRACE: {"suite": "CORE", "case": "0244", "section": "14", "sectionName": "Configuration", "subsection": "16", "scenario": "01", "title": "HistoryDaysDefault365"}
 func TestConfig_14_16_HistoryDaysDefault365(t *testing.T) {
 	// DINA_HISTORY_DAYS config default 365.
 	impl := realConfigLoader
@@ -353,6 +369,7 @@ func TestConfig_14_16_HistoryDaysDefault365(t *testing.T) {
 }
 
 // TST-CORE-554
+// TRACE: {"suite": "CORE", "case": "0245", "section": "14", "sectionName": "Configuration", "subsection": "04", "scenario": "01", "title": "DefaultValues"}
 func TestConfig_14_4_DefaultValues(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -373,15 +390,17 @@ func TestConfig_14_4_DefaultValues(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// §14.1 DINA_OWN_DID Env Var Loading
+// §14.1 DINA_OWN_DID Env Var Loading (deprecated — identity from persisted metadata)
 // --------------------------------------------------------------------------
 
 // TST-CORE-1035 TST-CORE-1056
+// TRACE: {"suite": "CORE", "case": "0246", "section": "14", "sectionName": "Configuration", "subsection": "01", "scenario": "04", "title": "OwnDIDLoadedFromEnvVar"}
 func TestConfig_14_1_4_OwnDIDLoadedFromEnvVar(t *testing.T) {
 	// Requirement (§14.1):
-	//   The DINA_OWN_DID environment variable must be loaded into
-	//   Config.OwnDID. This DID identifies the node's own identity
-	//   for outbound D2D messages and DID resolution.
+	//   The DINA_OWN_DID environment variable is still loaded into
+	//   Config.OwnDID for backward compatibility, but identity now
+	//   comes from persisted metadata (RestoreDID). The env var is
+	//   no longer used to drive runtime identity in main.go.
 	//
 	// Anti-tautological design:
 	//   1. When set, OwnDID contains the exact env var value
@@ -391,6 +410,7 @@ func TestConfig_14_1_4_OwnDIDLoadedFromEnvVar(t *testing.T) {
 
 	loader := config.NewLoader()
 
+	// TRACE: {"suite": "CORE", "case": "0247", "section": "14", "sectionName": "Configuration", "title": "env_var_loaded_into_OwnDID"}
 	t.Run("env_var_loaded_into_OwnDID", func(t *testing.T) {
 		t.Setenv("DINA_OWN_DID", "did:plc:abc123test456")
 
@@ -403,6 +423,7 @@ func TestConfig_14_1_4_OwnDIDLoadedFromEnvVar(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0248", "section": "14", "sectionName": "Configuration", "title": "default_OwnDID_empty_when_not_set"}
 	t.Run("default_OwnDID_empty_when_not_set", func(t *testing.T) {
 		// Ensure DINA_OWN_DID is not set (t.Setenv restores on cleanup).
 		t.Setenv("DINA_OWN_DID", "")
@@ -418,6 +439,7 @@ func TestConfig_14_1_4_OwnDIDLoadedFromEnvVar(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0249", "section": "14", "sectionName": "Configuration", "title": "positive_control_other_vars_work_alongside"}
 	t.Run("positive_control_other_vars_work_alongside", func(t *testing.T) {
 		t.Setenv("DINA_OWN_DID", "did:plc:mynode")
 		t.Setenv("DINA_LISTEN_ADDR", ":7777")
@@ -434,6 +456,7 @@ func TestConfig_14_1_4_OwnDIDLoadedFromEnvVar(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0250", "section": "14", "sectionName": "Configuration", "title": "DID_format_preserved_exactly"}
 	t.Run("DID_format_preserved_exactly", func(t *testing.T) {
 		// Verify various DID formats are preserved without modification.
 		dids := []string{

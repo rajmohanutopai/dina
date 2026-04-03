@@ -31,6 +31,7 @@ import pytest
 class TestRunShBehavior:
     """run.sh commands work correctly after install."""
 
+    # TRACE: {"suite": "INST", "case": "0014", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "01", "title": "bare_shows_usage"}
     def test_bare_shows_usage(self, installed_dir: Path) -> None:
         """run.sh with no args shows usage, doesn't start."""
         result = subprocess.run(
@@ -45,6 +46,7 @@ class TestRunShBehavior:
         assert "--status" in result.stdout
         assert "--logs" in result.stdout
 
+    # TRACE: {"suite": "INST", "case": "0015", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "02", "title": "unknown_flag_rejected"}
     def test_unknown_flag_rejected(self, installed_dir: Path) -> None:
         result = subprocess.run(
             ["bash", str(installed_dir / "run.sh"), "--bogus"],
@@ -54,6 +56,7 @@ class TestRunShBehavior:
         )
         assert result.returncode != 0
 
+    # TRACE: {"suite": "INST", "case": "0016", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "03", "title": "status_shows_healthy"}
     def test_status_shows_healthy(self, installed_dir: Path) -> None:
         result = subprocess.run(
             ["bash", str(installed_dir / "run.sh"), "--status"],
@@ -64,6 +67,7 @@ class TestRunShBehavior:
         assert result.returncode == 0
         assert "healthy" in result.stdout.lower()
 
+    # TRACE: {"suite": "INST", "case": "0017", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "04", "title": "status_shows_did"}
     def test_status_shows_did(self, installed_dir: Path) -> None:
         result = subprocess.run(
             ["bash", str(installed_dir / "run.sh"), "--status"],
@@ -82,6 +86,7 @@ class TestRunShBehavior:
 class TestDinaAdminPostInstall:
     """dina-admin commands return correct data."""
 
+    # TRACE: {"suite": "INST", "case": "0018", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "01", "title": "persona_list"}
     def test_persona_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
             ["bash", str(installed_dir / "dina-admin"), "--json", "persona", "list"],
@@ -94,6 +99,7 @@ class TestDinaAdminPostInstall:
         assert isinstance(data, list)
         assert len(data) >= 4
 
+    # TRACE: {"suite": "INST", "case": "0019", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "02", "title": "device_list"}
     def test_device_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
             ["bash", str(installed_dir / "dina-admin"), "--json", "device", "list"],
@@ -102,6 +108,7 @@ class TestDinaAdminPostInstall:
         )
         assert result.returncode == 0, f"Failed: {result.stderr}"
 
+    # TRACE: {"suite": "INST", "case": "0020", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "03", "title": "approvals_list"}
     def test_approvals_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
             ["bash", str(installed_dir / "dina-admin"), "--json", "approvals", "list"],
@@ -110,6 +117,7 @@ class TestDinaAdminPostInstall:
         )
         assert result.returncode == 0, f"Failed: {result.stderr}"
 
+    # TRACE: {"suite": "INST", "case": "0021", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "04", "title": "model_list"}
     def test_model_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
             ["bash", str(installed_dir / "dina-admin"), "model", "list"],
@@ -128,6 +136,7 @@ class TestDinaAdminPostInstall:
 class TestTelegramOptional:
     """Telegram skip path in install.sh wrapper."""
 
+    # TRACE: {"suite": "INST", "case": "0022", "section": "03", "sectionName": "Functional", "subsection": "03", "scenario": "01", "title": "no_telegram_in_env_when_skipped"}
     def test_no_telegram_in_env_when_skipped(self, installed_dir: Path) -> None:
         """installed_dir fixture skips Telegram — no token in .env."""
         content = (installed_dir / ".env").read_text()
@@ -139,6 +148,7 @@ class TestTelegramOptional:
 class TestEnvFileWrapper:
     """Verify the bash wrapper wrote .env correctly (complements installer core tests)."""
 
+    # TRACE: {"suite": "INST", "case": "0023", "section": "03", "sectionName": "Functional", "subsection": "04", "scenario": "01", "title": "required_fields_from_wrapper"}
     def test_required_fields_from_wrapper(self, installed_dir: Path) -> None:
         content = (installed_dir / ".env").read_text()
         assert "DINA_SESSION=" in content
@@ -146,6 +156,7 @@ class TestEnvFileWrapper:
         assert "DINA_PDS_PORT=" in content
         assert "COMPOSE_PROJECT_NAME=" in content
 
+    # TRACE: {"suite": "INST", "case": "0024", "section": "03", "sectionName": "Functional", "subsection": "04", "scenario": "02", "title": "no_secrets_in_env_from_wrapper"}
     def test_no_secrets_in_env_from_wrapper(self, installed_dir: Path) -> None:
         """Master seed must NOT appear in .env written by bash wrapper."""
         content = (installed_dir / ".env").read_text()
@@ -161,6 +172,7 @@ class TestEnvFileWrapper:
 class TestInputValidation:
     """install.sh rejects invalid input and re-prompts."""
 
+    # TRACE: {"suite": "INST", "case": "0025", "section": "03", "sectionName": "Functional", "subsection": "05", "scenario": "01", "title": "invalid_identity_choice"}
     def test_invalid_identity_choice(self, install_dir: Path) -> None:
         child = pexpect.spawn(
             "bash", [str(install_dir / "install.sh")],
@@ -177,6 +189,7 @@ class TestInputValidation:
         child.close()
         assert idx in (0, 1), "Invalid identity choice should re-prompt"
 
+    # TRACE: {"suite": "INST", "case": "0026", "section": "03", "sectionName": "Functional", "subsection": "05", "scenario": "02", "title": "api_key_at_llm_menu"}
     def test_api_key_at_llm_menu(self, install_dir: Path) -> None:
         child = pexpect.spawn(
             "bash", [str(install_dir / "install.sh")],
@@ -208,6 +221,7 @@ class TestInputValidation:
         child.close()
         assert idx in (0, 1), "API key at LLM menu should re-prompt"
 
+    # TRACE: {"suite": "INST", "case": "0027", "section": "03", "sectionName": "Functional", "subsection": "05", "scenario": "03", "title": "invalid_security_mode"}
     def test_invalid_security_mode(self, install_dir: Path) -> None:
         child = pexpect.spawn(
             "bash", [str(install_dir / "install.sh")],
@@ -233,6 +247,7 @@ class TestInputValidation:
         child.close()
         assert idx in (0, 1), "Invalid security mode should re-prompt"
 
+    # TRACE: {"suite": "INST", "case": "0028", "section": "03", "sectionName": "Functional", "subsection": "05", "scenario": "04", "title": "invalid_telegram_choice"}
     def test_invalid_telegram_choice(self, install_dir: Path) -> None:
         """Invalid Telegram choice re-prompts."""
         child = pexpect.spawn(

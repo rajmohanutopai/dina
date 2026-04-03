@@ -15,6 +15,7 @@ class TestExportImport:
     """Real API tests for REL-021: export/import portability."""
 
     # REL-021
+    # TRACE: {"suite": "REL", "case": "0021", "section": "21", "sectionName": "Export & Import", "subsection": "01", "scenario": "01", "title": "rel_021_vault_has_data_to_export"}
     def test_rel_021_vault_has_data_to_export(self, api: httpx.Client) -> None:
         """Vault has data that would be included in an export."""
         # Store test data
@@ -41,6 +42,7 @@ class TestExportImport:
         assert len(items) >= 1, "Should have data to export"
 
     # REL-021
+    # TRACE: {"suite": "REL", "case": "0021", "section": "21", "sectionName": "Export & Import", "subsection": "01", "scenario": "02", "title": "rel_021_export_endpoint_exists"}
     def test_rel_021_export_endpoint_exists(
         self, core_url, auth_headers,
     ) -> None:
@@ -70,6 +72,7 @@ class TestExportImport:
         )
 
     # REL-021
+    # TRACE: {"suite": "REL", "case": "0021", "section": "21", "sectionName": "Export & Import", "subsection": "01", "scenario": "03", "title": "rel_021_did_signature_verifiable"}
     def test_rel_021_did_signature_verifiable(
         self, core_url, auth_headers,
     ) -> None:
@@ -107,6 +110,7 @@ class TestExportImport:
         assert resp.json().get("valid") is True
 
     # REL-021
+    # TRACE: {"suite": "REL", "case": "0021", "section": "21", "sectionName": "Export & Import", "subsection": "01", "scenario": "04", "title": "rel_021_kv_store_for_metadata"}
     def test_rel_021_kv_store_for_metadata(self, core_url, auth_headers) -> None:
         """KV store works for export metadata tracking."""
         key = "export:last_export_time"

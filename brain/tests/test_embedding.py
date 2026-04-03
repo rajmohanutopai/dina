@@ -69,6 +69,7 @@ def core_client():
 
 # TST-BRAIN-327
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0327", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "01", "title": "via_local_llama"}
 async def test_embedding_14_1_via_local_llama(embedding_client, core_client) -> None:
     """SS14.1: Embedding via local llama.
 
@@ -87,6 +88,7 @@ async def test_embedding_14_1_via_local_llama(embedding_client, core_client) -> 
 
 # TST-BRAIN-328
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0328", "section": "14", "sectionName": "Embedding Generation", "subsection": "02", "scenario": "01", "title": "via_cloud_api"}
 async def test_embedding_14_2_via_cloud_api(embedding_client_cloud, core_client) -> None:
     """SS14.2: Embedding via cloud API.
 
@@ -102,6 +104,7 @@ async def test_embedding_14_2_via_cloud_api(embedding_client_cloud, core_client)
 
 # TST-BRAIN-329
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0329", "section": "14", "sectionName": "Embedding Generation", "subsection": "03", "scenario": "01", "title": "stored_in_core"}
 async def test_embedding_14_3_stored_in_core(embedding_client, core_client) -> None:
     """SS14.3: Embedding stored in core.
 
@@ -124,6 +127,7 @@ async def test_embedding_14_3_stored_in_core(embedding_client, core_client) -> N
 
 # TST-BRAIN-330
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0330", "section": "14", "sectionName": "Embedding Generation", "subsection": "04", "scenario": "01", "title": "core_stores_sqlite_vec"}
 async def test_embedding_14_4_core_stores_sqlite_vec(core_client) -> None:
     """SS14.4: Core stores in sqlite-vec.
 
@@ -148,6 +152,7 @@ async def test_embedding_14_4_core_stores_sqlite_vec(core_client) -> None:
 
 # TST-BRAIN-331
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0331", "section": "14", "sectionName": "Embedding Generation", "subsection": "05", "scenario": "01", "title": "fallback_llama_to_cloud"}
 async def test_embedding_14_5_fallback_llama_to_cloud(
     embedding_client, embedding_client_cloud, core_client,
 ) -> None:
@@ -169,6 +174,7 @@ async def test_embedding_14_5_fallback_llama_to_cloud(
 
 # TST-BRAIN-332
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0332", "section": "14", "sectionName": "Embedding Generation", "subsection": "06", "scenario": "01", "title": "no_embedding_available"}
 async def test_embedding_14_6_no_embedding_available(
     embedding_client_unavailable, core_client,
 ) -> None:
@@ -198,6 +204,7 @@ async def test_embedding_14_6_no_embedding_available(
 
 # TST-BRAIN-333
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0333", "section": "14", "sectionName": "Embedding Generation", "subsection": "07", "scenario": "01", "title": "dimension_consistent"}
 async def test_embedding_14_7_dimension_consistent(embedding_client) -> None:
     """SS14.7: Embedding dimension consistent.
 

@@ -73,6 +73,7 @@ def local_only_router(local_provider):
 
 # TST-BRAIN-270
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0270", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "01", "title": "route_to_local_llm"}
 async def test_routing_8_1_1_route_to_local_llm(
     llm_router, local_provider, cloud_provider
 ) -> None:
@@ -102,6 +103,7 @@ async def test_routing_8_1_1_route_to_local_llm(
 
 # TST-BRAIN-271
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0271", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "02", "title": "route_to_mcp_agent"}
 async def test_routing_8_1_2_route_to_mcp_agent() -> None:
     """SS8.1.2: Email fetch task routes to MCP gmail agent."""
     from src.service.sync_engine import SyncEngine
@@ -132,6 +134,7 @@ async def test_routing_8_1_2_route_to_mcp_agent() -> None:
 
 # TST-BRAIN-272
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0272", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "03", "title": "route_unknown_task_fallback"}
 async def test_routing_8_1_3_route_unknown_task_fallback(llm_router) -> None:
     """SS8.1.3: Unknown task type falls back to local LLM."""
     task = make_routing_task(task_type="unknown_task_type")
@@ -145,6 +148,7 @@ async def test_routing_8_1_3_route_unknown_task_fallback(llm_router) -> None:
 
 # TST-BRAIN-273
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0273", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "04", "title": "route_respects_persona_tier"}
 async def test_routing_8_1_4_route_respects_persona_tier(llm_router, local_provider) -> None:
     """SS8.1.4: Routing respects persona tier -- locked persona prefers local."""
     task = make_routing_task(
@@ -169,6 +173,7 @@ async def test_routing_8_1_4_route_respects_persona_tier(llm_router, local_provi
 
 # TST-BRAIN-274
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0274", "section": "08", "sectionName": "Admin UI", "subsection": "02", "scenario": "01", "title": "delegate_to_mcp_tool"}
 async def test_routing_8_2_1_delegate_to_mcp_tool() -> None:
     """SS8.2.1: Router delegates to an MCP tool and returns the result."""
     tool = make_mcp_tool(name="gmail_fetch")
@@ -183,6 +188,7 @@ async def test_routing_8_2_1_delegate_to_mcp_tool() -> None:
 
 # TST-BRAIN-275
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0275", "section": "08", "sectionName": "Admin UI", "subsection": "02", "scenario": "02", "title": "mcp_tool_not_found"}
 async def test_routing_8_2_2_mcp_tool_not_found() -> None:
     """SS8.2.2: Requesting a non-existent MCP tool returns error."""
     from src.adapter.mcp_stdio import MCPStdioClient
@@ -195,6 +201,7 @@ async def test_routing_8_2_2_mcp_tool_not_found() -> None:
 
 # TST-BRAIN-276
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0276", "section": "08", "sectionName": "Admin UI", "subsection": "02", "scenario": "03", "title": "mcp_delegation_gatekeeper_check"}
 async def test_routing_8_2_3_mcp_delegation_gatekeeper_check() -> None:
     """SS8.2.3: MCP delegation checks gatekeeper before executing tool."""
     from src.service.guardian import GuardianLoop
@@ -238,6 +245,7 @@ async def test_routing_8_2_3_mcp_delegation_gatekeeper_check() -> None:
 
 # TST-BRAIN-278
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0278", "section": "08", "sectionName": "Admin UI", "subsection": "03", "scenario": "01", "title": "check_trusted_agent_trust_scores"}
 async def test_routing_8_3_1_check_trusted_agent_trust_scores() -> None:
     """SS8.3.1: Trusted agent with verified trust_level is auto-approved via review_intent."""
     from src.service.guardian import GuardianLoop
@@ -273,6 +281,7 @@ async def test_routing_8_3_1_check_trusted_agent_trust_scores() -> None:
 
 # TST-BRAIN-279
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0279", "section": "08", "sectionName": "Admin UI", "subsection": "03", "scenario": "02", "title": "check_untrusted_agent_trust_scores"}
 async def test_routing_8_3_2_check_untrusted_agent_trust_scores() -> None:
     """SS8.3.2: Untrusted agent is denied by guardian review_intent."""
     from src.service.guardian import GuardianLoop
@@ -308,6 +317,7 @@ async def test_routing_8_3_2_check_untrusted_agent_trust_scores() -> None:
 
 # TST-BRAIN-280
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0280", "section": "08", "sectionName": "Admin UI", "subsection": "03", "scenario": "03", "title": "unknown_agent_default_trust_scores"}
 async def test_routing_8_3_3_unknown_agent_default_trust_scores() -> None:
     """SS8.3.3: Unknown agent gets a default trust score (unverified tier)."""
     trust_db = {
@@ -324,6 +334,7 @@ async def test_routing_8_3_3_unknown_agent_default_trust_scores() -> None:
 
 # TST-BRAIN-465
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0465", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "05", "title": "complex_prefers_local"}
 async def test_routing_8_1_5_complex_prefers_local(llm_router, local_provider) -> None:
     """Complex reasoning uses lite model — local preferred when available."""
     result = await llm_router.route(
@@ -337,6 +348,7 @@ async def test_routing_8_1_5_complex_prefers_local(llm_router, local_provider) -
 
 # TST-BRAIN-466
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0466", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "06", "title": "fts_only_no_llm"}
 async def test_routing_8_1_6_fts_only_no_llm(llm_router) -> None:
     """FTS-only lookups bypass the LLM entirely."""
     result = await llm_router.route(

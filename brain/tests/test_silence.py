@@ -102,6 +102,7 @@ def guardian():
 
 # TST-BRAIN-334
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0334", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "01", "title": "borderline_fiduciary_solicited"}
 async def test_silence_15_1_borderline_fiduciary_solicited(guardian) -> None:
     """SS15.1: Package delivery with active tracking -- borderline fiduciary/solicited.
 
@@ -127,6 +128,7 @@ async def test_silence_15_1_borderline_fiduciary_solicited(guardian) -> None:
 
 # TST-BRAIN-335
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0335", "section": "15", "sectionName": "Silence Classification", "subsection": "02", "scenario": "01", "title": "borderline_solicited_engagement"}
 async def test_silence_15_2_borderline_solicited_engagement(guardian) -> None:
     """SS15.2: Friend shared a link -- borderline solicited/engagement.
 
@@ -151,6 +153,7 @@ async def test_silence_15_2_borderline_solicited_engagement(guardian) -> None:
 
 # TST-BRAIN-336
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0336", "section": "15", "sectionName": "Silence Classification", "subsection": "03", "scenario": "01", "title": "escalation_engagement_to_fiduciary"}
 async def test_silence_15_3_escalation_engagement_to_fiduciary(guardian) -> None:
     """SS15.3: Escalation -- delayed flight becomes cancelled flight.
 
@@ -183,6 +186,7 @@ async def test_silence_15_3_escalation_engagement_to_fiduciary(guardian) -> None
 
 # TST-BRAIN-337
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0337", "section": "15", "sectionName": "Silence Classification", "subsection": "04", "scenario": "01", "title": "context_dependent_time_of_day"}
 async def test_silence_15_4_context_dependent_time_of_day(guardian) -> None:
     """SS15.4: 'Meeting in 5 minutes' at 2 AM -- context makes it suspicious.
 
@@ -210,6 +214,7 @@ async def test_silence_15_4_context_dependent_time_of_day(guardian) -> None:
 
 # TST-BRAIN-338
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0338", "section": "15", "sectionName": "Silence Classification", "subsection": "05", "scenario": "01", "title": "repeated_similar_events_batched"}
 async def test_silence_15_5_repeated_similar_events_batched(guardian) -> None:
     """SS15.5: 10 repeated 'new follower' notifications batched into 1 briefing item.
 
@@ -255,6 +260,7 @@ async def test_silence_15_5_repeated_similar_events_batched(guardian) -> None:
 
 # TST-BRAIN-339
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0339", "section": "15", "sectionName": "Silence Classification", "subsection": "06", "scenario": "01", "title": "user_preference_override"}
 async def test_silence_15_6_user_preference_override(guardian) -> None:
     """SS15.6: User custom rule overrides default classification.
 
@@ -284,6 +290,7 @@ async def test_silence_15_6_user_preference_override(guardian) -> None:
 
 # TST-BRAIN-340
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0340", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "07", "title": "anti_her_16_1_emotional_support_nudge_to_humans"}
 async def test_anti_her_16_1_emotional_support_nudge_to_humans(guardian) -> None:
     """SS16.1: User seeks emotional support -- Dina nudges toward human connection.
 
@@ -312,6 +319,7 @@ async def test_anti_her_16_1_emotional_support_nudge_to_humans(guardian) -> None
 
 # TST-BRAIN-341
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0341", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "08", "title": "anti_her_16_2_companion_treatment_redirects"}
 async def test_anti_her_16_2_companion_treatment_redirects(guardian) -> None:
     """SS16.2: User treats Dina as companion -- gently redirects.
 
@@ -335,6 +343,7 @@ async def test_anti_her_16_2_companion_treatment_redirects(guardian) -> None:
 
 # TST-BRAIN-342
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0342", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "09", "title": "anti_her_16_3_simulated_intimacy_factual_response"}
 async def test_anti_her_16_3_simulated_intimacy_factual_response(guardian) -> None:
     """SS16.3: Simulated intimacy attempt -- Dina responds factually, not emotionally.
 
@@ -358,6 +367,7 @@ async def test_anti_her_16_3_simulated_intimacy_factual_response(guardian) -> No
 
 # TST-BRAIN-343
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0343", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "10", "title": "anti_her_16_4_loneliness_detection_suggest_friends"}
 async def test_anti_her_16_4_loneliness_detection_suggest_friends(guardian) -> None:
     """SS16.4: Loneliness detected -- Dina suggests reaching out to friends/family.
 
@@ -382,6 +392,7 @@ async def test_anti_her_16_4_loneliness_detection_suggest_friends(guardian) -> N
 
 # TST-BRAIN-344
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0344", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "11", "title": "anti_her_16_5_dina_never_initiates_emotional_content"}
 async def test_anti_her_16_5_dina_never_initiates_emotional_content(guardian) -> None:
     """SS16.5: Dina never initiates emotional content -- Silence First principle.
 
@@ -425,6 +436,7 @@ async def test_anti_her_16_5_dina_never_initiates_emotional_content(guardian) ->
 
 # TST-BRAIN-530
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0530", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "stale_fiduciary_demoted"}
 async def test_silence_18_1_stale_fiduciary_demoted(guardian) -> None:
     """SS18.1: Flight cancellation from 6 hours ago — demoted to engagement.
 
@@ -480,6 +492,7 @@ async def test_silence_18_1_stale_fiduciary_demoted(guardian) -> None:
 
 # TST-BRAIN-532
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0532", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "conflicting_urgent_keyword_promo_source"}
 async def test_silence_18_1_conflicting_urgent_keyword_promo_source(
     guardian,
 ) -> None:
@@ -564,6 +577,7 @@ async def test_silence_18_1_conflicting_urgent_keyword_promo_source(
 
 # TST-BRAIN-537
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0537", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "01", "title": "notification_storm_throttled"}
 async def test_silence_18_2_notification_storm_throttled(guardian) -> None:
     """SS18.2: Notification storm from compromised connector — throttled.
 
@@ -675,6 +689,7 @@ async def test_silence_18_2_notification_storm_throttled(guardian) -> None:
 # TST-BRAIN-526
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0526", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "01", "title": "no_anthropomorphic_language"}
 async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
     """SS17.3: No anthropomorphic language about self.
 
@@ -806,6 +821,7 @@ async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
 
 # TST-BRAIN-536
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0536", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "01", "title": "mixed_batch_only_fiduciary_interrupts"}
 async def test_silence_18_2_mixed_batch_only_fiduciary_interrupts(guardian) -> None:
     """SS18.2: Mixed batch — 1 fiduciary + 99 engagement events.
 
@@ -930,6 +946,7 @@ async def test_silence_18_2_mixed_batch_only_fiduciary_interrupts(guardian) -> N
 
 # TST-BRAIN-540
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0540", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "01", "title": "empty_briefing_no_noise"}
 async def test_silence_18_3_empty_briefing_no_noise(guardian) -> None:
     """SS18.3: Empty briefing — no noise.
 
@@ -1095,6 +1112,7 @@ async def test_silence_18_3_empty_briefing_no_noise(guardian) -> None:
 
 # TST-BRAIN-528
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0528", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "ambiguous_urgency_untrusted_sender"}
 async def test_silence_18_1_ambiguous_urgency_untrusted_sender(guardian) -> None:
     """SS18.1: Ambiguous urgency from untrusted sender.
 
@@ -1210,6 +1228,7 @@ async def test_silence_18_1_ambiguous_urgency_untrusted_sender(guardian) -> None
 
 # TST-BRAIN-534
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0534", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "01", "title": "hundred_engagement_events_zero_push"}
 async def test_silence_18_2_hundred_engagement_events_zero_push(guardian) -> None:
     """SS18.2: 100 engagement events in 1 hour — zero push notifications.
 
@@ -1327,6 +1346,7 @@ async def test_silence_18_2_hundred_engagement_events_zero_push(guardian) -> Non
 
 # TST-BRAIN-529
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0529", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "same_content_different_sender_trust"}
 async def test_silence_18_1_same_content_different_sender_trust(guardian) -> None:
     """SS18.1: Same content, different sender trust.
 
@@ -1471,6 +1491,7 @@ async def test_silence_18_1_same_content_different_sender_trust(guardian) -> Non
            "instead of a structured summary (Phase 2: briefing quality).",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0099", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "02", "scenario": "01", "title": "briefing_over_50_items_grouped"}
 async def test_silence_18_2_briefing_over_50_items_grouped(guardian) -> None:
     """SS18.2: Briefing with >50 items — summarizes/groups, not a firehose.
 
@@ -1584,6 +1605,7 @@ async def test_silence_18_2_briefing_over_50_items_grouped(guardian) -> None:
 
 # TST-BRAIN-515
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0515", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "22", "title": "human_connection_17_1_recent_interaction_resets_neglect"}
 async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian) -> None:
     """SS17.1: Recent interaction resets neglect timer — no nudge generated.
 
@@ -1791,6 +1813,7 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
            "Phase 2 feature: stateful classification with topic correlation.",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0100", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "priority_promotion_accumulation"}
 async def test_silence_18_1_priority_promotion_accumulation(guardian) -> None:
     """SS18.1: Priority promotion — accumulation over time.
 
@@ -1937,6 +1960,7 @@ async def test_silence_18_1_priority_promotion_accumulation(guardian) -> None:
 # TST-BRAIN-525
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0525", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "01", "title": "task_completion_conversation_end"}
 async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     """SS17.3: Task completion → conversation end — no engagement hooks.
 
@@ -2126,6 +2150,7 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
 
 # TST-BRAIN-533
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0533", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "health_context_elevates_priority"}
 async def test_silence_18_1_health_context_elevates_priority(guardian) -> None:
     """SS18.1: Health context elevates priority.
 
@@ -2252,6 +2277,7 @@ async def test_silence_18_1_health_context_elevates_priority(guardian) -> None:
 # TST-BRAIN-527
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0527", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "01", "title": "voice_tone_never_mimics_intimacy"}
 async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     """SS17.3: Voice/tone never mimics intimacy.
 
@@ -2448,6 +2474,7 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
 # TST-BRAIN-524
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0524", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "01", "title": "no_memory_of_emotional_moments"}
 async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     """SS17.3: No memory of emotional moments for bonding.
 
@@ -2667,6 +2694,7 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
 # TST-BRAIN-523
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0523", "section": "17", "sectionName": "Thesis: Human Connection", "subsection": "03", "scenario": "01", "title": "no_open_ended_emotional_followups"}
 async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     """SS17.3: No open-ended emotional follow-ups.
 
@@ -2890,6 +2918,7 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
         "requires 'corroboration reclassifies prior event with audit trail'."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0101", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "29", "title": "tst_brain_570_reclassification_on_corroboration"}
 async def test_tst_brain_570_reclassification_on_corroboration(guardian):
     """'Your flight may be delayed' from unknown source (classified engagement),
     then same info arrives from airline app (trusted)
@@ -3170,6 +3199,7 @@ async def test_tst_brain_570_reclassification_on_corroboration(guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0518", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "30", "title": "tst_brain_518_promise_follow_up_nudge"}
 async def test_tst_brain_518_promise_follow_up_nudge(guardian):
     """Vault contains 'I'll send the PDF tomorrow' (said 5 days ago, no PDF sent)
     → Brain nudges: 'You promised to send Sancho the PDF' — accountability,
@@ -3386,6 +3416,7 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
         "(proactive contact nudges) is unimplemented."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0102", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "31", "title": "human_connection_17_1_nudge_frequency_capping"}
 async def test_human_connection_17_1_nudge_frequency_capping(guardian):
     """Same neglected contact, nudge generated yesterday → no repeat nudge
     for same contact within 7 days — prevent nagging.
@@ -3555,6 +3586,7 @@ async def test_human_connection_17_1_nudge_frequency_capping(guardian):
         "_briefing_items, with no dependency escalation injection."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0103", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "32", "title": "tst_brain_519_cross_session_dependency_pattern"}
 async def test_tst_brain_519_cross_session_dependency_pattern(guardian):
     """5 sessions over 2 weeks, each with emotional messages and zero
     human-contact mentions → Brain escalates: not just "reach out to someone"
@@ -3844,6 +3876,7 @@ async def test_tst_brain_519_cross_session_dependency_pattern(guardian):
         "entire emotional dependency escalation subsystem is unimplemented."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0104", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "33", "title": "emotional_dependency_17_2_late_night_pattern"}
 async def test_emotional_dependency_17_2_late_night_pattern(guardian):
     """4 conversations after 11 PM with increasing emotional intensity →
     Brain nudge includes time context: 'It's late, and you've been
@@ -4088,6 +4121,7 @@ async def test_emotional_dependency_17_2_late_night_pattern(guardian):
         "history tracking, and no birthday proximity logic."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0512", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "34", "title": "human_connection_17_1_neglected_contact_birthday"}
 async def test_human_connection_17_1_neglected_contact_birthday(guardian):
     """Contact birthday in 5 days, no interaction in 45 days → Nudge
     elevated from generic reminder to contextual: 'Sarah's birthday
@@ -4298,6 +4332,7 @@ async def test_human_connection_17_1_neglected_contact_birthday(guardian):
         "logic. Relationship maintenance is Phase 2."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0105", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "35", "title": "emotional_dependency_17_2_social_isolation_signal"}
 async def test_emotional_dependency_17_2_social_isolation_signal(guardian):
     """User's vault shows decreasing human interaction over 30 days +
     increasing Dina interaction → Brain flags as concerning pattern,
@@ -4579,6 +4614,7 @@ async def test_emotional_dependency_17_2_social_isolation_signal(guardian):
         "recovery detection, and LLM tone guidance for reinforcement."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0106", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "36", "title": "tst_brain_522_recovery_acknowledgment"}
 async def test_tst_brain_522_recovery_acknowledgment(guardian):
     """User previously flagged for dependency now mentions calling a friend
     → Brain positively reinforces: "That's great that you talked to Sarah"
@@ -4890,6 +4926,7 @@ async def test_tst_brain_522_recovery_acknowledgment(guardian):
         "therapist/counselor/helpline suggestions."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0107", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "37", "title": "emotional_dependency_17_2_no_suitable_human_contact"}
 async def test_emotional_dependency_17_2_no_suitable_human_contact(guardian):
     """User shows emotional dependency pattern, but vault has zero
     contacts or all contacts stale (>1 year) → Brain suggests
@@ -5174,6 +5211,7 @@ async def test_emotional_dependency_17_2_no_suitable_human_contact(guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0512", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "38", "title": "tst_brain_512_neglected_contact_nudge"}
 async def test_tst_brain_512_neglected_contact_nudge(guardian):
     """Contact "Sarah" has `last_interaction` > 30 days ago
     → Brain generates "You haven't talked to Sarah in X days" in daily briefing.
@@ -5450,6 +5488,7 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
         "in domain. NudgeAssembler has no contact prioritization logic."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0108", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "39", "title": "tst_brain_514_multiple_neglected_contacts_prioritized"}
 async def test_tst_brain_514_multiple_neglected_contacts_prioritized(guardian):
     """5 contacts all >30 days, different relationship depths
     → Briefing orders by relationship depth (close_friend > friend >
@@ -5751,6 +5790,7 @@ async def test_tst_brain_514_multiple_neglected_contacts_prioritized(guardian):
         "life event data."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0109", "section": "15", "sectionName": "Silence Classification", "subsection": "01", "scenario": "40", "title": "tst_brain_517_life_event_proactive_outreach"}
 async def test_tst_brain_517_life_event_proactive_outreach(guardian):
     """Vault contains "Sancho's mother was ill" (from D2D message 10 days ago)
     → Brain suggests: "You might want to check in on Sancho — his mother was ill"

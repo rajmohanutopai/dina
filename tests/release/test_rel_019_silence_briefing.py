@@ -15,6 +15,7 @@ class TestSilenceBriefing:
     """Real API tests for REL-019: silence tier classification."""
 
     # REL-019
+    # TRACE: {"suite": "REL", "case": "0019", "section": "19", "sectionName": "Silence & Briefing", "subsection": "01", "scenario": "01", "title": "rel_019_fiduciary_event_classified"}
     def test_rel_019_fiduciary_event_classified(
         self, core_url, auth_headers,
     ) -> None:
@@ -46,6 +47,7 @@ class TestSilenceBriefing:
         )
 
     # REL-019
+    # TRACE: {"suite": "REL", "case": "0019", "section": "19", "sectionName": "Silence & Briefing", "subsection": "01", "scenario": "02", "title": "rel_019_safe_action_auto_approved"}
     def test_rel_019_safe_action_auto_approved(
         self, core_url, auth_headers,
     ) -> None:
@@ -73,6 +75,7 @@ class TestSilenceBriefing:
         )
 
     # REL-019
+    # TRACE: {"suite": "REL", "case": "0019", "section": "19", "sectionName": "Silence & Briefing", "subsection": "01", "scenario": "03", "title": "rel_019_risky_action_requires_approval"}
     def test_rel_019_risky_action_requires_approval(
         self, core_url, auth_headers,
     ) -> None:
@@ -98,6 +101,7 @@ class TestSilenceBriefing:
         )
 
     # REL-019
+    # TRACE: {"suite": "REL", "case": "0019", "section": "19", "sectionName": "Silence & Briefing", "subsection": "01", "scenario": "04", "title": "rel_019_agent_validate_returns_structured"}
     def test_rel_019_agent_validate_returns_structured(
         self, core_url, auth_headers,
     ) -> None:

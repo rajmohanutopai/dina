@@ -15,6 +15,7 @@ class TestLockedState:
     """Real API tests for REL-004: locked persona behavior."""
 
     # REL-004
+    # TRACE: {"suite": "REL", "case": "0004", "section": "04", "sectionName": "Locked State", "subsection": "01", "scenario": "01", "title": "rel_004_locked_persona_returns_403"}
     def test_rel_004_locked_persona_returns_403(
         self, core_url, auth_headers,
     ) -> None:
@@ -39,6 +40,7 @@ class TestLockedState:
         )
 
     # REL-004
+    # TRACE: {"suite": "REL", "case": "0004", "section": "04", "sectionName": "Locked State", "subsection": "01", "scenario": "02", "title": "rel_004_unlock_resumes_access"}
     def test_rel_004_unlock_resumes_access(
         self, core_url, auth_headers,
     ) -> None:
@@ -67,6 +69,7 @@ class TestLockedState:
         assert resp.status_code == 200, f"Query after unlock failed: {resp.status_code}"
 
     # REL-004
+    # TRACE: {"suite": "REL", "case": "0004", "section": "04", "sectionName": "Locked State", "subsection": "01", "scenario": "03", "title": "rel_004_no_data_in_locked_error"}
     def test_rel_004_no_data_in_locked_error(
         self, core_url, auth_headers,
     ) -> None:
@@ -93,6 +96,7 @@ class TestLockedState:
         assert "secret data" not in body, "Vault data leaked in error response"
 
     # REL-004
+    # TRACE: {"suite": "REL", "case": "0004", "section": "04", "sectionName": "Locked State", "subsection": "01", "scenario": "04", "title": "rel_004_wrong_passphrase_rejected"}
     def test_rel_004_wrong_passphrase_rejected(
         self, core_url, auth_headers,
     ) -> None:

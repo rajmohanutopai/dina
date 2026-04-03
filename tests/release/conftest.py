@@ -66,13 +66,8 @@ DOCKER_MODE = os.environ.get("DINA_RELEASE") == "docker"
 # Release adapter over TestStackServices
 # ---------------------------------------------------------------------------
 
-# Well-known actor DIDs matching docker-compose-test-stack.yml DINA_OWN_DID.
-_ACTOR_DIDS: dict[str, str] = {
-    "alonso": "did:plc:alonso",
-    "sancho": "did:plc:sancho",
-    "chairmaker": "did:plc:chairmaker",
-    "albert": "did:plc:albert",
-}
+# Actor DIDs — populated dynamically from Core /v1/did on first access.
+_ACTOR_DIDS: dict[str, str] = {}
 
 
 class _ReleaseAdapter:
@@ -115,7 +110,12 @@ class _ReleaseAdapter:
     # --- Actor DIDs ---
 
     def actor_did(self, actor: str) -> str:
-        """Return the DID for a given actor name."""
+        """Return the real PLC-registered DID for a given actor name.
+
+        Fetches from Core /v1/did on first call, then caches.
+        """
+        if actor not in _ACTOR_DIDS:
+            _ACTOR_DIDS[actor] = self._stack.actor_did(actor)
         return _ACTOR_DIDS[actor]
 
     def agent_exec(self, *args: str, timeout: int = 30) -> 'subprocess.CompletedProcess':

@@ -8,14 +8,16 @@ from dina_cli.session import SessionStore
 
 
 # TST-CLI-047
+# TRACE: {"suite": "CLI", "case": "0047", "section": "05", "sectionName": "Session", "subsection": "01", "scenario": "01", "title": "new_id_format"}
 def test_new_id_format():
     store = SessionStore()
     sid = store.new_id()
-    assert sid.startswith("sess_")
-    assert len(sid) == 13  # "sess_" + 8 hex chars
+    assert sid.startswith("pii_")
+    assert len(sid) == 12  # "pii_" + 8 hex chars
 
 
 # TST-CLI-048
+# TRACE: {"suite": "CLI", "case": "0048", "section": "05", "sectionName": "Session", "subsection": "01", "scenario": "02", "title": "save_and_load"}
 def test_save_and_load(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     entities = [
@@ -33,6 +35,7 @@ def test_save_and_load(tmp_path):
 
 
 # TST-CLI-049
+# TRACE: {"suite": "CLI", "case": "0049", "section": "05", "sectionName": "Session", "subsection": "01", "scenario": "03", "title": "save_python_style_keys"}
 def test_save_python_style_keys(tmp_path):
     """Accept lowercase keys from Brain's PII response."""
     store = SessionStore(base_dir=tmp_path)
@@ -48,6 +51,7 @@ def test_save_python_style_keys(tmp_path):
 
 
 # TST-CLI-050
+# TRACE: {"suite": "CLI", "case": "0050", "section": "05", "sectionName": "Session", "subsection": "01", "scenario": "04", "title": "rehydrate"}
 def test_rehydrate(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     entities = [
@@ -64,6 +68,7 @@ def test_rehydrate(tmp_path):
 
 
 # TST-CLI-051
+# TRACE: {"suite": "CLI", "case": "0051", "section": "05", "sectionName": "Session", "subsection": "01", "scenario": "05", "title": "load_missing_session"}
 def test_load_missing_session(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     try:
@@ -74,6 +79,7 @@ def test_load_missing_session(tmp_path):
 
 
 # TST-CLI-052
+# TRACE: {"suite": "CLI", "case": "0052", "section": "05", "sectionName": "Session", "subsection": "01", "scenario": "06", "title": "atomic_write"}
 def test_atomic_write(tmp_path):
     """Verify no .tmp file is left behind after save."""
     store = SessionStore(base_dir=tmp_path)

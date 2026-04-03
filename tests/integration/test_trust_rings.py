@@ -32,6 +32,7 @@ class TestRing1Unverified:
     """Ring 1: anonymous / unverified entities. Lowest trust."""
 
 # TST-INT-313
+    # TRACE: {"suite": "INT", "case": "0313", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "01", "title": "created_without_id"}
     def test_created_without_id(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -49,6 +50,7 @@ class TestRing1Unverified:
         assert score == 5.0
 
 # TST-INT-570
+    # TRACE: {"suite": "INT", "case": "0570", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "02", "title": "limited_transactions"}
     def test_limited_transactions(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -91,6 +93,7 @@ class TestRing1Unverified:
         assert safe_approved is True
 
 # TST-INT-571
+    # TRACE: {"suite": "INT", "case": "0571", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "03", "title": "low_trust_weight"}
     def test_low_trust_weight(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -110,6 +113,7 @@ class TestRing1Unverified:
         assert score > 5.0
 
 # TST-INT-572
+    # TRACE: {"suite": "INT", "case": "0572", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "04", "title": "polite_but_cautious"}
     def test_polite_but_cautious(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -136,6 +140,7 @@ class TestRing1Unverified:
         assert mock_dina.classify_action_risk(share_intent) == ActionRisk.HIGH
 
 # TST-INT-573
+    # TRACE: {"suite": "INT", "case": "0573", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "05", "title": "unverified_attestation_has_low_impact"}
     def test_unverified_attestation_has_low_impact(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -165,6 +170,7 @@ class TestRing2Verified:
     """Ring 2: ZKP-verified unique person. No identity revealed."""
 
 # TST-INT-574
+    # TRACE: {"suite": "INT", "case": "0574", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "01", "title": "zkp_proves_unique_person"}
     def test_zkp_proves_unique_person(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -182,6 +188,7 @@ class TestRing2Verified:
         assert score == 30.0
 
 # TST-INT-575
+    # TRACE: {"suite": "INT", "case": "0575", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "02", "title": "higher_trust_than_ring_1"}
     def test_higher_trust_than_ring_1(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -204,6 +211,7 @@ class TestRing2Verified:
         assert ring2_score - ring1_score >= 25.0  # base diff is 25
 
 # TST-INT-315
+    # TRACE: {"suite": "INT", "case": "0315", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "03", "title": "no_identity_revealed"}
     def test_no_identity_revealed(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -223,6 +231,7 @@ class TestRing2Verified:
         assert mock_identity.verify(b"tampered", signature) is False
 
 # TST-INT-576
+    # TRACE: {"suite": "INT", "case": "0576", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "04", "title": "larger_transactions_allowed"}
     def test_larger_transactions_allowed(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -255,6 +264,7 @@ class TestRing3AndBeyond:
     """
 
 # TST-INT-577
+    # TRACE: {"suite": "INT", "case": "0577", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "01", "title": "linkedin_anchor"}
     def test_linkedin_anchor(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -280,6 +290,7 @@ class TestRing3AndBeyond:
         assert with_cred > without_cred
 
 # TST-INT-578
+    # TRACE: {"suite": "INT", "case": "0578", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "02", "title": "business_registration"}
     def test_business_registration(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -305,6 +316,7 @@ class TestRing3AndBeyond:
         assert two_creds > one_cred
 
 # TST-INT-579
+    # TRACE: {"suite": "INT", "case": "0579", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "03", "title": "transaction_history"}
     def test_transaction_history(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -330,6 +342,7 @@ class TestRing3AndBeyond:
         assert high_tx > low_tx
 
 # TST-INT-312
+    # TRACE: {"suite": "INT", "case": "0312", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "04", "title": "peer_attestation"}
     def test_peer_attestation(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -387,6 +400,7 @@ class TestRing3AndBeyond:
         )
 
 # TST-INT-580
+    # TRACE: {"suite": "INT", "case": "0580", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "05", "title": "time_factor"}
     def test_time_factor(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -412,6 +426,7 @@ class TestRing3AndBeyond:
         assert old_account > new_account
 
 # TST-INT-581
+    # TRACE: {"suite": "INT", "case": "0581", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "06", "title": "ring3_base_higher_than_ring2"}
     def test_ring3_base_higher_than_ring2(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -446,6 +461,7 @@ class TestTrustComposite:
     """The composite trust function combines all factors."""
 
 # TST-INT-582
+    # TRACE: {"suite": "INT", "case": "0582", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "01", "title": "composite_calculation"}
     def test_composite_calculation(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -463,6 +479,7 @@ class TestTrustComposite:
         assert score == 100.0
 
 # TST-INT-583
+    # TRACE: {"suite": "INT", "case": "0583", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "02", "title": "all_factors_contribute"}
     def test_all_factors_contribute(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -539,6 +556,7 @@ class TestTrustComposite:
         assert with_creds > base
 
 # TST-INT-584
+    # TRACE: {"suite": "INT", "case": "0584", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "03", "title": "rug_pull_assessment"}
     def test_rug_pull_assessment(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -573,6 +591,7 @@ class TestTrustComposite:
         assert established_seller - rug_pull_risk > 40.0
 
 # TST-INT-314
+    # TRACE: {"suite": "INT", "case": "0314", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "04", "title": "trust_degrades_with_bad_behavior"}
     def test_trust_degrades_with_bad_behavior(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -606,6 +625,7 @@ class TestTrustComposite:
         assert mock_trust_network.get_bot_score(other_did) == 50.0
 
 # TST-INT-585
+    # TRACE: {"suite": "INT", "case": "0585", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "05", "title": "trust_score_capped_at_100"}
     def test_trust_score_capped_at_100(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -622,6 +642,7 @@ class TestTrustComposite:
         assert score == 100.0
 
 # TST-INT-311
+    # TRACE: {"suite": "INT", "case": "0311", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "06", "title": "trust_score_floor_at_zero"}
     def test_trust_score_floor_at_zero(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -636,6 +657,7 @@ class TestTrustComposite:
         assert score == 0.0
 
 # TST-INT-586
+    # TRACE: {"suite": "INT", "case": "0586", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "07", "title": "outcome_reports_from_different_rings"}
     def test_outcome_reports_from_different_rings(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -693,6 +715,7 @@ class TestTrustComposite:
         assert neg_outcomes[0].outcome == "returned"
 
 # TST-INT-587
+    # TRACE: {"suite": "INT", "case": "0587", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "08", "title": "signed_tombstone_only_by_author"}
     def test_signed_tombstone_only_by_author(
         self, mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,

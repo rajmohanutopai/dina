@@ -28,6 +28,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-710
+// TRACE: {"suite": "CORE", "case": "1081", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "01", "title": "SignAttestationRecord"}
 func TestPDS_22_1_1_SignAttestationRecord(t *testing.T) {
 	impl := pds.NewPDSPublisher("did:plc:testauthor")
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
@@ -94,6 +95,7 @@ func TestPDS_22_1_1_SignAttestationRecord(t *testing.T) {
 }
 
 // TST-CORE-711
+// TRACE: {"suite": "CORE", "case": "1082", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "02", "title": "SignOutcomeReport"}
 func TestPDS_22_1_2_SignOutcomeReport(t *testing.T) {
 	// Brain requests outcome publication.
 	// Core signs with Trust Signing Key (HKDF "dina:trust:v1") and writes to PDS.
@@ -132,6 +134,7 @@ func TestPDS_22_1_2_SignOutcomeReport(t *testing.T) {
 }
 
 // TST-CORE-712
+// TRACE: {"suite": "CORE", "case": "1083", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "03", "title": "LexiconValidation"}
 func TestPDS_22_1_3_LexiconValidation(t *testing.T) {
 	// Attestation missing required field (productCategory) must be rejected before signing.
 	impl := realPDSPublisher
@@ -156,6 +159,7 @@ func TestPDS_22_1_3_LexiconValidation(t *testing.T) {
 }
 
 // TST-CORE-713
+// TRACE: {"suite": "CORE", "case": "1084", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "04", "title": "RecordInMerkleRepo"}
 func TestPDS_22_1_4_RecordInMerkleRepo(t *testing.T) {
 	// §22.1.4: After publish, record must be stored in PDS's signed Merkle
 	// tree (tamper-evident). The AT URI serves as the record's address in
@@ -218,6 +222,7 @@ func TestPDS_22_1_4_RecordInMerkleRepo(t *testing.T) {
 }
 
 // TST-CORE-714
+// TRACE: {"suite": "CORE", "case": "1085", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "05", "title": "PDSConnectionFailure"}
 func TestPDS_22_1_5_PDSConnectionFailure(t *testing.T) {
 	impl := pds.NewPDSPublisher("did:plc:testauthor")
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
@@ -266,6 +271,7 @@ func TestPDS_22_1_5_PDSConnectionFailure(t *testing.T) {
 }
 
 // TST-CORE-715
+// TRACE: {"suite": "CORE", "case": "1086", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "06", "title": "TypeBBundledPDS"}
 func TestPDS_22_1_6_TypeBBundledPDS(t *testing.T) {
 	// Type B (default): Core writes directly to pds:2583 on internal network.
 	impl := realPDSPublisher
@@ -291,6 +297,7 @@ func TestPDS_22_1_6_TypeBBundledPDS(t *testing.T) {
 }
 
 // TST-CORE-716
+// TRACE: {"suite": "CORE", "case": "1087", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "07", "title": "TypeAExternalPDS"}
 func TestPDS_22_1_7_TypeAExternalPDS(t *testing.T) {
 	// §22.1.7: Type A deployment — Home Node behind CGNAT pushes signed
 	// commits to an external PDS via outbound HTTPS. The published record
@@ -359,6 +366,7 @@ func TestPDS_22_1_7_TypeAExternalPDS(t *testing.T) {
 }
 
 // TST-CORE-717
+// TRACE: {"suite": "CORE", "case": "1088", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "08", "title": "RatingRangeEnforcement"}
 func TestPDS_22_1_8_RatingRangeEnforcement(t *testing.T) {
 	// Rating must be 0-100 inclusive. Values outside range must be rejected.
 	impl := realPDSPublisher
@@ -399,6 +407,7 @@ func TestPDS_22_1_8_RatingRangeEnforcement(t *testing.T) {
 }
 
 // TST-CORE-718
+// TRACE: {"suite": "CORE", "case": "1089", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "09", "title": "VerdictIsStructuredObject"}
 func TestPDS_22_1_9_VerdictIsStructuredObject(t *testing.T) {
 	// verdict must be a #verdictDetail ref (object with sub-scores), not a plain string.
 	impl := realPDSPublisher
@@ -443,6 +452,7 @@ func TestPDS_22_1_9_VerdictIsStructuredObject(t *testing.T) {
 }
 
 // TST-CORE-719
+// TRACE: {"suite": "CORE", "case": "1090", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "01", "scenario": "10", "title": "AllRequiredFieldsValidated"}
 func TestPDS_22_1_10_AllRequiredFieldsValidated(t *testing.T) {
 	impl := pds.NewPDSPublisher("did:plc:testauthor")
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
@@ -492,6 +502,7 @@ func TestPDS_22_1_10_AllRequiredFieldsValidated(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-720
+// TRACE: {"suite": "CORE", "case": "1091", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "01", "title": "AuthorDeletesOwnRecord"}
 func TestPDS_22_2_1_AuthorDeletesOwnRecord(t *testing.T) {
 	// User requests deletion of own review.
 	// Core generates Tombstone{target, author, sig} signed by same key.
@@ -544,6 +555,7 @@ func TestPDS_22_2_1_AuthorDeletesOwnRecord(t *testing.T) {
 }
 
 // TST-CORE-721
+// TRACE: {"suite": "CORE", "case": "1092", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "02", "title": "NonAuthorDeletionRejected"}
 func TestPDS_22_2_2_NonAuthorDeletionRejected(t *testing.T) {
 	impl := pds.NewPDSPublisher("did:plc:testauthor")
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
@@ -586,6 +598,7 @@ func TestPDS_22_2_2_NonAuthorDeletionRejected(t *testing.T) {
 }
 
 // TST-CORE-722
+// TRACE: {"suite": "CORE", "case": "1093", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "03", "title": "TombstonePropagation"}
 func TestPDS_22_2_3_TombstonePropagation(t *testing.T) {
 	// Tombstone published to PDS must be distributed to federated AppViews.
 	authorDID := "did:key:z6MkPropagationAuthor"
@@ -641,6 +654,7 @@ func TestPDS_22_2_3_TombstonePropagation(t *testing.T) {
 }
 
 // TST-CORE-723
+// TRACE: {"suite": "CORE", "case": "1094", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "04", "title": "DeletedRecordAbsentFromQueries"}
 func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 	// After tombstone, the record must no longer be present — re-publish by new
 	// author must succeed (old record truly gone), and tombstone ownership must
@@ -708,6 +722,7 @@ func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 }
 
 // TST-CORE-918
+// TRACE: {"suite": "CORE", "case": "1095", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "05", "title": "BotLexiconValidation"}
 func TestPDS_22_2_5_BotLexiconValidation(t *testing.T) {
 	// com.dina.trust.bot and com.dina.trust.membership Lexicons validated.
 	impl := realPDSPublisher
@@ -724,6 +739,7 @@ func TestPDS_22_2_5_BotLexiconValidation(t *testing.T) {
 }
 
 // TST-CORE-919
+// TRACE: {"suite": "CORE", "case": "1096", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "06", "title": "OutcomeDataSchemaValidation"}
 func TestPDS_22_2_6_OutcomeDataSchemaValidation(t *testing.T) {
 	// §22.2.6: Outcome data schema requires reporter_trust_ring, outcome,
 	// satisfaction, issues fields. ValidateLexicon must enforce these.
@@ -783,6 +799,7 @@ func TestPDS_22_2_6_OutcomeDataSchemaValidation(t *testing.T) {
 }
 
 // TST-CORE-920
+// TRACE: {"suite": "CORE", "case": "1097", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "07", "title": "AttestationOptionalFieldsURIFormat"}
 func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
 	// §22.2.7: Attestation optional fields sourceUrl and deepLink must be
 	// valid URIs when present. The full record with optional fields must
@@ -853,6 +870,7 @@ func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
 }
 
 // TST-CORE-921
+// TRACE: {"suite": "CORE", "case": "1098", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "08", "title": "TrustQueryResponseIncludesSignedPayloads"}
 func TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads(t *testing.T) {
 	// §22.2.8: Trust query response includes signed payloads.
 	// Published attestation records must have valid AT URIs containing
@@ -936,6 +954,7 @@ func TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads(t *testing.T) {
 }
 
 // TST-CORE-922
+// TRACE: {"suite": "CORE", "case": "1099", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "09", "title": "DIDDocContainsDIDCommServiceEndpoint"}
 func TestPDS_22_2_9_DIDDocContainsDIDCommServiceEndpoint(t *testing.T) {
 	// Requirement: DID Document must contain a messaging service endpoint
 	// for D2D (Dina-to-Dina) communication.
@@ -997,6 +1016,7 @@ func TestPDS_22_2_9_DIDDocContainsDIDCommServiceEndpoint(t *testing.T) {
 }
 
 // TST-CORE-923
+// TRACE: {"suite": "CORE", "case": "1100", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "10", "title": "OutcomeRecordSigning"}
 func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
 	// §22.2.10: Outcome records must be signed and published with valid AT URIs.
 	// Both outcome and bot lexicon records must pass through SignAndPublish.
@@ -1059,6 +1079,7 @@ func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
 }
 
 // TST-CORE-924
+// TRACE: {"suite": "CORE", "case": "1101", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "11", "title": "TypeA_FallbackToExternalHTTPS"}
 func TestPDS_22_2_11_TypeA_FallbackToExternalHTTPS(t *testing.T) {
 	// PDS Type A: fallback to external HTTPS push.
 	impl := realPDSPublisher

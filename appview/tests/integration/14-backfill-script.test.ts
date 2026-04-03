@@ -112,6 +112,7 @@ async function simulateBackfill(
 }
 
 describe('14 Backfill Script', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0578", "section": "01", "sectionName": "General", "title": "IT-BF-001: backfill from mock PDS -- single DID"}
   it('IT-BF-001: backfill from mock PDS -- single DID', async () => {
     const did = 'did:plc:backfill001'
     const records = Array.from({ length: 10 }, (_, i) => ({
@@ -130,6 +131,7 @@ describe('14 Backfill Script', () => {
     expect(Number((rows as any).rows[0].cnt)).toBe(10)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0579", "section": "01", "sectionName": "General", "title": "IT-BF-002: backfill -- idempotent replay"}
   it('IT-BF-002: backfill -- idempotent replay', async () => {
     const did = 'did:plc:backfill002'
     const records = Array.from({ length: 10 }, (_, i) => ({
@@ -149,6 +151,7 @@ describe('14 Backfill Script', () => {
     expect(Number((rows as any).rows[0].cnt)).toBe(10)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0580", "section": "01", "sectionName": "General", "title": "IT-BF-003: backfill -- multiple collections"}
   it('IT-BF-003: backfill -- multiple collections', async () => {
     const did = 'did:plc:backfill003'
 
@@ -187,6 +190,7 @@ describe('14 Backfill Script', () => {
     expect(Number((flgCount as any).rows[0].cnt)).toBe(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0581", "section": "01", "sectionName": "General", "title": "IT-BF-004: backfill -- rate limiting applied"}
   it('IT-BF-004: backfill -- rate limiting applied', async () => {
     const did = 'did:plc:backfill004'
     const records = Array.from({ length: 100 }, (_, i) => ({
@@ -206,6 +210,7 @@ describe('14 Backfill Script', () => {
     expect(Number((rows as any).rows[0].cnt)).toBe(50)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0582", "section": "01", "sectionName": "General", "title": "IT-BF-005: backfill -- invalid records skipped"}
   it('IT-BF-005: backfill -- invalid records skipped', async () => {
     const did = 'did:plc:backfill005'
 
@@ -242,6 +247,7 @@ describe('14 Backfill Script', () => {
     expect(Number((rows as any).rows[0].cnt)).toBe(5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0583", "section": "01", "sectionName": "General", "title": "IT-BF-006: backfill -- concurrent PDS connections"}
   it('IT-BF-006: backfill -- concurrent PDS connections', async () => {
     // Simulate 5 PDSes with maxConcurrentPds = 3
     // Verify that concurrency is limited
@@ -292,6 +298,7 @@ describe('14 Backfill Script', () => {
     expect(semaphore.maxActive).toBeLessThanOrEqual(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0584", "section": "01", "sectionName": "General", "title": "IT-BF-007: backfill -- PDS failure does not stop others"}
   it('IT-BF-007: backfill -- PDS failure does not stop others', async () => {
     // Simulate 5 PDSes, one of which fails
     const results: { pds: string; success: boolean }[] = []
@@ -332,6 +339,7 @@ describe('14 Backfill Script', () => {
     expect(Number((rows as any).rows[0].cnt)).toBe(12)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0585", "section": "01", "sectionName": "General", "title": "IT-BF-008: backfill -- pagination (cursor-based)"}
   it('IT-BF-008: backfill -- pagination (cursor-based)', async () => {
     const did = 'did:plc:backfill008'
     const totalRecords = 250
@@ -368,6 +376,7 @@ describe('14 Backfill Script', () => {
     expect(totalFetched).toBe(250)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0586", "section": "01", "sectionName": "General", "title": "IT-BF-009: backfill -> live transition seamless"}
   it('IT-BF-009: backfill -> live transition seamless', async () => {
     const did = 'did:plc:backfill009'
 
@@ -406,6 +415,7 @@ describe('14 Backfill Script', () => {
     expect(Number((rows as any).rows[0].cnt)).toBe(15)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0587", "section": "01", "sectionName": "General", "title": "IT-BF-010: backfill -- filterDids limits scope"}
   it('IT-BF-010: backfill -- filterDids limits scope', async () => {
     const targetDid = 'did:plc:bf010-target'
     const otherDid = 'did:plc:bf010-other'

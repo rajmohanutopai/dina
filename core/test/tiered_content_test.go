@@ -39,6 +39,7 @@ func newTieredContentVault(t *testing.T) (*vault.Manager, context.Context) {
 //    EnrichmentVersion.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1410", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "TieredContent_StoreWithL0L1"}
 func TestTieredContent_StoreWithL0L1(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -72,6 +73,7 @@ func TestTieredContent_StoreWithL0L1(t *testing.T) {
 //    ContentL0/L1 empty.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1411", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "02", "scenario": "01", "title": "TieredContent_StoreWithoutL0L1"}
 func TestTieredContent_StoreWithoutL0L1(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -99,6 +101,7 @@ func TestTieredContent_StoreWithoutL0L1(t *testing.T) {
 // 3. EnrichmentStatusValidation — invalid enrichment_status is rejected.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1412", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "03", "scenario": "01", "title": "TieredContent_EnrichmentStatusValidation"}
 func TestTieredContent_EnrichmentStatusValidation(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -120,6 +123,7 @@ func TestTieredContent_EnrichmentStatusValidation(t *testing.T) {
 //    round-trip.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1413", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "04", "scenario": "01", "title": "TieredContent_ProcessingStatus"}
 func TestTieredContent_ProcessingStatus(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -145,6 +149,7 @@ func TestTieredContent_ProcessingStatus(t *testing.T) {
 // 5. FailedStatus — store with EnrichmentStatus="failed", verify round-trip.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1414", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "05", "scenario": "01", "title": "TieredContent_FailedStatus"}
 func TestTieredContent_FailedStatus(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -170,6 +175,7 @@ func TestTieredContent_FailedStatus(t *testing.T) {
 // 6. EnrichmentVersionJSON — EnrichmentVersion JSON string round-trips.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1415", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "06", "scenario": "01", "title": "TieredContent_EnrichmentVersionJSON"}
 func TestTieredContent_EnrichmentVersionJSON(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -201,6 +207,7 @@ func TestTieredContent_EnrichmentVersionJSON(t *testing.T) {
 //    still found by FTS5 query matching body text.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1416", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "07", "scenario": "01", "title": "TieredContent_UnenrichedItemSearchable"}
 func TestTieredContent_UnenrichedItemSearchable(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -230,6 +237,7 @@ func TestTieredContent_UnenrichedItemSearchable(t *testing.T) {
 //    query matching body text (body is L2, still indexed).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1417", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "08", "scenario": "01", "title": "TieredContent_EnrichedItemSearchable"}
 func TestTieredContent_EnrichedItemSearchable(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -261,6 +269,7 @@ func TestTieredContent_EnrichedItemSearchable(t *testing.T) {
 // 9. BatchStoreWithEnrichment — StoreBatch with mixed enrichment states.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1418", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "09", "scenario": "01", "title": "TieredContent_BatchStoreWithEnrichment"}
 func TestTieredContent_BatchStoreWithEnrichment(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 
@@ -317,6 +326,7 @@ func TestTieredContent_BatchStoreWithEnrichment(t *testing.T) {
 //     L0/L1 and new version. Verify the update took effect.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1419", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "10", "scenario": "01", "title": "TieredContent_ReEnrichment"}
 func TestTieredContent_ReEnrichment(t *testing.T) {
 	mgr, ctx := newTieredContentVault(t)
 

@@ -100,9 +100,11 @@ func decodeResponse(t *testing.T, rr *httptest.ResponseRecorder) map[string]inte
 // Brain must classify every notification into one of three Silence First
 // tiers before Core will accept it.
 
+// TRACE: {"suite": "CORE", "case": "0951", "section": "35", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "01", "title": "WebSocketPushRequiresExplicitPriority"}
 func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 	h, notifier := newNotifyHandler()
 
+	// TRACE: {"suite": "CORE", "case": "0952", "section": "35", "sectionName": "Thesis: Silence First", "title": "missing_priority_rejected_with_400"}
 	t.Run("missing_priority_rejected_with_400", func(t *testing.T) {
 		// POST /v1/notify with message but no priority field.
 		// Core must reject this — it cannot route without knowing the tier.
@@ -114,12 +116,14 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0953", "section": "35", "sectionName": "Thesis: Silence First", "title": "empty_priority_string_rejected"}
 	t.Run("empty_priority_string_rejected", func(t *testing.T) {
 		// Empty string is not a valid priority — must be an explicit tier.
 		rr := postNotify(h, `{"message":"test","priority":""}`)
 		testutil.RequireEqual(t, rr.Code, http.StatusBadRequest)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0954", "section": "35", "sectionName": "Thesis: Silence First", "title": "invalid_priority_value_rejected"}
 	t.Run("invalid_priority_value_rejected", func(t *testing.T) {
 		// Arbitrary strings are not valid priorities.
 		// Only fiduciary, solicited, and engagement are accepted.
@@ -127,6 +131,7 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusBadRequest)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0955", "section": "35", "sectionName": "Thesis: Silence First", "title": "case_sensitive_priority_rejected"}
 	t.Run("case_sensitive_priority_rejected", func(t *testing.T) {
 		// Priority must be lowercase — "Fiduciary" is not "fiduciary".
 		// This prevents ambiguity and ensures Brain uses the canonical values.
@@ -134,6 +139,7 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusBadRequest)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0956", "section": "35", "sectionName": "Thesis: Silence First", "title": "error_message_lists_valid_priorities"}
 	t.Run("error_message_lists_valid_priorities", func(t *testing.T) {
 		// The error response must tell Brain what the valid values are.
 		// This aids debugging when Brain sends an invalid priority.
@@ -147,6 +153,7 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0957", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_priority_accepted"}
 	t.Run("fiduciary_priority_accepted", func(t *testing.T) {
 		// Fiduciary = interrupt. Silence would cause harm (§35.1).
 		// Core must broadcast immediately.
@@ -162,6 +169,7 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0958", "section": "35", "sectionName": "Thesis: Silence First", "title": "solicited_priority_accepted"}
 	t.Run("solicited_priority_accepted", func(t *testing.T) {
 		// Solicited = user asked for this. Notify them (§35.1).
 		notifier.broadcasts = nil
@@ -176,6 +184,7 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0959", "section": "35", "sectionName": "Thesis: Silence First", "title": "engagement_priority_queued_not_pushed"}
 	t.Run("engagement_priority_queued_not_pushed", func(t *testing.T) {
 		// Engagement = silence merely misses an opportunity (§35.1).
 		// Must NOT push via WebSocket — queue for daily briefing instead.
@@ -192,12 +201,14 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0960", "section": "35", "sectionName": "Thesis: Silence First", "title": "message_still_required_with_priority"}
 	t.Run("message_still_required_with_priority", func(t *testing.T) {
 		// Priority alone is not enough — the message content is also required.
 		rr := postNotify(h, `{"priority":"fiduciary"}`)
 		testutil.RequireEqual(t, rr.Code, http.StatusBadRequest)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0961", "section": "35", "sectionName": "Thesis: Silence First", "title": "three_valid_priorities_exist"}
 	t.Run("three_valid_priorities_exist", func(t *testing.T) {
 		// Verify that exactly three priority tiers exist — no more, no less.
 		// Adding a fourth tier would undermine the Silence First classification.
@@ -221,9 +232,11 @@ func TestNotify_35_1_1_WebSocketPushRequiresExplicitPriority(t *testing.T) {
 // Priority alone determines the notification path. This prevents a
 // compromised or misbehaving Brain from bypassing Silence First.
 
+// TRACE: {"suite": "CORE", "case": "0962", "section": "35", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "06", "title": "BrainCannotBypassPriorityClassification"}
 func TestNotify_35_1_6_BrainCannotBypassPriorityClassification(t *testing.T) {
 	h, notifier := newNotifyHandler()
 
+	// TRACE: {"suite": "CORE", "case": "0963", "section": "35", "sectionName": "Thesis: Silence First", "title": "force_push_true_with_engagement_still_queued"}
 	t.Run("force_push_true_with_engagement_still_queued", func(t *testing.T) {
 		// The critical test: Brain sets force_push=true on an engagement
 		// notification. Core must IGNORE force_push and still queue it.
@@ -241,6 +254,7 @@ func TestNotify_35_1_6_BrainCannotBypassPriorityClassification(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0964", "section": "35", "sectionName": "Thesis: Silence First", "title": "force_push_true_with_fiduciary_sends_normally"}
 	t.Run("force_push_true_with_fiduciary_sends_normally", func(t *testing.T) {
 		// Fiduciary with force_push=true should send normally.
 		// force_push doesn't add anything — fiduciary already sends.
@@ -256,6 +270,7 @@ func TestNotify_35_1_6_BrainCannotBypassPriorityClassification(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0965", "section": "35", "sectionName": "Thesis: Silence First", "title": "force_push_true_with_solicited_sends_normally"}
 	t.Run("force_push_true_with_solicited_sends_normally", func(t *testing.T) {
 		// Solicited with force_push=true should send normally.
 		// force_push doesn't add anything — solicited already sends.
@@ -268,6 +283,7 @@ func TestNotify_35_1_6_BrainCannotBypassPriorityClassification(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0966", "section": "35", "sectionName": "Thesis: Silence First", "title": "force_push_false_no_effect"}
 	t.Run("force_push_false_no_effect", func(t *testing.T) {
 		// force_push=false should behave identically to no force_push.
 		// The field is always ignored regardless of its value.
@@ -280,6 +296,7 @@ func TestNotify_35_1_6_BrainCannotBypassPriorityClassification(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0967", "section": "35", "sectionName": "Thesis: Silence First", "title": "force_push_without_priority_still_rejected"}
 	t.Run("force_push_without_priority_still_rejected", func(t *testing.T) {
 		// force_push cannot substitute for a missing priority.
 		// Even if Brain sends force_push=true, priority is still required.
@@ -287,6 +304,7 @@ func TestNotify_35_1_6_BrainCannotBypassPriorityClassification(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusBadRequest)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0968", "section": "35", "sectionName": "Thesis: Silence First", "title": "unknown_fields_ignored_gracefully"}
 	t.Run("unknown_fields_ignored_gracefully", func(t *testing.T) {
 		// Brain might send additional fields (e.g., "bypass_dnd": true).
 		// Core should decode without error but ignore all non-standard fields.
@@ -309,6 +327,7 @@ func TestNotify_35_1_6_BrainCannotBypassPriorityClassification(t *testing.T) {
 // but Bearer tokens remain valid. An empty signature does NOT mean "skip all
 // auth" — it means "try the next auth method."
 
+// TRACE: {"suite": "CORE", "case": "0969", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "05", "title": "EmptySignatureBackwardCompatibility"}
 func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 	// Set up a token validator with a registered client token.
 	tokenValidator := auth.NewDefaultTokenValidator()
@@ -326,6 +345,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 
 	mw := authMW.Handler(echoHandler)
 
+	// TRACE: {"suite": "CORE", "case": "0970", "section": "29", "sectionName": "Adversarial & Security", "title": "empty_X_Signature_falls_through_to_Bearer"}
 	t.Run("empty_X_Signature_falls_through_to_Bearer", func(t *testing.T) {
 		// Request with X-DID and X-Timestamp set but X-Signature empty.
 		// The middleware checks `xDID != "" && xSig != "" && xTS != ""`
@@ -347,6 +367,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0971", "section": "29", "sectionName": "Adversarial & Security", "title": "missing_all_signature_headers_falls_through_to_Bearer"}
 	t.Run("missing_all_signature_headers_falls_through_to_Bearer", func(t *testing.T) {
 		// No Ed25519 headers at all — pure legacy Bearer token client.
 		req := httptest.NewRequest(http.MethodGet, "/v1/vault/query", nil)
@@ -361,6 +382,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0972", "section": "29", "sectionName": "Adversarial & Security", "title": "empty_X_DID_falls_through_to_Bearer"}
 	t.Run("empty_X_DID_falls_through_to_Bearer", func(t *testing.T) {
 		// Only X-Timestamp and X-Signature set, X-DID missing.
 		// Condition `xDID != ""` fails → fallthrough to Bearer.
@@ -374,6 +396,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusOK)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0973", "section": "29", "sectionName": "Adversarial & Security", "title": "empty_X_Timestamp_falls_through_to_Bearer"}
 	t.Run("empty_X_Timestamp_falls_through_to_Bearer", func(t *testing.T) {
 		// X-DID and X-Signature set but X-Timestamp empty.
 		req := httptest.NewRequest(http.MethodGet, "/v1/vault/query", nil)
@@ -387,6 +410,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusOK)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0974", "section": "29", "sectionName": "Adversarial & Security", "title": "empty_signature_no_Bearer_returns_401"}
 	t.Run("empty_signature_no_Bearer_returns_401", func(t *testing.T) {
 		// Empty X-Signature AND no Bearer token → auth fails entirely.
 		// Backward compatibility doesn't mean "no auth required."
@@ -400,6 +424,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusUnauthorized)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0975", "section": "29", "sectionName": "Adversarial & Security", "title": "no_auth_at_all_returns_401"}
 	t.Run("no_auth_at_all_returns_401", func(t *testing.T) {
 		// No Ed25519 headers, no Bearer token → 401.
 		req := httptest.NewRequest(http.MethodGet, "/v1/vault/query", nil)
@@ -409,6 +434,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusUnauthorized)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0976", "section": "29", "sectionName": "Adversarial & Security", "title": "invalid_Bearer_after_empty_signature_returns_401"}
 	t.Run("invalid_Bearer_after_empty_signature_returns_401", func(t *testing.T) {
 		// Empty X-Signature → falls through to Bearer → Bearer is invalid → 401.
 		// The fallthrough doesn't grant free access.
@@ -423,6 +449,7 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 		testutil.RequireEqual(t, rr.Code, http.StatusUnauthorized)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0977", "section": "29", "sectionName": "Adversarial & Security", "title": "public_paths_bypass_auth_entirely"}
 	t.Run("public_paths_bypass_auth_entirely", func(t *testing.T) {
 		// /healthz is a public path — no auth headers needed at all.
 		// This is independent of empty-signature logic, but verifies
@@ -447,8 +474,10 @@ func TestAuth_29_1_5_EmptySignatureBackwardCompatibility(t *testing.T) {
 // The test must validate that engagement is never pushed regardless of
 // DND state, force_push flags, or any other request parameters.
 
+// TRACE: {"suite": "CORE", "case": "0978", "section": "35", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "02", "title": "EngagementTierNeverPushedViaWebSocket"}
 func TestNotify_35_1_2_EngagementTierNeverPushedViaWebSocket(t *testing.T) {
 
+	// TRACE: {"suite": "CORE", "case": "0979", "section": "35", "sectionName": "Thesis: Silence First", "title": "engagement_without_DND_queued_not_broadcast"}
 	t.Run("engagement_without_DND_queued_not_broadcast", func(t *testing.T) {
 		// Normal operation (DND off): engagement is queued.
 		// The notifier must NOT be called — no broadcast, no per-device push.
@@ -464,6 +493,7 @@ func TestNotify_35_1_2_EngagementTierNeverPushedViaWebSocket(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0980", "section": "35", "sectionName": "Thesis: Silence First", "title": "engagement_with_DND_active_still_queued"}
 	t.Run("engagement_with_DND_active_still_queued", func(t *testing.T) {
 		// DND active: engagement is STILL queued (same behavior as without DND).
 		// DND only affects solicited — engagement is always queued regardless.
@@ -479,6 +509,7 @@ func TestNotify_35_1_2_EngagementTierNeverPushedViaWebSocket(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0981", "section": "35", "sectionName": "Thesis: Silence First", "title": "engagement_with_force_push_still_queued"}
 	t.Run("engagement_with_force_push_still_queued", func(t *testing.T) {
 		// force_push=true on engagement: STILL queued.
 		// Brain cannot promote engagement to push via force_push.
@@ -494,6 +525,7 @@ func TestNotify_35_1_2_EngagementTierNeverPushedViaWebSocket(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0982", "section": "35", "sectionName": "Thesis: Silence First", "title": "engagement_with_DND_and_force_push_still_queued"}
 	t.Run("engagement_with_DND_and_force_push_still_queued", func(t *testing.T) {
 		// Maximum escalation attempt: DND active + force_push=true + engagement.
 		// Must still be queued. No combination of flags can override engagement routing.
@@ -509,6 +541,7 @@ func TestNotify_35_1_2_EngagementTierNeverPushedViaWebSocket(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0983", "section": "35", "sectionName": "Thesis: Silence First", "title": "multiple_engagement_notifications_all_queued"}
 	t.Run("multiple_engagement_notifications_all_queued", func(t *testing.T) {
 		// Send multiple engagement notifications — ALL must be queued, none pushed.
 		h, notifier := newNotifyHandler()
@@ -530,6 +563,7 @@ func TestNotify_35_1_2_EngagementTierNeverPushedViaWebSocket(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0984", "section": "35", "sectionName": "Thesis: Silence First", "title": "engagement_returns_200_not_202"}
 	t.Run("engagement_returns_200_not_202", func(t *testing.T) {
 		// Engagement returns 200 (accepted and queued), not 202 (accepted for processing).
 		// The notification is immediately queued — no async processing pending.
@@ -549,8 +583,10 @@ func TestNotify_35_1_2_EngagementTierNeverPushedViaWebSocket(t *testing.T) {
 // If DND could block fiduciary, there would be no way to reach the user
 // in an emergency.
 
+// TRACE: {"suite": "CORE", "case": "0985", "section": "35", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "03", "title": "FiduciaryPushedEvenDuringDND"}
 func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 
+	// TRACE: {"suite": "CORE", "case": "0986", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_broadcast_when_DND_active"}
 	t.Run("fiduciary_broadcast_when_DND_active", func(t *testing.T) {
 		// DND is active, but fiduciary overrides it. The notification must
 		// be broadcast to all connected clients immediately.
@@ -566,6 +602,7 @@ func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0987", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_broadcast_when_DND_inactive"}
 	t.Run("fiduciary_broadcast_when_DND_inactive", func(t *testing.T) {
 		// Baseline: fiduciary without DND sends normally.
 		h, notifier, _ := newNotifyHandlerWithDND(false)
@@ -580,6 +617,7 @@ func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0988", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_message_content_preserved_during_DND"}
 	t.Run("fiduciary_message_content_preserved_during_DND", func(t *testing.T) {
 		// The broadcast message must be the original content, not a
 		// summary or placeholder. The user needs the full details.
@@ -596,6 +634,7 @@ func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0989", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_status_is_sent_not_deferred_during_DND"}
 	t.Run("fiduciary_status_is_sent_not_deferred_during_DND", func(t *testing.T) {
 		// The response status must be "sent", not "deferred".
 		// Brain needs to know the notification was actually pushed so it
@@ -609,6 +648,7 @@ func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0990", "section": "35", "sectionName": "Thesis: Silence First", "title": "multiple_fiduciary_during_DND_all_sent"}
 	t.Run("multiple_fiduciary_during_DND_all_sent", func(t *testing.T) {
 		// Multiple fiduciary notifications during DND: ALL must be pushed.
 		// DND is not a "one interrupt allowed" policy — every fiduciary goes through.
@@ -631,6 +671,7 @@ func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0991", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_with_nil_DND_checker_still_sends"}
 	t.Run("fiduciary_with_nil_DND_checker_still_sends", func(t *testing.T) {
 		// When DNDChecker is nil (not configured), fiduciary sends normally.
 		// nil = DND not configured = DND inactive (safe default).
@@ -646,6 +687,7 @@ func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0992", "section": "35", "sectionName": "Thesis: Silence First", "title": "DND_toggle_off_then_on_fiduciary_always_pushes"}
 	t.Run("DND_toggle_off_then_on_fiduciary_always_pushes", func(t *testing.T) {
 		// Toggle DND mid-session: fiduciary must always push regardless.
 		h, notifier, dnd := newNotifyHandlerWithDND(false)
@@ -683,8 +725,10 @@ func TestNotify_35_1_3_FiduciaryPushedEvenDuringDND(t *testing.T) {
 // interrupt me" (DND). The DND wins because solicited is not urgent —
 // the results will still be valid later.
 
+// TRACE: {"suite": "CORE", "case": "0993", "section": "35", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "04", "title": "SolicitedDeferredDuringDND"}
 func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 
+	// TRACE: {"suite": "CORE", "case": "0994", "section": "35", "sectionName": "Thesis: Silence First", "title": "solicited_deferred_when_DND_active"}
 	t.Run("solicited_deferred_when_DND_active", func(t *testing.T) {
 		// DND active + solicited → deferred. No broadcast.
 		h, notifier, _ := newNotifyHandlerWithDND(true)
@@ -699,6 +743,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0995", "section": "35", "sectionName": "Thesis: Silence First", "title": "solicited_sent_when_DND_inactive"}
 	t.Run("solicited_sent_when_DND_inactive", func(t *testing.T) {
 		// DND inactive + solicited → sent. Normal delivery.
 		h, notifier, _ := newNotifyHandlerWithDND(false)
@@ -713,6 +758,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0996", "section": "35", "sectionName": "Thesis: Silence First", "title": "solicited_with_nil_DND_checker_sends_normally"}
 	t.Run("solicited_with_nil_DND_checker_sends_normally", func(t *testing.T) {
 		// When DNDChecker is nil (not configured), solicited sends normally.
 		// nil = DND not configured = DND inactive.
@@ -728,6 +774,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0997", "section": "35", "sectionName": "Thesis: Silence First", "title": "deferred_status_distinct_from_queued"}
 	t.Run("deferred_status_distinct_from_queued", func(t *testing.T) {
 		// "deferred" (solicited during DND) must be different from "queued"
 		// (engagement). Brain uses the status to decide follow-up behavior:
@@ -752,6 +799,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0998", "section": "35", "sectionName": "Thesis: Silence First", "title": "multiple_solicited_during_DND_all_deferred"}
 	t.Run("multiple_solicited_during_DND_all_deferred", func(t *testing.T) {
 		// Multiple solicited notifications during DND: ALL must be deferred.
 		h, notifier, _ := newNotifyHandlerWithDND(true)
@@ -773,6 +821,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0999", "section": "35", "sectionName": "Thesis: Silence First", "title": "DND_toggle_affects_solicited_routing"}
 	t.Run("DND_toggle_affects_solicited_routing", func(t *testing.T) {
 		// DND on → solicited deferred. DND off → solicited sent.
 		// The routing must reflect the current DND state at request time.
@@ -801,6 +850,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1000", "section": "35", "sectionName": "Thesis: Silence First", "title": "solicited_with_force_push_still_deferred_during_DND"}
 	t.Run("solicited_with_force_push_still_deferred_during_DND", func(t *testing.T) {
 		// force_push=true cannot override DND for solicited.
 		// Brain cannot bypass DND — that's Core's policy.
@@ -816,6 +866,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1001", "section": "35", "sectionName": "Thesis: Silence First", "title": "mixed_priorities_during_DND_routed_correctly"}
 	t.Run("mixed_priorities_during_DND_routed_correctly", func(t *testing.T) {
 		// During DND, each priority tier routes independently:
 		//   fiduciary → sent (override DND)
@@ -866,6 +917,7 @@ func TestNotify_35_1_4_SolicitedDeferredDuringDND(t *testing.T) {
 //   - Engagement notifications never reach the rate limiter — they are
 //     queued before the rate check even runs.
 
+// TRACE: {"suite": "CORE", "case": "1002", "section": "35", "sectionName": "Thesis: Silence First", "subsection": "01", "scenario": "05", "title": "NotificationRateLimitingPerClient"}
 func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 
 	// newRateLimitedHandler creates a handler with a tight rate limit for testing.
@@ -879,6 +931,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		return h, notifier
 	}
 
+	// TRACE: {"suite": "CORE", "case": "1003", "section": "35", "sectionName": "Thesis: Silence First", "title": "rapid_solicited_notifications_hit_rate_limit"}
 	t.Run("rapid_solicited_notifications_hit_rate_limit", func(t *testing.T) {
 		// Send more solicited notifications than the rate limit allows.
 		// Notifications beyond the limit must be rejected with 429.
@@ -905,6 +958,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1004", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_exempt_from_rate_limiting"}
 	t.Run("fiduciary_exempt_from_rate_limiting", func(t *testing.T) {
 		// Fiduciary notifications must NEVER be rate-limited.
 		// Even when the rate limit is exhausted, fiduciary goes through.
@@ -937,6 +991,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1005", "section": "35", "sectionName": "Thesis: Silence First", "title": "rate_limit_resets_after_window_expires"}
 	t.Run("rate_limit_resets_after_window_expires", func(t *testing.T) {
 		// Use a very short window so we can test the reset.
 		// After the window expires, the counter resets and new notifications
@@ -968,6 +1023,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1006", "section": "35", "sectionName": "Thesis: Silence First", "title": "no_rate_limit_when_limit_is_zero"}
 	t.Run("no_rate_limit_when_limit_is_zero", func(t *testing.T) {
 		// RateLimit=0 means unlimited — no rate limiting configured.
 		// All notifications should pass through regardless of volume.
@@ -984,6 +1040,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1007", "section": "35", "sectionName": "Thesis: Silence First", "title": "engagement_unaffected_by_rate_limiting"}
 	t.Run("engagement_unaffected_by_rate_limiting", func(t *testing.T) {
 		// Engagement notifications are queued BEFORE the rate limiter runs.
 		// They should always return "queued" regardless of rate limit state.
@@ -1011,6 +1068,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1008", "section": "35", "sectionName": "Thesis: Silence First", "title": "rate_limit_429_response_includes_error_message"}
 	t.Run("rate_limit_429_response_includes_error_message", func(t *testing.T) {
 		// The 429 response must include a meaningful error message so Brain
 		// knows why the notification was rejected and can back off.
@@ -1027,6 +1085,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1009", "section": "35", "sectionName": "Thesis: Silence First", "title": "default_rate_limit_constants_reasonable"}
 	t.Run("default_rate_limit_constants_reasonable", func(t *testing.T) {
 		// Verify the default rate limit constants are sensible.
 		// DefaultNotifyRateLimit should allow a reasonable burst.
@@ -1045,6 +1104,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1010", "section": "35", "sectionName": "Thesis: Silence First", "title": "fiduciary_does_not_consume_rate_limit_quota"}
 	t.Run("fiduciary_does_not_consume_rate_limit_quota", func(t *testing.T) {
 		// Fiduciary notifications must not count against the rate limit.
 		// If they did, a burst of fiduciary alerts could prevent subsequent
@@ -1066,6 +1126,7 @@ func TestNotify_35_1_5_NotificationRateLimitingPerClient(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1011", "section": "35", "sectionName": "Thesis: Silence First", "title": "rate_limit_with_DND_interaction"}
 	t.Run("rate_limit_with_DND_interaction", func(t *testing.T) {
 		// Rate limiting and DND are orthogonal features.
 		// During DND: solicited → deferred (before rate check).

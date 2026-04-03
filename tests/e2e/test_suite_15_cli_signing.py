@@ -71,6 +71,7 @@ class TestCLIEd25519Signing:
     """E2E-15.x -- CLI Ed25519 request signing, pairing, and verification."""
 
     # TST-E2E-084
+    # TRACE: {"suite": "E2E", "case": "0084", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "01", "title": "15_cli_generates_keypair_and_did_format"}
     def test_15_cli_generates_keypair_and_did_format(
         self,
         cli_identity: CLIIdentity,
@@ -87,6 +88,7 @@ class TestCLIEd25519Signing:
         assert did == f"did:key:{multibase}"
 
     # TST-E2E-085
+    # TRACE: {"suite": "E2E", "case": "0085", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "02", "title": "15_cli_pairs_with_core_via_multibase"}
     def test_15_cli_pairs_with_core_via_multibase(
         self,
         cli_identity: CLIIdentity,
@@ -155,6 +157,7 @@ class TestCLIEd25519Signing:
             assert pair_audits[-1].details["device_id"] == device.device_id
 
     # TST-E2E-086
+    # TRACE: {"suite": "E2E", "case": "0086", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "03", "title": "15_signed_vault_query_returns_403"}
     def test_15_signed_vault_query_returns_403(
         self,
         cli_identity: CLIIdentity,
@@ -184,6 +187,7 @@ class TestCLIEd25519Signing:
             assert len(sig) == 128  # 64 bytes hex-encoded
 
     # TST-E2E-087
+    # TRACE: {"suite": "E2E", "case": "0087", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "04", "title": "15_signed_staging_ingest_returns_201"}
     def test_15_signed_staging_ingest_returns_201(
         self,
         cli_identity: CLIIdentity,
@@ -259,6 +263,7 @@ class TestCLIEd25519Signing:
             pub_key.verify(sig_bytes, payload.encode("utf-8"))
 
     # TST-E2E-088
+    # TRACE: {"suite": "E2E", "case": "0088", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "05", "title": "15_tampered_signature_returns_401"}
     def test_15_tampered_signature_returns_401(
         self,
         cli_identity: CLIIdentity,
@@ -304,6 +309,7 @@ class TestCLIEd25519Signing:
                 )
 
     # TST-E2E-089
+    # TRACE: {"suite": "E2E", "case": "0089", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "06", "title": "15_expired_timestamp_returns_401"}
     def test_15_expired_timestamp_returns_401(
         self,
         cli_identity: CLIIdentity,
@@ -333,6 +339,7 @@ class TestCLIEd25519Signing:
             assert delta.total_seconds() > 5 * 60, "Expired timestamp should be >5 min old"
 
     # TST-E2E-090
+    # TRACE: {"suite": "E2E", "case": "0090", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "07", "title": "15_unpaired_did_returns_401"}
     def test_15_unpaired_did_returns_401(
         self,
         cli_identity: CLIIdentity,
@@ -401,6 +408,7 @@ class TestCLIEd25519Signing:
 
     # TST-E2E-091
     @pytest.mark.compat
+    # TRACE: {"suite": "E2E", "case": "0091", "section": "15", "sectionName": "CLI Signing", "subsection": "01", "scenario": "08", "title": "15_bearer_token_fallback_still_works"}
     def test_15_bearer_token_fallback_still_works(
         self,
         don_alonso,

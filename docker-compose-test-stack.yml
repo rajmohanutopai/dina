@@ -46,6 +46,7 @@ x-core-env: &core-env
   DINA_APPVIEW_URL: http://appview-web:3000
   DINA_PLC_URL: http://plc:2582
   DINA_PDS_URL: http://pds:3000
+  DINA_MSGBOX_URL: "wss://mailbox.dinakernel.com"
 
 # -- Brain service base (Python sidecar) --
 x-brain-base: &brain-base
@@ -104,6 +105,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "2582:2582"
+    volumes:
+      - plc-data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:2582/healthz', timeout=2)"]
       interval: 5s
@@ -320,11 +323,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://alonso-brain:8200
       DINA_MASTER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
-      DINA_OWN_DID: "did:plc:alonso"
       DINA_PDS_HANDLE: "alonso.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "alonso@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
       DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
     volumes:
       - alonso-data:/data
@@ -365,11 +366,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://sancho-brain:8200
       DINA_MASTER_SEED: "0202020202020202020202020202020202020202020202020202020202020202"
-      DINA_OWN_DID: "did:plc:sancho"
       DINA_PDS_HANDLE: "sancho.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "sancho@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
     volumes:
       - sancho-data:/data
@@ -410,11 +409,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://chairmaker-brain:8200
       DINA_MASTER_SEED: "0303030303030303030303030303030303030303030303030303030303030303"
-      DINA_OWN_DID: "did:plc:chairmaker"
       DINA_PDS_HANDLE: "chairmaker.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "chairmaker@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:albert=http://albert-core:8100/msg=0404040404040404040404040404040404040404040404040404040404040404"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://albert-core:8100"
     volumes:
       - chairmaker-data:/data
@@ -455,11 +452,9 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://albert-brain:8200
       DINA_MASTER_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
-      DINA_OWN_DID: "did:plc:albert"
       DINA_PDS_HANDLE: "albert.test"
       DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
       DINA_PDS_EMAIL: "albert@test.dina.local"
-      DINA_KNOWN_PEERS: "did:plc:alonso=http://alonso-core:8100/msg=0101010101010101010101010101010101010101010101010101010101010101,did:plc:sancho=http://sancho-core:8100/msg=0202020202020202020202020202020202020202020202020202020202020202,did:plc:chairmaker=http://chairmaker-core:8100/msg=0303030303030303030303030303030303030303030303030303030303030303"
       DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100"
     volumes:
       - albert-data:/data
@@ -511,6 +506,7 @@ services:
 
 volumes:
   # Infrastructure
+  plc-data:
   pds-data:
   pgdata:
 

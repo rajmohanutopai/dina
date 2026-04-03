@@ -22,6 +22,7 @@ import (
 // ==========================================================================
 
 // TST-CORE-869
+// TRACE: {"suite": "CORE", "case": "0505", "section": "27", "sectionName": "Digital Estate", "subsection": "01", "scenario": "01", "title": "PlanStoredInTier0"}
 func TestEstate_27_1_PlanStoredInTier0(t *testing.T) {
 	// Estate plan stored in Tier 0 (identity.sqlite).
 	impl := realEstateManager
@@ -47,6 +48,7 @@ func TestEstate_27_1_PlanStoredInTier0(t *testing.T) {
 }
 
 // TST-CORE-870
+// TRACE: {"suite": "CORE", "case": "0506", "section": "27", "sectionName": "Digital Estate", "subsection": "02", "scenario": "01", "title": "Recovery_CustodianThresholdMet"}
 func TestEstate_27_2_Recovery_CustodianThresholdMet(t *testing.T) {
 	// Estate recovery: custodian threshold met → activation state change.
 	impl := realEstateManager
@@ -85,6 +87,7 @@ func TestEstate_27_2_Recovery_CustodianThresholdMet(t *testing.T) {
 }
 
 // TST-CORE-871
+// TRACE: {"suite": "CORE", "case": "0507", "section": "27", "sectionName": "Digital Estate", "subsection": "03", "scenario": "01", "title": "NoDeadMansSwitch_NoTimerTrigger"}
 func TestEstate_27_3_NoDeadMansSwitch_NoTimerTrigger(t *testing.T) {
 	// No Dead Man's Switch — no timer-based estate activation.
 	// Exercises the PRODUCTION PortEstateManager (port.EstateManager) and
@@ -143,6 +146,7 @@ func TestEstate_27_3_NoDeadMansSwitch_NoTimerTrigger(t *testing.T) {
 }
 
 // TST-CORE-872
+// TRACE: {"suite": "CORE", "case": "0508", "section": "27", "sectionName": "Digital Estate", "subsection": "04", "scenario": "01", "title": "ReadOnly90Days_Expires"}
 func TestEstate_27_4_ReadOnly90Days_Expires(t *testing.T) {
 	// Estate `read_only_90_days` access type expires after 90 days.
 	impl := realEstateManager
@@ -175,6 +179,7 @@ func TestEstate_27_4_ReadOnly90Days_Expires(t *testing.T) {
 }
 
 // TST-CORE-873
+// TRACE: {"suite": "CORE", "case": "0509", "section": "27", "sectionName": "Digital Estate", "subsection": "05", "scenario": "01", "title": "DefaultAction_DestroyOrArchive"}
 func TestEstate_27_5_DefaultAction_DestroyOrArchive(t *testing.T) {
 	// Estate `default_action` enforcement (destroy vs archive).
 	impl := realEstateManager
@@ -202,6 +207,7 @@ func TestEstate_27_5_DefaultAction_DestroyOrArchive(t *testing.T) {
 }
 
 // TST-CORE-874
+// TRACE: {"suite": "CORE", "case": "0510", "section": "27", "sectionName": "Digital Estate", "subsection": "06", "scenario": "01", "title": "SSSSharesReusedFromIdentityRecovery"}
 func TestEstate_27_6_SSSSharesReusedFromIdentityRecovery(t *testing.T) {
 	// Estate SSS shares reused from identity recovery (same set, not separate).
 	impl := realRecoveryManager
@@ -220,6 +226,7 @@ func TestEstate_27_6_SSSSharesReusedFromIdentityRecovery(t *testing.T) {
 }
 
 // TST-CORE-875
+// TRACE: {"suite": "CORE", "case": "0511", "section": "27", "sectionName": "Digital Estate", "subsection": "07", "scenario": "01", "title": "PlanJSONStructure_Validated"}
 func TestEstate_27_7_PlanJSONStructure_Validated(t *testing.T) {
 	// Estate plan JSON structure validated (trigger, custodians, beneficiaries).
 	impl := realEstateManager
@@ -254,6 +261,7 @@ func TestEstate_27_7_PlanJSONStructure_Validated(t *testing.T) {
 }
 
 // TST-CORE-876
+// TRACE: {"suite": "CORE", "case": "0512", "section": "27", "sectionName": "Digital Estate", "subsection": "08", "scenario": "01", "title": "NotificationList_InformsOnActivation"}
 func TestEstate_27_8_NotificationList_InformsOnActivation(t *testing.T) {
 	// Estate notification list informs contacts on activation.
 	// Test via production PortEstateManager which enforces plan-dependency.
@@ -281,6 +289,7 @@ func TestEstate_27_8_NotificationList_InformsOnActivation(t *testing.T) {
 }
 
 // TST-CORE-877
+// TRACE: {"suite": "CORE", "case": "0513", "section": "27", "sectionName": "Digital Estate", "subsection": "09", "scenario": "01", "title": "Recovery_KeysDeliveredViaD2D"}
 func TestEstate_27_9_Recovery_KeysDeliveredViaD2D(t *testing.T) {
 	// Estate recovery: keys delivered via Dina-to-Dina encrypted channel.
 	// Test via production PortEstateManager for context-based API.
@@ -311,6 +320,7 @@ func TestEstate_27_9_Recovery_KeysDeliveredViaD2D(t *testing.T) {
 }
 
 // TST-CORE-878
+// TRACE: {"suite": "CORE", "case": "0514", "section": "27", "sectionName": "Digital Estate", "subsection": "10", "scenario": "01", "title": "Recovery_NonAssignedDataDestroyed"}
 func TestEstate_27_10_Recovery_NonAssignedDataDestroyed(t *testing.T) {
 	// Estate recovery: non-assigned data destroyed per default_action.
 	impl := realEstateManager
@@ -332,6 +342,7 @@ func TestEstate_27_10_Recovery_NonAssignedDataDestroyed(t *testing.T) {
 }
 
 // TST-CORE-879
+// TRACE: {"suite": "CORE", "case": "0515", "section": "27", "sectionName": "Digital Estate", "subsection": "11", "scenario": "01", "title": "NoTimerTriggerInCodebase"}
 func TestEstate_27_11_NoTimerTriggerInCodebase(t *testing.T) {
 	// Code audit: estate activation must never be timer-driven.
 	// Scan all Go source files in the estate adapter for timer-based patterns

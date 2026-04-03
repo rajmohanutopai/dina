@@ -31,6 +31,7 @@ class TestIngestionPipeline:
     """Suite 5 — Ingestion Pipeline (TST-E2E-023 through TST-E2E-028)."""
 
     # TST-E2E-023
+    # TRACE: {"suite": "E2E", "case": "0023", "section": "05", "sectionName": "Ingestion", "subsection": "01", "scenario": "01", "title": "gmail_two_pass_triage"}
     def test_gmail_two_pass_triage(
         self, don_alonso: HomeNode, openclaw: MockOpenClaw,
     ) -> None:
@@ -190,6 +191,7 @@ class TestIngestionPipeline:
         assert len(empty) == 0
 
     # TST-E2E-024
+    # TRACE: {"suite": "E2E", "case": "0024", "section": "05", "sectionName": "Ingestion", "subsection": "01", "scenario": "02", "title": "telegram_ingestion"}
     def test_telegram_ingestion(
         self, don_alonso: HomeNode,
     ) -> None:
@@ -285,6 +287,7 @@ class TestIngestionPipeline:
         assert len(empty) == 0
 
     # TST-E2E-025
+    # TRACE: {"suite": "E2E", "case": "0025", "section": "05", "sectionName": "Ingestion", "subsection": "01", "scenario": "03", "title": "calendar_sync"}
     def test_calendar_sync(
         self, don_alonso: HomeNode, openclaw: MockOpenClaw,
     ) -> None:
@@ -402,6 +405,7 @@ class TestIngestionPipeline:
             )
 
     # TST-E2E-026
+    # TRACE: {"suite": "E2E", "case": "0026", "section": "05", "sectionName": "Ingestion", "subsection": "01", "scenario": "04", "title": "cursor_continuity"}
     def test_cursor_continuity(
         self, don_alonso: HomeNode, openclaw: MockOpenClaw,
     ) -> None:
@@ -472,6 +476,7 @@ class TestIngestionPipeline:
         )
 
     # TST-E2E-027
+    # TRACE: {"suite": "E2E", "case": "0027", "section": "05", "sectionName": "Ingestion", "subsection": "01", "scenario": "05", "title": "oauth_refresh_isolation"}
     def test_oauth_refresh_isolation(
         self, don_alonso: HomeNode, openclaw: MockOpenClaw,
     ) -> None:
@@ -529,6 +534,7 @@ class TestIngestionPipeline:
             )
 
     # TST-E2E-028
+    # TRACE: {"suite": "E2E", "case": "0028", "section": "05", "sectionName": "Ingestion", "subsection": "01", "scenario": "06", "title": "startup_fast_sync_plus_background_backfill"}
     def test_startup_fast_sync_plus_background_backfill(
         self, fresh_don_alonso: HomeNode, openclaw: MockOpenClaw,
             plc_directory, d2d_network,

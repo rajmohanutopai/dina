@@ -89,6 +89,7 @@ def auth_headers():
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0005", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "01", "title": "login_page_renders"}
 def test_login_page_renders(client) -> None:
     """GET /admin/login returns 200 HTML without auth."""
     resp = client.get("/admin/login")
@@ -99,6 +100,7 @@ def test_login_page_renders(client) -> None:
 
 
 # TST-BRAIN-482 Login cookie stores stripped token
+# TRACE: {"suite": "BRAIN", "case": "0482", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "02", "title": "login_valid_token_sets_cookie"}
 def test_login_valid_token_sets_cookie(client) -> None:
     """POST /admin/login with valid token sets HttpOnly cookie."""
     resp = client.post(
@@ -115,6 +117,7 @@ def test_login_valid_token_sets_cookie(client) -> None:
     assert "dina_client_token" in cookies
 
 
+# TRACE: {"suite": "BRAIN", "case": "0006", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "03", "title": "login_invalid_token_rejected"}
 def test_login_invalid_token_rejected(client) -> None:
     """POST /admin/login with wrong token returns 403."""
     resp = client.post(
@@ -124,6 +127,7 @@ def test_login_invalid_token_rejected(client) -> None:
     assert resp.status_code == 403
 
 
+# TRACE: {"suite": "BRAIN", "case": "0007", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "04", "title": "login_empty_token_rejected"}
 def test_login_empty_token_rejected(client) -> None:
     """POST /admin/login with empty token returns 403."""
     resp = client.post(
@@ -138,6 +142,7 @@ def test_login_empty_token_rejected(client) -> None:
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0008", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "05", "title": "dashboard_with_cookie"}
 def test_dashboard_with_cookie(client) -> None:
     """GET /admin/dashboard with valid cookie returns 200 HTML."""
     # First login to get cookie
@@ -154,6 +159,7 @@ def test_dashboard_with_cookie(client) -> None:
     assert "Dashboard" in resp.text
 
 
+# TRACE: {"suite": "BRAIN", "case": "0009", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "06", "title": "dashboard_with_bearer"}
 def test_dashboard_with_bearer(client, auth_headers) -> None:
     """GET /admin/dashboard with Bearer token returns 200 HTML."""
     resp = client.get("/admin/dashboard", headers=auth_headers)
@@ -161,6 +167,7 @@ def test_dashboard_with_bearer(client, auth_headers) -> None:
     assert "text/html" in resp.headers.get("content-type", "")
 
 
+# TRACE: {"suite": "BRAIN", "case": "0010", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "07", "title": "dashboard_no_auth_returns_401"}
 def test_dashboard_no_auth_returns_401(client) -> None:
     """GET /admin/dashboard without auth returns 401."""
     resp = client.get("/admin/dashboard")
@@ -172,6 +179,7 @@ def test_dashboard_no_auth_returns_401(client) -> None:
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0011", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "08", "title": "history_page_renders"}
 def test_history_page_renders(client, auth_headers) -> None:
     """GET /admin/history returns HTML page."""
     resp = client.get("/admin/history", headers=auth_headers)
@@ -180,6 +188,7 @@ def test_history_page_renders(client, auth_headers) -> None:
     assert "History" in resp.text
 
 
+# TRACE: {"suite": "BRAIN", "case": "0012", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "09", "title": "contacts_page_renders"}
 def test_contacts_page_renders(client, auth_headers) -> None:
     """GET /admin/contacts-page returns HTML page."""
     resp = client.get("/admin/contacts-page", headers=auth_headers)
@@ -188,6 +197,7 @@ def test_contacts_page_renders(client, auth_headers) -> None:
     assert "Contacts" in resp.text
 
 
+# TRACE: {"suite": "BRAIN", "case": "0013", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "10", "title": "settings_page_renders"}
 def test_settings_page_renders(client, auth_headers) -> None:
     """GET /admin/settings-page returns HTML page."""
     resp = client.get("/admin/settings-page", headers=auth_headers)
@@ -201,6 +211,7 @@ def test_settings_page_renders(client, auth_headers) -> None:
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0014", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "11", "title": "history_api_returns_paginated"}
 def test_history_api_returns_paginated(client, auth_headers) -> None:
     """GET /admin/api/history/ returns paginated JSON."""
     resp = client.get("/admin/api/history/", headers=auth_headers)
@@ -217,6 +228,7 @@ def test_history_api_returns_paginated(client, auth_headers) -> None:
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0015", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "12", "title": "chat_api_forwards_to_brain"}
 def test_chat_api_forwards_to_brain(client, auth_headers) -> None:
     """POST /admin/api/chat calls guardian directly (not httpx)."""
     # The chat endpoint calls _guardian.process_event() directly.
@@ -236,6 +248,7 @@ def test_chat_api_forwards_to_brain(client, auth_headers) -> None:
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0016", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "13", "title": "architecture_without_file_returns_404"}
 def test_architecture_without_file_returns_404(client, auth_headers) -> None:
     """GET /admin/architecture returns 404 when dina.html not found."""
     resp = client.get("/admin/architecture", headers=auth_headers)
@@ -247,6 +260,7 @@ def test_architecture_without_file_returns_404(client, auth_headers) -> None:
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0017", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "14", "title": "html_pages_require_auth"}
 def test_html_pages_require_auth(client) -> None:
     """All HTML page routes require authentication."""
     pages = ["/admin/dashboard", "/admin/history", "/admin/contacts-page", "/admin/settings-page"]
@@ -255,6 +269,7 @@ def test_html_pages_require_auth(client) -> None:
         assert resp.status_code == 401, f"{page} should require auth"
 
 
+# TRACE: {"suite": "BRAIN", "case": "0018", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "15", "title": "api_routes_require_auth"}
 def test_api_routes_require_auth(client) -> None:
     """API routes behind cookie auth require authentication."""
     resp = client.get("/admin/api/history/")

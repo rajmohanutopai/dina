@@ -35,6 +35,7 @@ class TestAgentIntentApproval:
     """Verify that the risk classifier gates every agent action correctly."""
 
 # TST-INT-166
+    # TRACE: {"suite": "INT", "case": "0166", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "01", "title": "safe_task_auto_approves"}
     def test_safe_task_auto_approves(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -52,6 +53,7 @@ class TestAgentIntentApproval:
         assert mock_human.notifications == []
 
 # TST-INT-538
+    # TRACE: {"suite": "INT", "case": "0538", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "02", "title": "email_send_requires_approval"}
     def test_email_send_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -70,6 +72,7 @@ class TestAgentIntentApproval:
         assert intent.risk_level == ActionRisk.MODERATE
 
 # TST-INT-539
+    # TRACE: {"suite": "INT", "case": "0539", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "03", "title": "email_denied"}
     def test_email_denied(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -87,6 +90,7 @@ class TestAgentIntentApproval:
         assert intent.risk_level == ActionRisk.MODERATE
 
 # TST-INT-540
+    # TRACE: {"suite": "INT", "case": "0540", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "04", "title": "money_transfer_requires_approval"}
     def test_money_transfer_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -105,6 +109,7 @@ class TestAgentIntentApproval:
         assert intent.risk_level == ActionRisk.HIGH
 
 # TST-INT-541
+    # TRACE: {"suite": "INT", "case": "0541", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "05", "title": "data_sharing_requires_approval"}
     def test_data_sharing_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -123,6 +128,7 @@ class TestAgentIntentApproval:
         assert intent.risk_level == ActionRisk.HIGH
 
 # TST-INT-041
+    # TRACE: {"suite": "INT", "case": "0041", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "06", "title": "untrusted_vendor_blocked"}
     def test_untrusted_vendor_blocked(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -144,6 +150,7 @@ class TestAgentIntentApproval:
         assert intent.risk_level == ActionRisk.MODERATE
 
 # TST-INT-040
+    # TRACE: {"suite": "INT", "case": "0040", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "07", "title": "agent_never_holds_keys"}
     def test_agent_never_holds_keys(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -165,6 +172,7 @@ class TestAgentIntentApproval:
         assert root_key not in all_agent_data
 
 # TST-INT-169
+    # TRACE: {"suite": "INT", "case": "0169", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "08", "title": "agent_never_sees_full_history"}
     def test_agent_never_sees_full_history(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
         sample_memory,
@@ -200,6 +208,7 @@ class TestAgentIntentApproval:
         assert id(mock_dina) != id(mock_external_agent)
 
 # TST-INT-542
+    # TRACE: {"suite": "INT", "case": "0542", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "09", "title": "multiple_agents_same_task"}
     def test_multiple_agents_same_task(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -235,6 +244,7 @@ class TestCredentialProtection:
     """Dina never exposes raw credentials to agents or external systems."""
 
 # TST-INT-044
+    # TRACE: {"suite": "INT", "case": "0044", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "01", "title": "credentials_never_exposed"}
     def test_credentials_never_exposed(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -258,6 +268,7 @@ class TestCredentialProtection:
         )
 
 # TST-INT-543
+    # TRACE: {"suite": "INT", "case": "0543", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "02", "title": "agent_accepts_no_external_commands"}
     def test_agent_accepts_no_external_commands(
         self, mock_external_agent: MockExternalAgent,
         mock_dina: MockDinaCore,
@@ -301,6 +312,7 @@ class TestCredentialProtection:
         assert len(mock_external_agent.intents_submitted) == 4
 
 # TST-INT-168
+    # TRACE: {"suite": "INT", "case": "0168", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "03", "title": "session_tokens_expire"}
     def test_session_tokens_expire(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -340,6 +352,7 @@ class TestSafetyEdgeCases:
     """Edge cases: crashes, concurrency, escalation, offline queuing."""
 
 # TST-INT-544
+    # TRACE: {"suite": "INT", "case": "0544", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "01", "title": "agent_crashes_mid_task"}
     def test_agent_crashes_mid_task(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -363,6 +376,7 @@ class TestSafetyEdgeCases:
         assert len(mock_external_agent.tasks_executed) == 0
 
 # TST-INT-545
+    # TRACE: {"suite": "INT", "case": "0545", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "02", "title": "concurrent_conflicting_actions"}
     def test_concurrent_conflicting_actions(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -393,6 +407,7 @@ class TestSafetyEdgeCases:
         assert cancel_approved is False
 
 # TST-INT-546
+    # TRACE: {"suite": "INT", "case": "0546", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "03", "title": "privilege_escalation_attempt"}
     def test_privilege_escalation_attempt(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -419,6 +434,7 @@ class TestSafetyEdgeCases:
         assert mock_external_agent._should_escalate is True
 
 # TST-INT-167
+    # TRACE: {"suite": "INT", "case": "0167", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "04", "title": "offline_queued_actions"}
     def test_offline_queued_actions(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_rich_client,
@@ -519,6 +535,7 @@ class TestAgentCrashSafety:
         ]
 
 # TST-INT-699
+    # TRACE: {"suite": "INT", "case": "0699", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "01", "title": "agent_crash_does_not_leak_partial_results"}
     def test_agent_crash_does_not_leak_partial_results(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -591,6 +608,7 @@ class TestAgentCrashSafety:
         assert mock_dina.vault.retrieve(1, "health_record_1") == self.SENSITIVE_HEALTH
         assert mock_dina.vault.retrieve(1, "financial_record_1") == self.SENSITIVE_FINANCIAL
 
+    # TRACE: {"suite": "INT", "case": "0134", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "02", "title": "successful_agent_execution_does_produce_results"}
     def test_successful_agent_execution_does_produce_results(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -606,6 +624,7 @@ class TestAgentCrashSafety:
         assert len(mock_external_agent.tasks_executed) == 1
         assert mock_external_agent.status == "idle"
 
+    # TRACE: {"suite": "INT", "case": "0135", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "03", "title": "error_response_contains_no_pii_patterns"}
     def test_error_response_contains_no_pii_patterns(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -641,6 +660,7 @@ class TestAgentCrashSafety:
         assert "Rajmohan" not in response_str, "Personal name leaked"
         assert "Krishnan" not in response_str, "Personal name leaked"
 
+    # TRACE: {"suite": "INT", "case": "0136", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "04", "title": "sensitive_context_in_task_dict_stripped_on_crash"}
     def test_sensitive_context_in_task_dict_stripped_on_crash(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -671,6 +691,7 @@ class TestAgentCrashSafety:
         assert as_dict(mock_dina.vault.retrieve(1, "secret_notes"))["note"] == \
             "Password reset token: xK9mZ2pQ"
 
+    # TRACE: {"suite": "INT", "case": "0137", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "05", "title": "crashing_agent_does_not_affect_other_agent"}
     def test_crashing_agent_does_not_affect_other_agent(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -700,6 +721,7 @@ class TestAgentCrashSafety:
         assert agent_b.status == "idle"
         assert len(agent_b.tasks_executed) == 1
 
+    # TRACE: {"suite": "INT", "case": "0138", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "04", "scenario": "06", "title": "agent_recovers_after_crash"}
     def test_agent_recovers_after_crash(
         self, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -830,6 +852,7 @@ class TestAgentRevocation:
     """
 
 # TST-INT-697
+    # TRACE: {"suite": "INT", "case": "0697", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "06", "scenario": "01", "title": "agent_revocation_propagates_from_core_to_brain"}
     def test_agent_revocation_propagates_from_core_to_brain(
         self,
         mock_external_agent: MockExternalAgent,
@@ -1081,6 +1104,7 @@ class TestAgentAuditTrail:
     })
 
 # TST-INT-696
+    # TRACE: {"suite": "INT", "case": "0696", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "01", "title": "agent_intent_logged_in_audit_trail"}
     def test_agent_intent_logged_in_audit_trail(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -1127,6 +1151,7 @@ class TestAgentAuditTrail:
         assert result["approved"] == (entry["approval_status"] != "denied")
         assert result["risk_level"] == entry["risk_level"]
 
+    # TRACE: {"suite": "INT", "case": "0139", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "02", "title": "denied_intent_also_logged"}
     def test_denied_intent_also_logged(
         self, mock_dina: MockDinaCore,
         mock_external_agent: MockExternalAgent,
@@ -1155,6 +1180,7 @@ class TestAgentAuditTrail:
         assert entry["agent_did"] == mock_external_agent.agent_did
         assert entry["risk_level"] == ActionRisk.HIGH
 
+    # TRACE: {"suite": "INT", "case": "0140", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "03", "title": "auto_approved_intent_logged"}
     def test_auto_approved_intent_logged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -1179,6 +1205,7 @@ class TestAgentAuditTrail:
         assert entry["intent_action"] == "search"
         assert entry["intent_target"] == "best ergonomic chairs"
 
+    # TRACE: {"suite": "INT", "case": "0141", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "04", "title": "blocked_intent_logged"}
     def test_blocked_intent_logged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -1236,6 +1263,7 @@ class TestAgentAuditTrail:
         mock_dina.classify_action_risk = original_classify  # type: ignore[assignment]
         mock_dina.approve_intent = original_approve  # type: ignore[assignment]
 
+    # TRACE: {"suite": "INT", "case": "0142", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "05", "title": "multiple_intents_all_logged_in_order"}
     def test_multiple_intents_all_logged_in_order(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -1284,6 +1312,7 @@ class TestAgentAuditTrail:
         assert audit_log[1]["risk_level"] == ActionRisk.MODERATE
         assert audit_log[2]["risk_level"] == ActionRisk.SAFE
 
+    # TRACE: {"suite": "INT", "case": "0143", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "06", "title": "audit_entry_has_all_required_fields"}
     def test_audit_entry_has_all_required_fields(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -1311,6 +1340,7 @@ class TestAgentAuditTrail:
         assert extra == set(), f"Unexpected extra audit fields: {extra}"
 
     # TST-INT-803
+    # TRACE: {"suite": "INT", "case": "0803", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "07", "title": "audit_timestamp_is_reasonable"}
     def test_audit_timestamp_is_reasonable(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -1336,6 +1366,7 @@ class TestAgentAuditTrail:
         # Sanity: not from the Unix epoch (1970)
         assert ts > 1_000_000_000, "Timestamp appears to be from 1970 or near-zero"
 
+    # TRACE: {"suite": "INT", "case": "0144", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "08", "title": "audit_log_preserves_agent_did_exactly"}
     def test_audit_log_preserves_agent_did_exactly(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -1359,6 +1390,7 @@ class TestAgentAuditTrail:
         assert audit_log[0]["agent_did"] is not None
         assert audit_log[0]["agent_did"] != ""
 
+    # TRACE: {"suite": "INT", "case": "0145", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "07", "scenario": "09", "title": "different_agents_different_audit_entries"}
     def test_different_agents_different_audit_entries(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -1538,6 +1570,7 @@ class TestAgentPersonaAccess:
     }
 
 # TST-INT-695
+    # TRACE: {"suite": "INT", "case": "0695", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "01", "title": "agent_queries_only_permitted_personas"}
     def test_agent_queries_only_permitted_personas(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1575,6 +1608,7 @@ class TestAgentPersonaAccess:
                 f"Health data '{sensitive_value}' leaked in error response"
             )
 
+    # TRACE: {"suite": "INT", "case": "0146", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "02", "title": "agent_can_query_open_personas"}
     def test_agent_can_query_open_personas(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1600,6 +1634,7 @@ class TestAgentPersonaAccess:
         returned_values = [item["value"] for item in result["data"]]
         assert self.CONSUMER_RECORD in returned_values
 
+    # TRACE: {"suite": "INT", "case": "0147", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "03", "title": "agent_cannot_query_financial_persona"}
     def test_agent_cannot_query_financial_persona(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1630,6 +1665,7 @@ class TestAgentPersonaAccess:
         assert result["data"] is None
         assert "persona_access_denied" in result["error"]
 
+    # TRACE: {"suite": "INT", "case": "0148", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "04", "title": "health_data_not_in_error_message"}
     def test_health_data_not_in_error_message(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1660,6 +1696,7 @@ class TestAgentPersonaAccess:
         # The query term itself should also not echo back
         assert "Metformin" not in full_response_str
 
+    # TRACE: {"suite": "INT", "case": "0149", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "05", "title": "agent_with_explicit_health_grant"}
     def test_agent_with_explicit_health_grant(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1691,6 +1728,7 @@ class TestAgentPersonaAccess:
         returned_values = [item["value"] for item in result["data"]]
         assert self.HEALTH_RECORD in returned_values
 
+    # TRACE: {"suite": "INT", "case": "0150", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "06", "title": "multiple_persona_queries_mixed"}
     def test_multiple_persona_queries_mixed(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1744,6 +1782,7 @@ class TestAgentPersonaAccess:
                     f"Health data '{health_value}' leaked into social query results"
                 )
 
+    # TRACE: {"suite": "INT", "case": "0151", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "07", "title": "empty_allowed_personas_blocks_all"}
     def test_empty_allowed_personas_blocks_all(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1766,6 +1805,7 @@ class TestAgentPersonaAccess:
         assert result["data"] is None
         assert "persona_access_denied" in result["error"]
 
+    # TRACE: {"suite": "INT", "case": "0152", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "08", "scenario": "08", "title": "query_nonexistent_persona_data_returns_empty"}
     def test_query_nonexistent_persona_data_returns_empty(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -1931,6 +1971,7 @@ class TestAgentMultiTenantIsolation:
     # TST-INT-698 — Primary test
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0698", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "01", "title": "agent_cannot_access_another_users_data"}
     def test_agent_cannot_access_another_users_data(self) -> None:
         """Agent authenticated for User A attempts vault query for User B.
 
@@ -1985,6 +2026,7 @@ class TestAgentMultiTenantIsolation:
     # Counter-proof 1: Agent CAN access its own user's data
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0153", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "02", "title": "agent_can_access_own_users_data"}
     def test_agent_can_access_own_users_data(self) -> None:
         """Same agent queries User A's vault (its owner) — status 200,
         data returned. Proves the access control is about user-scoping,
@@ -2022,6 +2064,7 @@ class TestAgentMultiTenantIsolation:
     # Counter-proof 2: Error response leaks no vault content
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0154", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "03", "title": "cross_user_error_does_not_leak_target_data"}
     def test_cross_user_error_does_not_leak_target_data(self) -> None:
         """The 403 error response must contain zero vault content from
         either User A or User B — only structural fields (status, error
@@ -2061,6 +2104,7 @@ class TestAgentMultiTenantIsolation:
     # Counter-proof 3: User B's data unaffected by failed access
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0155", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "04", "title": "user_b_data_unaffected_by_failed_access"}
     def test_user_b_data_unaffected_by_failed_access(self) -> None:
         """After a failed cross-user access attempt, User B's vault is
         still intact and accessible by User B's own agent."""
@@ -2102,6 +2146,7 @@ class TestAgentMultiTenantIsolation:
     # Edge case 1: Similar but different DIDs still blocked
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0156", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "05", "title": "agent_with_similar_did_still_blocked"}
     def test_agent_with_similar_did_still_blocked(self) -> None:
         """DID comparison is exact. 'did:plc:alice123' and
         'did:plc:alice124' differ by one character — access denied."""
@@ -2148,6 +2193,7 @@ class TestAgentMultiTenantIsolation:
     # Edge case 2: Multiple users — strict pairwise isolation
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0157", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "06", "title": "multiple_users_strict_isolation"}
     def test_multiple_users_strict_isolation(self) -> None:
         """3 users (A, B, C) — agent for A can only access A, fails on
         B and C. Tests that isolation holds across all user pairs."""
@@ -2201,6 +2247,7 @@ class TestAgentMultiTenantIsolation:
     # Edge case 3: Empty target vault still returns 403, not 200
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0158", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "07", "title": "empty_target_vault_still_returns_403"}
     def test_empty_target_vault_still_returns_403(self) -> None:
         """Even if User B's vault has no data, the cross-user access
         attempt must return 403, not 200 with empty results. The access
@@ -2231,6 +2278,7 @@ class TestAgentMultiTenantIsolation:
     # Edge case 4: Case-sensitive DID comparison
     # ------------------------------------------------------------------
 
+    # TRACE: {"suite": "INT", "case": "0159", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "09", "scenario": "08", "title": "agent_owner_did_must_match_exactly"}
     def test_agent_owner_did_must_match_exactly(self) -> None:
         """DID comparison is case-sensitive. 'did:plc:Alice' is a
         different identity from 'did:plc:alice'. Core must not

@@ -269,6 +269,7 @@ func newTransportTestEnv(t *testing.T) *transportTestEnv {
 // ==========================================================================
 
 // TST-CORE-934
+// TRACE: {"suite": "CORE", "case": "1618", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "SendStoresSignature"}
 func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 	// Requirements (§29.1):
 	//   - SendMessage signs the plaintext DinaMessage JSON with Ed25519
@@ -278,6 +279,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 	//   - The signature is over the PLAINTEXT (not ciphertext), enabling
 	//     verification after decryption on the receiving end
 
+	// TRACE: {"suite": "CORE", "case": "1619", "section": "29", "sectionName": "Adversarial & Security", "title": "sig_stored_and_status_delivered"}
 	t.Run("sig_stored_and_status_delivered", func(t *testing.T) {
 		env := newTransportTestEnv(t)
 		ctx := context.Background()
@@ -307,6 +309,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1620", "section": "29", "sectionName": "Adversarial & Security", "title": "sig_is_valid_ed25519_64_bytes"}
 	t.Run("sig_is_valid_ed25519_64_bytes", func(t *testing.T) {
 		// Ed25519 signatures are always exactly 64 bytes.
 		env := newTransportTestEnv(t)
@@ -328,6 +331,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1621", "section": "29", "sectionName": "Adversarial & Security", "title": "sig_verifies_against_plaintext"}
 	t.Run("sig_verifies_against_plaintext", func(t *testing.T) {
 		// The signature must be over the plaintext JSON, not the ciphertext.
 		// Verify by re-marshaling the message and checking the signature.
@@ -368,6 +372,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1622", "section": "29", "sectionName": "Adversarial & Security", "title": "delivery_payload_has_hex_sig_and_base64_ciphertext"}
 	t.Run("delivery_payload_has_hex_sig_and_base64_ciphertext", func(t *testing.T) {
 		// The D2D wire format is {"c":"<base64>","s":"<hex>"}.
 		env := newTransportTestEnv(t)
@@ -413,6 +418,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1623", "section": "29", "sectionName": "Adversarial & Security", "title": "different_messages_produce_different_sigs"}
 	t.Run("different_messages_produce_different_sigs", func(t *testing.T) {
 		// Anti-tautological: two different messages must produce different
 		// signatures, proving the signature is actually computed per-message.
@@ -448,6 +454,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 
 // TST-ADV-002: ReceiveMessage with valid signature succeeds.
 // TST-CORE-935
+// TRACE: {"suite": "CORE", "case": "1624", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "ValidSignatureAccepted"}
 func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 	// Requirement: Signed+encrypted envelope from known sender →
 	// Decrypted message returned, no error. The full receive path must:
@@ -455,6 +462,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 	// 2. Verify the Ed25519 signature over the plaintext
 	// 3. Return the original message with all fields intact
 
+	// TRACE: {"suite": "CORE", "case": "1625", "section": "29", "sectionName": "Adversarial & Security", "title": "basic_valid_sig_decrypts_successfully"}
 	t.Run("basic_valid_sig_decrypts_successfully", func(t *testing.T) {
 		env := newTransportTestEnv(t)
 		ctx := context.Background()
@@ -494,6 +502,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1626", "section": "29", "sectionName": "Adversarial & Security", "title": "all_message_fields_preserved"}
 	t.Run("all_message_fields_preserved", func(t *testing.T) {
 		// Verify that the decrypted message preserves ALL fields, not just ID.
 		// This catches truncation, field-swapping, or partial-decrypt bugs.
@@ -549,6 +558,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1627", "section": "29", "sectionName": "Adversarial & Security", "title": "signature_genuinely_verified_not_skipped"}
 	t.Run("signature_genuinely_verified_not_skipped", func(t *testing.T) {
 		// CRITICAL: Prove that the signature is ACTUALLY checked by showing
 		// that a wrong signature fails. Without this, the "valid sig accepted"
@@ -589,6 +599,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1628", "section": "29", "sectionName": "Adversarial & Security", "title": "different_message_types_accepted"}
 	t.Run("different_message_types_accepted", func(t *testing.T) {
 		// Valid signatures must be accepted regardless of message type.
 		env := newTransportTestEnv(t)
@@ -636,6 +647,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 
 // TST-CORE-936
 // TST-ADV-003: ReceiveMessage with wrong signature is rejected.
+// TRACE: {"suite": "CORE", "case": "1629", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "WrongSignatureRejected"}
 func TestAdv_29_1_WrongSignatureRejected(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -679,6 +691,7 @@ func TestAdv_29_1_WrongSignatureRejected(t *testing.T) {
 
 // TST-CORE-937
 // TST-ADV-004: ReceiveMessage with tampered ciphertext (bit flip) is rejected.
+// TRACE: {"suite": "CORE", "case": "1630", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "TamperedCiphertextRejected"}
 func TestAdv_29_1_TamperedCiphertextRejected(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -718,6 +731,7 @@ func TestAdv_29_1_TamperedCiphertextRejected(t *testing.T) {
 }
 
 // TST-ADV-005: ReceiveMessage with empty sig is rejected (no unsigned messages accepted).
+// TRACE: {"suite": "CORE", "case": "1631", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "EmptySigRejected"}
 func TestAdv_29_1_EmptySigRejected(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -754,6 +768,7 @@ func TestAdv_29_1_EmptySigRejected(t *testing.T) {
 
 // TST-ADV-006: ProcessOutbox delivers pending messages and marks delivered.
 // (Note: tests SendMessage immediate delivery path, not ProcessOutbox retry path.)
+// TRACE: {"suite": "CORE", "case": "1632", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxDeliverSuccess"}
 func TestAdv_29_2_OutboxDeliverSuccess(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -782,6 +797,7 @@ func TestAdv_29_2_OutboxDeliverSuccess(t *testing.T) {
 
 // TST-CORE-940
 // TST-ADV-007: ProcessOutbox marks failed when delivery errors.
+// TRACE: {"suite": "CORE", "case": "1633", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxDeliveryFailure"}
 func TestAdv_29_2_OutboxDeliveryFailure(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -826,6 +842,7 @@ func TestAdv_29_2_OutboxDeliveryFailure(t *testing.T) {
 
 // TST-CORE-941
 // TST-ADV-008: ProcessOutbox retries succeed after transient failure.
+// TRACE: {"suite": "CORE", "case": "1634", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxRetryTransient"}
 func TestAdv_29_2_OutboxRetryTransient(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -877,6 +894,7 @@ func TestAdv_29_2_OutboxRetryTransient(t *testing.T) {
 }
 
 // TST-ADV-009: ProcessOutbox with unresolvable DID marks failed.
+// TRACE: {"suite": "CORE", "case": "1635", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxUnresolvableDID"}
 func TestAdv_29_2_OutboxUnresolvableDID(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -912,6 +930,7 @@ func TestAdv_29_2_OutboxUnresolvableDID(t *testing.T) {
 
 // TST-CORE-943
 // TST-ADV-010: ProcessOutbox with no deliverer marks all failed.
+// TRACE: {"suite": "CORE", "case": "1636", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxNoDeliverer"}
 func TestAdv_29_2_OutboxNoDeliverer(t *testing.T) {
 	// Create a service without a deliverer.
 	signer := dinacrypto.NewEd25519Signer()
@@ -987,6 +1006,7 @@ func TestAdv_29_2_OutboxNoDeliverer(t *testing.T) {
 // so ProcessOutbox will enter the loop with 5 pending messages and immediately
 // hit the ctx.Done() select case on the first iteration, returning context.Canceled
 // with 0 messages processed.
+// TRACE: {"suite": "CORE", "case": "1637", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxContextCancel"}
 func TestAdv_29_2_OutboxContextCancel(t *testing.T) {
 	env := newTransportTestEnv(t)
 
@@ -1036,6 +1056,7 @@ func TestAdv_29_2_OutboxContextCancel(t *testing.T) {
 
 // TST-CORE-947
 // TST-ADV-012: RateLimiter rejects after IP rate limit exceeded.
+// TRACE: {"suite": "CORE", "case": "1638", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressIPRateLimit"}
 func TestAdv_29_3_IngressIPRateLimit(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDrop := ingress.NewDeadDrop(filepath.Join(tmpDir, "dd"), 10000, 500*1024*1024)
@@ -1061,6 +1082,7 @@ func TestAdv_29_3_IngressIPRateLimit(t *testing.T) {
 
 // TST-CORE-948
 // TST-ADV-013: Router.Ingest rejects after IP rate limit via ErrRateLimited.
+// TRACE: {"suite": "CORE", "case": "1639", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressRouterFlood"}
 func TestAdv_29_3_IngressRouterFlood(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1099,6 +1121,7 @@ func TestAdv_29_3_IngressRouterFlood(t *testing.T) {
 // Requirement: Ingest while vault locked → Dead drop count=1, inbox empty.
 // The 3-Valve Defense routes messages to the dead drop filesystem when the
 // vault DEK is not in RAM, preserving them for later processing after unlock.
+// TRACE: {"suite": "CORE", "case": "1640", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressDeadDropLocked"}
 func TestAdv_29_3_IngressDeadDropLocked(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1115,6 +1138,7 @@ func TestAdv_29_3_IngressDeadDropLocked(t *testing.T) {
 	ctx := context.Background()
 
 	// Sub-test 1: Single message goes to dead drop, not inbox.
+	// TRACE: {"suite": "CORE", "case": "1641", "section": "29", "sectionName": "Adversarial & Security", "title": "single_message_to_dead_drop"}
 	t.Run("single_message_to_dead_drop", func(t *testing.T) {
 		payload := []byte("encrypted-message-while-locked")
 
@@ -1139,6 +1163,7 @@ func TestAdv_29_3_IngressDeadDropLocked(t *testing.T) {
 	})
 
 	// Sub-test 2: Multiple messages accumulate in dead drop.
+	// TRACE: {"suite": "CORE", "case": "1642", "section": "29", "sectionName": "Adversarial & Security", "title": "multiple_messages_accumulate"}
 	t.Run("multiple_messages_accumulate", func(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			payload := []byte(fmt.Sprintf("locked-msg-%d", i))
@@ -1164,6 +1189,7 @@ func TestAdv_29_3_IngressDeadDropLocked(t *testing.T) {
 	})
 
 	// Sub-test 3: Dead drop blobs are retrievable (Peek returns stored data).
+	// TRACE: {"suite": "CORE", "case": "1643", "section": "29", "sectionName": "Adversarial & Security", "title": "blobs_retrievable_after_store"}
 	t.Run("blobs_retrievable_after_store", func(t *testing.T) {
 		blobs, err := deadDrop.List()
 		if err != nil {
@@ -1188,11 +1214,13 @@ func TestAdv_29_3_IngressDeadDropLocked(t *testing.T) {
 
 // TST-ADV-015: Router spools to inbox when vault is unlocked.
 // TST-CORE-950
+// TRACE: {"suite": "CORE", "case": "1644", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressInboxUnlocked"}
 func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 	// Requirement: When the vault is unlocked, ingested messages go to the
 	// inbox (fast path), NOT the dead drop. The dead drop is ONLY for the
 	// locked state. This validates Valve 3 of the 3-Valve Defense.
 
+	// TRACE: {"suite": "CORE", "case": "1645", "section": "29", "sectionName": "Adversarial & Security", "title": "single_message_to_inbox"}
 	t.Run("single_message_to_inbox", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1222,6 +1250,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1646", "section": "29", "sectionName": "Adversarial & Security", "title": "multiple_messages_all_to_inbox"}
 	t.Run("multiple_messages_all_to_inbox", func(t *testing.T) {
 		// Multiple messages ingested while unlocked must ALL go to inbox.
 		tmpDir := t.TempDir()
@@ -1254,6 +1283,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1647", "section": "29", "sectionName": "Adversarial & Security", "title": "message_content_preserved"}
 	t.Run("message_content_preserved", func(t *testing.T) {
 		// Message payload must arrive in the inbox byte-for-byte identical.
 		tmpDir := t.TempDir()
@@ -1281,6 +1311,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1648", "section": "29", "sectionName": "Adversarial & Security", "title": "locked_vs_unlocked_routing_contrast"}
 	t.Run("locked_vs_unlocked_routing_contrast", func(t *testing.T) {
 		// Same message to locked vault → dead drop; to unlocked vault → inbox.
 		// This validates the routing decision depends on vault state.
@@ -1330,6 +1361,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1649", "section": "29", "sectionName": "Adversarial & Security", "title": "different_ips_all_to_inbox"}
 	t.Run("different_ips_all_to_inbox", func(t *testing.T) {
 		// Messages from different IPs all go to inbox when unlocked.
 		// Valve 1 (IP rate limit) doesn't affect routing destination.
@@ -1365,6 +1397,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 
 // TST-CORE-951
 // TST-ADV-016: Dead drop spool full rejects new messages (Valve 2).
+// TRACE: {"suite": "CORE", "case": "1650", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSpoolFull"}
 func TestAdv_29_3_IngressSpoolFull(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1397,6 +1430,7 @@ func TestAdv_29_3_IngressSpoolFull(t *testing.T) {
 
 // TST-ADV-017: Sweeper skips dead drop blobs when keys not configured (fail-closed).
 // SEC-LOW-03: Without decrypt prerequisites, blobs are skipped (not delivered).
+// TRACE: {"suite": "CORE", "case": "1651", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSweeperSweep"}
 func TestAdv_29_3_IngressSweeperSweep(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1425,6 +1459,7 @@ func TestAdv_29_3_IngressSweeperSweep(t *testing.T) {
 
 // TST-CORE-953
 // TST-ADV-018: Router.ProcessPending sweeps dead drop + processes inbox spool.
+// TRACE: {"suite": "CORE", "case": "1652", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressProcessPending"}
 func TestAdv_29_3_IngressProcessPending(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1463,6 +1498,7 @@ func TestAdv_29_3_IngressProcessPending(t *testing.T) {
 
 // TST-CORE-954
 // TST-ADV-019: Oversized payload rejected at ingress.
+// TRACE: {"suite": "CORE", "case": "1653", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressOversizedPayload"}
 func TestAdv_29_3_IngressOversizedPayload(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1487,6 +1523,7 @@ func TestAdv_29_3_IngressOversizedPayload(t *testing.T) {
 
 // TST-CORE-955
 // TST-ADV-020: SweepFull returns detailed results.
+// TRACE: {"suite": "CORE", "case": "1654", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSweepFull"}
 func TestAdv_29_3_IngressSweepFull(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1523,6 +1560,7 @@ func TestAdv_29_3_IngressSweepFull(t *testing.T) {
 
 // TST-ADV-021: Replayed message with same ID is detected via outbox dedup.
 // Architecture §9: "msg_id prevents replay — each message has a unique ULID."
+// TRACE: {"suite": "CORE", "case": "1655", "section": "29", "sectionName": "Adversarial & Security", "subsection": "04", "scenario": "01", "title": "ReplayDuplicateID"}
 func TestAdv_29_4_ReplayDuplicateID(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1597,6 +1635,7 @@ func TestAdv_29_4_ReplayDuplicateID(t *testing.T) {
 // TST-CORE-957
 // TST-ADV-022: Envelope claims sender DID that doesn't match the actual signer.
 // Architecture §9: "mutual authentication — both Dinas verify Ed25519 signatures."
+// TRACE: {"suite": "CORE", "case": "1656", "section": "29", "sectionName": "Adversarial & Security", "subsection": "04", "scenario": "01", "title": "DIDSpoofingFromKID"}
 func TestAdv_29_4_DIDSpoofingFromKID(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1642,6 +1681,7 @@ func TestAdv_29_4_DIDSpoofingFromKID(t *testing.T) {
 
 // TST-ADV-023: Outbox rejects new messages when queue is full (100 limit).
 // Architecture §9: "Outbox Queue Limit: 100 pending messages."
+// TRACE: {"suite": "CORE", "case": "1657", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxQueueLimit"}
 func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1687,6 +1727,7 @@ func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 // TST-CORE-946
 // TST-ADV-024: Outbox retry count increments on repeated failures.
 // Architecture §9: "max 5 retries, backoff 30s→1m→5m→30m→2h."
+// TRACE: {"suite": "CORE", "case": "1658", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxRetryCount"}
 func TestAdv_29_2_OutboxRetryCount(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1727,6 +1768,7 @@ func TestAdv_29_2_OutboxRetryCount(t *testing.T) {
 // TST-CORE-958 TST-CORE-959 TST-CORE-960 TST-CORE-961 TST-CORE-962
 // TST-ADV-025: Malicious message body with injection payloads is safely deserialized.
 // Architecture §19: "Serialization boundary — type/length validation."
+// TRACE: {"suite": "CORE", "case": "1659", "section": "29", "sectionName": "Adversarial & Security", "subsection": "05", "scenario": "01", "title": "PromptInjectionBodySafe"}
 func TestAdv_29_5_PromptInjectionBodySafe(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1796,6 +1838,7 @@ func TestAdv_29_5_PromptInjectionBodySafe(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-963
+// TRACE: {"suite": "CORE", "case": "1660", "section": "29", "sectionName": "Adversarial & Security", "subsection": "05", "scenario": "01", "title": "HTMLXSSBodySafe"}
 func TestAdv_29_5_HTMLXSSBodySafe(t *testing.T) {
 	// Requirement: <script> tag in Body → Body preserved byte-for-byte.
 	// The D2D transport layer must treat message bodies as opaque data,
@@ -1912,6 +1955,7 @@ func TestAdv_29_5_HTMLXSSBodySafe(t *testing.T) {
 		})
 	}
 
+	// TRACE: {"suite": "CORE", "case": "1661", "section": "29", "sectionName": "Adversarial & Security", "title": "xss_body_does_not_affect_json_structure"}
 	t.Run("xss_body_does_not_affect_json_structure", func(t *testing.T) {
 		// Verify that Go's JSON serialization handles the XSS payload correctly
 		// at the serialization boundary — the <script> body must not break
@@ -1957,6 +2001,7 @@ func TestAdv_29_5_HTMLXSSBodySafe(t *testing.T) {
 //   - Without keys or transport, sweeper is fail-closed (0 delivered)
 
 // TST-CORE-952
+// TRACE: {"suite": "CORE", "case": "1662", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSweeperProcessesBlobs"}
 func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 
 	// mockTransportProcessor simulates the full transport service for sweeper tests.
@@ -1965,6 +2010,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		sealed []byte
 	}
 
+	// TRACE: {"suite": "CORE", "case": "1663", "section": "29", "sectionName": "Adversarial & Security", "title": "two_blobs_both_delivered"}
 	t.Run("two_blobs_both_delivered", func(t *testing.T) {
 		// Store 2 blobs with a mock transport that returns valid messages.
 		// Sweep must deliver both and ack (delete) them from dead drop.
@@ -2033,6 +2079,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1664", "section": "29", "sectionName": "Adversarial & Security", "title": "expired_blobs_dropped_silently"}
 	t.Run("expired_blobs_dropped_silently", func(t *testing.T) {
 		// Blob with CreatedTime > TTL (24h) ago must be dropped, not delivered.
 		// This validates zombie notification filtering (stale news).
@@ -2086,6 +2133,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1665", "section": "29", "sectionName": "Adversarial & Security", "title": "poison_pill_evicted_after_max_retries"}
 	t.Run("poison_pill_evicted_after_max_retries", func(t *testing.T) {
 		// A blob that consistently fails decryption is a poison pill (HIGH-04).
 		// After maxRetries (default 5) consecutive failures, it must be evicted.
@@ -2120,6 +2168,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1666", "section": "29", "sectionName": "Adversarial & Security", "title": "gc_stale_blobs_by_mtime"}
 	t.Run("gc_stale_blobs_by_mtime", func(t *testing.T) {
 		// GCStaleBlobs removes blobs older than maxAge based on file mtime.
 		// This provides restart resilience for the in-memory failure tracker.
@@ -2147,6 +2196,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1667", "section": "29", "sectionName": "Adversarial & Security", "title": "fresh_blobs_survive_gc"}
 	t.Run("fresh_blobs_survive_gc", func(t *testing.T) {
 		// Anti-tautological contrast: blobs within maxAge must NOT be evicted.
 		tmpDir := t.TempDir()
@@ -2170,6 +2220,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1668", "section": "29", "sectionName": "Adversarial & Security", "title": "sweep_full_mixed_valid_and_expired"}
 	t.Run("sweep_full_mixed_valid_and_expired", func(t *testing.T) {
 		// Mix of fresh and expired blobs → SweepFull must categorize correctly.
 		tmpDir := t.TempDir()
@@ -2225,6 +2276,7 @@ func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1669", "section": "29", "sectionName": "Adversarial & Security", "title": "no_transport_no_keys_fail_closed"}
 	t.Run("no_transport_no_keys_fail_closed", func(t *testing.T) {
 		// Anti-tautological contrast: without transport processor or keys,
 		// sweeper must deliver 0 blobs (fail-closed per SEC-LOW-03).
@@ -2267,6 +2319,7 @@ func (f transportProcessorFunc) ProcessInbound(ctx context.Context, sealed []byt
 // --------------------------------------------------------------------------
 
 // TST-CORE-942
+// TRACE: {"suite": "CORE", "case": "1670", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "04", "title": "UnresolvableDIDMarkedFailed"}
 func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 	// Requirement (§29.2, row 4):
 	//   When ProcessOutbox encounters a message to an unknown DID that cannot
@@ -2280,6 +2333,7 @@ func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 	//   4. Invalid DID format → also marked failed
 	//   5. DID with empty service endpoint → also marked failed
 
+	// TRACE: {"suite": "CORE", "case": "1671", "section": "29", "sectionName": "Adversarial & Security", "title": "unknown_DID_marked_failed"}
 	t.Run("unknown_DID_marked_failed", func(t *testing.T) {
 		env := newTransportTestEnv(t)
 		ctx := context.Background()
@@ -2326,6 +2380,7 @@ func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1672", "section": "29", "sectionName": "Adversarial & Security", "title": "positive_control_known_DID_delivers"}
 	t.Run("positive_control_known_DID_delivers", func(t *testing.T) {
 		// Contrast: a message to a KNOWN DID (in resolver) must be delivered.
 		// Without this, the test passes if ProcessOutbox marks everything failed.
@@ -2366,6 +2421,7 @@ func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1673", "section": "29", "sectionName": "Adversarial & Security", "title": "mixed_queue_selective_failure"}
 	t.Run("mixed_queue_selective_failure", func(t *testing.T) {
 		// Queue with both known and unknown DIDs: only unknown should fail.
 		env := newTransportTestEnv(t)
@@ -2425,6 +2481,7 @@ func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1674", "section": "29", "sectionName": "Adversarial & Security", "title": "DID_with_empty_service_endpoint_fails"}
 	t.Run("DID_with_empty_service_endpoint_fails", func(t *testing.T) {
 		// A DID that resolves but has no service endpoint should also be marked failed.
 		env := newTransportTestEnv(t)
@@ -2478,6 +2535,7 @@ func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-956
+// TRACE: {"suite": "CORE", "case": "1675", "section": "29", "sectionName": "Adversarial & Security", "subsection": "04", "scenario": "01", "title": "ReplayedMessageSameIDDetected"}
 func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 	// Requirement (§9, SEC-HIGH-08):
 	//   ProcessInbound maintains a bounded (sender, msgID) cache.
@@ -2528,6 +2586,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		return sealed
 	}
 
+	// TRACE: {"suite": "CORE", "case": "1676", "section": "29", "sectionName": "Adversarial & Security", "title": "duplicate_message_rejected_with_replay_error"}
 	t.Run("duplicate_message_rejected_with_replay_error", func(t *testing.T) {
 		env := newTransportTestEnv(t)
 		env.svc.SetRecipientKeys(env.rcptPub, env.rcptPriv)
@@ -2565,6 +2624,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1677", "section": "29", "sectionName": "Adversarial & Security", "title": "different_IDs_same_sender_both_accepted"}
 	t.Run("different_IDs_same_sender_both_accepted", func(t *testing.T) {
 		env := newTransportTestEnv(t)
 		env.svc.SetRecipientKeys(env.rcptPub, env.rcptPriv)
@@ -2599,6 +2659,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1678", "section": "29", "sectionName": "Adversarial & Security", "title": "same_ID_different_senders_both_accepted"}
 	t.Run("same_ID_different_senders_both_accepted", func(t *testing.T) {
 		// The replay key is composite: "senderDID|msgID".
 		// Same message ID from different senders must both be accepted.
@@ -2674,6 +2735,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1679", "section": "29", "sectionName": "Adversarial & Security", "title": "purge_cache_allows_reprocessing"}
 	t.Run("purge_cache_allows_reprocessing", func(t *testing.T) {
 		env := newTransportTestEnv(t)
 		env.svc.SetRecipientKeys(env.rcptPub, env.rcptPriv)
@@ -2720,6 +2782,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1680", "section": "29", "sectionName": "Adversarial & Security", "title": "positive_control_first_message_always_succeeds"}
 	t.Run("positive_control_first_message_always_succeeds", func(t *testing.T) {
 		// Verify that for any fresh message, the first ProcessInbound always succeeds.
 		// Without this, the test passes if ProcessInbound rejects everything.
@@ -2755,8 +2818,10 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 // delivery), verifying the background retry scheduler path.
 // ==========================================================================
 
+// TRACE: {"suite": "CORE", "case": "1681", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "ProcessOutboxDeliversPendingMessages"}
 func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 
+	// TRACE: {"suite": "CORE", "case": "1682", "section": "29", "sectionName": "Adversarial & Security", "title": "pending_message_becomes_delivered_after_ProcessOutbox"}
 	t.Run("pending_message_becomes_delivered_after_ProcessOutbox", func(t *testing.T) {
 		// Setup: enqueue via SendMessage with a failing deliverer so message stays pending.
 		// Then fix the deliverer and call ProcessOutbox — message should be delivered.
@@ -2810,6 +2875,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1683", "section": "29", "sectionName": "Adversarial & Security", "title": "deliverer_receives_valid_d2d_payload_with_ciphertext_and_sig"}
 	t.Run("deliverer_receives_valid_d2d_payload_with_ciphertext_and_sig", func(t *testing.T) {
 		// Verify the payload delivered by ProcessOutbox contains valid JSON
 		// with base64-encoded ciphertext and hex-encoded signature.
@@ -2857,6 +2923,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1684", "section": "29", "sectionName": "Adversarial & Security", "title": "multiple_pending_messages_all_delivered_in_one_call"}
 	t.Run("multiple_pending_messages_all_delivered_in_one_call", func(t *testing.T) {
 		// Verify ProcessOutbox handles multiple pending messages, not just one.
 		env := newTransportTestEnv(t)
@@ -2895,6 +2962,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1685", "section": "29", "sectionName": "Adversarial & Security", "title": "dead_letter_messages_skipped_not_delivered"}
 	t.Run("dead_letter_messages_skipped_not_delivered", func(t *testing.T) {
 		// Messages with Retries >= 5 are dead-lettered: skipped by ProcessOutbox.
 		// This verifies the dead-letter threshold (maxRetries = 5).
@@ -2933,6 +3001,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1686", "section": "29", "sectionName": "Adversarial & Security", "title": "positive_control_no_pending_messages_zero_processed"}
 	t.Run("positive_control_no_pending_messages_zero_processed", func(t *testing.T) {
 		// Contrast check: if there are no pending messages, ProcessOutbox
 		// returns 0 processed and makes no delivery calls.
@@ -2965,8 +3034,10 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 //    would cause recipient's signature verification to fail (key mismatch)
 // ==========================================================================
 
+// TRACE: {"suite": "CORE", "case": "1687", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "10", "title": "AgentCannotForgeFromDID"}
 func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 
+	// TRACE: {"suite": "CORE", "case": "1688", "section": "34", "sectionName": "Thesis: Loyalty", "title": "empty_From_gets_senderDID_in_round_trip"}
 	t.Run("empty_From_gets_senderDID_in_round_trip", func(t *testing.T) {
 		// Normal handler path: message created without From → SendMessage fills
 		// it with senderDID → recipient decrypts and sees correct From.
@@ -3006,6 +3077,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1689", "section": "34", "sectionName": "Thesis: Loyalty", "title": "forged_From_detected_by_recipient_DID_resolution_failure"}
 	t.Run("forged_From_detected_by_recipient_DID_resolution_failure", func(t *testing.T) {
 		// Even if a caller manages to set From to an unknown DID, the recipient
 		// will fail when trying to resolve that DID for signature verification.
@@ -3049,6 +3121,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1690", "section": "34", "sectionName": "Thesis: Loyalty", "title": "forged_From_with_different_key_fails_signature_verification"}
 	t.Run("forged_From_with_different_key_fails_signature_verification", func(t *testing.T) {
 		// Even if the forged DID IS resolvable but has a DIFFERENT public key,
 		// signature verification must fail — the message was signed with the
@@ -3112,6 +3185,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1691", "section": "34", "sectionName": "Thesis: Loyalty", "title": "handler_sendRequest_does_not_expose_from_field"}
 	t.Run("handler_sendRequest_does_not_expose_from_field", func(t *testing.T) {
 		// Structural verification: the handler's sendRequest struct has only
 		// To, Body, and Type fields. There is no From/from_did field that an
@@ -3136,6 +3210,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 		// Go's json.Unmarshal drops unknown fields — impersonation at API level impossible.
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1692", "section": "34", "sectionName": "Thesis: Loyalty", "title": "positive_control_legitimate_message_verifies_correctly"}
 	t.Run("positive_control_legitimate_message_verifies_correctly", func(t *testing.T) {
 		// Contrast check: a legitimate message (From = senderDID matching signing key)
 		// passes signature verification end-to-end. Without this, the test passes

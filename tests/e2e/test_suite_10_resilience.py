@@ -45,6 +45,7 @@ class TestResilienceRecovery:
     """
 
 # TST-E2E-047
+    # TRACE: {"suite": "E2E", "case": "0047", "section": "10", "sectionName": "Resilience", "subsection": "01", "scenario": "01", "title": "brain_crash_scratchpad_resume"}
     def test_brain_crash_scratchpad_resume(
         self,
         fresh_don_alonso: HomeNode,
@@ -189,6 +190,7 @@ class TestResilienceRecovery:
         )
 
 # TST-E2E-048
+    # TRACE: {"suite": "E2E", "case": "0048", "section": "10", "sectionName": "Resilience", "subsection": "01", "scenario": "02", "title": "core_wal_recovery_after_power_loss"}
     def test_core_wal_recovery_after_power_loss(
         self,
         fresh_don_alonso: HomeNode,
@@ -288,6 +290,7 @@ class TestResilienceRecovery:
             )
 
 # TST-E2E-049
+    # TRACE: {"suite": "E2E", "case": "0049", "section": "10", "sectionName": "Resilience", "subsection": "01", "scenario": "03", "title": "full_stack_power_loss"}
     def test_full_stack_power_loss(
         self,
         fresh_don_alonso: HomeNode,
@@ -374,6 +377,7 @@ class TestResilienceRecovery:
             assert msg.status == "delivered"
 
 # TST-E2E-050
+    # TRACE: {"suite": "E2E", "case": "0050", "section": "10", "sectionName": "Resilience", "subsection": "01", "scenario": "04", "title": "dead_letter_queue"}
     def test_dead_letter_queue(
         self,
         fresh_don_alonso: HomeNode,
@@ -442,6 +446,7 @@ class TestResilienceRecovery:
         assert "5" in failure_notif["payload"]["text"]
 
 # TST-E2E-051
+    # TRACE: {"suite": "E2E", "case": "0051", "section": "10", "sectionName": "Resilience", "subsection": "01", "scenario": "05", "title": "disk_full_scenario"}
     def test_disk_full_scenario(
         self,
         fresh_don_alonso: HomeNode,
@@ -478,8 +483,8 @@ class TestResilienceRecovery:
             msg_id="msg_disk_full_001",
             from_did="did:plc:sender",
             to_did=node.did,
-            message_type="test",
-            payload={"data": "will not fit"},
+            message_type="presence.signal",
+            payload={"status": "arriving", "data": "will not fit"},
             encrypted_payload=large_payload,
         ))
         assert result["status"] == "429"
@@ -491,8 +496,8 @@ class TestResilienceRecovery:
             msg_id="msg_disk_full_002",
             from_did="did:plc:sender",
             to_did=node.did,
-            message_type="test",
-            payload={"data": "fits"},
+            message_type="presence.signal",
+            payload={"status": "arriving", "data": "fits"},
             encrypted_payload=small_payload,
         ))
         assert result_small["status"] == "202"
@@ -517,14 +522,15 @@ class TestResilienceRecovery:
             msg_id="msg_disk_full_003",
             from_did="did:plc:sender",
             to_did=node.did,
-            message_type="test",
-            payload={"data": "now it fits"},
+            message_type="presence.signal",
+            payload={"status": "arriving", "data": "now it fits"},
             encrypted_payload=large_payload,
         ))
         assert result_after["status"] == "202"
         assert result_after["reason"] == "spooled"
 
 # TST-E2E-052
+    # TRACE: {"suite": "E2E", "case": "0052", "section": "10", "sectionName": "Resilience", "subsection": "01", "scenario": "06", "title": "batch_ingestion_atomicity"}
     def test_batch_ingestion_atomicity(
         self,
         fresh_don_alonso: HomeNode,

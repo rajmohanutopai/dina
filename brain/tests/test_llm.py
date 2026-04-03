@@ -104,6 +104,7 @@ def llm_router_no_consent(local_provider, cloud_provider):
 
 # TST-BRAIN-121
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0121", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "01", "title": "simple_lookup_no_llm"}
 async def test_llm_4_1_1_simple_lookup_no_llm(llm_router, local_provider, cloud_provider) -> None:
     """SS4.1.1: Simple lookup -> FTS5 only, no LLM call — brain not involved."""
     result = await llm_router.route(
@@ -123,6 +124,7 @@ async def test_llm_4_1_1_simple_lookup_no_llm(llm_router, local_provider, cloud_
 
 # TST-BRAIN-122
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0122", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "02", "title": "basic_summarization_local"}
 async def test_llm_4_1_2_basic_summarization_local(llm_router, local_provider) -> None:
     """SS4.1.2: Basic summarization with llama available -> local LLM, no PII scrubbing."""
     result = await llm_router.route(
@@ -137,6 +139,7 @@ async def test_llm_4_1_2_basic_summarization_local(llm_router, local_provider) -
 
 # TST-BRAIN-123
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0123", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "03", "title": "basic_summarization_cloud_fallback"}
 async def test_llm_4_1_3_basic_summarization_cloud_fallback(
     llm_router_cloud_only, cloud_provider
 ) -> None:
@@ -153,6 +156,7 @@ async def test_llm_4_1_3_basic_summarization_cloud_fallback(
 
 # TST-BRAIN-124
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0124", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "04", "title": "complex_reasoning_prefers_local"}
 async def test_llm_4_1_4_complex_reasoning_prefers_local(
     llm_router, local_provider, cloud_provider
 ) -> None:
@@ -178,6 +182,7 @@ async def test_llm_4_1_4_complex_reasoning_prefers_local(
 
 # TST-BRAIN-125
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0125", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "05", "title": "sensitive_persona_local"}
 async def test_llm_4_1_5_sensitive_persona_local(llm_router, local_provider) -> None:
     """SS4.1.5: Sensitive persona with llama available -> local LLM (never leaves node)."""
     result = await llm_router.route(
@@ -193,6 +198,7 @@ async def test_llm_4_1_5_sensitive_persona_local(llm_router, local_provider) -> 
 
 # TST-BRAIN-126
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0126", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "06", "title": "sensitive_persona_entity_vault_cloud"}
 async def test_llm_4_1_6_sensitive_persona_entity_vault_cloud(
     llm_router, local_provider, cloud_provider
 ) -> None:
@@ -220,6 +226,7 @@ async def test_llm_4_1_6_sensitive_persona_entity_vault_cloud(
 
 # TST-BRAIN-127
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0127", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "07", "title": "fallback_local_to_cloud"}
 async def test_llm_4_1_7_fallback_local_to_cloud(
     llm_router, local_provider, cloud_provider
 ) -> None:
@@ -240,6 +247,7 @@ async def test_llm_4_1_7_fallback_local_to_cloud(
 
 # TST-BRAIN-128
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0128", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "08", "title": "fallback_cloud_to_local"}
 async def test_llm_4_1_8_fallback_cloud_to_local(
     llm_router, local_provider, cloud_provider
 ) -> None:
@@ -260,6 +268,7 @@ async def test_llm_4_1_8_fallback_cloud_to_local(
 
 # TST-BRAIN-129
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0129", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "09", "title": "no_llm_available"}
 async def test_llm_4_1_9_no_llm_available(local_provider, cloud_provider) -> None:
     """SS4.1.9: No LLM available — both local and cloud unreachable -> graceful error."""
     from src.domain.errors import LLMError
@@ -279,6 +288,7 @@ async def test_llm_4_1_9_no_llm_available(local_provider, cloud_provider) -> Non
 
 # TST-BRAIN-130
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0130", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "10", "title": "model_selection_by_task_type"}
 async def test_llm_4_1_10_model_selection_by_task_type(
     llm_router, local_provider, cloud_provider
 ) -> None:
@@ -308,6 +318,7 @@ async def test_llm_4_1_10_model_selection_by_task_type(
 
 # TST-BRAIN-131
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0131", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "11", "title": "user_configures_preferred_cloud"}
 async def test_llm_4_1_11_user_configures_preferred_cloud(cloud_provider) -> None:
     """SS4.1.11: User configures preferred cloud provider (preferred_cloud=gemini)."""
     from src.service.llm_router import LLMRouter
@@ -336,6 +347,7 @@ async def test_llm_4_1_11_user_configures_preferred_cloud(cloud_provider) -> Non
 
 # TST-BRAIN-132
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0132", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "12", "title": "pii_scrub_failure_blocks_cloud_send"}
 async def test_llm_4_1_12_pii_scrub_failure_blocks_cloud_send() -> None:
     """SS4.1.12: PII scrub failure on sensitive persona -> refuse cloud send (hard security gate).
 
@@ -367,6 +379,7 @@ async def test_llm_4_1_12_pii_scrub_failure_blocks_cloud_send() -> None:
 
 # TST-BRAIN-133
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0133", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "02", "scenario": "01", "title": "successful_completion"}
 async def test_llm_4_2_1_successful_completion(llm_router, local_provider, cloud_provider) -> None:
     """SS4.2.1: Successful completion — valid prompt returns LLM response."""
     result = await llm_router.route(
@@ -386,6 +399,7 @@ async def test_llm_4_2_1_successful_completion(llm_router, local_provider, cloud
 
 # TST-BRAIN-134
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0134", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "02", "scenario": "02", "title": "streaming_response"}
 async def test_llm_4_2_2_streaming_response(local_provider) -> None:
     """SS4.2.2: Streaming response — provider returns chunked data."""
     # Verify the provider interface supports async iteration.
@@ -409,6 +423,7 @@ async def test_llm_4_2_2_streaming_response(local_provider) -> None:
 
 # TST-BRAIN-135
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0135", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "02", "scenario": "03", "title": "timeout"}
 async def test_llm_4_2_3_timeout(local_provider) -> None:
     """SS4.2.3: Timeout — LLM takes too long, raises error after fallback exhausted."""
     from src.domain.errors import LLMError
@@ -424,6 +439,7 @@ async def test_llm_4_2_3_timeout(local_provider) -> None:
 
 # TST-BRAIN-136
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0136", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "02", "scenario": "04", "title": "token_limit_exceeded"}
 async def test_llm_4_2_4_token_limit_exceeded(local_provider) -> None:
     """SS4.2.4: Token limit exceeded — very long prompt handled by provider, error propagated."""
     from src.domain.errors import LLMError
@@ -442,6 +458,7 @@ async def test_llm_4_2_4_token_limit_exceeded(local_provider) -> None:
 
 # TST-BRAIN-137
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0137", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "02", "scenario": "05", "title": "malformed_llm_response"}
 async def test_llm_4_2_5_malformed_llm_response(llm_router, local_provider, cloud_provider) -> None:
     """SS4.2.5: Malformed LLM response — dict returned without standard keys still works."""
     local_provider.complete.return_value = {"raw": "not valid structured response"}
@@ -462,6 +479,7 @@ async def test_llm_4_2_5_malformed_llm_response(llm_router, local_provider, clou
 
 # TST-BRAIN-138
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0138", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "02", "scenario": "06", "title": "rate_limiting"}
 async def test_llm_4_2_6_rate_limiting(llm_router, cloud_provider, local_provider) -> None:
     """SS4.2.6: Rate limiting — cloud rate-limited, falls back to local."""
     # Complex task tries cloud first.
@@ -480,6 +498,7 @@ async def test_llm_4_2_6_rate_limiting(llm_router, cloud_provider, local_provide
 
 # TST-BRAIN-139
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0139", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "02", "scenario": "07", "title": "cost_tracking"}
 async def test_llm_4_2_7_cost_tracking(llm_router) -> None:
     """SS4.2.7: Cost tracking — LLM response includes token counts."""
     result = await llm_router.route(
@@ -501,6 +520,7 @@ async def test_llm_4_2_7_cost_tracking(llm_router) -> None:
 
 # TST-BRAIN-396
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0396", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "13", "title": "cloud_consent_not_given_rejects"}
 async def test_llm_4_1_13_cloud_consent_not_given_rejects(cloud_provider) -> None:
     """§4.1.13: Cloud LLM consent NOT given -> sensitive persona query rejected."""
     from src.domain.errors import CloudConsentError
@@ -522,6 +542,7 @@ async def test_llm_4_1_13_cloud_consent_not_given_rejects(cloud_provider) -> Non
 
 # TST-BRAIN-397
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0397", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "14", "title": "cloud_consent_given_processes"}
 async def test_llm_4_1_14_cloud_consent_given_processes(cloud_provider) -> None:
     """§4.1.14: Cloud LLM consent given -> sensitive persona query processed."""
     from src.service.llm_router import LLMRouter
@@ -548,6 +569,7 @@ async def test_llm_4_1_14_cloud_consent_given_processes(cloud_provider) -> None:
 
 
 # TST-BRAIN-403
+# TRACE: {"suite": "BRAIN", "case": "0403", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "15", "title": "hybrid_search_merging_formula"}
 def test_llm_4_1_15_hybrid_search_merging_formula() -> None:
     """§4.1.15: Hybrid search merges FTS5 + cosine with correct weights.
 
@@ -567,6 +589,7 @@ def test_llm_4_1_15_hybrid_search_merging_formula() -> None:
 
 
 # TST-BRAIN-404
+# TRACE: {"suite": "BRAIN", "case": "0404", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "01", "scenario": "16", "title": "hybrid_search_dedup"}
 def test_llm_4_1_16_hybrid_search_dedup() -> None:
     """§4.1.16: Hybrid search deduplicates items appearing in both result sets."""
     shared = make_search_result(item_id="item-shared", fts5_rank=0.8, cosine_sim=0.7)
@@ -595,6 +618,7 @@ def test_llm_4_1_16_hybrid_search_dedup() -> None:
 
 
 # TST-BRAIN-462
+# TRACE: {"suite": "BRAIN", "case": "0462", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "03", "scenario": "01", "title": "available_models"}
 def test_llm_4_3_1_available_models(llm_router) -> None:
     """available_models() returns identifiers for all registered providers."""
     models = llm_router.available_models()
@@ -605,6 +629,7 @@ def test_llm_4_3_1_available_models(llm_router) -> None:
 
 # TST-BRAIN-463
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0463", "section": "04", "sectionName": "LLM Router (Multi-Provider)", "subsection": "03", "scenario": "02", "title": "no_providers_error"}
 async def test_llm_4_3_2_no_providers_error() -> None:
     """LLMRouter with no providers raises LLMError on route.
 

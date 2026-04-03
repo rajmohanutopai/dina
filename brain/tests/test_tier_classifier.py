@@ -27,6 +27,7 @@ from src.service.tier_classifier import TIER1_TYPES, TIER2_TYPES, classify
     "contact_card",
     "cart_handover",
 ])
+# TRACE: {"suite": "BRAIN", "case": "0207", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "01", "title": "tier1_types_classified_correctly"}
 def test_tier1_types_classified_correctly(item_type: str) -> None:
     """Tier 1 types should return 1 (embed)."""
     assert classify({"type": item_type}) == 1
@@ -45,6 +46,7 @@ def test_tier1_types_classified_correctly(item_type: str) -> None:
     "message",
     "contact",
 ])
+# TRACE: {"suite": "BRAIN", "case": "0208", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "02", "title": "tier2_types_classified_correctly"}
 def test_tier2_types_classified_correctly(item_type: str) -> None:
     """Tier 2 types should return 2 (text only)."""
     assert classify({"type": item_type}) == 2
@@ -54,16 +56,19 @@ def test_tier2_types_classified_correctly(item_type: str) -> None:
 # Edge cases
 # --------------------------------------------------------------------------
 
+# TRACE: {"suite": "BRAIN", "case": "0209", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "03", "title": "unknown_type_defaults_to_tier2"}
 def test_unknown_type_defaults_to_tier2() -> None:
     """Unknown types default to Tier 2 (safe — no embedding wasted)."""
     assert classify({"type": "some_future_type"}) == 2
 
 
+# TRACE: {"suite": "BRAIN", "case": "0210", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "04", "title": "missing_type_defaults_to_tier2"}
 def test_missing_type_defaults_to_tier2() -> None:
     """Items without a type key default to Tier 2."""
     assert classify({}) == 2
 
 
+# TRACE: {"suite": "BRAIN", "case": "0211", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "05", "title": "empty_type_defaults_to_tier2"}
 def test_empty_type_defaults_to_tier2() -> None:
     """Empty string type defaults to Tier 2."""
     assert classify({"type": ""}) == 2
@@ -73,12 +78,14 @@ def test_empty_type_defaults_to_tier2() -> None:
 # Set completeness
 # --------------------------------------------------------------------------
 
+# TRACE: {"suite": "BRAIN", "case": "0212", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "06", "title": "tier1_and_tier2_are_disjoint"}
 def test_tier1_and_tier2_are_disjoint() -> None:
     """Tier 1 and Tier 2 sets must not overlap."""
     overlap = TIER1_TYPES & TIER2_TYPES
     assert len(overlap) == 0, f"Overlapping types: {overlap}"
 
 
+# TRACE: {"suite": "BRAIN", "case": "0213", "section": "14", "sectionName": "Embedding Generation", "subsection": "01", "scenario": "07", "title": "all_known_vault_types_classified"}
 def test_all_known_vault_types_classified() -> None:
     """Every valid vault item type should appear in either TIER1 or TIER2."""
     # From core/internal/domain/vault_limits.go

@@ -37,6 +37,7 @@ func newSourceTrustVault(t *testing.T) (*vault.Manager, context.Context) {
 // 1. StoreWithProvenance — round-trip all 6 provenance fields.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1299", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SourceTrust_StoreWithProvenance"}
 func TestSourceTrust_StoreWithProvenance(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -74,6 +75,7 @@ func TestSourceTrust_StoreWithProvenance(t *testing.T) {
 //    treated as searchable.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1300", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SourceTrust_StoreWithoutProvenance"}
 func TestSourceTrust_StoreWithoutProvenance(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -106,6 +108,7 @@ func TestSourceTrust_StoreWithoutProvenance(t *testing.T) {
 //    only normal + caveated items.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1301", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "SourceTrust_DefaultQueryExcludesQuarantineAndBriefing"}
 func TestSourceTrust_DefaultQueryExcludesQuarantineAndBriefing(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -140,6 +143,7 @@ func TestSourceTrust_DefaultQueryExcludesQuarantineAndBriefing(t *testing.T) {
 // 4. IncludeAllReturnsEverything — IncludeAll=true returns all 4 policies.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1302", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "04", "scenario": "01", "title": "SourceTrust_IncludeAllReturnsEverything"}
 func TestSourceTrust_IncludeAllReturnsEverything(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -168,6 +172,7 @@ func TestSourceTrust_IncludeAllReturnsEverything(t *testing.T) {
 //    matching items.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1303", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "05", "scenario": "01", "title": "SourceTrust_QueryFiltersByPolicy"}
 func TestSourceTrust_QueryFiltersByPolicy(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -197,6 +202,7 @@ func TestSourceTrust_QueryFiltersByPolicy(t *testing.T) {
 // 6. FTS5RespectsPolicy — text search honours retrieval policy filtering.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1304", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "06", "scenario": "01", "title": "SourceTrust_FTS5RespectsPolicy"}
 func TestSourceTrust_FTS5RespectsPolicy(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -235,6 +241,7 @@ func TestSourceTrust_FTS5RespectsPolicy(t *testing.T) {
 // 7. ContradictionStored — Contradicts field round-trips correctly.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1305", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "07", "scenario": "01", "title": "SourceTrust_ContradictionStored"}
 func TestSourceTrust_ContradictionStored(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -260,6 +267,7 @@ func TestSourceTrust_ContradictionStored(t *testing.T) {
 // 8. ValidationRejectsInvalid — invalid sender_trust is rejected.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1306", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "08", "scenario": "01", "title": "SourceTrust_ValidationRejectsInvalid"}
 func TestSourceTrust_ValidationRejectsInvalid(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -280,6 +288,7 @@ func TestSourceTrust_ValidationRejectsInvalid(t *testing.T) {
 // 9. BatchStoreWithProvenance — StoreBatch preserves provenance on all items.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1307", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "09", "scenario": "01", "title": "SourceTrust_BatchStoreWithProvenance"}
 func TestSourceTrust_BatchStoreWithProvenance(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -345,6 +354,7 @@ func TestSourceTrust_BatchStoreWithProvenance(t *testing.T) {
 //     searchable (equivalent to "normal" in default queries).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1308", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "10", "scenario": "01", "title": "SourceTrust_EmptyPolicyDefaultsToNormal"}
 func TestSourceTrust_EmptyPolicyDefaultsToNormal(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -379,6 +389,7 @@ func TestSourceTrust_EmptyPolicyDefaultsToNormal(t *testing.T) {
 //     pre-provenance data) appear in default searches.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1309", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "11", "scenario": "01", "title": "SourceTrust_LegacyItemsVisible"}
 func TestSourceTrust_LegacyItemsVisible(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 
@@ -405,6 +416,7 @@ func TestSourceTrust_LegacyItemsVisible(t *testing.T) {
 //     from default searches (only quarantine + briefing_only are excluded).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1310", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "12", "scenario": "01", "title": "SourceTrust_CaveatedIncludedInDefaultSearch"}
 func TestSourceTrust_CaveatedIncludedInDefaultSearch(t *testing.T) {
 	mgr, ctx := newSourceTrustVault(t)
 

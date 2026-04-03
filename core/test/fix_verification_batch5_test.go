@@ -30,6 +30,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-1058
+// TRACE: {"suite": "CORE", "case": "0516", "section": "32", "sectionName": "Security Fix Verification", "subsection": "01", "scenario": "01", "title": "ReplaySignatureRejected"}
 func TestSecFix_32_1_1_ReplaySignatureRejected(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -50,6 +51,7 @@ func TestSecFix_32_1_1_ReplaySignatureRejected(t *testing.T) {
 }
 
 // TST-CORE-1059
+// TRACE: {"suite": "CORE", "case": "0517", "section": "32", "sectionName": "Security Fix Verification", "subsection": "01", "scenario": "02", "title": "DifferentSignaturesAccepted"}
 func TestSecFix_32_1_2_DifferentSignaturesAccepted(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
@@ -71,6 +73,7 @@ func TestSecFix_32_1_2_DifferentSignaturesAccepted(t *testing.T) {
 }
 
 // TST-CORE-1060
+// TRACE: {"suite": "CORE", "case": "0518", "section": "32", "sectionName": "Security Fix Verification", "subsection": "01", "scenario": "03", "title": "DoubleBufferRotation"}
 func TestSecFix_32_1_3_DoubleBufferRotation(t *testing.T) {
 	tv := auth.NewDefaultTokenValidator()
 
@@ -120,6 +123,7 @@ func TestSecFix_32_1_3_DoubleBufferRotation(t *testing.T) {
 }
 
 // TST-CORE-1061
+// TRACE: {"suite": "CORE", "case": "0519", "section": "32", "sectionName": "Security Fix Verification", "subsection": "01", "scenario": "04", "title": "SafetyValveUnderLoad"}
 func TestSecFix_32_1_4_SafetyValveUnderLoad(t *testing.T) {
 	tv := auth.NewDefaultTokenValidator()
 
@@ -156,6 +160,7 @@ func TestSecFix_32_1_4_SafetyValveUnderLoad(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1062
+// TRACE: {"suite": "CORE", "case": "0520", "section": "32", "sectionName": "Security Fix Verification", "subsection": "02", "scenario": "01", "title": "InboundCapEnforced"}
 func TestSecFix_32_2_1_InboundCapEnforced(t *testing.T) {
 	env := newTransportTestEnv(t)
 
@@ -198,6 +203,7 @@ func TestSecFix_32_2_1_InboundCapEnforced(t *testing.T) {
 }
 
 // TST-CORE-1063
+// TRACE: {"suite": "CORE", "case": "0521", "section": "32", "sectionName": "Security Fix Verification", "subsection": "02", "scenario": "02", "title": "InboundClearWorks"}
 func TestSecFix_32_2_2_InboundClearWorks(t *testing.T) {
 	env := newTransportTestEnv(t)
 
@@ -216,6 +222,7 @@ func TestSecFix_32_2_2_InboundClearWorks(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1064
+// TRACE: {"suite": "CORE", "case": "0522", "section": "32", "sectionName": "Security Fix Verification", "subsection": "03", "scenario": "01", "title": "PerDIDRateIsolation"}
 func TestSecFix_32_3_1_PerDIDRateIsolation(t *testing.T) {
 	// Create a fresh InboxManager with a low per-DID rate limit so we can
 	// actually exhaust one DID's quota and verify the other is unaffected.
@@ -243,6 +250,7 @@ func TestSecFix_32_3_1_PerDIDRateIsolation(t *testing.T) {
 }
 
 // TST-CORE-1065
+// TRACE: {"suite": "CORE", "case": "0523", "section": "32", "sectionName": "Security Fix Verification", "subsection": "03", "scenario": "02", "title": "RateLimitResetAfterWindow"}
 func TestSecFix_32_3_2_RateLimitResetAfterWindow(t *testing.T) {
 	impl := realInboxManager
 
@@ -266,6 +274,7 @@ func TestSecFix_32_3_2_RateLimitResetAfterWindow(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1066
+// TRACE: {"suite": "CORE", "case": "0524", "section": "32", "sectionName": "Security Fix Verification", "subsection": "04", "scenario": "01", "title": "HardCapEnforced"}
 func TestSecFix_32_4_1_HardCapEnforced(t *testing.T) {
 	cfg := pairing.Config{
 		CodeTTL: 10 * time.Minute,
@@ -290,6 +299,7 @@ func TestSecFix_32_4_1_HardCapEnforced(t *testing.T) {
 }
 
 // TST-CORE-1067
+// TRACE: {"suite": "CORE", "case": "0525", "section": "32", "sectionName": "Security Fix Verification", "subsection": "04", "scenario": "02", "title": "CompletePairingFreesSlot"}
 func TestSecFix_32_4_2_CompletePairingFreesSlot(t *testing.T) {
 	cfg := pairing.Config{
 		CodeTTL: 10 * time.Minute,
@@ -323,6 +333,7 @@ func TestSecFix_32_4_2_CompletePairingFreesSlot(t *testing.T) {
 }
 
 // TST-CORE-1068
+// TRACE: {"suite": "CORE", "case": "0526", "section": "32", "sectionName": "Security Fix Verification", "subsection": "04", "scenario": "03", "title": "PurgeExpiredCodesFreesSlots"}
 func TestSecFix_32_4_3_PurgeExpiredCodesFreesSlots(t *testing.T) {
 	cfg := pairing.Config{
 		CodeTTL: 1 * time.Millisecond,
@@ -351,6 +362,7 @@ func TestSecFix_32_4_3_PurgeExpiredCodesFreesSlots(t *testing.T) {
 }
 
 // TST-CORE-1069
+// TRACE: {"suite": "CORE", "case": "0527", "section": "32", "sectionName": "Security Fix Verification", "subsection": "04", "scenario": "04", "title": "ImmediateCleanupOnUse"}
 func TestSecFix_32_4_4_ImmediateCleanupOnUse(t *testing.T) {
 	cfg := pairing.Config{
 		CodeTTL: 10 * time.Minute,
@@ -378,6 +390,7 @@ func TestSecFix_32_4_4_ImmediateCleanupOnUse(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1070
+// TRACE: {"suite": "CORE", "case": "0528", "section": "32", "sectionName": "Security Fix Verification", "subsection": "05", "scenario": "01", "title": "WellKnownIdempotent"}
 func TestSecFix_32_5_1_WellKnownIdempotent(t *testing.T) {
 	impl := realATProtoDiscovery
 	testutil.RequireImplementation(t, impl, "ATProtoDiscovery")

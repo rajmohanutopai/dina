@@ -37,6 +37,7 @@ class TestAgentSandbox:
     """
 
     # TST-E2E-124
+    # TRACE: {"suite": "E2E", "case": "0124", "section": "24", "sectionName": "Agent Sandbox", "subsection": "01", "scenario": "01", "title": "malicious_agent_cannot_access_health_persona"}
     def test_malicious_agent_cannot_access_health_persona(
         self,
         don_alonso: HomeNode,
@@ -326,6 +327,7 @@ class TestAgentSandbox:
         )
 
     # TST-E2E-125
+    # TRACE: {"suite": "E2E", "case": "0125", "section": "24", "sectionName": "Agent Sandbox", "subsection": "01", "scenario": "02", "title": "agent_revocation_takes_immediate_effect"}
     def test_agent_revocation_takes_immediate_effect(
         self,
         don_alonso: HomeNode,
@@ -570,6 +572,7 @@ class TestAgentSandbox:
         )
 
     # TST-E2E-126
+    # TRACE: {"suite": "E2E", "case": "0126", "section": "24", "sectionName": "Agent Sandbox", "subsection": "01", "scenario": "03", "title": "agent_cannot_impersonate_user_in_d2d"}
     def test_agent_cannot_impersonate_user_in_d2d(
         self,
         don_alonso: HomeNode,
@@ -596,10 +599,11 @@ class TestAgentSandbox:
 
         legit_msg = node.send_d2d(
             to_did=sancho.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "Hey Sancho, want to grab coffee tomorrow?",
+                "category": "context",
             },
         )
 
@@ -626,7 +630,7 @@ class TestAgentSandbox:
             action="send_d2d",
             target=sancho.did,
             context={
-                "message_type": "dina/social/message",
+                "message_type": "social.update",
                 "text": "Hey Sancho, this is definitely Don Alonso!",
                 "forged_from_did": node.did,
                 "actual_agent_did": openclaw_did,
@@ -689,8 +693,9 @@ class TestAgentSandbox:
 
         # Construct what a forged message would look like.
         forged_payload = {
-            "type": "dina/social/message",
+            "type": "social.update",
             "text": "Hey Sancho, this is definitely Don Alonso!",
+            "category": "context",
             "from_did": node.did,  # Forged
         }
 
@@ -770,10 +775,11 @@ class TestAgentSandbox:
         # ------------------------------------------------------------------
         post_check_msg = node.send_d2d(
             to_did=sancho.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "Sancho, just confirming — this is really me.",
+                "category": "context",
             },
         )
 

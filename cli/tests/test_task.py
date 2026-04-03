@@ -48,6 +48,7 @@ def _invoke(args, mock_client=None, mock_openclaw=None, json_mode=False):
 
 class TestDinaTask:
 
+    # TRACE: {"suite": "CLI", "case": "0030", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "01", "title": "task_not_configured"}
     def test_task_not_configured(self):
         """Error when openclaw_url is empty."""
         from dina_cli.config import Config
@@ -58,6 +59,7 @@ class TestDinaTask:
         assert result.exit_code != 0
         assert "OpenClaw not configured" in result.output or "openclaw" in result.output.lower()
 
+    # TRACE: {"suite": "CLI", "case": "0031", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "02", "title": "task_validates_research_intent"}
     def test_task_validates_research_intent(self):
         """Task command calls process_event with action=research."""
         mc = MagicMock()
@@ -92,6 +94,7 @@ class TestDinaTask:
         assert event["action"] == "research"
         assert event["type"] == "agent_intent"
 
+    # TRACE: {"suite": "CLI", "case": "0032", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "03", "title": "task_denied"}
     def test_task_denied(self):
         """Task denied by guardian → no OpenClaw call."""
         mc = MagicMock()
@@ -109,6 +112,7 @@ class TestDinaTask:
         assert "denied" in result.output.lower() or "blocked" in result.output.lower()
         mc.session_end.assert_called()
 
+    # TRACE: {"suite": "CLI", "case": "0033", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "04", "title": "task_dry_run"}
     def test_task_dry_run(self):
         """Dry-run validates but doesn't invoke OpenClaw."""
         mc = MagicMock()
@@ -126,6 +130,7 @@ class TestDinaTask:
         assert "dry-run" in result.output.lower()
         mc.session_end.assert_called()
 
+    # TRACE: {"suite": "CLI", "case": "0034", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "05", "title": "task_session_lifecycle"}
     def test_task_session_lifecycle(self):
         """Session start/end always called, end in finally."""
         mc = MagicMock()
@@ -140,6 +145,7 @@ class TestDinaTask:
         mc.session_start.assert_called_once()
         mc.session_end.assert_called_once()
 
+    # TRACE: {"suite": "CLI", "case": "0035", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "06", "title": "task_stores_via_staging"}
     def test_task_stores_via_staging(self):
         """Result stored via staging_ingest with type=note, source=openclaw."""
         mc = MagicMock()

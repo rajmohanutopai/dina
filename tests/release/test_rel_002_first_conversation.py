@@ -18,6 +18,7 @@ class TestFirstConversation:
     """Real API tests for REL-002: first conversation path."""
 
     # REL-002
+    # TRACE: {"suite": "REL", "case": "0002", "section": "02", "sectionName": "First Conversation", "subsection": "01", "scenario": "01", "title": "rel_002_brain_reachable_from_core"}
     def test_rel_002_brain_reachable_from_core(
         self, core_url, auth_headers,
     ) -> None:
@@ -33,6 +34,7 @@ class TestFirstConversation:
             )
 
     # REL-002
+    # TRACE: {"suite": "REL", "case": "0002", "section": "02", "sectionName": "First Conversation", "subsection": "01", "scenario": "02", "title": "rel_002_vault_store_simulates_remember"}
     def test_rel_002_vault_store_simulates_remember(
         self, api: httpx.Client,
     ) -> None:
@@ -55,6 +57,7 @@ class TestFirstConversation:
         assert item_id, f"Store returned no item ID: {resp.json()}"
 
     # REL-002
+    # TRACE: {"suite": "REL", "case": "0002", "section": "02", "sectionName": "First Conversation", "subsection": "01", "scenario": "03", "title": "rel_002_vault_recall_uses_context"}
     def test_rel_002_vault_recall_uses_context(
         self, api: httpx.Client,
     ) -> None:
@@ -97,6 +100,7 @@ class TestFirstConversation:
         )
 
     # REL-002
+    # TRACE: {"suite": "REL", "case": "0002", "section": "02", "sectionName": "First Conversation", "subsection": "01", "scenario": "04", "title": "rel_002_brain_process_accepts_signed_request"}
     def test_rel_002_brain_process_accepts_signed_request(
         self, brain_url, brain_signer,
     ) -> None:

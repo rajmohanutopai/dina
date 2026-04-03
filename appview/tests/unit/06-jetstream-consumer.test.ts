@@ -292,6 +292,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     })
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0238", "section": "01", "sectionName": "General", "title": "UT-JC-001: kind = "}
   it('UT-JC-001: kind = "commit", operation = "create" -> handleCreateOrUpdate', async () => {
     // Description: Valid create event
     // Expected: handleCreateOrUpdate called, which calls handler.handleCreate
@@ -300,6 +301,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockHandleCreate).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0239", "section": "01", "sectionName": "General", "title": "UT-JC-002: kind = "}
   it('UT-JC-002: kind = "commit", operation = "update" -> handleCreateOrUpdate (upsert only, HIGH-02/03)', async () => {
     // Description: Valid update event
     // Expected: handleCreateOrUpdate calls handleCreate only (no delete — HIGH-02/03)
@@ -310,6 +312,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockHandleDelete).not.toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0240", "section": "01", "sectionName": "General", "title": "UT-JC-003: kind = "}
   it('UT-JC-003: kind = "commit", operation = "delete" -> handleDelete', async () => {
     // Description: Valid delete event
     // Expected: handleDelete called
@@ -319,6 +322,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockHandleCreate).not.toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0241", "section": "01", "sectionName": "General", "title": "UT-JC-004: kind = "}
   it('UT-JC-004: kind = "identity" -> handleIdentityEvent', async () => {
     // Description: Identity event
     // Expected: handleIdentityEvent called (logged, metrics incremented)
@@ -331,6 +335,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.events.identity')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0242", "section": "01", "sectionName": "General", "title": "UT-JC-005: kind = "}
   it('UT-JC-005: kind = "account" -> handleAccountEvent', async () => {
     // Description: Account event
     // Expected: handleAccountEvent called (metrics incremented)
@@ -339,6 +344,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.events.account', expect.any(Object))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0243", "section": "01", "sectionName": "General", "title": "UT-JC-006: non-trust collection -> skipped"}
   it('UT-JC-006: non-trust collection -> skipped', async () => {
     // Description: collection = "app.bsky.feed.post"
     // Expected: No handler called, event silently dropped
@@ -361,6 +367,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockHandleDelete).not.toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0244", "section": "01", "sectionName": "General", "title": "UT-JC-007: Fix 11: rate-limited DID -> event dropped"}
   it('UT-JC-007: Fix 11: rate-limited DID -> event dropped', async () => {
     // Description: DID exceeding 50/hr
     // Expected: No handler called, metrics incremented
@@ -371,6 +378,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rate_limited_drops', expect.any(Object))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0245", "section": "01", "sectionName": "General", "title": "UT-JC-008: HIGH-06: rate limiting applies to all operations including delete"}
   it('UT-JC-008: HIGH-06: rate limiting applies to all operations including delete', async () => {
     // Description: Rate-limited DID, operation = "delete"
     // Expected: Delete is ALSO blocked — HIGH-06 moved rate limiting before operation branch
@@ -382,6 +390,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rate_limited_drops', expect.any(Object))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0246", "section": "01", "sectionName": "General", "title": "UT-JC-009: validation failure -> event skipped"}
   it('UT-JC-009: validation failure -> event skipped', async () => {
     // Description: Invalid record structure
     // Expected: Handler not called, metrics incremented
@@ -396,6 +405,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.validation.failed', expect.any(Object))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0247", "section": "01", "sectionName": "General", "title": "UT-JC-010: unknown handler -> event skipped"}
   it('UT-JC-010: unknown handler -> event skipped', async () => {
     // Description: Valid record, unknown collection that passes the TRUST_COLLECTIONS check
     // Expected: No error thrown, logged as warning
@@ -421,6 +431,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockHandleCreate).not.toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0248", "section": "01", "sectionName": "General", "title": "UT-JC-011: HIGH-02/03: update = pure upsert (no delete)"}
   it('UT-JC-011: HIGH-02/03: update = pure upsert (no delete)', async () => {
     // Description: operation = "update"
     // Expected: Only handleCreate called, no handleDelete (HIGH-02/03 removed delete-before-create)
@@ -435,6 +446,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(callOrder).toEqual(['create'])
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0249", "section": "01", "sectionName": "General", "title": "UT-JC-012: cursor save interval -- every 100 events"}
   it('UT-JC-012: cursor save interval -- every 100 events', async () => {
     // Description: Process 100 events
     // Expected: saveCursor called once (at the 100th event)
@@ -457,6 +469,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(saveCursorSpy).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0250", "section": "01", "sectionName": "General", "title": "UT-JC-013: cursor save interval -- 99 events -> no save"}
   it('UT-JC-013: cursor save interval -- 99 events -> no save', async () => {
     // Description: Process 99 events
     // Expected: saveCursor not called
@@ -477,6 +490,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(saveCursorSpy).not.toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0251", "section": "01", "sectionName": "General", "title": "UT-JC-014: Fix 7: cursor value = queue.getSafeCursor"}
   it('UT-JC-014: Fix 7: cursor value = queue.getSafeCursor', async () => {
     // Description: Events being processed
     // Expected: Saved cursor = low watermark from queue
@@ -503,6 +517,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(lastSave.cursor).toBe(500)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0252", "section": "01", "sectionName": "General", "title": "UT-JC-015: highestSeenTimeUs tracks maximum"}
   it('UT-JC-015: highestSeenTimeUs tracks maximum', async () => {
     // Description: Events with time_us: [100, 500, 300]
     // Expected: highestSeenTimeUs = 500
@@ -526,6 +541,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect((consumer as any).highestSeenTimeUs).toBe(500)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0253", "section": "01", "sectionName": "General", "title": "UT-JC-016: reconnect backoff -- exponential delay"}
   it('UT-JC-016: reconnect backoff -- exponential delay', () => {
     // Description: Multiple disconnections
     // Expected: Delays: 1s, 2s, 4s, 8s, ... up to 60s max
@@ -550,6 +566,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(delays[7]).toBe(60000) // still capped
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0254", "section": "01", "sectionName": "General", "title": "UT-JC-017: reconnect resets on successful connection"}
   it('UT-JC-017: reconnect resets on successful connection', () => {
     // Description: Reconnect then successful open
     // Expected: reconnectAttempts reset to 0
@@ -564,6 +581,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect((consumer as any).reconnectAttempts).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0255", "section": "01", "sectionName": "General", "title": "UT-JC-018: graceful shutdown -- saves final cursor"}
   it('UT-JC-018: graceful shutdown -- saves final cursor', async () => {
     // Description: SIGTERM received
     // Expected: saveCursor called with low watermark
@@ -593,6 +611,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(saveCursorSpy).toHaveBeenCalled()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0256", "section": "01", "sectionName": "General", "title": "UT-JC-019: graceful shutdown -- closes WebSocket"}
   it('UT-JC-019: graceful shutdown -- closes WebSocket', () => {
     // Description: SIGTERM received
     // Expected: ws.close() called
@@ -609,6 +628,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockClose).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0257", "section": "01", "sectionName": "General", "title": "UT-JC-020: account takendown event -> logged"}
   it('UT-JC-020: account takendown event -> logged', async () => {
     // Description: account.status = "takendown"
     // Expected: Logger called with status info
@@ -621,6 +641,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     )
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0258", "section": "01", "sectionName": "General", "title": "UT-JC-021: JSON parse error -> logged, not crashed"}
   it('UT-JC-021: JSON parse error -> logged, not crashed', () => {
     // Description: WebSocket message = invalid JSON ("not json")
     // Expected: logger.error called with parse error, metrics.incr('ingester.errors.parse'), no crash
@@ -650,6 +671,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.errors.parse')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0259", "section": "01", "sectionName": "General", "title": "UT-JC-022: account deleted event -> logged"}
   it('UT-JC-022: account deleted event -> logged', async () => {
     // Description: account.status = "deleted"
     // Expected: Logger called with status info
@@ -662,6 +684,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     )
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0260", "section": "01", "sectionName": "General", "title": "UT-JC-023: account suspended event -> logged"}
   it('UT-JC-023: account suspended event -> logged', async () => {
     // Description: account.status = "suspended"
     // Expected: Logger called with status info, metrics tracked
@@ -674,6 +697,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.events.account', { status: 'suspended' })
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0261", "section": "01", "sectionName": "General", "title": "UT-JC-024: HIGH-05: queue push failure logged with metric"}
   it('UT-JC-024: HIGH-05: queue push failure logged with metric', async () => {
     // Description: Queue is full, push returns false
     // Expected: Warning logged, metric incremented
@@ -690,6 +714,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     mockQueuePush.mockReturnValue(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0262", "section": "01", "sectionName": "General", "title": "UT-JC-025: HIGH-06: rate limiting blocks updates too"}
   it('UT-JC-025: HIGH-06: rate limiting blocks updates too', async () => {
     // Description: Rate-limited DID sends an update
     // Expected: Update blocked (rate limiting is before operation branch)

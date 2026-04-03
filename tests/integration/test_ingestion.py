@@ -42,6 +42,7 @@ class TestGmailConnector:
     """Gmail connector — read-only OAuth, polling, encryption, routing, dedup."""
 
 # TST-INT-236
+    # TRACE: {"suite": "INT", "case": "0236", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "01", "title": "readonly_scope"}
     def test_readonly_scope(self, mock_gmail_connector: MockGmailConnector) -> None:
         """Gmail connector must request read-only OAuth scope — never send or modify."""
         assert mock_gmail_connector.oauth_scope == "readonly"
@@ -57,11 +58,13 @@ class TestGmailConnector:
         assert "write" not in mock_gmail_connector.oauth_scope
 
 # TST-INT-242
+    # TRACE: {"suite": "INT", "case": "0242", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "02", "title": "polling_interval_default"}
     def test_polling_interval_default(self, mock_gmail_connector: MockGmailConnector) -> None:
         """Default polling interval for Gmail is 15 minutes."""
         assert mock_gmail_connector.poll_interval_minutes == 15
 
 # TST-INT-249
+    # TRACE: {"suite": "INT", "case": "0249", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "03", "title": "polling_updates_last_poll_timestamp"}
     def test_polling_updates_last_poll_timestamp(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -73,6 +76,7 @@ class TestGmailConnector:
         assert mock_gmail_connector.last_poll <= time.time()
 
 # TST-INT-251
+    # TRACE: {"suite": "INT", "case": "0251", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "04", "title": "data_encrypted_immediately"}
     def test_data_encrypted_immediately(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -120,17 +124,20 @@ class TestGmailConnector:
             "Wrong persona must not decrypt the data"
 
 # TST-INT-495
+    # TRACE: {"suite": "INT", "case": "0495", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "05", "title": "persona_routing"}
     def test_persona_routing(self, mock_gmail_connector: MockGmailConnector) -> None:
         """Gmail connector routes to the PROFESSIONAL persona by default."""
         assert mock_gmail_connector.persona == PersonaType.PROFESSIONAL
 
 # TST-INT-237
+    # TRACE: {"suite": "INT", "case": "0237", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "06", "title": "persona_routing_custom"}
     def test_persona_routing_custom(self) -> None:
         """Gmail connector can be assigned to a different persona."""
         connector = MockGmailConnector(persona=PersonaType.SOCIAL)
         assert connector.persona == PersonaType.SOCIAL
 
 # TST-INT-496
+    # TRACE: {"suite": "INT", "case": "0496", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "07", "title": "deduplication_by_message_id"}
     def test_deduplication_by_message_id(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -147,6 +154,7 @@ class TestGmailConnector:
         assert ids == {"msg_dup_1", "msg_dup_2"}
 
 # TST-INT-238
+    # TRACE: {"suite": "INT", "case": "0238", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "08", "title": "deduplication_across_polls"}
     def test_deduplication_across_polls(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -167,6 +175,7 @@ class TestGmailConnector:
         assert second[0]["message_id"] == "msg_cross_2"
 
 # TST-INT-497
+    # TRACE: {"suite": "INT", "case": "0497", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "01", "scenario": "09", "title": "items_ingested_counter"}
     def test_items_ingested_counter(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -207,6 +216,7 @@ class TestTelegramConnector:
     """Telegram connector — server-side Bot API, full message+media, polling."""
 
 # TST-INT-255
+    # TRACE: {"suite": "INT", "case": "0255", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "02", "scenario": "01", "title": "uses_polling_model"}
     def test_uses_polling_model(
         self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
@@ -233,6 +243,7 @@ class TestTelegramConnector:
         assert gmail.poll_interval_minutes != mock_telegram_connector.poll_interval_minutes
 
 # TST-INT-246
+    # TRACE: {"suite": "INT", "case": "0246", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "02", "scenario": "02", "title": "supports_media"}
     def test_supports_media(
         self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
@@ -256,6 +267,7 @@ class TestTelegramConnector:
             assert "content" in item
 
 # TST-INT-248
+    # TRACE: {"suite": "INT", "case": "0248", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "02", "scenario": "03", "title": "ingestion_requires_bot_token"}
     def test_ingestion_requires_bot_token(
         self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
@@ -267,6 +279,7 @@ class TestTelegramConnector:
         assert len(mock_telegram_connector._data) == 0
 
 # TST-INT-244
+    # TRACE: {"suite": "INT", "case": "0244", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "02", "scenario": "04", "title": "ingestion_succeeds_with_bot_token"}
     def test_ingestion_succeeds_with_bot_token(
         self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
@@ -278,6 +291,7 @@ class TestTelegramConnector:
         assert len(mock_telegram_connector._data) == 1
 
 # TST-INT-247
+    # TRACE: {"suite": "INT", "case": "0247", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "02", "scenario": "05", "title": "default_persona_is_social"}
     def test_default_persona_is_social(
         self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
@@ -294,6 +308,7 @@ class TestConnectorSecurityRules:
     """Cross-cutting security rules for all connectors."""
 
 # TST-INT-498
+    # TRACE: {"suite": "INT", "case": "0498", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "01", "title": "minimum_permission_scope_gmail"}
     def test_minimum_permission_scope_gmail(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -301,6 +316,7 @@ class TestConnectorSecurityRules:
         assert mock_gmail_connector.oauth_scope == "readonly"
 
 # TST-INT-254
+    # TRACE: {"suite": "INT", "case": "0254", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "02", "title": "oauth_tokens_encrypted_in_tier_0"}
     def test_oauth_tokens_encrypted_in_tier_0(
         self, mock_gmail_connector: MockGmailConnector,
         mock_identity: MockIdentity,
@@ -321,6 +337,7 @@ class TestConnectorSecurityRules:
         assert oauth_token not in retrieved
 
 # TST-INT-240
+    # TRACE: {"suite": "INT", "case": "0240", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "03", "title": "connectors_sandboxed_no_cross_persona_access"}
     def test_connectors_sandboxed_no_cross_persona_access(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -349,6 +366,7 @@ class TestConnectorSecurityRules:
         assert "email_1" not in social_data
 
 # TST-INT-257
+    # TRACE: {"suite": "INT", "case": "0257", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "04", "title": "connector_status_visible"}
     def test_connector_status_visible(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -368,6 +386,7 @@ class TestConnectorSecurityRules:
             assert hasattr(conn, "items_ingested")
 
 # TST-INT-499
+    # TRACE: {"suite": "INT", "case": "0499", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "05", "title": "connector_can_be_paused"}
     def test_connector_can_be_paused(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -376,6 +395,7 @@ class TestConnectorSecurityRules:
         assert mock_gmail_connector.status == ConnectorStatus.PAUSED
 
 # TST-INT-500
+    # TRACE: {"suite": "INT", "case": "0500", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "06", "title": "connector_can_be_disabled"}
     def test_connector_can_be_disabled(
         self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
@@ -384,6 +404,7 @@ class TestConnectorSecurityRules:
         assert mock_telegram_connector.status == ConnectorStatus.DISABLED
 
 # TST-INT-234
+    # TRACE: {"suite": "INT", "case": "0234", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "03", "scenario": "07", "title": "calendar_connector_defaults"}
     def test_calendar_connector_defaults(
         self, mock_calendar_connector: MockCalendarConnector
     ) -> None:
@@ -421,6 +442,7 @@ class TestOAuthTokenLifecycle:
     # --- Healthy token ---
 
 # TST-INT-501
+    # TRACE: {"suite": "INT", "case": "0501", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "01", "title": "healthy_token_stays_active"}
     def test_healthy_token_stays_active(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -434,6 +456,7 @@ class TestOAuthTokenLifecycle:
     # --- Needs refresh ---
 
 # TST-INT-502
+    # TRACE: {"suite": "INT", "case": "0502", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "02", "title": "token_near_expiry_triggers_needs_refresh"}
     def test_token_near_expiry_triggers_needs_refresh(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -446,6 +469,7 @@ class TestOAuthTokenLifecycle:
         assert status in (ConnectorStatus.NEEDS_REFRESH, ConnectorStatus.EXPIRED)
 
 # TST-INT-503
+    # TRACE: {"suite": "INT", "case": "0503", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "03", "title": "auto_refresh_succeeds"}
     def test_auto_refresh_succeeds(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -466,6 +490,7 @@ class TestOAuthTokenLifecycle:
         assert len(mock_gmail_connector.notifications_emitted) == 0
 
 # TST-INT-504
+    # TRACE: {"suite": "INT", "case": "0504", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "04", "title": "auto_refresh_fails_transitions_to_expired"}
     def test_auto_refresh_fails_transitions_to_expired(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -495,6 +520,7 @@ class TestOAuthTokenLifecycle:
     # --- Expired token ---
 
 # TST-INT-505
+    # TRACE: {"suite": "INT", "case": "0505", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "05", "title": "expired_token_emits_tier2_notification"}
     def test_expired_token_emits_tier2_notification(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -524,6 +550,7 @@ class TestOAuthTokenLifecycle:
             "Healthy token must not emit any notification"
 
 # TST-INT-241
+    # TRACE: {"suite": "INT", "case": "0241", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "06", "title": "expired_connector_returns_no_data_on_poll"}
     def test_expired_connector_returns_no_data_on_poll(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -538,6 +565,7 @@ class TestOAuthTokenLifecycle:
         assert items == []
 
 # TST-INT-260
+    # TRACE: {"suite": "INT", "case": "0260", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "07", "title": "user_reauthorize_restores_active"}
     def test_user_reauthorize_restores_active(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -554,6 +582,7 @@ class TestOAuthTokenLifecycle:
     # --- Revoked token ---
 
 # TST-INT-243
+    # TRACE: {"suite": "INT", "case": "0243", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "08", "title": "revoked_token_emits_notification"}
     def test_revoked_token_emits_notification(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -571,6 +600,7 @@ class TestOAuthTokenLifecycle:
         assert "revoked" in notif.body.lower()
 
 # TST-INT-506
+    # TRACE: {"suite": "INT", "case": "0506", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "09", "title": "revoked_check_token_health_stays_revoked"}
     def test_revoked_check_token_health_stays_revoked(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -583,6 +613,7 @@ class TestOAuthTokenLifecycle:
         assert status == ConnectorStatus.REVOKED
 
 # TST-INT-507
+    # TRACE: {"suite": "INT", "case": "0507", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "10", "title": "revoked_reauthorize_restores_active"}
     def test_revoked_reauthorize_restores_active(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -624,6 +655,7 @@ class TestOAuthTokenLifecycle:
     # --- No token ---
 
 # TST-INT-245
+    # TRACE: {"suite": "INT", "case": "0245", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "11", "title": "no_token_set_is_expired"}
     def test_no_token_set_is_expired(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -634,6 +666,7 @@ class TestOAuthTokenLifecycle:
     # --- Status log ---
 
 # TST-INT-508
+    # TRACE: {"suite": "INT", "case": "0508", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "12", "title": "status_transitions_logged"}
     def test_status_transitions_logged(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -654,6 +687,7 @@ class TestOAuthTokenLifecycle:
     # --- Refresh token rotation ---
 
 # TST-INT-509
+    # TRACE: {"suite": "INT", "case": "0509", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "04", "scenario": "13", "title": "refresh_rotates_token"}
     def test_refresh_rotates_token(
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
@@ -685,6 +719,7 @@ class TestFullIngestionPipelines:
     """End-to-end ingestion flows — Gmail full pipeline, contacts, cursors."""
 
 # TST-INT-233
+    # TRACE: {"suite": "INT", "case": "0233", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "05", "scenario": "01", "title": "email_ingestion_full_pipeline"}
     def test_email_ingestion_full_pipeline(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -728,6 +763,7 @@ class TestFullIngestionPipelines:
             assert value.startswith("ENC[")
 
 # TST-INT-235
+    # TRACE: {"suite": "INT", "case": "0235", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "05", "scenario": "02", "title": "contacts_sync"}
     def test_contacts_sync(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -773,6 +809,7 @@ class TestFullIngestionPipelines:
         assert len(mock_vault.per_persona_partition(PersonaType.SOCIAL)) == 0
 
 # TST-INT-239
+    # TRACE: {"suite": "INT", "case": "0239", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "05", "scenario": "03", "title": "cursor_continuity_across_restart"}
     def test_cursor_continuity_across_restart(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -837,6 +874,7 @@ class TestCoreBrainBoundary:
     """Security boundaries between Core, Brain, and external systems."""
 
 # TST-INT-250
+    # TRACE: {"suite": "INT", "case": "0250", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "06", "scenario": "01", "title": "core_never_calls_external_apis_during_ingestion"}
     def test_core_never_calls_external_apis_during_ingestion(
         self,
         mock_go_core: MockGoCore,
@@ -868,6 +906,7 @@ class TestCoreBrainBoundary:
             )
 
 # TST-INT-252
+    # TRACE: {"suite": "INT", "case": "0252", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "06", "scenario": "02", "title": "openclaw_sandboxed_no_vault_access"}
     def test_openclaw_sandboxed_no_vault_access(
         self,
         mock_external_agent: MockExternalAgent,
@@ -901,6 +940,7 @@ class TestCoreBrainBoundary:
             assert "diagnosis" not in task_str
 
 # TST-INT-253
+    # TRACE: {"suite": "INT", "case": "0253", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "06", "scenario": "03", "title": "brain_scrubs_before_cloud_llm"}
     def test_brain_scrubs_before_cloud_llm(
         self,
         mock_vault: MockVault,
@@ -920,28 +960,27 @@ class TestCoreBrainBoundary:
         # Brain must scrub before sending to cloud LLM
         scrubbed, replacement_map = scrubber.scrub(raw_text)
 
-        # Scrubbed text must not contain any PII
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in scrubbed
+        assert "Sancho" in scrubbed
         assert "rajmohan@email.com" not in scrubbed
-        assert "Sancho" not in scrubbed
         assert "123 Main Street" not in scrubbed
 
-        # Placeholders are present instead
-        assert "[PERSON_1]" in scrubbed
+        # Structured PII placeholders are present
         assert "[EMAIL_1]" in scrubbed
-        assert "[PERSON_2]" in scrubbed
         assert "[ADDRESS_1]" in scrubbed
 
         # Validate the scrubbed text is clean
         assert scrubber.validate_clean(scrubbed) is True
 
-        # After LLM response, Brain can restore PII locally
-        llm_response = "Schedule follow-up with [PERSON_1] at [ADDRESS_1]"
+        # After LLM response, Brain can restore structured PII locally
+        llm_response = "Schedule follow-up with Rajmohan at [ADDRESS_1]"
         restored = scrubber.desanitize(llm_response, replacement_map)
         assert "Rajmohan" in restored
         assert "123 Main Street" in restored
 
 # TST-INT-256
+    # TRACE: {"suite": "INT", "case": "0256", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "06", "scenario": "04", "title": "attachment_metadata_only_in_vault"}
     def test_attachment_metadata_only_in_vault(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -1034,6 +1073,7 @@ class TestFastSyncAndBackfill:
     """Fast initial sync returns results quickly; background backfill follows."""
 
 # TST-INT-258
+    # TRACE: {"suite": "INT", "case": "0258", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "07", "scenario": "01", "title": "fast_sync_ready_in_seconds"}
     def test_fast_sync_ready_in_seconds(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -1057,6 +1097,7 @@ class TestFastSyncAndBackfill:
         assert len(mock_gmail_connector._backfill_queue) == 450
 
 # TST-INT-259
+    # TRACE: {"suite": "INT", "case": "0259", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "07", "scenario": "02", "title": "background_backfill"}
     def test_background_backfill(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -1086,6 +1127,7 @@ class TestFastSyncAndBackfill:
         assert total == 200
 
 # TST-INT-261
+    # TRACE: {"suite": "INT", "case": "0261", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "07", "scenario": "03", "title": "time_horizon_enforced"}
     def test_time_horizon_enforced(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -1116,6 +1158,7 @@ class TestFastSyncAndBackfill:
         assert "old_2" not in filtered_ids
 
 # TST-INT-262
+    # TRACE: {"suite": "INT", "case": "0262", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "07", "scenario": "04", "title": "cold_archive_pass_through"}
     def test_cold_archive_pass_through(
         self,
         mock_gmail_connector: MockGmailConnector,
@@ -1164,6 +1207,7 @@ class TestFastSyncAndBackfill:
         assert "cold_2" not in mock_vault.search_fts("Very")
 
 # TST-INT-263
+    # TRACE: {"suite": "INT", "case": "0263", "section": "09", "sectionName": "Ingestion-to-Vault Pipeline", "subsection": "07", "scenario": "05", "title": "openclaw_outage_during_backfill"}
     def test_openclaw_outage_during_backfill(
         self,
         mock_external_agent: MockExternalAgent,

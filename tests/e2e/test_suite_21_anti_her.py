@@ -37,6 +37,7 @@ class TestAntiHer:
     """
 
     # TST-E2E-111
+    # TRACE: {"suite": "E2E", "case": "0111", "section": "21", "sectionName": "Anti-Her", "subsection": "01", "scenario": "01", "title": "neglected_contact_nudge_in_daily_briefing"}
     def test_neglected_contact_nudge_in_daily_briefing(
         self,
         don_alonso: HomeNode,
@@ -198,6 +199,7 @@ class TestAntiHer:
             "but life event detection requires NLU over message history."
         ),
     )
+    # TRACE: {"suite": "E2E", "case": "0008", "section": "21", "sectionName": "Anti-Her", "subsection": "01", "scenario": "02", "title": "life_event_follow_up_nudge"}
     def test_life_event_follow_up_nudge(
         self,
         don_alonso: HomeNode,
@@ -219,10 +221,11 @@ class TestAntiHer:
         # ------------------------------------------------------------------
         msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "My mother had a fall last week. She's in the hospital.",
+                "category": "life_event",
                 "context_flags": ["life_event", "illness"],
             },
         )
@@ -327,10 +330,11 @@ class TestAntiHer:
         # ------------------------------------------------------------------
         follow_up = don_alonso.send_d2d(
             to_did=sancho.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "Hey Sancho, how is your mother doing? I hope she's recovering.",
+                "category": "context",
             },
         )
         assert follow_up.msg_id.startswith("msg_"), (
@@ -386,6 +390,7 @@ class TestAntiHer:
             "unimplemented."
         ),
     )
+    # TRACE: {"suite": "E2E", "case": "0009", "section": "21", "sectionName": "Anti-Her", "subsection": "01", "scenario": "03", "title": "social_isolation_warning"}
     def test_social_isolation_warning(
         self,
         don_alonso: HomeNode,
@@ -725,6 +730,7 @@ class TestAntiHer:
         )
 
     # TST-E2E-113
+    # TRACE: {"suite": "E2E", "case": "0113", "section": "21", "sectionName": "Anti-Her", "subsection": "01", "scenario": "04", "title": "promise_accountability"}
     def test_promise_accountability(
         self,
         don_alonso: HomeNode,
@@ -951,10 +957,11 @@ class TestAntiHer:
         # Simulate Don Alonso sending the PDF.
         pdf_msg = node.send_d2d(
             to_did=sancho.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": "Here's the architecture PDF we discussed!",
+                "category": "context",
                 "attachment": "architecture_patterns.pdf",
             },
         )
@@ -1008,6 +1015,7 @@ class TestAntiHer:
             "cross-session vault scanning and escalation state tracking."
         ),
     )
+    # TRACE: {"suite": "E2E", "case": "0010", "section": "21", "sectionName": "Anti-Her", "subsection": "01", "scenario": "05", "title": "emotional_dependency_escalation"}
     def test_emotional_dependency_escalation(
         self,
         don_alonso: HomeNode,

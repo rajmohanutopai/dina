@@ -16,8 +16,8 @@ import (
 
 // ==========================================================================
 // PII Handler — Tier 1 + Tier 2 chained scrubbing
-// Tests the HandleScrub endpoint which chains regex (Tier 1) → Brain NER
-// (Tier 2) and handles graceful degradation.
+// Tests the HandleScrub endpoint which chains regex (Tier 1) → Brain
+// structured PII patterns (Tier 2) and handles graceful degradation.
 // ==========================================================================
 
 // --- Mock implementations ---
@@ -78,6 +78,7 @@ func invokeScrub(h *handler.PIIHandler, text string) (int, map[string]interface{
 // pass through.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1117", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "01", "scenario": "01", "title": "PIIHandler_Tier1Only_BrainNil"}
 func TestPIIHandler_Tier1Only_BrainNil(t *testing.T) {
 	h := &handler.PIIHandler{
 		Scrubber: &mockPIIScrubber{
@@ -110,6 +111,7 @@ func TestPIIHandler_Tier1Only_BrainNil(t *testing.T) {
 // scrubbed.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1118", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "02", "scenario": "01", "title": "PIIHandler_Tier1PlusTier2"}
 func TestPIIHandler_Tier1PlusTier2(t *testing.T) {
 	h := &handler.PIIHandler{
 		Scrubber: &mockPIIScrubber{
@@ -149,6 +151,7 @@ func TestPIIHandler_Tier1PlusTier2(t *testing.T) {
 // TST-CORE-902: Tier 2 failure — graceful degradation to Tier 1 only.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1119", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "03", "scenario": "01", "title": "PIIHandler_Tier2Failure_GracefulDegradation"}
 func TestPIIHandler_Tier2Failure_GracefulDegradation(t *testing.T) {
 	h := &handler.PIIHandler{
 		Scrubber: &mockPIIScrubber{
@@ -182,6 +185,7 @@ func TestPIIHandler_Tier2Failure_GracefulDegradation(t *testing.T) {
 // only appears once.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "1120", "section": "05", "sectionName": "PII Scrubber (Tier 1)", "subsection": "04", "scenario": "01", "title": "PIIHandler_EntityDeduplication"}
 func TestPIIHandler_EntityDeduplication(t *testing.T) {
 	h := &handler.PIIHandler{
 		Scrubber: &mockPIIScrubber{

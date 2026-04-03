@@ -38,6 +38,7 @@ class TestSanchoMoment:
     messaging, and egress audit trails."""
 
 # TST-E2E-007
+    # TRACE: {"suite": "E2E", "case": "0007", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "01", "title": "complete_9_step_arrival_flow"}
     def test_complete_9_step_arrival_flow(
         self,
         don_alonso: HomeNode,
@@ -62,9 +63,10 @@ class TestSanchoMoment:
         # Step 1-3: Sancho composes and sends arrival D2D
         msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 15,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -109,17 +111,18 @@ class TestSanchoMoment:
         assert len(sancho_send_entries) >= 1
         last_send = sancho_send_entries[-1]
         assert last_send.details["contact_did"] == don_alonso.did
-        assert last_send.details["type"] == "dina/social/arrival"
+        assert last_send.details["type"] == "presence.signal"
         assert last_send.details["delivered"] is True
 
         alonso_recv_entries = don_alonso.get_audit_entries("d2d_receive")
         assert len(alonso_recv_entries) >= 1
         last_recv = alonso_recv_entries[-1]
         assert last_recv.details["from_did"] == sancho.did
-        assert last_recv.details["type"] == "dina/social/arrival"
+        assert last_recv.details["type"] == "presence.signal"
         assert last_recv.details["action"] == "processed"
 
 # TST-E2E-008
+    # TRACE: {"suite": "E2E", "case": "0008", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "02", "title": "sharing_policy_blocks_context"}
     def test_sharing_policy_blocks_context(
         self,
         don_alonso: HomeNode,
@@ -147,9 +150,10 @@ class TestSanchoMoment:
 
         baseline_msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 15,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -186,9 +190,10 @@ class TestSanchoMoment:
 
         msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 20,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -207,7 +212,7 @@ class TestSanchoMoment:
         assert msg.payload.get("eta_minutes") == 20, (
             "ETA must survive context filtering"
         )
-        assert msg.payload.get("type") == "dina/social/arrival"
+        assert msg.payload.get("type") == "presence.signal"
 
         # Audit trail records the denial
         send_entries = sancho.get_audit_entries("d2d_send")
@@ -229,6 +234,7 @@ class TestSanchoMoment:
         # (vault context from don_alonso's own memory may still appear)
 
 # TST-E2E-009
+    # TRACE: {"suite": "E2E", "case": "0009", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "03", "title": "dnd_context_queues_for_briefing"}
     def test_dnd_context_queues_for_briefing(
         self,
         don_alonso: HomeNode,
@@ -253,9 +259,10 @@ class TestSanchoMoment:
 
         sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 20,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -294,9 +301,10 @@ class TestSanchoMoment:
 
         sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 10,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -351,6 +359,7 @@ class TestSanchoMoment:
         don_alonso.dnd_active = False
 
 # TST-E2E-010
+    # TRACE: {"suite": "E2E", "case": "0010", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "04", "title": "vault_locked_dead_drop"}
     def test_vault_locked_dead_drop(
         self,
         don_alonso: HomeNode,
@@ -386,9 +395,10 @@ class TestSanchoMoment:
         # --- Sancho sends a D2D arrival message ---
         msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 5,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -420,9 +430,10 @@ class TestSanchoMoment:
         # --- Send a second message while locked (test multiple spooled) ---
         sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 30,
             },
         )
@@ -445,6 +456,7 @@ class TestSanchoMoment:
         # The exact count depends on whether mock decryption succeeds
 
 # TST-E2E-011
+    # TRACE: {"suite": "E2E", "case": "0011", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "05", "title": "bidirectional_d2d"}
     def test_bidirectional_d2d(
         self,
         don_alonso: HomeNode,
@@ -471,9 +483,10 @@ class TestSanchoMoment:
         # Sancho -> Alonso
         msg_s2a = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 30,
             },
         )
@@ -483,7 +496,7 @@ class TestSanchoMoment:
         assert msg_s2a.to_did == don_alonso.did, (
             "Sancho→Alonso message must have to_did=don_alonso"
         )
-        assert msg_s2a.message_type == "dina/social/arrival", (
+        assert msg_s2a.message_type == "presence.signal", (
             "Message type must be preserved"
         )
         assert msg_s2a.payload.get("eta_minutes") == 30, (
@@ -502,9 +515,10 @@ class TestSanchoMoment:
         # Alonso -> Sancho
         msg_a2s = don_alonso.send_d2d(
             to_did=sancho.did,
-            message_type="dina/social/greeting",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/greeting",
+                "type": "presence.signal",
+                "status": "here",
                 "eta_minutes": 0,
                 "context_flags": ["looking_forward"],
             },
@@ -515,7 +529,7 @@ class TestSanchoMoment:
         assert msg_a2s.to_did == sancho.did, (
             "Alonso→Sancho message must have to_did=sancho"
         )
-        assert msg_a2s.message_type == "dina/social/greeting", (
+        assert msg_a2s.message_type == "presence.signal", (
             "Message type must be preserved"
         )
         assert msg_a2s.payload.get("eta_minutes") == 0, (
@@ -575,6 +589,7 @@ class TestSanchoMoment:
         )
 
 # TST-E2E-012
+    # TRACE: {"suite": "E2E", "case": "0012", "section": "02", "sectionName": "Sancho Moment", "subsection": "01", "scenario": "06", "title": "egress_audit_trail"}
     def test_egress_audit_trail(
         self,
         don_alonso: HomeNode,
@@ -593,9 +608,10 @@ class TestSanchoMoment:
 
         msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 12,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
@@ -609,7 +625,7 @@ class TestSanchoMoment:
 
         # Required fields on sender side
         assert send_audit.details["contact_did"] == don_alonso.did
-        assert send_audit.details["type"] == "dina/social/arrival"
+        assert send_audit.details["type"] == "presence.signal"
         assert "delivered" in send_audit.details
         assert send_audit.details["delivered"] is True
         assert "presence" in send_audit.details
@@ -625,7 +641,7 @@ class TestSanchoMoment:
 
         # Required fields on receiver side
         assert recv_audit.details["from_did"] == sancho.did
-        assert recv_audit.details["type"] == "dina/social/arrival"
+        assert recv_audit.details["type"] == "presence.signal"
         assert "signature_valid" in recv_audit.details
         assert recv_audit.details["action"] == "processed"
         assert recv_audit.timestamp > 0

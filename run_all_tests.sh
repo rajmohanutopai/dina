@@ -109,18 +109,20 @@ if [ "$UNIT_ONLY" = false ] && [ "$SKIP_PREPARE" = false ]; then
   echo "============================================"
   echo ""
 
-  # Clean tear-down first, then fresh start (suppress verbose Docker output)
+  # Clean tear-down first, then fresh start
   echo "  Tearing down old stack..."
-  ./prepare_non_unit_env.sh down > /dev/null 2>&1 || true
-  echo "  Done."
+  ./prepare_non_unit_env.sh down 2>&1 | sed 's/^/  /' || true
+  echo ""
 
   echo "  Building and starting fresh stack..."
-  if ! ./prepare_non_unit_env.sh up > /dev/null 2>&1; then
+  echo ""
+  if ! ./prepare_non_unit_env.sh up 2>&1 | sed 's/^/  /'; then
     echo ""
     echo "ERROR: Docker stack preparation failed. Run ./prepare_non_unit_env.sh up manually for details."
     rm -rf "$TMPDIR_BASE"
     exit 1
   fi
+  echo ""
   echo "  Stack ready."
 fi
 

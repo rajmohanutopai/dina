@@ -103,6 +103,7 @@ def guardian():
 
 # TST-BRAIN-019
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0019", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "01", "title": "fiduciary_flight_cancelled"}
 async def test_guardian_2_1_1_fiduciary_flight_cancelled(guardian) -> None:
     """SS2.1.1: Flight cancellation -> fiduciary (silence causes harm)."""
     event = make_fiduciary_event(body="Your flight is cancelled in 2 hours")
@@ -112,6 +113,7 @@ async def test_guardian_2_1_1_fiduciary_flight_cancelled(guardian) -> None:
 
 # TST-BRAIN-020
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0020", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "02", "title": "fiduciary_security_threat"}
 async def test_guardian_2_1_2_fiduciary_security_threat(guardian) -> None:
     """SS2.1.2: Unusual login from unknown device -> fiduciary."""
     event = make_security_alert()
@@ -121,6 +123,7 @@ async def test_guardian_2_1_2_fiduciary_security_threat(guardian) -> None:
 
 # TST-BRAIN-029
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0029", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "03", "title": "fiduciary_health_critical"}
 async def test_guardian_2_1_3_fiduciary_health_critical(guardian) -> None:
     """SS2.1.3: Critical lab result -> fiduciary (medical urgency)."""
     event = make_health_alert()
@@ -130,6 +133,7 @@ async def test_guardian_2_1_3_fiduciary_health_critical(guardian) -> None:
 
 # TST-BRAIN-021
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0021", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "04", "title": "fiduciary_financial_overdraft"}
 async def test_guardian_2_1_4_fiduciary_financial_overdraft(guardian) -> None:
     """SS2.1.4: Payment due with overdrawn account -> fiduciary.
 
@@ -144,6 +148,7 @@ async def test_guardian_2_1_4_fiduciary_financial_overdraft(guardian) -> None:
 
 # TST-BRAIN-022
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0022", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "05", "title": "solicited_meeting_reminder"}
 async def test_guardian_2_1_5_solicited_meeting_reminder(guardian) -> None:
     """SS2.1.5: User-requested meeting reminder -> solicited."""
     event = make_solicited_event(body="Meeting reminder: Team standup in 15 minutes")
@@ -153,6 +158,7 @@ async def test_guardian_2_1_5_solicited_meeting_reminder(guardian) -> None:
 
 # TST-BRAIN-023
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0023", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "06", "title": "solicited_search_result"}
 async def test_guardian_2_1_6_solicited_search_result(guardian) -> None:
     """SS2.1.6: User asked for a product search; result returned -> solicited."""
     event = make_solicited_event(
@@ -165,6 +171,7 @@ async def test_guardian_2_1_6_solicited_search_result(guardian) -> None:
 
 # TST-BRAIN-024
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0024", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "07", "title": "engagement_podcast_released"}
 async def test_guardian_2_1_7_engagement_podcast_released(guardian) -> None:
     """SS2.1.7: New podcast episode -> engagement (save for briefing)."""
     event = make_engagement_event(body="New episode of your podcast released")
@@ -174,6 +181,7 @@ async def test_guardian_2_1_7_engagement_podcast_released(guardian) -> None:
 
 # TST-BRAIN-025
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0025", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "08", "title": "engagement_promo_offer"}
 async def test_guardian_2_1_8_engagement_promo_offer(guardian) -> None:
     """SS2.1.8: Promotional offer from known vendor -> engagement."""
     event = make_engagement_event(
@@ -187,6 +195,7 @@ async def test_guardian_2_1_8_engagement_promo_offer(guardian) -> None:
 
 # TST-BRAIN-361
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0361", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "09", "title": "fiduciary_overrides_dnd"}
 async def test_guardian_2_1_9_fiduciary_overrides_dnd(guardian) -> None:
     """SS2.1.9: Fiduciary event must interrupt even when DND is active.
 
@@ -201,6 +210,7 @@ async def test_guardian_2_1_9_fiduciary_overrides_dnd(guardian) -> None:
 
 # TST-BRAIN-362
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0362", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "10", "title": "solicited_deferred_during_dnd"}
 async def test_guardian_2_1_10_solicited_deferred_during_dnd(guardian) -> None:
     """SS2.1.10: Solicited event is deferred (not dropped) under DND.
 
@@ -214,6 +224,7 @@ async def test_guardian_2_1_10_solicited_deferred_during_dnd(guardian) -> None:
 
 # TST-BRAIN-363
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0363", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "11", "title": "engagement_never_interrupts"}
 async def test_guardian_2_1_11_engagement_never_interrupts(guardian) -> None:
     """SS2.1.11: Engagement events never trigger push notification.
 
@@ -230,6 +241,7 @@ async def test_guardian_2_1_11_engagement_never_interrupts(guardian) -> None:
 
 # TST-BRAIN-027
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0027", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "12", "title": "ambiguous_defaults_to_engagement"}
 async def test_guardian_2_1_12_ambiguous_defaults_to_engagement(guardian) -> None:
     """SS2.1.12: Event with no clear urgency defaults to engagement (Silence First)."""
     event = make_event(type="unknown", body="Some vague notification")
@@ -239,6 +251,7 @@ async def test_guardian_2_1_12_ambiguous_defaults_to_engagement(guardian) -> Non
 
 # TST-BRAIN-026
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0026", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "13", "title": "engagement_social_media_update"}
 async def test_guardian_2_1_13_engagement_social_media_update(guardian) -> None:
     """SS2.1.13: Social media update ('Friend posted a photo') -> engagement."""
     event = make_engagement_event(
@@ -252,6 +265,7 @@ async def test_guardian_2_1_13_engagement_social_media_update(guardian) -> None:
 
 # TST-BRAIN-028
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0028", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "14", "title": "no_notification_routine_sync"}
 async def test_guardian_2_1_14_no_notification_routine_sync(guardian) -> None:
     """SS2.1.14: Routine background sync -> silently logged, no notification."""
     event = make_event(type="background_sync", body="Routine sync completed")
@@ -261,6 +275,7 @@ async def test_guardian_2_1_14_no_notification_routine_sync(guardian) -> None:
 
 # TST-BRAIN-030
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0030", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "15", "title": "fiduciary_composite_heuristic"}
 async def test_guardian_2_1_15_fiduciary_composite_heuristic(guardian) -> None:
     """SS2.1.15: Composite heuristic — trusted sender + fiduciary keyword -> fiduciary;
     unknown sender + same keyword -> solicited (avoids spam-as-fiduciary attack)."""
@@ -309,6 +324,7 @@ async def test_guardian_2_1_15_fiduciary_composite_heuristic(guardian) -> None:
 # TST-BRAIN-672
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0672", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "16", "title": "llm_detects_casual_emergency"}
 async def test_guardian_2_1_16_llm_detects_casual_emergency(guardian) -> None:
     """SS2.1.16: LLM detects family emergency phrased casually.
 
@@ -331,6 +347,7 @@ async def test_guardian_2_1_16_llm_detects_casual_emergency(guardian) -> None:
 
 # TST-BRAIN-673
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0673", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "17", "title": "llm_failure_defaults_to_engagement"}
 async def test_guardian_2_1_17_llm_failure_defaults_to_engagement(guardian) -> None:
     """SS2.1.17: LLM failure falls back to engagement (Silence First).
 
@@ -352,6 +369,7 @@ async def test_guardian_2_1_17_llm_failure_defaults_to_engagement(guardian) -> N
 
 # TST-BRAIN-674
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0674", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "18", "title": "llm_low_confidence_defaults_to_engagement"}
 async def test_guardian_2_1_18_llm_low_confidence_defaults_to_engagement(guardian) -> None:
     """SS2.1.18: LLM returns fiduciary with low confidence -> engagement.
 
@@ -374,6 +392,7 @@ async def test_guardian_2_1_18_llm_low_confidence_defaults_to_engagement(guardia
 
 # TST-BRAIN-675
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0675", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "19", "title": "llm_not_called_for_hard_rails"}
 async def test_guardian_2_1_19_llm_not_called_for_hard_rails(guardian) -> None:
     """SS2.1.19: LLM is never called when a hard rail matches.
 
@@ -399,6 +418,7 @@ async def test_guardian_2_1_19_llm_not_called_for_hard_rails(guardian) -> None:
 
 # TST-BRAIN-676
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0676", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "20", "title": "llm_malformed_json_falls_back"}
 async def test_guardian_2_1_20_llm_malformed_json_falls_back(guardian) -> None:
     """SS2.1.20: Malformed JSON from LLM -> fallback to engagement."""
     guardian._test_llm.route.return_value = {
@@ -416,6 +436,7 @@ async def test_guardian_2_1_20_llm_malformed_json_falls_back(guardian) -> None:
 
 # TST-BRAIN-677
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0677", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "21", "title": "llm_invalid_decision_falls_back"}
 async def test_guardian_2_1_21_llm_invalid_decision_falls_back(guardian) -> None:
     """SS2.1.21: LLM returns invalid decision value -> fallback to engagement."""
     guardian._test_llm.route.return_value = {
@@ -435,6 +456,7 @@ async def test_guardian_2_1_21_llm_invalid_decision_falls_back(guardian) -> None
 # TST-BRAIN-678
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0678", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "22", "title": "llm_solicited_classification"}
 async def test_guardian_2_1_22_llm_solicited_classification(guardian) -> None:
     """SS2.1.22: LLM classifies as solicited for implicit request responses."""
     guardian._test_llm.route.return_value = {
@@ -453,6 +475,7 @@ async def test_guardian_2_1_22_llm_solicited_classification(guardian) -> None:
 
 # TST-BRAIN-679
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0679", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "23", "title": "llm_spam_urgency_stays_engagement"}
 async def test_guardian_2_1_23_llm_spam_urgency_stays_engagement(guardian) -> None:
     """SS2.1.23: LLM correctly identifies fake urgency as engagement.
 
@@ -476,6 +499,7 @@ async def test_guardian_2_1_23_llm_spam_urgency_stays_engagement(guardian) -> No
 
 # TST-BRAIN-680
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0680", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "24", "title": "scrub_failure_falls_back_to_engagement"}
 async def test_guardian_2_1_24_scrub_failure_falls_back_to_engagement(guardian) -> None:
     """SS2.1.24: PII scrub failure in silence classifier -> engagement.
 
@@ -519,6 +543,7 @@ async def test_guardian_2_1_24_scrub_failure_falls_back_to_engagement(guardian) 
 
 # TST-BRAIN-031
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0031", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "01", "title": "vault_unlocked"}
 async def test_guardian_2_2_1_vault_unlocked(guardian) -> None:
     """SS2.2.1: vault_unlocked event initialises guardian with decrypted data access."""
     event = make_vault_unlocked_event()
@@ -530,6 +555,7 @@ async def test_guardian_2_2_1_vault_unlocked(guardian) -> None:
 
 # TST-BRAIN-033
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0033", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "02", "title": "vault_locked"}
 async def test_guardian_2_2_2_vault_locked(guardian) -> None:
     """SS2.2.2: vault_locked event flushes in-memory state for that persona."""
     # First unlock to set up state.
@@ -547,6 +573,7 @@ async def test_guardian_2_2_2_vault_locked(guardian) -> None:
 
 # TST-BRAIN-032
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0032", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "03", "title": "degraded_mode_when_vault_unreachable"}
 async def test_guardian_2_2_3_degraded_mode_when_vault_unreachable(guardian) -> None:
     """SS2.2.3: Guardian enters degraded mode when core is unreachable.
 
@@ -582,6 +609,7 @@ async def test_guardian_2_2_3_degraded_mode_when_vault_unreachable(guardian) -> 
 
 # TST-BRAIN-034
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0034", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "04", "title": "vault_unlocked_idempotent"}
 async def test_guardian_2_2_4_vault_unlocked_idempotent(guardian) -> None:
     """SS2.2.4: Duplicate vault_unlocked events are idempotent — no double init."""
     event = make_vault_unlocked_event()
@@ -611,6 +639,7 @@ async def test_guardian_2_2_4_vault_unlocked_idempotent(guardian) -> None:
 
 # TST-BRAIN-035
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0035", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "process_event_returns_action"}
 async def test_guardian_2_3_1_process_event_returns_action(guardian) -> None:
     """SS2.3.1: process_event returns a structured action dict."""
     event = make_fiduciary_event()
@@ -623,6 +652,7 @@ async def test_guardian_2_3_1_process_event_returns_action(guardian) -> None:
 
 # TST-BRAIN-036
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0036", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "multi_step_reasoning_with_scratchpad"}
 async def test_guardian_2_3_2_multi_step_reasoning_with_scratchpad(guardian) -> None:
     """SS2.3.2: Multi-step reasoning writes checkpoints to scratchpad."""
     event = make_fiduciary_event(body="Your flight is cancelled in 2 hours")
@@ -647,6 +677,7 @@ async def test_guardian_2_3_2_multi_step_reasoning_with_scratchpad(guardian) -> 
 
 # TST-BRAIN-037
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0037", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "11", "title": "agent_intent_review_general"}
 async def test_guardian_2_3_11_agent_intent_review_general(guardian) -> None:
     """SS2.3.11: External agent submits intent — Guardian evaluates against privacy rules, trust, state."""
     intent = make_safe_intent()
@@ -659,6 +690,7 @@ async def test_guardian_2_3_11_agent_intent_review_general(guardian) -> None:
 
 # TST-BRAIN-038
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0038", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "03", "title": "agent_intent_review_safe"}
 async def test_guardian_2_3_3_agent_intent_review_safe(guardian) -> None:
     """SS2.3.3: Safe agent intent (fetch_weather) is auto-approved.
 
@@ -693,6 +725,7 @@ async def test_guardian_2_3_3_agent_intent_review_safe(guardian) -> None:
 
 # TST-BRAIN-039
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0039", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "04", "title": "agent_intent_review_risky"}
 async def test_guardian_2_3_4_agent_intent_review_risky(guardian) -> None:
     """SS2.3.4: Risky intent (send_email) is flagged for user review."""
     intent = make_risky_intent()
@@ -704,6 +737,7 @@ async def test_guardian_2_3_4_agent_intent_review_risky(guardian) -> None:
 
 # TST-BRAIN-040
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0040", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "05", "title": "agent_intent_review_blocked"}
 async def test_guardian_2_3_5_agent_intent_review_blocked(guardian) -> None:
     """SS2.3.5: Blocked intent (untrusted bot reading vault) is rejected."""
     intent = make_blocked_intent()
@@ -714,6 +748,7 @@ async def test_guardian_2_3_5_agent_intent_review_blocked(guardian) -> None:
 
 # TST-BRAIN-364
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0364", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "06", "title": "risky_intent_logs_audit_trail"}
 async def test_guardian_2_3_6_risky_intent_logs_audit_trail(guardian) -> None:
     """SS2.3.6: Risky intents produce an audit trail entry in core KV."""
     intent = make_risky_intent()
@@ -728,6 +763,7 @@ async def test_guardian_2_3_6_risky_intent_logs_audit_trail(guardian) -> None:
 
 # TST-BRAIN-365
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0365", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "07", "title": "blocked_intent_logs_audit_trail"}
 async def test_guardian_2_3_7_blocked_intent_logs_audit_trail(guardian) -> None:
     """SS2.3.7: Blocked intents produce an audit trail entry in core KV."""
     intent = make_blocked_intent()
@@ -741,6 +777,7 @@ async def test_guardian_2_3_7_blocked_intent_logs_audit_trail(guardian) -> None:
 
 # TST-BRAIN-041
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0041", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "08", "title": "processing_timeout"}
 async def test_guardian_2_3_8_processing_timeout(guardian) -> None:
     """SS2.3.8: Guardian imposes a timeout on event processing.
 
@@ -765,6 +802,7 @@ async def test_guardian_2_3_8_processing_timeout(guardian) -> None:
 
 # TST-BRAIN-042
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0042", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "09", "title": "error_recovery_continues_loop"}
 async def test_guardian_2_3_9_error_recovery_continues_loop(guardian) -> None:
     """SS2.3.9: A failed event does not crash the loop — guardian recovers."""
     # Process a bad event that triggers an exception in the generic path.
@@ -782,6 +820,7 @@ async def test_guardian_2_3_9_error_recovery_continues_loop(guardian) -> None:
 
 # TST-BRAIN-043
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0043", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "12", "title": "crash_handler_sanitized_stdout"}
 async def test_guardian_2_3_12_crash_handler_sanitized_stdout(guardian) -> None:
     """SS2.3.12: Crash handler writes ONLY sanitized one-liner to stdout — no PII, no traceback frames."""
     # Force an exception during fiduciary processing (after classify_silence).
@@ -804,6 +843,7 @@ async def test_guardian_2_3_12_crash_handler_sanitized_stdout(guardian) -> None:
 
 # TST-BRAIN-044
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0044", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "10", "title": "crash_handler_writes_report"}
 async def test_guardian_2_3_10_crash_handler_writes_report(guardian) -> None:
     """SS2.3.10: Unrecoverable crash writes a crash report to scratchpad."""
     event = make_fiduciary_event(body="Emergency alert")
@@ -831,6 +871,7 @@ async def test_guardian_2_3_10_crash_handler_writes_report(guardian) -> None:
 
 # TST-BRAIN-045
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0045", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "1_never_calls_messages_send"}
 async def test_guardian_2_3_1_1_never_calls_messages_send(guardian) -> None:
     """SS2.3.1.1: Guardian never calls messages.send — only drafts.
 
@@ -853,6 +894,7 @@ async def test_guardian_2_3_1_1_never_calls_messages_send(guardian) -> None:
 
 # TST-BRAIN-046
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0046", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "2_draft_via_gmail_api"}
 async def test_guardian_2_3_1_2_draft_via_gmail_api(guardian) -> None:
     """SS2.3.1.2: Email action creates a draft via Gmail drafts.create, not send.
 
@@ -866,6 +908,7 @@ async def test_guardian_2_3_1_2_draft_via_gmail_api(guardian) -> None:
 
 # TST-BRAIN-047
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0047", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "3_draft_includes_confidence_score"}
 async def test_guardian_2_3_1_3_draft_includes_confidence_score(guardian) -> None:
     """SS2.3.1.3: Draft metadata includes a confidence score for user review.
 
@@ -886,6 +929,7 @@ async def test_guardian_2_3_1_3_draft_includes_confidence_score(guardian) -> Non
 
 # TST-BRAIN-048
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0048", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "9_below_threshold_flagged"}
 async def test_guardian_2_3_1_9_below_threshold_flagged(guardian) -> None:
     """SS2.3.1.9: Draft with confidence < 0.7 flagged for review with warning."""
     intent = make_risky_intent(action="draft_email")
@@ -897,6 +941,7 @@ async def test_guardian_2_3_1_9_below_threshold_flagged(guardian) -> None:
 
 # TST-BRAIN-049
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0049", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "10_high_risk_legal"}
 async def test_guardian_2_3_1_10_high_risk_legal(guardian) -> None:
     """SS2.3.1.10: Email from attorney with legal terms -> flagged for review, NOT auto-executed.
 
@@ -939,6 +984,7 @@ async def test_guardian_2_3_1_10_high_risk_legal(guardian) -> None:
 
 # TST-BRAIN-050
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0050", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "11_high_risk_financial"}
 async def test_guardian_2_3_1_11_high_risk_financial(guardian) -> None:
     """SS2.3.1.11: Email about large financial transaction -> flagged for review."""
     intent = make_risky_intent(
@@ -952,6 +998,7 @@ async def test_guardian_2_3_1_11_high_risk_financial(guardian) -> None:
 
 # TST-BRAIN-051
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0051", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "12_high_risk_emotional"}
 async def test_guardian_2_3_1_12_high_risk_emotional(guardian) -> None:
     """SS2.3.1.12: Email about sensitive personal matter -> flagged for review."""
     intent = make_risky_intent(
@@ -965,6 +1012,7 @@ async def test_guardian_2_3_1_12_high_risk_emotional(guardian) -> None:
 
 # TST-BRAIN-366
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0366", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "4_high_risk_classified_correctly"}
 async def test_guardian_2_3_1_4_high_risk_classified_correctly(guardian) -> None:
     """SS2.3.1.4: Email with attachment to external domain -> risky classification."""
     intent = make_risky_intent(
@@ -979,6 +1027,7 @@ async def test_guardian_2_3_1_4_high_risk_classified_correctly(guardian) -> None
 
 # TST-BRAIN-367
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0367", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "5_draft_preserves_original_intent"}
 async def test_guardian_2_3_1_5_draft_preserves_original_intent(guardian) -> None:
     """SS2.3.1.5: Draft preserves the original intent metadata for audit."""
     intent = make_risky_intent(action="send_email")
@@ -989,6 +1038,7 @@ async def test_guardian_2_3_1_5_draft_preserves_original_intent(guardian) -> Non
 
 # TST-BRAIN-368
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0368", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "6_no_send_even_if_agent_requests"}
 async def test_guardian_2_3_1_6_no_send_even_if_agent_requests(guardian) -> None:
     """SS2.3.1.6: Even if agent explicitly requests send, guardian downgrades to review."""
     intent = make_risky_intent(action="send_email", force_send=True)
@@ -1008,6 +1058,7 @@ async def test_guardian_2_3_1_6_no_send_even_if_agent_requests(guardian) -> None
 
 # TST-BRAIN-052
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0052", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "7_draft_notification_to_user"}
 async def test_guardian_2_3_1_7_draft_notification_to_user(guardian) -> None:
     """SS2.3.1.7: After flagging a draft intent, guardian provides reason for user."""
     intent = make_risky_intent(action="draft_email")
@@ -1019,6 +1070,7 @@ async def test_guardian_2_3_1_7_draft_notification_to_user(guardian) -> None:
 
 # TST-BRAIN-369
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0369", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "01", "title": "8_bulk_draft_rate_limited"}
 async def test_guardian_2_3_1_8_bulk_draft_rate_limited(guardian) -> None:
     """SS2.3.1.8: Burst of draft requests are all individually flagged for review."""
     intents = [
@@ -1041,6 +1093,7 @@ async def test_guardian_2_3_1_8_bulk_draft_rate_limited(guardian) -> None:
 
 # TST-BRAIN-053
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0053", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "1_upi_payment_intent_handover"}
 async def test_guardian_2_3_2_1_upi_payment_intent_handover(guardian) -> None:
     """SS2.3.2.1: UPI payment intent -> flagged for user review (cart handover)."""
     intent = make_risky_intent(
@@ -1056,6 +1109,7 @@ async def test_guardian_2_3_2_1_upi_payment_intent_handover(guardian) -> None:
 
 # TST-BRAIN-054
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0054", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "2_crypto_payment_intent_handover"}
 async def test_guardian_2_3_2_2_crypto_payment_intent_handover(guardian) -> None:
     """SS2.3.2.2: Crypto (USDC) payment intent -> flagged for user review."""
     intent = make_risky_intent(
@@ -1071,6 +1125,7 @@ async def test_guardian_2_3_2_2_crypto_payment_intent_handover(guardian) -> None
 
 # TST-BRAIN-055
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0055", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "3_web_payment_intent_handover"}
 async def test_guardian_2_3_2_3_web_payment_intent_handover(guardian) -> None:
     """SS2.3.2.3: Web checkout intent -> flagged for user review, never auto-pays."""
     intent = make_risky_intent(
@@ -1084,6 +1139,7 @@ async def test_guardian_2_3_2_3_web_payment_intent_handover(guardian) -> None:
 
 # TST-BRAIN-056
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0056", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "4_never_sees_credentials"}
 async def test_guardian_2_3_2_4_never_sees_credentials(guardian) -> None:
     """SS2.3.2.4: Guardian (and agent) never receives payment credentials.
 
@@ -1101,6 +1157,7 @@ async def test_guardian_2_3_2_4_never_sees_credentials(guardian) -> None:
 
 # TST-BRAIN-370
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0370", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "5_agent_never_holds_keys"}
 async def test_guardian_2_3_2_5_agent_never_holds_keys(guardian) -> None:
     """SS2.3.2.5: Agent DID never has access to wallet private keys.
 
@@ -1116,6 +1173,7 @@ async def test_guardian_2_3_2_5_agent_never_holds_keys(guardian) -> None:
 
 # TST-BRAIN-057
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0057", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "6_outcome_recorded_after_handover"}
 async def test_guardian_2_3_2_6_outcome_recorded_after_handover(guardian) -> None:
     """SS2.3.2.6: Payment intent is flagged, and the audit trail is written."""
     intent = make_risky_intent(action="pay_upi", target="merchant@upi")
@@ -1128,6 +1186,7 @@ async def test_guardian_2_3_2_6_outcome_recorded_after_handover(guardian) -> Non
 
 # TST-BRAIN-058
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0058", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "7_cart_handover_expiry"}
 async def test_guardian_2_3_2_7_cart_handover_expiry(guardian) -> None:
     """SS2.3.2.7: Cart handover intent has a TTL in the intent metadata.
 
@@ -1145,6 +1204,7 @@ async def test_guardian_2_3_2_7_cart_handover_expiry(guardian) -> None:
 
 # TST-BRAIN-059
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0059", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "10_outcome_followup_timing"}
 async def test_guardian_2_3_2_10_outcome_followup_timing(guardian) -> None:
     """SS2.3.2.10: Outcome followup event classifies as engagement.
 
@@ -1180,6 +1240,7 @@ async def test_guardian_2_3_2_10_outcome_followup_timing(guardian) -> None:
 
 # TST-BRAIN-060
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0060", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "11_outcome_inference_no_explicit_response"}
 async def test_guardian_2_3_2_11_outcome_inference_no_explicit_response(guardian) -> None:
     """SS2.3.2.11: Infer outcome from usage signals without explicit feedback.
 
@@ -1194,6 +1255,7 @@ async def test_guardian_2_3_2_11_outcome_inference_no_explicit_response(guardian
 
 # TST-BRAIN-061
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0061", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "12_outcome_anonymization"}
 async def test_guardian_2_3_2_12_outcome_anonymization(guardian) -> None:
     """SS2.3.2.12: Anonymized outcome does not contain user DID or names.
 
@@ -1238,6 +1300,7 @@ async def test_guardian_2_3_2_12_outcome_anonymization(guardian) -> None:
 
 # TST-BRAIN-062
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0062", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "01", "title": "briefing_works_without_scrubber"}
 async def test_guardian_2_5_briefing_works_without_scrubber() -> None:
     """Briefing generation must not crash when scrubber=None (degraded mode)."""
     from src.service.guardian import GuardianLoop
@@ -1277,6 +1340,7 @@ async def test_guardian_2_5_briefing_works_without_scrubber() -> None:
 
 # TST-BRAIN-371
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0371", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "8_handover_includes_summary"}
 async def test_guardian_2_3_2_8_handover_includes_summary(guardian) -> None:
     """SS2.3.2.8: Cart handover intent includes a human-readable summary."""
     intent = make_risky_intent(
@@ -1291,6 +1355,7 @@ async def test_guardian_2_3_2_8_handover_includes_summary(guardian) -> None:
 
 # TST-BRAIN-372
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0372", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "02", "title": "9_duplicate_handover_idempotent"}
 async def test_guardian_2_3_2_9_duplicate_handover_idempotent(guardian) -> None:
     """SS2.3.2.9: Duplicate cart handover for same cart ID is idempotent."""
     intent = make_risky_intent(
@@ -1312,6 +1377,7 @@ async def test_guardian_2_3_2_9_duplicate_handover_idempotent(guardian) -> None:
 
 # TST-BRAIN-062
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0062", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "04", "scenario": "01", "title": "non_streaming_whisper"}
 async def test_guardian_2_4_1_non_streaming_whisper(guardian) -> None:
     """SS2.4.1: Non-streaming whisper delivers via process_event for fiduciary events."""
     event = make_fiduciary_event(body="Flight rebooking confirmed")
@@ -1322,6 +1388,7 @@ async def test_guardian_2_4_1_non_streaming_whisper(guardian) -> None:
 
 # TST-BRAIN-063
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0063", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "04", "scenario": "02", "title": "streaming_whisper"}
 async def test_guardian_2_4_2_streaming_whisper(guardian) -> None:
     """SS2.4.2: Solicited event produces a notify action for delivery."""
     event = make_solicited_event(body="Here is your detailed analysis...")
@@ -1332,6 +1399,7 @@ async def test_guardian_2_4_2_streaming_whisper(guardian) -> None:
 
 # TST-BRAIN-064
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0064", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "04", "scenario": "03", "title": "disconnected_client_queues"}
 async def test_guardian_2_4_3_disconnected_client_queues(guardian) -> None:
     """SS2.4.3: Whisper to disconnected client — notify call fails but event is processed."""
     guardian._test_core.notify.side_effect = ConnectionError("client offline")
@@ -1344,6 +1412,7 @@ async def test_guardian_2_4_3_disconnected_client_queues(guardian) -> None:
 
 # TST-BRAIN-065
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0065", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "04", "scenario": "04", "title": "whisper_includes_vault_references"}
 async def test_guardian_2_4_4_whisper_includes_vault_references(guardian) -> None:
     """SS2.4.4: Whisper can include references to vault items (deep links).
 
@@ -1364,6 +1433,7 @@ async def test_guardian_2_4_4_whisper_includes_vault_references(guardian) -> Non
 
 # TST-BRAIN-066
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0066", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "01", "title": "morning_briefing_generated"}
 async def test_guardian_2_5_1_morning_briefing_generated(guardian) -> None:
     """SS2.5.1: Morning briefing aggregates engagement-tier items."""
     events = [
@@ -1378,6 +1448,7 @@ async def test_guardian_2_5_1_morning_briefing_generated(guardian) -> None:
 
 # TST-BRAIN-067
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0067", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "02", "title": "empty_briefing_no_items"}
 async def test_guardian_2_5_2_empty_briefing_no_items(guardian) -> None:
     """SS2.5.2: Briefing with zero engagement items returns empty/no-op."""
     briefing = await guardian.generate_briefing()
@@ -1388,6 +1459,7 @@ async def test_guardian_2_5_2_empty_briefing_no_items(guardian) -> None:
 
 # TST-BRAIN-068
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0068", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "03", "title": "briefing_items_ordered_by_relevance"}
 async def test_guardian_2_5_3_briefing_items_ordered_by_relevance(guardian) -> None:
     """SS2.5.3: Briefing items are ordered by relevance, not arrival time."""
     events = [
@@ -1405,6 +1477,7 @@ async def test_guardian_2_5_3_briefing_items_ordered_by_relevance(guardian) -> N
 
 # TST-BRAIN-069
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0069", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "04", "title": "dnd_defers_briefing"}
 async def test_guardian_2_5_4_dnd_defers_briefing(guardian) -> None:
     """SS2.5.4: Briefing delivery deferred while DND is active.
 
@@ -1423,6 +1496,7 @@ async def test_guardian_2_5_4_dnd_defers_briefing(guardian) -> None:
 
 # TST-BRAIN-070
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0070", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "05", "title": "briefing_dedup"}
 async def test_guardian_2_5_5_briefing_dedup(guardian) -> None:
     """SS2.5.5: Duplicate engagement items are deduplicated in briefing."""
     events = [
@@ -1437,6 +1511,7 @@ async def test_guardian_2_5_5_briefing_dedup(guardian) -> None:
 
 # TST-BRAIN-071
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0071", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "06", "title": "restricted_persona_summary"}
 async def test_guardian_2_5_6_restricted_persona_summary(guardian) -> None:
     """SS2.5.6: Briefing from restricted persona is included with persona metadata."""
     event = make_engagement_event(
@@ -1458,6 +1533,7 @@ async def test_guardian_2_5_6_restricted_persona_summary(guardian) -> None:
 
 # TST-BRAIN-072
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0072", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "10", "title": "zero_restricted_accesses_omitted"}
 async def test_guardian_2_5_10_zero_restricted_accesses_omitted(guardian) -> None:
     """SS2.5.10: Briefing with no restricted persona items has empty fiduciary recap."""
     briefing = await guardian.generate_briefing()
@@ -1466,6 +1542,7 @@ async def test_guardian_2_5_10_zero_restricted_accesses_omitted(guardian) -> Non
 
 # TST-BRAIN-073
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0073", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "11", "title": "restricted_summary_queries_audit_log"}
 async def test_guardian_2_5_11_restricted_summary_queries_audit_log(guardian) -> None:
     """SS2.5.11: Brain queries core for fiduciary recap during briefing generation.
 
@@ -1507,6 +1584,7 @@ async def test_guardian_2_5_11_restricted_summary_queries_audit_log(guardian) ->
 
 # TST-BRAIN-074
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0074", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "12", "title": "briefing_permanently_disabled"}
 async def test_guardian_2_5_12_briefing_permanently_disabled(guardian) -> None:
     """SS2.5.12: When no engagement items exist, no briefing is generated.
 
@@ -1519,6 +1597,7 @@ async def test_guardian_2_5_12_briefing_permanently_disabled(guardian) -> None:
 
 # TST-BRAIN-373
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0373", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "07", "title": "briefing_includes_fiduciary_recap"}
 async def test_guardian_2_5_7_briefing_includes_fiduciary_recap(guardian) -> None:
     """SS2.5.7: Briefing includes a recap of fiduciary events since last briefing."""
     # Process an engagement item to trigger briefing generation.
@@ -1548,6 +1627,7 @@ async def test_guardian_2_5_7_briefing_includes_fiduciary_recap(guardian) -> Non
 
 # TST-BRAIN-374
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0374", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "08", "title": "briefing_multi_persona"}
 async def test_guardian_2_5_8_briefing_multi_persona(guardian) -> None:
     """SS2.5.8: Briefing aggregates across personas without leaking cross-persona data."""
     personal = make_engagement_event(body="Friend posted photos", persona_id="personal")
@@ -1563,6 +1643,7 @@ async def test_guardian_2_5_8_briefing_multi_persona(guardian) -> None:
 
 # TST-BRAIN-375
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0375", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "05", "scenario": "09", "title": "briefing_respects_user_preferences"}
 async def test_guardian_2_5_9_briefing_respects_user_preferences(guardian) -> None:
     """SS2.5.9: Briefing respects user preferences for category ordering."""
     events = [
@@ -1585,6 +1666,7 @@ async def test_guardian_2_5_9_briefing_respects_user_preferences(guardian) -> No
 
 # TST-BRAIN-075
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0075", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "01", "title": "nudge_on_conversation_open"}
 async def test_guardian_2_6_1_nudge_on_conversation_open(guardian) -> None:
     """SS2.6.1: Nudge on conversation open — fiduciary events trigger nudge assembly.
 
@@ -1603,6 +1685,7 @@ async def test_guardian_2_6_1_nudge_on_conversation_open(guardian) -> None:
 
 # TST-BRAIN-076
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0076", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "02", "title": "nudge_context_assembly"}
 async def test_guardian_2_6_2_nudge_context_assembly(guardian) -> None:
     """SS2.6.2: Nudge context assembly — gathers messages, notes, tasks, calendar."""
     # Set up vault to return relevant context.
@@ -1621,6 +1704,7 @@ async def test_guardian_2_6_2_nudge_context_assembly(guardian) -> None:
 
 # TST-BRAIN-077
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0077", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "03", "title": "nudge_delivery_via_ws"}
 async def test_guardian_2_6_3_nudge_delivery_via_ws(guardian) -> None:
     """SS2.6.3: Nudge delivery — core pushes assembled context via WS notification.
 
@@ -1647,6 +1731,7 @@ async def test_guardian_2_6_3_nudge_delivery_via_ws(guardian) -> None:
 
 # TST-BRAIN-078
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0078", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "04", "title": "nudge_no_context_no_interrupt"}
 async def test_guardian_2_6_4_nudge_no_context_no_interrupt(guardian) -> None:
     """SS2.6.4: Nudge with no relevant context — no nudge payload generated."""
     # Vault returns nothing — no context for the contact.
@@ -1662,6 +1747,7 @@ async def test_guardian_2_6_4_nudge_no_context_no_interrupt(guardian) -> None:
 
 # TST-BRAIN-079
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0079", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "05", "title": "nudge_respects_persona_boundaries"}
 async def test_guardian_2_6_5_nudge_respects_persona_boundaries(guardian) -> None:
     """SS2.6.5: Nudge respects persona boundaries — queries per persona."""
     guardian._test_core.query_vault.return_value = []
@@ -1687,6 +1773,7 @@ async def test_guardian_2_6_5_nudge_respects_persona_boundaries(guardian) -> Non
 
 # TST-BRAIN-080
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0080", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "06", "title": "pending_promise_detection"}
 async def test_guardian_2_6_6_pending_promise_detection(guardian) -> None:
     """SS2.6.6: Pending promise detection — "I'll send the PDF tomorrow" surfaces.
 
@@ -1726,6 +1813,7 @@ async def test_guardian_2_6_6_pending_promise_detection(guardian) -> None:
 
 # TST-BRAIN-081
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0081", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "07", "title": "calendar_context_included"}
 async def test_guardian_2_6_7_calendar_context_included(guardian) -> None:
     """SS2.6.7: Calendar context included — upcoming event with contact appears in nudge."""
     # Calendar events are queried via query_vault with type filter.
@@ -1753,6 +1841,7 @@ async def test_guardian_2_6_7_calendar_context_included(guardian) -> None:
 
 # TST-BRAIN-082
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0082", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "07", "scenario": "01", "title": "grant_specific_sharing"}
 async def test_guardian_2_7_1_grant_specific_sharing(guardian) -> None:
     """SS2.7.1: Grant specific sharing request -> classified as engagement for chat processing."""
     event = make_event(
@@ -1766,6 +1855,7 @@ async def test_guardian_2_7_1_grant_specific_sharing(guardian) -> None:
 
 # TST-BRAIN-083
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0083", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "07", "scenario": "02", "title": "revoke_sharing_bulk"}
 async def test_guardian_2_7_2_revoke_sharing_bulk(guardian) -> None:
     """SS2.7.2: Revoke sharing for all contacts -> classified as engagement."""
     event = make_event(
@@ -1778,6 +1868,7 @@ async def test_guardian_2_7_2_revoke_sharing_bulk(guardian) -> None:
 
 # TST-BRAIN-084
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0084", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "07", "scenario": "03", "title": "query_current_sharing"}
 async def test_guardian_2_7_3_query_current_sharing(guardian) -> None:
     """SS2.7.3: Query current sharing policy -> classified as engagement."""
     event = make_event(
@@ -1790,6 +1881,7 @@ async def test_guardian_2_7_3_query_current_sharing(guardian) -> None:
 
 # TST-BRAIN-085
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0085", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "07", "scenario": "04", "title": "grant_full_sharing_specific_category"}
 async def test_guardian_2_7_4_grant_full_sharing_specific_category(guardian) -> None:
     """SS2.7.4: Grant full sharing for specific category -> classified as engagement."""
     event = make_event(
@@ -1802,6 +1894,7 @@ async def test_guardian_2_7_4_grant_full_sharing_specific_category(guardian) -> 
 
 # TST-BRAIN-086
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0086", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "07", "scenario": "05", "title": "ambiguous_request_asks_clarification"}
 async def test_guardian_2_7_5_ambiguous_request_asks_clarification(guardian) -> None:
     """SS2.7.5: Ambiguous request -> classified as engagement (no fiduciary escalation)."""
     event = make_event(
@@ -1819,6 +1912,7 @@ async def test_guardian_2_7_5_ambiguous_request_asks_clarification(guardian) -> 
 
 # TST-BRAIN-087
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0087", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "08", "scenario": "01", "title": "brain_prepares_tiered_payload"}
 async def test_guardian_2_8_1_brain_prepares_tiered_payload(guardian) -> None:
     """SS2.8.1: Brain prepares tiered payload for D2D send.
 
@@ -1836,6 +1930,7 @@ async def test_guardian_2_8_1_brain_prepares_tiered_payload(guardian) -> None:
 
 # TST-BRAIN-088
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0088", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "08", "scenario": "02", "title": "brain_sends_max_detail"}
 async def test_guardian_2_8_2_brain_sends_max_detail(guardian) -> None:
     """SS2.8.2: Brain sends max detail — location data includes summary + full coordinates."""
     event = {
@@ -1851,6 +1946,7 @@ async def test_guardian_2_8_2_brain_sends_max_detail(guardian) -> None:
 
 # TST-BRAIN-089
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0089", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "08", "scenario": "03", "title": "brain_never_prefilters_by_policy"}
 async def test_guardian_2_8_3_brain_never_prefilters_by_policy(guardian) -> None:
     """SS2.8.3: Brain never pre-filters by policy — always includes all tiers."""
     event = {
@@ -1870,6 +1966,7 @@ async def test_guardian_2_8_3_brain_never_prefilters_by_policy(guardian) -> None
 
 # TST-BRAIN-090
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0090", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "08", "scenario": "04", "title": "brain_calls_post_dina_send"}
 async def test_guardian_2_8_4_brain_calls_post_dina_send(guardian) -> None:
     """SS2.8.4: Brain prepares D2D payload for core to handle egress."""
     event = {
@@ -1889,6 +1986,7 @@ async def test_guardian_2_8_4_brain_calls_post_dina_send(guardian) -> None:
 # TST-BRAIN-392
 # TST-BRAIN-476 (partial) Fiduciary ACK behavior
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0392", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "13", "title": "task_ack_after_success"}
 async def test_guardian_2_3_13_task_ack_after_success(guardian) -> None:
     """SS2.3.13: Brain ACKs task after successful processing.
 
@@ -1906,6 +2004,7 @@ async def test_guardian_2_3_13_task_ack_after_success(guardian) -> None:
 
 # TST-BRAIN-393
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0393", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "14", "title": "task_not_acked_on_failure"}
 async def test_guardian_2_3_14_task_not_acked_on_failure(guardian) -> None:
     """SS2.3.14: Brain does NOT ACK failed task.
 
@@ -1929,6 +2028,7 @@ async def test_guardian_2_3_14_task_not_acked_on_failure(guardian) -> None:
 
 # TST-BRAIN-394
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0394", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "03", "scenario": "15", "title": "retried_task_after_crash"}
 async def test_guardian_2_3_15_retried_task_after_crash(guardian) -> None:
     """SS2.3.15: Brain receives retried task (same task_id) after crash.
 
@@ -1953,6 +2053,7 @@ async def test_guardian_2_3_15_retried_task_after_crash(guardian) -> None:
 
 # TST-BRAIN-398
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0398", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "05", "title": "persona_locked_whisper"}
 async def test_guardian_2_2_5_persona_locked_whisper(guardian) -> None:
     """SS2.2.5: Brain receives 403 Persona Locked -> whispers unlock request.
 
@@ -1976,6 +2077,7 @@ async def test_guardian_2_2_5_persona_locked_whisper(guardian) -> None:
 
 # TST-BRAIN-399
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0399", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "06", "title": "persona_unlock_retry"}
 async def test_guardian_2_2_6_persona_unlock_retry(guardian) -> None:
     """SS2.2.6: Brain retries query after persona unlock notification.
 
@@ -2011,6 +2113,7 @@ async def test_guardian_2_2_6_persona_unlock_retry(guardian) -> None:
 
 # TST-BRAIN-411
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0411", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "06", "scenario": "08", "title": "disconnection_pattern"}
 async def test_guardian_2_6_8_disconnection_pattern(guardian) -> None:
     """SS2.6.8: Brain detects contacts with no recent interaction.
 
@@ -2035,6 +2138,7 @@ async def test_guardian_2_6_8_disconnection_pattern(guardian) -> None:
 
 # TST-BRAIN-412
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0412", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "08", "scenario": "05", "title": "didcomm_message_type_parsing"}
 async def test_guardian_2_8_5_didcomm_message_type_parsing(guardian) -> None:
     """SS2.8.5: Brain correctly routes D2D v1 message types.
 
@@ -2114,6 +2218,7 @@ _SAMPLE_VAULT_ITEMS = [
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0047", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "10", "scenario": "01", "title": "disclosure_approved_unknown_id"}
 async def test_guardian_2_10_1_disclosure_approved_unknown_id(guardian) -> None:
     """Approving with an unknown disclosure_id must return disclosure_invalid."""
     event = _make_approval_event("disc-does-not-exist", "some text")
@@ -2123,6 +2228,7 @@ async def test_guardian_2_10_1_disclosure_approved_unknown_id(guardian) -> None:
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0048", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "10", "scenario": "02", "title": "disclosure_approved_text_mismatch"}
 async def test_guardian_2_10_2_disclosure_approved_text_mismatch(guardian) -> None:
     """Approving with text that doesn't match the proposal must be blocked."""
     # First, generate a proposal so a disclosure_id is stored.
@@ -2141,6 +2247,7 @@ async def test_guardian_2_10_2_disclosure_approved_text_mismatch(guardian) -> No
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0049", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "10", "scenario": "03", "title": "disclosure_approved_binding_correct"}
 async def test_guardian_2_10_3_disclosure_approved_binding_correct(guardian) -> None:
     """Approving with matching text must succeed as disclosure_shared."""
     guardian._test_core.query_vault.return_value = _SAMPLE_VAULT_ITEMS
@@ -2160,6 +2267,7 @@ async def test_guardian_2_10_3_disclosure_approved_binding_correct(guardian) -> 
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0050", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "10", "scenario": "04", "title": "vault_query_error_returns_disclosure_error"}
 async def test_guardian_2_10_4_vault_query_error_returns_disclosure_error(guardian) -> None:
     """Vault query failure must return disclosure_error, not no_relevant_data."""
     guardian._test_core.query_vault.side_effect = RuntimeError("connection refused")
@@ -2176,6 +2284,7 @@ async def test_guardian_2_10_4_vault_query_error_returns_disclosure_error(guardi
 
 # TST-BRAIN-545
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0545", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "no_hallucinated_trust_scores"}
 async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
     """SS19.1: No hallucinated trust scores — Verified Truth principle.
 
@@ -2284,6 +2393,7 @@ async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
 
 # TST-BRAIN-559
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0559", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "draft_expires_after_72_hours"}
 async def test_guardian_20_1_draft_expires_after_72_hours(guardian) -> None:
     """SS20.1: Draft auto-deleted from Tier 4 after 72 hours, user notified.
 
@@ -2397,6 +2507,7 @@ async def test_guardian_20_1_draft_expires_after_72_hours(guardian) -> None:
 
 # TST-BRAIN-538
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0538", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "01", "title": "briefing_pii_scrubbed"}
 async def test_guardian_18_3_briefing_pii_scrubbed(guardian) -> None:
     """SS18.3: Briefing PII scrubbed — engagement items containing PII
     must pass through the PII scrubber before delivery.
@@ -2510,6 +2621,7 @@ async def test_guardian_18_3_briefing_pii_scrubbed(guardian) -> None:
 
 # TST-BRAIN-569
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0569", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "approval_invalidated_on_payload_mutation"}
 async def test_guardian_20_1_approval_invalidated_on_payload_mutation(
     guardian,
 ) -> None:
@@ -2639,6 +2751,7 @@ async def test_guardian_20_1_approval_invalidated_on_payload_mutation(
            "injecting trust data density caveats (Phase 2: Verified Truth).",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0051", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "01", "title": "reviews_exist_no_outcome_data"}
 async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     """SS19.2: Reviews exist but no outcome data.
 
@@ -2826,6 +2939,7 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
 
 # TST-BRAIN-563
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0563", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "messages_send_always_downgraded"}
 async def test_guardian_20_1_messages_send_always_downgraded(guardian) -> None:
     """SS20.1: Agent requests messages.send → always downgraded.
 
@@ -2963,6 +3077,7 @@ async def test_guardian_20_1_messages_send_always_downgraded(guardian) -> None:
            "(Phase 2: Approval Semantics Under Pressure).",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0052", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "escalation_unreviewed_high_risk_draft"}
 async def test_guardian_20_1_escalation_unreviewed_high_risk_draft(guardian) -> None:
     """SS20.1: Escalation — unreviewed high-risk draft after 24 hours.
 
@@ -3143,6 +3258,7 @@ async def test_guardian_20_1_escalation_unreviewed_high_risk_draft(guardian) -> 
            "but the Brain does not invoke this flow (Phase 2: Deep Link Default).",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0053", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "01", "title": "bot_trust_penalty_stripped_attribution"}
 async def test_guardian_19_3_bot_trust_penalty_stripped_attribution(
     guardian,
 ) -> None:
@@ -3373,6 +3489,7 @@ async def test_guardian_19_3_bot_trust_penalty_stripped_attribution(
            "Phase 2 feature: action-aware TTL tiers.",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0054", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "cart_handover_expires_after_12_hours"}
 async def test_approval_20_1_cart_handover_expires_after_12_hours(guardian) -> None:
     """SS20.1: Cart handover expires after 12 hours.
 
@@ -3526,6 +3643,7 @@ async def test_approval_20_1_cart_handover_expires_after_12_hours(guardian) -> N
            "(Phase 2: Approval Semantics Under Pressure).",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0055", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "multiple_pending_drafts_no_silent_batch"}
 async def test_guardian_20_1_multiple_pending_drafts_no_silent_batch(guardian) -> None:
     """SS20.1: Multiple pending drafts — no silent batch.
 
@@ -3730,6 +3848,7 @@ async def test_guardian_20_1_multiple_pending_drafts_no_silent_batch(guardian) -
 
 # TST-BRAIN-539
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0539", "section": "18", "sectionName": "Thesis: Silence First", "subsection": "03", "scenario": "01", "title": "briefing_cross_persona_safety"}
 async def test_guardian_18_3_briefing_cross_persona_safety(guardian) -> None:
     """SS18.3: Briefing cross-persona safety.
 
@@ -3920,6 +4039,7 @@ async def test_guardian_18_3_briefing_cross_persona_safety(guardian) -> None:
         "timestamps (UTC) with no timezone conversion."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0056", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "120", "title": "tst_brain_541_briefing_timing_respects_timezone"}
 async def test_tst_brain_541_briefing_timing_respects_timezone(guardian):
     """User in IST (UTC+5:30), briefing configured for 7 AM
     → Briefing generated at 7 AM IST, not 7 AM UTC.
@@ -4063,6 +4183,7 @@ async def test_tst_brain_541_briefing_timing_respects_timezone(guardian):
            "(Phase 2: Approval Semantics Under Pressure).",
     strict=True,
 )
+# TRACE: {"suite": "BRAIN", "case": "0057", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "concurrent_draft_cart_same_product"}
 async def test_guardian_20_1_concurrent_draft_cart_same_product(guardian) -> None:
     """SS20.1: Concurrent draft + cart for same product.
 
@@ -4233,6 +4354,7 @@ async def test_guardian_20_1_concurrent_draft_cart_same_product(guardian) -> Non
 
 # TST-BRAIN-542
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0542", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "attribution_mandatory_in_recommendations"}
 async def test_guardian_19_1_attribution_mandatory_in_recommendations(guardian) -> None:
     """SS19.1: Attribution mandatory in recommendations.
 
@@ -4519,6 +4641,7 @@ async def test_guardian_19_1_attribution_mandatory_in_recommendations(guardian) 
 
 # TST-BRAIN-564
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0564", "section": "20", "sectionName": "Thesis: Action Integrity", "subsection": "01", "scenario": "01", "title": "approval_state_survives_brain_restart"}
 async def test_guardian_20_1_approval_state_survives_brain_restart(guardian) -> None:
     """SS20.1: Approval state survives brain restart.
 
@@ -4717,6 +4840,7 @@ async def test_guardian_20_1_approval_state_survives_brain_restart(guardian) -> 
 
 # TST-BRAIN-543
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0543", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "deep_link_creators_get_traffic"}
 async def test_guardian_19_1_deep_link_creators_get_traffic(guardian) -> None:
     """SS19.1: Deep link default — creators get traffic, not extraction.
 
@@ -5003,6 +5127,7 @@ async def test_guardian_19_1_deep_link_creators_get_traffic(guardian) -> None:
 # TST-BRAIN-549
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0549", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "01", "title": "single_review_limited_data"}
 async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
     """SS19.2: Single review, no consensus possible.
 
@@ -5225,6 +5350,7 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0058", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "126", "title": "tst_brain_544_sponsored_content_disclosed"}
 async def test_tst_brain_544_sponsored_content_disclosed(guardian):
     """Brain includes recommendation with `sponsored: true` metadata
     → User sees '[Sponsored]' tag — sponsorship never hidden.
@@ -5418,6 +5544,7 @@ async def test_tst_brain_544_sponsored_content_disclosed(guardian):
         "than 365 days. The LLM is never instructed to note review age."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0059", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "127", "title": "tst_brain_554_stale_reviews_all_over_one_year"}
 async def test_tst_brain_554_stale_reviews_all_over_one_year(guardian):
     """20 reviews, all >365 days old → Brain includes but notes recency:
     'Reviews are over a year old — product may have changed'.
@@ -5638,6 +5765,7 @@ async def test_tst_brain_554_stale_reviews_all_over_one_year(guardian):
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0060", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "128", "title": "tst_brain_571_sponsorship_cannot_distort_ranking"}
 async def test_tst_brain_571_sponsorship_cannot_distort_ranking(guardian):
     """Product A: sponsored, 10 reviews avg 3/5. Product B: unsponsored,
     30 reviews avg 4.5/5 → Product B ranks above A. Sponsorship adds
@@ -5908,6 +6036,7 @@ async def test_tst_brain_571_sponsorship_cannot_distort_ranking(guardian):
         "consensus from conflicting data."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0061", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "129", "title": "tst_brain_550_sparse_but_conflicting_reviews"}
 async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
     """3 reviews, mixed (2 positive, 1 negative) → Brain reports the split
     honestly: 'Mixed reviews — 2 positive, 1 negative from verified
@@ -6188,6 +6317,7 @@ async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0062", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "130", "title": "tst_brain_548_zero_reviews_zero_attestations"}
 async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     """AppView returns empty for product query → Brain uses web search
     (OpenClaw) + vault context. Response says 'I found web reviews but
@@ -6497,6 +6627,7 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
         "or enforce deep linking in responses."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0063", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "131", "title": "tst_brain_556_expert_review_deep_linked_not_extracted"}
 async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
     """Brain processes expert attestation with linked article → Response
     links to expert's original article — does NOT reproduce the full
@@ -6783,6 +6914,7 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0064", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "132", "title": "tst_brain_567_no_unsolicited_discovery"}
 async def test_tst_brain_567_no_unsolicited_discovery(guardian):
     """User asks about topic X, Brain finds related product Y during
     reasoning → Brain does NOT proactively surface product Y — only
@@ -7094,6 +7226,7 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
         "consensus scoring or review aggregation."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0065", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "133", "title": "tst_brain_552_dense_with_strong_consensus"}
 async def test_tst_brain_552_dense_with_strong_consensus(guardian):
     """50 reviews, 45 positive, 5 negative → Brain reports with
     confidence: 'Strong consensus: 90% positive from 50 verified
@@ -7370,6 +7503,7 @@ async def test_tst_brain_552_dense_with_strong_consensus(guardian):
         "_handle_reason() (guardian.py:1521-1620)."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0066", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "134", "title": "tst_brain_551_sparse_but_unanimous"}
 async def test_tst_brain_551_sparse_but_unanimous(guardian):
     """3 reviews, all positive → Brain reports consensus but notes
     sample size: '3 verified reviewers all positive, but limited sample'.
@@ -7674,6 +7808,7 @@ async def test_tst_brain_551_sparse_but_unanimous(guardian):
         "to validate individual attribution."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0067", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "135", "title": "tst_brain_557_multiple_sources_attributed_individually"}
 async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
     """Brain aggregates 3 expert reviews → Each expert individually
     credited with name + link — not 'experts say'.
@@ -7975,6 +8110,7 @@ async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
         "conflicting reviews."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0068", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "136", "title": "tst_brain_546_sparse_trust_data_honest_uncertainty"}
 async def test_tst_brain_546_sparse_trust_data_honest_uncertainty(guardian):
     """2 reviews for product, 1 positive 1 negative → Brain communicates
     uncertainty: 'Only 2 verified reviews, opinions split' — does not
@@ -8257,6 +8393,7 @@ async def test_tst_brain_546_sparse_trust_data_honest_uncertainty(guardian):
         "comparative analysis."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0069", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "137", "title": "tst_brain_566_ranking_explainability"}
 async def test_tst_brain_566_ranking_explainability(guardian):
     """User asks 'why was product A ranked above product B?' → Brain
     explains ranking factors (trust ring level, review count, consensus
@@ -8529,6 +8666,7 @@ async def test_tst_brain_566_ranking_explainability(guardian):
         "language proportionally with data volume."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0070", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "138", "title": "tst_brain_547_dense_trust_confidence_proportional"}
 async def test_tst_brain_547_dense_trust_confidence_proportional(guardian):
     """50+ reviews with strong consensus → Brain communicates confidence:
     "Strong consensus from verified reviewers" — confidence earned, not assumed.
@@ -8798,6 +8936,7 @@ async def test_tst_brain_547_dense_trust_confidence_proportional(guardian):
         "ring metadata in the LLM context."
     ),
 )
+# TRACE: {"suite": "BRAIN", "case": "0071", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "139", "title": "tst_brain_555_trust_ring_weighting_visible"}
 async def test_tst_brain_555_trust_ring_weighting_visible(guardian):
     """Mix of Ring 1 (unverified) and Ring 2 (verified) reviews
     → Brain clearly weights Ring 2 higher: "3 verified reviewers recommend it;
@@ -9086,6 +9225,7 @@ async def test_tst_brain_555_trust_ring_weighting_visible(guardian):
 
 
 # TST-BRAIN-561
+# TRACE: {"suite": "BRAIN", "case": "0561", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "140", "title": "analyze_trust_density_zero_when_unscoped"}
 def test_analyze_trust_density_zero_when_unscoped():
     """SS19.2: Unscoped density analysis returns zero tier when no entity.
 
@@ -9114,13 +9254,15 @@ def test_analyze_trust_density_zero_when_unscoped():
 
 
 # TST-BRAIN-562
-def test_apply_density_enforcement_zero_injects_disclosure():
-    """SS19.2: Zero-tier enforcement injects honest disclosure.
+# TRACE: {"suite": "BRAIN", "case": "0562", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "141", "title": "density_enforcement_zero_passes_through_clean"}
+def test_density_enforcement_zero_passes_through_clean():
+    """SS19.2: Zero-tier enforcement handles zero-trust content.
 
-    Requirement: When density_meta has tier=zero and inject_disclosure=True,
-    _apply_density_enforcement prepends "Note: no verified data..." prefix.
-    Fabrication stripping is now the guard scan LLM's job (sentence removal),
-    not density enforcement's.
+    The disclosure prefix ("Note: no verified data...") was removed —
+    the LLM's search_trust_network tool now handles disclosure naturally.
+    Zero-tier enforcement still strips fabricated trust claims and
+    hallucinated numeric scores, and still corrects locked-persona
+    "no data" claims to "data inaccessible".
     """
     from src.service.guardian import GuardianLoop
 
@@ -9138,28 +9280,33 @@ def test_apply_density_enforcement_zero_injects_disclosure():
     # sentences removed, only honest content remains).
     clean_content = "I don't have specific trust data for this vendor."
 
+    # No disclosure prefix injected — LLM handles disclosure via tool output.
     result = GuardianLoop._apply_density_enforcement(
         clean_content, density_meta, [],
         inject_disclosure=True,
     )
-
-    # Must inject honest disclosure.
-    import re
-    no_data_pat = re.compile(
-        r"no verified|no trust|no data|not available", re.IGNORECASE
-    )
-    assert no_data_pat.search(result), (
-        f"Zero-tier enforcement must inject honest 'no verified data' "
-        f"disclosure. Got: {result!r}"
+    assert result == clean_content, (
+        f"Zero-tier with clean content should pass through unchanged "
+        f"(disclosure removed). Got: {result!r}"
     )
 
-    # When inject_disclosure=False, no prefix added.
+    # inject_disclosure=False also passes through unchanged.
     result_no_disc = GuardianLoop._apply_density_enforcement(
         clean_content, density_meta, [],
         inject_disclosure=False,
     )
     assert result_no_disc == clean_content, (
         f"inject_disclosure=False must not add prefix. Got: {result_no_disc!r}"
+    )
+
+    # Fabricated trust claims ARE still stripped even without disclosure.
+    fabricated_content = "The trust network data shows a verified rating of 4.5/5."
+    result_fab = GuardianLoop._apply_density_enforcement(
+        fabricated_content, density_meta, [],
+        inject_disclosure=True,
+    )
+    assert "trust network data" not in result_fab.lower(), (
+        f"Fabricated trust claims must still be stripped. Got: {result_fab!r}"
     )
 
     # Locked persona correction: "no data" → "data inaccessible".
@@ -9174,6 +9321,7 @@ def test_apply_density_enforcement_zero_injects_disclosure():
     )
 
 
+# TRACE: {"suite": "BRAIN", "case": "0072", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "142", "title": "density_enforcement_strips_fabricated_scores_zero_tier"}
 def test_density_enforcement_strips_fabricated_scores_zero_tier():
     """SS19.2: Zero-tier density enforcement strips fabricated numeric ratings.
 
@@ -9257,6 +9405,7 @@ def test_density_enforcement_strips_fabricated_scores_zero_tier():
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0073", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "143", "title": "guard_scan_failure_falls_back_to_regex"}
 async def test_guard_scan_failure_falls_back_to_regex(guardian) -> None:
     """Safety: guard_scan failure triggers deterministic regex fallback.
 
@@ -9320,6 +9469,7 @@ async def test_guard_scan_failure_falls_back_to_regex(guardian) -> None:
 # TST-BRAIN-563
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0563", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "144", "title": "guardian_density_miss_path_vague_prompt_trust_rich_vault"}
 async def test_guardian_density_miss_path_vague_prompt_trust_rich_vault(
     guardian,
 ) -> None:
@@ -9423,6 +9573,7 @@ async def test_guardian_density_miss_path_vague_prompt_trust_rich_vault(
 
 # TST-BRAIN-564
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0564", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "145", "title": "guardian_density_miss_path_lowercase_entity"}
 async def test_guardian_density_miss_path_lowercase_entity(
     guardian,
 ) -> None:
@@ -9492,6 +9643,7 @@ async def test_guardian_density_miss_path_lowercase_entity(
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0074", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "146", "title": "guardian_approval_needed_returns_notification"}
 async def test_guardian_approval_needed_returns_notification(guardian):
     """approval_needed event returns notification status."""
     event = {
@@ -9509,6 +9661,7 @@ async def test_guardian_approval_needed_returns_notification(guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0075", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "147", "title": "guardian_approval_needed_calls_telegram"}
 async def test_guardian_approval_needed_calls_telegram(guardian):
     """approval_needed event sends prompt to Telegram when available."""
     mock_telegram = AsyncMock()
@@ -9532,6 +9685,7 @@ async def test_guardian_approval_needed_calls_telegram(guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0076", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "148", "title": "guardian_approval_needed_telegram_failure_graceful"}
 async def test_guardian_approval_needed_telegram_failure_graceful(guardian):
     """Telegram send failure does not crash the approval handler."""
     mock_telegram = AsyncMock()
@@ -9558,6 +9712,7 @@ async def test_guardian_approval_needed_telegram_failure_graceful(guardian):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0077", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "149", "title": "guardian_reminder_fired_reads_direct_lineage_fields"}
 async def test_guardian_reminder_fired_reads_direct_lineage_fields(guardian):
     """Fired reminder with direct lineage fields produces contextual notification.
 
@@ -9638,6 +9793,7 @@ def guardian_with_extractor():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0078", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "150", "title": "post_publish_extracts_events"}
 async def test_post_publish_extracts_events(guardian_with_extractor):
     """post_publish event triggers event extraction for drained items."""
     event = {
@@ -9663,6 +9819,7 @@ async def test_post_publish_extracts_events(guardian_with_extractor):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0079", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "151", "title": "post_publish_updates_contact_by_did"}
 async def test_post_publish_updates_contact_by_did(guardian_with_extractor):
     """post_publish updates contact last_seen using contact_did, not sender email."""
     event = {
@@ -9683,6 +9840,7 @@ async def test_post_publish_updates_contact_by_did(guardian_with_extractor):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0080", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "152", "title": "post_publish_no_contact_did_skips_update"}
 async def test_post_publish_no_contact_did_skips_update(guardian_with_extractor):
     """No contact_did → contact update skipped (not attempted with sender email)."""
     event = {
@@ -9710,6 +9868,7 @@ async def test_post_publish_no_contact_did_skips_update(guardian_with_extractor)
 @pytest.mark.asyncio
 # TST-BRAIN-807
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0807", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "153", "title": "document_ingest_uses_direct_vault_write"}
 async def test_document_ingest_uses_direct_vault_write(guardian):
     """Document ingest stores to vault directly — NOT via staging.
 
@@ -9792,6 +9951,7 @@ async def test_document_ingest_uses_direct_vault_write(guardian):
 
 @pytest.mark.asyncio
 # TST-BRAIN-800
+# TRACE: {"suite": "BRAIN", "case": "0800", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "154", "title": "d2d_memory_note_staged"}
 async def test_d2d_memory_note_staged(guardian):
     """D2D social.update is staged with ingress_channel=d2d (v1 type)."""
     import json as _json
@@ -9825,6 +9985,7 @@ async def test_d2d_memory_note_staged(guardian):
 
 @pytest.mark.asyncio
 # TST-BRAIN-801
+# TRACE: {"suite": "BRAIN", "case": "0801", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "155", "title": "d2d_trust_attestation_staged"}
 async def test_d2d_trust_attestation_staged(guardian):
     """D2D trust.vouch.response is staged with ingress_channel=d2d (v1 type)."""
     core = guardian._test_core
@@ -9848,6 +10009,7 @@ async def test_d2d_trust_attestation_staged(guardian):
 
 @pytest.mark.asyncio
 # TST-BRAIN-802
+# TRACE: {"suite": "BRAIN", "case": "0802", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "156", "title": "d2d_arrival_not_staged"}
 async def test_d2d_arrival_not_staged(guardian):
     """D2D presence.signal is a real-time signal — NOT staged (v1 type)."""
     core = guardian._test_core
@@ -9868,6 +10030,7 @@ async def test_d2d_arrival_not_staged(guardian):
 
 @pytest.mark.asyncio
 # TST-BRAIN-803
+# TRACE: {"suite": "BRAIN", "case": "0803", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "157", "title": "d2d_commerce_review_staged"}
 async def test_d2d_commerce_review_staged(guardian):
     """D2D coordination.request is routed via nudge_assembly but NOT staged (ephemeral)."""
     core = guardian._test_core
@@ -9889,6 +10052,7 @@ async def test_d2d_commerce_review_staged(guardian):
 
 @pytest.mark.asyncio
 # TST-BRAIN-804
+# TRACE: {"suite": "BRAIN", "case": "0804", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "158", "title": "d2d_context_share_staged"}
 async def test_d2d_context_share_staged(guardian):
     """D2D social.update (v1 replacement for context_share) is staged as relationship_note."""
     core = guardian._test_core
@@ -9911,6 +10075,7 @@ async def test_d2d_context_share_staged(guardian):
 
 @pytest.mark.asyncio
 # TST-BRAIN-805
+# TRACE: {"suite": "BRAIN", "case": "0805", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "159", "title": "d2d_unknown_type_not_staged"}
 async def test_d2d_unknown_type_not_staged(guardian):
     """Unknown DIDComm type is neither staged nor handled."""
     core = guardian._test_core
@@ -9928,6 +10093,7 @@ async def test_d2d_unknown_type_not_staged(guardian):
 
 @pytest.mark.asyncio
 # TST-BRAIN-806
+# TRACE: {"suite": "BRAIN", "case": "0806", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "01", "scenario": "160", "title": "d2d_realtime_signals_not_staged"}
 async def test_d2d_realtime_signals_not_staged(guardian):
     """Real-time D2D signals (greeting, departure) are NOT staged."""
     core = guardian._test_core

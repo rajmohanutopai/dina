@@ -135,6 +135,7 @@ func (m *telVaultMgr) Checkpoint(_ domain.PersonaName) error                    
 // ---------------------------------------------------------------------------
 
 // TST-TEL-001: UserOriginated=true allows brain access to sensitive persona.
+// TRACE: {"suite": "CORE", "case": "1393", "section": "25", "sectionName": "Bot Interface", "subsection": "01", "scenario": "01", "title": "Telegram_AccessPersona_SensitiveAutoApproved"}
 func TestTelegram_AccessPersona_SensitiveAutoApproved(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "health", "sensitive")
@@ -156,6 +157,7 @@ func TestTelegram_AccessPersona_SensitiveAutoApproved(t *testing.T) {
 }
 
 // TST-TEL-002: UserOriginated=false preserves existing behavior.
+// TRACE: {"suite": "CORE", "case": "1394", "section": "25", "sectionName": "Bot Interface", "subsection": "02", "scenario": "01", "title": "Telegram_AccessPersona_NoUserOrigin_ExistingBehavior"}
 func TestTelegram_AccessPersona_NoUserOrigin_ExistingBehavior(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "medical", "sensitive")
@@ -179,6 +181,7 @@ func TestTelegram_AccessPersona_NoUserOrigin_ExistingBehavior(t *testing.T) {
 }
 
 // TST-TEL-003: Non-Brain callers cannot use UserOriginated to gain access.
+// TRACE: {"suite": "CORE", "case": "1395", "section": "25", "sectionName": "Bot Interface", "subsection": "03", "scenario": "01", "title": "Telegram_AccessPersona_NonBrainCallerIgnoresUserOrigin"}
 func TestTelegram_AccessPersona_NonBrainCallerIgnoresUserOrigin(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "secrets", "sensitive")
@@ -198,6 +201,7 @@ func TestTelegram_AccessPersona_NonBrainCallerIgnoresUserOrigin(t *testing.T) {
 }
 
 // TST-TEL-004: Locked persona still denied even with UserOriginated=true.
+// TRACE: {"suite": "CORE", "case": "1396", "section": "25", "sectionName": "Bot Interface", "subsection": "04", "scenario": "01", "title": "Telegram_AccessPersona_LockedStillDenied"}
 func TestTelegram_AccessPersona_LockedStillDenied(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
@@ -217,6 +221,7 @@ func TestTelegram_AccessPersona_LockedStillDenied(t *testing.T) {
 }
 
 // TST-TEL-005: Default tier allows all callers regardless of user_origin.
+// TRACE: {"suite": "CORE", "case": "1397", "section": "25", "sectionName": "Bot Interface", "subsection": "05", "scenario": "01", "title": "Telegram_AccessPersona_DefaultTierAlwaysAllowed"}
 func TestTelegram_AccessPersona_DefaultTierAlwaysAllowed(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "general", "default")
@@ -240,6 +245,7 @@ func TestTelegram_AccessPersona_DefaultTierAlwaysAllowed(t *testing.T) {
 }
 
 // TST-TEL-006: Standard tier — brain always allowed, agent still needs grant.
+// TRACE: {"suite": "CORE", "case": "1398", "section": "25", "sectionName": "Bot Interface", "subsection": "06", "scenario": "01", "title": "Telegram_AccessPersona_StandardTierBrainAllowed"}
 func TestTelegram_AccessPersona_StandardTierBrainAllowed(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "social", "standard")
@@ -263,6 +269,7 @@ func TestTelegram_AccessPersona_StandardTierBrainAllowed(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TST-TEL-007: Auto-unlock fires when vault is closed and request is user-originated.
+// TRACE: {"suite": "CORE", "case": "1399", "section": "25", "sectionName": "Bot Interface", "subsection": "07", "scenario": "01", "title": "Telegram_EnsureOpen_AutoUnlockCalled"}
 func TestTelegram_EnsureOpen_AutoUnlockCalled(t *testing.T) {
 	mgr := newTelVaultMgr()
 	vs := service.NewVaultService(mgr, mgr, mgr, &telAllowGatekeeper{}, &telClock{})
@@ -281,6 +288,7 @@ func TestTelegram_EnsureOpen_AutoUnlockCalled(t *testing.T) {
 }
 
 // TST-TEL-008: Auto-unlock NOT called when vault is already open.
+// TRACE: {"suite": "CORE", "case": "1400", "section": "25", "sectionName": "Bot Interface", "subsection": "08", "scenario": "01", "title": "Telegram_EnsureOpen_AlreadyOpen_NoAutoUnlock"}
 func TestTelegram_EnsureOpen_AlreadyOpen_NoAutoUnlock(t *testing.T) {
 	mgr := newTelVaultMgr()
 	vs := service.NewVaultService(mgr, mgr, mgr, &telAllowGatekeeper{}, &telClock{})
@@ -300,6 +308,7 @@ func TestTelegram_EnsureOpen_AlreadyOpen_NoAutoUnlock(t *testing.T) {
 }
 
 // TST-TEL-009: Auto-unlock NOT called for non-user-originated → ErrPersonaLocked.
+// TRACE: {"suite": "CORE", "case": "1401", "section": "25", "sectionName": "Bot Interface", "subsection": "09", "scenario": "01", "title": "Telegram_EnsureOpen_NonUserOriginated_AutoOpens"}
 func TestTelegram_EnsureOpen_NonUserOriginated_AutoOpens(t *testing.T) {
 	// v1 model: sensitive personas auto-open for any authorized request.
 	// ensureOpen no longer checks UserOriginated — AccessPersona gates access.
@@ -322,6 +331,7 @@ func TestTelegram_EnsureOpen_NonUserOriginated_AutoOpens(t *testing.T) {
 }
 
 // TST-TEL-010: Auto-unlock propagates through Store().
+// TRACE: {"suite": "CORE", "case": "1402", "section": "25", "sectionName": "Bot Interface", "subsection": "10", "scenario": "01", "title": "Telegram_EnsureOpen_Store_AutoUnlock"}
 func TestTelegram_EnsureOpen_Store_AutoUnlock(t *testing.T) {
 	mgr := newTelVaultMgr()
 	vs := service.NewVaultService(mgr, mgr, mgr, &telAllowGatekeeper{}, &telClock{})
@@ -340,6 +350,7 @@ func TestTelegram_EnsureOpen_Store_AutoUnlock(t *testing.T) {
 }
 
 // TST-TEL-011: Auto-unlock propagates through Delete().
+// TRACE: {"suite": "CORE", "case": "1403", "section": "25", "sectionName": "Bot Interface", "subsection": "11", "scenario": "01", "title": "Telegram_EnsureOpen_Delete_AutoUnlock"}
 func TestTelegram_EnsureOpen_Delete_AutoUnlock(t *testing.T) {
 	mgr := newTelVaultMgr()
 	vs := service.NewVaultService(mgr, mgr, mgr, &telAllowGatekeeper{}, &telClock{})
@@ -358,6 +369,7 @@ func TestTelegram_EnsureOpen_Delete_AutoUnlock(t *testing.T) {
 }
 
 // TST-TEL-012: Auto-unlock propagates through StoreBatch().
+// TRACE: {"suite": "CORE", "case": "1404", "section": "25", "sectionName": "Bot Interface", "subsection": "12", "scenario": "01", "title": "Telegram_EnsureOpen_StoreBatch_AutoUnlock"}
 func TestTelegram_EnsureOpen_StoreBatch_AutoUnlock(t *testing.T) {
 	mgr := newTelVaultMgr()
 	vs := service.NewVaultService(mgr, mgr, mgr, &telAllowGatekeeper{}, &telClock{})
@@ -381,6 +393,7 @@ func TestTelegram_EnsureOpen_StoreBatch_AutoUnlock(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TST-TEL-013: Audit entry for sensitive persona includes user_via_telegram.
+// TRACE: {"suite": "CORE", "case": "1405", "section": "25", "sectionName": "Bot Interface", "subsection": "13", "scenario": "01", "title": "Telegram_AuditIncludesUserOrigin"}
 func TestTelegram_AuditIncludesUserOrigin(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "health", "sensitive")
@@ -408,6 +421,7 @@ func TestTelegram_AuditIncludesUserOrigin(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TST-TEL-014: Default tier persona cannot be locked.
+// TRACE: {"suite": "CORE", "case": "1406", "section": "25", "sectionName": "Bot Interface", "subsection": "14", "scenario": "01", "title": "Telegram_DefaultPersonaCannotBeLocked"}
 func TestTelegram_DefaultPersonaCannotBeLocked(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "general", "default")
@@ -423,6 +437,7 @@ func TestTelegram_DefaultPersonaCannotBeLocked(t *testing.T) {
 }
 
 // TST-TEL-015: Standard tier persona cannot be locked.
+// TRACE: {"suite": "CORE", "case": "1407", "section": "25", "sectionName": "Bot Interface", "subsection": "15", "scenario": "01", "title": "Telegram_StandardPersonaCannotBeLocked"}
 func TestTelegram_StandardPersonaCannotBeLocked(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "consumer", "standard")
@@ -435,6 +450,7 @@ func TestTelegram_StandardPersonaCannotBeLocked(t *testing.T) {
 }
 
 // TST-TEL-016: Sensitive tier persona CAN be locked.
+// TRACE: {"suite": "CORE", "case": "1408", "section": "25", "sectionName": "Bot Interface", "subsection": "16", "scenario": "01", "title": "Telegram_SensitivePersonaCanBeLocked"}
 func TestTelegram_SensitivePersonaCanBeLocked(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "health", "sensitive")
@@ -445,6 +461,7 @@ func TestTelegram_SensitivePersonaCanBeLocked(t *testing.T) {
 }
 
 // TST-TEL-017: Default persona state forced unlocked on load.
+// TRACE: {"suite": "CORE", "case": "1409", "section": "25", "sectionName": "Bot Interface", "subsection": "17", "scenario": "01", "title": "Telegram_DefaultPersonaForcedUnlockedOnLoad"}
 func TestTelegram_DefaultPersonaForcedUnlockedOnLoad(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(context.Background(), "general", "default")

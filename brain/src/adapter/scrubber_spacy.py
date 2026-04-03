@@ -28,11 +28,8 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _LABEL_MAP: dict[str, str] = {
-    "PERSON": "PERSON",
-    "ORG": "ORG",
-    "GPE": "LOC",       # geopolitical entity -> LOC
-    "LOC": "LOC",       # geographic locations
-    "FAC": "LOC",       # facilities (buildings, airports)
+    # Names, orgs, and locations pass through — only structured PII is scrubbed.
+    # PERSON, ORG, GPE, LOC, FAC are intentionally excluded.
     "DATE": "DATE",
     "NORP": "GROUP",    # nationalities, religious, political groups
 }
@@ -193,7 +190,11 @@ class SpacyScrubber:
         raw_entities: list[dict[str, Any]] = []
         for ent in doc.ents:
             label = ent.label_
-            mapped = _LABEL_MAP.get(label, label)
+            mapped = _LABEL_MAP.get(label)
+
+            # Only scrub entity types in _LABEL_MAP (names/orgs/locations excluded)
+            if mapped is None:
+                continue
 
             # Skip entities embedded in URLs
             if self._overlaps_url(ent.start_char, ent.end_char, url_spans):

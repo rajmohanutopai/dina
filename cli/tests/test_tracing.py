@@ -18,21 +18,23 @@ def _test_config():
 
 class TestReqIdSurfacing:
 
+    # TRACE: {"suite": "CLI", "case": "0036", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "01", "title": "error_includes_req_id"}
     def test_error_includes_req_id(self):
         """Error messages include req_id for traced commands."""
         from dina_cli.client import DinaClientError
 
         mc = MagicMock()
         mc.req_id = "trace_abc123"
-        mc.reason.side_effect = DinaClientError("vault query failed")
+        mc.ask.side_effect = DinaClientError("vault query failed")
 
         runner = CliRunner()
         with patch("dina_cli.main.load_config", return_value=_test_config()), \
              patch("dina_cli.main.DinaClient", return_value=mc):
-            result = runner.invoke(cli, ["ask", "test query"])
+            result = runner.invoke(cli, ["ask", "--session", "ses_test", "test query"])
 
         assert "trace_abc123" in result.output
 
+    # TRACE: {"suite": "CLI", "case": "0037", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "02", "title": "validate_json_includes_req_id"}
     def test_validate_json_includes_req_id(self):
         """dina --json validate includes req_id in output."""
         mc = MagicMock()
@@ -47,39 +49,42 @@ class TestReqIdSurfacing:
         runner = CliRunner()
         with patch("dina_cli.main.load_config", return_value=_test_config()), \
              patch("dina_cli.main.DinaClient", return_value=mc):
-            result = runner.invoke(cli, ["--json", "validate", "search", "test"])
+            result = runner.invoke(cli, ["--json", "validate", "--session", "ses_test", "search", "test"])
 
         # req_id appears in JSON body or stderr (mixed in CliRunner output)
         assert "val_trace_id" in result.output
 
+    # TRACE: {"suite": "CLI", "case": "0038", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "03", "title": "remember_json_includes_req_id"}
     def test_remember_json_includes_req_id(self):
         """dina --json remember includes req_id in output."""
         mc = MagicMock()
         mc.req_id = "rem_trace_id"
-        mc.staging_ingest.return_value = {"id": "stg-12345678"}
+        mc.remember.return_value = {"status": "processing"}
 
         runner = CliRunner()
         with patch("dina_cli.main.load_config", return_value=_test_config()), \
              patch("dina_cli.main.DinaClient", return_value=mc):
-            result = runner.invoke(cli, ["--json", "remember", "test fact"])
+            result = runner.invoke(cli, ["--json", "remember", "--session", "ses_test", "test fact"])
 
         # req_id appears in JSON body or stderr (mixed in CliRunner output)
         assert "rem_trace_id" in result.output
 
+    # TRACE: {"suite": "CLI", "case": "0039", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "04", "title": "ask_json_includes_req_id"}
     def test_ask_json_includes_req_id(self):
         """dina --json ask includes req_id in response."""
         mc = MagicMock()
         mc.req_id = "ask_trace_id"
-        mc.reason.return_value = {"content": "test answer", "model": "test"}
+        mc.ask.return_value = {"content": "test answer", "model": "test"}
 
         runner = CliRunner()
         with patch("dina_cli.main.load_config", return_value=_test_config()), \
              patch("dina_cli.main.DinaClient", return_value=mc):
-            result = runner.invoke(cli, ["--json", "ask", "test query"])
+            result = runner.invoke(cli, ["--json", "ask", "--session", "ses_test", "test query"])
 
         # req_id appears either in JSON body or in stderr output
         assert "ask_trace_id" in result.output
 
+    # TRACE: {"suite": "CLI", "case": "0040", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "05", "title": "client_generates_req_id"}
     def test_client_generates_req_id(self):
         """DinaClient generates a 12-char hex req_id."""
         with patch("dina_cli.client.CLIIdentity"):
@@ -92,6 +97,7 @@ class TestReqIdSurfacing:
                 # May fail without real keypair — that's ok, we test the attribute
                 pass
 
+    # TRACE: {"suite": "CLI", "case": "0041", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "06", "title": "print_result_with_trace_dict"}
     def test_print_result_with_trace_dict(self):
         """Dict output gets req_id injected."""
         from dina_cli.output import print_result_with_trace
@@ -107,6 +113,7 @@ class TestReqIdSurfacing:
         assert merged["req_id"] == "abc123"
         assert merged["content"] == "hello"
 
+    # TRACE: {"suite": "CLI", "case": "0042", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "07", "title": "print_result_with_trace_list"}
     def test_print_result_with_trace_list(self):
         """List output stays as array — req_id goes to stderr, not into JSON."""
         data = [{"id": "1"}, {"id": "2"}]
@@ -115,6 +122,7 @@ class TestReqIdSurfacing:
         assert isinstance(data, list)
         assert len(data) == 2
 
+    # TRACE: {"suite": "CLI", "case": "0043", "section": "07", "sectionName": "Tracing", "subsection": "01", "scenario": "08", "title": "no_req_id_on_local_commands"}
     def test_no_req_id_on_local_commands(self):
         """Local commands (status, rehydrate) don't fabricate req_id."""
         runner = CliRunner()
@@ -135,6 +143,7 @@ class TestDuplicateReqId:
     List responses: req_id is printed to stderr only (NOT in the list).
     """
 
+    # TRACE: {"suite": "CLI", "case": "0044", "section": "07", "sectionName": "Tracing", "subsection": "02", "scenario": "01", "title": "dict_response_req_id_in_data_only"}
     def test_dict_response_req_id_in_data_only(self):
         """Dict response: req_id appears in the data dict, NOT on stderr."""
         from dina_cli.output import print_result_with_trace
@@ -155,6 +164,7 @@ class TestDuplicateReqId:
         assert isinstance(merged, dict)
         assert "req_id" in merged
 
+    # TRACE: {"suite": "CLI", "case": "0045", "section": "07", "sectionName": "Tracing", "subsection": "02", "scenario": "02", "title": "list_response_req_id_on_stderr"}
     def test_list_response_req_id_on_stderr(self):
         """List response: req_id NOT injected into the list (goes to stderr)."""
         from dina_cli.output import print_result_with_trace

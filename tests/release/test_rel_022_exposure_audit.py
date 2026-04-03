@@ -18,6 +18,7 @@ class TestExposureAudit:
     """Real Docker tests for REL-022: deployment boundary audit."""
 
     # REL-022
+    # TRACE: {"suite": "REL", "case": "0022", "section": "22", "sectionName": "Exposure Audit", "subsection": "01", "scenario": "01", "title": "rel_022_only_core_port_exposed"}
     def test_rel_022_only_core_port_exposed(self, release_services) -> None:
         """Only Core port is mapped to the host — Brain is internal."""
         compose_file = release_services._compose_file
@@ -56,6 +57,7 @@ class TestExposureAudit:
                 )
 
     # REL-022
+    # TRACE: {"suite": "REL", "case": "0022", "section": "22", "sectionName": "Exposure Audit", "subsection": "01", "scenario": "02", "title": "rel_022_healthz_no_secrets"}
     def test_rel_022_healthz_no_secrets(self, core_url) -> None:
         """/healthz does not leak secrets or internal paths."""
         resp = httpx.get(f"{core_url}/healthz", timeout=5)
@@ -67,6 +69,7 @@ class TestExposureAudit:
             )
 
     # REL-022
+    # TRACE: {"suite": "REL", "case": "0022", "section": "22", "sectionName": "Exposure Audit", "subsection": "01", "scenario": "03", "title": "rel_022_brain_not_directly_accessible_without_auth"}
     def test_rel_022_brain_not_directly_accessible_without_auth(
         self, brain_url,
     ) -> None:
@@ -84,6 +87,7 @@ class TestExposureAudit:
         )
 
     # REL-022
+    # TRACE: {"suite": "REL", "case": "0022", "section": "22", "sectionName": "Exposure Audit", "subsection": "01", "scenario": "04", "title": "rel_022_no_debug_endpoints"}
     def test_rel_022_no_debug_endpoints(self, core_url) -> None:
         """No debug/profiling endpoints are exposed."""
         debug_paths = ["/debug/pprof/", "/debug/vars", "/_debug", "/metrics"]
@@ -95,6 +99,7 @@ class TestExposureAudit:
             )
 
     # REL-022
+    # TRACE: {"suite": "REL", "case": "0022", "section": "22", "sectionName": "Exposure Audit", "subsection": "01", "scenario": "05", "title": "rel_022_container_runs_non_root"}
     def test_rel_022_container_runs_non_root(self, release_services) -> None:
         """Core container main process (PID 1) runs as non-root user."""
         compose_file = release_services._compose_file

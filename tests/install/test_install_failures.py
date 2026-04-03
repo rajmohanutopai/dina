@@ -29,6 +29,7 @@ class TestOwnershipRepair:
     which this test exercises.
     """
 
+    # TRACE: {"suite": "INST", "case": "0008", "section": "05", "sectionName": "Failure Modes", "subsection": "01", "scenario": "01", "title": "inaccessible_secrets_detected"}
     def test_inaccessible_secrets_detected(self, install_dir: Path) -> None:
         """Install detects inaccessible secrets/ and attempts repair or fails clearly."""
         secrets = install_dir / "secrets"
@@ -71,6 +72,7 @@ class TestOwnershipRepair:
 class TestRunWithoutInstall:
     """Verify run.sh handles missing install gracefully."""
 
+    # TRACE: {"suite": "INST", "case": "0009", "section": "05", "sectionName": "Failure Modes", "subsection": "02", "scenario": "01", "title": "run_without_install_shows_missing"}
     def test_run_without_install_shows_missing(self, install_dir: Path) -> None:
         """run.sh shows what is missing when install is incomplete."""
         child = pexpect.spawn(
@@ -95,6 +97,7 @@ class TestRunWithoutInstall:
         child.close()
         assert idx in (0, 1, 2, 3), "run.sh should indicate install is needed"
 
+    # TRACE: {"suite": "INST", "case": "0010", "section": "05", "sectionName": "Failure Modes", "subsection": "02", "scenario": "02", "title": "run_shows_specific_missing_artifacts"}
     def test_run_shows_specific_missing_artifacts(self, install_dir: Path) -> None:
         """run.sh lists which specific artifacts are missing."""
         # Create partial install state — secrets dir but no keys
@@ -129,6 +132,7 @@ class TestRunWithoutInstall:
 class TestCorruptSeedArtifacts:
     """Verify Core fails closed with useful logs when seed artifacts are corrupt."""
 
+    # TRACE: {"suite": "INST", "case": "0011", "section": "05", "sectionName": "Failure Modes", "subsection": "03", "scenario": "01", "title": "corrupt_wrapped_seed_fails_closed"}
     def test_corrupt_wrapped_seed_fails_closed(self, installed_dir: Path) -> None:
         """Corrupting wrapped_seed.bin causes Core to fail with clear error.
 
@@ -225,6 +229,7 @@ class TestCorruptSeedArtifacts:
 class TestDockerNotRunning:
     """Verify install.sh fails early when Docker is unavailable."""
 
+    # TRACE: {"suite": "INST", "case": "0012", "section": "05", "sectionName": "Failure Modes", "subsection": "04", "scenario": "01", "title": "install_no_docker_fails_early"}
     def test_install_no_docker_fails_early(self, install_dir: Path) -> None:
         """Install fails before reaching identity setup when Docker is missing.
 
@@ -262,6 +267,7 @@ class TestDockerNotRunning:
                 "Install should fail before identity setup when Docker is missing"
             )
 
+    # TRACE: {"suite": "INST", "case": "0013", "section": "05", "sectionName": "Failure Modes", "subsection": "04", "scenario": "02", "title": "install_docker_daemon_unavailable"}
     def test_install_docker_daemon_unavailable(self, install_dir: Path) -> None:
         """Install fails with clear message when Docker exists but daemon is not running.
 

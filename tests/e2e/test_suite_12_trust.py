@@ -49,6 +49,7 @@ class TestTrustNetworkLifecycle:
     """
 
 # TST-E2E-059
+    # TRACE: {"suite": "E2E", "case": "0059", "section": "12", "sectionName": "Trust", "subsection": "01", "scenario": "01", "title": "expert_attestation_publish_relay_query"}
     def test_expert_attestation_publish_relay_query(
         self,
         don_alonso: HomeNode,
@@ -195,6 +196,7 @@ class TestTrustNetworkLifecycle:
         )
 
 # TST-E2E-060
+    # TRACE: {"suite": "E2E", "case": "0060", "section": "12", "sectionName": "Trust", "subsection": "01", "scenario": "02", "title": "bot_trust_degradation"}
     def test_bot_trust_degradation(
         self,
         don_alonso: HomeNode,
@@ -323,6 +325,7 @@ class TestTrustNetworkLifecycle:
         )
 
 # TST-E2E-061
+    # TRACE: {"suite": "E2E", "case": "0061", "section": "12", "sectionName": "Trust", "subsection": "01", "scenario": "03", "title": "signed_tombstone_deletion"}
     def test_signed_tombstone_deletion(
         self,
         don_alonso: HomeNode,
@@ -453,6 +456,7 @@ class TestTrustNetworkLifecycle:
         )
 
 # TST-E2E-062
+    # TRACE: {"suite": "E2E", "case": "0062", "section": "12", "sectionName": "Trust", "subsection": "01", "scenario": "04", "title": "trust_score_computation"}
     def test_trust_score_computation(
         self,
         chairmaker: HomeNode,
@@ -578,6 +582,7 @@ class TestTrustNetworkLifecycle:
         assert appview.query_product("nonexistent-product") is None
 
 # TST-E2E-063
+    # TRACE: {"suite": "E2E", "case": "0063", "section": "12", "sectionName": "Trust", "subsection": "01", "scenario": "05", "title": "at_protocol_discovery"}
     def test_at_protocol_discovery(
         self,
         don_alonso: HomeNode,
@@ -670,6 +675,7 @@ class TestTrustNetworkLifecycle:
         )
 
 # TST-E2E-064
+    # TRACE: {"suite": "E2E", "case": "0064", "section": "12", "sectionName": "Trust", "subsection": "01", "scenario": "06", "title": "appview_determinism_censorship_alert"}
     def test_appview_determinism_censorship_alert(
         self,
         appview: MockAppView,

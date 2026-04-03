@@ -43,6 +43,7 @@ import (
 // TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop verifies that when the
 // onEnvelope callback returns an error on the fast path, the Router falls back
 // to storing the envelope in the dead drop instead of losing it.
+// TRACE: {"suite": "CORE", "case": "0529", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "01", "title": "OnEnvelopeError_FallsBackToDeadDrop"}
 func TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -92,6 +93,7 @@ func TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
 // TST-CORE-1072
 // TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError verifies that ProcessPending
 // re-spools envelopes to the dead drop when the onEnvelope callback fails.
+// TRACE: {"suite": "CORE", "case": "0530", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "02", "title": "ProcessPending_ReSpoolsOnError"}
 func TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError(t *testing.T) {
 	tmpDir := t.TempDir()
 	vaultMgr := vault.NewManager(tmpDir)
@@ -134,6 +136,7 @@ func TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError(t *testing.T) {
 // TST-CORE-1073
 // TestFixVerify_31_7_3_Complete_RemovesInFlight verifies that after Dequeue puts a
 // task into inFlight, Complete removes it — preventing the in-flight leak.
+// TRACE: {"suite": "CORE", "case": "0531", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "03", "title": "Complete_RemovesInFlight"}
 func TestFixVerify_31_7_3_Complete_RemovesInFlight(t *testing.T) {
 	q := tq.NewTaskQueue()
 	ctx := context.Background()
@@ -178,6 +181,7 @@ func TestFixVerify_31_7_3_Complete_RemovesInFlight(t *testing.T) {
 // TST-CORE-1074
 // TestFixVerify_31_7_4_Sweeper_HasSetTransport verifies that the Sweeper has a
 // SetTransport method that can be called to wire the transport processor.
+// TRACE: {"suite": "CORE", "case": "0532", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "04", "title": "Sweeper_HasSetTransport"}
 func TestFixVerify_31_7_4_Sweeper_HasSetTransport(t *testing.T) {
 	tmpDir := t.TempDir()
 	dd := ingress.NewDeadDrop(tmpDir, 100, 10*1024*1024)
@@ -195,6 +199,7 @@ func TestFixVerify_31_7_4_Sweeper_HasSetTransport(t *testing.T) {
 // TST-CORE-1075
 // TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails verifies that handler
 // error responses use generic messages and don't leak internal error details.
+// TRACE: {"suite": "CORE", "case": "0533", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "05", "title": "ErrorSanitization_NoInternalDetails"}
 func TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails(t *testing.T) {
 	// Test the clientError pattern from handler/errors.go.
 	// We simulate what the handler does: write a generic error to the client.
@@ -231,6 +236,7 @@ func TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails(t *testing.T) {
 // TST-CORE-1076
 // TestFixVerify_31_7_6_WS_Components_Constructable verifies that all ws components
 // required for the /ws route can be constructed and wired together.
+// TRACE: {"suite": "CORE", "case": "0534", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "06", "title": "WS_Components_Constructable"}
 func TestFixVerify_31_7_6_WS_Components_Constructable(t *testing.T) {
 	// Verify all required ws components can be constructed.
 	upgrader := ws.NewUpgrader()
@@ -264,6 +270,7 @@ func TestFixVerify_31_7_6_WS_Components_Constructable(t *testing.T) {
 // TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs verifies that DeleteExpired
 // removes expired message IDs from the sentIDs dedup index, so that
 // re-enqueue of the same ID after expiry creates a new message entry.
+// TRACE: {"suite": "CORE", "case": "0535", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "07", "title": "DeleteExpired_PrunesSentIDs"}
 func TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs(t *testing.T) {
 	outbox := transport.NewOutboxManager(100)
 	ctx := context.Background()
@@ -314,6 +321,7 @@ func TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs(t *testing.T) {
 // TST-CORE-1078
 // TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem verifies the Store method
 // rejects items whose body exceeds MaxVaultItemSize.
+// TRACE: {"suite": "CORE", "case": "0536", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "08", "title": "VaultStore_RejectsOversizedItem"}
 func TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
@@ -337,6 +345,7 @@ func TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem(t *testing.T) {
 // TST-CORE-1079
 // TestFixVerify_31_7_9_VaultStore_RejectsInvalidType verifies the Store method
 // rejects items with unrecognized types.
+// TRACE: {"suite": "CORE", "case": "0537", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "09", "title": "VaultStore_RejectsInvalidType"}
 func TestFixVerify_31_7_9_VaultStore_RejectsInvalidType(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
@@ -358,6 +367,7 @@ func TestFixVerify_31_7_9_VaultStore_RejectsInvalidType(t *testing.T) {
 // TST-CORE-1080
 // TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem verifies StoreBatch
 // rejects the entire batch if any item is invalid (transactional behavior).
+// TRACE: {"suite": "CORE", "case": "0538", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "10", "title": "VaultStoreBatch_RejectsInvalidItem"}
 func TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
@@ -379,6 +389,7 @@ func TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
 
 // TST-CORE-1081
 // TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes verifies valid types are accepted.
+// TRACE: {"suite": "CORE", "case": "0539", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "11", "title": "VaultStore_AcceptsValidTypes"}
 func TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
@@ -405,6 +416,7 @@ func TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes(t *testing.T) {
 // TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials verifies that when
 // AllowOrigin is "*", the response has Access-Control-Allow-Origin: * and
 // does NOT include Access-Control-Allow-Credentials (per CORS spec).
+// TRACE: {"suite": "CORE", "case": "0540", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "12", "title": "CORS_Wildcard_SetsStarNoCredentials"}
 func TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials(t *testing.T) {
 	cors := &middleware.CORS{AllowOrigin: "*"}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +443,7 @@ func TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials(t *testing.T) {
 // TST-CORE-1083
 // TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials verifies that when a specific
 // origin matches, credentials are allowed (unlike wildcard).
+// TRACE: {"suite": "CORE", "case": "0541", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "13", "title": "CORS_Whitelist_SetsCredentials"}
 func TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials(t *testing.T) {
 	cors := &middleware.CORS{AllowOrigin: "https://dina.local,https://admin.dina.local"}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -454,6 +467,7 @@ func TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials(t *testing.T) {
 // TST-CORE-1084
 // TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204 verifies OPTIONS preflight
 // with wildcard CORS returns 204.
+// TRACE: {"suite": "CORE", "case": "0542", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "14", "title": "CORS_Wildcard_PreflightReturns204"}
 func TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204(t *testing.T) {
 	cors := &middleware.CORS{AllowOrigin: "*"}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -478,6 +492,7 @@ func TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204(t *testing.T) {
 // TST-CORE-1085
 // TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault verifies that NewUpgrader()
 // with no options has InsecureSkipVerify=false (origin checking enabled).
+// TRACE: {"suite": "CORE", "case": "0543", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "15", "title": "WS_DefaultUpgrader_SecureByDefault"}
 func TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault(t *testing.T) {
 	upgrader := ws.NewUpgrader()
 
@@ -503,6 +518,7 @@ func TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault(t *testing.T) {
 // TST-CORE-1086
 // TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled verifies that
 // WithInsecureSkipVerify() disables origin checking (for dev mode).
+// TRACE: {"suite": "CORE", "case": "0544", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "16", "title": "WS_InsecureSkipVerify_Enabled"}
 func TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled(t *testing.T) {
 	// Verify the option is callable and produces a non-nil upgrader.
 	upgrader := ws.NewUpgrader(ws.WithInsecureSkipVerify())
@@ -514,6 +530,7 @@ func TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled(t *testing.T) {
 // TST-CORE-1087
 // TestFixVerify_31_7_17_WS_WithOriginPatterns_Configurable verifies that
 // WithOriginPatterns() can be used to configure allowed origins.
+// TRACE: {"suite": "CORE", "case": "0545", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "07", "scenario": "17", "title": "WS_WithOriginPatterns_Configurable"}
 func TestFixVerify_31_7_17_WS_WithOriginPatterns_Configurable(t *testing.T) {
 	upgrader := ws.NewUpgrader(ws.WithOriginPatterns("*.dina.local"))
 	if upgrader == nil {
@@ -547,6 +564,7 @@ func (s *fixStubInbox) DrainSpool(_ context.Context) ([][]byte, error) {
 // ===========================================================================
 
 // TST-CORE-945
+// TRACE: {"suite": "CORE", "case": "0546", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "09", "title": "QueueLimitEnforcedRejectWhenFull"}
 func TestTransport_29_2_9_QueueLimitEnforcedRejectWhenFull(t *testing.T) {
 	// Requirement (§9, queue limit):
 	//   Outbox enforces a maximum queue size. When the queue is full,
@@ -560,6 +578,7 @@ func TestTransport_29_2_9_QueueLimitEnforcedRejectWhenFull(t *testing.T) {
 	//   4. Empty ID returned on rejection (no partial state)
 	//   5. Default queue size is 100 when maxQueue <= 0
 
+	// TRACE: {"suite": "CORE", "case": "0547", "section": "29", "sectionName": "Adversarial & Security", "title": "queue_full_returns_ErrOutboxFull"}
 	t.Run("queue_full_returns_ErrOutboxFull", func(t *testing.T) {
 		outbox := transport.NewOutboxManager(3) // Small limit for testing.
 		ctx := context.Background()
@@ -589,6 +608,7 @@ func TestTransport_29_2_9_QueueLimitEnforcedRejectWhenFull(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0548", "section": "29", "sectionName": "Adversarial & Security", "title": "positive_control_below_limit_succeeds"}
 	t.Run("positive_control_below_limit_succeeds", func(t *testing.T) {
 		outbox := transport.NewOutboxManager(5)
 		ctx := context.Background()
@@ -607,6 +627,7 @@ func TestTransport_29_2_9_QueueLimitEnforcedRejectWhenFull(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0549", "section": "29", "sectionName": "Adversarial & Security", "title": "delivered_messages_dont_count_toward_limit"}
 	t.Run("delivered_messages_dont_count_toward_limit", func(t *testing.T) {
 		outbox := transport.NewOutboxManager(3)
 		ctx := context.Background()
@@ -648,6 +669,7 @@ func TestTransport_29_2_9_QueueLimitEnforcedRejectWhenFull(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0550", "section": "29", "sectionName": "Adversarial & Security", "title": "failed_messages_dont_count_toward_limit"}
 	t.Run("failed_messages_dont_count_toward_limit", func(t *testing.T) {
 		outbox := transport.NewOutboxManager(2)
 		ctx := context.Background()
@@ -683,6 +705,7 @@ func TestTransport_29_2_9_QueueLimitEnforcedRejectWhenFull(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0551", "section": "29", "sectionName": "Adversarial & Security", "title": "default_queue_size_100_when_zero"}
 	t.Run("default_queue_size_100_when_zero", func(t *testing.T) {
 		// When maxQueue <= 0, default is 100. Verify by enqueuing 100.
 		outbox := transport.NewOutboxManager(0)

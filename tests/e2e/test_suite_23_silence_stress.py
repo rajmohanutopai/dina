@@ -35,6 +35,7 @@ class TestSilenceUnderStress:
     """
 
     # TST-E2E-121
+    # TRACE: {"suite": "E2E", "case": "0121", "section": "23", "sectionName": "Silence Stress", "subsection": "01", "scenario": "01", "title": "notification_storm_only_fiduciary_interrupts"}
     def test_notification_storm_only_fiduciary_interrupts(
         self,
         don_alonso: HomeNode,
@@ -205,6 +206,7 @@ class TestSilenceUnderStress:
         )
 
     # TST-E2E-122
+    # TRACE: {"suite": "E2E", "case": "0122", "section": "23", "sectionName": "Silence Stress", "subsection": "01", "scenario": "02", "title": "ambiguous_urgency_from_untrusted_source"}
     def test_ambiguous_urgency_from_untrusted_source(
         self,
         don_alonso: HomeNode,
@@ -273,7 +275,7 @@ class TestSilenceUnderStress:
             {
                 "from_did": unknown_did,
                 "text": urgent_text,
-                "message_type": "dina/social/message",
+                "message_type": "social.update",
                 "sender_ring": TrustRing.RING_1_UNVERIFIED.value,
                 "sender_verified": False,
                 "sender_known": False,
@@ -364,10 +366,11 @@ class TestSilenceUnderStress:
         # Sancho sends the same urgent text via D2D.
         trusted_msg = sancho.send_d2d(
             to_did=don_alonso.did,
-            message_type="dina/social/message",
+            message_type="social.update",
             payload={
-                "type": "dina/social/message",
+                "type": "social.update",
                 "text": urgent_text,
+                "category": "context",
                 "context_flags": ["urgent", "security"],
             },
         )
@@ -382,7 +385,7 @@ class TestSilenceUnderStress:
             {
                 "from_did": sancho.did,
                 "text": urgent_text,
-                "message_type": "dina/social/message",
+                "message_type": "social.update",
                 "sender_ring": TrustRing.RING_2_VERIFIED.value,
                 "sender_verified": True,
                 "sender_known": True,
@@ -479,6 +482,7 @@ class TestSilenceUnderStress:
         )
 
     # TST-E2E-123
+    # TRACE: {"suite": "E2E", "case": "0123", "section": "23", "sectionName": "Silence Stress", "subsection": "01", "scenario": "03", "title": "dnd_respects_hierarchy"}
     def test_dnd_respects_hierarchy(
         self,
         don_alonso: HomeNode,

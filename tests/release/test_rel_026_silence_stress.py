@@ -24,6 +24,7 @@ class TestSilenceUnderStress:
     # ------------------------------------------------------------------
 
     # REL-026
+    # TRACE: {"suite": "REL", "case": "0026", "section": "26", "sectionName": "Silence Stress", "subsection": "01", "scenario": "01", "title": "rel_026_high_volume_engagement_silent"}
     def test_rel_026_high_volume_engagement_silent(
         self, brain_url, brain_signer,
     ) -> None:
@@ -66,6 +67,7 @@ class TestSilenceUnderStress:
     # ------------------------------------------------------------------
 
     # REL-026
+    # TRACE: {"suite": "REL", "case": "0026", "section": "26", "sectionName": "Silence Stress", "subsection": "01", "scenario": "02", "title": "rel_026_fiduciary_in_batch_interrupts"}
     def test_rel_026_fiduciary_in_batch_interrupts(
         self, brain_url, brain_signer,
     ) -> None:
@@ -129,6 +131,7 @@ class TestSilenceUnderStress:
     # ------------------------------------------------------------------
 
     # REL-026
+    # TRACE: {"suite": "REL", "case": "0026", "section": "26", "sectionName": "Silence Stress", "subsection": "01", "scenario": "03", "title": "rel_026_untrusted_urgent_not_fiduciary"}
     def test_rel_026_untrusted_urgent_not_fiduciary(
         self, brain_url, brain_signer,
     ) -> None:
@@ -166,6 +169,7 @@ class TestSilenceUnderStress:
     # ------------------------------------------------------------------
 
     # REL-026
+    # TRACE: {"suite": "REL", "case": "0026", "section": "26", "sectionName": "Silence Stress", "subsection": "01", "scenario": "04", "title": "rel_026_trusted_urgent_is_fiduciary"}
     def test_rel_026_trusted_urgent_is_fiduciary(
         self, brain_url, brain_signer,
     ) -> None:
@@ -200,6 +204,7 @@ class TestSilenceUnderStress:
     # ------------------------------------------------------------------
 
     # REL-026
+    # TRACE: {"suite": "REL", "case": "0026", "section": "26", "sectionName": "Silence Stress", "subsection": "01", "scenario": "05", "title": "rel_026_engagement_events_saved_for_briefing"}
     def test_rel_026_engagement_events_saved_for_briefing(
         self, brain_url, brain_signer,
     ) -> None:
@@ -248,6 +253,7 @@ class TestSilenceUnderStress:
     # ------------------------------------------------------------------
 
     # REL-026
+    # TRACE: {"suite": "REL", "case": "0026", "section": "26", "sectionName": "Silence Stress", "subsection": "01", "scenario": "06", "title": "rel_026_empty_state_no_notification"}
     def test_rel_026_empty_state_no_notification(
         self, brain_url, brain_signer,
     ) -> None:
@@ -286,6 +292,7 @@ class TestSilenceUnderStress:
     # ------------------------------------------------------------------
 
     # REL-026
+    # TRACE: {"suite": "REL", "case": "0026", "section": "26", "sectionName": "Silence Stress", "subsection": "01", "scenario": "07", "title": "rel_026_trust_classification_asymmetry"}
     def test_rel_026_trust_classification_asymmetry(
         self, brain_url, brain_signer,
     ) -> None:

@@ -581,6 +581,67 @@ def _start_local() -> float:
 
 SECTION_HEADER_RE = re.compile(r"^##\s+(\d+)[\.\s]+(.+)")
 
+# TRACE comment format: # TRACE: {"suite":"BRAIN","case":"0270","section":"08",...}
+_TRACE_RE = re.compile(r'^\s*[#/]+\s*TRACE:\s*(\{.*\})')
+_PY_FUNC_RE = re.compile(r"^\s*(async\s+)?def\s+(test_\w+)")
+_GO_FUNC_RE_TRACE = re.compile(r"^func\s+(Test\w+)\(")
+
+
+def prescan_trace_sections(test_dir: Path, lang: str = "python") -> tuple[dict[str, int], dict[int, str]]:
+    """Prescan test files for TRACE comments.
+
+    Returns:
+        (func_to_section, section_names):
+        - func_to_section: {function_name: section_number}
+        - section_names: {section_number: section_name}
+
+    TRACE comments are the single source of truth for section mapping.
+    Falls through to legacy extraction if no TRACE comment found.
+    """
+    func_map: dict[str, int] = {}
+    name_map: dict[int, str] = {}
+
+    if lang == "python":
+        glob_pat = "test_*.py"
+        func_re = _PY_FUNC_RE
+    elif lang == "go":
+        glob_pat = "*_test.go"
+        func_re = _GO_FUNC_RE_TRACE
+    else:
+        return func_map, name_map
+
+    for filepath in sorted(test_dir.rglob(glob_pat)):
+        lines = filepath.read_text().splitlines()
+        pending_trace: dict | None = None
+
+        for line in lines:
+            # Check for TRACE comment.
+            tm = _TRACE_RE.match(line)
+            if tm:
+                try:
+                    pending_trace = json.loads(tm.group(1))
+                except (json.JSONDecodeError, ValueError):
+                    pending_trace = None
+                continue
+
+            # Check for function definition.
+            fm = func_re.match(line.strip() if lang == "python" else line)
+            if fm:
+                func_name = fm.group(2) if lang == "python" else fm.group(1)
+                if pending_trace:
+                    sec_str = pending_trace.get("section", "00")
+                    try:
+                        sec_num = int(sec_str)
+                    except ValueError:
+                        sec_num = 0
+                    func_map[func_name] = sec_num
+                    sec_name = pending_trace.get("sectionName", "")
+                    if sec_name and sec_num not in name_map:
+                        name_map[sec_num] = sec_name
+                pending_trace = None
+
+    return func_map, name_map
+
 
 def parse_section_headers(plan_path: Path) -> dict[int, str]:
     """Extract {major_section_number: section_name} from ## headers."""
@@ -842,9 +903,22 @@ _STATUS_MAP = {
 _GO_JSON_ACTION_MAP = {"pass": "PASS", "skip": "SKIP", "fail": "FAIL"}
 
 
-def _extract_go_section(name: str) -> int:
-    m = _GO_SECTION_RE.match(name)
-    return int(m.group(1)) if m else 0
+def _extract_go_section(name: str, override: dict[str, int] | None = None) -> int:
+    """Extract section number for a Go test function.
+
+    Primary source: TRACE JSON comments (passed via override dict).
+    Subtests inherit their parent's section: TestFoo_4_1_Bar/subcase
+    looks up TestFoo_4_1_Bar first, then falls back to parent name.
+    """
+    if override:
+        if name in override:
+            return override[name]
+        # Subtests: inherit section from parent (before the first /)
+        if "/" in name:
+            parent = name.split("/")[0]
+            if parent in override:
+                return override[parent]
+    return 0
 
 
 _PY_FILE_SECTION_RE = re.compile(r"test_0*(\d+)_\w+\.py")
@@ -855,22 +929,23 @@ def _extract_py_section(
     override: dict[str, int] | None,
     qualified: str = "",
 ) -> int:
+    """Extract section number for a Python test function.
+
+    Primary source: TRACE JSON comments (passed via override dict).
+    Fallback: extract from filename pattern (test_01_foo.py → section 1).
+    This handles suites without TRACE (user stories, system tests).
+    """
     if override and func_name in override:
         return override[func_name]
-    # Try filename first (e.g. test_01_purchase_journey.py → 1)
-    # — more reliable than function name for user story / release tests
+    # Fallback: extract section from the qualified path (filename)
     if qualified:
-        fm = _PY_FILE_SECTION_RE.search(qualified)
-        if fm:
-            return int(fm.group(1))
-    # Fallback: extract from function name (e.g. test_rel_001_fresh → 1)
-    m = _PY_SECTION_RE.match(func_name)
-    if m:
-        return int(m.group(1))
+        m = _PY_FILE_SECTION_RE.search(qualified)
+        if m:
+            return int(m.group(1))
     return 0
 
 
-def parse_go_json(output: str) -> list[TestResult]:
+def parse_go_json(output: str, go_trace_override: dict[str, int] | None = None) -> list[TestResult]:
     """Parse ``go test -json`` output — one JSON object per line.
 
     Accumulates per-test ``output`` events so that failure context
@@ -898,7 +973,7 @@ def parse_go_json(output: str) -> list[TestResult]:
             TestResult(
                 name=name,
                 status=_GO_JSON_ACTION_MAP[action],
-                section=_extract_go_section(name),
+                section=_extract_go_section(name, override=go_trace_override),
                 duration=float(event.get("Elapsed", 0)),
                 output="".join(test_output.get(name, [])).rstrip(),
             )
@@ -1104,6 +1179,8 @@ SUITES = {
         "cwd": "core",
         "plan": "core/test/TEST_PLAN.md",
         "parser": "go",
+        "test_dir": "core/test",
+        "lang": "go",
     },
     "brain": {
         "name": "Brain (Py)",
@@ -1143,7 +1220,7 @@ SUITES = {
                 "cli/tests/"],
         "cwd": None,
         "parser": "pytest",
-        "flat": True,
+        "test_dir": "cli/tests",
     },
     "admin_cli": {
         "name": "Admin CLI (Py)",
@@ -1151,7 +1228,7 @@ SUITES = {
                 "admin-cli/tests/"],
         "cwd": None,
         "parser": "pytest",
-        "flat": True,  # no section breakdown — all tests in one group
+        "test_dir": "admin-cli/tests",
     },
     "appview": {
         "name": "AppView (TS)",
@@ -1175,6 +1252,7 @@ SUITES = {
                 "tests/release/"],
         "cwd": None,
         "parser": "pytest",
+        "timeout": 600,
         "test_dir": "tests/release",
         "section_names": {
             1: "Fresh Machine Install",
@@ -1211,6 +1289,7 @@ SUITES = {
                 "tests/system/user_stories/"],
         "cwd": None,
         "parser": "pytest",
+        "timeout": 600,
         "test_dir": "tests/system/user_stories",
         "section_names": {
             1: "The Purchase Journey",
@@ -1235,7 +1314,8 @@ SUITES = {
                 "tests/install/test_installer_core.py",
                 "tests/install/test_installer_wizard.py",
                 "tests/install/test_model_set.py",
-                "tests/install/test_post_install.py"],
+                "tests/install/test_post_install.py",
+                "tests/install/test_deploy_regression.py"],
         "cwd": None,
         "parser": "pytest",
         "test_dir": "tests/install",
@@ -1336,7 +1416,7 @@ def prescan_e2e_sections(test_dir: Path) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# E2E Docker lifecycle (docker-compose-e2e.yml — 4 Core+Brain pairs)
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -1356,136 +1436,6 @@ def _load_dotenv() -> dict[str, str]:
     return extra
 
 
-def _start_e2e_docker(*, restart: bool = False) -> float:
-    """Start 4-node E2E Docker stack. Returns startup time in seconds.
-
-    If all 4 Brain containers are already healthy, skips rebuild to avoid
-    disrupting a running stack.  Pass ``restart=True`` to force teardown
-    and rebuild.
-    """
-    import time as _time
-
-    import httpx
-
-    _ensure_client_token()
-    t0 = _time.monotonic()
-
-    # Load .env for API keys (GOOGLE_API_KEY, OPENROUTER_API_KEY, etc.)
-    dotenv = _load_dotenv()
-    for key in ("GOOGLE_API_KEY", "OPENROUTER_API_KEY", "OPENROUTER_MODEL",
-                "ANTHROPIC_API_KEY", "DINA_CLOUD_LLM"):
-        if key in dotenv and key not in os.environ:
-            os.environ[key] = dotenv[key]
-
-    compose_file = str(PROJECT_ROOT / "docker-compose-e2e.yml")
-    e2e_project = "dina-e2e"
-
-    actors = {
-        "alonso": 19200, "sancho": 19201,
-        "chairmaker": 19202, "albert": 19203,
-    }
-
-    # Tear down first if --restart requested
-    if restart:
-        print("  Tearing down existing E2E stack (--restart)...", file=sys.stderr,
-              flush=True)
-        subprocess.run(
-            ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
-            capture_output=True,
-            timeout=60,
-        )
-
-    # Check if all containers are already healthy
-    all_healthy = not restart  # skip check when restarting
-    if all_healthy:
-        for actor, port in actors.items():
-            try:
-                resp = httpx.get(f"http://localhost:{port}/healthz", timeout=3)
-                if not resp.is_success:
-                    all_healthy = False
-                    break
-            except Exception:
-                all_healthy = False
-                break
-
-    we_started = False
-    if all_healthy:
-        # Never reuse stale containers — tear down and rebuild with current code.
-        print("  E2E Docker stack found — tearing down for fresh rebuild...",
-              file=sys.stderr, flush=True)
-        subprocess.run(
-            ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
-            capture_output=True, timeout=60,
-        )
-        all_healthy = False
-
-    if not all_healthy:
-        we_started = True
-        print("  Starting E2E Docker stack (4 actors)...", file=sys.stderr,
-              flush=True)
-        # Bust Docker layer cache so current source is always used.
-        for src_dir in [PROJECT_ROOT / "brain" / "src", PROJECT_ROOT / "core" / "cmd"]:
-            sentinel = src_dir / ".build-sentinel"
-            sentinel.write_text(f"{_time.time()}\n")
-        e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "-d"]
-        if os.environ.get("DINA_SKIP_DOCKER_BUILD") != "1":
-            e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "--build", "-d"]
-        result = subprocess.run(
-            e2e_up,
-            capture_output=True,
-            timeout=300,
-            text=True,
-        )
-        if result.returncode != 0:
-            # Print the actual Docker error for diagnosis
-            stderr_tail = (result.stderr or "").strip().split("\n")[-20:]
-            raise RuntimeError(
-                f"docker compose up failed (exit {result.returncode}):\n"
-                + "\n".join(stderr_tail)
-            )
-
-        # Wait for all containers to become healthy (in parallel)
-        from concurrent.futures import ThreadPoolExecutor as _TPE
-        from concurrent.futures import as_completed as _asc
-        with _TPE(max_workers=len(actors)) as pool:
-            futs = {
-                pool.submit(
-                    _wait_for_health,
-                    f"http://localhost:{port}/healthz",
-                    f"brain-{actor}",
-                    180,
-                ): actor
-                for actor, port in actors.items()
-            }
-            for fut in _asc(futs):
-                fut.result()
-
-    elapsed = _time.monotonic() - t0
-    print(
-        f"  E2E stack healthy: 4 actors × (Core+Brain)"
-        f"  ({_fmt_startup_time(elapsed)})",
-        file=sys.stderr,
-    )
-
-    # Set env so E2E tests detect Docker mode
-    os.environ["DINA_E2E"] = "docker"
-
-    # Only tear down if we started the stack (don't kill pre-existing containers)
-    if we_started:
-        def _stop() -> None:
-            print("\n  Stopping E2E Docker stack...", file=sys.stderr, flush=True)
-            subprocess.run(
-                ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
-                capture_output=True,
-                timeout=60,
-            )
-            print("  E2E Docker stack stopped.", file=sys.stderr)
-
-        _register_cleanup(_stop)
-
-    return elapsed
-
-
 def run_suite(
     key: str, *, quick: bool = True,
 ) -> tuple[list[TestResult], dict[int, str], float, str]:
@@ -1500,36 +1450,50 @@ def run_suite(
 
     cfg = SUITES[key]
 
-    # E2E suites: section map from filenames, not TEST_PLAN.md
+    # TRACE JSON is the single source of truth for section mapping.
+    # Prescan test files for # TRACE: {...} comments.
     section_override: dict[str, int] | None = None
-    if cfg.get("e2e_sections"):
+    trace_section_names: dict[int, str] = {}
+
+    test_dir_path = PROJECT_ROOT / cfg["test_dir"] if "test_dir" in cfg else None
+    lang = cfg.get("lang", "python")
+
+    if test_dir_path and test_dir_path.is_dir():
+        section_override, trace_section_names = prescan_trace_sections(
+            test_dir_path, lang=lang,
+        )
+
+    # Section names: prefer TRACE-derived names, fall back to plan headers or config.
+    if trace_section_names:
+        section_map = trace_section_names
+    elif cfg.get("e2e_sections"):
         section_map = dict(_E2E_SECTION_MAP)
-        section_override = prescan_e2e_sections(PROJECT_ROOT / cfg["test_dir"])
     elif "plan" in cfg:
         plan_path = PROJECT_ROOT / cfg["plan"]
         section_map = parse_section_headers(plan_path)
-        if "test_dir" in cfg and "manifest" in cfg:
-            # Integration suite: uses TST-INT IDs + manifest
-            manifest_path = PROJECT_ROOT / cfg["manifest"]
-            section_override = prescan_integration_sections(
-                PROJECT_ROOT / cfg["test_dir"],
-                plan_path,
-                manifest_path,
-            )
-        elif "test_dir" in cfg:
-            # Brain suite (or any suite with test_dir + plan, no manifest):
-            # uses TST-BRAIN IDs from plan headers
-            section_override = prescan_brain_sections(
-                PROJECT_ROOT / cfg["test_dir"],
-                plan_path,
-            )
     elif "section_names" in cfg:
-        # Inline section names (e.g. AppView)
         section_map = dict(cfg["section_names"])
     else:
-        # Flat suite (e.g. CLI) — no section plan, all tests grouped as one
         section_map = {1: cfg["name"]}
-        section_override = None
+
+    # Legacy prescan fallback: if TRACE yielded nothing, try old methods.
+    # This handles suites not yet migrated to TRACE format.
+    if not section_override:
+        if cfg.get("e2e_sections"):
+            section_override = prescan_e2e_sections(PROJECT_ROOT / cfg["test_dir"])
+        elif "plan" in cfg:
+            plan_path = PROJECT_ROOT / cfg["plan"]
+            if "manifest" in cfg:
+                section_override = prescan_integration_sections(
+                    PROJECT_ROOT / cfg["test_dir"],
+                    plan_path,
+                    PROJECT_ROOT / cfg["manifest"],
+                )
+            elif "test_dir" in cfg:
+                section_override = prescan_brain_sections(
+                    PROJECT_ROOT / cfg["test_dir"],
+                    plan_path,
+                )
 
     cwd = (PROJECT_ROOT / cfg["cwd"]) if cfg["cwd"] else PROJECT_ROOT
 
@@ -1579,7 +1543,9 @@ def run_suite(
     elapsed = _time.monotonic() - t0
 
     if cfg["parser"] == "go":
-        tests = parse_go_json(output)
+        # Use TRACE prescan for Go section mapping.
+        go_override = section_override  # Already populated from prescan_trace_sections
+        tests = parse_go_json(output, go_trace_override=go_override)
     elif cfg["parser"] == "vitest":
         tests = parse_vitest_output(output)
     else:

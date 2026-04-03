@@ -37,6 +37,7 @@ def _invoke(args, mock_client=None):
 # ── status ───────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0022", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "01", "title": "status_json"}
 def test_status_json():
     mc = MagicMock()
     mc.healthz.return_value = {"status": "ok"}
@@ -54,6 +55,7 @@ def test_status_json():
     assert data["devices"] == 1
 
 
+# TRACE: {"suite": "ADMIN", "case": "0023", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "02", "title": "status_degraded"}
 def test_status_degraded():
     """Status shows partial info when some endpoints fail."""
     mc = MagicMock()
@@ -70,6 +72,7 @@ def test_status_degraded():
     assert data["personas"] == "?"
 
 
+# TRACE: {"suite": "ADMIN", "case": "0024", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "03", "title": "status_human"}
 def test_status_human():
     """Human-readable status output."""
     mc = MagicMock()
@@ -87,6 +90,7 @@ def test_status_human():
 # ── device list ──────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0025", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "04", "title": "device_list_json"}
 def test_device_list_json():
     mc = MagicMock()
     mc.list_devices.return_value = {"devices": [
@@ -99,6 +103,7 @@ def test_device_list_json():
     assert len(data) == 2
 
 
+# TRACE: {"suite": "ADMIN", "case": "0026", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "05", "title": "device_list_empty"}
 def test_device_list_empty():
     mc = MagicMock()
     mc.list_devices.return_value = {"devices": []}
@@ -107,6 +112,7 @@ def test_device_list_empty():
     assert "No paired devices" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0027", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "06", "title": "device_list_human"}
 def test_device_list_human():
     mc = MagicMock()
     mc.list_devices.return_value = {"devices": [
@@ -120,6 +126,7 @@ def test_device_list_human():
 # ── device pair ──────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0028", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "07", "title": "device_pair_json"}
 def test_device_pair_json():
     mc = MagicMock()
     mc.initiate_pairing.return_value = {"code": "123456", "expires_in": 300}
@@ -129,6 +136,7 @@ def test_device_pair_json():
     assert data["code"] == "123456"
 
 
+# TRACE: {"suite": "ADMIN", "case": "0029", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "08", "title": "device_pair_human"}
 def test_device_pair_human():
     mc = MagicMock()
     mc.initiate_pairing.return_value = {"code": "987654", "expires_in": 300}
@@ -141,6 +149,7 @@ def test_device_pair_human():
 # ── device revoke ────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0030", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "09", "title": "device_revoke_json"}
 def test_device_revoke_json():
     mc = MagicMock()
     mc.revoke_device.return_value = None
@@ -151,6 +160,7 @@ def test_device_revoke_json():
     assert data["device_id"] == "d-1"
 
 
+# TRACE: {"suite": "ADMIN", "case": "0031", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "10", "title": "device_revoke_error"}
 def test_device_revoke_error():
     mc = MagicMock()
     mc.revoke_device.side_effect = AdminClientError("HTTP 404: device not found")
@@ -161,6 +171,7 @@ def test_device_revoke_error():
 # ── persona list ─────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0032", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "11", "title": "persona_list_json"}
 def test_persona_list_json():
     mc = MagicMock()
     mc.list_personas.return_value = [
@@ -172,6 +183,7 @@ def test_persona_list_json():
     assert len(data) == 1
 
 
+# TRACE: {"suite": "ADMIN", "case": "0033", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "12", "title": "persona_list_empty"}
 def test_persona_list_empty():
     mc = MagicMock()
     mc.list_personas.return_value = []
@@ -183,6 +195,7 @@ def test_persona_list_empty():
 # ── persona create ───────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0034", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "13", "title": "persona_create_json"}
 def test_persona_create_json():
     mc = MagicMock()
     mc.create_persona.return_value = {"id": "persona-work", "status": "created"}
@@ -201,6 +214,7 @@ def test_persona_create_json():
 # ── persona unlock ───────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0035", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "14", "title": "persona_unlock_json"}
 def test_persona_unlock_json():
     mc = MagicMock()
     mc.unlock_persona.return_value = {"status": "unlocked"}
@@ -219,6 +233,7 @@ def test_persona_unlock_json():
 # ── identity show ────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0036", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "15", "title": "identity_show_json"}
 def test_identity_show_json():
     mc = MagicMock()
     mc.get_did.return_value = {"id": "did:key:z6MkTest", "verificationMethod": []}
@@ -231,6 +246,7 @@ def test_identity_show_json():
 # ── identity sign ────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0037", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "16", "title": "identity_sign_json"}
 def test_identity_sign_json():
     mc = MagicMock()
     mc.sign_data.return_value = {"signature": "aabb" * 32}
@@ -243,6 +259,7 @@ def test_identity_sign_json():
 # ── config loading ──────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0038", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "17", "title": "missing_config"}
 def test_missing_config():
     """CLI exits with error when socket doesn't exist."""
     runner = CliRunner()
@@ -250,6 +267,7 @@ def test_missing_config():
     assert result.exit_code != 0
 
 
+# TRACE: {"suite": "ADMIN", "case": "0039", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "18", "title": "fail_closed_socket_missing"}
 def test_fail_closed_socket_missing(monkeypatch, tmp_path):
     """When DINA_ADMIN_SOCKET points to nonexistent file, fail — don't silently proceed."""
     from dina_admin_cli.config import load_config
@@ -260,6 +278,7 @@ def test_fail_closed_socket_missing(monkeypatch, tmp_path):
         load_config()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0040", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "19", "title": "socket_disabled_when_empty"}
 def test_socket_disabled_when_empty(monkeypatch):
     """When DINA_ADMIN_SOCKET is explicitly empty, fail with descriptive error."""
     from dina_admin_cli.config import load_config
@@ -270,6 +289,7 @@ def test_socket_disabled_when_empty(monkeypatch):
         load_config()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0041", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "20", "title": "config_uses_default_socket"}
 def test_config_uses_default_socket(monkeypatch, tmp_path):
     """When DINA_ADMIN_SOCKET is unset, load_config uses the default path."""
     from dina_admin_cli.config import DEFAULT_SOCKET_PATH, load_config
@@ -281,6 +301,7 @@ def test_config_uses_default_socket(monkeypatch, tmp_path):
         load_config()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0042", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "21", "title": "config_loads_socket"}
 def test_config_loads_socket(monkeypatch, tmp_path):
     """When socket file exists, config loads successfully."""
     from dina_admin_cli.config import load_config
@@ -294,6 +315,7 @@ def test_config_loads_socket(monkeypatch, tmp_path):
     assert cfg.timeout == 30.0
 
 
+# TRACE: {"suite": "ADMIN", "case": "0043", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "22", "title": "config_custom_timeout"}
 def test_config_custom_timeout(monkeypatch, tmp_path):
     """DINA_TIMEOUT env var overrides default timeout."""
     from dina_admin_cli.config import load_config
@@ -310,6 +332,7 @@ def test_config_custom_timeout(monkeypatch, tmp_path):
 # ── approvals list ───────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0044", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "23", "title": "approvals_list_json"}
 def test_approvals_list_json():
     mc = MagicMock()
     mc.list_approvals.return_value = [
@@ -330,6 +353,7 @@ def test_approvals_list_json():
     assert data[0]["id"] == "apr-001"
 
 
+# TRACE: {"suite": "ADMIN", "case": "0045", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "24", "title": "approvals_list_empty"}
 def test_approvals_list_empty():
     mc = MagicMock()
     mc.list_approvals.return_value = []
@@ -338,6 +362,7 @@ def test_approvals_list_empty():
     assert "No pending approvals" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0046", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "25", "title": "approvals_list_human"}
 def test_approvals_list_human():
     mc = MagicMock()
     mc.list_approvals.return_value = [
@@ -354,6 +379,7 @@ def test_approvals_list_human():
     assert "health" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0047", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "26", "title": "approvals_bare_invocation_lists"}
 def test_approvals_bare_invocation_lists():
     """Running 'dina-admin approvals' without subcommand lists pending."""
     mc = MagicMock()
@@ -366,6 +392,7 @@ def test_approvals_bare_invocation_lists():
 # ── approvals approve ───────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0048", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "27", "title": "approvals_approve_json"}
 def test_approvals_approve_json():
     mc = MagicMock()
     mc.approve.return_value = {"status": "approved", "id": "apr-001"}
@@ -376,6 +403,7 @@ def test_approvals_approve_json():
     mc.approve.assert_called_once_with("apr-001", "session")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0049", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "28", "title": "approvals_approve_human"}
 def test_approvals_approve_human():
     mc = MagicMock()
     mc.approve.return_value = {"status": "approved"}
@@ -384,6 +412,7 @@ def test_approvals_approve_human():
     assert "Approved: apr-001" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0050", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "29", "title": "approvals_approve_single_scope"}
 def test_approvals_approve_single_scope():
     mc = MagicMock()
     mc.approve.return_value = {"status": "approved"}
@@ -395,6 +424,7 @@ def test_approvals_approve_single_scope():
     mc.approve.assert_called_once_with("apr-001", "single")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0051", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "30", "title": "approvals_approve_error"}
 def test_approvals_approve_error():
     mc = MagicMock()
     mc.approve.side_effect = AdminClientError("HTTP 404: approval not found")
@@ -405,6 +435,7 @@ def test_approvals_approve_error():
 # ── approvals deny ──────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0052", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "31", "title": "approvals_deny_json"}
 def test_approvals_deny_json():
     mc = MagicMock()
     mc.deny.return_value = {"status": "denied", "id": "apr-001"}
@@ -414,6 +445,7 @@ def test_approvals_deny_json():
     assert data["status"] == "denied"
 
 
+# TRACE: {"suite": "ADMIN", "case": "0053", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "32", "title": "approvals_deny_human"}
 def test_approvals_deny_human():
     mc = MagicMock()
     mc.deny.return_value = {"status": "denied"}
@@ -422,6 +454,7 @@ def test_approvals_deny_human():
     assert "Denied: apr-001" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0054", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "33", "title": "approvals_deny_error"}
 def test_approvals_deny_error():
     mc = MagicMock()
     mc.deny.side_effect = AdminClientError("HTTP 404: approval not found")
@@ -432,6 +465,7 @@ def test_approvals_deny_error():
 # ── help ─────────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0055", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "34", "title": "help"}
 def test_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["--help"])
@@ -439,6 +473,7 @@ def test_help():
     assert "Dina Admin CLI" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0056", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "35", "title": "device_help"}
 def test_device_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["device", "--help"])
@@ -446,6 +481,7 @@ def test_device_help():
     assert "Manage paired devices" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0057", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "36", "title": "persona_help"}
 def test_persona_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["persona", "--help"])
@@ -453,6 +489,7 @@ def test_persona_help():
     assert "Manage personas" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0058", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "37", "title": "approvals_help"}
 def test_approvals_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["approvals", "--help"])
@@ -460,6 +497,7 @@ def test_approvals_help():
     assert "pending approval" in result.output.lower()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0059", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "38", "title": "identity_help"}
 def test_identity_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["identity", "--help"])
@@ -470,6 +508,7 @@ def test_identity_help():
 # ── vault list ──────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0060", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "39", "title": "vault_list_json"}
 def test_vault_list_json():
     mc = MagicMock()
     mc.vault_query.return_value = [
@@ -483,6 +522,7 @@ def test_vault_list_json():
     mc.vault_query.assert_called_once_with("general", query="", limit=20, offset=0)
 
 
+# TRACE: {"suite": "ADMIN", "case": "0061", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "40", "title": "vault_list_empty"}
 def test_vault_list_empty():
     mc = MagicMock()
     mc.vault_query.return_value = []
@@ -491,6 +531,7 @@ def test_vault_list_empty():
     assert "No items found" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0062", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "41", "title": "vault_list_with_offset"}
 def test_vault_list_with_offset():
     """--offset is passed through to vault_query."""
     mc = MagicMock()
@@ -508,6 +549,7 @@ def test_vault_list_with_offset():
 # ── vault search ────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0063", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "42", "title": "vault_search_json"}
 def test_vault_search_json():
     mc = MagicMock()
     mc.vault_query.return_value = [
@@ -525,6 +567,7 @@ def test_vault_search_json():
     )
 
 
+# TRACE: {"suite": "ADMIN", "case": "0064", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "43", "title": "vault_search_empty_results"}
 def test_vault_search_empty_results():
     mc = MagicMock()
     mc.vault_query.return_value = []
@@ -539,6 +582,7 @@ def test_vault_search_empty_results():
 # ── vault delete ────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0065", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "44", "title": "vault_delete_json"}
 def test_vault_delete_json():
     mc = MagicMock()
     mc.vault_delete.return_value = None
@@ -553,6 +597,7 @@ def test_vault_delete_json():
     mc.vault_delete.assert_called_once_with("general", "item-123")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0066", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "45", "title": "vault_delete_human"}
 def test_vault_delete_human():
     mc = MagicMock()
     mc.vault_delete.return_value = None
@@ -564,6 +609,7 @@ def test_vault_delete_human():
     assert "Deleted: item-456" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0067", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "46", "title": "vault_delete_error"}
 def test_vault_delete_error():
     mc = MagicMock()
     mc.vault_delete.side_effect = AdminClientError("HTTP 404: item not found")
@@ -577,6 +623,7 @@ def test_vault_delete_error():
 # ── ask ──────────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0068", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "47", "title": "ask_returns_content"}
 def test_ask_returns_content():
     """dina-admin ask should display the LLM response."""
     mc = MagicMock()
@@ -587,6 +634,7 @@ def test_ask_returns_content():
     mc.ask.assert_called_once_with("What tea do I like")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0069", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "48", "title": "ask_json_mode"}
 def test_ask_json_mode():
     """--json returns full response dict."""
     mc = MagicMock()
@@ -597,6 +645,7 @@ def test_ask_json_mode():
     assert data["content"] == "answer"
 
 
+# TRACE: {"suite": "ADMIN", "case": "0070", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "49", "title": "ask_response_field_fallback"}
 def test_ask_response_field_fallback():
     """Falls back to response field when content is empty."""
     mc = MagicMock()
@@ -606,6 +655,7 @@ def test_ask_response_field_fallback():
     assert "fallback answer" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0071", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "50", "title": "ask_dict_response"}
 def test_ask_dict_response():
     """Extracts text from dict-typed response."""
     mc = MagicMock()
@@ -615,6 +665,7 @@ def test_ask_dict_response():
     assert "structured response" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0072", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "51", "title": "ask_no_text_shows_error"}
 def test_ask_no_text_shows_error():
     """Missing text argument should fail."""
     mc = MagicMock()
@@ -622,6 +673,7 @@ def test_ask_no_text_shows_error():
     assert result.exit_code != 0
 
 
+# TRACE: {"suite": "ADMIN", "case": "0073", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "52", "title": "ask_error_shows_message"}
 def test_ask_error_shows_message():
     """API error should display error message."""
     mc = MagicMock()
@@ -631,6 +683,7 @@ def test_ask_error_shows_message():
     assert "Brain unreachable" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0074", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "53", "title": "ask_multi_word_query"}
 def test_ask_multi_word_query():
     """Multiple arguments are joined into one query."""
     mc = MagicMock()
@@ -643,6 +696,7 @@ def test_ask_multi_word_query():
 # ── remember ─────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0075", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "54", "title": "remember_stored"}
 def test_remember_stored():
     """dina-admin remember should display stored status."""
     mc = MagicMock()
@@ -653,6 +707,7 @@ def test_remember_stored():
     mc.remember.assert_called_once_with("Team lunch Friday 1pm")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0076", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "55", "title": "remember_needs_approval"}
 def test_remember_needs_approval():
     """Sensitive data triggers approval prompt."""
     mc = MagicMock()
@@ -666,6 +721,7 @@ def test_remember_needs_approval():
     assert "approval" in result.output.lower()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0077", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "56", "title": "remember_failed"}
 def test_remember_failed():
     """Failed remember shows error."""
     mc = MagicMock()
@@ -675,6 +731,7 @@ def test_remember_failed():
     assert "Failed" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0078", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "57", "title": "remember_json_mode"}
 def test_remember_json_mode():
     """--json returns full result dict."""
     mc = MagicMock()
@@ -686,6 +743,7 @@ def test_remember_json_mode():
     assert data["id"] == "stg-abc"
 
 
+# TRACE: {"suite": "ADMIN", "case": "0079", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "58", "title": "remember_no_text_shows_error"}
 def test_remember_no_text_shows_error():
     """Missing text argument should fail."""
     mc = MagicMock()
@@ -693,6 +751,7 @@ def test_remember_no_text_shows_error():
     assert result.exit_code != 0
 
 
+# TRACE: {"suite": "ADMIN", "case": "0080", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "59", "title": "remember_error_shows_message"}
 def test_remember_error_shows_message():
     """API error should display error message."""
     mc = MagicMock()
@@ -702,6 +761,7 @@ def test_remember_error_shows_message():
     assert "staging failed" in result.output
 
 
+# TRACE: {"suite": "ADMIN", "case": "0081", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "60", "title": "remember_multi_word_text"}
 def test_remember_multi_word_text():
     """Multiple arguments are joined into one text."""
     mc = MagicMock()

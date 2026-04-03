@@ -34,6 +34,7 @@ def _get_core_port(install_dir: Path) -> str:
 class TestContainersHealthy:
     """Verify containers are healthy after install."""
 
+    # TRACE: {"suite": "INST", "case": "0001", "section": "04", "sectionName": "Blackbox", "subsection": "01", "scenario": "01", "title": "install_containers_healthy"}
     def test_install_containers_healthy(self, installed_dir: Path) -> None:
         """All containers are healthy after install."""
         port = _get_core_port(installed_dir)
@@ -45,6 +46,7 @@ class TestContainersHealthy:
         except httpx.ConnectError:
             pytest.fail("Core not reachable after install")
 
+    # TRACE: {"suite": "INST", "case": "0002", "section": "04", "sectionName": "Blackbox", "subsection": "01", "scenario": "02", "title": "install_did_reachable"}
     def test_install_did_reachable(self, installed_dir: Path) -> None:
         """DID endpoint returns a valid did:plc after install."""
         port = _get_core_port(installed_dir)
@@ -62,6 +64,7 @@ class TestContainersHealthy:
 class TestFullLifecycle:
     """End-to-end lifecycle: install → stop → start → verify."""
 
+    # TRACE: {"suite": "INST", "case": "0003", "section": "04", "sectionName": "Blackbox", "subsection": "02", "scenario": "01", "title": "full_lifecycle"}
     def test_full_lifecycle(self, installed_dir: Path) -> None:
         """Install, stop, start, verify containers healthy and DID stable."""
         port = _get_core_port(installed_dir)
@@ -125,6 +128,7 @@ class TestFullLifecycle:
 class TestDevicePairingSurvivesRestart:
     """Paired device authentication works after Core restart."""
 
+    # TRACE: {"suite": "INST", "case": "0004", "section": "04", "sectionName": "Blackbox", "subsection": "03", "scenario": "01", "title": "paired_device_auth_survives_restart"}
     def test_paired_device_auth_survives_restart(self, installed_dir: Path) -> None:
         """Pair → restart → signed request still authenticates."""
         port = _get_core_port(installed_dir)
@@ -241,6 +245,7 @@ class TestDevicePairingSurvivesRestart:
 class TestInstallRerun:
     """Verify install.sh --skip-build is idempotent against a live install."""
 
+    # TRACE: {"suite": "INST", "case": "0005", "section": "04", "sectionName": "Blackbox", "subsection": "04", "scenario": "01", "title": "rerun_preserves_did"}
     def test_rerun_preserves_did(self, installed_dir: Path) -> None:
         """Rerunning install.sh --skip-build preserves the DID."""
         port = _get_core_port(installed_dir)
@@ -273,6 +278,7 @@ class TestInstallRerun:
             f"DID changed after rerun: {did_before} → {did_after}"
         )
 
+    # TRACE: {"suite": "INST", "case": "0006", "section": "04", "sectionName": "Blackbox", "subsection": "04", "scenario": "02", "title": "rerun_preserves_secrets"}
     def test_rerun_preserves_secrets(self, installed_dir: Path) -> None:
         """Rerunning install.sh --skip-build does not rotate secrets."""
         secrets = installed_dir / "secrets"
@@ -303,6 +309,7 @@ class TestInstallRerun:
 class TestInstallPrompts:
     """Verify specific interactive prompt flows."""
 
+    # TRACE: {"suite": "INST", "case": "0007", "section": "04", "sectionName": "Blackbox", "subsection": "05", "scenario": "01", "title": "install_multi_provider_skip"}
     def test_install_multi_provider_skip(self, install_dir: Path) -> None:
         """Selecting skip (6) results in no LLM keys in .env."""
         child = pexpect.spawn(

@@ -40,6 +40,7 @@ beforeEach(async () => {
 // §4.1 Concurrent Subject Creation / Fix 2 + Fix 10 (IT-SUB-001..007) — 7 tests
 // ---------------------------------------------------------------------------
 describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0389", "section": "01", "sectionName": "General", "title": "IT-SUB-001: Fix 2: 50 concurrent creates \u2192 exactly 1 subject"}
   it('IT-SUB-001: Fix 2: 50 concurrent creates → exactly 1 subject', async () => {
     const ref = { type: 'did' as const, did: SUBJECT_DID, name: 'Test Subject' }
 
@@ -59,6 +60,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0390", "section": "01", "sectionName": "General", "title": "IT-SUB-002: Fix 2: concurrent creates \u2014 no errors"}
   it('IT-SUB-002: Fix 2: concurrent creates — no errors', async () => {
     const ref = { type: 'did' as const, did: SUBJECT_DID, name: 'Test Subject' }
 
@@ -73,6 +75,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
     expect(rejected).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0391", "section": "01", "sectionName": "General", "title": "IT-SUB-003: Fix 2: concurrent creates \u2014 all return same ID"}
   it('IT-SUB-003: Fix 2: concurrent creates — all return same ID', async () => {
     const ref = { type: 'did' as const, did: SUBJECT_DID, name: 'Test Subject' }
 
@@ -89,6 +92,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0392", "section": "01", "sectionName": "General", "title": "IT-SUB-004: Fix 10: progressive identifier enrichment"}
   it('IT-SUB-004: Fix 10: progressive identifier enrichment', async () => {
     // First call with Google Maps identifier
     const ref1 = {
@@ -150,6 +154,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
     expect(identifiersA2.some((i: any) => i.uri === 'https://example.com/article-1')).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0393", "section": "01", "sectionName": "General", "title": "IT-SUB-005: Fix 10: Tier 1 DID \u2192 globally deterministic"}
   it('IT-SUB-005: Fix 10: Tier 1 DID → globally deterministic', async () => {
     const ref = { type: 'did' as const, did: SUBJECT_DID, name: 'Test Subject' }
 
@@ -172,6 +177,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
     expect(rows[0].authorScopedDid).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0394", "section": "01", "sectionName": "General", "title": "IT-SUB-006: Fix 10: Tier 2 name-only \u2192 author-scoped"}
   it('IT-SUB-006: Fix 10: Tier 2 name-only → author-scoped', async () => {
     const ref = { type: 'organization' as const, name: 'Test Place' }
 
@@ -196,6 +202,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0395", "section": "01", "sectionName": "General", "title": "IT-SUB-007: Fix 10: Tier 2 same author same name \u2192 deduplicated"}
   it('IT-SUB-007: Fix 10: Tier 2 same author same name → deduplicated', async () => {
     const ref = { type: 'organization' as const, name: 'Test Place' }
 
@@ -221,6 +228,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
 // §4.2 Canonical Merge Chain / Fix 10 Tier 3 (IT-SUB-008..015) — 8 tests
 // ---------------------------------------------------------------------------
 describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0396", "section": "01", "sectionName": "General", "title": "IT-SUB-008: simple merge \u2014 A \u2192 B"}
   it('IT-SUB-008: simple merge — A → B', async () => {
     // Create two subjects
     const refA = { type: 'did' as const, did: 'did:plc:subA', name: 'Subject A' }
@@ -239,6 +247,7 @@ describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
     expect(resolvedId).toBe(idB)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0397", "section": "01", "sectionName": "General", "title": "IT-SUB-009: chain merge \u2014 A \u2192 B \u2192 C"}
   it('IT-SUB-009: chain merge — A → B → C', async () => {
     // Create three subjects
     const refA = { type: 'did' as const, did: 'did:plc:chainA', name: 'Chain A' }
@@ -262,6 +271,7 @@ describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
     expect(resolvedId).toBe(idC)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0398", "section": "01", "sectionName": "General", "title": "IT-SUB-010: cycle detection \u2014 A \u2192 B \u2192 A"}
   it('IT-SUB-010: cycle detection — A → B → A', async () => {
     // Create two subjects
     const refA = { type: 'did' as const, did: 'did:plc:cycleA', name: 'Cycle A' }
@@ -284,6 +294,7 @@ describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
     expect([idA, idB]).toContain(resolvedId)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0399", "section": "01", "sectionName": "General", "title": "IT-SUB-011: max depth exceeded"}
   it('IT-SUB-011: max depth exceeded', async () => {
     // Create a chain of 7 subjects (depth > MAX_CHAIN_DEPTH=5)
     const dids = Array.from({ length: 7 }, (_, i) => `did:plc:depth${i}`)
@@ -327,6 +338,7 @@ describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
     expect(resolvedId).toBeTruthy()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0400", "section": "01", "sectionName": "General", "title": "IT-SUB-012: processMerge \u2014 self-merge rejected"}
   it('IT-SUB-012: processMerge — self-merge rejected', async () => {
     // Create a subject
     const ref = { type: 'did' as const, did: 'did:plc:selfmerge', name: 'Self Merge Subject' }
@@ -343,6 +355,7 @@ describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
     expect(resolvedId).toBe(id)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0401", "section": "01", "sectionName": "General", "title": "IT-SUB-013: processMerge \u2014 cycle prevention"}
   it('IT-SUB-013: processMerge — cycle prevention', async () => {
     // B already points to A
     const refA = { type: 'did' as const, did: 'did:plc:prevA', name: 'Prev A' }
@@ -367,6 +380,7 @@ describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
     expect([idA, idB]).toContain(resolvedId)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0402", "section": "01", "sectionName": "General", "title": "IT-SUB-014: processMerge \u2014 both subjects marked dirty"}
   it('IT-SUB-014: processMerge — both subjects marked dirty', async () => {
     // Create two subjects
     const refA = { type: 'did' as const, did: 'did:plc:dirtyA', name: 'Dirty A' }
@@ -398,6 +412,7 @@ describe('§4.2 Canonical Merge Chain (Fix 10 Tier 3)', () => {
     expect(rowB[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0403", "section": "01", "sectionName": "General", "title": "IT-SUB-015: resolve endpoint follows canonical chain"}
   it('IT-SUB-015: resolve endpoint follows canonical chain', async () => {
     // Create two subjects
     const refA = { type: 'did' as const, did: 'did:plc:resolveA', name: 'Resolve A' }

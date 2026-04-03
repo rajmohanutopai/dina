@@ -42,6 +42,7 @@ from tests.integration.mocks import (
 # ---------------------------------------------------------------------------
 
 # TST-INT-635
+# TRACE: {"suite": "INT", "case": "0635", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "01", "title": "egress_malformed_category_dropped"}
 def test_egress_malformed_category_dropped(
     mock_sharing_policy: MockSharingPolicyManager,
 ):
@@ -66,6 +67,7 @@ def test_egress_malformed_category_dropped(
 
 
 # TST-INT-636
+# TRACE: {"suite": "INT", "case": "0636", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "02", "title": "trusted_empty_policy_no_data"}
 def test_trusted_empty_policy_no_data(
     mock_sharing_policy: MockSharingPolicyManager,
 ):
@@ -87,6 +89,7 @@ def test_trusted_empty_policy_no_data(
 
 
 # TST-INT-637
+# TRACE: {"suite": "INT", "case": "0637", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "03", "title": "egress_audit_90_day_retention"}
 def test_egress_audit_90_day_retention(
     mock_sharing_policy: MockSharingPolicyManager,
 ):
@@ -122,6 +125,7 @@ def test_egress_audit_90_day_retention(
 
 
 # TST-INT-638
+# TRACE: {"suite": "INT", "case": "0638", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "04", "title": "outbox_24h_ttl_expired_dropped"}
 def test_outbox_24h_ttl_expired_dropped(
     mock_outbox: MockOutbox,
 ):
@@ -162,6 +166,7 @@ def test_outbox_24h_ttl_expired_dropped(
 
 
 # TST-INT-639
+# TRACE: {"suite": "INT", "case": "0639", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "05", "title": "bulk_policy_update_filtered"}
 def test_bulk_policy_update_filtered(
     mock_sharing_policy: MockSharingPolicyManager,
 ):
@@ -191,6 +196,7 @@ def test_bulk_policy_update_filtered(
 
 
 # TST-INT-640
+# TRACE: {"suite": "INT", "case": "0640", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "06", "title": "new_contact_default_sharing_policy"}
 def test_new_contact_default_sharing_policy(
     mock_sharing_policy: MockSharingPolicyManager,
 ):
@@ -216,6 +222,7 @@ def test_new_contact_default_sharing_policy(
 # ---------------------------------------------------------------------------
 
 # TST-INT-641
+# TRACE: {"suite": "INT", "case": "0641", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "07", "title": "bot_query_response_format_and_max_sources"}
 def test_bot_query_response_format_and_max_sources(
     mock_review_bot: MockReviewBot,
 ):
@@ -237,6 +244,7 @@ def test_bot_query_response_format_and_max_sources(
 
 
 # TST-INT-642
+# TRACE: {"suite": "INT", "case": "0642", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "08", "title": "missing_attribution_trust_penalty"}
 def test_missing_attribution_trust_penalty(
     mock_review_bot: MockReviewBot,
     mock_trust_network: MockTrustNetwork,
@@ -281,6 +289,7 @@ def test_missing_attribution_trust_penalty(
 
 
 # TST-INT-643
+# TRACE: {"suite": "INT", "case": "0643", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "09", "title": "bot_routing_threshold_boundary"}
 def test_bot_routing_threshold_boundary(
     mock_trust_network: MockTrustNetwork,
 ):
@@ -319,6 +328,7 @@ def test_bot_routing_threshold_boundary(
 
 
 # TST-INT-644
+# TRACE: {"suite": "INT", "case": "0644", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "10", "title": "bot_referral_below_threshold_declined"}
 def test_bot_referral_below_threshold_declined(
     mock_trust_network: MockTrustNetwork,
 ):
@@ -360,6 +370,7 @@ def test_bot_referral_below_threshold_declined(
 # ---------------------------------------------------------------------------
 
 # TST-INT-645
+# TRACE: {"suite": "INT", "case": "0645", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "11", "title": "pii_failure_blocks_cloud_route"}
 def test_pii_failure_blocks_cloud_route(
     mock_scrubber: MockPIIScrubber,
     mock_llm_router: MockLLMRouter,
@@ -386,20 +397,21 @@ def test_pii_failure_blocks_cloud_route(
 
 
 # TST-INT-646
+# TRACE: {"suite": "INT", "case": "0646", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "12", "title": "entity_vault_destroyed_after_rehydration"}
 def test_entity_vault_destroyed_after_rehydration(
     mock_scrubber: MockPIIScrubber,
 ):
     """Entity vault (replacement map) is cleared after rehydration."""
-    original = "Rajmohan lives at 123 Main Street"
+    original = "Rajmohan lives at 123 Main Street, contact rajmohan@email.com"
     scrubbed, entity_vault = mock_scrubber.scrub(original)
 
-    # Verify scrub produced a non-empty vault
+    # Verify scrub produced a non-empty vault (address + email)
     assert len(entity_vault) > 0, "Entity vault should have replacements"
 
     # Rehydrate (desanitize)
     restored = mock_scrubber.desanitize(scrubbed, entity_vault)
-    assert "Rajmohan" in restored
     assert "123 Main Street" in restored
+    assert "rajmohan@email.com" in restored
 
     # Clear the entity vault after use (application-level responsibility)
     entity_vault.clear()
@@ -409,12 +421,13 @@ def test_entity_vault_destroyed_after_rehydration(
 
     # Attempting desanitize with empty vault should return scrubbed text
     still_scrubbed = mock_scrubber.desanitize(scrubbed, entity_vault)
-    assert "Rajmohan" not in still_scrubbed, (
+    assert "rajmohan@email.com" not in still_scrubbed, (
         "Without entity vault, PII tokens should remain in place"
     )
 
 
 # TST-INT-647
+# TRACE: {"suite": "INT", "case": "0647", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "13", "title": "simple_lookup_no_llm"}
 def test_simple_lookup_no_llm(
     mock_llm_router: MockLLMRouter,
 ):
@@ -450,6 +463,7 @@ def test_simple_lookup_no_llm(
 # ---------------------------------------------------------------------------
 
 # TST-INT-648
+# TRACE: {"suite": "INT", "case": "0648", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "14", "title": "payment_intent_12h_expiry"}
 def test_payment_intent_12h_expiry(
     mock_staging: MockStagingTier,
 ):
@@ -494,6 +508,7 @@ def test_payment_intent_12h_expiry(
 
 
 # TST-INT-649
+# TRACE: {"suite": "INT", "case": "0649", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "15", "title": "agent_draft_only_prevents_send"}
 def test_agent_draft_only_prevents_send(
     mock_staging: MockStagingTier,
 ):
@@ -568,6 +583,7 @@ def test_agent_draft_only_prevents_send(
 
 
 # TST-INT-650
+# TRACE: {"suite": "INT", "case": "0650", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "16", "title": "reminder_negative_sleep_fires_immediately"}
 def test_reminder_negative_sleep_fires_immediately():
     """Missed reminder (trigger_at in the past) fires immediately, not skipped."""
     now = time.time()
@@ -591,6 +607,7 @@ def test_reminder_negative_sleep_fires_immediately():
 
 
 # TST-INT-651
+# TRACE: {"suite": "INT", "case": "0651", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "17", "title": "cart_outcome_recorded_tier3"}
 def test_cart_outcome_recorded_tier3(
     mock_vault: MockVault,
 ):
@@ -652,6 +669,7 @@ def test_cart_outcome_recorded_tier3(
 # ---------------------------------------------------------------------------
 
 # TST-INT-652
+# TRACE: {"suite": "INT", "case": "0652", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "18", "title": "conflict_resolution_last_write_wins"}
 def test_conflict_resolution_last_write_wins(
     mock_vault: MockVault,
 ):
@@ -704,6 +722,7 @@ def test_conflict_resolution_last_write_wins(
 
 
 # TST-INT-653
+# TRACE: {"suite": "INT", "case": "0653", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "19", "title": "ws_missed_message_buffer"}
 def test_ws_missed_message_buffer(
     mock_ws_session_mgr: MockWSSessionManager,
 ):
@@ -765,6 +784,7 @@ def test_ws_missed_message_buffer(
 # ---------------------------------------------------------------------------
 
 # TST-INT-654
+# TRACE: {"suite": "INT", "case": "0654", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "20", "title": "ws_three_missed_pongs_disconnect"}
 def test_ws_three_missed_pongs_disconnect(
     mock_ws_session_mgr: MockWSSessionManager,
 ):
@@ -790,6 +810,7 @@ def test_ws_three_missed_pongs_disconnect(
 
 
 # TST-INT-655
+# TRACE: {"suite": "INT", "case": "0655", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "21", "title": "ws_auth_timeout_5s"}
 def test_ws_auth_timeout_5s(
     mock_ws_session_mgr: MockWSSessionManager,
 ):
@@ -813,6 +834,7 @@ def test_ws_auth_timeout_5s(
 
 
 # TST-INT-656
+# TRACE: {"suite": "INT", "case": "0656", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "22", "title": "ws_reconnect_backoff_caps_30s"}
 def test_ws_reconnect_backoff_caps_30s(
     mock_reconnect_backoff: MockReconnectBackoff,
 ):
@@ -843,6 +865,7 @@ def test_ws_reconnect_backoff_caps_30s(
 # ---------------------------------------------------------------------------
 
 # TST-INT-657
+# TRACE: {"suite": "INT", "case": "0657", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "23", "title": "well_known_atproto_did_endpoint"}
 def test_well_known_atproto_did_endpoint(
     mock_identity: MockIdentity,
 ):
@@ -880,6 +903,7 @@ def test_well_known_atproto_did_endpoint(
 
 
 # TST-INT-658
+# TRACE: {"suite": "INT", "case": "0658", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "24", "title": "pds_net_outbound_for_plc"}
 def test_pds_net_outbound_for_plc(
     mock_compose: MockDockerCompose,
 ):
@@ -909,6 +933,7 @@ def test_pds_net_outbound_for_plc(
 
 
 # TST-INT-659
+# TRACE: {"suite": "INT", "case": "0659", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "25", "title": "pairing_code_single_use"}
 def test_pairing_code_single_use(
     mock_pairing_manager: MockPairingManager,
 ):
@@ -943,6 +968,7 @@ def test_pairing_code_single_use(
 
 
 # TST-INT-660
+# TRACE: {"suite": "INT", "case": "0660", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "26", "title": "brain_cannot_reach_pds"}
 def test_brain_cannot_reach_pds(
     mock_compose: MockDockerCompose,
 ):
@@ -963,6 +989,7 @@ def test_brain_cannot_reach_pds(
 
 
 # TST-INT-661
+# TRACE: {"suite": "INT", "case": "0661", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "27", "title": "managed_hosting_15min_snapshots"}
 def test_managed_hosting_15min_snapshots():
     """ZFS/Btrfs snapshot interval for managed hosting is 15 minutes."""
     managed_hosting_config = {
@@ -985,6 +1012,7 @@ def test_managed_hosting_15min_snapshots():
 # ---------------------------------------------------------------------------
 
 # TST-INT-662
+# TRACE: {"suite": "INT", "case": "0662", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "28", "title": "estate_read_only_90_days_expires"}
 def test_estate_read_only_90_days_expires(
     mock_estate_manager: MockEstateManager,
     mock_p2p: MockP2PChannel,
@@ -1022,6 +1050,7 @@ def test_estate_read_only_90_days_expires(
 # ---------------------------------------------------------------------------
 
 # TST-INT-663
+# TRACE: {"suite": "INT", "case": "0663", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "29", "title": "watchdog_breach_tier2_notification"}
 def test_watchdog_breach_tier2_notification(
     mock_watchdog: MockWatchdog,
 ):
@@ -1050,6 +1079,7 @@ def test_watchdog_breach_tier2_notification(
 # ---------------------------------------------------------------------------
 
 # TST-INT-664
+# TRACE: {"suite": "INT", "case": "0664", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "30", "title": "docker_log_rotation_config"}
 def test_docker_log_rotation_config():
     """All services must have max-size: 10m, max-file: 3 log rotation."""
     # Define expected docker-compose logging config for all services

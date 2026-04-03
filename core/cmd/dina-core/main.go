@@ -500,8 +500,6 @@ func main() {
 
 		// Update PLC directory with MsgBox service and Ed25519 key so other
 		// nodes can discover this node's D2D endpoint and encrypt messages.
-		// PDS creates the DID with only #atproto (secp256k1) — we add
-		// #dina_messaging service and the Ed25519 verification method.
 		if ownDID != "" && msgboxURL != "" {
 			rotKey, rotErr := k256Mgr.GenerateOrLoad()
 			if rotErr != nil {
@@ -594,58 +592,8 @@ func main() {
 
 	// 8. Transport
 	didResolver := transport.NewDIDResolver()
-	// KNOWN_PEERS: legacy dev/test-only mechanism. Disabled by default.
-	// Production uses PLC directory for DID resolution.
-	// Enable with DINA_KNOWN_PEERS_MODE=legacy for internal testing only.
-	if os.Getenv("DINA_KNOWN_PEERS_MODE") == "legacy" {
-		didResolver.SetTTL(365 * 24 * time.Hour)
-		if peers := os.Getenv("DINA_KNOWN_PEERS"); peers != "" {
-			slog.Warn("KNOWN_PEERS: legacy mode enabled (dev/test only)")
-			for i, entry := range strings.Split(peers, ",") {
-				parts := strings.SplitN(entry, "=", 3)
-				if len(parts) != 3 {
-					slog.Error("KNOWN_PEERS: invalid entry format (expected did=endpoint=seedhex)", "index", i, "entry", entry)
-					os.Exit(1)
-				}
-				did := strings.TrimSpace(parts[0])
-				endpoint := strings.TrimSpace(parts[1])
-				peerSeedHex := strings.TrimSpace(parts[2])
-				peerSeedBytes, seedErr := hex.DecodeString(peerSeedHex)
-				if seedErr != nil {
-					slog.Error("KNOWN_PEERS: invalid seed hex", "index", i, "did", did, "error", seedErr)
-					os.Exit(1)
-				}
-				if len(peerSeedBytes) != 32 {
-					slog.Error("KNOWN_PEERS: invalid seed length", "index", i, "did", did, "got", len(peerSeedBytes), "expected", 32)
-					os.Exit(1)
-				}
-				_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'/0'")
-				if deriveErr != nil {
-					slog.Error("KNOWN_PEERS: key derivation failure", "index", i, "did", did, "error", deriveErr)
-					os.Exit(1)
-				}
-				var peerPrivKey ed25519.PrivateKey
-				if len(peerKeyBytes) == ed25519.SeedSize {
-					peerPrivKey = ed25519.NewKeyFromSeed(peerKeyBytes)
-				} else {
-					peerPrivKey = ed25519.PrivateKey(peerKeyBytes)
-				}
-				peerPubKey := peerPrivKey.Public().(ed25519.PublicKey)
-				multicodecKey := append([]byte{0xed, 0x01}, peerPubKey...)
-				pubKeyMultibase := "z" + base58.Encode(multicodecKey)
 
-				doc := fmt.Sprintf(`{`+
-					`"id":"%s",`+
-					`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"%s"}],`+
-					`"service":[{"id":"%s#msg","type":"DinaMsgBox","serviceEndpoint":"%s"}]`+
-					`}`, did, did, did, pubKeyMultibase, did, endpoint)
-				didResolver.AddDocument(did, []byte(doc))
-			}
-		}
-	}
-
-	// Wire PLC directory as remote fetcher for unknown DIDs.
-	// KNOWN_PEERS are resolved from cache; everything else falls through to PLC.
+	// Wire PLC directory as remote fetcher for DID resolution.
 	plcResolver := pds.NewPLCResolver(cfg.PLCURL)
 	didResolver.SetFetcher(func(did string) ([]byte, error) {
 		raw, err := plcResolver.ResolveDID(context.Background(), did)
@@ -654,10 +602,7 @@ func main() {
 		}
 		return raw, nil
 	})
-	didResolver.SetTTL(10 * time.Minute) // cache PLC results, not forever
-	// Re-add KNOWN_PEERS with long TTL (they don't expire).
-	// The global TTL is now 10min for PLC results, but KNOWN_PEERS
-	// are pre-populated and refreshed on each restart.
+	didResolver.SetTTL(10 * time.Minute)
 
 	didResolverPort := transport.NewDIDResolverPort(didResolver)
 	// SQLite-backed durable outbox (survives restarts). Falls back to in-memory
@@ -840,11 +785,7 @@ func main() {
 		signingPrivKey.Public().(ed25519.PublicKey),
 		[]byte(signingPrivKey),
 	)
-	// Set sender DID for outbound D2D messages — use config override or
-	// the DID restored from identity metadata (the normal path).
-	if cfg.OwnDID != "" {
-		ownDID = cfg.OwnDID
-	}
+	// Set sender DID for outbound D2D messages from restored/created identity.
 	if ownDID != "" {
 		transportSvc.SetSenderDID(ownDID)
 		slog.Info("D2D sender DID configured", "did", ownDID)
@@ -1116,7 +1057,7 @@ func main() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			if err := trustSvc.SyncNeighborhood(cfg.OwnDID); err != nil {
+			if err := trustSvc.SyncNeighborhood(ownDID); err != nil {
 				slog.Warn("trust sync failed", "error", err)
 			}
 		}
@@ -1399,7 +1340,7 @@ func main() {
 
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed, StagingInbox: stagingInbox, PendingReasons: pendingReasonStore, Brain: brain}
 	sessionH := &handler.SessionHandler{Sessions: personaMgr}
-	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
+	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: ownDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr, ScenarioPolicies: scenarioPolicyMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber, Brain: brain}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}

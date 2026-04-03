@@ -17,6 +17,7 @@ import { SearchParams } from '@/api/xrpc/search.js'
 // SS8.1 Resolve Params
 // ---------------------------------------------------------------------------
 describe('SS8.1 Resolve Params', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0280", "section": "01", "sectionName": "General", "title": "UT-RP-001: valid params -- subject only"}
   it('UT-RP-001: valid params -- subject only', () => {
     // Description: subject = '{"type":"did","did":"did:plc:abc"}'
     // Expected: Parses successfully
@@ -32,6 +33,7 @@ describe('SS8.1 Resolve Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0281", "section": "01", "sectionName": "General", "title": "UT-RP-002: valid params -- all fields"}
   it('UT-RP-002: valid params -- all fields', () => {
     // Description: subject + requesterDid + domain + context
     // Expected: Parses successfully
@@ -50,6 +52,7 @@ describe('SS8.1 Resolve Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0282", "section": "01", "sectionName": "General", "title": "UT-RP-003: missing subject -> error"}
   it('UT-RP-003: missing subject -> error', () => {
     // Description: No subject param
     // Expected: Zod error
@@ -63,6 +66,7 @@ describe('SS8.1 Resolve Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0283", "section": "01", "sectionName": "General", "title": "UT-RP-004: invalid context enum"}
   it('UT-RP-004: invalid context enum', () => {
     // Description: context = "shopping"
     // Expected: Zod error
@@ -77,6 +81,7 @@ describe('SS8.1 Resolve Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0284", "section": "01", "sectionName": "General", "title": "UT-RP-005: all context values valid"}
   it('UT-RP-005: all context values valid', () => {
     // Description: "before-transaction", "before-interaction", "content-verification",
     //              "product-evaluation", "general-lookup"
@@ -103,6 +108,7 @@ describe('SS8.1 Resolve Params', () => {
 // SS8.2 Search Params
 // ---------------------------------------------------------------------------
 describe('SS8.2 Search Params', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0285", "section": "01", "sectionName": "General", "title": "UT-SP-001: valid params -- q only"}
   it('UT-SP-001: valid params -- q only', () => {
     // Description: q = "darshini"
     // Expected: Parses successfully
@@ -113,6 +119,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0286", "section": "01", "sectionName": "General", "title": "UT-SP-002: valid params -- all filters"}
   it('UT-SP-002: valid params -- all filters', () => {
     // Description: q + category + domain + sentiment + tags + authorDid + since + until
     // Expected: Parses successfully
@@ -142,6 +149,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0287", "section": "01", "sectionName": "General", "title": "UT-SP-003: limit bounds -- too high"}
   it('UT-SP-003: limit bounds -- too high', () => {
     // Description: limit = 200 (max 100)
     // Expected: Zod error
@@ -153,6 +161,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0288", "section": "01", "sectionName": "General", "title": "UT-SP-004: limit bounds -- too low"}
   it('UT-SP-004: limit bounds -- too low', () => {
     // Description: limit = 0 (min 1)
     // Expected: Zod error
@@ -164,6 +173,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0289", "section": "01", "sectionName": "General", "title": "UT-SP-005: limit default"}
   it('UT-SP-005: limit default', () => {
     // Description: limit unset
     // Expected: Default = 25
@@ -174,6 +184,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0290", "section": "01", "sectionName": "General", "title": "UT-SP-006: sort default"}
   it('UT-SP-006: sort default', () => {
     // Description: sort unset
     // Expected: Default = "relevant"
@@ -184,6 +195,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0291", "section": "01", "sectionName": "General", "title": "UT-SP-007: invalid sort enum"}
   it('UT-SP-007: invalid sort enum', () => {
     // Description: sort = "popularity"
     // Expected: Zod error
@@ -195,6 +207,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0292", "section": "01", "sectionName": "General", "title": "UT-SP-008: invalid sentiment enum"}
   it('UT-SP-008: invalid sentiment enum', () => {
     // Description: sentiment = "very-positive"
     // Expected: Zod error
@@ -206,6 +219,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0293", "section": "01", "sectionName": "General", "title": "UT-SP-009: invalid subjectType enum"}
   it('UT-SP-009: invalid subjectType enum', () => {
     // Description: subjectType = "place"
     // Expected: Zod error
@@ -217,6 +231,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0294", "section": "01", "sectionName": "General", "title": "UT-SP-010: tags -- comma-separated parsing"}
   it('UT-SP-010: tags -- comma-separated parsing', () => {
     // Description: tags = "food,quality,service"
     // Expected: Parses to string "food,quality,service" (split happens at runtime in search())
@@ -233,6 +248,7 @@ describe('SS8.2 Search Params', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0295", "section": "01", "sectionName": "General", "title": "UT-SP-011: MEDIUM-03: minConfidence filter accepted"}
   it('UT-SP-011: MEDIUM-03: minConfidence filter accepted', () => {
     // Description: minConfidence = "high"
     // Expected: Parses successfully (MEDIUM-03 added minConfidence param)

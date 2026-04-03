@@ -35,6 +35,7 @@ class TestRichClientSync:
     """Phone/Laptop with SQLite cache and on-device LLM."""
 
 # TST-INT-369
+    # TRACE: {"suite": "INT", "case": "0369", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "01", "title": "initial_sync_from_checkpoint"}
     def test_initial_sync_from_checkpoint(
         self,
         mock_rich_client: MockRichClient,
@@ -60,6 +61,7 @@ class TestRichClientSync:
         assert "item_b" in mock_rich_client.local_cache
 
 # TST-INT-380
+    # TRACE: {"suite": "INT", "case": "0380", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "02", "title": "realtime_push"}
     def test_realtime_push(
         self,
         mock_rich_client: MockRichClient,
@@ -100,6 +102,7 @@ class TestRichClientSync:
         assert len(mock_rich_client.search_local("nonexistent")) == 0
 
 # TST-INT-381
+    # TRACE: {"suite": "INT", "case": "0381", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "03", "title": "offline_queue_then_sync"}
     def test_offline_queue_then_sync(
         self, mock_rich_client: MockRichClient
     ):
@@ -124,6 +127,7 @@ class TestRichClientSync:
         assert "offline_2" in flushed_ids
 
 # TST-INT-368
+    # TRACE: {"suite": "INT", "case": "0368", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "04", "title": "local_cache_works_offline"}
     def test_local_cache_works_offline(
         self, mock_rich_client: MockRichClient
     ):
@@ -146,6 +150,7 @@ class TestRichClientSync:
         assert len(results_all) == 2
 
 # TST-INT-379
+    # TRACE: {"suite": "INT", "case": "0379", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "01", "scenario": "05", "title": "corrupted_cache_resync"}
     def test_corrupted_cache_resync(
         self, mock_rich_client: MockRichClient, mock_dina: MockDinaCore
     ):
@@ -199,6 +204,7 @@ class TestThinClientSync:
     """Glasses/Watch/Browser — no local storage."""
 
 # TST-INT-370
+    # TRACE: {"suite": "INT", "case": "0370", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "01", "title": "no_local_storage"}
     def test_no_local_storage(self, mock_thin_client: MockThinClient):
         """Thin clients have no local cache at all — everything streams
         from the home node."""
@@ -206,6 +212,7 @@ class TestThinClientSync:
         assert not hasattr(mock_thin_client, "local_cache")
 
 # TST-INT-371
+    # TRACE: {"suite": "INT", "case": "0371", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "02", "title": "authenticated_only"}
     def test_authenticated_only(
         self,
         mock_thin_client: MockThinClient,
@@ -229,6 +236,7 @@ class TestThinClientSync:
         assert len(mock_thin_client.received_streams) == 1
 
 # TST-INT-374
+    # TRACE: {"suite": "INT", "case": "0374", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "02", "scenario": "03", "title": "unauthenticated_receives_nothing"}
     def test_unauthenticated_receives_nothing(
         self, mock_thin_client: MockThinClient
     ):
@@ -248,6 +256,7 @@ class TestDeviceOnboarding:
     """New device onboarding flow: QR code -> key exchange -> registration."""
 
 # TST-INT-030
+    # TRACE: {"suite": "INT", "case": "0030", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "01", "title": "qr_code_pairing"}
     def test_qr_code_pairing(self, mock_dina: MockDinaCore):
         """Pairing code is single-use: generate → complete → token issued.
         Re-using the same code must fail."""
@@ -289,6 +298,7 @@ class TestDeviceOnboarding:
         )
 
 # TST-INT-367
+    # TRACE: {"suite": "INT", "case": "0367", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "02", "title": "key_stored_in_hardware"}
     def test_key_stored_in_hardware(self, mock_dina: MockDinaCore):
         """The device key is derived from the root identity and is unique
         per device. In production this would be stored in the Secure Enclave
@@ -321,6 +331,7 @@ class TestDeviceOnboarding:
         assert other_key != key_phone  # different root key → different device key
 
 # TST-INT-378
+    # TRACE: {"suite": "INT", "case": "0378", "section": "10", "sectionName": "Data Flow Patterns", "subsection": "03", "scenario": "03", "title": "device_registered"}
     def test_device_registered(self, mock_dina: MockDinaCore):
         """After onboarding, the device appears in the identity's device list."""
         assert len(mock_dina.identity.devices) == 0

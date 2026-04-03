@@ -28,6 +28,7 @@ afterAll(async () => {
 })
 
 describe('12 Dirty Flags Integration', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0563", "section": "01", "sectionName": "General", "title": "IT-DF-001: markDirty -- creates subject_scores row if not exists"}
   it('IT-DF-001: markDirty -- creates subject_scores row if not exists', async () => {
     // Description: New subject
     // Expected: subject_scores row with needs_recalc = true
@@ -51,6 +52,7 @@ describe('12 Dirty Flags Integration', () => {
     expect(rows[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0564", "section": "01", "sectionName": "General", "title": "IT-DF-002: markDirty -- creates did_profiles row if not exists"}
   it('IT-DF-002: markDirty -- creates did_profiles row if not exists', async () => {
     // Description: New DID
     // Expected: did_profiles row with needs_recalc = true
@@ -64,6 +66,7 @@ describe('12 Dirty Flags Integration', () => {
     expect(rows[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0565", "section": "01", "sectionName": "General", "title": "IT-DF-003: markDirty -- sets existing row dirty"}
   it('IT-DF-003: markDirty -- sets existing row dirty', async () => {
     // Description: Profile with needs_recalc = false
     // Expected: Flipped to true
@@ -91,6 +94,7 @@ describe('12 Dirty Flags Integration', () => {
     expect(after[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0566", "section": "01", "sectionName": "General", "title": "IT-DF-004: markDirty -- author always marked"}
   it('IT-DF-004: markDirty -- author always marked', async () => {
     // Description: Any attestation
     // Expected: Author's profile dirty
@@ -106,6 +110,7 @@ describe('12 Dirty Flags Integration', () => {
     expect(rows[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0567", "section": "01", "sectionName": "General", "title": "IT-DF-005: markDirty -- subject DID marked (when DID type)"}
   it('IT-DF-005: markDirty -- subject DID marked (when DID type)', async () => {
     // Description: Attestation about did:plc:xyz
     // Expected: did_profiles for xyz dirty
@@ -128,6 +133,7 @@ describe('12 Dirty Flags Integration', () => {
     expect(authorProfile[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0568", "section": "01", "sectionName": "General", "title": "IT-DF-006: markDirty -- cosigner marked"}
   it('IT-DF-006: markDirty -- cosigner marked', async () => {
     // Description: Attestation with coSignature.did
     // Expected: Cosigner's profile dirty
@@ -145,6 +151,7 @@ describe('12 Dirty Flags Integration', () => {
     expect(cosignerProfile[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0569", "section": "01", "sectionName": "General", "title": "IT-DF-007: markDirty -- mentioned DIDs marked"}
   it('IT-DF-007: markDirty -- mentioned DIDs marked', async () => {
     // Description: Attestation with 3 mentions
     // Expected: All 3 mentioned DID profiles dirty
@@ -168,6 +175,7 @@ describe('12 Dirty Flags Integration', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0570", "section": "01", "sectionName": "General", "title": "IT-DF-008: markDirty -- subject_scores marked"}
   it('IT-DF-008: markDirty -- subject_scores marked', async () => {
     // Description: Attestation for subject S
     // Expected: subject_scores for S dirty
@@ -201,6 +209,7 @@ describe('12 Dirty Flags Integration', () => {
     expect(after[0].needsRecalc).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0571", "section": "01", "sectionName": "General", "title": "IT-DF-009: cascade: attestation -> dirty -> scorer refresh -> clean"}
   it('IT-DF-009: cascade: attestation -> dirty -> scorer refresh -> clean', async () => {
     // Description: Full cycle
     // Expected: Profile starts dirty, ends clean after scorer run

@@ -26,6 +26,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-649
+// TRACE: {"suite": "CORE", "case": "1041", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "01", "scenario": "01", "title": "ManagedOnboarding"}
 func TestOnboarding_19_1_ManagedOnboarding(t *testing.T) {
 	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
@@ -85,6 +86,7 @@ func TestOnboarding_19_1_ManagedOnboarding(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-650
+// TRACE: {"suite": "CORE", "case": "1042", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "02", "scenario": "01", "title": "SeedReceivedFromClient"}
 func TestOnboarding_19_2_SeedReceivedFromClient(t *testing.T) {
 	// BIP-39 mnemonic generation is now handled client-side (Python CLI / install.sh).
 	// Core receives only the wrapped seed blob — never generates mnemonics.
@@ -116,6 +118,7 @@ func TestOnboarding_19_2_SeedReceivedFromClient(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-651
+// TRACE: {"suite": "CORE", "case": "1043", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "03", "scenario": "01", "title": "RootKeypairDerived"}
 func TestOnboarding_19_3_RootKeypairDerived(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
 	impl := realOnboardingSequence
@@ -143,6 +146,7 @@ func TestOnboarding_19_3_RootKeypairDerived(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-652
+// TRACE: {"suite": "CORE", "case": "1044", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "04", "scenario": "01", "title": "DIDRegistered"}
 func TestOnboarding_19_4_DIDRegistered(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
 	impl := realOnboardingSequence
@@ -171,6 +175,7 @@ func TestOnboarding_19_4_DIDRegistered(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-653
+// TRACE: {"suite": "CORE", "case": "1045", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "05", "scenario": "01", "title": "DEKsDerived"}
 func TestOnboarding_19_5_DEKsDerived(t *testing.T) {
 	// Onboarding step check (stub adapter — always reports complete).
 	impl := realOnboardingSequence
@@ -237,6 +242,7 @@ func TestOnboarding_19_5_DEKsDerived(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-654
+// TRACE: {"suite": "CORE", "case": "1046", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "06", "scenario": "01", "title": "PasswordWrapsMasterSeed"}
 func TestOnboarding_19_6_PasswordWrapsMasterSeed(t *testing.T) {
 	// Verify the onboarding step is still listed (regression guard).
 	impl := realOnboardingSequence
@@ -315,6 +321,7 @@ func TestOnboarding_19_6_PasswordWrapsMasterSeed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-655
+// TRACE: {"suite": "CORE", "case": "1047", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "07", "scenario": "01", "title": "DatabasesCreated"}
 func TestOnboarding_19_7_DatabasesCreated(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
 	impl := realOnboardingSequence
@@ -342,6 +349,7 @@ func TestOnboarding_19_7_DatabasesCreated(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-656
+// TRACE: {"suite": "CORE", "case": "1048", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "08", "scenario": "01", "title": "ConvenienceModeSet"}
 func TestOnboarding_19_8_ConvenienceModeSet(t *testing.T) {
 	impl := onboarding.NewOnboardingSequence()
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
@@ -365,6 +373,7 @@ func TestOnboarding_19_8_ConvenienceModeSet(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-657
+// TRACE: {"suite": "CORE", "case": "1049", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "09", "scenario": "01", "title": "BrainStartsGuardianLoop"}
 func TestOnboarding_19_9_BrainStartsGuardianLoop(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
 	impl := realOnboardingSequence
@@ -392,6 +401,7 @@ func TestOnboarding_19_9_BrainStartsGuardianLoop(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-658
+// TRACE: {"suite": "CORE", "case": "1050", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "10", "scenario": "01", "title": "InitialSyncTriggered"}
 func TestOnboarding_19_10_InitialSyncTriggered(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
 	impl := realOnboardingSequence
@@ -419,6 +429,7 @@ func TestOnboarding_19_10_InitialSyncTriggered(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-659
+// TRACE: {"suite": "CORE", "case": "1051", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "11", "scenario": "01", "title": "OneDefaultPersona"}
 func TestOnboarding_19_11_OneDefaultPersona(t *testing.T) {
 	impl := onboarding.NewOnboardingSequence()
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
@@ -443,6 +454,7 @@ func TestOnboarding_19_11_OneDefaultPersona(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-660
+// TRACE: {"suite": "CORE", "case": "1052", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "12", "scenario": "01", "title": "MnemonicBackupDeferred"}
 func TestOnboarding_19_12_MnemonicBackupDeferred(t *testing.T) {
 	impl := onboarding.NewOnboardingSequence()
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
@@ -465,6 +477,7 @@ func TestOnboarding_19_12_MnemonicBackupDeferred(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-661
+// TRACE: {"suite": "CORE", "case": "1053", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "13", "scenario": "01", "title": "SharingRulesDefaultEmpty"}
 func TestOnboarding_19_13_SharingRulesDefaultEmpty(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
 	impl := realOnboardingSequence
@@ -480,6 +493,7 @@ func TestOnboarding_19_13_SharingRulesDefaultEmpty(t *testing.T) {
 }
 
 // TST-CORE-932
+// TRACE: {"suite": "CORE", "case": "1054", "section": "19", "sectionName": "Onboarding Sequence", "subsection": "14", "scenario": "01", "title": "InstallSH_Bootstrap"}
 func TestOnboarding_19_14_InstallSH_Bootstrap(t *testing.T) {
 	// install.sh bootstrap: token gen, dirs, permissions.
 	impl := realOnboardingSequence

@@ -56,6 +56,7 @@ class TestDirectTransactions:
     """Buyer's Dina speaks directly to seller's Dina — no middleman."""
 
 # TST-INT-514
+    # TRACE: {"suite": "INT", "case": "0514", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "direct_purchase_via_open_protocol"}
     def test_direct_purchase_via_open_protocol(
         self,
         mock_dina: MockDinaCore,
@@ -85,6 +86,7 @@ class TestDirectTransactions:
         assert received.payload["product_id"] == "aeron_2025"
 
 # TST-INT-290
+    # TRACE: {"suite": "INT", "case": "0290", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "02", "title": "walled_garden_still_option"}
     def test_walled_garden_still_option(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ):
@@ -123,6 +125,7 @@ class TestDirectTransactions:
         assert mock_dina.vault.retrieve(1, "purchase_channels") is None
 
 # TST-INT-515
+    # TRACE: {"suite": "INT", "case": "0515", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "03", "title": "negotiates_with_seller"}
     def test_negotiates_with_seller(
         self,
         mock_dina: MockDinaCore,
@@ -166,6 +169,7 @@ class TestDirectTransactions:
         assert received_counter.payload["counter_price"] == 90000
 
 # TST-INT-516
+    # TRACE: {"suite": "INT", "case": "0516", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "04", "title": "logistics_via_separate_dina"}
     def test_logistics_via_separate_dina(
         self,
         mock_dina: MockDinaCore,
@@ -209,6 +213,7 @@ class TestPluginEconomy:
     """The open economy rewards quality, not platform lock-in."""
 
 # TST-INT-291
+    # TRACE: {"suite": "INT", "case": "0291", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "01", "title": "maker_earns_by_quality"}
     def test_maker_earns_by_quality(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -242,6 +247,7 @@ class TestPluginEconomy:
         assert new_score < 20.0
 
 # TST-INT-311
+    # TRACE: {"suite": "INT", "case": "0311", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "02", "title": "bot_operator_earns_by_accuracy"}
     def test_bot_operator_earns_by_accuracy(
         self, mock_trust_network: MockTrustNetwork
     ):
@@ -263,6 +269,7 @@ class TestPluginEconomy:
         assert mock_trust_network.get_bot_score(bot_did) == 0.0
 
 # TST-INT-312
+    # TRACE: {"suite": "INT", "case": "0312", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "03", "title": "expert_earns_by_trust"}
     def test_expert_earns_by_trust(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -284,6 +291,7 @@ class TestPluginEconomy:
         assert score > 75.0
 
 # TST-INT-517
+    # TRACE: {"suite": "INT", "case": "0517", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "04", "title": "protocol_earns_nothing"}
     def test_protocol_earns_nothing(self, mock_dina: MockDinaCore):
         """The protocol itself takes no cut from transactions. Zero fees
         at the protocol layer — value accrues to participants, not the pipe."""
@@ -312,6 +320,7 @@ class TestMultiPartyCoordination:
     """Multi-Dina coordination for complex transactions."""
 
 # TST-INT-518
+    # TRACE: {"suite": "INT", "case": "0518", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "01", "title": "buyer_seller_logistics_three_party"}
     def test_buyer_seller_logistics_three_party(
         self,
         mock_dina: MockDinaCore,
@@ -388,6 +397,7 @@ class TestMultiPartyCoordination:
         assert len(mock_p2p.messages) == 3
 
 # TST-INT-519
+    # TRACE: {"suite": "INT", "case": "0519", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "02", "title": "group_purchase"}
     def test_group_purchase(
         self,
         mock_dina: MockDinaCore,
@@ -435,6 +445,7 @@ class TestMultiPartyCoordination:
         assert total_quantity == 2
 
 # TST-INT-520
+    # TRACE: {"suite": "INT", "case": "0520", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "03", "title": "dispute_resolution"}
     def test_dispute_resolution(
         self,
         mock_dina: MockDinaCore,

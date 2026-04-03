@@ -15,6 +15,7 @@ class TestAdminLifecycle:
     """Real API tests for REL-017: admin auth lifecycle."""
 
     # REL-017
+    # TRACE: {"suite": "REL", "case": "0017", "section": "17", "sectionName": "Admin Lifecycle", "subsection": "01", "scenario": "01", "title": "rel_017_wrong_token_rejected"}
     def test_rel_017_wrong_token_rejected(self, core_url) -> None:
         """Wrong Bearer token is rejected by admin endpoints."""
         resp = httpx.post(
@@ -28,6 +29,7 @@ class TestAdminLifecycle:
         )
 
     # REL-017
+    # TRACE: {"suite": "REL", "case": "0017", "section": "17", "sectionName": "Admin Lifecycle", "subsection": "01", "scenario": "02", "title": "rel_017_valid_token_accepted"}
     def test_rel_017_valid_token_accepted(
         self, core_url, auth_headers,
     ) -> None:
@@ -53,6 +55,7 @@ class TestAdminLifecycle:
         )
 
     # REL-017
+    # TRACE: {"suite": "REL", "case": "0017", "section": "17", "sectionName": "Admin Lifecycle", "subsection": "01", "scenario": "03", "title": "rel_017_admin_persona_create"}
     def test_rel_017_admin_persona_create(
         self, core_url, auth_headers,
     ) -> None:
@@ -77,6 +80,7 @@ class TestAdminLifecycle:
         )
 
     # REL-017
+    # TRACE: {"suite": "REL", "case": "0017", "section": "17", "sectionName": "Admin Lifecycle", "subsection": "01", "scenario": "04", "title": "rel_017_device_pairing_requires_auth"}
     def test_rel_017_device_pairing_requires_auth(
         self, core_url,
     ) -> None:

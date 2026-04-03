@@ -181,6 +181,7 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
 // Traces to: Architecture §"Record Validator"
 // ---------------------------------------------------------------------------
 describe('§2.1 Record Validator', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0078", "section": "01", "sectionName": "General", "title": "UT-RV-001: valid attestation record"}
   it('UT-RV-001: valid attestation record', () => {
     // Input: All required fields, valid sentiment enum
     // Expected: success = true, data populated
@@ -190,6 +191,7 @@ describe('§2.1 Record Validator', () => {
     expect((result.data as Record<string, unknown>).sentiment).toBe('positive')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0079", "section": "01", "sectionName": "General", "title": "UT-RV-002: missing required field (subject)"}
   it('UT-RV-002: missing required field (subject)', () => {
     // Input: Attestation without subject
     // Expected: success = false, errors point to "subject"
@@ -199,6 +201,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0080", "section": "01", "sectionName": "General", "title": "UT-RV-003: missing required field (createdAt)"}
   it('UT-RV-003: missing required field (createdAt)', () => {
     // Input: Attestation without createdAt
     // Expected: success = false
@@ -208,6 +211,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0081", "section": "01", "sectionName": "General", "title": "UT-RV-004: invalid sentiment enum"}
   it('UT-RV-004: invalid sentiment enum', () => {
     // Input: sentiment = "excellent" (not in enum)
     // Expected: success = false, errors mention enum values
@@ -219,6 +223,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0082", "section": "01", "sectionName": "General", "title": "UT-RV-005: text exceeds max length"}
   it('UT-RV-005: text exceeds max length', () => {
     const result = validateRecord(
       'com.dina.trust.attestation',
@@ -228,6 +233,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0083", "section": "01", "sectionName": "General", "title": "UT-RV-006: tags exceeds max count"}
   it('UT-RV-006: tags exceeds max count', () => {
     const result = validateRecord(
       'com.dina.trust.attestation',
@@ -237,6 +243,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0084", "section": "01", "sectionName": "General", "title": "UT-RV-007: tag exceeds max length"}
   it('UT-RV-007: tag exceeds max length', () => {
     const result = validateRecord(
       'com.dina.trust.attestation',
@@ -246,6 +253,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0085", "section": "01", "sectionName": "General", "title": "UT-RV-008: dimensions exceeds max count"}
   it('UT-RV-008: dimensions exceeds max count', () => {
     const dims = Array.from({ length: 15 }, (_, i) => ({ dimension: `dim${i}`, value: 'met' }))
     const result = validateRecord(
@@ -256,6 +264,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0086", "section": "01", "sectionName": "General", "title": "UT-RV-009: evidence exceeds max count"}
   it('UT-RV-009: evidence exceeds max count', () => {
     const items = Array.from({ length: 15 }, (_, i) => ({ type: `type${i}` }))
     const result = validateRecord(
@@ -266,6 +275,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0087", "section": "01", "sectionName": "General", "title": "UT-RV-010: valid vouch record"}
   it('UT-RV-010: valid vouch record', () => {
     // Input: All required fields
     // Expected: success = true
@@ -274,6 +284,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.data).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0088", "section": "01", "sectionName": "General", "title": "UT-RV-011: invalid vouch confidence"}
   it('UT-RV-011: invalid vouch confidence', () => {
     // Input: confidence = "extremely-high"
     // Expected: success = false
@@ -285,6 +296,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0089", "section": "01", "sectionName": "General", "title": "UT-RV-012: valid reaction record"}
   it('UT-RV-012: valid reaction record', () => {
     // Input: Valid targetUri and reaction enum value
     // Expected: success = true
@@ -293,6 +305,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.data).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0090", "section": "01", "sectionName": "General", "title": "UT-RV-013: invalid reaction enum"}
   it('UT-RV-013: invalid reaction enum', () => {
     // Input: reaction = "love" (not in enum)
     // Expected: success = false
@@ -304,6 +317,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0091", "section": "01", "sectionName": "General", "title": "UT-RV-014: valid report record"}
   it('UT-RV-014: valid report record', () => {
     // Input: Valid targetUri, reportType, optional text
     // Expected: success = true
@@ -315,6 +329,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.data).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0092", "section": "01", "sectionName": "General", "title": "UT-RV-015: invalid report type enum"}
   it('UT-RV-015: invalid report type enum', () => {
     // Input: reportType = "illegal" (not in enum)
     // Expected: success = false
@@ -326,6 +341,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0093", "section": "01", "sectionName": "General", "title": "UT-RV-016: report text exceeds max"}
   it('UT-RV-016: report text exceeds max', () => {
     const result = validateRecord(
       'com.dina.trust.reportRecord',
@@ -335,6 +351,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0094", "section": "01", "sectionName": "General", "title": "UT-RV-017: report evidence max count"}
   it('UT-RV-017: report evidence max count', () => {
     const items = Array.from({ length: 6 }, (_, i) => ({ type: `type${i}` }))
     const result = validateRecord(
@@ -345,6 +362,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0095", "section": "01", "sectionName": "General", "title": "UT-RV-018: unknown collection -> error"}
   it('UT-RV-018: unknown collection -> error', () => {
     // Input: collection = "com.dina.trust.unknown"
     // Expected: success = false, error says "Unknown collection"
@@ -354,6 +372,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.data).toBeUndefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0096", "section": "01", "sectionName": "General", "title": "UT-RV-019: valid attestation with optional fields"}
   it('UT-RV-019: valid attestation with optional fields', () => {
     // Input: All optional fields populated (dimensions, evidence, mentions, cosignature, etc.)
     // Expected: success = true, all fields parsed
@@ -387,6 +406,7 @@ describe('§2.1 Record Validator', () => {
     expect((data.coSignature as Record<string, unknown>).did).toBe('did:plc:cosigner')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0097", "section": "01", "sectionName": "General", "title": "UT-RV-020: subject ref \u2014 all type variants"}
   it('UT-RV-020: subject ref — all type variants', () => {
     // Input: type = "did", "content", "product", "dataset", "organization", "claim"
     // Expected: All pass validation
@@ -400,6 +420,7 @@ describe('§2.1 Record Validator', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0098", "section": "01", "sectionName": "General", "title": "UT-RV-021: subject ref \u2014 invalid type"}
   it('UT-RV-021: subject ref — invalid type', () => {
     // Input: type = "place" (not in enum)
     // Expected: success = false
@@ -411,6 +432,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0099", "section": "01", "sectionName": "General", "title": "UT-RV-022: subject name max length"}
   it('UT-RV-022: subject name max length', () => {
     const result = validateRecord(
       'com.dina.trust.attestation',
@@ -420,6 +442,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0100", "section": "01", "sectionName": "General", "title": "UT-RV-023: dimension rating \u2014 valid enum values"}
   it('UT-RV-023: dimension rating — valid enum values', () => {
     // Input: "exceeded", "met", "below", "failed"
     // Expected: All pass
@@ -435,6 +458,7 @@ describe('§2.1 Record Validator', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0101", "section": "01", "sectionName": "General", "title": "UT-RV-024: dimension rating \u2014 invalid value"}
   it('UT-RV-024: dimension rating — invalid value', () => {
     // Input: value = "good"
     // Expected: success = false
@@ -448,6 +472,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0102", "section": "01", "sectionName": "General", "title": "UT-RV-025: evidence item \u2014 valid structure"}
   it('UT-RV-025: evidence item — valid structure', () => {
     // Input: type + optional uri/hash/description
     // Expected: success = true
@@ -463,6 +488,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.success).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0103", "section": "01", "sectionName": "General", "title": "UT-RV-026: evidence description max length"}
   it('UT-RV-026: evidence description max length', () => {
     const result = validateRecord(
       'com.dina.trust.attestation',
@@ -472,6 +498,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0104", "section": "01", "sectionName": "General", "title": "UT-RV-027: mention \u2014 valid structure"}
   it('UT-RV-027: mention — valid structure', () => {
     // Input: did (required) + optional role
     // Expected: success = true
@@ -487,6 +514,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.success).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0105", "section": "01", "sectionName": "General", "title": "UT-RV-028: mentions exceeds max count"}
   it('UT-RV-028: mentions exceeds max count', () => {
     const mentions = Array.from({ length: 15 }, (_, i) => ({ did: `did:plc:mention${i}` }))
     const result = validateRecord(
@@ -497,6 +525,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0106", "section": "01", "sectionName": "General", "title": "UT-RV-029: relatedAttestations max count"}
   it('UT-RV-029: relatedAttestations max count', () => {
     const related = Array.from({ length: 6 }, (_, i) => ({ uri: `at://did:plc:x/com.dina.trust.attestation/tid${i}`, relation: 'agrees' }))
     const result = validateRecord(
@@ -507,6 +536,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0107", "section": "01", "sectionName": "General", "title": "UT-RV-030: cosignature \u2014 valid structure"}
   it('UT-RV-030: cosignature — valid structure', () => {
     // Input: did + sig + sigCreatedAt all present
     // Expected: success = true
@@ -523,6 +553,7 @@ describe('§2.1 Record Validator', () => {
     expect(cosig.sig).toBe('deadbeef')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0108", "section": "01", "sectionName": "General", "title": "UT-RV-031: cosignature \u2014 missing sig field"}
   it('UT-RV-031: cosignature — missing sig field', () => {
     // Input: Cosignature without sig
     // Expected: success = false
@@ -536,6 +567,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0109", "section": "01", "sectionName": "General", "title": "UT-RV-032: confidence enum \u2014 all valid values"}
   it('UT-RV-032: confidence enum — all valid values', () => {
     // Input: "certain", "high", "moderate", "speculative"
     // Expected: All pass
@@ -549,6 +581,7 @@ describe('§2.1 Record Validator', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0110", "section": "01", "sectionName": "General", "title": "UT-RV-033: confidence \u2014 invalid value"}
   it('UT-RV-033: confidence — invalid value', () => {
     // Input: confidence = "low"
     // Expected: success = false
@@ -560,6 +593,7 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 19 collection types \u2014 valid minimal records"}
   it('UT-RV-034: all 19 collection types — valid minimal records', () => {
     // Input: Minimal valid record for each of the 19 collections
     // Expected: All return success = true
@@ -571,6 +605,7 @@ describe('§2.1 Record Validator', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0112", "section": "01", "sectionName": "General", "title": "UT-RV-035: extra fields ignored (passthrough)"}
   it('UT-RV-035: extra fields ignored (passthrough)', () => {
     // Input: Record with extra fields not in schema
     // Expected: success = true (zod strips extras by default)
@@ -585,6 +620,7 @@ describe('§2.1 Record Validator', () => {
     expect(data.anotherExtra).toBeUndefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0113", "section": "01", "sectionName": "General", "title": "UT-RV-036: relatedRecords max on report"}
   it('UT-RV-036: relatedRecords max on report', () => {
     const records = Array.from({ length: 11 }, (_, i) => `at://did:plc:x/com.dina.trust.attestation/tid${i}`)
     const result = validateRecord(
@@ -609,6 +645,7 @@ describe('§2.2 Rate Limiter', () => {
     vi.restoreAllMocks()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0114", "section": "01", "sectionName": "General", "title": "UT-RL-001: first record not rate limited"}
   it('UT-RL-001: first record not rate limited', () => {
     // Input: New DID, first call
     // Expected: isRateLimited returns false
@@ -616,6 +653,7 @@ describe('§2.2 Rate Limiter', () => {
     expect(result).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0115", "section": "01", "sectionName": "General", "title": "UT-RL-002: 50th record not rate limited"}
   it('UT-RL-002: 50th record not rate limited', () => {
     // Input: DID with 49 prior records
     // Expected: isRateLimited returns false on the 50th call
@@ -628,6 +666,7 @@ describe('§2.2 Rate Limiter', () => {
     expect(result).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0116", "section": "01", "sectionName": "General", "title": "UT-RL-003: Fix 11: 51st record rate limited"}
   it('UT-RL-003: Fix 11: 51st record rate limited', () => {
     // Input: DID at count 50
     // Expected: isRateLimited returns true on the 51st call
@@ -640,6 +679,7 @@ describe('§2.2 Rate Limiter', () => {
     expect(result).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0117", "section": "01", "sectionName": "General", "title": "UT-RL-004: Fix 11: quarantine flag set on first limit"}
   it('UT-RL-004: Fix 11: quarantine flag set on first limit', () => {
     // Input: DID just exceeding 50/hr
     // Expected: quarantine flag set to true
@@ -652,6 +692,7 @@ describe('§2.2 Rate Limiter', () => {
     expect(getQuarantinedDids().has(did)).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0118", "section": "01", "sectionName": "General", "title": "UT-RL-005: subsequent records still rate limited"}
   it('UT-RL-005: subsequent records still rate limited', () => {
     // Input: DID already quarantined, count at 55
     // Expected: isRateLimited returns true
@@ -665,6 +706,7 @@ describe('§2.2 Rate Limiter', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0119", "section": "01", "sectionName": "General", "title": "UT-RL-006: different DIDs independent"}
   it('UT-RL-006: different DIDs independent', () => {
     // Input: DID-A at 50, DID-B at 0
     // Expected: DID-A limited, DID-B not limited
@@ -679,6 +721,7 @@ describe('§2.2 Rate Limiter', () => {
     expect(isRateLimited(didB)).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0120", "section": "01", "sectionName": "General", "title": "UT-RL-007: getQuarantinedDids returns flagged DIDs"}
   it('UT-RL-007: getQuarantinedDids returns flagged DIDs', () => {
     // Input: 3 DIDs quarantined, 10 normal
     // Expected: Returns exactly the 3 quarantined DIDs
@@ -706,6 +749,7 @@ describe('§2.2 Rate Limiter', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0121", "section": "01", "sectionName": "General", "title": "UT-RL-008: LRU eviction under max capacity"}
   it('UT-RL-008: LRU eviction under max capacity', () => {
     // Requirement: When the LRU cache reaches MAX_TRACKED_DIDS capacity,
     // adding one more DID must evict the least-recently-used entry.
@@ -758,6 +802,7 @@ describe('§2.2 Rate Limiter', () => {
     // but oldest does not (it was evicted to make room).
   }, 30_000) // 30s timeout — 100K iterations
 
+  // TRACE: {"suite": "APPVIEW", "case": "0122", "section": "01", "sectionName": "General", "title": "UT-RL-009: sliding window \u2014 TTL expiry resets count"}
   it('UT-RL-009: sliding window — TTL expiry resets count', () => {
     // Input: Simulate 1-hour TTL expiry
     // Expected: DID's count resets, no longer rate limited
@@ -783,6 +828,7 @@ describe('§2.2 Rate Limiter', () => {
     vi.restoreAllMocks()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0123", "section": "01", "sectionName": "General", "title": "UT-RL-010: counter increments on every call"}
   it('UT-RL-010: counter increments on every call', () => {
     // Input: Call isRateLimited 5 times for same DID
     // Expected: Count = 5 (side effect)
@@ -799,6 +845,7 @@ describe('§2.2 Rate Limiter', () => {
 // Traces to: Architecture §"Bounded Ingestion Queue", Fix 5, Fix 7
 // ---------------------------------------------------------------------------
 describe('§2.3 Bounded Queue', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0124", "section": "01", "sectionName": "General", "title": "UT-BQ-001: push triggers processing"}
   it('UT-BQ-001: push triggers processing', async () => {
     // Input: Push 1 event to empty queue
     // Expected: processFn called with event
@@ -818,6 +865,7 @@ describe('§2.3 Bounded Queue', () => {
     expect(processed[0].timestampUs).toBe(1000)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0125", "section": "01", "sectionName": "General", "title": "UT-BQ-002: concurrent workers capped at MAX_CONCURRENCY"}
   it('UT-BQ-002: concurrent workers capped at MAX_CONCURRENCY', async () => {
     // Input: Push 30 events, MAX_CONCURRENCY = 5
     // Expected: At most 5 active workers at any time
@@ -853,6 +901,7 @@ describe('§2.3 Bounded Queue', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0126", "section": "01", "sectionName": "General", "title": "UT-BQ-003: Fix 5: backpressure \u2014 ws.pause() at MAX_QUEUE_SIZE"}
   it('UT-BQ-003: Fix 5: backpressure — ws.pause() at MAX_QUEUE_SIZE', async () => {
     // Input: Push items to fill queue, then one more when full
     // Expected: ws.pause() called
@@ -892,6 +941,7 @@ describe('§2.3 Bounded Queue', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0127", "section": "01", "sectionName": "General", "title": "UT-BQ-004: Fix 5: hysteresis \u2014 ws.resume() at 50%"}
   it('UT-BQ-004: Fix 5: hysteresis — ws.resume() at 50%', async () => {
     // Requirement: After backpressure pauses the WebSocket, it must only
     // resume when the queue drains to ≤50% capacity (the low watermark).
@@ -970,6 +1020,7 @@ describe('§2.3 Bounded Queue', () => {
     expect(mockWs.resume).toHaveBeenCalledTimes(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0128", "section": "01", "sectionName": "General", "title": "UT-BQ-005: no oscillation \u2014 resume only once below 50%"}
   it('UT-BQ-005: no oscillation — resume only once below 50%', async () => {
     // Requirement: When the queue fluctuates near capacity, the hysteresis
     // mechanism (lowWatermark = 50%) prevents rapid pause/resume oscillation.
@@ -1053,6 +1104,7 @@ describe('§2.3 Bounded Queue', () => {
     expect(queue.isPaused).toBe(false)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0129", "section": "01", "sectionName": "General", "title": "UT-BQ-006: Fix 7: getSafeCursor \u2014 no in-flight"}
   it('UT-BQ-006: Fix 7: getSafeCursor — no in-flight', async () => {
     // Input: All events completed, queue empty
     // Expected: getSafeCursor returns null (nothing pending)
@@ -1072,6 +1124,7 @@ describe('§2.3 Bounded Queue', () => {
     expect(queue.getSafeCursor()).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0130", "section": "01", "sectionName": "General", "title": "UT-BQ-007: Fix 7: getSafeCursor \u2014 with in-flight"}
   it('UT-BQ-007: Fix 7: getSafeCursor — with in-flight', async () => {
     // Input: In-flight timestamps: [1000, 2000, 3000]
     // Expected: getSafeCursor returns 1000 (min of in-flight)
@@ -1097,6 +1150,7 @@ describe('§2.3 Bounded Queue', () => {
     resolvers.forEach((r) => r())
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0131", "section": "01", "sectionName": "General", "title": "UT-BQ-008: Fix 7: low watermark prevents data loss"}
   it('UT-BQ-008: Fix 7: low watermark prevents data loss', async () => {
     // Input: Event 1000 slow, event 2000 fast, event 2000 completes first
     // Expected: getSafeCursor still includes 1000
@@ -1130,6 +1184,7 @@ describe('§2.3 Bounded Queue', () => {
     if (resolveFirst) resolveFirst()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0132", "section": "01", "sectionName": "General", "title": "UT-BQ-009: error in processFn doesn\\"}
   it('UT-BQ-009: error in processFn doesn\'t crash queue', async () => {
     // Input: processFn throws for one event
     // Expected: Other events continue processing, error logged
@@ -1157,6 +1212,7 @@ describe('§2.3 Bounded Queue', () => {
     expect(processFn).toHaveBeenCalledTimes(5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0133", "section": "01", "sectionName": "General", "title": "UT-BQ-010: depth/active/inFlight accessors"}
   it('UT-BQ-010: depth/active/inFlight accessors', async () => {
     // Input: Various queue states
     // Expected: Correct counts returned
@@ -1191,6 +1247,7 @@ describe('§2.3 Bounded Queue', () => {
     await new Promise((r) => setTimeout(r, 50))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0134", "section": "01", "sectionName": "General", "title": "UT-BQ-011: pump resumes after worker completes"}
   it('UT-BQ-011: pump resumes after worker completes', async () => {
     // Input: MAX_CONCURRENCY workers busy, one completes
     // Expected: Next queued event immediately dequeued
@@ -1224,6 +1281,7 @@ describe('§2.3 Bounded Queue', () => {
     await new Promise((r) => setTimeout(r, 50))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0135", "section": "01", "sectionName": "General", "title": "UT-BQ-012: metrics emitted correctly"}
   it('UT-BQ-012: metrics emitted correctly', async () => {
     // Requirement: The queue must emit structured metrics at key lifecycle
     // points so operators can monitor queue health in production:
@@ -1346,6 +1404,7 @@ describe('§2.3 Bounded Queue', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0136", "section": "01", "sectionName": "General", "title": "UT-BQ-013: HIGH-04: failed item timestamp pinned in getSafeCursor"}
   it('UT-BQ-013: HIGH-04: failed item timestamp pinned in getSafeCursor', async () => {
     // Input: An item that fails processing
     // Expected: Its timestamp stays in failedTimestamps, getSafeCursor includes it
@@ -1384,6 +1443,7 @@ describe('§2.3 Bounded Queue', () => {
     await new Promise((r) => setTimeout(r, 50))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0137", "section": "01", "sectionName": "General", "title": "UT-BQ-014: MEDIUM-06: getSafeCursor scans all queued items for minimum"}
   it('UT-BQ-014: MEDIUM-06: getSafeCursor scans all queued items for minimum', async () => {
     // Input: Items queued in non-sequential order
     // Expected: getSafeCursor finds minimum across all queued items (not just head)
@@ -1418,6 +1478,7 @@ describe('§2.3 Bounded Queue', () => {
 // Traces to: Architecture §"Handler Pattern"
 // ---------------------------------------------------------------------------
 describe('§2.4 Handler Router', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0138", "section": "01", "sectionName": "General", "title": "UT-HR-001: routeHandler \u2014 attestation"}
   it('UT-HR-001: routeHandler — attestation', () => {
     // Input: collection = "com.dina.trust.attestation"
     // Expected: Returns a handler (not null)
@@ -1425,6 +1486,7 @@ describe('§2.4 Handler Router', () => {
     expect(handler).not.toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0139", "section": "01", "sectionName": "General", "title": "UT-HR-002: routeHandler \u2014 vouch"}
   it('UT-HR-002: routeHandler — vouch', () => {
     // Input: collection = "com.dina.trust.vouch"
     // Expected: Returns a handler (not null)
@@ -1432,6 +1494,7 @@ describe('§2.4 Handler Router', () => {
     expect(handler).not.toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0140", "section": "01", "sectionName": "General", "title": "UT-HR-003: routeHandler \u2014 all 19 collections registered"}
   it('UT-HR-003: routeHandler — all 19 collections registered', () => {
     // Input: Iterate TRUST_COLLECTIONS
     // Expected: All return non-null handler
@@ -1444,6 +1507,7 @@ describe('§2.4 Handler Router', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0141", "section": "01", "sectionName": "General", "title": "UT-HR-004: routeHandler \u2014 unknown collection"}
   it('UT-HR-004: routeHandler — unknown collection', () => {
     // Input: collection = "com.dina.trust.foo"
     // Expected: Returns null
@@ -1451,6 +1515,7 @@ describe('§2.4 Handler Router', () => {
     expect(handler).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0142", "section": "01", "sectionName": "General", "title": "UT-HR-005: routeHandler \u2014 non-dina collection"}
   it('UT-HR-005: routeHandler — non-dina collection', () => {
     // Input: collection = "app.bsky.feed.post"
     // Expected: Returns null
@@ -1458,6 +1523,7 @@ describe('§2.4 Handler Router', () => {
     expect(handler).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0143", "section": "01", "sectionName": "General", "title": "UT-HR-006: handler interface \u2014 handleCreate exists"}
   it('UT-HR-006: handler interface — handleCreate exists', () => {
     // Input: Each handler in registry
     // Expected: Has handleCreate method
@@ -1468,6 +1534,7 @@ describe('§2.4 Handler Router', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0144", "section": "01", "sectionName": "General", "title": "UT-HR-007: handler interface \u2014 handleDelete exists"}
   it('UT-HR-007: handler interface — handleDelete exists', () => {
     // Input: Each handler in registry
     // Expected: Has handleDelete method
@@ -1484,6 +1551,7 @@ describe('§2.4 Handler Router', () => {
 // Traces to: Architecture §"Deletion Handler", Fix 13
 // ---------------------------------------------------------------------------
 describe('§2.5 Deletion Handler', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0145", "section": "01", "sectionName": "General", "title": "UT-DH-001: getSourceTable \u2014 attestation -> attestations table"}
   it('UT-DH-001: getSourceTable — attestation -> attestations table', () => {
     // Input: "com.dina.trust.attestation"
     // Expected: Returns attestations Drizzle table
@@ -1491,6 +1559,7 @@ describe('§2.5 Deletion Handler', () => {
     expect(table).toBe(schema.attestations)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0146", "section": "01", "sectionName": "General", "title": "UT-DH-002: getSourceTable \u2014 vouch -> vouches table"}
   it('UT-DH-002: getSourceTable — vouch -> vouches table', () => {
     // Input: "com.dina.trust.vouch"
     // Expected: Returns vouches Drizzle table
@@ -1498,6 +1567,7 @@ describe('§2.5 Deletion Handler', () => {
     expect(table).toBe(schema.vouches)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0147", "section": "01", "sectionName": "General", "title": "UT-DH-003: Fix 13: all 18 record types mapped"}
   it('UT-DH-003: Fix 13: all 18 record types mapped', () => {
     // Input: Iterate all entries in COLLECTION_TABLE_MAP
     // Expected: All 18 collections (excluding 'subject') map to correct tables
@@ -1528,6 +1598,7 @@ describe('§2.5 Deletion Handler', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0148", "section": "01", "sectionName": "General", "title": "UT-DH-004: getSourceTable \u2014 unknown collection -> null"}
   it('UT-DH-004: getSourceTable — unknown collection -> null', () => {
     // Input: "com.dina.trust.unknown"
     // Expected: Returns null
@@ -1535,6 +1606,7 @@ describe('§2.5 Deletion Handler', () => {
     expect(table).toBeNull()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0149", "section": "01", "sectionName": "General", "title": "UT-DH-005: getSourceTable \u2014 media -> media table"}
   it('UT-DH-005: getSourceTable — media -> media table', () => {
     // Input: "com.dina.trust.media"
     // Expected: Returns the media Drizzle table (media has a dedicated table)
@@ -1542,6 +1614,7 @@ describe('§2.5 Deletion Handler', () => {
     expect(table).toBe(schema.media)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0150", "section": "01", "sectionName": "General", "title": "UT-DH-006: COLLECTION_TABLE_MAP completeness"}
   it('UT-DH-006: COLLECTION_TABLE_MAP completeness', () => {
     // Input: Compare keys count to expected (18 collections have table mappings)
     // Expected: 18 entries (all TRUST_COLLECTIONS except 'subject')
@@ -1621,6 +1694,7 @@ describe('§2.6 Trust Edge Sync', () => {
     addTrustEdgeCalls.length = 0
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0151", "section": "01", "sectionName": "General", "title": "UT-TE-001: vouch high confidence -> weight 1.0"}
   it('UT-TE-001: vouch high confidence -> weight 1.0', async () => {
     // Input: confidence = "high"
     // Expected: weight = 1.0
@@ -1638,6 +1712,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].edgeType).toBe('vouch')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0152", "section": "01", "sectionName": "General", "title": "UT-TE-002: vouch moderate -> weight 0.6"}
   it('UT-TE-002: vouch moderate -> weight 0.6', async () => {
     // Input: confidence = "moderate"
     // Expected: weight = 0.6
@@ -1654,6 +1729,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].weight).toBe(0.6)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0153", "section": "01", "sectionName": "General", "title": "UT-TE-003: vouch low -> weight 0.3"}
   it('UT-TE-003: vouch low -> weight 0.3', async () => {
     // Input: confidence = "low"
     // Expected: weight = 0.3
@@ -1670,6 +1746,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].weight).toBe(0.3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0154", "section": "01", "sectionName": "General", "title": "UT-TE-004: endorsement worked-together -> weight 0.8"}
   it('UT-TE-004: endorsement worked-together -> weight 0.8', async () => {
     // Input: endorsementType = "worked-together"
     // Expected: weight = 0.8
@@ -1687,6 +1764,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].edgeType).toBe('endorsement')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0155", "section": "01", "sectionName": "General", "title": "UT-TE-005: endorsement observed-output -> weight 0.4"}
   it('UT-TE-005: endorsement observed-output -> weight 0.4', async () => {
     // Input: endorsementType = "observed-output"
     // Expected: weight = 0.4
@@ -1703,6 +1781,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].weight).toBe(0.4)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0156", "section": "01", "sectionName": "General", "title": "UT-TE-006: delegation -> weight 0.9"}
   it('UT-TE-006: delegation -> weight 0.9', async () => {
     // Input: Delegation record
     // Expected: weight = 0.9
@@ -1720,6 +1799,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].edgeType).toBe('delegation')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0157", "section": "01", "sectionName": "General", "title": "UT-TE-007: cosigned attestation -> weight 0.3 (positive-attestation edge)"}
   it('UT-TE-007: cosigned attestation -> weight 0.3 (positive-attestation edge)', async () => {
     // Input: Attestation with coSignature and DID subject
     // Note: The attestation handler creates a 'positive-attestation' edge with weight 0.3
@@ -1748,6 +1828,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(CONSTANTS.EDGE_WEIGHT_COSIGN).toBe(0.7)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0158", "section": "01", "sectionName": "General", "title": "UT-TE-008: positive attestation DID subject -> weight 0.3"}
   it('UT-TE-008: positive attestation DID subject -> weight 0.3', async () => {
     // Input: DID-type subject, positive sentiment
     // Expected: weight = 0.3
@@ -1772,6 +1853,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].toDid).toBe('did:plc:target')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0159", "section": "01", "sectionName": "General", "title": "UT-TE-009: negative attestation DID subject -> no trust edge (HIGH-07)"}
   it('UT-TE-009: negative attestation DID subject -> no trust edge (HIGH-07)', async () => {
     // Input: DID-type subject, negative sentiment
     // Expected: No trust edge created — HIGH-07 added positive-only guard
@@ -1793,6 +1875,7 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0160", "section": "01", "sectionName": "General", "title": "UT-TE-010: non-DID subject attestation -> no trust edge"}
   it('UT-TE-010: non-DID subject attestation -> no trust edge', async () => {
     // Input: Product-type subject, positive sentiment
     // Expected: No trust edge created (only DID subjects create edges)

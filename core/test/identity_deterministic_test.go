@@ -26,6 +26,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-1106
+// TRACE: {"suite": "CORE", "case": "0802", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "Identity_3_DeterministicCorruptMetadataFailsClosed"}
 func TestIdentity_3_DeterministicCorruptMetadataFailsClosed(t *testing.T) {
 	// Write corrupt JSON to identity metadata file, attempt to load,
 	// expect error (not silent generation).
@@ -52,6 +53,7 @@ func TestIdentity_3_DeterministicCorruptMetadataFailsClosed(t *testing.T) {
 }
 
 // TST-CORE-1107
+// TRACE: {"suite": "CORE", "case": "0803", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "01", "title": "Identity_3_DeterministicGenerationPersistsAcrossRestart"}
 func TestIdentity_3_DeterministicGenerationPersistsAcrossRestart(t *testing.T) {
 	// Derive a key at generation N, persist to temp dir, reload,
 	// verify same generation is recovered.
@@ -83,6 +85,7 @@ func TestIdentity_3_DeterministicGenerationPersistsAcrossRestart(t *testing.T) {
 }
 
 // TST-CORE-1108
+// TRACE: {"suite": "CORE", "case": "0804", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "01", "title": "Identity_3_DeterministicRejectsNonNextGeneration"}
 func TestIdentity_3_DeterministicRejectsNonNextGeneration(t *testing.T) {
 	// Attempt rotation with a key that doesn't match next generation,
 	// expect error.
@@ -121,6 +124,7 @@ func TestIdentity_3_DeterministicRejectsNonNextGeneration(t *testing.T) {
 }
 
 // TST-CORE-1109
+// TRACE: {"suite": "CORE", "case": "0805", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "01", "title": "Identity_3_DeterministicPLCBranchIsolated"}
 func TestIdentity_3_DeterministicPLCBranchIsolated(t *testing.T) {
 	// Derive keys from PLC branch, persona branch, service branch using
 	// SLIP-0010, verify no collision (all 32-byte outputs differ).
@@ -180,6 +184,7 @@ func TestIdentity_3_DeterministicPLCBranchIsolated(t *testing.T) {
 // (JSON metadata persistence), and validates the security invariant that
 // old keys are rejected after rotation. The test does not check implementation
 // details; it validates observable behavior against the specification.
+// TRACE: {"suite": "CORE", "case": "0806", "section": "03", "sectionName": "Identity (DID)", "subsection": "05", "scenario": "01", "title": "Identity_3_DeterministicKeyRotationWithPersistenceRestart"}
 func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T) {
 	dir := testutil.TempDir(t)
 	deriver := dinacrypto.NewSLIP0010Deriver()
@@ -187,6 +192,7 @@ func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T)
 	signer := dinacrypto.NewEd25519Signer()
 	seed := testutil.TestMnemonicSeed
 
+	// TRACE: {"suite": "CORE", "case": "0807", "section": "03", "sectionName": "Identity (DID)", "title": "rotate_persists_and_survives_restart"}
 	t.Run("rotate_persists_and_survives_restart", func(t *testing.T) {
 		// Step 1: Create a DID at generation 0.
 		mgr1 := identity.NewDIDManager(dir)
@@ -270,6 +276,7 @@ func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T)
 		testutil.RequireEqual(t, meta3.SigningKeyPath, "m/9999'/0'/2'")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0808", "section": "03", "sectionName": "Identity (DID)", "title": "old_key_cannot_sign_rotation_after_restart"}
 	t.Run("old_key_cannot_sign_rotation_after_restart", func(t *testing.T) {
 		// After rotating to gen 1, the gen 0 private key must NOT be able
 		// to authorize further rotations. This validates that the security
@@ -321,6 +328,7 @@ func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T)
 		testutil.RequireNoError(t, err)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0809", "section": "03", "sectionName": "Identity (DID)", "title": "rotation_fail_closed_no_metadata_no_rotation"}
 	t.Run("rotation_fail_closed_no_metadata_no_rotation", func(t *testing.T) {
 		// Rotation must fail if metadata cannot be loaded. This validates
 		// the fail-closed property: the system refuses to proceed rather
@@ -361,6 +369,7 @@ func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T)
 		testutil.RequireEqual(t, mgr.SigningGeneration(), 0)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0810", "section": "03", "sectionName": "Identity (DID)", "title": "deterministic_key_derivation_across_generations"}
 	t.Run("deterministic_key_derivation_across_generations", func(t *testing.T) {
 		// Verify that the same seed always produces the same keys at each
 		// generation. This is the foundation of recovery: if the master seed
@@ -377,6 +386,7 @@ func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0811", "section": "03", "sectionName": "Identity (DID)", "title": "each_generation_produces_unique_key"}
 	t.Run("each_generation_produces_unique_key", func(t *testing.T) {
 		// Each generation must produce a different key. If two generations
 		// produced the same key, rotation would be pointless.
@@ -393,6 +403,7 @@ func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0812", "section": "03", "sectionName": "Identity (DID)", "title": "RootSigningPath_format_correct"}
 	t.Run("RootSigningPath_format_correct", func(t *testing.T) {
 		// Verify the path format matches SLIP-0010 convention.
 		path0 := identity.RootSigningPath(0)
@@ -415,6 +426,7 @@ func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T)
 var vectorSecurityImpl interface{} = nil
 
 // TST-CORE-1110
+// TRACE: {"suite": "CORE", "case": "0813", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "01", "title": "Security_17_VectorUnlockHydratesHNSW"}
 func TestSecurity_17_VectorUnlockHydratesHNSW(t *testing.T) {
 	// Unlock persona, verify search returns results (index was hydrated).
 	// Use mock vault with stored embeddings.
@@ -430,6 +442,7 @@ func TestSecurity_17_VectorUnlockHydratesHNSW(t *testing.T) {
 }
 
 // TST-CORE-1111
+// TRACE: {"suite": "CORE", "case": "0814", "section": "03", "sectionName": "Identity (DID)", "subsection": "07", "scenario": "01", "title": "Security_17_VectorLockDestroysIndex"}
 func TestSecurity_17_VectorLockDestroysIndex(t *testing.T) {
 	// Unlock, verify search works, lock, verify search fails/empty.
 	impl := vectorSecurityImpl
@@ -444,6 +457,7 @@ func TestSecurity_17_VectorLockDestroysIndex(t *testing.T) {
 }
 
 // TST-CORE-1112
+// TRACE: {"suite": "CORE", "case": "0815", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "01", "title": "Security_17_VectorNoPlaintextFiles"}
 func TestSecurity_17_VectorNoPlaintextFiles(t *testing.T) {
 	// After indexing, scan temp dir for .bin/.idx/.hnswlib files, assert
 	// none found.
@@ -462,6 +476,7 @@ func TestSecurity_17_VectorNoPlaintextFiles(t *testing.T) {
 }
 
 // TST-CORE-1113
+// TRACE: {"suite": "CORE", "case": "0816", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "01", "title": "Security_17_VectorRestartRebuildsFromSQLCipher"}
 func TestSecurity_17_VectorRestartRebuildsFromSQLCipher(t *testing.T) {
 	// Store embeddings, "restart" (clear in-memory state), unlock,
 	// search still works.
@@ -482,6 +497,7 @@ func TestSecurity_17_VectorRestartRebuildsFromSQLCipher(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1114
+// TRACE: {"suite": "CORE", "case": "0817", "section": "03", "sectionName": "Identity (DID)", "subsection": "10", "scenario": "01", "title": "Infra_30_StaticAuditNoLatestTags"}
 func TestInfra_30_StaticAuditNoLatestTags(t *testing.T) {
 	// Read docker-compose*.yml files, scan for :latest in image references,
 	// assert none found.
@@ -525,6 +541,7 @@ func TestInfra_30_StaticAuditNoLatestTags(t *testing.T) {
 }
 
 // TST-CORE-1115
+// TRACE: {"suite": "CORE", "case": "0818", "section": "03", "sectionName": "Identity (DID)", "subsection": "11", "scenario": "01", "title": "Infra_30_StaticAuditNoUnexpectedPublicRoutes"}
 func TestInfra_30_StaticAuditNoUnexpectedPublicRoutes(t *testing.T) {
 	// Enumerate routes from the server implementation, compare against
 	// documented API surface.
@@ -607,6 +624,7 @@ func TestInfra_30_StaticAuditNoUnexpectedPublicRoutes(t *testing.T) {
 }
 
 // TST-CORE-1116
+// TRACE: {"suite": "CORE", "case": "0819", "section": "03", "sectionName": "Identity (DID)", "subsection": "12", "scenario": "01", "title": "Infra_30_StaticAuditNoPlaintextVectorPatterns"}
 func TestInfra_30_StaticAuditNoPlaintextVectorPatterns(t *testing.T) {
 	// Scan Go source files for mmap, .hnswlib, .faiss patterns, assert
 	// none found.

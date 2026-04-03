@@ -25,6 +25,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-783
+// TRACE: {"suite": "CORE", "case": "0704", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SafeIntentAllowed"}
 func TestGatekeeper_6_1_1_SafeIntentAllowed(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -58,6 +59,7 @@ func TestGatekeeper_6_1_1_SafeIntentAllowed(t *testing.T) {
 }
 
 // TST-CORE-784
+// TRACE: {"suite": "CORE", "case": "0705", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "02", "title": "RiskyIntentFlagged"}
 func TestGatekeeper_6_1_2_RiskyIntentFlagged(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -89,6 +91,7 @@ func TestGatekeeper_6_1_2_RiskyIntentFlagged(t *testing.T) {
 }
 
 // TST-CORE-785
+// TRACE: {"suite": "CORE", "case": "0706", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "03", "title": "BlockedIntentDenied"}
 func TestGatekeeper_6_1_3_BlockedIntentDenied(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -107,6 +110,7 @@ func TestGatekeeper_6_1_3_BlockedIntentDenied(t *testing.T) {
 }
 
 // TST-CORE-786
+// TRACE: {"suite": "CORE", "case": "0707", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "04", "title": "ReadVaultByUntrustedDenied"}
 func TestGatekeeper_6_1_4_ReadVaultByUntrustedDenied(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -125,6 +129,7 @@ func TestGatekeeper_6_1_4_ReadVaultByUntrustedDenied(t *testing.T) {
 }
 
 // TST-CORE-787
+// TRACE: {"suite": "CORE", "case": "0708", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "05", "title": "EmptyActionRejected"}
 func TestGatekeeper_6_1_5_EmptyActionRejected(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -155,6 +160,7 @@ func TestGatekeeper_6_1_5_EmptyActionRejected(t *testing.T) {
 }
 
 // TST-CORE-788
+// TRACE: {"suite": "CORE", "case": "0709", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "06", "title": "EmptyAgentDIDRejected"}
 func TestGatekeeper_6_1_6_EmptyAgentDIDRejected(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -172,6 +178,7 @@ func TestGatekeeper_6_1_6_EmptyAgentDIDRejected(t *testing.T) {
 }
 
 // TST-CORE-789
+// TRACE: {"suite": "CORE", "case": "0710", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "07", "title": "DecisionContainsReason"}
 func TestGatekeeper_6_1_7_DecisionContainsReason(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -206,6 +213,7 @@ func TestGatekeeper_6_1_7_DecisionContainsReason(t *testing.T) {
 }
 
 // TST-CORE-790
+// TRACE: {"suite": "CORE", "case": "0711", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "08", "title": "SafeIntentNoAudit"}
 func TestGatekeeper_6_1_8_SafeIntentNoAudit(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -242,6 +250,7 @@ func TestGatekeeper_6_1_8_SafeIntentNoAudit(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-791
+// TRACE: {"suite": "CORE", "case": "0712", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "09", "title": "MockAllowAll"}
 func TestGatekeeper_6_1_9_MockAllowAll(t *testing.T) {
 	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
@@ -278,6 +287,7 @@ func TestGatekeeper_6_1_9_MockAllowAll(t *testing.T) {
 }
 
 // TST-CORE-792
+// TRACE: {"suite": "CORE", "case": "0713", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "10", "title": "MockDenyAll"}
 func TestGatekeeper_6_1_10_MockDenyAll(t *testing.T) {
 	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
@@ -328,6 +338,7 @@ func TestGatekeeper_6_1_10_MockDenyAll(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-793
+// TRACE: {"suite": "CORE", "case": "0714", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "EgressToTrustedDestination"}
 func TestGatekeeper_6_2_1_EgressToTrustedDestination(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -339,6 +350,7 @@ func TestGatekeeper_6_2_1_EgressToTrustedDestination(t *testing.T) {
 }
 
 // TST-CORE-794
+// TRACE: {"suite": "CORE", "case": "0715", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "02", "title": "EgressToBlockedDestination"}
 func TestGatekeeper_6_2_2_EgressToBlockedDestination(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -350,6 +362,7 @@ func TestGatekeeper_6_2_2_EgressToBlockedDestination(t *testing.T) {
 }
 
 // TST-CORE-795
+// TRACE: {"suite": "CORE", "case": "0716", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "03", "title": "EgressWithPIIBlocked"}
 func TestGatekeeper_6_2_3_EgressWithPIIBlocked(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -363,6 +376,7 @@ func TestGatekeeper_6_2_3_EgressWithPIIBlocked(t *testing.T) {
 }
 
 // TST-CORE-796
+// TRACE: {"suite": "CORE", "case": "0717", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "04", "title": "EgressEmptyDestinationRejected"}
 func TestGatekeeper_6_2_4_EgressEmptyDestinationRejected(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -379,6 +393,7 @@ func TestGatekeeper_6_2_4_EgressEmptyDestinationRejected(t *testing.T) {
 }
 
 // TST-CORE-797
+// TRACE: {"suite": "CORE", "case": "0718", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "05", "title": "EgressNilDataAllowed"}
 func TestGatekeeper_6_2_5_EgressNilDataAllowed(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -398,6 +413,7 @@ func TestGatekeeper_6_2_5_EgressNilDataAllowed(t *testing.T) {
 }
 
 // TST-CORE-798
+// TRACE: {"suite": "CORE", "case": "0719", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "06", "title": "MockEgressDeny"}
 func TestGatekeeper_6_2_6_MockEgressDeny(t *testing.T) {
 	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
@@ -426,6 +442,7 @@ func TestGatekeeper_6_2_6_MockEgressDeny(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-799
+// TRACE: {"suite": "CORE", "case": "0720", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "TrustedAgentAccessesOpenPersona"}
 func TestGatekeeper_6_3_1_TrustedAgentAccessesOpenPersona(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -444,6 +461,7 @@ func TestGatekeeper_6_3_1_TrustedAgentAccessesOpenPersona(t *testing.T) {
 }
 
 // TST-CORE-800
+// TRACE: {"suite": "CORE", "case": "0721", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "02", "title": "UntrustedAgentDeniedLockedPersona"}
 func TestGatekeeper_6_3_2_UntrustedAgentDeniedLockedPersona(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -476,6 +494,7 @@ func TestGatekeeper_6_3_2_UntrustedAgentDeniedLockedPersona(t *testing.T) {
 }
 
 // TST-CORE-801
+// TRACE: {"suite": "CORE", "case": "0722", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "03", "title": "VerifiedAgentRestrictedPersona"}
 func TestGatekeeper_6_3_3_VerifiedAgentRestrictedPersona(t *testing.T) {
 	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
@@ -509,6 +528,7 @@ func TestGatekeeper_6_3_3_VerifiedAgentRestrictedPersona(t *testing.T) {
 }
 
 // TST-CORE-802
+// TRACE: {"suite": "CORE", "case": "0723", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "04", "title": "CrossPersonaAccessDenied"}
 func TestGatekeeper_6_3_4_CrossPersonaAccessDenied(t *testing.T) {
 	impl := gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
@@ -545,6 +565,7 @@ func TestGatekeeper_6_3_4_CrossPersonaAccessDenied(t *testing.T) {
 }
 
 // TST-CORE-803
+// TRACE: {"suite": "CORE", "case": "0724", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "05", "title": "MoneyActionRequiresTrustedRing"}
 func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -579,6 +600,7 @@ func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 }
 
 // TST-CORE-804
+// TRACE: {"suite": "CORE", "case": "0725", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "06", "title": "DataSharingActionFlagged"}
 func TestGatekeeper_6_3_6_DataSharingActionFlagged(t *testing.T) {
 	impl := realGatekeeper
 	// impl = gatekeeper.New()
@@ -617,6 +639,7 @@ func TestGatekeeper_6_3_6_DataSharingActionFlagged(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-360
+// TRACE: {"suite": "CORE", "case": "0726", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP1_DefaultDenyNoPolicyExists"}
 func TestGatekeeper_6_1_SP1_DefaultDenyNoPolicyExists(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 
@@ -634,6 +657,7 @@ func TestGatekeeper_6_1_SP1_DefaultDenyNoPolicyExists(t *testing.T) {
 }
 
 // TST-CORE-361
+// TRACE: {"suite": "CORE", "case": "0727", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP2_DefaultDenyMissingCategoryKey"}
 func TestGatekeeper_6_1_SP2_DefaultDenyMissingCategoryKey(t *testing.T) {
 	spm := gatekeeper.NewSharingPolicyManager()
 	ctx := context.Background()
@@ -671,6 +695,7 @@ func TestGatekeeper_6_1_SP2_DefaultDenyMissingCategoryKey(t *testing.T) {
 }
 
 // TST-CORE-362
+// TRACE: {"suite": "CORE", "case": "0728", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP3_PolicyNoneExplicit"}
 func TestGatekeeper_6_1_SP3_PolicyNoneExplicit(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -707,6 +732,7 @@ func TestGatekeeper_6_1_SP3_PolicyNoneExplicit(t *testing.T) {
 }
 
 // TST-CORE-363
+// TRACE: {"suite": "CORE", "case": "0729", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP4_PolicySummaryTier"}
 func TestGatekeeper_6_1_SP4_PolicySummaryTier(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"availability": "summary"})
@@ -723,6 +749,7 @@ func TestGatekeeper_6_1_SP4_PolicySummaryTier(t *testing.T) {
 }
 
 // TST-CORE-364
+// TRACE: {"suite": "CORE", "case": "0730", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP5_PolicyFullTier"}
 func TestGatekeeper_6_1_SP5_PolicyFullTier(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -757,6 +784,7 @@ func TestGatekeeper_6_1_SP5_PolicyFullTier(t *testing.T) {
 }
 
 // TST-CORE-365
+// TRACE: {"suite": "CORE", "case": "0731", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP6_PerContactPerCategoryGranularity"}
 func TestGatekeeper_6_1_SP6_PerContactPerCategoryGranularity(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -790,6 +818,7 @@ func TestGatekeeper_6_1_SP6_PerContactPerCategoryGranularity(t *testing.T) {
 }
 
 // TST-CORE-366
+// TRACE: {"suite": "CORE", "case": "0732", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP7_DomainSpecificETAOnly"}
 func TestGatekeeper_6_1_SP7_DomainSpecificETAOnly(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"presence": "eta_only"})
@@ -807,6 +836,7 @@ func TestGatekeeper_6_1_SP7_DomainSpecificETAOnly(t *testing.T) {
 }
 
 // TST-CORE-367
+// TRACE: {"suite": "CORE", "case": "0733", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP8_DomainSpecificFreeBusy"}
 func TestGatekeeper_6_1_SP8_DomainSpecificFreeBusy(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -829,6 +859,7 @@ func TestGatekeeper_6_1_SP8_DomainSpecificFreeBusy(t *testing.T) {
 }
 
 // TST-CORE-368
+// TRACE: {"suite": "CORE", "case": "0734", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP9_DomainSpecificExactLocation"}
 func TestGatekeeper_6_1_SP9_DomainSpecificExactLocation(t *testing.T) {
 	spm := gatekeeper.NewSharingPolicyManager()
 	ctx := context.Background()
@@ -866,6 +897,7 @@ func TestGatekeeper_6_1_SP9_DomainSpecificExactLocation(t *testing.T) {
 }
 
 // TST-CORE-371
+// TRACE: {"suite": "CORE", "case": "0735", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP12_TrustLevelNotEqualSharing"}
 func TestGatekeeper_6_1_SP12_TrustLevelNotEqualSharing(t *testing.T) {
 	// Fresh production SharingPolicyManager — no shared state.
 	spm := gatekeeper.NewSharingPolicyManager()
@@ -912,6 +944,7 @@ func TestGatekeeper_6_1_SP12_TrustLevelNotEqualSharing(t *testing.T) {
 }
 
 // TST-CORE-372
+// TRACE: {"suite": "CORE", "case": "0736", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP13_RecognizedCategories"}
 func TestGatekeeper_6_1_SP13_RecognizedCategories(t *testing.T) {
 	// §6.1 SP13: Phase 1 must recognize these 6 categories at egress.
 	// Test validates requirements, not a fixture list.
@@ -968,6 +1001,7 @@ func TestGatekeeper_6_1_SP13_RecognizedCategories(t *testing.T) {
 }
 
 // TST-CORE-375
+// TRACE: {"suite": "CORE", "case": "0737", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP16_ExtensibleCategoryAccepted"}
 func TestGatekeeper_6_1_SP16_ExtensibleCategoryAccepted(t *testing.T) {
 	impl := gatekeeper.NewSharingPolicyManager()
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1009,6 +1043,7 @@ func TestGatekeeper_6_1_SP16_ExtensibleCategoryAccepted(t *testing.T) {
 }
 
 // TST-CORE-376
+// TRACE: {"suite": "CORE", "case": "0738", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP17_ExtensibleCategoryEnforcedAtEgress"}
 func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 	impl := gatekeeper.NewSharingPolicyManager()
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1062,6 +1097,7 @@ func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-369
+// TRACE: {"suite": "CORE", "case": "0739", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP10_PolicyUpdateViaPatch"}
 func TestGatekeeper_6_1_SP10_PolicyUpdateViaPatch(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1102,6 +1138,7 @@ func TestGatekeeper_6_1_SP10_PolicyUpdateViaPatch(t *testing.T) {
 }
 
 // TST-CORE-370
+// TRACE: {"suite": "CORE", "case": "0740", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP11_BulkPolicyUpdate"}
 func TestGatekeeper_6_1_SP11_BulkPolicyUpdate(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy(context.Background(), "did:plc:alice", map[string]testutil.SharingTier{"location": "full"})
@@ -1116,6 +1153,7 @@ func TestGatekeeper_6_1_SP11_BulkPolicyUpdate(t *testing.T) {
 }
 
 // TST-CORE-373
+// TRACE: {"suite": "CORE", "case": "0741", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP14_SharingDefaultsForNewContacts"}
 func TestGatekeeper_6_1_SP14_SharingDefaultsForNewContacts(t *testing.T) {
 	impl := gatekeeper.NewSharingPolicyManager()
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1156,6 +1194,7 @@ func TestGatekeeper_6_1_SP14_SharingDefaultsForNewContacts(t *testing.T) {
 }
 
 // TST-CORE-374
+// TRACE: {"suite": "CORE", "case": "0742", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "01", "scenario": "01", "title": "SP15_OutboundPIIScrub"}
 func TestGatekeeper_6_1_SP15_OutboundPIIScrub(t *testing.T) {
 	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
@@ -1182,6 +1221,7 @@ func TestGatekeeper_6_1_SP15_OutboundPIIScrub(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-377
+// TRACE: {"suite": "CORE", "case": "0743", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP1_GetPolicy"}
 func TestGatekeeper_6_2_SP1_GetPolicy(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1208,6 +1248,7 @@ func TestGatekeeper_6_2_SP1_GetPolicy(t *testing.T) {
 }
 
 // TST-CORE-378
+// TRACE: {"suite": "CORE", "case": "0744", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP2_PatchSingleCategory"}
 func TestGatekeeper_6_2_SP2_PatchSingleCategory(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1242,6 +1283,7 @@ func TestGatekeeper_6_2_SP2_PatchSingleCategory(t *testing.T) {
 }
 
 // TST-CORE-379
+// TRACE: {"suite": "CORE", "case": "0745", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP3_PatchMultipleCategories"}
 func TestGatekeeper_6_2_SP3_PatchMultipleCategories(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1271,6 +1313,7 @@ func TestGatekeeper_6_2_SP3_PatchMultipleCategories(t *testing.T) {
 }
 
 // TST-CORE-380
+// TRACE: {"suite": "CORE", "case": "0746", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP4_PatchBulkByTrustLevel"}
 func TestGatekeeper_6_2_SP4_PatchBulkByTrustLevel(t *testing.T) {
 	// §6.2 SP4: Bulk policy update by trust level filter.
 	// Fresh production SharingPolicyManager.
@@ -1312,6 +1355,7 @@ func TestGatekeeper_6_2_SP4_PatchBulkByTrustLevel(t *testing.T) {
 }
 
 // TST-CORE-381
+// TRACE: {"suite": "CORE", "case": "0747", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP5_PatchBulkAllContacts"}
 func TestGatekeeper_6_2_SP5_PatchBulkAllContacts(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1344,6 +1388,7 @@ func TestGatekeeper_6_2_SP5_PatchBulkAllContacts(t *testing.T) {
 }
 
 // TST-CORE-382
+// TRACE: {"suite": "CORE", "case": "0748", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP6_GetPolicyUnknownDID"}
 func TestGatekeeper_6_2_SP6_GetPolicyUnknownDID(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1378,6 +1423,7 @@ func TestGatekeeper_6_2_SP6_GetPolicyUnknownDID(t *testing.T) {
 }
 
 // TST-CORE-383
+// TRACE: {"suite": "CORE", "case": "0749", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP7_PatchInvalidTierValue"}
 func TestGatekeeper_6_2_SP7_PatchInvalidTierValue(t *testing.T) {
 	impl := gatekeeper.NewSharingPolicyManager()
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1399,6 +1445,7 @@ func TestGatekeeper_6_2_SP7_PatchInvalidTierValue(t *testing.T) {
 }
 
 // TST-CORE-384
+// TRACE: {"suite": "CORE", "case": "0750", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "02", "scenario": "01", "title": "SP8_PolicyStoredInContactsTable"}
 func TestGatekeeper_6_2_SP8_PolicyStoredInContactsTable(t *testing.T) {
 	// Schema validation: sharing_policy is stored in contacts table.
 	schemaImpl := realSchemaInspector
@@ -1421,6 +1468,7 @@ func TestGatekeeper_6_2_SP8_PolicyStoredInContactsTable(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-385
+// TRACE: {"suite": "CORE", "case": "0751", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP1_BrainSendsTieredPayload"}
 func TestGatekeeper_6_3_EP1_BrainSendsTieredPayload(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1458,6 +1506,7 @@ func TestGatekeeper_6_3_EP1_BrainSendsTieredPayload(t *testing.T) {
 }
 
 // TST-CORE-386
+// TRACE: {"suite": "CORE", "case": "0752", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP2_CoreStripsDeniedCategories"}
 func TestGatekeeper_6_3_EP2_CoreStripsDeniedCategories(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1496,6 +1545,7 @@ func TestGatekeeper_6_3_EP2_CoreStripsDeniedCategories(t *testing.T) {
 }
 
 // TST-CORE-387
+// TRACE: {"suite": "CORE", "case": "0753", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP3_MalformedPayloadCategoryDropped"}
 func TestGatekeeper_6_3_EP3_MalformedPayloadCategoryDropped(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1542,6 +1592,7 @@ func TestGatekeeper_6_3_EP3_MalformedPayloadCategoryDropped(t *testing.T) {
 }
 
 // TST-CORE-388
+// TRACE: {"suite": "CORE", "case": "0754", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP4_EgressEnforcementInCompiledGo"}
 func TestGatekeeper_6_3_EP4_EgressEnforcementInCompiledGo(t *testing.T) {
 	// Code audit: sharing policy enforcement is in compiled Go, not delegated to LLM.
 	src, err := os.ReadFile("../internal/adapter/gatekeeper/gatekeeper.go")
@@ -1560,6 +1611,7 @@ func TestGatekeeper_6_3_EP4_EgressEnforcementInCompiledGo(t *testing.T) {
 }
 
 // TST-CORE-389
+// TRACE: {"suite": "CORE", "case": "0755", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP5_EgressNotIngress"}
 func TestGatekeeper_6_3_EP5_EgressNotIngress(t *testing.T) {
 	// Design audit: enforcement is at egress (outbound), not ingress (inbound).
 	src, err := os.ReadFile("../internal/adapter/gatekeeper/gatekeeper.go")
@@ -1589,6 +1641,7 @@ func TestGatekeeper_6_3_EP5_EgressNotIngress(t *testing.T) {
 }
 
 // TST-CORE-390
+// TRACE: {"suite": "CORE", "case": "0756", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP6_RecipientDIDResolution"}
 func TestGatekeeper_6_3_EP6_RecipientDIDResolution(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -1600,6 +1653,7 @@ func TestGatekeeper_6_3_EP6_RecipientDIDResolution(t *testing.T) {
 }
 
 // TST-CORE-391
+// TRACE: {"suite": "CORE", "case": "0757", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP7_EgressAuditLogging"}
 func TestGatekeeper_6_3_EP7_EgressAuditLogging(t *testing.T) {
 	impl := gatekeeper.NewSharingPolicyManager()
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1668,6 +1722,7 @@ func TestGatekeeper_6_3_EP7_EgressAuditLogging(t *testing.T) {
 }
 
 // TST-CORE-392
+// TRACE: {"suite": "CORE", "case": "0758", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP8_AuditIncludesDeniedCategories"}
 func TestGatekeeper_6_3_EP8_AuditIncludesDeniedCategories(t *testing.T) {
 	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -1703,6 +1758,7 @@ func TestGatekeeper_6_3_EP8_AuditIncludesDeniedCategories(t *testing.T) {
 }
 
 // TST-CORE-393
+// TRACE: {"suite": "CORE", "case": "0759", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "03", "scenario": "01", "title": "EP9_NaClEncryptionAfterPolicyCheck"}
 func TestGatekeeper_6_3_EP9_NaClEncryptionAfterPolicyCheck(t *testing.T) {
 	// After payload passes egress check, it should be encrypted with crypto_box_seal.
 	// This is a design integration test: egress policy check -> NaCl seal -> roundtrip decrypt.
@@ -1756,6 +1812,7 @@ func TestGatekeeper_6_3_EP9_NaClEncryptionAfterPolicyCheck(t *testing.T) {
 }
 
 // TST-CORE-889
+// TRACE: {"suite": "CORE", "case": "0760", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "04", "scenario": "01", "title": "AuditLog_90DayRollingRetention"}
 func TestGatekeeper_6_4_AuditLog_90DayRollingRetention(t *testing.T) {
 	// §6.4: Egress audit log must have 90-day rolling retention (auto-purge old entries).
 	// Fresh AuditLogger to avoid shared state.
@@ -1801,6 +1858,7 @@ func TestGatekeeper_6_4_AuditLog_90DayRollingRetention(t *testing.T) {
 }
 
 // TST-CORE-890
+// TRACE: {"suite": "CORE", "case": "0761", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "05", "scenario": "01", "title": "ContactsUpdatedAtRefreshedOnPolicyChange"}
 func TestGatekeeper_6_5_ContactsUpdatedAtRefreshedOnPolicyChange(t *testing.T) {
 	// Contact updated_at refreshed on sharing policy mutation.
 	impl := realSharingPolicyManager
@@ -1814,6 +1872,7 @@ func TestGatekeeper_6_5_ContactsUpdatedAtRefreshedOnPolicyChange(t *testing.T) {
 }
 
 // TST-CORE-891
+// TRACE: {"suite": "CORE", "case": "0762", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "06", "scenario": "01", "title": "DraftConfidenceScore_Validated"}
 func TestGatekeeper_6_6_DraftConfidenceScore_Validated(t *testing.T) {
 	// §6.6: Draft confidence scoring — staging lifecycle exercises Stage/Approve/Reject.
 	// Fresh StagingManager to avoid shared state.
@@ -1862,6 +1921,7 @@ func TestGatekeeper_6_6_DraftConfidenceScore_Validated(t *testing.T) {
 }
 
 // TST-CORE-892 TST-CORE-1025
+// TRACE: {"suite": "CORE", "case": "0763", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "06", "scenario": "26", "title": "AgentConstraint_DraftOnlyEnforced"}
 func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 	// Agent draft_only: true constraint enforced, no raw vault data to agents.
 	impl := realGatekeeper
@@ -1881,6 +1941,7 @@ func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 }
 
 // TST-CORE-893
+// TRACE: {"suite": "CORE", "case": "0764", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "06", "scenario": "27", "title": "AgentOutcome_RecordedForTrust"}
 func TestGatekeeper_6_6_27_AgentOutcome_RecordedForTrust(t *testing.T) {
 	// §6.6.27: Agent outcomes must be recorded in audit log for trust scoring.
 	// Fresh AuditLogger to avoid shared state.
@@ -1925,6 +1986,7 @@ func TestGatekeeper_6_6_27_AgentOutcome_RecordedForTrust(t *testing.T) {
 // Requirement: Agent DID with access to /consumer queries /health data → 403.
 // Gatekeeper denies cross-persona access for agent identity.
 // This tests the ATTACK VECTOR — a compromised agent trying to escape its sandbox.
+// TRACE: {"suite": "CORE", "case": "0765", "section": "33", "sectionName": "Architecture Review Coverage", "subsection": "01", "scenario": "01", "title": "AgentCrossPersonaVaultQuery"}
 func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
 	impl := gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
@@ -1932,6 +1994,7 @@ func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
 	ctx := context.Background()
 
 	// Sub-test 1: Consumer agent tries to read health data → denied.
+	// TRACE: {"suite": "CORE", "case": "0766", "section": "33", "sectionName": "Architecture Review Coverage", "title": "consumer_agent_reads_health_denied"}
 	t.Run("consumer_agent_reads_health_denied", func(t *testing.T) {
 		intent := testutil.Intent{
 			AgentDID:    "did:key:z6MkConsumerAgent",
@@ -1956,6 +2019,7 @@ func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
 	})
 
 	// Sub-test 2: Consumer agent tries to read financial data → denied.
+	// TRACE: {"suite": "CORE", "case": "0767", "section": "33", "sectionName": "Architecture Review Coverage", "title": "consumer_agent_reads_financial_denied"}
 	t.Run("consumer_agent_reads_financial_denied", func(t *testing.T) {
 		intent := testutil.Intent{
 			AgentDID:    "did:key:z6MkConsumerAgent",
@@ -1971,6 +2035,7 @@ func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
 	})
 
 	// Sub-test 3: Same-persona access is allowed (not a sandbox escape).
+	// TRACE: {"suite": "CORE", "case": "0768", "section": "33", "sectionName": "Architecture Review Coverage", "title": "consumer_agent_reads_consumer_allowed"}
 	t.Run("consumer_agent_reads_consumer_allowed", func(t *testing.T) {
 		intent := testutil.Intent{
 			AgentDID:    "did:key:z6MkConsumerAgent",
@@ -1987,6 +2052,7 @@ func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
 
 	// Sub-test 4: Health agent tries to read consumer data → denied.
 	// Verifies enforcement is symmetric — not just consumer→health.
+	// TRACE: {"suite": "CORE", "case": "0769", "section": "33", "sectionName": "Architecture Review Coverage", "title": "health_agent_reads_consumer_denied"}
 	t.Run("health_agent_reads_consumer_denied", func(t *testing.T) {
 		intent := testutil.Intent{
 			AgentDID:    "did:key:z6MkHealthAgent",
@@ -2005,6 +2071,7 @@ func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
 
 	// Sub-test 5: Agent with no persona constraints can access any persona.
 	// This is the baseline — constraints must be explicit.
+	// TRACE: {"suite": "CORE", "case": "0770", "section": "33", "sectionName": "Architecture Review Coverage", "title": "unconstrained_agent_accesses_any_persona"}
 	t.Run("unconstrained_agent_accesses_any_persona", func(t *testing.T) {
 		intent := testutil.Intent{
 			AgentDID:   "did:key:z6MkUnconstrainedAgent",
@@ -2025,11 +2092,13 @@ func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-980
+// TRACE: {"suite": "CORE", "case": "0771", "section": "29", "sectionName": "Adversarial & Security", "subsection": "10", "scenario": "01", "title": "NoPolicyForContact_AllCategoriesDenied"}
 func TestGatekeeper_29_10_NoPolicyForContact_AllCategoriesDenied(t *testing.T) {
 	// Requirement: Unknown contact DID (no sharing policy) → ALL categories denied.
 	// This is the fail-closed default-deny behavior. Missing policy = all blocked.
 	// No information should ever leak to an unknown contact.
 
+	// TRACE: {"suite": "CORE", "case": "0772", "section": "29", "sectionName": "Adversarial & Security", "title": "all_six_categories_denied_real_impl"}
 	t.Run("all_six_categories_denied_real_impl", func(t *testing.T) {
 		// Use real implementation — not mock — to verify production behavior.
 		impl := realSharingPolicyManager
@@ -2081,6 +2150,7 @@ func TestGatekeeper_29_10_NoPolicyForContact_AllCategoriesDenied(t *testing.T) {
 		testutil.RequireEqual(t, result.RecipientDID, unknownDID)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0773", "section": "29", "sectionName": "Adversarial & Security", "title": "single_category_also_denied"}
 	t.Run("single_category_also_denied", func(t *testing.T) {
 		// Even a single harmless category must be denied for unknown contacts.
 		impl := realSharingPolicyManager
@@ -2100,6 +2170,7 @@ func TestGatekeeper_29_10_NoPolicyForContact_AllCategoriesDenied(t *testing.T) {
 		testutil.RequireEqual(t, len(result.Filtered), 0)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0774", "section": "29", "sectionName": "Adversarial & Security", "title": "contrast_known_contact_with_policy_allowed"}
 	t.Run("contrast_known_contact_with_policy_allowed", func(t *testing.T) {
 		// Positive control: a known contact WITH a policy SHOULD have
 		// their allowed categories pass through. This proves the deny
@@ -2147,6 +2218,7 @@ func TestGatekeeper_29_10_NoPolicyForContact_AllCategoriesDenied(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0775", "section": "29", "sectionName": "Adversarial & Security", "title": "empty_categories_payload_no_crash"}
 	t.Run("empty_categories_payload_no_crash", func(t *testing.T) {
 		// Edge case: empty categories map for unknown contact must not crash.
 		impl := realSharingPolicyManager
@@ -2169,6 +2241,7 @@ func TestGatekeeper_29_10_NoPolicyForContact_AllCategoriesDenied(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-981
+// TRACE: {"suite": "CORE", "case": "0776", "section": "29", "sectionName": "Adversarial & Security", "subsection": "10", "scenario": "04", "title": "MalformedPayloadNonTieredPayloadDenied"}
 func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T) {
 	// Requirement (§29.10, row 4):
 	//   Malformed payload (non-TieredPayload) must be denied. When a category
@@ -2199,6 +2272,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 	})
 	testutil.RequireNoError(t, err)
 
+	// TRACE: {"suite": "CORE", "case": "0777", "section": "29", "sectionName": "Adversarial & Security", "title": "raw_string_denied"}
 	t.Run("raw_string_denied", func(t *testing.T) {
 		// Raw string is not a TieredPayload — must be denied.
 		payload := testutil.EgressPayload{
@@ -2222,6 +2296,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0778", "section": "29", "sectionName": "Adversarial & Security", "title": "integer_denied"}
 	t.Run("integer_denied", func(t *testing.T) {
 		payload := testutil.EgressPayload{
 			RecipientDID: contactDID,
@@ -2241,6 +2316,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0779", "section": "29", "sectionName": "Adversarial & Security", "title": "bool_denied"}
 	t.Run("bool_denied", func(t *testing.T) {
 		payload := testutil.EgressPayload{
 			RecipientDID: contactDID,
@@ -2260,6 +2336,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0780", "section": "29", "sectionName": "Adversarial & Security", "title": "nil_value_denied"}
 	t.Run("nil_value_denied", func(t *testing.T) {
 		payload := testutil.EgressPayload{
 			RecipientDID: contactDID,
@@ -2279,6 +2356,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0781", "section": "29", "sectionName": "Adversarial & Security", "title": "nested_map_denied"}
 	t.Run("nested_map_denied", func(t *testing.T) {
 		payload := testutil.EgressPayload{
 			RecipientDID: contactDID,
@@ -2298,6 +2376,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0782", "section": "29", "sectionName": "Adversarial & Security", "title": "slice_denied"}
 	t.Run("slice_denied", func(t *testing.T) {
 		payload := testutil.EgressPayload{
 			RecipientDID: contactDID,
@@ -2317,6 +2396,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0783", "section": "29", "sectionName": "Adversarial & Security", "title": "contrast_well_formed_allowed"}
 	t.Run("contrast_well_formed_allowed", func(t *testing.T) {
 		// Positive control: well-formed TieredPayload MUST be allowed.
 		// Without this, the test would pass even if FilterEgress denied everything.
@@ -2344,6 +2424,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0784", "section": "29", "sectionName": "Adversarial & Security", "title": "mixed_well_formed_and_malformed"}
 	t.Run("mixed_well_formed_and_malformed", func(t *testing.T) {
 		// Mix: one well-formed category + one malformed. Must handle both correctly.
 		payload := testutil.EgressPayload{
@@ -2374,6 +2455,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0785", "section": "29", "sectionName": "Adversarial & Security", "title": "audit_reason_malformed"}
 	t.Run("audit_reason_malformed", func(t *testing.T) {
 		// Audit entries for malformed payloads must have Reason="malformed".
 		payload := testutil.EgressPayload{
@@ -2402,6 +2484,7 @@ func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T)
 // --------------------------------------------------------------------------
 
 // TST-CORE-979
+// TRACE: {"suite": "CORE", "case": "0786", "section": "29", "sectionName": "Adversarial & Security", "subsection": "10", "scenario": "02", "title": "TierNoneBlocksCategory"}
 func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
 	// Requirement (§29.10, row 2):
 	//   When a sharing policy explicitly sets a category tier to "none",
@@ -2425,6 +2508,7 @@ func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
 	ctx := context.Background()
 	contactDID := "did:plc:tier_none_test_979"
 
+	// TRACE: {"suite": "CORE", "case": "0787", "section": "29", "sectionName": "Adversarial & Security", "title": "tier_none_denies_valid_payload"}
 	t.Run("tier_none_denies_valid_payload", func(t *testing.T) {
 		// Set policy: health explicitly set to "none".
 		impl := realSharingPolicyManager
@@ -2463,6 +2547,7 @@ func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0788", "section": "29", "sectionName": "Adversarial & Security", "title": "positive_control_summary_tier_allows"}
 	t.Run("positive_control_summary_tier_allows", func(t *testing.T) {
 		// Contrast: "summary" tier must allow the same type of payload.
 		// Without this, the test passes if FilterEgress denies everything.
@@ -2497,6 +2582,7 @@ func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0789", "section": "29", "sectionName": "Adversarial & Security", "title": "audit_entry_reason_tier_none"}
 	t.Run("audit_entry_reason_tier_none", func(t *testing.T) {
 		impl := realSharingPolicyManager
 		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -2528,6 +2614,7 @@ func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0790", "section": "29", "sectionName": "Adversarial & Security", "title": "selective_blocking_mixed_tiers"}
 	t.Run("selective_blocking_mixed_tiers", func(t *testing.T) {
 		// Mix of "none" and allowed tiers: only "none" categories blocked.
 		impl := realSharingPolicyManager
@@ -2584,6 +2671,7 @@ func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0791", "section": "29", "sectionName": "Adversarial & Security", "title": "all_categories_none_nothing_filtered"}
 	t.Run("all_categories_none_nothing_filtered", func(t *testing.T) {
 		impl := realSharingPolicyManager
 		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -2623,6 +2711,7 @@ func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-977
+// TRACE: {"suite": "CORE", "case": "0792", "section": "29", "sectionName": "Adversarial & Security", "subsection": "09", "scenario": "03", "title": "EgressDeniedAndAudited"}
 func TestGatekeeper_29_9_3_EgressDeniedAndAudited(t *testing.T) {
 	// Requirement (§29.9, row 3):
 	//   When EnforceEgress is called to an untrusted destination and the
@@ -2637,6 +2726,7 @@ func TestGatekeeper_29_9_3_EgressDeniedAndAudited(t *testing.T) {
 	//   3. Audit entry fields validated (Action, Requester, Reason, QueryType)
 	//   4. Notification payload contains destination info
 
+	// TRACE: {"suite": "CORE", "case": "0793", "section": "29", "sectionName": "Adversarial & Security", "title": "denied_egress_audited_and_notified"}
 	t.Run("denied_egress_audited_and_notified", func(t *testing.T) {
 		vault := newGatekeeperVaultManager()
 		gk := &gatekeeperMock{
@@ -2693,6 +2783,7 @@ func TestGatekeeper_29_9_3_EgressDeniedAndAudited(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0794", "section": "29", "sectionName": "Adversarial & Security", "title": "positive_control_allowed_egress_audited_but_not_notified"}
 	t.Run("positive_control_allowed_egress_audited_but_not_notified", func(t *testing.T) {
 		// Contrast: allowed egress is audited but does NOT trigger notification.
 		// Without this, the test passes if the service always notifies.
@@ -2736,6 +2827,7 @@ func TestGatekeeper_29_9_3_EgressDeniedAndAudited(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0795", "section": "29", "sectionName": "Adversarial & Security", "title": "multiple_destinations_selective_denial"}
 	t.Run("multiple_destinations_selective_denial", func(t *testing.T) {
 		vault := newGatekeeperVaultManager()
 		gk := &gatekeeperMock{
@@ -2792,6 +2884,7 @@ func TestGatekeeper_29_9_3_EgressDeniedAndAudited(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1121
+// TRACE: {"suite": "CORE", "case": "0796", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "01", "scenario": "05", "title": "UserSharingPolicyOverridesBotSuggestedVisibility"}
 func TestGatekeeper_34_1_5_UserSharingPolicyOverridesBotSuggestedVisibility(t *testing.T) {
 	// Requirement (§34.1 / Absolute Loyalty):
 	//   If a bot suggests visibility level "full" for some data, but the user's
@@ -2810,6 +2903,7 @@ func TestGatekeeper_34_1_5_UserSharingPolicyOverridesBotSuggestedVisibility(t *t
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
 	ctx := context.Background()
 
+	// TRACE: {"suite": "CORE", "case": "0797", "section": "34", "sectionName": "Thesis: Loyalty", "title": "user_policy_none_blocks_bot_full_suggestion"}
 	t.Run("user_policy_none_blocks_bot_full_suggestion", func(t *testing.T) {
 		contactDID := "did:key:z6MkBotSuggestFull1121a"
 
@@ -2848,6 +2942,7 @@ func TestGatekeeper_34_1_5_UserSharingPolicyOverridesBotSuggestedVisibility(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0798", "section": "34", "sectionName": "Thesis: Loyalty", "title": "user_policy_summary_downgrades_bot_full_suggestion"}
 	t.Run("user_policy_summary_downgrades_bot_full_suggestion", func(t *testing.T) {
 		contactDID := "did:key:z6MkBotSuggestFull1121b"
 
@@ -2880,6 +2975,7 @@ func TestGatekeeper_34_1_5_UserSharingPolicyOverridesBotSuggestedVisibility(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0799", "section": "34", "sectionName": "Thesis: Loyalty", "title": "positive_control_user_policy_full_allows_full_content"}
 	t.Run("positive_control_user_policy_full_allows_full_content", func(t *testing.T) {
 		contactDID := "did:key:z6MkBotSuggestFull1121c"
 
@@ -2912,6 +3008,7 @@ func TestGatekeeper_34_1_5_UserSharingPolicyOverridesBotSuggestedVisibility(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0800", "section": "34", "sectionName": "Thesis: Loyalty", "title": "mixed_policies_enforced_independently_per_category"}
 	t.Run("mixed_policies_enforced_independently_per_category", func(t *testing.T) {
 		contactDID := "did:key:z6MkBotSuggestFull1121d"
 
@@ -2967,6 +3064,7 @@ func TestGatekeeper_34_1_5_UserSharingPolicyOverridesBotSuggestedVisibility(t *t
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0801", "section": "34", "sectionName": "Thesis: Loyalty", "title": "audit_entries_reflect_user_policy_not_bot_suggestion"}
 	t.Run("audit_entries_reflect_user_policy_not_bot_suggestion", func(t *testing.T) {
 		contactDID := "did:key:z6MkBotSuggestFull1121e"
 

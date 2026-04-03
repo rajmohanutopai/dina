@@ -19,6 +19,7 @@ class TestDocExistence:
     """REL-012: Referenced documents exist."""
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "01", "scenario": "01", "title": "rel_012_core_docs_exist"}
     def test_rel_012_core_docs_exist(self) -> None:
         """All core referenced documents exist.
 
@@ -38,6 +39,7 @@ class TestDocExistence:
             assert path.stat().st_size > 100, f"Doc {doc} is suspiciously small"
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "01", "scenario": "02", "title": "rel_012_architecture_docs_exist"}
     def test_rel_012_architecture_docs_exist(self) -> None:
         """Architecture detail docs exist.
 
@@ -51,6 +53,7 @@ class TestDocExistence:
             assert len(md_files) > 0, "Architecture docs directory is empty"
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "01", "scenario": "03", "title": "rel_012_walkthrough_docs_exist"}
     def test_rel_012_walkthrough_docs_exist(self) -> None:
         """Walkthrough documents exist.
 
@@ -73,24 +76,28 @@ class TestScriptsExist:
     """REL-012: Referenced scripts and entrypoints exist."""
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "02", "scenario": "01", "title": "rel_012_install_script_exists"}
     def test_rel_012_install_script_exists(self) -> None:
         """install.sh exists and is executable."""
         install = PROJECT_ROOT / "install.sh"
         assert install.exists(), "Missing install.sh"
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "02", "scenario": "02", "title": "rel_012_run_script_exists"}
     def test_rel_012_run_script_exists(self) -> None:
         """run.sh exists."""
         run_sh = PROJECT_ROOT / "run.sh"
         assert run_sh.exists(), "Missing run.sh"
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "02", "scenario": "03", "title": "rel_012_docker_compose_exists"}
     def test_rel_012_docker_compose_exists(self) -> None:
         """docker-compose.yml exists."""
         compose = PROJECT_ROOT / "docker-compose.yml"
         assert compose.exists(), "Missing docker-compose.yml"
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "02", "scenario": "04", "title": "rel_012_provision_scripts_exist"}
     def test_rel_012_provision_scripts_exist(self) -> None:
         """Key provisioning scripts exist."""
         scripts = [
@@ -107,6 +114,7 @@ class TestDocLinks:
     """REL-012: Internal documentation links resolve."""
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "03", "scenario": "01", "title": "rel_012_readme_internal_links"}
     def test_rel_012_readme_internal_links(self) -> None:
         """Internal links in README.md resolve to existing files.
 
@@ -140,6 +148,7 @@ class TestDocLinks:
         )
 
     # REL-012
+    # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "03", "scenario": "02", "title": "rel_012_test_plan_references"}
     def test_rel_012_test_plan_references(self) -> None:
         """Test plan files referenced in RELEASE_TEST_PLAN.md exist."""
         plan = PROJECT_ROOT / "docs" / "RELEASE_TEST_PLAN.md"

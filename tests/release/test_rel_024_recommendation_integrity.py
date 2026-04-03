@@ -33,6 +33,7 @@ class TestRecommendationIntegrity:
 
     # REL-024
     @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
+    # TRACE: {"suite": "REL", "case": "0024", "section": "24", "sectionName": "Recommendation Integrity", "subsection": "01", "scenario": "01", "title": "rel_024_dense_data_earned_confidence"}
     def test_rel_024_dense_data_earned_confidence(
         self, brain_url, brain_signer,
     ) -> None:
@@ -69,6 +70,7 @@ class TestRecommendationIntegrity:
 
     # REL-024
     @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
+    # TRACE: {"suite": "REL", "case": "0024", "section": "24", "sectionName": "Recommendation Integrity", "subsection": "01", "scenario": "02", "title": "rel_024_zero_data_honest_absence"}
     def test_rel_024_zero_data_honest_absence(
         self, brain_url, brain_signer,
     ) -> None:
@@ -110,6 +112,7 @@ class TestRecommendationIntegrity:
 
     # REL-024
     @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
+    # TRACE: {"suite": "REL", "case": "0024", "section": "24", "sectionName": "Recommendation Integrity", "subsection": "01", "scenario": "03", "title": "rel_024_sparse_conflicting_transparent_split"}
     def test_rel_024_sparse_conflicting_transparent_split(
         self, brain_url, brain_signer,
     ) -> None:
@@ -143,6 +146,7 @@ class TestRecommendationIntegrity:
 
     # REL-024
     @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
+    # TRACE: {"suite": "REL", "case": "0024", "section": "24", "sectionName": "Recommendation Integrity", "subsection": "01", "scenario": "04", "title": "rel_024_attribution_includes_deep_link"}
     def test_rel_024_attribution_includes_deep_link(
         self, brain_url, brain_signer,
     ) -> None:
@@ -188,6 +192,7 @@ class TestRecommendationIntegrity:
     # ------------------------------------------------------------------
 
     # REL-024
+    # TRACE: {"suite": "REL", "case": "0024", "section": "24", "sectionName": "Recommendation Integrity", "subsection": "01", "scenario": "05", "title": "rel_024_no_unsolicited_product_discovery"}
     def test_rel_024_no_unsolicited_product_discovery(
         self, brain_url, brain_signer,
     ) -> None:
@@ -229,6 +234,7 @@ class TestRecommendationIntegrity:
 
     # REL-024
     @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
+    # TRACE: {"suite": "REL", "case": "0024", "section": "24", "sectionName": "Recommendation Integrity", "subsection": "01", "scenario": "06", "title": "rel_024_sponsorship_cannot_distort_ranking"}
     def test_rel_024_sponsorship_cannot_distort_ranking(
         self, brain_url, brain_signer,
     ) -> None:
@@ -278,6 +284,7 @@ class TestRecommendationIntegrity:
 
     # REL-024
     @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
+    # TRACE: {"suite": "REL", "case": "0024", "section": "24", "sectionName": "Recommendation Integrity", "subsection": "01", "scenario": "07", "title": "rel_024_ranking_rationale_explainable"}
     def test_rel_024_ranking_rationale_explainable(
         self, brain_url, brain_signer,
     ) -> None:

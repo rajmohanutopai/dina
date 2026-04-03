@@ -626,9 +626,9 @@ class HomeNode:
         # Determine notification tier
         tier = self._classify_silence(event_type, payload)
 
-        if event_type == "dina/social/arrival":
+        if event_type in ("dina/social/arrival", "presence.signal"):
             return self._handle_arrival(payload, from_did, tier)
-        elif event_type == "dina/commerce/inquiry":
+        elif event_type in ("dina/commerce/inquiry", "coordination.request"):
             return self._handle_commerce_inquiry(payload, from_did)
         elif event_type == "vault_unlocked":
             return self._handle_vault_unlocked()
@@ -655,7 +655,8 @@ class HomeNode:
         elif event_type == "dnd_disabled":
             return self._flush_deferred()
         elif event_type in ("security_alert", "reminder_fired",
-                            "content_suggestion", "inbound_d2d"):
+                            "content_suggestion", "inbound_d2d",
+                            "social.update"):
             return self._handle_generic_event(event_type, payload, tier)
         else:
             return {"status": "ok", "tier": tier.value}
@@ -693,7 +694,11 @@ class HomeNode:
         if event_type == "agent_access_violation":
             return SilenceTier.TIER_3_ENGAGEMENT
 
-        if payload.get("user_requested") or event_type.startswith("dina/social"):
+        # V1 D2D types that are solicited (presence, social, coordination)
+        v1_solicited_types = {"presence.signal", "social.update",
+                              "coordination.request", "coordination.response"}
+        if payload.get("user_requested") or event_type.startswith("dina/social") \
+                or event_type in v1_solicited_types:
             return SilenceTier.TIER_2_SOLICITED
 
         if event_type == "reminder_fired":
@@ -728,7 +733,7 @@ class HomeNode:
             "type": "whisper",
             "payload": {
                 "text": nudge_text,
-                "trigger": f"didcomm:{payload.get('type', 'dina/social/arrival')}",
+                "trigger": f"didcomm:{payload.get('type', 'presence.signal')}",
                 "tier": tier.value,
             },
         }
@@ -1237,7 +1242,7 @@ class HomeNode:
                 continue
             d2d = D2DMessage(
                 msg_id=mid, from_did=self.did, to_did=msg.to_did,
-                message_type="retry", payload=msg.payload,
+                message_type="presence.signal", payload=msg.payload,
                 encrypted_payload=_mock_encrypt(
                     json.dumps(msg.payload).encode(), "pubkey"),
             )

@@ -84,6 +84,7 @@ func extractServiceBlock(content, serviceName string) string {
 // --------------------------------------------------------------------------
 
 // TST-CORE-662
+// TRACE: {"suite": "CORE", "case": "1012", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "01", "title": "HealthzLiveness"}
 func TestObservability_20_1_1_HealthzLiveness(t *testing.T) {
 	// GET /healthz must return 200 OK with near-zero cost, no DB call.
 	impl := realHealthChecker
@@ -106,6 +107,7 @@ func TestObservability_20_1_1_HealthzLiveness(t *testing.T) {
 }
 
 // TST-CORE-663
+// TRACE: {"suite": "CORE", "case": "1013", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "02", "title": "ReadyzVaultQueryable"}
 func TestObservability_20_1_2_ReadyzVaultQueryable(t *testing.T) {
 	// Positive: healthy vault → Readiness succeeds (200).
 	impl := realHealthChecker
@@ -126,6 +128,7 @@ func TestObservability_20_1_2_ReadyzVaultQueryable(t *testing.T) {
 }
 
 // TST-CORE-664
+// TRACE: {"suite": "CORE", "case": "1014", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "03", "title": "ReadyzVaultLocked"}
 func TestObservability_20_1_3_ReadyzVaultLocked(t *testing.T) {
 	// GET /readyz must return 503 when vault is locked (security mode).
 	// Use a locked-vault health checker to simulate this scenario.
@@ -137,6 +140,7 @@ func TestObservability_20_1_3_ReadyzVaultLocked(t *testing.T) {
 }
 
 // TST-CORE-665
+// TRACE: {"suite": "CORE", "case": "1015", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "04", "title": "ReadyzDBDeadlocked"}
 func TestObservability_20_1_4_ReadyzDBDeadlocked(t *testing.T) {
 	// GET /readyz must return 503 when SQLite is locked (PingContext times out).
 	// Use a DynamicHealthChecker whose health function returns false,
@@ -165,6 +169,7 @@ func TestObservability_20_1_4_ReadyzDBDeadlocked(t *testing.T) {
 }
 
 // TST-CORE-666
+// TRACE: {"suite": "CORE", "case": "1016", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "05", "title": "ZombieDetection"}
 func TestObservability_20_1_5_ZombieDetection(t *testing.T) {
 	// /healthz -> 200 but /readyz -> 503 means container is alive but useless.
 	// Docker restarts after 3 consecutive failures.
@@ -180,6 +185,7 @@ func TestObservability_20_1_5_ZombieDetection(t *testing.T) {
 }
 
 // TST-CORE-667
+// TRACE: {"suite": "CORE", "case": "1017", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "06", "title": "HealthzUnauthenticated"}
 func TestObservability_20_1_6_HealthzUnauthenticated(t *testing.T) {
 	// Liveness probes must not require auth — no auth header needed.
 	impl := realHealthChecker
@@ -191,6 +197,7 @@ func TestObservability_20_1_6_HealthzUnauthenticated(t *testing.T) {
 }
 
 // TST-CORE-668
+// TRACE: {"suite": "CORE", "case": "1018", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "07", "title": "ReadyzUnauthenticated"}
 func TestObservability_20_1_7_ReadyzUnauthenticated(t *testing.T) {
 	// Readiness probes must not require auth — /readyz must be in publicPaths.
 	// The "unauthenticated" property lives in middleware.Auth, not in the HealthChecker
@@ -232,6 +239,7 @@ func TestObservability_20_1_7_ReadyzUnauthenticated(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-669
+// TRACE: {"suite": "CORE", "case": "1019", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "01", "title": "CoreHealthcheckEndpoint"}
 func TestObservability_20_2_1_CoreHealthcheckEndpoint(t *testing.T) {
 	// Core healthcheck must use wget to probe http://localhost:8100/healthz.
 	// Verify against the REAL docker-compose.yml file, not a hardcoded map.
@@ -259,6 +267,7 @@ func TestObservability_20_2_1_CoreHealthcheckEndpoint(t *testing.T) {
 }
 
 // TST-CORE-670
+// TRACE: {"suite": "CORE", "case": "1020", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "02", "title": "CoreHealthcheckInterval"}
 func TestObservability_20_2_2_CoreHealthcheckInterval(t *testing.T) {
 	// Core healthcheck interval must be 10s.
 	impl := realDockerComposeParser
@@ -270,6 +279,7 @@ func TestObservability_20_2_2_CoreHealthcheckInterval(t *testing.T) {
 }
 
 // TST-CORE-671
+// TRACE: {"suite": "CORE", "case": "1021", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "03", "title": "CoreHealthcheckTimeout"}
 func TestObservability_20_2_3_CoreHealthcheckTimeout(t *testing.T) {
 	// Core healthcheck timeout must be 3s.
 	impl := realDockerComposeParser
@@ -281,6 +291,7 @@ func TestObservability_20_2_3_CoreHealthcheckTimeout(t *testing.T) {
 }
 
 // TST-CORE-672
+// TRACE: {"suite": "CORE", "case": "1022", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "04", "title": "CoreHealthcheckRetries"}
 func TestObservability_20_2_4_CoreHealthcheckRetries(t *testing.T) {
 	// Core healthcheck retries must be 3.
 	// Verify against the REAL docker-compose.yml file, not a hardcoded map.
@@ -299,6 +310,7 @@ func TestObservability_20_2_4_CoreHealthcheckRetries(t *testing.T) {
 }
 
 // TST-CORE-673
+// TRACE: {"suite": "CORE", "case": "1023", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "05", "title": "CoreHealthcheckStartPeriod"}
 func TestObservability_20_2_5_CoreHealthcheckStartPeriod(t *testing.T) {
 	impl := realDockerComposeParser
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
@@ -317,6 +329,7 @@ func TestObservability_20_2_5_CoreHealthcheckStartPeriod(t *testing.T) {
 }
 
 // TST-CORE-674
+// TRACE: {"suite": "CORE", "case": "1024", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "06", "title": "BrainHealthcheck"}
 func TestObservability_20_2_6_BrainHealthcheck(t *testing.T) {
 	// Brain healthcheck: /healthz, interval 30s, timeout 5s, retries 3, start_period 15s.
 	impl := realDockerComposeParser
@@ -344,6 +357,7 @@ func TestObservability_20_2_6_BrainHealthcheck(t *testing.T) {
 }
 
 // TST-CORE-675
+// TRACE: {"suite": "CORE", "case": "1025", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "07", "title": "PDSHealthcheck"}
 func TestObservability_20_2_7_PDSHealthcheck(t *testing.T) {
 	impl := observability.NewDockerComposeParser()
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
@@ -365,6 +379,7 @@ func TestObservability_20_2_7_PDSHealthcheck(t *testing.T) {
 }
 
 // TST-CORE-676
+// TRACE: {"suite": "CORE", "case": "1026", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "08", "title": "LlamaHealthcheck"}
 func TestObservability_20_2_8_LlamaHealthcheck(t *testing.T) {
 	impl := observability.NewDockerComposeParser()
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
@@ -390,6 +405,7 @@ func TestObservability_20_2_8_LlamaHealthcheck(t *testing.T) {
 }
 
 // TST-CORE-677
+// TRACE: {"suite": "CORE", "case": "1027", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "09", "title": "WgetNotCurl"}
 func TestObservability_20_2_9_WgetNotCurl(t *testing.T) {
 	// Healthchecks use wget (available in minimal Alpine) not curl.
 	impl := realDockerComposeParser
@@ -403,6 +419,7 @@ func TestObservability_20_2_9_WgetNotCurl(t *testing.T) {
 }
 
 // TST-CORE-678
+// TRACE: {"suite": "CORE", "case": "1028", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "10", "title": "RestartAlways"}
 func TestObservability_20_2_10_RestartAlways(t *testing.T) {
 	// All services must have restart: always.
 	impl := realDockerComposeParser
@@ -423,6 +440,7 @@ func TestObservability_20_2_10_RestartAlways(t *testing.T) {
 }
 
 // TST-CORE-679
+// TRACE: {"suite": "CORE", "case": "1029", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "11", "title": "BrainDependsOnCoreHealthy"}
 func TestObservability_20_2_11_BrainDependsOnCoreHealthy(t *testing.T) {
 	impl := observability.NewDockerComposeParser()
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
@@ -445,6 +463,7 @@ func TestObservability_20_2_11_BrainDependsOnCoreHealthy(t *testing.T) {
 }
 
 // TST-CORE-680
+// TRACE: {"suite": "CORE", "case": "1030", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "12", "title": "CoreDependsOnPDSStarted"}
 func TestObservability_20_2_12_CoreDependsOnPDSStarted(t *testing.T) {
 	impl := observability.NewDockerComposeParser()
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
@@ -467,6 +486,7 @@ func TestObservability_20_2_12_CoreDependsOnPDSStarted(t *testing.T) {
 }
 
 // TST-CORE-681
+// TRACE: {"suite": "CORE", "case": "1031", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "13", "title": "LlamaProfileLocalLLM"}
 func TestObservability_20_2_13_LlamaProfileLocalLLM(t *testing.T) {
 	impl := observability.NewDockerComposeParser()
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
@@ -494,6 +514,7 @@ func TestObservability_20_2_13_LlamaProfileLocalLLM(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-682
+// TRACE: {"suite": "CORE", "case": "1032", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "01", "title": "CrashTracebackStored"}
 func TestObservability_20_3_1_CrashTracebackStored(t *testing.T) {
 	// Brain sends POST /v1/vault/crash and row is inserted in crash_log table.
 	impl := realCrashLogger
@@ -524,6 +545,7 @@ func TestObservability_20_3_1_CrashTracebackStored(t *testing.T) {
 }
 
 // TST-CORE-683
+// TRACE: {"suite": "CORE", "case": "1033", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "02", "title": "CrashLogTableSchema"}
 func TestObservability_20_3_2_CrashLogTableSchema(t *testing.T) {
 	// crash_log table must have schema: id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp, error TEXT, traceback TEXT, task_id TEXT.
 	impl := realSchemaInspector
@@ -569,6 +591,7 @@ func TestObservability_20_3_2_CrashLogTableSchema(t *testing.T) {
 }
 
 // TST-CORE-684
+// TRACE: {"suite": "CORE", "case": "1034", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "03", "title": "CrashLogEncryptedAtRest"}
 func TestObservability_20_3_3_CrashLogEncryptedAtRest(t *testing.T) {
 	// Crash log is encrypted at rest via SQLCipher on identity.sqlite.
 	// Raw file inspection should not reveal readable crash data.
@@ -590,6 +613,7 @@ func TestObservability_20_3_3_CrashLogEncryptedAtRest(t *testing.T) {
 }
 
 // TST-CORE-685
+// TRACE: {"suite": "CORE", "case": "1035", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "04", "title": "CrashLogRetention90Days"}
 func TestObservability_20_3_4_CrashLogRetention90Days(t *testing.T) {
 	// Watchdog deletes crash entries older than 90 days.
 	impl := realCrashLogger
@@ -602,6 +626,7 @@ func TestObservability_20_3_4_CrashLogRetention90Days(t *testing.T) {
 }
 
 // TST-CORE-686
+// TRACE: {"suite": "CORE", "case": "1036", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "05", "title": "CrashLogQueryable"}
 func TestObservability_20_3_5_CrashLogQueryable(t *testing.T) {
 	impl := observability.NewCrashLogger()
 	testutil.RequireImplementation(t, impl, "CrashLogger")
@@ -637,6 +662,7 @@ func TestObservability_20_3_5_CrashLogQueryable(t *testing.T) {
 }
 
 // TST-CORE-687
+// TRACE: {"suite": "CORE", "case": "1037", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "06", "title": "CrashLogIncludedInBackup"}
 func TestObservability_20_3_6_CrashLogIncludedInBackup(t *testing.T) {
 	// `dina export` must include crash_log table (it is part of identity.sqlite).
 	impl := realExportManager
@@ -666,6 +692,7 @@ func TestObservability_20_3_6_CrashLogIncludedInBackup(t *testing.T) {
 }
 
 // TST-CORE-688
+// TRACE: {"suite": "CORE", "case": "1038", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "07", "title": "AdminUICrashHistory"}
 func TestObservability_20_3_7_AdminUICrashHistory(t *testing.T) {
 	// GET /admin/crashes returns table of recent crashes — simulated via Store+Query.
 	cl := observability.NewCrashLogger()
@@ -698,6 +725,7 @@ func TestObservability_20_3_7_AdminUICrashHistory(t *testing.T) {
 }
 
 // TST-CORE-914
+// TRACE: {"suite": "CORE", "case": "1039", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "08", "title": "DockerComposeLoggingRotationConfig"}
 func TestObservability_20_3_8_DockerComposeLoggingRotationConfig(t *testing.T) {
 	// Docker compose logging/restart config validated for all services.
 	parser := observability.NewDockerComposeParser()
@@ -720,6 +748,7 @@ func TestObservability_20_3_8_DockerComposeLoggingRotationConfig(t *testing.T) {
 }
 
 // TST-CORE-917
+// TRACE: {"suite": "CORE", "case": "1040", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "11", "title": "DataVolumeLayout"}
 func TestObservability_20_3_11_DataVolumeLayout(t *testing.T) {
 	// §20.3.11: Data volume layout in docker-compose.yml must match architecture spec.
 	// The spec requires:

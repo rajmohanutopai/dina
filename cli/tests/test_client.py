@@ -32,6 +32,7 @@ def mock_identity():
 
 
 # TST-CLI-015
+# TRACE: {"suite": "CLI", "case": "0015", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "01", "title": "vault_store"}
 def test_vault_store(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -46,6 +47,7 @@ def test_vault_store(config):
 
 
 # TST-CLI-016
+# TRACE: {"suite": "CLI", "case": "0016", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "02", "title": "vault_query"}
 def test_vault_query(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -61,6 +63,7 @@ def test_vault_query(config):
 
 
 # TST-CLI-017
+# TRACE: {"suite": "CLI", "case": "0017", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "03", "title": "kv_get_found"}
 def test_kv_get_found(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -74,6 +77,7 @@ def test_kv_get_found(config):
 
 
 # TST-CLI-018
+# TRACE: {"suite": "CLI", "case": "0018", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "04", "title": "kv_get_not_found"}
 def test_kv_get_not_found(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 404
@@ -89,6 +93,7 @@ def test_kv_get_not_found(config):
 
 
 # TST-CLI-019
+# TRACE: {"suite": "CLI", "case": "0019", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "05", "title": "connection_error"}
 def test_connection_error(config):
     with patch.object(httpx.Client, "request", side_effect=httpx.ConnectError("fail")):
         client = DinaClient(config)
@@ -98,6 +103,7 @@ def test_connection_error(config):
 
 
 # TST-CLI-020
+# TRACE: {"suite": "CLI", "case": "0020", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "06", "title": "auth_error"}
 def test_auth_error(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 401
@@ -114,6 +120,7 @@ def test_auth_error(config):
 
 
 # TST-CLI-021
+# TRACE: {"suite": "CLI", "case": "0021", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "07", "title": "process_event_via_core"}
 def test_process_event_via_core(config):
     """process_event routes through Core (not Brain), so no brain_token needed."""
     mock_resp = MagicMock()
@@ -129,6 +136,7 @@ def test_process_event_via_core(config):
 
 
 # TST-CLI-022
+# TRACE: {"suite": "CLI", "case": "0022", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "08", "title": "context_manager"}
 def test_context_manager(config):
     with patch.object(httpx.Client, "request") as mock_req:
         mock_resp = MagicMock()
@@ -146,6 +154,7 @@ def test_context_manager(config):
 
 
 # TST-CLI-023
+# TRACE: {"suite": "CLI", "case": "0023", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "09", "title": "signing_headers_set"}
 def test_signing_headers_set(config, mock_identity):
     """Requests carry X-DID, X-Timestamp, X-Signature headers."""
     mock_resp = MagicMock()
@@ -168,6 +177,7 @@ def test_signing_headers_set(config, mock_identity):
 
 
 # TST-CLI-024
+# TRACE: {"suite": "CLI", "case": "0024", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "10", "title": "no_bearer_on_core"}
 def test_no_bearer_on_core(config):
     """Core client should NOT have an Authorization header."""
     client = DinaClient(config)
@@ -176,6 +186,7 @@ def test_no_bearer_on_core(config):
 
 
 # TST-CLI-025
+# TRACE: {"suite": "CLI", "case": "0025", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "11", "title": "extract_body_json"}
 def test_extract_body_json():
     """_extract_body serializes json= kwarg with compact separators."""
     kwargs = {"json": {"key": "value", "num": 42}}
@@ -187,6 +198,7 @@ def test_extract_body_json():
 
 
 # TST-CLI-026
+# TRACE: {"suite": "CLI", "case": "0026", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "12", "title": "extract_body_content_string"}
 def test_extract_body_content_string():
     kwargs = {"content": "hello"}
     body = DinaClient._extract_body(kwargs)
@@ -194,6 +206,7 @@ def test_extract_body_content_string():
 
 
 # TST-CLI-027
+# TRACE: {"suite": "CLI", "case": "0027", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "13", "title": "extract_body_empty"}
 def test_extract_body_empty():
     kwargs = {}
     body = DinaClient._extract_body(kwargs)

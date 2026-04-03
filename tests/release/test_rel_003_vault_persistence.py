@@ -15,6 +15,7 @@ class TestVaultPersistence:
     """Real API tests for REL-003: vault data persistence."""
 
     # REL-003
+    # TRACE: {"suite": "REL", "case": "0003", "section": "03", "sectionName": "Vault Persistence", "subsection": "01", "scenario": "01", "title": "rel_003_data_persists_via_api"}
     def test_rel_003_data_persists_via_api(self, api: httpx.Client) -> None:
         """Store data, then retrieve by ID — verify content matches."""
         import os
@@ -56,6 +57,7 @@ class TestVaultPersistence:
         )
 
     # REL-003
+    # TRACE: {"suite": "REL", "case": "0003", "section": "03", "sectionName": "Vault Persistence", "subsection": "01", "scenario": "02", "title": "rel_003_fts_retrieval_works"}
     def test_rel_003_fts_retrieval_works(self, api: httpx.Client) -> None:
         """FTS query returns items whose content contains the stored text."""
         import os
@@ -96,6 +98,7 @@ class TestVaultPersistence:
         )
 
     # REL-003
+    # TRACE: {"suite": "REL", "case": "0003", "section": "03", "sectionName": "Vault Persistence", "subsection": "01", "scenario": "03", "title": "rel_003_no_duplicate_on_re_store"}
     def test_rel_003_no_duplicate_on_re_store(self, api: httpx.Client) -> None:
         """Re-storing with same source_id is idempotent."""
         item = {
@@ -113,6 +116,7 @@ class TestVaultPersistence:
         assert resp2.status_code in (200, 201)
 
     # REL-003
+    # TRACE: {"suite": "REL", "case": "0003", "section": "03", "sectionName": "Vault Persistence", "subsection": "01", "scenario": "04", "title": "rel_003_healthz_returns_ok"}
     def test_rel_003_healthz_returns_ok(self, core_url) -> None:
         """Core healthz endpoint returns OK — no startup corruption."""
         resp = httpx.get(f"{core_url}/healthz", timeout=5)

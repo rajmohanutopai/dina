@@ -19,6 +19,7 @@ import pytest
 class TestAutoStartMode:
     """Auto-start (server) mode — run.sh starts without passphrase prompt."""
 
+    # TRACE: {"suite": "INST", "case": "0101", "section": "08", "sectionName": "Startup Modes", "subsection": "01", "scenario": "01", "title": "auto_start_run_no_prompt"}
     def test_auto_start_run_no_prompt(self, installed_dir: Path) -> None:
         """run.sh starts without prompting and reaches healthy state."""
         subprocess.run(
@@ -95,6 +96,7 @@ class TestManualStartMode:
 
         return install_dir
 
+    # TRACE: {"suite": "INST", "case": "0102", "section": "08", "sectionName": "Startup Modes", "subsection": "02", "scenario": "01", "title": "manual_start_run_prompts_and_clears"}
     def test_manual_start_run_prompts_and_clears(self, manual_start_dir: Path) -> None:
         """run.sh prompts for passphrase, starts, and clears it from disk."""
         subprocess.run(

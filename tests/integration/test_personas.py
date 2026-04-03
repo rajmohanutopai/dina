@@ -26,6 +26,7 @@ class TestPersonaCreation:
     """Root identity generates personas via SLIP-0010 derivation."""
 
 # TST-INT-521
+    # TRACE: {"suite": "INT", "case": "0521", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "01", "title": "root_identity_generates_consumer_persona"}
     def test_root_identity_generates_consumer_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -58,6 +59,7 @@ class TestPersonaCreation:
             "Same persona type on different identity must differ"
 
 # TST-INT-033
+    # TRACE: {"suite": "INT", "case": "0033", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "02", "title": "root_identity_generates_health_persona"}
     def test_root_identity_generates_health_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -69,6 +71,7 @@ class TestPersonaCreation:
         assert persona.did.startswith("did:key:z6Mk")
 
 # TST-INT-522
+    # TRACE: {"suite": "INT", "case": "0522", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "03", "title": "root_identity_generates_legal_persona"}
     def test_root_identity_generates_legal_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -81,6 +84,7 @@ class TestPersonaCreation:
         assert len(persona.derived_key) == 64  # SHA-256 hex
 
 # TST-INT-159
+    # TRACE: {"suite": "INT", "case": "0159", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "04", "title": "seller_interaction_gets_own_persona"}
     def test_seller_interaction_gets_own_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -91,6 +95,7 @@ class TestPersonaCreation:
         assert persona.did != mock_identity.root_did
 
 # TST-INT-161
+    # TRACE: {"suite": "INT", "case": "0161", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "05", "title": "each_persona_has_unique_key_derivation"}
     def test_each_persona_has_unique_key_derivation(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -111,6 +116,7 @@ class TestPersonaCreation:
         assert len(set(dids)) == len(types), "DIDs must be unique"
 
 # TST-INT-523
+    # TRACE: {"suite": "INT", "case": "0523", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "06", "title": "persona_derivation_is_deterministic"}
     def test_persona_derivation_is_deterministic(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -123,6 +129,7 @@ class TestPersonaCreation:
         assert first.derived_key == second.derived_key
 
 # TST-INT-034
+    # TRACE: {"suite": "INT", "case": "0034", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "07", "title": "different_roots_produce_different_personas"}
     def test_different_roots_produce_different_personas(self) -> None:
         """Two root identities produce completely different persona keys."""
         alice = MockIdentity(did="did:plc:Alice12345678901234567890abcd")
@@ -143,6 +150,7 @@ class TestPersonaIsolation:
     """Personas are cryptographically isolated compartments."""
 
 # TST-INT-031
+    # TRACE: {"suite": "INT", "case": "0031", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "01", "title": "seller_cannot_see_health_data"}
     def test_seller_cannot_see_health_data(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -170,6 +178,7 @@ class TestPersonaIsolation:
         assert result["systolic"] == 120
 
 # TST-INT-032
+    # TRACE: {"suite": "INT", "case": "0032", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "02", "title": "health_bot_cannot_see_purchases"}
     def test_health_bot_cannot_see_purchases(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -191,6 +200,7 @@ class TestPersonaIsolation:
         assert "purchase_chair" in consumer_view
 
 # TST-INT-164
+    # TRACE: {"suite": "INT", "case": "0164", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "03", "title": "cross_persona_requires_authorization"}
     def test_cross_persona_requires_authorization(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -209,6 +219,7 @@ class TestPersonaIsolation:
         assert cross_decrypt is None
 
 # TST-INT-157
+    # TRACE: {"suite": "INT", "case": "0157", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "04", "title": "malicious_system_cannot_jailbreak_persona"}
     def test_malicious_system_cannot_jailbreak_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -243,6 +254,7 @@ class TestPersonaIsolation:
         assert "bank account" not in encrypted_fin
 
 # TST-INT-160
+    # TRACE: {"suite": "INT", "case": "0160", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "05", "title": "persona_keys_derived_from_root"}
     def test_persona_keys_derived_from_root(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -263,6 +275,7 @@ class TestPersonaIsolation:
         assert consumer_clone.derived_key == consumer.derived_key
 
 # TST-INT-162
+    # TRACE: {"suite": "INT", "case": "0162", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "06", "title": "vault_partition_naming_matches_persona_type"}
     def test_vault_partition_naming_matches_persona_type(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -297,6 +310,7 @@ class TestPersonaInInteraction:
     """Dina auto-selects the correct persona based on interaction context."""
 
 # TST-INT-524
+    # TRACE: {"suite": "INT", "case": "0524", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "01", "title": "buying_chair_uses_consumer_persona"}
     def test_buying_chair_uses_consumer_persona(
         self, mock_dina: MockDinaCore, mock_review_bot
     ) -> None:
@@ -355,6 +369,7 @@ class TestPersonaInInteraction:
             "Consumer persona must not decrypt health data"
 
 # TST-INT-525
+    # TRACE: {"suite": "INT", "case": "0525", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "02", "title": "license_renewal_uses_legal_persona"}
     def test_license_renewal_uses_legal_persona(
         self, mock_dina: MockDinaCore, mock_legal_bot
     ) -> None:
@@ -396,6 +411,7 @@ class TestPersonaInInteraction:
         assert "item" not in fill_record["identity_fields"]
 
 # TST-INT-158
+    # TRACE: {"suite": "INT", "case": "0158", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "03", "title": "doctor_visit_uses_health_persona"}
     def test_doctor_visit_uses_health_persona(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -429,6 +445,7 @@ class TestPersonaInInteraction:
         ]
 
 # TST-INT-526
+    # TRACE: {"suite": "INT", "case": "0526", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "04", "title": "auto_selection_by_context_product_query"}
     def test_auto_selection_by_context_product_query(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -464,6 +481,7 @@ class TestPersonaInInteraction:
         assert "product_search_result" not in health_partition
 
 # TST-INT-527
+    # TRACE: {"suite": "INT", "case": "0527", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "05", "title": "auto_selection_by_context_medical_query"}
     def test_auto_selection_by_context_medical_query(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -485,6 +503,7 @@ class TestPersonaInInteraction:
         assert target == LLMTarget.LOCAL
 
 # TST-INT-528
+    # TRACE: {"suite": "INT", "case": "0528", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "06", "title": "financial_persona_also_routes_locally"}
     def test_financial_persona_also_routes_locally(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -505,6 +524,7 @@ class TestPersonaInInteraction:
         assert consumer_target == LLMTarget.CLOUD
 
 # TST-INT-156
+    # TRACE: {"suite": "INT", "case": "0156", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "03", "scenario": "07", "title": "persona_data_survives_across_sessions"}
     def test_persona_data_survives_across_sessions(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:

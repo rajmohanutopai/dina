@@ -21,6 +21,7 @@ var wdCtx = context.Background()
 // ==========================================================================
 
 // TST-CORE-916
+// TRACE: {"suite": "CORE", "case": "2039", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "10", "title": "SystemTicker_1HourInterval"}
 func TestWatchdog_20_3_10_SystemTicker_1HourInterval(t *testing.T) {
 	// System watchdog (1h interval): connector liveness, disk usage, brain health.
 	impl := realSystemWatchdog
@@ -46,6 +47,7 @@ func TestWatchdog_20_3_10_SystemTicker_1HourInterval(t *testing.T) {
 }
 
 // TST-CORE-915
+// TRACE: {"suite": "CORE", "case": "2040", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "09", "title": "SingleSweepCleansAuditAndCrashLogs"}
 func TestWatchdog_20_3_9_SingleSweepCleansAuditAndCrashLogs(t *testing.T) {
 	// Single watchdog sweep cleans both audit AND crash logs together.
 	impl := realSystemWatchdog
@@ -79,6 +81,7 @@ func TestWatchdog_20_3_9_SingleSweepCleansAuditAndCrashLogs(t *testing.T) {
 }
 
 // TST-CORE-914 (subsection for this in observability but test is here)
+// TRACE: {"suite": "CORE", "case": "2041", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "08", "title": "ConnectorLiveness"}
 func TestWatchdog_20_3_8_ConnectorLiveness(t *testing.T) {
 	// Check connector liveness.
 	impl := realSystemWatchdog
@@ -90,6 +93,7 @@ func TestWatchdog_20_3_8_ConnectorLiveness(t *testing.T) {
 }
 
 // TST-CORE-917 (data volume layout)
+// TRACE: {"suite": "CORE", "case": "2042", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "11", "title": "DiskUsageCheck"}
 func TestWatchdog_20_3_11_DiskUsageCheck(t *testing.T) {
 	// Check disk usage.
 	impl := realSystemWatchdog

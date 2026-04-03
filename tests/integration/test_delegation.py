@@ -35,6 +35,7 @@ class TestLicenseRenewalFlow:
     delegation to LegalBot, user approves, agent executes, report back."""
 
 # TST-INT-240
+    # TRACE: {"suite": "INT", "case": "0240", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "01", "title": "detects_license_expiring"}
     def test_detects_license_expiring(
         self, mock_dina: MockDinaCore, sample_events: list[dict],
     ) -> None:
@@ -54,6 +55,7 @@ class TestLicenseRenewalFlow:
         assert tier == SilenceTier.TIER_2_SOLICITED
 
 # TST-INT-296
+    # TRACE: {"suite": "INT", "case": "0296", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "02", "title": "suggests_delegation"}
     def test_suggests_delegation(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -92,6 +94,7 @@ class TestLicenseRenewalFlow:
         assert rejected is False  # user rejected → no delegation
 
 # TST-INT-293
+    # TRACE: {"suite": "INT", "case": "0293", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "03", "title": "user_approves_delegation"}
     def test_user_approves_delegation(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -139,6 +142,7 @@ class TestLicenseRenewalFlow:
         assert safe_intent.risk_level == ActionRisk.SAFE
 
 # TST-INT-292
+    # TRACE: {"suite": "INT", "case": "0292", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "04", "title": "agent_executes_with_oversight"}
     def test_agent_executes_with_oversight(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -175,6 +179,7 @@ class TestLicenseRenewalFlow:
         assert "name" in fill_log["identity_fields"]
 
 # TST-INT-465
+    # TRACE: {"suite": "INT", "case": "0465", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "05", "title": "completion_reported"}
     def test_completion_reported(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -215,6 +220,7 @@ class TestLicenseRenewalFlow:
         assert retrieved.subject == "Draft: License renewal"
 
 # TST-INT-466
+    # TRACE: {"suite": "INT", "case": "0466", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "01", "scenario": "06", "title": "failure_handled"}
     def test_failure_handled(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -260,6 +266,7 @@ class TestGenericDelegation:
     """Generic delegation rules — risk-based approval for any agent."""
 
 # TST-INT-467
+    # TRACE: {"suite": "INT", "case": "0467", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "01", "title": "read_only_auto_approved"}
     def test_read_only_auto_approved(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -302,6 +309,7 @@ class TestGenericDelegation:
         assert financial_intent.risk_level == ActionRisk.HIGH
 
 # TST-INT-242
+    # TRACE: {"suite": "INT", "case": "0242", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "02", "title": "write_requires_approval"}
     def test_write_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -337,6 +345,7 @@ class TestGenericDelegation:
         assert intent_cal.risk_level == ActionRisk.MODERATE
 
 # TST-INT-294
+    # TRACE: {"suite": "INT", "case": "0294", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "03", "title": "financial_always_flagged"}
     def test_financial_always_flagged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -370,6 +379,7 @@ class TestGenericDelegation:
         assert intent2.risk_level == ActionRisk.HIGH
 
 # TST-INT-468
+    # TRACE: {"suite": "INT", "case": "0468", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "04", "title": "delegation_scope_limited"}
     def test_delegation_scope_limited(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,

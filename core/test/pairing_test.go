@@ -31,6 +31,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-520
+// TRACE: {"suite": "CORE", "case": "1055", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "01", "title": "GenerateCode"}
 func TestPairing_10_1_1_GenerateCode(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
 	impl := realPairingManager
@@ -60,6 +61,7 @@ func TestPairing_10_1_1_GenerateCode(t *testing.T) {
 }
 
 // TST-CORE-520
+// TRACE: {"suite": "CORE", "case": "1056", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "02", "title": "GenerateCodeUniqueness"}
 func TestPairing_10_1_2_GenerateCodeUniqueness(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
 	impl := realPairingManager
@@ -96,6 +98,7 @@ func TestPairing_10_1_2_GenerateCodeUniqueness(t *testing.T) {
 }
 
 // TST-CORE-520
+// TRACE: {"suite": "CORE", "case": "1057", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "03", "title": "GenerateCodeEntropy"}
 func TestPairing_10_1_3_GenerateCodeEntropy(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -128,6 +131,7 @@ func TestPairing_10_1_3_GenerateCodeEntropy(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-521
+// TRACE: {"suite": "CORE", "case": "1058", "section": "10", "sectionName": "Device Pairing", "subsection": "02", "scenario": "01", "title": "CompletePairingSuccess"}
 func TestPairing_10_2_1_CompletePairingSuccess(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
 	impl := realPairingManager
@@ -162,6 +166,7 @@ func TestPairing_10_2_1_CompletePairingSuccess(t *testing.T) {
 }
 
 // TST-CORE-523
+// TRACE: {"suite": "CORE", "case": "1059", "section": "10", "sectionName": "Device Pairing", "subsection": "02", "scenario": "02", "title": "CompletePairingInvalidCode"}
 func TestPairing_10_2_2_CompletePairingInvalidCode(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
 	impl := realPairingManager
@@ -173,6 +178,7 @@ func TestPairing_10_2_2_CompletePairingInvalidCode(t *testing.T) {
 }
 
 // TST-CORE-521
+// TRACE: {"suite": "CORE", "case": "1060", "section": "10", "sectionName": "Device Pairing", "subsection": "02", "scenario": "03", "title": "DeviceNameRecorded"}
 func TestPairing_10_2_3_DeviceNameRecorded(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -203,6 +209,7 @@ func TestPairing_10_2_3_DeviceNameRecorded(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-530
+// TRACE: {"suite": "CORE", "case": "1061", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "04", "title": "TokenLengthAndEntropy"}
 func TestPairing_10_1_4_TokenLengthAndEntropy(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
 	impl := realPairingManager
@@ -219,6 +226,7 @@ func TestPairing_10_1_4_TokenLengthAndEntropy(t *testing.T) {
 }
 
 // TST-CORE-530
+// TRACE: {"suite": "CORE", "case": "1062", "section": "10", "sectionName": "Device Pairing", "subsection": "03", "scenario": "02", "title": "TokenUniquePerDevice"}
 func TestPairing_10_3_2_TokenUniquePerDevice(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -262,6 +270,7 @@ func TestPairing_10_3_2_TokenUniquePerDevice(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-523
+// TRACE: {"suite": "CORE", "case": "1063", "section": "10", "sectionName": "Device Pairing", "subsection": "04", "scenario": "01", "title": "NumericCodeFormat"}
 func TestPairing_10_4_1_NumericCodeFormat(t *testing.T) {
 	// Generate a pairing code and verify it matches the expected format.
 	// Architecture §10: "Core generates 6-digit pairing code (expires in 5 minutes)".
@@ -283,6 +292,7 @@ func TestPairing_10_4_1_NumericCodeFormat(t *testing.T) {
 }
 
 // TST-CORE-524
+// TRACE: {"suite": "CORE", "case": "1064", "section": "10", "sectionName": "Device Pairing", "subsection": "04", "scenario": "02", "title": "NumericCodeBruteForceResistance"}
 func TestPairing_10_4_2_NumericCodeBruteForceResistance(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -320,6 +330,7 @@ func TestPairing_10_4_2_NumericCodeBruteForceResistance(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-524b
+// TRACE: {"suite": "CORE", "case": "1065", "section": "10", "sectionName": "Device Pairing", "subsection": "04", "scenario": "03", "title": "CodeCollisionRetry"}
 func TestPairing_10_4_3_CodeCollisionRetry(t *testing.T) {
 	// Verify that GenerateCode retries on collision and returns
 	// ErrCodeCollision only after exhausting retries.
@@ -350,6 +361,7 @@ func TestPairing_10_4_3_CodeCollisionRetry(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-522
+// TRACE: {"suite": "CORE", "case": "1066", "section": "10", "sectionName": "Device Pairing", "subsection": "05", "scenario": "01", "title": "CodeExpiresAfterTTL"}
 func TestPairing_10_5_1_CodeExpiresAfterTTL(t *testing.T) {
 	// Use a very short TTL so we can test expiry in a unit test.
 	cfg := pairing.DefaultConfig()
@@ -378,6 +390,7 @@ func TestPairing_10_5_1_CodeExpiresAfterTTL(t *testing.T) {
 }
 
 // TST-CORE-525
+// TRACE: {"suite": "CORE", "case": "1067", "section": "10", "sectionName": "Device Pairing", "subsection": "06", "scenario": "01", "title": "CodeSingleUse"}
 func TestPairing_10_6_CodeSingleUse(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -413,6 +426,7 @@ func TestPairing_10_6_CodeSingleUse(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-526
+// TRACE: {"suite": "CORE", "case": "1068", "section": "10", "sectionName": "Device Pairing", "subsection": "07", "scenario": "01", "title": "ConcurrentPairingCodes"}
 func TestPairing_10_7_ConcurrentPairingCodes(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -452,6 +466,7 @@ func TestPairing_10_7_ConcurrentPairingCodes(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-527
+// TRACE: {"suite": "CORE", "case": "1069", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "01", "title": "ListPairedDevices"}
 func TestPairing_10_1_ListPairedDevices(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
 	impl := realPairingManager
@@ -478,6 +493,7 @@ func TestPairing_10_1_ListPairedDevices(t *testing.T) {
 }
 
 // TST-CORE-528
+// TRACE: {"suite": "CORE", "case": "1070", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "01", "title": "RevokeDevice"}
 func TestPairing_10_1_RevokeDevice(t *testing.T) {
 	// Use a fresh PairingManager to avoid shared-state pollution from other tests.
 	impl := pairing.NewManager(pairing.DefaultConfig())
@@ -529,6 +545,7 @@ func TestPairing_10_1_RevokeDevice(t *testing.T) {
 }
 
 // TST-CORE-529
+// TRACE: {"suite": "CORE", "case": "1071", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "01", "title": "PairCompletionResponseFields"}
 func TestPairing_10_1_PairCompletionResponseFields(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -573,6 +590,7 @@ func genMultibase(t *testing.T) (multibase, did string) {
 
 // TestPairing_DeviceRole_DefaultIsUser — CompletePairingWithKey without
 // explicit role defaults to "user".
+// TRACE: {"suite": "CORE", "case": "1072", "section": "10", "sectionName": "Device Pairing", "subsection": "18", "scenario": "01", "title": "Pairing_DeviceRole_DefaultIsUser"}
 func TestPairing_DeviceRole_DefaultIsUser(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -596,6 +614,7 @@ func TestPairing_DeviceRole_DefaultIsUser(t *testing.T) {
 
 // TestPairing_DeviceRole_ExplicitAgent — CompletePairingWithKey with
 // role="agent" records agent role.
+// TRACE: {"suite": "CORE", "case": "1073", "section": "10", "sectionName": "Device Pairing", "subsection": "19", "scenario": "01", "title": "Pairing_DeviceRole_ExplicitAgent"}
 func TestPairing_DeviceRole_ExplicitAgent(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -618,6 +637,7 @@ func TestPairing_DeviceRole_ExplicitAgent(t *testing.T) {
 
 // TestPairing_DeviceRole_MixedRoles — pair two devices, one user and one
 // agent. Verify both appear with correct roles in ListDevices.
+// TRACE: {"suite": "CORE", "case": "1074", "section": "10", "sectionName": "Device Pairing", "subsection": "20", "scenario": "01", "title": "Pairing_DeviceRole_MixedRoles"}
 func TestPairing_DeviceRole_MixedRoles(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -651,6 +671,7 @@ func TestPairing_DeviceRole_MixedRoles(t *testing.T) {
 
 // TestPairing_GetDeviceByDID_Found — GetDeviceByDID returns the correct
 // device with all fields populated.
+// TRACE: {"suite": "CORE", "case": "1075", "section": "10", "sectionName": "Device Pairing", "subsection": "21", "scenario": "01", "title": "Pairing_GetDeviceByDID_Found"}
 func TestPairing_GetDeviceByDID_Found(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -677,6 +698,7 @@ func TestPairing_GetDeviceByDID_Found(t *testing.T) {
 
 // TestPairing_GetDeviceByDID_NotFound — GetDeviceByDID returns nil for
 // unknown DID (no error).
+// TRACE: {"suite": "CORE", "case": "1076", "section": "10", "sectionName": "Device Pairing", "subsection": "22", "scenario": "01", "title": "Pairing_GetDeviceByDID_NotFound"}
 func TestPairing_GetDeviceByDID_NotFound(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -689,6 +711,7 @@ func TestPairing_GetDeviceByDID_NotFound(t *testing.T) {
 
 // TestPairing_GetDeviceByDID_Revoked — GetDeviceByDID returns revoked
 // devices (revoked flag=true, not nil).
+// TRACE: {"suite": "CORE", "case": "1077", "section": "10", "sectionName": "Device Pairing", "subsection": "23", "scenario": "01", "title": "Pairing_GetDeviceByDID_Revoked"}
 func TestPairing_GetDeviceByDID_Revoked(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -712,6 +735,7 @@ func TestPairing_GetDeviceByDID_Revoked(t *testing.T) {
 
 // TestPairing_DeviceRole_TokenPairDefaultsUser — Token-based pairing
 // (CompletePairing) should default role to "user".
+// TRACE: {"suite": "CORE", "case": "1078", "section": "10", "sectionName": "Device Pairing", "subsection": "24", "scenario": "01", "title": "Pairing_DeviceRole_TokenPairDefaultsUser"}
 func TestPairing_DeviceRole_TokenPairDefaultsUser(t *testing.T) {
 	impl := pairing.NewManager(pairing.DefaultConfig())
 	testutil.RequireImplementation(t, impl, "PairingManager")
@@ -731,6 +755,7 @@ func TestPairing_DeviceRole_TokenPairDefaultsUser(t *testing.T) {
 }
 
 // TST-CORE-895
+// TRACE: {"suite": "CORE", "case": "1079", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "05", "title": "DeviceTypeRecorded"}
 func TestPairing_10_1_5_DeviceTypeRecorded(t *testing.T) {
 	// Device type (rich/thin) recorded during pairing.
 	impl := realPairingManager
@@ -742,6 +767,7 @@ func TestPairing_10_1_5_DeviceTypeRecorded(t *testing.T) {
 }
 
 // TST-CORE-896
+// TRACE: {"suite": "CORE", "case": "1080", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "06", "title": "mDNS_AutoDiscoveryBroadcast"}
 func TestPairing_10_1_6_mDNS_AutoDiscoveryBroadcast(t *testing.T) {
 	// mDNS auto-discovery broadcast on LAN.
 	impl := realPairingManager

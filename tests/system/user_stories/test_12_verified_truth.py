@@ -98,7 +98,7 @@ class TestVerifiedTruth:
 
     # TST-USR-086
     def test_01_trust_resolve_via_appview(
-        self, alonso_core, admin_headers, appview,
+        self, alonso_core, admin_headers, appview, sancho_did,
     ):
         """Query trust data for a known DID via the AppView xRPC endpoint.
 
@@ -111,7 +111,7 @@ class TestVerifiedTruth:
         # Query AppView directly for trust resolution.
         r = httpx.get(
             f"{appview}/xrpc/com.dina.trust.resolve",
-            params={"did": "did:plc:sancho"},
+            params={"did": sancho_did},
             timeout=15,
         )
         # AppView may return the data or a 400/404 if the endpoint
@@ -136,7 +136,7 @@ class TestVerifiedTruth:
             # trust proxy endpoint.
             r2 = httpx.get(
                 f"{alonso_core}/v1/trust/resolve",
-                params={"did": "did:plc:sancho"},
+                params={"did": sancho_did},
                 headers=admin_headers,
                 timeout=15,
             )

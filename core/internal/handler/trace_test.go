@@ -42,6 +42,7 @@ func (m *mockTraceStore) Purge(_ context.Context, _ int64) (int, error) {
 	return 0, nil
 }
 
+// TRACE: {"suite": "CORE", "case": "2125", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "01", "scenario": "01", "title": "TraceHandler_Query"}
 func TestTraceHandler_Query(t *testing.T) {
 	store := &mockTraceStore{}
 	store.Append("test-req-1", "http_response", "core", `{"method":"POST","path":"/v1/vault/query","status":"200"}`)
@@ -90,6 +91,7 @@ func TestTraceHandler_Query(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2126", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "02", "scenario": "01", "title": "TraceHandler_AdminOnly"}
 func TestTraceHandler_AdminOnly(t *testing.T) {
 	store := &mockTraceStore{}
 	h := &TraceHandler{Store: store}
@@ -107,6 +109,7 @@ func TestTraceHandler_AdminOnly(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2127", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "03", "scenario": "01", "title": "TraceHandler_NilStore"}
 func TestTraceHandler_NilStore(t *testing.T) {
 	// No-CGO mode: store is nil → 503
 	h := &TraceHandler{Store: nil}
@@ -123,6 +126,7 @@ func TestTraceHandler_NilStore(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2128", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "04", "scenario": "01", "title": "TraceHandler_EmptyReqID"}
 func TestTraceHandler_EmptyReqID(t *testing.T) {
 	store := &mockTraceStore{}
 	h := &TraceHandler{Store: store}
@@ -139,6 +143,7 @@ func TestTraceHandler_EmptyReqID(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2129", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "05", "scenario": "01", "title": "Tracer_Emit"}
 func TestTracer_Emit(t *testing.T) {
 	store := &mockTraceStore{}
 	tracer := &Tracer{Store: store}
@@ -157,6 +162,7 @@ func TestTracer_Emit(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2130", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "06", "scenario": "01", "title": "Tracer_NilSafe"}
 func TestTracer_NilSafe(t *testing.T) {
 	// Nil tracer should not panic
 	var tracer *Tracer
@@ -167,6 +173,7 @@ func TestTracer_NilSafe(t *testing.T) {
 	tracer2.Emit(context.Background(), "step", "core", nil) // should not panic
 }
 
+// TRACE: {"suite": "CORE", "case": "2131", "section": "20", "sectionName": "Observability & Self-Healing", "subsection": "07", "scenario": "01", "title": "Tracer_NoReqID"}
 func TestTracer_NoReqID(t *testing.T) {
 	store := &mockTraceStore{}
 	tracer := &Tracer{Store: store}

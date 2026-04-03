@@ -35,6 +35,7 @@ class TestFirstRunOnboarding:
     disclosure, BIP-39 recovery, and exactly-one-root-identity guard."""
 
 # TST-E2E-001
+    # TRACE: {"suite": "E2E", "case": "0001", "section": "01", "sectionName": "Onboarding", "subsection": "01", "scenario": "01", "title": "complete_first_run_setup"}
     def test_complete_first_run_setup(
         self,
         fresh_don_alonso: HomeNode,
@@ -96,6 +97,7 @@ class TestFirstRunOnboarding:
             plc_directory.set_available(True)
 
 # TST-E2E-002
+    # TRACE: {"suite": "E2E", "case": "0002", "section": "01", "sectionName": "Onboarding", "subsection": "01", "scenario": "02", "title": "device_pairing_phone"}
     def test_device_pairing_phone(
         self,
         fresh_don_alonso: HomeNode,
@@ -133,6 +135,7 @@ class TestFirstRunOnboarding:
         assert phone.device_id in node.devices
 
 # TST-E2E-003
+    # TRACE: {"suite": "E2E", "case": "0003", "section": "01", "sectionName": "Onboarding", "subsection": "01", "scenario": "03", "title": "second_device_pairing_laptop_ws_push"}
     def test_second_device_pairing_laptop_ws_push(
         self,
         fresh_don_alonso: HomeNode,
@@ -202,9 +205,10 @@ class TestFirstRunOnboarding:
 
         msg = sender.send_d2d(
             to_did=node.did,
-            message_type="dina/social/arrival",
+            message_type="presence.signal",
             payload={
-                "type": "dina/social/arrival",
+                "type": "presence.signal",
+                "status": "arriving",
                 "eta_minutes": 10,
             },
         )
@@ -241,8 +245,8 @@ class TestFirstRunOnboarding:
         sender2.first_run_setup("visitor2@example.com", "pass_v2")
         sender2.send_d2d(
             to_did=node.did,
-            message_type="dina/social/arrival",
-            payload={"type": "dina/social/arrival", "eta_minutes": 5},
+            message_type="presence.signal",
+            payload={"type": "presence.signal", "status": "arriving", "eta_minutes": 5},
         )
 
         assert len(laptop.ws_messages) == laptop_count_before, (
@@ -252,6 +256,7 @@ class TestFirstRunOnboarding:
         assert len(phone.ws_messages) > phone_before + 1
 
 # TST-E2E-004
+    # TRACE: {"suite": "E2E", "case": "0004", "section": "01", "sectionName": "Onboarding", "subsection": "01", "scenario": "04", "title": "progressive_disclosure_day_7"}
     def test_progressive_disclosure_day_7(
         self,
         fresh_don_alonso: HomeNode,
@@ -304,6 +309,7 @@ class TestFirstRunOnboarding:
         assert "recovery phrase" in phone.ws_messages[-1]["payload"]["text"]
 
 # TST-E2E-005
+    # TRACE: {"suite": "E2E", "case": "0005", "section": "01", "sectionName": "Onboarding", "subsection": "01", "scenario": "05", "title": "bip39_recovery_same_mnemonic_same_did"}
     def test_bip39_recovery_same_mnemonic_same_did(
         self,
         plc_directory: MockPLCDirectory,
@@ -423,6 +429,7 @@ class TestFirstRunOnboarding:
         )
 
 # TST-E2E-006
+    # TRACE: {"suite": "E2E", "case": "0006", "section": "01", "sectionName": "Onboarding", "subsection": "01", "scenario": "06", "title": "exactly_one_root_identity"}
     def test_exactly_one_root_identity(
         self,
         fresh_don_alonso: HomeNode,

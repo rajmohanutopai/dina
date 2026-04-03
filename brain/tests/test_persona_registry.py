@@ -46,12 +46,14 @@ class MockLLM:
 
 class TestPersonaRegistry:
 
+    # TRACE: {"suite": "BRAIN", "case": "0081", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "01", "title": "normalize_strips_prefix"}
     def test_normalize_strips_prefix(self):
         r = PersonaRegistry()
         assert r.normalize("persona-general") == "general"
         assert r.normalize("general") == "general"
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0082", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "02", "title": "load_from_core"}
     async def test_load_from_core(self):
         core = MockCore(personas=[
             {"id": "persona-general", "name": "general", "tier": "default", "locked": False},
@@ -70,6 +72,7 @@ class TestPersonaRegistry:
         assert r.locked("health") is True
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0083", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "03", "title": "fallback_on_core_unreachable"}
     async def test_fallback_on_core_unreachable(self):
         r = PersonaRegistry()
         await r.load(FailingCore())
@@ -81,6 +84,7 @@ class TestPersonaRegistry:
         assert r.exists("finance")
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0084", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "04", "title": "refresh_failure_keeps_cache"}
     async def test_refresh_failure_keeps_cache(self):
         """Transient Core failure must NOT overwrite a valid cache."""
         core = MockCore(personas=[
@@ -95,6 +99,7 @@ class TestPersonaRegistry:
         assert r.exists("travel"), "Cache must survive transient refresh failure"
         assert r.exists("general")
 
+    # TRACE: {"suite": "BRAIN", "case": "0085", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "05", "title": "all_names"}
     def test_all_names(self):
         r = PersonaRegistry()
         r._ingest([
@@ -104,6 +109,7 @@ class TestPersonaRegistry:
         names = r.all_names()
         assert sorted(names) == ["general", "work"]
 
+    # TRACE: {"suite": "BRAIN", "case": "0086", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "06", "title": "update_locked"}
     def test_update_locked(self):
         r = PersonaRegistry()
         r._ingest([
@@ -114,6 +120,7 @@ class TestPersonaRegistry:
         assert r.locked("health") is False
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0087", "section": "09", "sectionName": "Configuration", "subsection": "04", "scenario": "07", "title": "refresh"}
     async def test_refresh(self):
         core = MockCore(personas=[
             {"id": "persona-general", "name": "general", "tier": "default", "locked": False},
@@ -146,6 +153,7 @@ class TestPersonaSelector:
         return r
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0088", "section": "09", "sectionName": "Configuration", "subsection": "05", "scenario": "01", "title": "explicit_hint_used"}
     async def test_explicit_hint_used(self):
         s = PersonaSelector(registry=self._make_registry())
         result = await s.select({"body": "anything"}, persona_hint="health")
@@ -153,6 +161,7 @@ class TestPersonaSelector:
         assert result.confidence == 1.0
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0089", "section": "09", "sectionName": "Configuration", "subsection": "05", "scenario": "02", "title": "invalid_hint_returns_none"}
     async def test_invalid_hint_returns_none(self):
         s = PersonaSelector(registry=self._make_registry())
         result = await s.select({"body": "anything"}, persona_hint="nonexistent")
@@ -160,6 +169,7 @@ class TestPersonaSelector:
 
     @pytest.mark.asyncio
     @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+    # TRACE: {"suite": "BRAIN", "case": "0090", "section": "09", "sectionName": "Configuration", "subsection": "05", "scenario": "03", "title": "llm_selects_from_installed"}
     async def test_llm_selects_from_installed(self):
         llm = MockLLM(response={
             "primary": "financial_family",
@@ -177,6 +187,7 @@ class TestPersonaSelector:
         assert result.confidence == 0.91
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0091", "section": "09", "sectionName": "Configuration", "subsection": "05", "scenario": "04", "title": "llm_invalid_persona_rejected"}
     async def test_llm_invalid_persona_rejected(self):
         llm = MockLLM(response={
             "primary": "invented_persona",
@@ -190,6 +201,7 @@ class TestPersonaSelector:
         assert result is None
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0092", "section": "09", "sectionName": "Configuration", "subsection": "05", "scenario": "05", "title": "returns_none_when_no_llm"}
     async def test_returns_none_when_no_llm(self):
         s = PersonaSelector(registry=self._make_registry())
         result = await s.select({"body": "test"})
@@ -197,6 +209,7 @@ class TestPersonaSelector:
 
     @pytest.mark.asyncio
     @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+    # TRACE: {"suite": "BRAIN", "case": "0093", "section": "09", "sectionName": "Configuration", "subsection": "05", "scenario": "06", "title": "secondary_validated"}
     async def test_secondary_validated(self):
         llm = MockLLM(response={
             "primary": "health",
@@ -211,6 +224,7 @@ class TestPersonaSelector:
         assert "nonexistent" not in result.secondary
 
     @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0094", "section": "09", "sectionName": "Configuration", "subsection": "05", "scenario": "07", "title": "llm_failure_returns_none"}
     async def test_llm_failure_returns_none(self):
         class FailingLLM:
             async def complete(self, *args, **kwargs):

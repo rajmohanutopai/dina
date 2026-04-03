@@ -31,6 +31,7 @@ import (
 //    device. Expect channel=cli, kind=user.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2101", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "01", "scenario": "01", "title": "DeriveProvenance_DeviceUser"}
 func TestDeriveProvenance_DeviceUser(t *testing.T) {
 	h := &StagingHandler{Devices: nil} // no device service → defaults to user
 
@@ -64,6 +65,7 @@ func TestDeriveProvenance_DeviceUser(t *testing.T) {
 //    device. Expect channel=cli, kind=agent.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2102", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "02", "scenario": "01", "title": "DeriveProvenance_DeviceAgent"}
 func TestDeriveProvenance_DeviceAgent(t *testing.T) {
 	// Create a real PairingManager + DeviceService with an agent-role device.
 	pm := pairing.NewManager(pairing.DefaultConfig())
@@ -121,6 +123,7 @@ func TestDeriveProvenance_DeviceAgent(t *testing.T) {
 //    with explicit ingress_channel. Expect forward passthrough.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2103", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "03", "scenario": "01", "title": "DeriveProvenance_BrainForward"}
 func TestDeriveProvenance_BrainForward(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -159,6 +162,7 @@ func TestDeriveProvenance_BrainForward(t *testing.T) {
 //    connector_id set. Producer should use connector prefix.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2104", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "04", "scenario": "01", "title": "DeriveProvenance_BrainForwardWithConnectorID"}
 func TestDeriveProvenance_BrainForwardWithConnectorID(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -192,6 +196,7 @@ func TestDeriveProvenance_BrainForwardWithConnectorID(t *testing.T) {
 //    connector_id. Expect channel=connector, did=serviceID.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2105", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "05", "scenario": "01", "title": "DeriveProvenance_ConnectorService"}
 func TestDeriveProvenance_ConnectorService(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -230,6 +235,7 @@ func TestDeriveProvenance_ConnectorService(t *testing.T) {
 //    without connector_id. Must be REJECTED (error message returned).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2106", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "06", "scenario": "01", "title": "DeriveProvenance_NonBrainServiceNoConnectorID"}
 func TestDeriveProvenance_NonBrainServiceNoConnectorID(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -258,6 +264,7 @@ func TestDeriveProvenance_NonBrainServiceNoConnectorID(t *testing.T) {
 //    or connector. Expect channel=brain, producer=brain:system.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2107", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "07", "scenario": "01", "title": "DeriveProvenance_BrainInternal"}
 func TestDeriveProvenance_BrainInternal(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -294,6 +301,7 @@ func TestDeriveProvenance_BrainInternal(t *testing.T) {
 //    Expect channel=admin, producer=admin:system.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2108", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "08", "scenario": "01", "title": "DeriveProvenance_Admin"}
 func TestDeriveProvenance_Admin(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -326,6 +334,7 @@ func TestDeriveProvenance_Admin(t *testing.T) {
 //    only Brain can forward provenance.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2109", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "09", "scenario": "01", "title": "DeriveProvenance_ConnectorSpoofTelegram"}
 func TestDeriveProvenance_ConnectorSpoofTelegram(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -357,6 +366,7 @@ func TestDeriveProvenance_ConnectorSpoofTelegram(t *testing.T) {
 // 10. TestHandleIngest_MethodNotAllowed — GET request returns 405.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2110", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "10", "scenario": "01", "title": "HandleIngest_MethodNotAllowed"}
 func TestHandleIngest_MethodNotAllowed(t *testing.T) {
 	h := &StagingHandler{Staging: nil, Devices: nil}
 
@@ -374,6 +384,7 @@ func TestHandleIngest_MethodNotAllowed(t *testing.T) {
 // 11. TestHandleIngest_InvalidJSON — malformed JSON returns 400.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2111", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "11", "scenario": "01", "title": "HandleIngest_InvalidJSON"}
 func TestHandleIngest_InvalidJSON(t *testing.T) {
 	h := &StagingHandler{Staging: nil, Devices: nil}
 
@@ -393,6 +404,7 @@ func TestHandleIngest_InvalidJSON(t *testing.T) {
 //     forward provenance (same as brain).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2112", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "12", "scenario": "01", "title": "DeriveProvenance_CoreServiceForwards"}
 func TestDeriveProvenance_CoreServiceForwards(t *testing.T) {
 	h := &StagingHandler{Devices: nil}
 
@@ -429,6 +441,7 @@ func TestDeriveProvenance_CoreServiceForwards(t *testing.T) {
 // 13. TestHandleClaim_MethodNotAllowed — GET on /v1/staging/claim returns 405.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2113", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "13", "scenario": "01", "title": "HandleClaim_MethodNotAllowed"}
 func TestHandleClaim_MethodNotAllowed(t *testing.T) {
 	h := &StagingHandler{Staging: nil}
 
@@ -446,6 +459,7 @@ func TestHandleClaim_MethodNotAllowed(t *testing.T) {
 // 14. TestHandleResolve_MissingID — resolve without ID returns 400.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2114", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "14", "scenario": "01", "title": "HandleResolve_MissingID"}
 func TestHandleResolve_MissingID(t *testing.T) {
 	h := &StagingHandler{Staging: nil}
 
@@ -470,6 +484,7 @@ func TestHandleResolve_MissingID(t *testing.T) {
 // 15. TestHandleFail_MethodNotAllowed — GET on /v1/staging/fail returns 405.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2115", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "15", "scenario": "01", "title": "HandleFail_MethodNotAllowed"}
 func TestHandleFail_MethodNotAllowed(t *testing.T) {
 	h := &StagingHandler{Staging: nil}
 
@@ -573,6 +588,7 @@ func (s *stubDetailedStagingInbox) GetStatusDetailed(_ context.Context, id strin
 //     + persona in the response body.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2116", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "16", "scenario": "01", "title": "HandleStatus_ReturnsStatusAndPersona"}
 func TestHandleStatus_ReturnsStatusAndPersona(t *testing.T) {
 	stub := newStubDetailedInbox()
 	stub.detailedStatus["item-abc"] = domain.StagingStored
@@ -608,6 +624,7 @@ func TestHandleStatus_ReturnsStatusAndPersona(t *testing.T) {
 //     target_persona yet; response must not include "persona" key.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2117", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "17", "scenario": "01", "title": "HandleStatus_ReturnsStatusWithoutPersona"}
 func TestHandleStatus_ReturnsStatusWithoutPersona(t *testing.T) {
 	stub := newStubDetailedInbox()
 	stub.detailedStatus["item-xyz"] = domain.StagingReceived
@@ -639,6 +656,7 @@ func TestHandleStatus_ReturnsStatusWithoutPersona(t *testing.T) {
 // 18. TestHandleStatus_NotFound — unknown ID returns 404.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2118", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "18", "scenario": "01", "title": "HandleStatus_NotFound"}
 func TestHandleStatus_NotFound(t *testing.T) {
 	stub := newStubDetailedInbox()
 	stub.notFound["missing-id"] = true
@@ -664,6 +682,7 @@ func TestHandleStatus_NotFound(t *testing.T) {
 // 19. TestHandleStatus_MethodNotAllowed — non-GET method returns 405.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2119", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "19", "scenario": "01", "title": "HandleStatus_MethodNotAllowed"}
 func TestHandleStatus_MethodNotAllowed(t *testing.T) {
 	h := &StagingHandler{Staging: nil}
 
@@ -681,6 +700,7 @@ func TestHandleStatus_MethodNotAllowed(t *testing.T) {
 // 20. TestHandleStatus_EmptyID — request with no trailing ID returns 400.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2120", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "20", "scenario": "01", "title": "HandleStatus_EmptyID"}
 func TestHandleStatus_EmptyID(t *testing.T) {
 	h := &StagingHandler{Staging: nil}
 
@@ -763,6 +783,7 @@ func (s *stubBasicStagingInbox) ListByStatus(_ context.Context, _ string, _ int)
 	panic("stub: ListByStatus not implemented")
 }
 
+// TRACE: {"suite": "CORE", "case": "2121", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "21", "scenario": "01", "title": "HandleStatus_FallbackToGetStatus"}
 func TestHandleStatus_FallbackToGetStatus(t *testing.T) {
 	stub := newStubBasicInbox()
 	stub.statuses["item-fallback"] = domain.StagingClassifying
@@ -803,6 +824,7 @@ func TestHandleStatus_FallbackToGetStatus(t *testing.T) {
 //     UserOrigin="telegram" and brain caller type injects UserOriginatedKey.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2122", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "22", "scenario": "01", "title": "ResolveRequest_UserOriginTelegram"}
 func TestResolveRequest_UserOriginTelegram(t *testing.T) {
 	// injectUserOrigin requires CallerType=brain.
 	r := httptest.NewRequest("POST", "/v1/staging/resolve", nil)
@@ -827,6 +849,7 @@ func TestResolveRequest_UserOriginTelegram(t *testing.T) {
 //     must NOT inject UserOriginatedKey into context.
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2123", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "23", "scenario": "01", "title": "ResolveRequest_UserOriginEmpty"}
 func TestResolveRequest_UserOriginEmpty(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/staging/resolve", nil)
 	ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "brain")
@@ -846,6 +869,7 @@ func TestResolveRequest_UserOriginEmpty(t *testing.T) {
 //     UserOrigin must NOT inject UserOriginatedKey (security boundary).
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2124", "section": "15", "sectionName": "API Endpoint Tests", "subsection": "24", "scenario": "01", "title": "ResolveRequest_UserOriginNonBrainIgnored"}
 func TestResolveRequest_UserOriginNonBrainIgnored(t *testing.T) {
 	for _, caller := range []string{"agent", "connector", "admin"} {
 		r := httptest.NewRequest("POST", "/v1/staging/resolve", nil)

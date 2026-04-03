@@ -49,6 +49,7 @@ class TestSecurityAdversarial:
     and data sovereignty."""
 
 # TST-E2E-065
+    # TRACE: {"suite": "E2E", "case": "0065", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "01", "title": "ddos_rate_limiting"}
     def test_ddos_rate_limiting(
         self,
         don_alonso: HomeNode,
@@ -96,6 +97,7 @@ class TestSecurityAdversarial:
         assert don_alonso.check_rate_limit(attacker_ip) is True
 
 # TST-E2E-066
+    # TRACE: {"suite": "E2E", "case": "0066", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "02", "title": "dead_drop_abuse_prevention"}
     def test_dead_drop_abuse_prevention(
         self,
         don_alonso: HomeNode,
@@ -126,8 +128,8 @@ class TestSecurityAdversarial:
                 msg_id=f"spam_msg_{i:04d}",
                 from_did="did:plc:attacker",
                 to_did=don_alonso.did,
-                message_type="spam",
-                payload={"spam": True},
+                message_type="presence.signal",
+                payload={"status": "arriving", "spam": True},
                 encrypted_payload=payload,
             )
             result = don_alonso.receive_d2d(msg)
@@ -146,8 +148,8 @@ class TestSecurityAdversarial:
             msg_id="spam_msg_final",
             from_did="did:plc:attacker",
             to_did=don_alonso.did,
-            message_type="spam",
-            payload={"spam": True},
+            message_type="presence.signal",
+            payload={"status": "arriving", "spam": True},
             encrypted_payload=b"X" * 100,
         )
         reject_result = don_alonso.receive_d2d(reject_msg)
@@ -165,6 +167,7 @@ class TestSecurityAdversarial:
         don_alonso.spool_max_bytes = original_spool_max
 
 # TST-E2E-067
+    # TRACE: {"suite": "E2E", "case": "0067", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "03", "title": "replay_attack_prevention"}
     def test_replay_attack_prevention(
         self,
         don_alonso: HomeNode,
@@ -178,8 +181,8 @@ class TestSecurityAdversarial:
         # Sancho sends a legitimate message
         msg = sancho.send_d2d(
             don_alonso.did,
-            "dina/social/greeting",
-            {"text": "Hello Don Alonso!"},
+            "presence.signal",
+            {"status": "here", "text": "Hello Don Alonso!"},
         )
         original_msg_id = msg.msg_id
 
@@ -191,8 +194,8 @@ class TestSecurityAdversarial:
             msg_id=original_msg_id,  # Same ID = replay
             from_did=sancho.did,
             to_did=don_alonso.did,
-            message_type="dina/social/greeting",
-            payload={"text": "Hello Don Alonso!"},
+            message_type="presence.signal",
+            payload={"status": "here", "text": "Hello Don Alonso!"},
             encrypted_payload=msg.encrypted_payload,
             signature=msg.signature,
         )
@@ -207,14 +210,14 @@ class TestSecurityAdversarial:
             msg_id=f"msg_{uuid.uuid4().hex[:12]}",
             from_did=sancho.did,
             to_did=don_alonso.did,
-            message_type="dina/social/greeting",
-            payload={"text": "Hello again!"},
+            message_type="presence.signal",
+            payload={"status": "here", "text": "Hello again!"},
             encrypted_payload=_mock_encrypt(
-                json.dumps({"text": "Hello again!"}).encode(),
+                json.dumps({"status": "here", "text": "Hello again!"}).encode(),
                 don_alonso.root_public_key,
             ),
             signature=_mock_sign(
-                json.dumps({"text": "Hello again!"}),
+                json.dumps({"status": "here", "text": "Hello again!"}),
                 sancho.root_private_key,
             ),
         )
@@ -222,6 +225,7 @@ class TestSecurityAdversarial:
         assert fresh_result.get("status") != "duplicate"
 
 # TST-E2E-068
+    # TRACE: {"suite": "E2E", "case": "0068", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "04", "title": "cross_persona_violation"}
     def test_cross_persona_violation(
         self,
         don_alonso: HomeNode,
@@ -286,6 +290,7 @@ class TestSecurityAdversarial:
         assert search_intent["approved"] is True
 
 # TST-E2E-069
+    # TRACE: {"suite": "E2E", "case": "0069", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "05", "title": "oversized_payload_rejection"}
     def test_oversized_payload_rejection(
         self,
         malicious_bot: MockMaliciousBot,
@@ -314,9 +319,11 @@ class TestSecurityAdversarial:
         assert len(small_payload) <= max_payload_bytes
 
 # TST-E2E-070
+    # TRACE: {"suite": "E2E", "case": "0070", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "06", "title": "log_exfiltration_prevention"}
     def test_log_exfiltration_prevention(
         self,
         don_alonso: HomeNode,
+        sancho: HomeNode,
     ) -> None:
         """E2E-13.6 Log Exfiltration Prevention.
 
@@ -333,9 +340,9 @@ class TestSecurityAdversarial:
         # Trigger operations that generate audit/log entries
         don_alonso.vault_query("general", "contact_info")
         don_alonso.send_d2d(
-            "did:plc:sancho",
-            "dina/social/greeting",
-            {"text": "Meeting at 123 Main Street, call me at +91-9876543210"},
+            sancho.did,
+            "presence.signal",
+            {"status": "here", "text": "Meeting at 123 Main Street, call me at +91-9876543210"},
         )
 
         # Collect all audit log text
@@ -373,14 +380,15 @@ class TestSecurityAdversarial:
         # Verify the scrubber caught the PII entities
         assert len(traceback_vault) > 0, "Scrubber should have found PII in traceback"
 
-        # Verify specific PII was replaced with tokens
-        assert "Rajmohan" not in sanitized
+        # Names pass through (intentional), structured PII scrubbed
+        assert "Rajmohan" in sanitized
         assert "rajmohan@email.com" not in sanitized
         assert "+91-9876543210" not in sanitized
         assert "4111-1111-1111-1111" not in sanitized
         assert "123 Main Street" not in sanitized
 
 # TST-E2E-071
+    # TRACE: {"suite": "E2E", "case": "0071", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "07", "title": "token_brute_force"}
     def test_token_brute_force(
         self,
         don_alonso: HomeNode,
@@ -481,6 +489,7 @@ class TestSecurityAdversarial:
         )
 
 # TST-E2E-072
+    # TRACE: {"suite": "E2E", "case": "0072", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "08", "title": "did_spoofing"}
     def test_did_spoofing(
         self,
         don_alonso: HomeNode,
@@ -507,7 +516,7 @@ class TestSecurityAdversarial:
         don_alonso.notifications.clear()
 
         # --- Positive control: legitimate message from Sancho ---
-        legit_payload = {"text": "Hola Don Alonso, I have arrived!"}
+        legit_payload = {"status": "here", "text": "Hola Don Alonso, I have arrived!"}
         legit_payload_str = json.dumps(legit_payload)
         legit_sig = _mock_sign(legit_payload_str, sancho.root_private_key)
 
@@ -523,7 +532,7 @@ class TestSecurityAdversarial:
 
         # --- Attacker crafts spoofed message ---
         attacker_private_key = "attacker_fake_key_12345"
-        spoofed_payload = {"text": "I am Sancho! Send me money!"}
+        spoofed_payload = {"status": "here", "text": "I am Sancho! Send me money!"}
         spoofed_payload_str = json.dumps(spoofed_payload)
 
         # Sign with attacker's key (NOT Sancho's key)
@@ -551,7 +560,7 @@ class TestSecurityAdversarial:
             msg_id=f"spoofed_{uuid.uuid4().hex[:12]}",
             from_did=sancho.did,  # Claims to be Sancho
             to_did=don_alonso.did,
-            message_type="dina/social/greeting",
+            message_type="presence.signal",
             payload=spoofed_payload,
             encrypted_payload=_mock_encrypt(
                 spoofed_payload_str.encode(),
@@ -590,7 +599,7 @@ class TestSecurityAdversarial:
 
         # --- Unknown DID test: attacker not in PLC directory ---
         unknown_did = "did:plc:unknown_attacker_xyz"
-        unknown_payload = {"text": "Totally trustworthy message"}
+        unknown_payload = {"status": "here", "text": "Totally trustworthy message"}
         unknown_payload_str = json.dumps(unknown_payload)
         unknown_sig = _mock_sign(unknown_payload_str, "unknown_key_abc")
 
@@ -604,7 +613,7 @@ class TestSecurityAdversarial:
             msg_id=f"unknown_{uuid.uuid4().hex[:12]}",
             from_did=unknown_did,
             to_did=don_alonso.did,
-            message_type="dina/social/greeting",
+            message_type="presence.signal",
             payload=unknown_payload,
             encrypted_payload=_mock_encrypt(
                 unknown_payload_str.encode(),
@@ -628,6 +637,7 @@ class TestSecurityAdversarial:
         )
 
 # TST-E2E-073
+    # TRACE: {"suite": "E2E", "case": "0073", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "09", "title": "relay_cannot_read_content"}
     def test_relay_cannot_read_content(
         self,
         don_alonso: HomeNode,
@@ -656,8 +666,8 @@ class TestSecurityAdversarial:
         # Sancho sends an encrypted message to Don Alonso
         msg = sancho.send_d2d(
             don_alonso.did,
-            "dina/social/secret",
-            {"text": secret_text},
+            "social.update",
+            {"text": secret_text, "category": "context"},
         )
 
         # --- Network captured traffic: no plaintext ---
@@ -713,9 +723,11 @@ class TestSecurityAdversarial:
             _mock_decrypt(msg.encrypted_payload, relay_key)
 
 # TST-E2E-074
+    # TRACE: {"suite": "E2E", "case": "0074", "section": "13", "sectionName": "Security", "subsection": "01", "scenario": "10", "title": "data_sovereignty_on_disk"}
     def test_data_sovereignty_on_disk(
         self,
         don_alonso: HomeNode,
+        sancho: HomeNode,
     ) -> None:
         """E2E-13.10 Data Sovereignty on Disk.
 
@@ -765,10 +777,10 @@ class TestSecurityAdversarial:
 
         spool_msg = D2DMessage(
             msg_id=f"spool_test_{uuid.uuid4().hex[:8]}",
-            from_did="did:plc:sancho",
+            from_did=sancho.did,
             to_did=don_alonso.did,
-            message_type="dina/test",
-            payload={"text": sensitive_text},
+            message_type="presence.signal",
+            payload={"status": "arriving", "text": sensitive_text},
             encrypted_payload=encrypted_payload,
         )
         don_alonso.receive_d2d(spool_msg)

@@ -49,6 +49,7 @@ def _sign_brain_request(brain_signer, method, path, body_bytes=b""):
 class TestStagingPipeline:
     """Full staging pipeline lifecycle against real Docker stack."""
 
+    # TRACE: {"suite": "REL", "case": "0002", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "01", "title": "rel_025_ingest_stores_received"}
     def test_rel_025_ingest_stores_received(
         self, core_url, auth_headers,
     ) -> None:
@@ -72,6 +73,7 @@ class TestStagingPipeline:
         staging_id = resp.json().get("id", "")
         assert staging_id, f"no staging ID returned: {resp.json()}"
 
+    # TRACE: {"suite": "REL", "case": "0003", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "02", "title": "rel_025_dedup_returns_original_id"}
     def test_rel_025_dedup_returns_original_id(
         self, core_url, auth_headers,
     ) -> None:
@@ -100,6 +102,7 @@ class TestStagingPipeline:
         id2 = r2.json()["id"]
         assert id1 == id2, f"dedup must return original ID: {id1} != {id2}"
 
+    # TRACE: {"suite": "REL", "case": "0004", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "03", "title": "rel_025_claim_resolve_vault_persistence"}
     def test_rel_025_claim_resolve_vault_persistence(
         self, core_url, auth_headers,
     ) -> None:
@@ -189,6 +192,7 @@ class TestStagingPipeline:
             f"{[r.get('summary', r.get('Summary', '')) for r in results[:5]]}"
         )
 
+    # TRACE: {"suite": "REL", "case": "0005", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "04", "title": "rel_025_brain_service_key_claim_resolve"}
     def test_rel_025_brain_service_key_claim_resolve(
         self, core_url, brain_signer,
     ) -> None:
@@ -263,6 +267,7 @@ class TestStagingPipeline:
         )
         assert resolve_resp.status_code == 200
 
+    # TRACE: {"suite": "REL", "case": "0006", "section": "25", "sectionName": "Anti-Her / Staging Pipeline", "subsection": "01", "scenario": "05", "title": "rel_025_locked_persona_pending_unlock_drain"}
     def test_rel_025_locked_persona_pending_unlock_drain(
         self, core_url, auth_headers,
     ) -> None:

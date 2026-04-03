@@ -318,13 +318,14 @@ class EntityVaultService:
 
         # -- Tier 2: Presidio pattern-only scrub (local, in-process) --
         # V1: Only pattern recognizers (emails, phones, SSNs, gov IDs).
-        # NER (spaCy) is disabled — it produces too many false positives
-        # (B12→ORG, biryani→PERSON, Raju→ORG). Free-text name/address
-        # detection is deferred to V2 (GLiNER local model).
-        scrub_fn = getattr(
-            self._scrubber, "scrub_patterns_only", self._scrubber.scrub,
-        )
-        tier2_scrubbed, tier2_entities = await asyncio.to_thread(scrub_fn, tier1_scrubbed)
-        combined_entities.extend(tier2_entities or [])
+        # NER (spaCy) is disabled — it produces too many false positives.
+        # If Presidio is unavailable, degrade to Tier 1 only.
+        if self._scrubber is not None:
+            scrub_fn = getattr(
+                self._scrubber, "scrub_patterns_only", self._scrubber.scrub,
+            )
+            tier2_scrubbed, tier2_entities = await asyncio.to_thread(scrub_fn, tier1_scrubbed)
+            combined_entities.extend(tier2_entities or [])
+            return tier2_scrubbed, combined_entities
 
-        return tier2_scrubbed, combined_entities
+        return tier1_scrubbed, combined_entities

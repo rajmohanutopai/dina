@@ -95,6 +95,7 @@ def _make_item(
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0110", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "01", "title": "process_pending_claims_and_classifies"}
 async def test_process_pending_claims_and_classifies(core, processor):
     """process_pending claims items and resolves them."""
     core.staging_claim.return_value = [_make_item()]
@@ -110,6 +111,7 @@ async def test_process_pending_claims_and_classifies(core, processor):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0111", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "02", "title": "process_pending_enriches_before_resolve"}
 async def test_process_pending_enriches_before_resolve(core, enrichment, processor):
     """Enrichment runs before resolve. Classified item has L0/L1/embedding."""
     core.staging_claim.return_value = [_make_item()]
@@ -129,6 +131,7 @@ async def test_process_pending_enriches_before_resolve(core, enrichment, process
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0112", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "03", "title": "enriched_item_has_ready_status"}
 async def test_enriched_item_has_ready_status(core, processor):
     """Classified item sent to resolve has enrichment_status=ready."""
     core.staging_claim.return_value = [_make_item()]
@@ -141,6 +144,7 @@ async def test_enriched_item_has_ready_status(core, processor):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0113", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "04", "title": "classification_highest_sensitivity_wins"}
 async def test_classification_highest_sensitivity_wins(core, enrichment):
     """Health-related types classify to health persona."""
     processor = StagingProcessor(core=core, enrichment=enrichment)
@@ -155,6 +159,7 @@ async def test_classification_highest_sensitivity_wins(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0114", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "05", "title": "trust_scoring_applied"}
 async def test_trust_scoring_applied(core, trust_scorer, enrichment):
     """Trust scoring is applied to classified items."""
     processor = StagingProcessor(
@@ -172,6 +177,7 @@ async def test_trust_scoring_applied(core, trust_scorer, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0115", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "06", "title": "contact_did_propagated_via_explicit_did"}
 async def test_contact_did_propagated_via_explicit_did(core, enrichment):
     """Item with explicit contact_did → flows into classified item."""
     from src.service.trust_scorer import TrustScorer
@@ -193,6 +199,7 @@ async def test_contact_did_propagated_via_explicit_did(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0116", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "07", "title": "contact_did_resolved_from_sender_via_alias"}
 async def test_contact_did_resolved_from_sender_via_alias(core, enrichment):
     """Connector item without contact_did → resolved from sender via contact alias.
 
@@ -220,6 +227,7 @@ async def test_contact_did_resolved_from_sender_via_alias(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0117", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "08", "title": "no_contact_did_when_unknown_sender"}
 async def test_no_contact_did_when_unknown_sender(core, enrichment):
     """Unknown sender → contact_did is empty in classified item."""
     from src.service.trust_scorer import TrustScorer
@@ -237,6 +245,7 @@ async def test_no_contact_did_when_unknown_sender(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0118", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "09", "title": "resolve_includes_lineage"}
 async def test_resolve_includes_lineage(core, processor):
     """Classified item includes staging lineage fields."""
     core.staging_claim.return_value = [
@@ -259,6 +268,7 @@ async def test_resolve_includes_lineage(core, processor):
 
 # TST-BRAIN-823
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0823", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "10", "title": "enrichment_failure_calls_staging_fail"}
 async def test_enrichment_failure_calls_staging_fail(core, enrichment):
     """When enrich_raw raises, staging_fail is called and item is not resolved."""
     enrichment.enrich_raw.side_effect = RuntimeError("LLM timeout")
@@ -278,6 +288,7 @@ async def test_enrichment_failure_calls_staging_fail(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0119", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "11", "title": "enrichment_failure_does_not_extract_events"}
 async def test_enrichment_failure_does_not_extract_events(core, enrichment):
     """No event extraction when enrichment fails."""
     enrichment.enrich_raw.side_effect = RuntimeError("embed failed")
@@ -298,6 +309,7 @@ async def test_enrichment_failure_does_not_extract_events(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0120", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "12", "title": "multi_persona_enriches_once"}
 async def test_multi_persona_enriches_once(core, enrichment):
     """Cross-persona items: enrichment runs once, fields copied to all targets."""
     processor = StagingProcessor(core=core, enrichment=enrichment)
@@ -327,6 +339,7 @@ async def test_multi_persona_enriches_once(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0121", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "13", "title": "classification_failure_calls_fail"}
 async def test_classification_failure_calls_fail(core, enrichment):
     """Classification error calls staging_fail endpoint."""
     processor = StagingProcessor(core=core, enrichment=enrichment)
@@ -347,6 +360,7 @@ async def test_classification_failure_calls_fail(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0122", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "14", "title": "approval_required_does_not_call_staging_fail"}
 async def test_approval_required_does_not_call_staging_fail(core, enrichment):
     """When Core returns approval_required, the item is NOT marked failed.
 
@@ -372,6 +386,7 @@ async def test_approval_required_does_not_call_staging_fail(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0123", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "15", "title": "no_pending_items_noop"}
 async def test_no_pending_items_noop(core, processor):
     """No pending items → no-op, returns 0."""
     core.staging_claim.return_value = []
@@ -381,6 +396,7 @@ async def test_no_pending_items_noop(core, processor):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0124", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "16", "title": "claim_failure_returns_zero"}
 async def test_claim_failure_returns_zero(core, processor):
     """If claim fails, returns 0 gracefully."""
     core.staging_claim.side_effect = Exception("Core down")
@@ -389,6 +405,7 @@ async def test_claim_failure_returns_zero(core, processor):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0125", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "17", "title": "finance_type_classifies_to_financial"}
 async def test_finance_type_classifies_to_financial(core, enrichment):
     """Finance-related types classify to financial persona."""
     processor = StagingProcessor(core=core, enrichment=enrichment)
@@ -409,6 +426,7 @@ async def test_finance_type_classifies_to_financial(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0126", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "18", "title": "pending_unlock_skips_event_extraction"}
 async def test_pending_unlock_skips_event_extraction(core, enrichment):
     """When resolve returns pending_unlock, no reminders are created."""
     core.staging_resolve.return_value = {"status": "pending_unlock"}
@@ -427,6 +445,7 @@ async def test_pending_unlock_skips_event_extraction(core, enrichment):
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0127", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "19", "title": "stored_triggers_event_extraction"}
 async def test_stored_triggers_event_extraction(core, enrichment):
     """When resolve returns stored, event extraction runs."""
     core.staging_resolve.return_value = {"status": "stored"}
@@ -451,6 +470,7 @@ async def test_stored_triggers_event_extraction(core, enrichment):
 
 @pytest.mark.asyncio
 # TST-BRAIN-808
+# TRACE: {"suite": "BRAIN", "case": "0808", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "20", "title": "timestamp_preserved_from_metadata"}
 async def test_timestamp_preserved_from_metadata(core, enrichment):
     """Staging processor extracts timestamp from metadata and sets it on vault item.
 
@@ -478,6 +498,7 @@ async def test_timestamp_preserved_from_metadata(core, enrichment):
 
 @pytest.mark.asyncio
 # TST-BRAIN-809
+# TRACE: {"suite": "BRAIN", "case": "0809", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "21", "title": "no_timestamp_in_metadata_omits_field"}
 async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
     """When metadata has no timestamp, classified item should not have one."""
     processor = StagingProcessor(core=core, enrichment=enrichment)
@@ -504,6 +525,7 @@ async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
 
 @pytest.mark.asyncio
 # TST-BRAIN-810
+# TRACE: {"suite": "BRAIN", "case": "0810", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "22", "title": "d2d_origin_did_sets_contact_did"}
 async def test_d2d_origin_did_sets_contact_did(core, enrichment):
     """D2D items: origin_did is copied to contact_did for trust scorer lookup."""
     from src.service.trust_scorer import TrustScorer
@@ -539,6 +561,7 @@ async def test_d2d_origin_did_sets_contact_did(core, enrichment):
 
 @pytest.mark.asyncio
 # TST-BRAIN-811
+# TRACE: {"suite": "BRAIN", "case": "0811", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "23", "title": "d2d_unknown_sender_gets_unknown_trust"}
 async def test_d2d_unknown_sender_gets_unknown_trust(core, enrichment):
     """D2D items from unknown sender get unknown/low/quarantine trust."""
     from src.service.trust_scorer import TrustScorer
@@ -572,6 +595,7 @@ async def test_d2d_unknown_sender_gets_unknown_trust(core, enrichment):
 
 @pytest.mark.asyncio
 # TST-BRAIN-812
+# TRACE: {"suite": "BRAIN", "case": "0812", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "24", "title": "d2d_valid_vault_type_resolves"}
 async def test_d2d_valid_vault_type_resolves(core, enrichment):
     """D2D staged item with valid vault type resolves successfully."""
     processor = StagingProcessor(core=core, enrichment=enrichment)

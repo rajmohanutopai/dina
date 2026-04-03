@@ -47,6 +47,7 @@ afterAll(async () => {
 })
 
 describe('13 Cursor Management', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0572", "section": "01", "sectionName": "General", "title": "IT-CUR-001: loadCursor -- no prior cursor -> 0"}
   it('IT-CUR-001: loadCursor -- no prior cursor -> 0', async () => {
     // Description: Fresh database
     // Expected: cursor = 0
@@ -54,6 +55,7 @@ describe('13 Cursor Management', () => {
     expect(cursor).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0573", "section": "01", "sectionName": "General", "title": "IT-CUR-002: saveCursor -> loadCursor round-trip"}
   it('IT-CUR-002: saveCursor -> loadCursor round-trip', async () => {
     // Description: Save 12345, then load
     // Expected: Returns 12345
@@ -63,6 +65,7 @@ describe('13 Cursor Management', () => {
     expect(cursor).toBe(12345)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0574", "section": "01", "sectionName": "General", "title": "IT-CUR-003: saveCursor -- upsert on conflict"}
   it('IT-CUR-003: saveCursor -- upsert on conflict', async () => {
     // Description: Save twice for same service
     // Expected: 1 row, second value
@@ -78,6 +81,7 @@ describe('13 Cursor Management', () => {
     expect(rows.length).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0575", "section": "01", "sectionName": "General", "title": "IT-CUR-004: cursor per service URL"}
   it('IT-CUR-004: cursor per service URL', async () => {
     // Description: Save for ws://jetstream:6008 and ws://other:6008
     // Expected: 2 distinct rows
@@ -94,6 +98,7 @@ describe('13 Cursor Management', () => {
     expect(cursor2).toBe(2000)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0576", "section": "01", "sectionName": "General", "title": "IT-CUR-005: Fix 7: low watermark cursor value"}
   it('IT-CUR-005: Fix 7: low watermark cursor value', async () => {
     // Description: Save via getSafeCursor with in-flight
     // Expected: Saved value = min(in-flight) - 1
@@ -135,6 +140,7 @@ describe('13 Cursor Management', () => {
     await new Promise(resolve => setTimeout(resolve, 500))
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0577", "section": "01", "sectionName": "General", "title": "IT-CUR-006: HIGH-04: cursor includes failed event timestamps"}
   it('IT-CUR-006: HIGH-04: cursor includes failed event timestamps', async () => {
     // Description: A failed event should pin the cursor
     // Expected: getSafeCursor includes failed timestamps in minimum calculation

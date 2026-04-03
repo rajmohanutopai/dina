@@ -28,6 +28,7 @@ from src.service.enrichment import (
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0019", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "01", "title": "l0_deterministic_from_metadata"}
 def test_l0_deterministic_from_metadata():
     """Generate L0 from type + sender + date without LLM."""
     l0 = _generate_l0_deterministic(
@@ -42,6 +43,7 @@ def test_l0_deterministic_from_metadata():
     assert "Email" in l0 or "email" in l0.lower()
 
 
+# TRACE: {"suite": "BRAIN", "case": "0020", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "02", "title": "l0_deterministic_from_summary_only"}
 def test_l0_deterministic_from_summary_only():
     """L0 falls back to summary when metadata is sparse."""
     l0 = _generate_l0_deterministic(
@@ -51,6 +53,7 @@ def test_l0_deterministic_from_summary_only():
     assert "Meeting notes" in l0
 
 
+# TRACE: {"suite": "BRAIN", "case": "0021", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "03", "title": "l0_deterministic_low_trust_includes_caveat"}
 def test_l0_deterministic_low_trust_includes_caveat():
     """Low-trust items get 'Unverified' prefix in L0."""
     l0 = _generate_l0_deterministic(
@@ -65,6 +68,7 @@ def test_l0_deterministic_low_trust_includes_caveat():
     assert "unknown@spam.com" in l0
 
 
+# TRACE: {"suite": "BRAIN", "case": "0022", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "04", "title": "l0_deterministic_marketing_caveat"}
 def test_l0_deterministic_marketing_caveat():
     """Marketing items get caveat."""
     l0 = _generate_l0_deterministic(
@@ -78,6 +82,7 @@ def test_l0_deterministic_marketing_caveat():
     assert "Unverified" in l0
 
 
+# TRACE: {"suite": "BRAIN", "case": "0023", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "05", "title": "l0_deterministic_empty_returns_empty"}
 def test_l0_deterministic_empty_returns_empty():
     """No metadata → empty string (LLM fallback needed)."""
     l0 = _generate_l0_deterministic(
@@ -93,6 +98,7 @@ def test_l0_deterministic_empty_returns_empty():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0024", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "06", "title": "enrich_raw_returns_all_fields"}
 async def test_enrich_raw_returns_all_fields():
     """enrich_raw populates L0, L1, embedding, status=ready, version."""
     llm = AsyncMock()
@@ -121,6 +127,7 @@ async def test_enrich_raw_returns_all_fields():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0025", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "07", "title": "enrich_raw_low_trust_caveat"}
 async def test_enrich_raw_low_trust_caveat():
     """Low-trust items get provenance-aware L1 with 'Unverified...' prefix."""
     llm = AsyncMock()
@@ -146,6 +153,7 @@ async def test_enrich_raw_low_trust_caveat():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0026", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "08", "title": "enrich_raw_high_trust_no_caveat"}
 async def test_enrich_raw_high_trust_no_caveat():
     """High-trust (self/contact_ring1) items get clean L1 without caveats."""
     llm = AsyncMock()
@@ -169,6 +177,7 @@ async def test_enrich_raw_high_trust_no_caveat():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0027", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "09", "title": "enrich_raw_embedding_from_l1"}
 async def test_enrich_raw_embedding_from_l1():
     """Embedding is generated from L1, not L2 body_text."""
     llm = AsyncMock()
@@ -193,6 +202,7 @@ async def test_enrich_raw_embedding_from_l1():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0028", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "10", "title": "enrich_raw_llm_failure_raises"}
 async def test_enrich_raw_llm_failure_raises():
     """LLM failure raises (no silent fallback to truncated body)."""
     llm = AsyncMock()
@@ -209,6 +219,7 @@ async def test_enrich_raw_llm_failure_raises():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0029", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "11", "title": "enrich_raw_no_llm_raises"}
 async def test_enrich_raw_no_llm_raises():
     """enrich_raw with llm=None raises (enrichment requires LLM)."""
     svc = EnrichmentService(core=AsyncMock(), llm=None)
@@ -219,6 +230,7 @@ async def test_enrich_raw_no_llm_raises():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0030", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "12", "title": "enrich_raw_embed_failure_raises"}
 async def test_enrich_raw_embed_failure_raises():
     """Embedding failure propagates (no silent skip)."""
     llm = AsyncMock()
@@ -238,6 +250,7 @@ async def test_enrich_raw_embed_failure_raises():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0031", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "13", "title": "enrich_raw_summary_only_item"}
 async def test_enrich_raw_summary_only_item():
     """Empty body_text → LLM called with summary as input (calendar events, etc)."""
     llm = AsyncMock()
@@ -263,6 +276,7 @@ async def test_enrich_raw_summary_only_item():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0032", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "14", "title": "enrich_raw_no_body_no_summary_raises"}
 async def test_enrich_raw_no_body_no_summary_raises():
     """Both body and summary empty → raises (nothing to enrich)."""
     llm = AsyncMock()
@@ -285,6 +299,7 @@ async def test_enrich_raw_no_body_no_summary_raises():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0033", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "15", "title": "enrich_item_single_llm_call"}
 async def test_enrich_item_single_llm_call():
     """enrich_item generates L0+L1 in one LLM call and PATCHes Core."""
     core = AsyncMock()
@@ -329,6 +344,7 @@ async def test_enrich_item_single_llm_call():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0034", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "16", "title": "enrich_item_llm_failure_sets_failed"}
 async def test_enrich_item_llm_failure_sets_failed():
     """LLM failure → enrich_item returns False and sets status=failed."""
     core = AsyncMock()
@@ -352,6 +368,7 @@ async def test_enrich_item_llm_failure_sets_failed():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0035", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "17", "title": "enrich_item_core_failure_sets_failed"}
 async def test_enrich_item_core_failure_sets_failed():
     """If Core GetItem fails, enrichment returns False."""
     core = AsyncMock()
@@ -364,6 +381,7 @@ async def test_enrich_item_core_failure_sets_failed():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0036", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "18", "title": "enrich_item_low_trust_l0_caveat"}
 async def test_enrich_item_low_trust_l0_caveat():
     """Low-trust item L0 includes 'Unverified' caveat (deterministic path)."""
     core = AsyncMock()
@@ -397,6 +415,7 @@ async def test_enrich_item_low_trust_l0_caveat():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0037", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "19", "title": "enrich_pending_finds_and_enriches"}
 async def test_enrich_pending_finds_and_enriches():
     """enrich_pending scans for pending items and enriches them."""
     core = AsyncMock()
@@ -434,6 +453,7 @@ async def test_enrich_pending_finds_and_enriches():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0038", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "20", "title": "enrich_pending_handles_search_failure"}
 async def test_enrich_pending_handles_search_failure():
     """enrich_pending returns 0 if search_vault fails."""
     core = AsyncMock()
@@ -445,6 +465,7 @@ async def test_enrich_pending_handles_search_failure():
 
 
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0039", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "21", "title": "enrich_pending_empty_results"}
 async def test_enrich_pending_empty_results():
     """enrich_pending returns 0 if no pending items found."""
     core = AsyncMock()
@@ -465,6 +486,7 @@ async def test_enrich_pending_empty_results():
 
 # TST-BRAIN-815
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0815", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "22", "title": "fc2_enrichment_scrubs_pii_before_cloud_llm"}
 async def test_fc2_enrichment_scrubs_pii_before_cloud_llm():
     """FC2: EnrichmentService must scrub PII before sending to cloud LLM.
 
@@ -512,6 +534,7 @@ async def test_fc2_enrichment_scrubs_pii_before_cloud_llm():
 
 # TST-BRAIN-816
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0816", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "23", "title": "fc2_enrichment_fails_if_scrub_fails"}
 async def test_fc2_enrichment_fails_if_scrub_fails():
     """FC2: If PII scrubbing fails, enrichment must fail (fail-closed)."""
     entity_vault = AsyncMock()
@@ -537,6 +560,7 @@ async def test_fc2_enrichment_fails_if_scrub_fails():
 
 # TST-BRAIN-817
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0817", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "24", "title": "fc2_enrichment_no_scrub_when_no_entity_vault"}
 async def test_fc2_enrichment_no_scrub_when_no_entity_vault():
     """Without entity_vault, enrichment proceeds (backward-compatible for local LLM)."""
     llm = AsyncMock()
@@ -565,6 +589,7 @@ async def test_fc2_enrichment_no_scrub_when_no_entity_vault():
 
 # TST-BRAIN-820
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0820", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "25", "title": "enrich_raw_rehydrates_l0_l1"}
 async def test_enrich_raw_rehydrates_l0_l1():
     """LLM generates text with PII tokens; enrich_raw rehydrates L1 before storing.
 
@@ -625,6 +650,7 @@ async def test_enrich_raw_rehydrates_l0_l1():
 
 # TST-BRAIN-821
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0821", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "26", "title": "enrich_raw_without_entity_vault_no_rehydrate"}
 async def test_enrich_raw_without_entity_vault_no_rehydrate():
     """Without entity_vault, L0/L1 stored as-is (no scrub, no rehydrate).
 
@@ -657,6 +683,7 @@ async def test_enrich_raw_without_entity_vault_no_rehydrate():
 
 # TST-BRAIN-822
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0822", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "27", "title": "enrich_raw_body_and_summary_not_scrubbed_in_item"}
 async def test_enrich_raw_body_and_summary_not_scrubbed_in_item():
     """body_text and summary in item_dict are NOT modified (original values preserved)."""
     from unittest.mock import MagicMock

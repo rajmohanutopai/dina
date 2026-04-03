@@ -76,7 +76,7 @@ class Sensitivity(str, Enum):
     """Content sensitivity level controlling PII scrub intensity.
 
     GENERAL    = Tier 1 only (regex patterns — emails, phones, IDs).
-    ELEVATED   = Tier 1 + Tier 2 (Presidio NER — names, orgs, locations).
+    ELEVATED   = Tier 1 + Tier 2 (Presidio patterns — structured PII).
     SENSITIVE  = Full pipeline (all tiers, strictest scrubbing).
     LOCAL_ONLY = Never leaves device — cloud send refused outright.
     """

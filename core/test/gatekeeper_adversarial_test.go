@@ -196,6 +196,7 @@ func (r *nullVaultReader) VectorSearch(_ context.Context, _ domain.PersonaName, 
 // TST-CORE-975
 // TST-ADV-037: Access to locked persona is denied regardless of gatekeeper rules.
 // Architecture §5: "locked persona → DEK not in RAM → access always denied."
+// TRACE: {"suite": "CORE", "case": "0570", "section": "29", "sectionName": "Adversarial & Security", "subsection": "09", "scenario": "01", "title": "LockedPersonaDenied"}
 func TestAdv_29_9_LockedPersonaDenied(t *testing.T) {
 	vault := newGatekeeperVaultManager()
 	// "general" is open, "financial" is closed (not in map).
@@ -251,6 +252,7 @@ func TestAdv_29_9_LockedPersonaDenied(t *testing.T) {
 // TST-CORE-976
 // TST-ADV-038: Locked persona denial generates audit entry.
 // Architecture §5: "every access check is audited."
+// TRACE: {"suite": "CORE", "case": "0571", "section": "29", "sectionName": "Adversarial & Security", "subsection": "09", "scenario": "01", "title": "LockedPersonaAudited"}
 func TestAdv_29_9_LockedPersonaAudited(t *testing.T) {
 	vault := newGatekeeperVaultManager()
 	// No personas open — everything is locked.
@@ -291,6 +293,7 @@ func TestAdv_29_9_LockedPersonaAudited(t *testing.T) {
 
 // TST-ADV-039: Egress to untrusted destination is denied and audited.
 // Architecture §6: "every egress decision is logged to audit trail."
+// TRACE: {"suite": "CORE", "case": "0572", "section": "29", "sectionName": "Adversarial & Security", "subsection": "09", "scenario": "01", "title": "EgressDeniedAudited"}
 func TestAdv_29_9_EgressDeniedAudited(t *testing.T) {
 	vault := newGatekeeperVaultManager()
 	gk := &gatekeeperMock{
@@ -342,6 +345,7 @@ func TestAdv_29_9_EgressDeniedAudited(t *testing.T) {
 // TST-CORE-978
 // TST-ADV-040: Missing sharing policy category is completely denied (default deny).
 // Architecture §9: "missing policy key = denied — default deny throughout."
+// TRACE: {"suite": "CORE", "case": "0573", "section": "29", "sectionName": "Adversarial & Security", "subsection": "10", "scenario": "01", "title": "MissingCategoryDenied"}
 func TestAdv_29_10_MissingCategoryDenied(t *testing.T) {
 	spm := testutil.NewMockSharingPolicyManager()
 	ctx := context.Background()
@@ -392,6 +396,7 @@ func TestAdv_29_10_MissingCategoryDenied(t *testing.T) {
 
 // TST-ADV-041: Policy tier "none" completely blocks the category.
 // Architecture §9: "tier=none → category blocked entirely."
+// TRACE: {"suite": "CORE", "case": "0574", "section": "29", "sectionName": "Adversarial & Security", "subsection": "10", "scenario": "01", "title": "TierNoneBlocks"}
 func TestAdv_29_10_TierNoneBlocks(t *testing.T) {
 	spm := testutil.NewMockSharingPolicyManager()
 	ctx := context.Background()
@@ -433,6 +438,7 @@ func TestAdv_29_10_TierNoneBlocks(t *testing.T) {
 
 // TST-ADV-042: No policy for contact → ALL categories denied (default deny).
 // Architecture §9: "default deny — no policy means everything blocked."
+// TRACE: {"suite": "CORE", "case": "0575", "section": "29", "sectionName": "Adversarial & Security", "subsection": "10", "scenario": "01", "title": "NoPolicyDefaultDeny"}
 func TestAdv_29_10_NoPolicyDefaultDeny(t *testing.T) {
 	spm := testutil.NewMockSharingPolicyManager()
 	ctx := context.Background()
@@ -462,6 +468,7 @@ func TestAdv_29_10_NoPolicyDefaultDeny(t *testing.T) {
 
 // TST-ADV-043: Egress with malformed (non-TieredPayload) data is denied.
 // Architecture §19: "strict typing — malformed payload category dropped entirely."
+// TRACE: {"suite": "CORE", "case": "0576", "section": "29", "sectionName": "Adversarial & Security", "subsection": "10", "scenario": "01", "title": "MalformedPayloadDenied"}
 func TestAdv_29_10_MalformedPayloadDenied(t *testing.T) {
 	spm := testutil.NewMockSharingPolicyManager()
 	ctx := context.Background()
@@ -500,6 +507,7 @@ func TestAdv_29_10_MalformedPayloadDenied(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1124
+// TRACE: {"suite": "CORE", "case": "0577", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "01", "title": "AgentAttemptsToReadOtherAgentsData"}
 func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 	// Requirements (§34.2):
 	//   - A compromised or malicious agent must not escape its sandbox.
@@ -513,6 +521,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 	//   2. Trust-level checks (untrusted agents denied for vault access)
 	//   3. Immutable agent_did binding (set by auth middleware, cannot be forged)
 
+	// TRACE: {"suite": "CORE", "case": "0578", "section": "34", "sectionName": "Thesis: Loyalty", "title": "cross_persona_constraint_blocks_agent_B"}
 	t.Run("cross_persona_constraint_blocks_agent_B", func(t *testing.T) {
 		// Agent A is constrained to "consumer" persona.
 		// Agent A tries to query "health" persona (where Agent B stores data).
@@ -564,6 +573,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0579", "section": "34", "sectionName": "Thesis: Loyalty", "title": "agent_A_allowed_on_own_persona"}
 	t.Run("agent_A_allowed_on_own_persona", func(t *testing.T) {
 		// Anti-tautological contrast: Agent A CAN access its own persona.
 		// This proves the deny above is specific, not a blanket deny.
@@ -603,6 +613,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0580", "section": "34", "sectionName": "Thesis: Loyalty", "title": "two_agents_mutually_isolated"}
 	t.Run("two_agents_mutually_isolated", func(t *testing.T) {
 		// Agent A constrained to consumer, Agent B constrained to health.
 		// Neither agent can access the other's persona.
@@ -674,6 +685,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0581", "section": "34", "sectionName": "Thesis: Loyalty", "title": "untrusted_agent_denied_all_personas"}
 	t.Run("untrusted_agent_denied_all_personas", func(t *testing.T) {
 		// Trust level "untrusted" → denied for vault access regardless of persona.
 		// This is the base security layer — no sandbox escape via low trust.
@@ -703,6 +715,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0582", "section": "34", "sectionName": "Thesis: Loyalty", "title": "denial_audited_with_agent_identity"}
 	t.Run("denial_audited_with_agent_identity", func(t *testing.T) {
 		// Every cross-persona denial must create an audit entry that includes
 		// the agent's DID, the denied persona, and the action attempted.
@@ -753,6 +766,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-985
+// TRACE: {"suite": "CORE", "case": "0583", "section": "30", "sectionName": "Test System Quality", "subsection": "01", "scenario": "01", "title": "MockSideEffectsDisabledInStrictReal"}
 func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 	// Requirements (§30.1, test_issues #1):
 	//   - In strict-real mode, mock state must NOT be updated alongside real calls.
@@ -765,6 +779,7 @@ func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 	// Anti-tautological: each subtest includes a contrast that proves the assertion
 	// is meaningful (e.g., mock state IS updated when you call the mock directly).
 
+	// TRACE: {"suite": "CORE", "case": "0584", "section": "30", "sectionName": "Test System Quality", "title": "real_implementations_are_not_mock_wrappers"}
 	t.Run("real_implementations_are_not_mock_wrappers", func(t *testing.T) {
 		// Verify that all real implementations wired in wiring_test.go are concrete
 		// adapter types from internal packages — not types from the test/testutil
@@ -822,6 +837,7 @@ func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0585", "section": "30", "sectionName": "Test System Quality", "title": "real_gatekeeper_independent_of_mock_state"}
 	t.Run("real_gatekeeper_independent_of_mock_state", func(t *testing.T) {
 		// Verify that calling realGatekeeper.EvaluateIntent does not update any
 		// shared mock state. This proves Go's wiring pattern is side-effect-free.
@@ -859,6 +875,7 @@ func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0586", "section": "30", "sectionName": "Test System Quality", "title": "real_sharing_policy_independent_of_mock"}
 	t.Run("real_sharing_policy_independent_of_mock", func(t *testing.T) {
 		// Verify that setting a policy on realSharingPolicyManager does not
 		// affect a separately-created MockSharingPolicyManager.
@@ -895,6 +912,7 @@ func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0587", "section": "30", "sectionName": "Test System Quality", "title": "wiring_variables_typed_to_ports_not_mocks"}
 	t.Run("wiring_variables_typed_to_ports_not_mocks", func(t *testing.T) {
 		// Verify that wiring_test.go variables are typed to port interfaces
 		// (e.g., port.HDKeyDeriver) not to mock types. This ensures that
@@ -932,6 +950,7 @@ func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0588", "section": "30", "sectionName": "Test System Quality", "title": "real_pii_scrubber_independent_of_mock"}
 	t.Run("real_pii_scrubber_independent_of_mock", func(t *testing.T) {
 		// Verify that the real PII scrubber does not share state with mocks.
 		testutil.RequireImplementation(t, realPIIScrubber, "PIIScrubber")
@@ -965,6 +984,7 @@ func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1128
+// TRACE: {"suite": "CORE", "case": "0589", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "01", "title": "AgentCredentialHarvestingViaErrors"}
 func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 	// Requirements (§34.2):
 	//   - Error responses must contain NO internal state, no key material,
@@ -1009,6 +1029,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		}
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0590", "section": "34", "sectionName": "Thesis: Loyalty", "title": "malformed_json_body_no_leak"}
 	t.Run("malformed_json_body_no_leak", func(t *testing.T) {
 		// Send structurally invalid JSON to a JSON endpoint — error must be generic.
 		malformedBodies := []struct {
@@ -1035,6 +1056,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0591", "section": "34", "sectionName": "Thesis: Loyalty", "title": "injection_payloads_no_echo_in_errors"}
 	t.Run("injection_payloads_no_echo_in_errors", func(t *testing.T) {
 		// SQL injection and path traversal payloads are valid JSON, so they
 		// pass JSON parsing. The test verifies that if the service layer
@@ -1072,6 +1094,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0592", "section": "34", "sectionName": "Thesis: Loyalty", "title": "oversized_payload_no_leak"}
 	t.Run("oversized_payload_no_leak", func(t *testing.T) {
 		// Oversized payload — error must not reveal the configured max size.
 		oversized := make([]byte, 11*1024*1024) // 11 MiB (exceeds 10 MiB default)
@@ -1091,6 +1114,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0593", "section": "34", "sectionName": "Thesis: Loyalty", "title": "unknown_endpoint_no_resource_discovery"}
 	t.Run("unknown_endpoint_no_resource_discovery", func(t *testing.T) {
 		// Probing for undocumented endpoints must return generic 404.
 		probePaths := []string{
@@ -1119,6 +1143,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0594", "section": "34", "sectionName": "Thesis: Loyalty", "title": "wrong_method_no_endpoint_enumeration"}
 	t.Run("wrong_method_no_endpoint_enumeration", func(t *testing.T) {
 		// Wrong HTTP method — error must not list valid methods (no Allow header leak in body).
 		status, body, err := impl.HandleRequest("DELETE", "/v1/vault/query", "", nil)
@@ -1137,6 +1162,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0595", "section": "34", "sectionName": "Thesis: Loyalty", "title": "missing_required_fields_generic_error"}
 	t.Run("missing_required_fields_generic_error", func(t *testing.T) {
 		// Missing required fields — error may name the field but must not
 		// reveal vault schema, item counts, or other internal state.
@@ -1151,6 +1177,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		checkNoLeakage(t, body, "missing_fields")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0596", "section": "34", "sectionName": "Thesis: Loyalty", "title": "wrong_content_type_no_leak"}
 	t.Run("wrong_content_type_no_leak", func(t *testing.T) {
 		// Wrong Content-Type — error must be generic.
 		status, body, err := impl.HandleRequest("POST", "/v1/vault/store", "text/xml", []byte("<vault><item/></vault>"))
@@ -1163,6 +1190,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		checkNoLeakage(t, body, "wrong_content_type")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0597", "section": "34", "sectionName": "Thesis: Loyalty", "title": "error_responses_are_valid_json"}
 	t.Run("error_responses_are_valid_json", func(t *testing.T) {
 		// All error responses must be valid JSON — prevents XSS via reflected
 		// error messages and ensures structured error format.
@@ -1197,6 +1225,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0598", "section": "34", "sectionName": "Thesis: Loyalty", "title": "contrast_valid_request_returns_200"}
 	t.Run("contrast_valid_request_returns_200", func(t *testing.T) {
 		// Anti-tautological: valid requests DO succeed.
 		// This proves the error responses above are specific to bad input.
@@ -1216,6 +1245,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-986
+// TRACE: {"suite": "CORE", "case": "0599", "section": "30", "sectionName": "Test System Quality", "subsection": "01", "scenario": "01", "title": "AllFallbackLocationsAuditedStrict"}
 func TestInfra_30_1_AllFallbackLocationsAuditedStrict(t *testing.T) {
 	// Requirement (§30.1, row 5):
 	//   All fallback locations in real_clients.py, real_nodes.py, and real_d2d.py
@@ -1310,6 +1340,7 @@ func TestInfra_30_1_AllFallbackLocationsAuditedStrict(t *testing.T) {
 		})
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0600", "section": "30", "sectionName": "Test System Quality", "title": "total_inventory_within_bounds"}
 	t.Run("total_inventory_within_bounds", func(t *testing.T) {
 		// Read all 3 files and compute total fallback patterns.
 		totalSuper := 0
@@ -1343,6 +1374,7 @@ func TestInfra_30_1_AllFallbackLocationsAuditedStrict(t *testing.T) {
 			totalSuper, maxTotalSuper, totalTry, totalMock)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0601", "section": "30", "sectionName": "Test System Quality", "title": "contrast_Go_wiring_has_no_mock_fallback"}
 	t.Run("contrast_Go_wiring_has_no_mock_fallback", func(t *testing.T) {
 		// Positive control: Go Core's wiring_test.go real* implementations
 		// must NOT reference mock types. This proves the Go side is clean
@@ -1372,6 +1404,7 @@ func TestInfra_30_1_AllFallbackLocationsAuditedStrict(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1127
+// TRACE: {"suite": "CORE", "case": "0602", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "01", "scenario": "01", "title": "AgentSendsMalformedIntentToBypassGatekeeper"}
 func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 	// Requirement (§34.1):
 	//   Agent sends malformed intent (missing action or target fields) →
@@ -1394,6 +1427,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 	// Use real Gatekeeper (not mock) to test production validation logic.
 	realGK := gatekeeper.New()
 
+	// TRACE: {"suite": "CORE", "case": "0603", "section": "34", "sectionName": "Thesis: Loyalty", "title": "empty_action_returns_error_not_decision"}
 	t.Run("empty_action_returns_error_not_decision", func(t *testing.T) {
 		ctx := context.Background()
 		intent := domain.Intent{
@@ -1412,6 +1446,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0604", "section": "34", "sectionName": "Thesis: Loyalty", "title": "empty_agent_did_returns_error_not_decision"}
 	t.Run("empty_agent_did_returns_error_not_decision", func(t *testing.T) {
 		ctx := context.Background()
 		intent := domain.Intent{
@@ -1430,6 +1465,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0605", "section": "34", "sectionName": "Thesis: Loyalty", "title": "both_empty_returns_error"}
 	t.Run("both_empty_returns_error", func(t *testing.T) {
 		ctx := context.Background()
 		intent := domain.Intent{
@@ -1442,6 +1478,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0606", "section": "34", "sectionName": "Thesis: Loyalty", "title": "positive_control_valid_intent_returns_decision"}
 	t.Run("positive_control_valid_intent_returns_decision", func(t *testing.T) {
 		// Contrast: a valid intent with all fields returns a Decision, not an error.
 		// Without this, the test passes if EvaluateIntent always returns errors.
@@ -1464,6 +1501,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0607", "section": "34", "sectionName": "Thesis: Loyalty", "title": "nil_constraints_safe"}
 	t.Run("nil_constraints_safe", func(t *testing.T) {
 		// Nil Constraints map must not cause panic or error.
 		ctx := context.Background()
@@ -1481,6 +1519,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0608", "section": "34", "sectionName": "Thesis: Loyalty", "title": "empty_constraints_map_safe"}
 	t.Run("empty_constraints_map_safe", func(t *testing.T) {
 		ctx := context.Background()
 		intent := domain.Intent{
@@ -1497,6 +1536,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0609", "section": "34", "sectionName": "Thesis: Loyalty", "title": "CheckAccess_propagates_validation_error"}
 	t.Run("CheckAccess_propagates_validation_error", func(t *testing.T) {
 		// GatekeeperService.CheckAccess must propagate EvaluateIntent errors,
 		// not absorb them into a Decision{Allowed:false}.
@@ -1530,6 +1570,7 @@ func TestAdv_34_1_AgentSendsMalformedIntentToBypassGatekeeper(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0610", "section": "34", "sectionName": "Thesis: Loyalty", "title": "malformed_intent_with_risky_action_still_errors"}
 	t.Run("malformed_intent_with_risky_action_still_errors", func(t *testing.T) {
 		// Even if the action is risky (would normally be denied), empty AgentDID
 		// must still cause an error, not a deny decision. This proves validation
@@ -1706,6 +1747,7 @@ func (s *failingScrubber) Scrub(_ context.Context, _ string) (*domain.ScrubResul
 }
 
 // TST-CORE-1126
+// TRACE: {"suite": "CORE", "case": "0611", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "05", "title": "OversizedQueryLimitCapped"}
 func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 	// Build a VaultHandler with mock ports. The queryCapturingReader records
 	// what limit the handler actually passes to the service layer.
@@ -1740,6 +1782,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		return reader.getLimit()
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0612", "section": "34", "sectionName": "Thesis: Loyalty", "title": "oversized_limit_999999_capped_to_100"}
 	t.Run("oversized_limit_999999_capped_to_100", func(t *testing.T) {
 		// §34.2: Agent sends limit: 999999 to exfiltrate entire vault.
 		// The handler must cap this to the configured maximum (100).
@@ -1749,6 +1792,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0613", "section": "34", "sectionName": "Thesis: Loyalty", "title": "oversized_limit_1000000_capped_to_100"}
 	t.Run("oversized_limit_1000000_capped_to_100", func(t *testing.T) {
 		// Another extreme value — ensure no integer overflow or edge case.
 		got := sendQuery(t, 1000000)
@@ -1757,6 +1801,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0614", "section": "34", "sectionName": "Thesis: Loyalty", "title": "limit_at_boundary_100_passes_through"}
 	t.Run("limit_at_boundary_100_passes_through", func(t *testing.T) {
 		// Exactly at the max — must pass through unchanged.
 		got := sendQuery(t, 100)
@@ -1765,6 +1810,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0615", "section": "34", "sectionName": "Thesis: Loyalty", "title": "limit_101_capped_to_100"}
 	t.Run("limit_101_capped_to_100", func(t *testing.T) {
 		// One above the boundary — must be capped.
 		got := sendQuery(t, 101)
@@ -1773,6 +1819,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0616", "section": "34", "sectionName": "Thesis: Loyalty", "title": "normal_limit_50_passes_through"}
 	t.Run("normal_limit_50_passes_through", func(t *testing.T) {
 		// Normal usage — limit under the cap passes unchanged.
 		got := sendQuery(t, 50)
@@ -1781,6 +1828,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0617", "section": "34", "sectionName": "Thesis: Loyalty", "title": "limit_1_passes_through"}
 	t.Run("limit_1_passes_through", func(t *testing.T) {
 		// Minimum valid limit — should pass through.
 		got := sendQuery(t, 1)
@@ -1789,6 +1837,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0618", "section": "34", "sectionName": "Thesis: Loyalty", "title": "limit_zero_clamped_to_default"}
 	t.Run("limit_zero_clamped_to_default", func(t *testing.T) {
 		// DM3: Zero is clamped to domain.DefaultSearchLimit (50) at handler level.
 		got := sendQuery(t, 0)
@@ -1797,6 +1846,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0619", "section": "34", "sectionName": "Thesis: Loyalty", "title": "negative_limit_clamped_to_default"}
 	t.Run("negative_limit_clamped_to_default", func(t *testing.T) {
 		// DM3: Negative is clamped to domain.DefaultSearchLimit (50) at handler level.
 		got := sendQuery(t, -5)
@@ -1805,6 +1855,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0620", "section": "34", "sectionName": "Thesis: Loyalty", "title": "positive_control_response_contains_items_array"}
 	t.Run("positive_control_response_contains_items_array", func(t *testing.T) {
 		// Verify the handler returns a well-formed JSON response, not just 200.
 		// This proves the test chain is wired correctly (not a vacuous pass).
@@ -1843,6 +1894,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-1024
+// TRACE: {"suite": "CORE", "case": "0621", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "03", "title": "LockedPersonaDeadDropIngress"}
 func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 	// Build a VaultHandler backed by a locked persona. The VaultManager
 	// reports "general" as NOT open (simulating a locked persona where
@@ -1887,6 +1939,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		return rr.Code, rr.Body.String()
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0622", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_on_locked_persona_returns_403"}
 	t.Run("vault_query_on_locked_persona_returns_403", func(t *testing.T) {
 		// The core requirement: when a persona is locked, the vault MUST NOT
 		// return any data. Instead, it returns 403 "persona locked".
@@ -1900,6 +1953,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0623", "section": "30", "sectionName": "Test System Quality", "title": "vault_store_on_locked_persona_returns_403"}
 	t.Run("vault_store_on_locked_persona_returns_403", func(t *testing.T) {
 		// Write operations must also be blocked when locked.
 		code, body := sendStore(t, "general")
@@ -1912,6 +1966,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0624", "section": "30", "sectionName": "Test System Quality", "title": "dead_drop_accepts_messages_while_locked"}
 	t.Run("dead_drop_accepts_messages_while_locked", func(t *testing.T) {
 		// While the vault is locked, the dead-drop filesystem MUST accept
 		// incoming encrypted blobs. Messages are not lost — they wait until
@@ -1953,6 +2008,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0625", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_and_dead_drop_combined_scenario"}
 	t.Run("vault_query_and_dead_drop_combined_scenario", func(t *testing.T) {
 		// Combined: vault query fails with 403 while dead-drop ingress succeeds.
 		// This is the exact §7 Locked tier behavior: no reads, but messages
@@ -1990,6 +2046,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0626", "section": "30", "sectionName": "Test System Quality", "title": "after_unlock_vault_query_succeeds"}
 	t.Run("after_unlock_vault_query_succeeds", func(t *testing.T) {
 		// Positive control: after unlocking the persona, vault queries
 		// must succeed. This proves the 403 was due to lock state, not
@@ -2011,6 +2068,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0627", "section": "30", "sectionName": "Test System Quality", "title": "after_unlock_vault_store_succeeds"}
 	t.Run("after_unlock_vault_store_succeeds", func(t *testing.T) {
 		// Positive control for writes: store must work after unlock.
 		code, _ := sendStore(t, "general")
@@ -2020,6 +2078,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0628", "section": "30", "sectionName": "Test System Quality", "title": "different_persona_still_locked"}
 	t.Run("different_persona_still_locked", func(t *testing.T) {
 		// Isolation: unlocking "general" must not affect other personas.
 		// "financial" was never opened — it must remain locked.
@@ -2058,6 +2117,7 @@ func (w *goldenSchemaWriter) Delete(_ context.Context, _ domain.PersonaName, _ s
 }
 
 // TST-CORE-998
+// TRACE: {"suite": "CORE", "case": "0629", "section": "30", "sectionName": "Test System Quality", "subsection": "03", "scenario": "08", "title": "JSONSchemaFrozenGoldenExamples"}
 func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 	// Build a VaultHandler with mock ports that return predictable data.
 	mgr := newGatekeeperVaultManager()
@@ -2068,6 +2128,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 	vaultSvc := service.NewVaultService(mgr, reader, &goldenSchemaWriter{}, gk, &simpleClock{})
 	h := &handler.VaultHandler{Vault: vaultSvc}
 
+	// TRACE: {"suite": "CORE", "case": "0630", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_response_schema"}
 	t.Run("vault_query_response_schema", func(t *testing.T) {
 		// Golden: POST /v1/vault/query → 200 with {"items": [...]}
 		// The "items" key is the contract between Core and Brain for search results.
@@ -2117,6 +2178,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0631", "section": "30", "sectionName": "Test System Quality", "title": "vault_store_response_schema"}
 	t.Run("vault_store_response_schema", func(t *testing.T) {
 		// Golden: POST /v1/vault/store → 201 with {"id": "<string>"}
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2163,6 +2225,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0632", "section": "30", "sectionName": "Test System Quality", "title": "vault_store_batch_response_schema"}
 	t.Run("vault_store_batch_response_schema", func(t *testing.T) {
 		// Golden: POST /v1/vault/store/batch → 201 with {"ids": ["<string>", ...]}
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2204,6 +2267,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0633", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_invalid_body_error_schema"}
 	t.Run("vault_query_invalid_body_error_schema", func(t *testing.T) {
 		// Golden: malformed request body → 400 with {"error": "<message>"}
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/query",
@@ -2227,6 +2291,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0634", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_invalid_persona_error_schema"}
 	t.Run("vault_query_invalid_persona_error_schema", func(t *testing.T) {
 		// Golden: invalid persona name → 400 with {"error": "invalid persona name"}
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2250,6 +2315,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0635", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_method_not_allowed_schema"}
 	t.Run("vault_query_method_not_allowed_schema", func(t *testing.T) {
 		// Golden: GET /v1/vault/query → 405 Method Not Allowed
 		req := httptest.NewRequest(http.MethodGet, "/v1/vault/query", nil)
@@ -2270,6 +2336,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0636", "section": "30", "sectionName": "Test System Quality", "title": "vault_store_method_not_allowed_schema"}
 	t.Run("vault_store_method_not_allowed_schema", func(t *testing.T) {
 		// Golden: GET /v1/vault/store → 405 Method Not Allowed
 		req := httptest.NewRequest(http.MethodGet, "/v1/vault/store", nil)
@@ -2281,6 +2348,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0637", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_locked_persona_error_schema"}
 	t.Run("vault_query_locked_persona_error_schema", func(t *testing.T) {
 		// Golden: query on locked persona → 403 with "persona locked" message.
 		// This validates the error schema for the locked tier.
@@ -2304,6 +2372,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0638", "section": "30", "sectionName": "Test System Quality", "title": "positive_control_request_fields_accepted"}
 	t.Run("positive_control_request_fields_accepted", func(t *testing.T) {
 		// Positive control: verify that the handler accepts all documented
 		// request fields without error. This proves the golden schema is not
@@ -2346,12 +2415,14 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 // Core returns {"scrubbed":"...","entities":[...]} with 200. Errors return
 // proper status codes and error JSON. The contract must be verified through
 // the real handler (not a mock) to catch serialization mismatches.
+// TRACE: {"suite": "CORE", "case": "0639", "section": "30", "sectionName": "Test System Quality", "subsection": "03", "scenario": "07", "title": "PIIScrubContractBrainToCore"}
 func TestContract_30_3_7_PIIScrubContractBrainToCore(t *testing.T) {
 	// Build a PIIHandler with a mock scrubber that produces known output.
 	piiH := &handler.PIIHandler{
 		Scrubber: &contractPIIScrubber{},
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0640", "section": "30", "sectionName": "Test System Quality", "title": "valid_scrub_request_returns_scrubbed_and_entities"}
 	t.Run("valid_scrub_request_returns_scrubbed_and_entities", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{
 			"text": "My email is alice@example.com and phone is 555-0100",
@@ -2425,6 +2496,7 @@ func TestContract_30_3_7_PIIScrubContractBrainToCore(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0641", "section": "30", "sectionName": "Test System Quality", "title": "empty_text_returns_400"}
 	t.Run("empty_text_returns_400", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{"text": ""})
 		req := httptest.NewRequest(http.MethodPost, "/v1/pii/scrub", bytes.NewReader(body))
@@ -2440,6 +2512,7 @@ func TestContract_30_3_7_PIIScrubContractBrainToCore(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0642", "section": "30", "sectionName": "Test System Quality", "title": "invalid_json_body_returns_400"}
 	t.Run("invalid_json_body_returns_400", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/pii/scrub", bytes.NewReader([]byte("not json")))
 		rr := httptest.NewRecorder()
@@ -2453,6 +2526,7 @@ func TestContract_30_3_7_PIIScrubContractBrainToCore(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0643", "section": "30", "sectionName": "Test System Quality", "title": "wrong_method_returns_405"}
 	t.Run("wrong_method_returns_405", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/pii/scrub", nil)
 		rr := httptest.NewRecorder()
@@ -2463,6 +2537,7 @@ func TestContract_30_3_7_PIIScrubContractBrainToCore(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0644", "section": "30", "sectionName": "Test System Quality", "title": "scrubber_error_returns_500"}
 	t.Run("scrubber_error_returns_500", func(t *testing.T) {
 		// Use a failing scrubber to test error handling.
 		failH := &handler.PIIHandler{
@@ -2488,6 +2563,7 @@ func TestContract_30_3_7_PIIScrubContractBrainToCore(t *testing.T) {
 // responses must come from the real mux with handlers wired to mock ports.
 // This validates the wiring (route registration, method dispatch, handler
 // selection) through the same code path used in production.
+// TRACE: {"suite": "CORE", "case": "0645", "section": "30", "sectionName": "Test System Quality", "subsection": "03", "scenario": "01", "title": "RealCoreHTTPRouterContract"}
 func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 	// Build a real mux with the same route registrations as main.go,
 	// using mock ports so we don't need real databases or crypto.
@@ -2525,6 +2601,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 
 	client := ts.Client()
 
+	// TRACE: {"suite": "CORE", "case": "0646", "section": "30", "sectionName": "Test System Quality", "title": "vault_query_routed_correctly"}
 	t.Run("vault_query_routed_correctly", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]interface{}{
 			"persona": "general",
@@ -2552,6 +2629,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0647", "section": "30", "sectionName": "Test System Quality", "title": "vault_store_routed_correctly"}
 	t.Run("vault_store_routed_correctly", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]interface{}{
 			"persona": "general",
@@ -2579,6 +2657,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0648", "section": "30", "sectionName": "Test System Quality", "title": "vault_store_batch_routed_correctly"}
 	t.Run("vault_store_batch_routed_correctly", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]interface{}{
 			"persona": "general",
@@ -2606,6 +2685,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0649", "section": "30", "sectionName": "Test System Quality", "title": "pii_scrub_routed_correctly"}
 	t.Run("pii_scrub_routed_correctly", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{
 			"text": "My email is alice@example.com",
@@ -2632,6 +2712,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0650", "section": "30", "sectionName": "Test System Quality", "title": "healthz_routed_correctly"}
 	t.Run("healthz_routed_correctly", func(t *testing.T) {
 		resp, err := client.Get(ts.URL + "/healthz")
 		if err != nil {
@@ -2652,6 +2733,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0651", "section": "30", "sectionName": "Test System Quality", "title": "unregistered_route_returns_404"}
 	t.Run("unregistered_route_returns_404", func(t *testing.T) {
 		resp, err := client.Get(ts.URL + "/v1/nonexistent")
 		if err != nil {
@@ -2664,6 +2746,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0652", "section": "30", "sectionName": "Test System Quality", "title": "wrong_method_on_vault_query_returns_405"}
 	t.Run("wrong_method_on_vault_query_returns_405", func(t *testing.T) {
 		resp, err := client.Get(ts.URL + "/v1/vault/query")
 		if err != nil {
@@ -2684,6 +2767,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 // vault query endpoint. Core returns {"items":[...]} with matching items.
 // The contract must validate all request fields accepted by the handler
 // (persona, query, mode, types, limit, embedding) and all response invariants.
+// TRACE: {"suite": "CORE", "case": "0653", "section": "30", "sectionName": "Test System Quality", "subsection": "03", "scenario": "06", "title": "BrainToCoreVaultQueryContract"}
 func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 	// Wire up the full handler stack with predictable mock data.
 	mgr := newGatekeeperVaultManager()
@@ -2695,6 +2779,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 	vaultSvc := service.NewVaultService(mgr, reader, &goldenSchemaWriter{}, gk, &simpleClock{})
 	h := &handler.VaultHandler{Vault: vaultSvc}
 
+	// TRACE: {"suite": "CORE", "case": "0654", "section": "30", "sectionName": "Test System Quality", "title": "minimal_query_persona_and_text_only"}
 	t.Run("minimal_query_persona_and_text_only", func(t *testing.T) {
 		// Brain sends the minimum required fields: persona + query text.
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2729,6 +2814,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0655", "section": "30", "sectionName": "Test System Quality", "title": "full_query_all_fields_accepted"}
 	t.Run("full_query_all_fields_accepted", func(t *testing.T) {
 		// Brain may send all optional fields. Core must accept them without error.
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2748,6 +2834,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0656", "section": "30", "sectionName": "Test System Quality", "title": "query_different_persona"}
 	t.Run("query_different_persona", func(t *testing.T) {
 		// Brain queries a different persona (health). Must work if persona is open.
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2763,6 +2850,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0657", "section": "30", "sectionName": "Test System Quality", "title": "query_locked_persona_returns_403"}
 	t.Run("query_locked_persona_returns_403", func(t *testing.T) {
 		// Brain queries a persona that hasn't been opened → 403 Forbidden.
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2781,6 +2869,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0658", "section": "30", "sectionName": "Test System Quality", "title": "query_invalid_persona_name_returns_400"}
 	t.Run("query_invalid_persona_name_returns_400", func(t *testing.T) {
 		// Brain sends an invalid persona name (contains special chars).
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2799,6 +2888,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0659", "section": "30", "sectionName": "Test System Quality", "title": "query_empty_body_returns_400"}
 	t.Run("query_empty_body_returns_400", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/query", bytes.NewReader([]byte("not json")))
 		rr := httptest.NewRecorder()
@@ -2809,6 +2899,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0660", "section": "30", "sectionName": "Test System Quality", "title": "items_array_has_expected_fields"}
 	t.Run("items_array_has_expected_fields", func(t *testing.T) {
 		// Validate that each item in the response has the expected vault item fields.
 		body, _ := json.Marshal(map[string]interface{}{
@@ -2839,6 +2930,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0661", "section": "30", "sectionName": "Test System Quality", "title": "search_mode_degradation_signals"}
 	t.Run("search_mode_degradation_signals", func(t *testing.T) {
 		// When Brain requests semantic/hybrid search without embedding,
 		// Core must signal degradation via response headers.
@@ -2879,6 +2971,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 // Delete method must be called, and subsequent GetItem must fail with
 // "not found". This validates that test cleanup uses actual deletion,
 // not just filtering items out of a mock dictionary.
+// TRACE: {"suite": "CORE", "case": "0662", "section": "30", "sectionName": "Test System Quality", "subsection": "06", "scenario": "03", "title": "RealDeleteAPIsUsedNotFiltering"}
 func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 	// Build a handler stack with a tracking writer that records delete calls.
 	mgr := newGatekeeperVaultManager()
@@ -2890,6 +2983,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 	vaultSvc := service.NewVaultService(mgr, reader, tracker, gk, &simpleClock{})
 	h := &handler.VaultHandler{Vault: vaultSvc}
 
+	// TRACE: {"suite": "CORE", "case": "0663", "section": "30", "sectionName": "Test System Quality", "title": "delete_calls_writer_delete_method"}
 	t.Run("delete_calls_writer_delete_method", func(t *testing.T) {
 		// Pre-populate the reader with an item.
 		reader.mu.Lock()
@@ -2918,6 +3012,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 		tracker.mu.Unlock()
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0664", "section": "30", "sectionName": "Test System Quality", "title": "get_item_after_delete_returns_not_found"}
 	t.Run("get_item_after_delete_returns_not_found", func(t *testing.T) {
 		// Remove the item from the reader to simulate deletion.
 		reader.mu.Lock()
@@ -2934,6 +3029,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0665", "section": "30", "sectionName": "Test System Quality", "title": "delete_on_locked_persona_returns_403"}
 	t.Run("delete_on_locked_persona_returns_403", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/any-id?persona=financial", nil)
 		rr := httptest.NewRecorder()
@@ -2947,6 +3043,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0666", "section": "30", "sectionName": "Test System Quality", "title": "delete_with_empty_id_returns_400"}
 	t.Run("delete_with_empty_id_returns_400", func(t *testing.T) {
 		// URL path ending in "/" gives empty ID.
 		req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/?persona=general", nil)
@@ -2958,6 +3055,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0667", "section": "30", "sectionName": "Test System Quality", "title": "wrong_method_returns_405"}
 	t.Run("wrong_method_returns_405", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/item/some-id?persona=general", nil)
 		rr := httptest.NewRecorder()
@@ -2968,6 +3066,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0668", "section": "30", "sectionName": "Test System Quality", "title": "multiple_deletes_are_tracked"}
 	t.Run("multiple_deletes_are_tracked", func(t *testing.T) {
 		// Reset tracker.
 		tracker.mu.Lock()
@@ -3003,12 +3102,14 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 // category (email, SSN, credit card, phone, IP address) and for every
 // destination type (trusted, blocked, unknown). All patterns must be
 // validated against the real gatekeeper implementation, not mocks.
+// TRACE: {"suite": "CORE", "case": "0669", "section": "30", "sectionName": "Test System Quality", "subsection": "10", "scenario": "03", "title": "EgressPolicyEnforcementAllCategories"}
 func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
 	ctx := context.Background()
 
+	// TRACE: {"suite": "CORE", "case": "0670", "section": "30", "sectionName": "Test System Quality", "title": "pii_email_blocked"}
 	t.Run("pii_email_blocked", func(t *testing.T) {
 		data := []byte(`{"user":"Alice","email":"alice@example.com"}`)
 		allowed, err := impl.CheckEgress(ctx, "https://external-api.example.com", data)
@@ -3018,6 +3119,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0671", "section": "30", "sectionName": "Test System Quality", "title": "pii_ssn_blocked"}
 	t.Run("pii_ssn_blocked", func(t *testing.T) {
 		data := []byte(`{"name":"Bob","ssn":"123-45-6789"}`)
 		allowed, err := impl.CheckEgress(ctx, "https://external-api.example.com", data)
@@ -3027,6 +3129,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0672", "section": "30", "sectionName": "Test System Quality", "title": "pii_credit_card_blocked"}
 	t.Run("pii_credit_card_blocked", func(t *testing.T) {
 		data := []byte(`{"payment":"4532-1234-5678-9012"}`)
 		allowed, err := impl.CheckEgress(ctx, "https://external-api.example.com", data)
@@ -3036,6 +3139,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0673", "section": "30", "sectionName": "Test System Quality", "title": "pii_phone_blocked"}
 	t.Run("pii_phone_blocked", func(t *testing.T) {
 		data := []byte(`{"contact":"555-123-4567"}`)
 		allowed, err := impl.CheckEgress(ctx, "https://external-api.example.com", data)
@@ -3045,6 +3149,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0674", "section": "30", "sectionName": "Test System Quality", "title": "pii_ip_address_blocked"}
 	t.Run("pii_ip_address_blocked", func(t *testing.T) {
 		data := []byte(`{"server":"192.168.1.100"}`)
 		allowed, err := impl.CheckEgress(ctx, "https://external-api.example.com", data)
@@ -3054,6 +3159,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0675", "section": "30", "sectionName": "Test System Quality", "title": "clean_data_to_trusted_destination_allowed"}
 	t.Run("clean_data_to_trusted_destination_allowed", func(t *testing.T) {
 		data := []byte(`{"summary":"weather data","temp":72}`)
 		allowed, err := impl.CheckEgress(ctx, "https://trusted-api.example.com", data)
@@ -3063,6 +3169,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0676", "section": "30", "sectionName": "Test System Quality", "title": "clean_data_to_unknown_destination_allowed"}
 	t.Run("clean_data_to_unknown_destination_allowed", func(t *testing.T) {
 		data := []byte(`{"summary":"product info","price":29.99}`)
 		allowed, err := impl.CheckEgress(ctx, "https://random-api.example.com", data)
@@ -3072,6 +3179,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0677", "section": "30", "sectionName": "Test System Quality", "title": "any_data_to_blocked_destination_denied"}
 	t.Run("any_data_to_blocked_destination_denied", func(t *testing.T) {
 		data := []byte(`{"summary":"safe data"}`)
 		allowed, err := impl.CheckEgress(ctx, "https://blocked-tracker.example.com", data)
@@ -3081,6 +3189,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0678", "section": "30", "sectionName": "Test System Quality", "title": "pii_to_trusted_destination_still_blocked"}
 	t.Run("pii_to_trusted_destination_still_blocked", func(t *testing.T) {
 		// PII must NEVER leave the Home Node, even to trusted destinations.
 		data := []byte(`{"email":"secret@example.com"}`)
@@ -3091,6 +3200,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0679", "section": "30", "sectionName": "Test System Quality", "title": "nil_data_to_any_destination_allowed"}
 	t.Run("nil_data_to_any_destination_allowed", func(t *testing.T) {
 		// Nil data (health-check pings) should always be allowed.
 		allowed, err := impl.CheckEgress(ctx, "https://any-api.example.com", nil)
@@ -3100,6 +3210,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0680", "section": "30", "sectionName": "Test System Quality", "title": "empty_destination_returns_error"}
 	t.Run("empty_destination_returns_error", func(t *testing.T) {
 		_, err := impl.CheckEgress(ctx, "", []byte("any data"))
 		if err == nil {
@@ -3107,6 +3218,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0681", "section": "30", "sectionName": "Test System Quality", "title": "multiple_pii_types_in_single_payload_blocked"}
 	t.Run("multiple_pii_types_in_single_payload_blocked", func(t *testing.T) {
 		// A payload with multiple PII types must still be caught.
 		data := []byte(`{"email":"a@b.com","ssn":"999-88-7777","phone":"555-111-2222","card":"4111-1111-1111-1111"}`)
@@ -3117,6 +3229,7 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0682", "section": "30", "sectionName": "Test System Quality", "title": "pii_embedded_in_large_json_still_detected"}
 	t.Run("pii_embedded_in_large_json_still_detected", func(t *testing.T) {
 		// PII buried deep in a large JSON payload must still be detected.
 		data := []byte(`{
@@ -3143,12 +3256,14 @@ func TestSecurity_30_10_3_EgressPolicyEnforcementAllCategories(t *testing.T) {
 // enforces task-scoped access: draft_only blocks risky actions,
 // persona_X_only blocks cross-persona access. Constraints compound —
 // an agent with multiple constraints is restricted by ALL of them.
+// TRACE: {"suite": "CORE", "case": "0683", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "09", "title": "AgentCannotEscalateFromTaskScopedToFullAccess"}
 func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testing.T) {
 	impl := gatekeeper.New()
 	ctx := context.Background()
 
 	// --- draft_only constraint blocks ALL risky actions ---
 
+	// TRACE: {"suite": "CORE", "case": "0684", "section": "34", "sectionName": "Thesis: Loyalty", "title": "draft_only_blocks_send_email"}
 	t.Run("draft_only_blocks_send_email", func(t *testing.T) {
 		// An agent constrained to draft_only mode MUST NOT perform send_email.
 		// This is the core task-scope enforcement: drafting is allowed, direct action is not.
@@ -3167,6 +3282,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0685", "section": "34", "sectionName": "Thesis: Loyalty", "title": "draft_only_blocks_transfer_money"}
 	t.Run("draft_only_blocks_transfer_money", func(t *testing.T) {
 		// Financial actions are even more critical — draft_only must block them.
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
@@ -3181,6 +3297,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0686", "section": "34", "sectionName": "Thesis: Loyalty", "title": "draft_only_blocks_share_data"}
 	t.Run("draft_only_blocks_share_data", func(t *testing.T) {
 		// Data sharing is a risky action — must be blocked for draft-only agents.
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
@@ -3197,6 +3314,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 
 	// --- draft_only still allows non-risky operations ---
 
+	// TRACE: {"suite": "CORE", "case": "0687", "section": "34", "sectionName": "Thesis: Loyalty", "title": "draft_only_allows_vault_read"}
 	t.Run("draft_only_allows_vault_read", func(t *testing.T) {
 		// Vault reads are safe operations — draft_only should not block them.
 		// The constraint only restricts RISKY actions, not all actions.
@@ -3215,6 +3333,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 
 	// --- persona_X_only blocks cross-persona access ---
 
+	// TRACE: {"suite": "CORE", "case": "0688", "section": "34", "sectionName": "Thesis: Loyalty", "title": "persona_constraint_blocks_cross_persona_access"}
 	t.Run("persona_constraint_blocks_cross_persona_access", func(t *testing.T) {
 		// An agent constrained to "general" persona MUST NOT access "financial".
 		// This prevents lateral movement between persona compartments.
@@ -3234,6 +3353,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0689", "section": "34", "sectionName": "Thesis: Loyalty", "title": "persona_constraint_allows_own_persona"}
 	t.Run("persona_constraint_allows_own_persona", func(t *testing.T) {
 		// The same agent CAN access the persona it's authorized for.
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
@@ -3249,6 +3369,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0690", "section": "34", "sectionName": "Thesis: Loyalty", "title": "persona_constraint_blocks_all_other_personas"}
 	t.Run("persona_constraint_blocks_all_other_personas", func(t *testing.T) {
 		// Test that the constraint blocks EVERY other persona, not just one.
 		// An agent constrained to "health" must be blocked from personal, financial, and social.
@@ -3270,6 +3391,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 
 	// --- Compound constraints: BOTH apply ---
 
+	// TRACE: {"suite": "CORE", "case": "0691", "section": "34", "sectionName": "Thesis: Loyalty", "title": "compound_constraints_both_enforced"}
 	t.Run("compound_constraints_both_enforced", func(t *testing.T) {
 		// An agent with BOTH draft_only AND persona_general_only must be
 		// denied on either dimension. This verifies constraints compound.
@@ -3325,6 +3447,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 
 	// --- Constraint bypass attempts ---
 
+	// TRACE: {"suite": "CORE", "case": "0692", "section": "34", "sectionName": "Thesis: Loyalty", "title": "false_constraint_value_does_not_restrict"}
 	t.Run("false_constraint_value_does_not_restrict", func(t *testing.T) {
 		// Setting a constraint to false should NOT apply it.
 		// An agent may attempt to "disable" a constraint by setting it false.
@@ -3343,6 +3466,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0693", "section": "34", "sectionName": "Thesis: Loyalty", "title": "nil_constraints_no_restriction"}
 	t.Run("nil_constraints_no_restriction", func(t *testing.T) {
 		// An agent with nil constraints has no scope restriction.
 		// But trust level and action risk rules still apply.
@@ -3359,6 +3483,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0694", "section": "34", "sectionName": "Thesis: Loyalty", "title": "brain_agent_with_constraints_still_denied_security_actions"}
 	t.Run("brain_agent_with_constraints_still_denied_security_actions", func(t *testing.T) {
 		// Even if someone manages to set constraints on the brain agent,
 		// brainDeniedActions still block security-critical operations.
@@ -3391,6 +3516,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 // --------------------------------------------------------------------------
 
 // TST-CORE-1200
+// TRACE: {"suite": "CORE", "case": "0695", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "03", "scenario": "01", "title": "ApprovalLifecycleE2E"}
 func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	ctx := context.Background()
 	agentDID := "did:key:z6MkTestOpenClawAgent"
@@ -3448,6 +3574,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// ---------- Phase 1: Default persona — always allowed ----------
+	// TRACE: {"suite": "CORE", "case": "0696", "section": "34", "sectionName": "Thesis: Loyalty", "title": "default_persona_always_allowed_for_agent"}
 	t.Run("default_persona_always_allowed_for_agent", func(t *testing.T) {
 		// Agent must provide a valid session — even for default tier.
 		aCtx := agentCtx(agentDID, "approval-e2e")
@@ -3456,6 +3583,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	})
 
 	// ---------- Phase 2: Standard persona — agent without session gets denied ----------
+	// TRACE: {"suite": "CORE", "case": "0697", "section": "34", "sectionName": "Thesis: Loyalty", "title": "standard_persona_denied_without_session"}
 	t.Run("standard_persona_denied_without_session", func(t *testing.T) {
 		aCtx := agentCtx(agentDID, "")
 		_, err := vaultSvc.Query(aCtx, agentDID, "consumer", q)
@@ -3467,6 +3595,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	})
 
 	// ---------- Phase 3: Start session, sensitive still denied ----------
+	// TRACE: {"suite": "CORE", "case": "0698", "section": "34", "sectionName": "Thesis: Loyalty", "title": "sensitive_persona_denied_then_approved"}
 	t.Run("sensitive_persona_denied_then_approved", func(t *testing.T) {
 		// Start a session.
 		sess, err := pm.StartSession(ctx, agentDID, sessionName)
@@ -3542,6 +3671,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	})
 
 	// ---------- Phase 4: Different agent is still denied ----------
+	// TRACE: {"suite": "CORE", "case": "0699", "section": "34", "sectionName": "Thesis: Loyalty", "title": "cross_agent_grant_isolation"}
 	t.Run("cross_agent_grant_isolation", func(t *testing.T) {
 		otherAgent := "did:key:z6MkOtherMaliciousAgent"
 		// Start a different agent's session.
@@ -3558,6 +3688,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	})
 
 	// ---------- Phase 5: User/admin always allowed for sensitive ----------
+	// TRACE: {"suite": "CORE", "case": "0700", "section": "34", "sectionName": "Thesis: Loyalty", "title": "user_always_allowed_for_sensitive"}
 	t.Run("user_always_allowed_for_sensitive", func(t *testing.T) {
 		uCtx := userCtx()
 		_, err := vaultSvc.Query(uCtx, "user", "health", q)
@@ -3565,6 +3696,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	})
 
 	// ---------- Phase 6: Locked persona denies agents even with session ----------
+	// TRACE: {"suite": "CORE", "case": "0701", "section": "34", "sectionName": "Thesis: Loyalty", "title": "locked_persona_denies_agent_unconditionally"}
 	t.Run("locked_persona_denies_agent_unconditionally", func(t *testing.T) {
 		// Wire passphrase verifier so Unlock works.
 		pm.VerifyPassphrase = func(hash, passphrase string) (bool, error) {
@@ -3590,6 +3722,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	})
 
 	// ---------- Phase 7: Session end revokes grants ----------
+	// TRACE: {"suite": "CORE", "case": "0702", "section": "34", "sectionName": "Thesis: Loyalty", "title": "session_end_revokes_grants"}
 	t.Run("session_end_revokes_grants", func(t *testing.T) {
 		// End the session.
 		err := pm.EndSession(ctx, agentDID, sessionName)
@@ -3610,6 +3743,7 @@ func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
 	})
 
 	// ---------- Phase 8: Deny flow ----------
+	// TRACE: {"suite": "CORE", "case": "0703", "section": "34", "sectionName": "Thesis: Loyalty", "title": "denied_approval_stays_denied"}
 	t.Run("denied_approval_stays_denied", func(t *testing.T) {
 		aCtx := agentCtx(agentDID, "new-session")
 

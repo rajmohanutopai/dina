@@ -24,6 +24,7 @@ class TestMemoryRecall:
     """Suite 4 — Memory & Recall (TST-E2E-019 through TST-E2E-022)."""
 
     # TST-E2E-019
+    # TRACE: {"suite": "E2E", "case": "0019", "section": "04", "sectionName": "Memory Recall", "subsection": "01", "scenario": "01", "title": "hybrid_search_fts5_plus_vector"}
     def test_hybrid_search_fts5_plus_vector(
         self, fresh_don_alonso: HomeNode, plc_directory, d2d_network,
     ) -> None:
@@ -102,6 +103,7 @@ class TestMemoryRecall:
             )
 
     # TST-E2E-020
+    # TRACE: {"suite": "E2E", "case": "0020", "section": "04", "sectionName": "Memory Recall", "subsection": "01", "scenario": "02", "title": "emotional_recall"}
     def test_emotional_recall(
         self, fresh_don_alonso: HomeNode, plc_directory, d2d_network,
     ) -> None:
@@ -166,6 +168,7 @@ class TestMemoryRecall:
             )
 
     # TST-E2E-021
+    # TRACE: {"suite": "E2E", "case": "0021", "section": "04", "sectionName": "Memory Recall", "subsection": "01", "scenario": "03", "title": "offline_recall_rich_client_cache"}
     def test_offline_recall_rich_client_cache(
         self, don_alonso: HomeNode,
     ) -> None:
@@ -255,6 +258,7 @@ class TestMemoryRecall:
         assert "vi_cache_002" in device.local_cache
 
     # TST-E2E-022
+    # TRACE: {"suite": "E2E", "case": "0022", "section": "04", "sectionName": "Memory Recall", "subsection": "01", "scenario": "04", "title": "cross_persona_search_isolation"}
     def test_cross_persona_search_isolation(
         self, fresh_don_alonso: HomeNode, plc_directory, d2d_network,
     ) -> None:

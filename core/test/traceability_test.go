@@ -133,9 +133,11 @@ func countGoTestFunctions(t *testing.T) (int, map[string][]string) {
 // Requirement: The test_manifest.json `total` field must be non-zero, the
 // `scenarios` map must be non-empty, and the `sections` totals must be
 // consistent with `total`. CI must catch drift between manifest and test code.
+// TRACE: {"suite": "CORE", "case": "1420", "section": "30", "sectionName": "Test System Quality", "subsection": "07", "scenario": "01", "title": "ManifestTotalsMatchActual"}
 func TestTraceability_30_7_1_ManifestTotalsMatchActual(t *testing.T) {
 	m := loadManifest(t)
 
+	// TRACE: {"suite": "CORE", "case": "1421", "section": "30", "sectionName": "Test System Quality", "title": "total_is_non_zero"}
 	t.Run("total_is_non_zero", func(t *testing.T) {
 		// TST-CORE-1013: CI validates manifest totals are non-zero.
 		if m.Total == 0 {
@@ -143,12 +145,14 @@ func TestTraceability_30_7_1_ManifestTotalsMatchActual(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1422", "section": "30", "sectionName": "Test System Quality", "title": "scenarios_count_is_non_zero"}
 	t.Run("scenarios_count_is_non_zero", func(t *testing.T) {
 		if len(m.Scenarios) == 0 {
 			t.Fatal("manifest scenarios must be non-zero")
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1423", "section": "30", "sectionName": "Test System Quality", "title": "sections_sum_equals_total"}
 	t.Run("sections_sum_equals_total", func(t *testing.T) {
 		// The total field should match the sum of all section ID lists.
 		sectionSum := 0
@@ -161,6 +165,7 @@ func TestTraceability_30_7_1_ManifestTotalsMatchActual(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1424", "section": "30", "sectionName": "Test System Quality", "title": "scenarios_count_at_least_total"}
 	t.Run("scenarios_count_at_least_total", func(t *testing.T) {
 		// Scenarios may include entries not in any section, but must have
 		// at least as many entries as the total (every section ID must exist).
@@ -170,6 +175,7 @@ func TestTraceability_30_7_1_ManifestTotalsMatchActual(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1425", "section": "30", "sectionName": "Test System Quality", "title": "every_section_id_has_scenario_entry"}
 	t.Run("every_section_id_has_scenario_entry", func(t *testing.T) {
 		missing := 0
 		for section, ids := range m.Sections {
@@ -185,6 +191,7 @@ func TestTraceability_30_7_1_ManifestTotalsMatchActual(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1426", "section": "30", "sectionName": "Test System Quality", "title": "actual_go_test_functions_exist"}
 	t.Run("actual_go_test_functions_exist", func(t *testing.T) {
 		// Validate that Go test files contain a reasonable number of test functions.
 		// This catches scenarios where test files are accidentally deleted or emptied.
@@ -201,6 +208,7 @@ func TestTraceability_30_7_1_ManifestTotalsMatchActual(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1427", "section": "30", "sectionName": "Test System Quality", "title": "total_exceeds_safety_threshold"}
 	t.Run("total_exceeds_safety_threshold", func(t *testing.T) {
 		// The manifest should reflect a comprehensive test suite.
 		// A total below 500 would indicate massive plan regression.
@@ -218,10 +226,12 @@ func TestTraceability_30_7_1_ManifestTotalsMatchActual(t *testing.T) {
 // tags in their preceding comment blocks, establishing traceability between
 // code and the test plan. This test validates that the mapping exists and
 // detects orphan tests that are missing plan references.
+// TRACE: {"suite": "CORE", "case": "1428", "section": "30", "sectionName": "Test System Quality", "subsection": "07", "scenario": "03", "title": "GoTestFunctionsMappedToPlanIDs"}
 func TestTraceability_30_7_3_GoTestFunctionsMappedToPlanIDs(t *testing.T) {
 	m := loadManifest(t)
 	_, funcTags := countGoTestFunctions(t)
 
+	// TRACE: {"suite": "CORE", "case": "1429", "section": "30", "sectionName": "Test System Quality", "title": "tagged_functions_reference_mostly_valid_ids"}
 	t.Run("tagged_functions_reference_mostly_valid_ids", func(t *testing.T) {
 		// Test code may reference TST-CORE IDs that were added after the manifest
 		// was last regenerated. We validate that the MAJORITY of references are valid.
@@ -252,6 +262,7 @@ func TestTraceability_30_7_3_GoTestFunctionsMappedToPlanIDs(t *testing.T) {
 			validRatio*100, validRefs, totalRefs, totalRefs-validRefs)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1430", "section": "30", "sectionName": "Test System Quality", "title": "minimum_tagged_coverage"}
 	t.Run("minimum_tagged_coverage", func(t *testing.T) {
 		// A significant proportion of test functions should have plan IDs.
 		// This prevents the codebase from drifting away from plan traceability.
@@ -279,6 +290,7 @@ func TestTraceability_30_7_3_GoTestFunctionsMappedToPlanIDs(t *testing.T) {
 			coverageRatio*100, len(coveredIDs), len(m.Scenarios))
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1431", "section": "30", "sectionName": "Test System Quality", "title": "no_extreme_id_duplication"}
 	t.Run("no_extreme_id_duplication", func(t *testing.T) {
 		// Test IDs may legitimately span multiple functions. Crypto tests
 		// (§2.2 SLIP-0010, §2.7 NaCl) bulk-tag 14-18 functions per ID group.
@@ -305,6 +317,7 @@ func TestTraceability_30_7_3_GoTestFunctionsMappedToPlanIDs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1432", "section": "30", "sectionName": "Test System Quality", "title": "manifest_scenario_ids_follow_format"}
 	t.Run("manifest_scenario_ids_follow_format", func(t *testing.T) {
 		// Every scenario ID must match the TST-CORE-NNN format.
 		idFormat := regexp.MustCompile(`^TST-CORE-\d+$`)
@@ -359,6 +372,7 @@ func readProjectFile(t *testing.T, root, relPath string) string {
 // file should contain token fallback patterns like `client_token or brain_token`.
 // This anti-pattern would silently use the wrong auth method if the correct
 // token is missing, masking configuration errors and violating auth separation.
+// TRACE: {"suite": "CORE", "case": "1433", "section": "30", "sectionName": "Test System Quality", "subsection": "05", "scenario": "04", "title": "NoTokenFallbackInAnyConftest"}
 func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 	root := findProjectRoot(t)
 
@@ -387,6 +401,7 @@ func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 		regexp.MustCompile(`getenv\([^)]*BRAIN_TOKEN[^)]*\)\s*or\s*`),
 	}
 
+	// TRACE: {"suite": "CORE", "case": "1434", "section": "30", "sectionName": "Test System Quality", "title": "zero_fallback_patterns_across_all_conftest_files"}
 	t.Run("zero_fallback_patterns_across_all_conftest_files", func(t *testing.T) {
 		violations := 0
 		for _, relPath := range conftestPaths {
@@ -414,6 +429,7 @@ func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 		t.Logf("scanned %d conftest files, zero token fallback patterns found", len(conftestPaths))
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1435", "section": "30", "sectionName": "Test System Quality", "title": "no_brain_token_in_admin_operations"}
 	t.Run("no_brain_token_in_admin_operations", func(t *testing.T) {
 		// brain_token must NEVER be used for admin operations (persona create,
 		// unlock, device management, etc.). Only CLIENT_TOKEN is valid for admin.
@@ -465,9 +481,11 @@ func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 // (not brain_token) for persona create/unlock operations. Integration conftest
 // must use CLIENT_TOKEN for admin setup. This separation ensures tests exercise
 // the correct auth path and don't mask missing tokens via silent fallback.
+// TRACE: {"suite": "CORE", "case": "1436", "section": "30", "sectionName": "Test System Quality", "subsection": "02", "scenario": "01", "title": "ConftestUsesClientTokenForAdminOps"}
 func TestCompliance_30_2_1_ConftestUsesClientTokenForAdminOps(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "1437", "section": "30", "sectionName": "Test System Quality", "title": "e2e_conftest_uses_client_token_for_persona_ops"}
 	t.Run("e2e_conftest_uses_client_token_for_persona_ops", func(t *testing.T) {
 		// TST-CORE-987: E2E conftest uses CLIENT_TOKEN for persona create/unlock.
 		// The conftest MUST reference client_token (from docker_services) for
@@ -510,6 +528,7 @@ func TestCompliance_30_2_1_ConftestUsesClientTokenForAdminOps(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1438", "section": "30", "sectionName": "Test System Quality", "title": "integration_conftest_uses_client_token_for_admin_setup"}
 	t.Run("integration_conftest_uses_client_token_for_admin_setup", func(t *testing.T) {
 		// TST-CORE-988: Integration conftest uses CLIENT_TOKEN for admin setup.
 		// No `client_token or brain_token` fallback pattern.
@@ -538,6 +557,7 @@ func TestCompliance_30_2_1_ConftestUsesClientTokenForAdminOps(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1439", "section": "30", "sectionName": "Test System Quality", "title": "admin_headers_reference_client_token_not_brain_token"}
 	t.Run("admin_headers_reference_client_token_not_brain_token", func(t *testing.T) {
 		// Both E2E and integration conftest should construct admin headers
 		// using CLIENT_TOKEN. This subtest verifies that any line setting
@@ -575,9 +595,11 @@ func TestCompliance_30_2_1_ConftestUsesClientTokenForAdminOps(t *testing.T) {
 // causes confusing 401s deep in test setup, and violates auth separation.
 // The Docker service classes must raise RuntimeError before attempting any
 // persona operations with a missing token.
+// TRACE: {"suite": "CORE", "case": "1440", "section": "30", "sectionName": "Test System Quality", "subsection": "02", "scenario": "04", "title": "DockerModeFailsFastOnMissingClientToken"}
 func TestCompliance_30_2_4_DockerModeFailsFastOnMissingClientToken(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "1441", "section": "30", "sectionName": "Test System Quality", "title": "all_docker_services_have_fail_fast_assertion"}
 	t.Run("all_docker_services_have_fail_fast_assertion", func(t *testing.T) {
 		// TestStackServices reads client_token from a file — if the file is
 		// missing or empty, Path.read_text() raises or returns empty string.
@@ -590,6 +612,7 @@ func TestCompliance_30_2_4_DockerModeFailsFastOnMissingClientToken(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1442", "section": "30", "sectionName": "Test System Quality", "title": "no_silent_empty_token_acceptance"}
 	t.Run("no_silent_empty_token_acceptance", func(t *testing.T) {
 		// Integration conftest must reference client_token (from TestStackServices).
 		conftest := readProjectFile(t, root, filepath.Join("tests", "integration", "conftest.py"))
@@ -598,6 +621,7 @@ func TestCompliance_30_2_4_DockerModeFailsFastOnMissingClientToken(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1443", "section": "30", "sectionName": "Test System Quality", "title": "error_message_is_actionable"}
 	t.Run("error_message_is_actionable", func(t *testing.T) {
 		// prepare_non_unit_env.sh must reference secrets/client_token so
 		// the error is actionable when the token is missing.
@@ -616,6 +640,7 @@ func TestCompliance_30_2_4_DockerModeFailsFastOnMissingClientToken(t *testing.T)
 // establishing traceability between pytest test names and the test plan.
 // This enables `pytest --collect-only` output to be mapped to plan IDs.
 // Without these tags, tests become untraceable orphans.
+// TRACE: {"suite": "CORE", "case": "1444", "section": "30", "sectionName": "Test System Quality", "subsection": "07", "scenario": "04", "title": "PytestCollectOnlyMapsToPlanIDs"}
 func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 	root := findProjectRoot(t)
 
@@ -633,9 +658,13 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 
 	// Regex to find Python test function definitions.
 	pyTestFuncRe := regexp.MustCompile(`^\s*(?:def|async def)\s+(test_\w+)`)
+	// TRACE comment: # TRACE: {"suite":"...","case":"...","section":"...",...}
+	traceRe := regexp.MustCompile(`^\s*#\s*TRACE:\s*\{`)
 
+	// TRACE: {"suite": "CORE", "case": "1445", "section": "30", "sectionName": "Test System Quality", "title": "python_test_files_have_plan_id_tags"}
 	t.Run("python_test_files_have_plan_id_tags", func(t *testing.T) {
-		// Each Python test suite must have TST-* tags above test functions.
+		// Each Python test suite must have a TRACE comment on the line
+		// immediately above the test function (per docs/TEST_SPEC.md).
 		for _, suite := range suites {
 			suiteDir := filepath.Join(root, suite.dir)
 			entries, err := os.ReadDir(suiteDir)
@@ -645,7 +674,6 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 
 			totalTests := 0
 			taggedTests := 0
-			tagRe := regexp.MustCompile(regexp.QuoteMeta(suite.tagPrefix) + `\d+`)
 
 			for _, entry := range entries {
 				if entry.IsDir() || !strings.HasPrefix(entry.Name(), "test_") || !strings.HasSuffix(entry.Name(), ".py") {
@@ -658,21 +686,12 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 				}
 				lines := strings.Split(string(data), "\n")
 
-				// Scan for test functions and check preceding lines for tags.
+				// Scan for test functions — check if the line above has a TRACE comment.
 				for i, line := range lines {
 					if m := pyTestFuncRe.FindStringSubmatch(line); m != nil {
 						totalTests++
-						// Look back up to 5 lines for a TST tag.
-						for j := i - 1; j >= 0 && j >= i-5; j-- {
-							if tagRe.MatchString(lines[j]) {
-								taggedTests++
-								break
-							}
-							// Stop looking back if we hit a non-comment, non-blank line.
-							trimmed := strings.TrimSpace(lines[j])
-							if trimmed != "" && !strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "@") && !strings.HasPrefix(trimmed, "\"\"\"") {
-								break
-							}
+						if i > 0 && traceRe.MatchString(lines[i-1]) {
+							taggedTests++
 						}
 					}
 				}
@@ -699,6 +718,7 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1446", "section": "30", "sectionName": "Test System Quality", "title": "tag_ids_follow_consistent_format"}
 	t.Run("tag_ids_follow_consistent_format", func(t *testing.T) {
 		// All TST-* tags must follow the format TST-{SUITE}-{NUMBER}.
 		// Mixed formats (TST-INT vs TST-INTEGRATION) would break tooling.
@@ -744,6 +764,7 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1447", "section": "30", "sectionName": "Test System Quality", "title": "minimum_total_tags_across_suites"}
 	t.Run("minimum_total_tags_across_suites", func(t *testing.T) {
 		// The test infrastructure must have a substantial number of TST-* tags
 		// to ensure traceability is actively maintained, not neglected.
@@ -782,6 +803,7 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 // Trezor python-mnemonic library (BIP-0039 reference implementation) and the
 // English wordlist. The mnemonic must be exactly 24 words, and the entropy
 // source must be os.urandom (CSPRNG).
+// TRACE: {"suite": "CORE", "case": "1448", "section": "30", "sectionName": "Test System Quality", "subsection": "07", "scenario": "01", "title": "BIP39_2_1_1_Generate24WordMnemonic"}
 func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 	root := findProjectRoot(t)
 
@@ -790,6 +812,7 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 	// The standalone script provides the same functionality.
 	seedToMnemonic := readProjectFile(t, root, "scripts/seed_to_mnemonic.py")
 
+	// TRACE: {"suite": "CORE", "case": "1449", "section": "30", "sectionName": "Test System Quality", "title": "uses_trezor_bip39_reference_library"}
 	t.Run("uses_trezor_bip39_reference_library", func(t *testing.T) {
 		// BIP-39 compliance requires the official Trezor python-mnemonic library.
 		// Rolling a custom implementation would be a security vulnerability.
@@ -801,6 +824,7 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1450", "section": "30", "sectionName": "Test System Quality", "title": "uses_english_wordlist"}
 	t.Run("uses_english_wordlist", func(t *testing.T) {
 		// BIP-39 supports multiple languages, but Dina standardizes on English
 		// for interoperability with hardware wallets and other BIP-39 tools.
@@ -812,6 +836,7 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1451", "section": "30", "sectionName": "Test System Quality", "title": "seed_to_mnemonic_function_exists_with_correct_signature"}
 	t.Run("seed_to_mnemonic_function_exists_with_correct_signature", func(t *testing.T) {
 		// The primary API function for mnemonic generation.
 		seedToMnemonicRe := regexp.MustCompile(`def\s+seed_to_mnemonic\s*\(\s*seed\s*:\s*bytes\s*\)`)
@@ -820,6 +845,7 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1452", "section": "30", "sectionName": "Test System Quality", "title": "validates_32_byte_input_entropy"}
 	t.Run("validates_32_byte_input_entropy", func(t *testing.T) {
 		// BIP-39 with 24 words requires exactly 256 bits (32 bytes) of entropy.
 		// The implementation must reject any other size to prevent weak keys.
@@ -833,6 +859,7 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1453", "section": "30", "sectionName": "Test System Quality", "title": "produces_word_list_from_to_mnemonic"}
 	t.Run("produces_word_list_from_to_mnemonic", func(t *testing.T) {
 		// The Trezor library's to_mnemonic() returns a space-separated string.
 		// seed_wrap.py must split this into a list of words.
@@ -845,6 +872,7 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1454", "section": "30", "sectionName": "Test System Quality", "title": "generate_seed_uses_csprng"}
 	t.Run("generate_seed_uses_csprng", func(t *testing.T) {
 		// The entropy source must be cryptographically secure.
 		// os.urandom() is the standard Python CSPRNG.
@@ -858,6 +886,7 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1455", "section": "30", "sectionName": "Test System Quality", "title": "standalone_script_validates_entropy_length"}
 	t.Run("standalone_script_validates_entropy_length", func(t *testing.T) {
 		// The standalone script must also validate 32-byte entropy.
 		if !strings.Contains(seedToMnemonic, `len(entropy) != 32`) {
@@ -879,12 +908,14 @@ func TestBIP39_2_1_1_Generate24WordMnemonic(t *testing.T) {
 // The checksum validation must happen BEFORE attempting entropy extraction
 // (fail-fast). Without this check, corrupted or tampered mnemonics could
 // silently produce wrong keys, compromising the entire identity chain.
+// TRACE: {"suite": "CORE", "case": "1456", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "01", "title": "BIP39_2_1_3_InvalidMnemonicBadChecksum"}
 func TestBIP39_2_1_3_InvalidMnemonicBadChecksum(t *testing.T) {
 	root := findProjectRoot(t)
 
 	seedWrap := readProjectFile(t, root, "cli/src/dina_cli/seed_wrap.py")
 	mnemonicToSeed := readProjectFile(t, root, "scripts/mnemonic_to_seed.py")
 
+	// TRACE: {"suite": "CORE", "case": "1457", "section": "30", "sectionName": "Test System Quality", "title": "seed_wrap_validates_checksum_before_conversion"}
 	t.Run("seed_wrap_validates_checksum_before_conversion", func(t *testing.T) {
 		// The mnemonic_to_seed function must call _M.check() BEFORE calling
 		// _M.to_entropy(). This ordering is critical: if to_entropy is called
@@ -920,6 +951,7 @@ func TestBIP39_2_1_3_InvalidMnemonicBadChecksum(t *testing.T) {
 			checkLineIdx+1, toEntropyLineIdx+1)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1458", "section": "30", "sectionName": "Test System Quality", "title": "seed_wrap_raises_error_on_bad_checksum"}
 	t.Run("seed_wrap_raises_error_on_bad_checksum", func(t *testing.T) {
 		// When _M.check() returns False, the code must raise ValueError with a
 		// descriptive message mentioning "checksum".
@@ -938,6 +970,7 @@ func TestBIP39_2_1_3_InvalidMnemonicBadChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1459", "section": "30", "sectionName": "Test System Quality", "title": "standalone_script_validates_checksum"}
 	t.Run("standalone_script_validates_checksum", func(t *testing.T) {
 		// The standalone mnemonic_to_seed.py must also validate checksums.
 		if !strings.Contains(mnemonicToSeed, ".check(") {
@@ -969,6 +1002,7 @@ func TestBIP39_2_1_3_InvalidMnemonicBadChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1460", "section": "30", "sectionName": "Test System Quality", "title": "standalone_script_raises_on_bad_checksum"}
 	t.Run("standalone_script_raises_on_bad_checksum", func(t *testing.T) {
 		// The error must mention "checksum" so users know exactly what failed.
 		if !strings.Contains(mnemonicToSeed, "checksum") {
@@ -981,6 +1015,7 @@ func TestBIP39_2_1_3_InvalidMnemonicBadChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1461", "section": "30", "sectionName": "Test System Quality", "title": "mnemonic_to_seed_validates_word_count"}
 	t.Run("mnemonic_to_seed_validates_word_count", func(t *testing.T) {
 		// In addition to checksum, the function must reject wrong word counts.
 		// A 12-word mnemonic (128-bit entropy) is insecure for Dina's 256-bit
@@ -1004,12 +1039,14 @@ func TestBIP39_2_1_3_InvalidMnemonicBadChecksum(t *testing.T) {
 // extra spaces. The normalization must produce a canonical single-space-separated
 // string before checksum validation. This is critical for usability:
 // recovery from a paper backup must not fail due to trivial formatting issues.
+// TRACE: {"suite": "CORE", "case": "1462", "section": "30", "sectionName": "Test System Quality", "subsection": "09", "scenario": "01", "title": "BIP39_2_1_5_MnemonicExtraWhitespace"}
 func TestBIP39_2_1_5_MnemonicExtraWhitespace(t *testing.T) {
 	root := findProjectRoot(t)
 
 	seedWrap := readProjectFile(t, root, "cli/src/dina_cli/seed_wrap.py")
 	mnemonicToSeed := readProjectFile(t, root, "scripts/mnemonic_to_seed.py")
 
+	// TRACE: {"suite": "CORE", "case": "1463", "section": "30", "sectionName": "Test System Quality", "title": "seed_wrap_normalizes_whitespace_via_join"}
 	t.Run("seed_wrap_normalizes_whitespace_via_join", func(t *testing.T) {
 		// The standard normalization pattern is `" ".join(words)` which:
 		// 1. Collapses multiple spaces between words to single space
@@ -1055,6 +1092,7 @@ func TestBIP39_2_1_5_MnemonicExtraWhitespace(t *testing.T) {
 		t.Logf("whitespace normalization via %q variable used consistently for check and entropy", joinVar)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1464", "section": "30", "sectionName": "Test System Quality", "title": "standalone_script_normalizes_whitespace"}
 	t.Run("standalone_script_normalizes_whitespace", func(t *testing.T) {
 		// The standalone mnemonic_to_seed.py receives a single string argument.
 		// It must strip() the input to handle leading/trailing whitespace.
@@ -1084,6 +1122,7 @@ func TestBIP39_2_1_5_MnemonicExtraWhitespace(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1465", "section": "30", "sectionName": "Test System Quality", "title": "seed_wrap_accepts_list_input_for_natural_normalization"}
 	t.Run("seed_wrap_accepts_list_input_for_natural_normalization", func(t *testing.T) {
 		// The seed_wrap.py mnemonic_to_seed takes a list[str], which is the
 		// natural normalization mechanism: each word is already separated,
@@ -1096,6 +1135,7 @@ func TestBIP39_2_1_5_MnemonicExtraWhitespace(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1466", "section": "30", "sectionName": "Test System Quality", "title": "consistent_normalization_across_both_implementations"}
 	t.Run("consistent_normalization_across_both_implementations", func(t *testing.T) {
 		// Both files must use the Trezor library for the actual BIP-39 operations.
 		// This ensures consistent behavior regardless of which entry point is used.
@@ -1129,12 +1169,14 @@ func TestBIP39_2_1_5_MnemonicExtraWhitespace(t *testing.T) {
 // (root key + 6 persona keys + vault DEKs + service keys all derived from
 // the same entropy). Accepting fewer words would silently weaken the
 // entire cryptographic foundation.
+// TRACE: {"suite": "CORE", "case": "1467", "section": "30", "sectionName": "Test System Quality", "subsection": "10", "scenario": "01", "title": "BIP39_2_1_4_InvalidMnemonicWrongWordCount"}
 func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 	root := findProjectRoot(t)
 
 	seedWrap := readProjectFile(t, root, "cli/src/dina_cli/seed_wrap.py")
 	mnemonicToSeed := readProjectFile(t, root, "scripts/mnemonic_to_seed.py")
 
+	// TRACE: {"suite": "CORE", "case": "1468", "section": "30", "sectionName": "Test System Quality", "title": "seed_wrap_rejects_non_24_word_mnemonic"}
 	t.Run("seed_wrap_rejects_non_24_word_mnemonic", func(t *testing.T) {
 		// The mnemonic_to_seed function must check word count BEFORE any
 		// checksum validation or entropy extraction. Wrong word count is
@@ -1150,6 +1192,7 @@ func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1469", "section": "30", "sectionName": "Test System Quality", "title": "seed_wrap_error_message_specifies_expected_count"}
 	t.Run("seed_wrap_error_message_specifies_expected_count", func(t *testing.T) {
 		// The error message must tell the user how many words were provided
 		// AND how many were expected. "invalid mnemonic" is not helpful;
@@ -1168,6 +1211,7 @@ func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1470", "section": "30", "sectionName": "Test System Quality", "title": "seed_wrap_word_count_checked_before_checksum"}
 	t.Run("seed_wrap_word_count_checked_before_checksum", func(t *testing.T) {
 		// Word count validation must come BEFORE checksum validation.
 		// Rationale: checking checksum on a 12-word mnemonic would pass for
@@ -1200,6 +1244,7 @@ func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1471", "section": "30", "sectionName": "Test System Quality", "title": "standalone_script_rejects_wrong_word_count"}
 	t.Run("standalone_script_rejects_wrong_word_count", func(t *testing.T) {
 		// The standalone mnemonic_to_seed.py must also validate word count.
 		if !strings.Contains(mnemonicToSeed, `len(word_list) != 24`) {
@@ -1212,6 +1257,7 @@ func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1472", "section": "30", "sectionName": "Test System Quality", "title": "standalone_script_error_mentions_24"}
 	t.Run("standalone_script_error_mentions_24", func(t *testing.T) {
 		// Error message must mention "24" so the user knows the expected count.
 		// Scan for ValueError near word count check.
@@ -1233,6 +1279,7 @@ func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1473", "section": "30", "sectionName": "Test System Quality", "title": "seed_to_mnemonic_only_accepts_32_bytes_for_24_words"}
 	t.Run("seed_to_mnemonic_only_accepts_32_bytes_for_24_words", func(t *testing.T) {
 		// The forward direction must also be strict: only 32 bytes (256 bits)
 		// produces a 24-word mnemonic. 16 bytes → 12 words, which Dina forbids.
@@ -1258,12 +1305,14 @@ func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 // recovery, the system MUST alert them immediately rather than silently
 // deriving wrong keys (which would create an identity with no connection
 // to their original data, contacts, or trust network).
+// TRACE: {"suite": "CORE", "case": "1474", "section": "30", "sectionName": "Test System Quality", "subsection": "11", "scenario": "01", "title": "BIP39_29_8_1_RecoveryRejectsInvalidChecksum"}
 func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 	root := findProjectRoot(t)
 
 	seedWrap := readProjectFile(t, root, "cli/src/dina_cli/seed_wrap.py")
 	mnemonicToSeed := readProjectFile(t, root, "scripts/mnemonic_to_seed.py")
 
+	// TRACE: {"suite": "CORE", "case": "1475", "section": "30", "sectionName": "Test System Quality", "title": "recovery_path_validates_before_key_derivation"}
 	t.Run("recovery_path_validates_before_key_derivation", func(t *testing.T) {
 		// In the recovery flow, mnemonic → entropy is the FIRST step, and
 		// checksum validation MUST happen at this boundary. The recovery chain:
@@ -1282,6 +1331,7 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1476", "section": "30", "sectionName": "Test System Quality", "title": "corrupt_word_produces_validation_error_not_wrong_keys"}
 	t.Run("corrupt_word_produces_validation_error_not_wrong_keys", func(t *testing.T) {
 		// The error message must be specific enough for a user doing recovery.
 		// "invalid mnemonic" is too vague. The message must mention:
@@ -1295,6 +1345,7 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1477", "section": "30", "sectionName": "Test System Quality", "title": "recovery_script_also_validates_checksum"}
 	t.Run("recovery_script_also_validates_checksum", func(t *testing.T) {
 		// The standalone recovery script (mnemonic_to_seed.py) is an
 		// alternative entry point. It must have identical checksum protection.
@@ -1306,6 +1357,7 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1478", "section": "30", "sectionName": "Test System Quality", "title": "recovery_error_mentions_checksum_in_standalone_script"}
 	t.Run("recovery_error_mentions_checksum_in_standalone_script", func(t *testing.T) {
 		// The standalone script's error must also mention "checksum" specifically.
 		checksumMsgRe := regexp.MustCompile(`raise\s+ValueError\([^)]*checksum\s+failed[^)]*\)`)
@@ -1314,6 +1366,7 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1479", "section": "30", "sectionName": "Test System Quality", "title": "no_silent_fallback_to_entropy_extraction"}
 	t.Run("no_silent_fallback_to_entropy_extraction", func(t *testing.T) {
 		// CRITICAL: The code must NOT have a try/except around to_entropy that
 		// catches and silently swallows checksum errors. If someone wraps
@@ -1347,6 +1400,7 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1480", "section": "30", "sectionName": "Test System Quality", "title": "both_entry_points_use_same_validation_library"}
 	t.Run("both_entry_points_use_same_validation_library", func(t *testing.T) {
 		// Both entry points must use the Trezor Mnemonic class for checksum
 		// validation. A custom checksum implementation could have bugs that
@@ -1371,6 +1425,7 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1481", "section": "30", "sectionName": "Test System Quality", "title": "go_side_assumes_valid_entropy_from_python"}
 	t.Run("go_side_assumes_valid_entropy_from_python", func(t *testing.T) {
 		// The Go Core receives raw entropy/seed from Python (via install.sh).
 		// Go does NOT re-validate the mnemonic — it trusts that Python caught
@@ -1405,12 +1460,14 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 // validates the RECOVERY path where a user enters their backup mnemonic.
 // The difference matters because recovery is the highest-stakes moment —
 // wrong entropy silently produces an entirely different identity.
+// TRACE: {"suite": "CORE", "case": "1482", "section": "30", "sectionName": "Test System Quality", "subsection": "12", "scenario": "01", "title": "BIP39_29_8_2_RecoveryRejectsWrongWordCount"}
 func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 	root := findProjectRoot(t)
 
 	seedWrap := readProjectFile(t, root, "cli/src/dina_cli/seed_wrap.py")
 	mnemonicToSeed := readProjectFile(t, root, "scripts/mnemonic_to_seed.py")
 
+	// TRACE: {"suite": "CORE", "case": "1483", "section": "30", "sectionName": "Test System Quality", "title": "library_rejects_12_word_at_function_boundary"}
 	t.Run("library_rejects_12_word_at_function_boundary", func(t *testing.T) {
 		// The mnemonic_to_seed function (library API) must reject 12-word input.
 		// A 12-word BIP-39 mnemonic is valid for Bitcoin wallets (128-bit entropy)
@@ -1424,6 +1481,7 @@ func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1484", "section": "30", "sectionName": "Test System Quality", "title": "error_message_helps_user_understand_the_problem"}
 	t.Run("error_message_helps_user_understand_the_problem", func(t *testing.T) {
 		// During recovery, a user might have a 12-word mnemonic from a different
 		// system (Bitcoin wallet, hardware wallet). The error must clearly state:
@@ -1437,6 +1495,7 @@ func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1485", "section": "30", "sectionName": "Test System Quality", "title": "standalone_script_also_rejects_wrong_word_count"}
 	t.Run("standalone_script_also_rejects_wrong_word_count", func(t *testing.T) {
 		// mnemonic_to_seed.py is the standalone recovery script. It receives
 		// a single space-separated string, splits it, and validates word count.
@@ -1451,6 +1510,7 @@ func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1486", "section": "30", "sectionName": "Test System Quality", "title": "word_count_check_precedes_checksum_validation"}
 	t.Run("word_count_check_precedes_checksum_validation", func(t *testing.T) {
 		// CRITICAL ordering: word count check MUST come before checksum.
 		// Reason: a valid 12-word mnemonic HAS a valid checksum. If checksum
@@ -1483,6 +1543,7 @@ func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1487", "section": "30", "sectionName": "Test System Quality", "title": "rejection_is_raise_not_return_none"}
 	t.Run("rejection_is_raise_not_return_none", func(t *testing.T) {
 		// The rejection must be a ValueError (fail-fast), not a return None
 		// or return empty bytes. Returning None silently would let the caller
@@ -1494,6 +1555,7 @@ func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1488", "section": "30", "sectionName": "Test System Quality", "title": "no_silent_truncation_or_padding"}
 	t.Run("no_silent_truncation_or_padding", func(t *testing.T) {
 		// The code must NOT silently truncate a 30-word input to 24 words,
 		// or pad a 12-word input to 24 words. Any word count other than
@@ -1526,11 +1588,13 @@ func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 // composition is resilient: a fresh install with only Core URL configured
 // can still serve `/healthz` and accept API requests (even if LLM-dependent
 // features return degraded responses).
+// TRACE: {"suite": "CORE", "case": "1489", "section": "30", "sectionName": "Test System Quality", "subsection": "04", "scenario": "01", "title": "CreateAppBootSmokeMinimalEnv"}
 func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 	root := findProjectRoot(t)
 
 	mainPy := readProjectFile(t, root, "brain/src/main.py")
 
+	// TRACE: {"suite": "CORE", "case": "1490", "section": "30", "sectionName": "Test System Quality", "title": "create_app_function_exists_and_returns_fastapi"}
 	t.Run("create_app_function_exists_and_returns_fastapi", func(t *testing.T) {
 		// The composition root must define create_app() → FastAPI.
 		// This is the ONLY entry point for constructing the Brain application.
@@ -1540,6 +1604,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1491", "section": "30", "sectionName": "Test System Quality", "title": "explicit_dependency_construction_no_di_framework"}
 	t.Run("explicit_dependency_construction_no_di_framework", func(t *testing.T) {
 		// Dina's design principle: explicit construction, no magic DI.
 		// The main.py docstring or code must NOT import from a DI framework
@@ -1560,6 +1625,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1492", "section": "30", "sectionName": "Test System Quality", "title": "llm_providers_optional_with_graceful_degradation"}
 	t.Run("llm_providers_optional_with_graceful_degradation", func(t *testing.T) {
 		// Each LLM provider must be wrapped in try/except so that a missing
 		// API key or import error doesn't crash the app. The brain must
@@ -1584,6 +1650,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1493", "section": "30", "sectionName": "Test System Quality", "title": "spacy_scrubber_optional_not_required"}
 	t.Run("spacy_scrubber_optional_not_required", func(t *testing.T) {
 		// spaCy is a large optional dependency. Missing the model must not
 		// crash the app. The code must catch both ImportError (spaCy not
@@ -1605,6 +1672,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1494", "section": "30", "sectionName": "Test System Quality", "title": "healthz_endpoint_registered_without_auth"}
 	t.Run("healthz_endpoint_registered_without_auth", func(t *testing.T) {
 		// /healthz must be accessible without authentication. This is critical
 		// for Docker health checks, load balancers, and monitoring.
@@ -1623,6 +1691,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1495", "section": "30", "sectionName": "Test System Quality", "title": "admin_ui_conditional_on_client_token"}
 	t.Run("admin_ui_conditional_on_client_token", func(t *testing.T) {
 		// Admin UI requires CLIENT_TOKEN. Without it, admin endpoints
 		// must NOT be mounted (security: don't serve admin UI without auth).
@@ -1636,6 +1705,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1496", "section": "30", "sectionName": "Test System Quality", "title": "module_isolation_rules_enforced"}
 	t.Run("module_isolation_rules_enforced", func(t *testing.T) {
 		// Architecture rule: main.py is the ONLY file that imports from adapter/.
 		// This ensures the composition root is the single point of construction.
@@ -1654,6 +1724,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1497", "section": "30", "sectionName": "Test System Quality", "title": "service_identity_fail_closed"}
 	t.Run("service_identity_fail_closed", func(t *testing.T) {
 		// Ed25519 service key must be loaded at startup. If the key file
 		// is missing, the app must CRASH (fail-closed), not start without auth.
@@ -1684,12 +1755,14 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 // Without this, stale data from prior tests can cause false positives
 // (test passes because it finds data from a previous test) or false negatives
 // (test fails because unexpected data corrupts assertions).
+// TRACE: {"suite": "CORE", "case": "1498", "section": "30", "sectionName": "Test System Quality", "subsection": "06", "scenario": "01", "title": "HardCleanupPerTestClassInRealSuites"}
 func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 	root := findProjectRoot(t)
 
 	integrationConftest := readProjectFile(t, root, "tests/integration/conftest.py")
 	e2eConftest := readProjectFile(t, root, "tests/e2e/conftest.py")
 
+	// TRACE: {"suite": "CORE", "case": "1499", "section": "30", "sectionName": "Test System Quality", "title": "integration_session_clears_vault_at_startup"}
 	t.Run("integration_session_clears_vault_at_startup", func(t *testing.T) {
 		// At session start (before any tests run), the integration conftest
 		// must clear all vault data via POST /v1/vault/clear. This ensures
@@ -1704,6 +1777,7 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1500", "section": "30", "sectionName": "Test System Quality", "title": "integration_has_autouse_cleanup_fixture"}
 	t.Run("integration_has_autouse_cleanup_fixture", func(t *testing.T) {
 		// There must be an autouse fixture for per-test cleanup or isolation.
 		// This runs automatically for every test without explicit import.
@@ -1717,6 +1791,7 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1501", "section": "30", "sectionName": "Test System Quality", "title": "e2e_session_clears_vault_on_all_nodes"}
 	t.Run("e2e_session_clears_vault_on_all_nodes", func(t *testing.T) {
 		// E2E tests run against 4 nodes. ALL nodes must have their vaults
 		// cleared at session start, not just one.
@@ -1732,6 +1807,7 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1502", "section": "30", "sectionName": "Test System Quality", "title": "e2e_has_per_test_state_reset"}
 	t.Run("e2e_has_per_test_state_reset", func(t *testing.T) {
 		// E2E tests need per-test reset of mutable state (notifications,
 		// briefing queue, DND, spool, audit log, etc.). This is more granular
@@ -1743,6 +1819,7 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1503", "section": "30", "sectionName": "Test System Quality", "title": "e2e_reset_clears_all_mutable_state_categories"}
 	t.Run("e2e_reset_clears_all_mutable_state_categories", func(t *testing.T) {
 		// The per-test reset must clear ALL categories of mutable state.
 		// Missing even one category can cause subtle test interference.
@@ -1768,6 +1845,7 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1504", "section": "30", "sectionName": "Test System Quality", "title": "cleanup_uses_client_token_not_brain_token"}
 	t.Run("cleanup_uses_client_token_not_brain_token", func(t *testing.T) {
 		// Vault clear is an admin operation. It must use CLIENT_TOKEN auth,
 		// not brain_token. Using brain_token would violate auth boundaries
@@ -1797,6 +1875,7 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1505", "section": "30", "sectionName": "Test System Quality", "title": "e2e_clears_real_go_core_state_for_docker_nodes"}
 	t.Run("e2e_clears_real_go_core_state_for_docker_nodes", func(t *testing.T) {
 		// For nodes backed by real Docker containers (RealHomeNode), the reset
 		// must also clear Go Core KV state via a real API call, not just
@@ -1823,79 +1902,38 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 // because spaCy is a 200MB+ dependency that may not be available in
 // lightweight deployments, CI environments, or first-run before model
 // download. The Brain must remain functional for all non-PII operations.
+// TRACE: {"suite": "CORE", "case": "1506", "section": "30", "sectionName": "Test System Quality", "subsection": "04", "scenario": "02", "title": "DegradedStartupMissingSpacyModel"}
 func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 	root := findProjectRoot(t)
 
 	mainPy := readProjectFile(t, root, "brain/src/main.py")
 
-	t.Run("spacy_scrubber_class_documents_exception_behavior", func(t *testing.T) {
-		// The _SpacyScrubber.__init__ docstring must document that it raises
-		// ImportError or OSError. This is the contract that create_app() relies
-		// on for its try/except degradation path.
-		scrubberDocRe := regexp.MustCompile(`class\s+_SpacyScrubber`)
-		if !scrubberDocRe.MatchString(mainPy) {
-			t.Fatal("brain/src/main.py must define _SpacyScrubber class")
-		}
-		// Must document the exception types in docstring or comments.
-		if !strings.Contains(mainPy, "ImportError") || !strings.Contains(mainPy, "OSError") {
-			t.Fatal("_SpacyScrubber must document ImportError (spacy not installed) and " +
-				"OSError (model not downloaded) as possible failure modes")
+	// TRACE: {"suite": "CORE", "case": "1507", "section": "30", "sectionName": "Test System Quality", "title": "no_spacy_fallback_presidio_or_none"}
+	t.Run("no_spacy_fallback_presidio_or_none", func(t *testing.T) {
+		// Structured PII scrubbing requires Presidio. There is no spaCy
+		// fallback — spaCy NER alone cannot detect emails, phones, or
+		// govt IDs. Without Presidio, scrubber is None and Go Core Tier 1
+		// regex handles basic PII.
+		if strings.Contains(mainPy, "_SpacyScrubber") {
+			t.Fatal("brain/src/main.py must NOT define _SpacyScrubber — " +
+				"no spaCy-only fallback (it cannot detect structured PII)")
 		}
 	})
 
-	t.Run("spacy_load_inside_init_not_module_level", func(t *testing.T) {
-		// spaCy import and model loading must happen inside __init__, NOT at
-		// module level. Module-level loading would crash the entire Brain
-		// on import, before create_app() has a chance to catch the error.
-		// The import must be lazy (inside __init__ or inside create_app).
-		lines := strings.Split(mainPy, "\n")
+	// TRACE: {"suite": "CORE", "case": "1509", "section": "30", "sectionName": "Test System Quality", "title": "scrubber_presidio_or_none"}
+	t.Run("scrubber_presidio_or_none", func(t *testing.T) {
+		// The scrubber construction is Presidio-only:
+		// 1. Try Presidio (structured PII: emails, phones, govt IDs)
+		// 2. Fall back to None (Go Core Tier 1 regex only)
+		// No spaCy fallback — it can't detect structured PII.
 
-		// Check that "import spacy" is NOT at the top level (outside class/def).
-		for i, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "import spacy" || trimmed == "from spacy import" {
-				// Check if we're inside a function or class body (indented).
-				if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-					t.Fatalf("line %d: `import spacy` at module level would crash Brain "+
-						"when spaCy is not installed — must be lazy (inside __init__ or function)", i+1)
-				}
-			}
-		}
-	})
-
-	t.Run("scrubber_fallback_chain_presidio_then_spacy_then_none", func(t *testing.T) {
-		// The scrubber construction must follow a specific fallback chain:
-		// 1. Try Presidio (enterprise-grade, best quality)
-		// 2. Try spaCy (good enough, lighter weight)
-		// 3. Fall back to None (Tier 1 regex only, Go Core handles basic PII)
-		// This ordering ensures the best available scrubber is used.
-
-		// Verify Presidio is tried first.
+		// Verify Presidio is tried.
 		if !strings.Contains(mainPy, "PresidioScrubber") {
-			t.Fatal("must try PresidioScrubber first (enterprise-grade PII scrubbing)")
-		}
-		// Verify spaCy is the second fallback.
-		if !strings.Contains(mainPy, "_SpacyScrubber()") {
-			t.Fatal("must try _SpacyScrubber as fallback when Presidio unavailable")
-		}
-
-		// Verify the ordering: Presidio try block must come before spaCy try block.
-		presidioLine := -1
-		spacyLine := -1
-		for i, line := range strings.Split(mainPy, "\n") {
-			if strings.Contains(line, "PresidioScrubber()") {
-				presidioLine = i
-			}
-			if strings.Contains(line, "_SpacyScrubber()") {
-				spacyLine = i
-			}
-		}
-		if presidioLine >= 0 && spacyLine >= 0 && presidioLine >= spacyLine {
-			t.Fatalf("PresidioScrubber (line %d) must be tried BEFORE _SpacyScrubber (line %d)",
-				presidioLine+1, spacyLine+1)
+			t.Fatal("must try PresidioScrubber (structured PII scrubbing)")
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1510", "section": "30", "sectionName": "Test System Quality", "title": "scrubber_none_when_both_unavailable"}
 	t.Run("scrubber_none_when_both_unavailable", func(t *testing.T) {
 		// When BOTH Presidio and spaCy fail, scrubber must be set to None.
 		// The app must NOT crash — it should continue with Tier 1 regex
@@ -1905,6 +1943,7 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1511", "section": "30", "sectionName": "Test System Quality", "title": "warning_logged_when_scrubber_unavailable"}
 	t.Run("warning_logged_when_scrubber_unavailable", func(t *testing.T) {
 		// When scrubber is unavailable, a WARNING (not ERROR) must be logged.
 		// It's a warning because the system is functional (degraded, not broken).
@@ -1923,6 +1962,7 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1512", "section": "30", "sectionName": "Test System Quality", "title": "degraded_scrubber_tier_tracked"}
 	t.Run("degraded_scrubber_tier_tracked", func(t *testing.T) {
 		// The code must track which scrubber tier is active ("presidio", "spacy",
 		// or "none"). This tier info feeds into /healthz and LLM routing config
@@ -1937,6 +1977,7 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1513", "section": "30", "sectionName": "Test System Quality", "title": "scrubber_tier_passed_to_llm_router_config"}
 	t.Run("scrubber_tier_passed_to_llm_router_config", func(t *testing.T) {
 		// The LLM router needs to know the scrubber tier to decide whether
 		// it's safe to send data to cloud LLMs. Without a scrubber, PII
@@ -1958,11 +1999,13 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 // A /healthz that always returns "ok" masks system failures and defeats
 // the purpose of health monitoring. The endpoint must be fast (not block
 // on slow Core responses) and must NOT require authentication.
+// TRACE: {"suite": "CORE", "case": "1514", "section": "30", "sectionName": "Test System Quality", "subsection": "04", "scenario": "03", "title": "HealthzComponentStatusCorrectness"}
 func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 	root := findProjectRoot(t)
 
 	mainPy := readProjectFile(t, root, "brain/src/main.py")
 
+	// TRACE: {"suite": "CORE", "case": "1515", "section": "30", "sectionName": "Test System Quality", "title": "healthz_registered_on_master_app_not_subapp"}
 	t.Run("healthz_registered_on_master_app_not_subapp", func(t *testing.T) {
 		// /healthz must be on the MASTER app (root), not on /api or /admin
 		// sub-apps. Sub-apps require authentication. The master app serves
@@ -1978,6 +2021,7 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1516", "section": "30", "sectionName": "Test System Quality", "title": "healthz_checks_core_connectivity"}
 	t.Run("healthz_checks_core_connectivity", func(t *testing.T) {
 		// The health check must probe Core availability. If Core is down,
 		// the Brain is functionally useless (can't access vault, can't sign).
@@ -2005,6 +2049,7 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1517", "section": "30", "sectionName": "Test System Quality", "title": "healthz_has_timeout_to_prevent_blocking"}
 	t.Run("healthz_has_timeout_to_prevent_blocking", func(t *testing.T) {
 		// The health check must NOT block indefinitely if Core is slow.
 		// Docker health checks have their own timeout (typically 30s), but
@@ -2021,6 +2066,7 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1518", "section": "30", "sectionName": "Test System Quality", "title": "healthz_reports_degraded_when_core_unreachable"}
 	t.Run("healthz_reports_degraded_when_core_unreachable", func(t *testing.T) {
 		// When Core is down, status MUST be "degraded", not "ok".
 		// "ok" when Core is unreachable would be a lie.
@@ -2051,6 +2097,7 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1519", "section": "30", "sectionName": "Test System Quality", "title": "healthz_reports_degraded_when_no_llm_providers"}
 	t.Run("healthz_reports_degraded_when_no_llm_providers", func(t *testing.T) {
 		// If no LLM providers loaded (empty providers dict), status = degraded.
 		// Brain without LLM can still serve vault queries but can't reason,
@@ -2077,6 +2124,7 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1520", "section": "30", "sectionName": "Test System Quality", "title": "healthz_returns_dict_with_status_field"}
 	t.Run("healthz_returns_dict_with_status_field", func(t *testing.T) {
 		// Requirement: /healthz response must be a JSON object with a
 		// "status" key so monitoring systems and Docker health checks
@@ -2115,6 +2163,7 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1521", "section": "30", "sectionName": "Test System Quality", "title": "healthz_is_async_for_non_blocking_probes"}
 	t.Run("healthz_is_async_for_non_blocking_probes", func(t *testing.T) {
 		// The health check must be async to avoid blocking the event loop.
 		// A synchronous healthz would block all other requests while waiting
@@ -2138,12 +2187,14 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 // The RealVault class achieves this via _item_map tracking: only items
 // stored in the CURRENT test are retrievable, even though the underlying
 // vault still contains prior-run data.
+// TRACE: {"suite": "CORE", "case": "1522", "section": "30", "sectionName": "Test System Quality", "subsection": "06", "scenario": "02", "title": "DirtyStateDetectorFailsOnPriorRunArtifacts"}
 func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T) {
 	root := findProjectRoot(t)
 
 	realClients := readProjectFile(t, root, "tests/integration/real_clients.py")
 	integrationConftest := readProjectFile(t, root, "tests/integration/conftest.py")
 
+	// TRACE: {"suite": "CORE", "case": "1523", "section": "30", "sectionName": "Test System Quality", "title": "realvault_tracks_items_via_item_map"}
 	t.Run("realvault_tracks_items_via_item_map", func(t *testing.T) {
 		// RealVault must use an _item_map to track which items were stored
 		// in the current test. This is the primary isolation mechanism:
@@ -2158,6 +2209,7 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1524", "section": "30", "sectionName": "Test System Quality", "title": "store_populates_item_map"}
 	t.Run("store_populates_item_map", func(t *testing.T) {
 		// When RealVault.store() is called, it must add the returned item_id
 		// to _item_map. This links the logical key to the real Go Core item.
@@ -2167,6 +2219,7 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1525", "section": "30", "sectionName": "Test System Quality", "title": "retrieve_uses_item_map_for_filtering"}
 	t.Run("retrieve_uses_item_map_for_filtering", func(t *testing.T) {
 		// RealVault.retrieve() must consult _item_map to find the correct
 		// item. It must NOT return an arbitrary item matching the query —
@@ -2177,6 +2230,7 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1526", "section": "30", "sectionName": "Test System Quality", "title": "item_map_per_test_instance_not_shared"}
 	t.Run("item_map_per_test_instance_not_shared", func(t *testing.T) {
 		// Each test gets a NEW RealVault instance (via the mock_vault fixture),
 		// which means a fresh _item_map. Prior-test items are invisible because
@@ -2189,6 +2243,7 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1527", "section": "30", "sectionName": "Test System Quality", "title": "cleanup_ids_tracked_for_eventual_removal"}
 	t.Run("cleanup_ids_tracked_for_eventual_removal", func(t *testing.T) {
 		// In addition to _item_map filtering, RealVault must track item IDs
 		// for cleanup. The cleanup_ids list accumulates all items stored
@@ -2202,6 +2257,7 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1528", "section": "30", "sectionName": "Test System Quality", "title": "delete_removes_from_item_map"}
 	t.Run("delete_removes_from_item_map", func(t *testing.T) {
 		// When an item is deleted, it must be removed from _item_map.
 		// A stale _item_map entry for a deleted item would cause retrieve()
@@ -2212,6 +2268,7 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1529", "section": "30", "sectionName": "Test System Quality", "title": "conftest_documents_isolation_strategy"}
 	t.Run("conftest_documents_isolation_strategy", func(t *testing.T) {
 		// The conftest must explicitly document WHY per-test cleanup is a no-op:
 		// because RealVault's _item_map provides isolation. Without this
@@ -2236,12 +2293,14 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 // any real API failure". Without this, a passing integration test might
 // actually be running against mock state because the real API silently
 // failed, masking genuine regressions.
+// TRACE: {"suite": "CORE", "case": "1530", "section": "30", "sectionName": "Test System Quality", "subsection": "01", "scenario": "01", "title": "EnvVarAndFlagDefinition"}
 func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 	root := findProjectRoot(t)
 
 	realClients := readProjectFile(t, root, "tests/integration/real_clients.py")
 	realNodes := readProjectFile(t, root, "tests/e2e/real_nodes.py")
 
+	// TRACE: {"suite": "CORE", "case": "1531", "section": "30", "sectionName": "Test System Quality", "title": "integration_reads_DINA_STRICT_REAL_env_var"}
 	t.Run("integration_reads_DINA_STRICT_REAL_env_var", func(t *testing.T) {
 		// real_clients.py must read DINA_STRICT_REAL from environment.
 		// The env var name must be exact — typos would silently disable strict mode.
@@ -2250,6 +2309,7 @@ func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1532", "section": "30", "sectionName": "Test System Quality", "title": "e2e_reads_DINA_STRICT_REAL_env_var"}
 	t.Run("e2e_reads_DINA_STRICT_REAL_env_var", func(t *testing.T) {
 		// real_nodes.py must also read DINA_STRICT_REAL from environment.
 		if !strings.Contains(realNodes, `os.environ.get("DINA_STRICT_REAL"`) {
@@ -2257,6 +2317,7 @@ func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1533", "section": "30", "sectionName": "Test System Quality", "title": "integration_defines_STRICT_REAL_module_flag"}
 	t.Run("integration_defines_STRICT_REAL_module_flag", func(t *testing.T) {
 		// The flag must be a module-level constant, not re-evaluated per call.
 		// Re-evaluation per call would be fragile (race with env changes mid-test).
@@ -2266,6 +2327,7 @@ func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1534", "section": "30", "sectionName": "Test System Quality", "title": "e2e_defines_STRICT_REAL_module_flag"}
 	t.Run("e2e_defines_STRICT_REAL_module_flag", func(t *testing.T) {
 		strictRealDefRe := regexp.MustCompile(`_STRICT_REAL\s*=\s*os\.environ\.get\("DINA_STRICT_REAL"`)
 		if !strictRealDefRe.MatchString(realNodes) {
@@ -2273,6 +2335,7 @@ func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1535", "section": "30", "sectionName": "Test System Quality", "title": "flag_compares_to_string_1_not_truthy"}
 	t.Run("flag_compares_to_string_1_not_truthy", func(t *testing.T) {
 		// The flag must compare to "1" explicitly, not use truthy evaluation.
 		// Truthy would activate on "0", "false", or any non-empty string, which
@@ -2286,6 +2349,7 @@ func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1536", "section": "30", "sectionName": "Test System Quality", "title": "flag_strips_whitespace_before_comparison"}
 	t.Run("flag_strips_whitespace_before_comparison", func(t *testing.T) {
 		// Edge case: env vars may have trailing whitespace (e.g., from shell
 		// scripts or Docker env files). .strip() prevents "1 " != "1".
@@ -2297,6 +2361,7 @@ func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1537", "section": "30", "sectionName": "Test System Quality", "title": "both_files_document_strict_real_purpose"}
 	t.Run("both_files_document_strict_real_purpose", func(t *testing.T) {
 		// The comment must explain WHY strict mode exists: to prevent silent
 		// mock fallback that masks real integration failures.
@@ -2316,11 +2381,13 @@ func TestStrictReal_30_1_EnvVarAndFlagDefinition(t *testing.T) {
 // errors when DINA_STRICT_REAL=1. Returning None on failure is the "silent
 // mock fallback" path — in strict mode this must be replaced with an immediate
 // hard failure so the test runner sees the real error.
+// TRACE: {"suite": "CORE", "case": "1538", "section": "30", "sectionName": "Test System Quality", "subsection": "01", "scenario": "01", "title": "TryRequestRaisesInStrictMode"}
 func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 	root := findProjectRoot(t)
 
 	realClients := readProjectFile(t, root, "tests/integration/real_clients.py")
 
+	// TRACE: {"suite": "CORE", "case": "1539", "section": "30", "sectionName": "Test System Quality", "title": "try_request_checks_STRICT_REAL_on_non_success"}
 	t.Run("try_request_checks_STRICT_REAL_on_non_success", func(t *testing.T) {
 		// After exhausting retries on a non-2xx response, _try_request must
 		// check _STRICT_REAL before returning None.
@@ -2343,6 +2410,7 @@ func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1540", "section": "30", "sectionName": "Test System Quality", "title": "try_request_raises_RuntimeError_not_returns_None"}
 	t.Run("try_request_raises_RuntimeError_not_returns_None", func(t *testing.T) {
 		// In strict mode, the function must raise RuntimeError, not return None.
 		// RuntimeError is appropriate because this is a test harness invariant
@@ -2359,6 +2427,7 @@ func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1541", "section": "30", "sectionName": "Test System Quality", "title": "error_message_includes_STRICT_REAL_prefix"}
 	t.Run("error_message_includes_STRICT_REAL_prefix", func(t *testing.T) {
 		// The error message must include "STRICT_REAL" so that a failing test's
 		// output immediately tells the developer that strict mode caused the
@@ -2375,6 +2444,7 @@ func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1542", "section": "30", "sectionName": "Test System Quality", "title": "error_message_includes_method_and_url"}
 	t.Run("error_message_includes_method_and_url", func(t *testing.T) {
 		// The error must include the HTTP method and URL for debugging.
 		// Without this, the developer sees "strict real failed" but doesn't
@@ -2391,6 +2461,7 @@ func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1543", "section": "30", "sectionName": "Test System Quality", "title": "error_message_includes_status_code"}
 	t.Run("error_message_includes_status_code", func(t *testing.T) {
 		// The error must include the HTTP status code.
 		tryReqStart := strings.Index(realClients, "def _try_request(")
@@ -2405,6 +2476,7 @@ func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1544", "section": "30", "sectionName": "Test System Quality", "title": "connection_errors_also_raise_in_strict_mode"}
 	t.Run("connection_errors_also_raise_in_strict_mode", func(t *testing.T) {
 		// Connection errors (ConnectError, ReadTimeout, etc.) must ALSO raise
 		// in strict mode. A connection error means the Docker service isn't
@@ -2447,6 +2519,7 @@ func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1545", "section": "30", "sectionName": "Test System Quality", "title": "non_strict_mode_still_returns_None"}
 	t.Run("non_strict_mode_still_returns_None", func(t *testing.T) {
 		// When _STRICT_REAL is False (default), the function must still return
 		// None on failure — backward compatibility with existing tests.
@@ -2471,11 +2544,13 @@ func TestStrictReal_30_1_TryRequestRaisesInStrictMode(t *testing.T) {
 // DINA_STRICT_REAL=1. It must merge the strict-real flag with the existing
 // raise_on_fail parameter so callers that explicitly request fail-fast
 // also benefit from the same error handling path.
+// TRACE: {"suite": "CORE", "case": "1546", "section": "30", "sectionName": "Test System Quality", "subsection": "01", "scenario": "01", "title": "ApiRequestRaisesInStrictMode"}
 func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 	root := findProjectRoot(t)
 
 	realNodes := readProjectFile(t, root, "tests/e2e/real_nodes.py")
 
+	// TRACE: {"suite": "CORE", "case": "1547", "section": "30", "sectionName": "Test System Quality", "title": "api_request_merges_STRICT_REAL_with_raise_on_fail"}
 	t.Run("api_request_merges_STRICT_REAL_with_raise_on_fail", func(t *testing.T) {
 		// _api_request() already has a raise_on_fail parameter used by specific
 		// callers (e.g., store operations). Strict-real mode must merge with it
@@ -2498,6 +2573,7 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1548", "section": "30", "sectionName": "Test System Quality", "title": "api_request_raises_RuntimeError_on_non_success"}
 	t.Run("api_request_raises_RuntimeError_on_non_success", func(t *testing.T) {
 		// When raise_on_fail is True (either explicitly or via _STRICT_REAL),
 		// _api_request must raise RuntimeError on non-2xx after exhausting retries.
@@ -2513,6 +2589,7 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1549", "section": "30", "sectionName": "Test System Quality", "title": "error_message_includes_STRICT_REAL_prefix"}
 	t.Run("error_message_includes_STRICT_REAL_prefix", func(t *testing.T) {
 		// Consistent with _try_request: error message must include "STRICT_REAL"
 		// prefix for clear diagnostics in test output.
@@ -2528,6 +2605,7 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1550", "section": "30", "sectionName": "Test System Quality", "title": "error_message_includes_method_url_and_status"}
 	t.Run("error_message_includes_method_url_and_status", func(t *testing.T) {
 		apiReqStart := strings.Index(realNodes, "def _api_request(")
 		nextFn := strings.Index(realNodes[apiReqStart+1:], "\ndef ")
@@ -2544,6 +2622,7 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1551", "section": "30", "sectionName": "Test System Quality", "title": "connection_errors_raise_when_strict"}
 	t.Run("connection_errors_raise_when_strict", func(t *testing.T) {
 		// Connection errors (ConnectError, ReadTimeout, etc.) must also raise
 		// when raise_on_fail is True (which includes _STRICT_REAL).
@@ -2584,6 +2663,7 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1552", "section": "30", "sectionName": "Test System Quality", "title": "non_strict_still_returns_None"}
 	t.Run("non_strict_still_returns_None", func(t *testing.T) {
 		// Default behavior (DINA_STRICT_REAL not set, raise_on_fail not passed)
 		// must still return None on failure for backward compatibility.
@@ -2599,6 +2679,7 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1553", "section": "30", "sectionName": "Test System Quality", "title": "api_request_has_raise_on_fail_parameter"}
 	t.Run("api_request_has_raise_on_fail_parameter", func(t *testing.T) {
 		// The raise_on_fail parameter must exist as a kwarg (not positional)
 		// so existing callers are unaffected.
@@ -2619,6 +2700,7 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1554", "section": "30", "sectionName": "Test System Quality", "title": "strict_real_documented_in_module_header"}
 	t.Run("strict_real_documented_in_module_header", func(t *testing.T) {
 		// The strict-real section must be documented with its TST IDs.
 		if !strings.Contains(realNodes, "TST-CORE-982") || !strings.Contains(realNodes, "TST-CORE-984") {
@@ -2648,9 +2730,11 @@ func TestStrictReal_30_1_ApiRequestRaisesInStrictMode(t *testing.T) {
 //     this test catches it
 //   - It validates cross-language contract: Go tests verify Python test infra
 
+// TRACE: {"suite": "CORE", "case": "1555", "section": "30", "sectionName": "Test System Quality", "subsection": "09", "scenario": "03", "title": "CompatTestsLabeledExplicitly"}
 func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "1556", "section": "30", "sectionName": "Test System Quality", "title": "pyproject_toml_defines_compat_marker"}
 	t.Run("pyproject_toml_defines_compat_marker", func(t *testing.T) {
 		// pyproject.toml must define the 'compat' marker so pytest recognizes it.
 		// Without this definition, @pytest.mark.compat triggers a warning
@@ -2667,6 +2751,7 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1557", "section": "30", "sectionName": "Test System Quality", "title": "pyproject_toml_defines_legacy_marker"}
 	t.Run("pyproject_toml_defines_legacy_marker", func(t *testing.T) {
 		// pyproject.toml must define the 'legacy' marker for legacy test separation.
 		pyprojectData := readProjectFile(t, root, "pyproject.toml")
@@ -2680,6 +2765,7 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1558", "section": "30", "sectionName": "Test System Quality", "title": "makefile_test_excludes_legacy"}
 	t.Run("makefile_test_excludes_legacy", func(t *testing.T) {
 		// The default 'make test' target must exclude legacy tests.
 		// This ensures v0.4 quality gates don't run obsolete tests.
@@ -2691,6 +2777,7 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1559", "section": "30", "sectionName": "Test System Quality", "title": "backward_compat_tests_have_compat_marker"}
 	t.Run("backward_compat_tests_have_compat_marker", func(t *testing.T) {
 		// Python test files that contain "backward compat" in docstrings
 		// must also have @pytest.mark.compat somewhere in the file.
@@ -2733,6 +2820,7 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1560", "section": "30", "sectionName": "Test System Quality", "title": "compat_marker_count_nonzero"}
 	t.Run("compat_marker_count_nonzero", func(t *testing.T) {
 		// There must be at least one @pytest.mark.compat in the test suite.
 		// If the count is zero, either compat tests were removed or the markers
@@ -2765,6 +2853,7 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 		t.Logf("found %d @pytest.mark.compat markers in test suite", compatCount)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1561", "section": "30", "sectionName": "Test System Quality", "title": "all_six_markers_defined_in_pyproject"}
 	t.Run("all_six_markers_defined_in_pyproject", func(t *testing.T) {
 		// Verify the full set of test markers is defined — these are the
 		// classification system for the test suite.
@@ -2793,10 +2882,12 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 //     (crypto, vault, auth, identity, transport, handlers, config, etc.).
 //   - The Makefile must have a target that runs Go unit tests.
 //   - The master test runner (run_all_tests.sh) must include Go tests in its pipeline.
+// TRACE: {"suite": "CORE", "case": "1562", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "01", "title": "UnitCoreStage"}
 func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 	root := findProjectRoot(t)
 	coreTestDir := filepath.Join(root, "core", "test")
 
+	// TRACE: {"suite": "CORE", "case": "1563", "section": "30", "sectionName": "Test System Quality", "title": "go_test_files_exist_and_follow_convention"}
 	t.Run("go_test_files_exist_and_follow_convention", func(t *testing.T) {
 		// Go test files must exist in core/test/ and follow the _test.go naming
 		// convention. Without test files, `go test ./...` passes vacuously.
@@ -2821,6 +2912,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		t.Logf("found %d Go test files in core/test/", len(testFiles))
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1564", "section": "30", "sectionName": "Test System Quality", "title": "all_test_files_have_package_declaration"}
 	t.Run("all_test_files_have_package_declaration", func(t *testing.T) {
 		// Every _test.go file must declare `package test` to be compiled
 		// correctly by `go test ./test/`. A missing or wrong package
@@ -2846,6 +2938,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1565", "section": "30", "sectionName": "Test System Quality", "title": "core_subsystems_covered_by_tests"}
 	t.Run("core_subsystems_covered_by_tests", func(t *testing.T) {
 		// The unit-core CI stage must exercise all major Go subsystems.
 		// Each subsystem needs at least one dedicated test file. If a
@@ -2882,6 +2975,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1566", "section": "30", "sectionName": "Test System Quality", "title": "test_functions_exist_in_test_files"}
 	t.Run("test_functions_exist_in_test_files", func(t *testing.T) {
 		// Test files must contain actual Test* functions, not just helper code.
 		// A file with only helpers would compile fine but contribute no tests
@@ -2918,6 +3012,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1567", "section": "30", "sectionName": "Test System Quality", "title": "makefile_has_go_test_target"}
 	t.Run("makefile_has_go_test_target", func(t *testing.T) {
 		// The Makefile must include `go test` in its test target so that
 		// `make test` actually runs Go unit tests as a CI gate.
@@ -2932,6 +3027,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1568", "section": "30", "sectionName": "Test System Quality", "title": "total_test_function_count_is_substantial"}
 	t.Run("total_test_function_count_is_substantial", func(t *testing.T) {
 		// A meaningful CI gate needs a substantial number of test functions.
 		// Count all Test* function declarations across core/test/.
@@ -2962,6 +3058,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		t.Logf("unit-core: %d test functions across all test files", totalFunctions)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1569", "section": "30", "sectionName": "Test System Quality", "title": "master_runner_includes_integration_tests"}
 	t.Run("master_runner_includes_integration_tests", func(t *testing.T) {
 		// The master test runner (run_all_tests.sh) must exist and include
 		// Go-related test execution in its pipeline. Without this, the CI
@@ -2992,6 +3089,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1570", "section": "30", "sectionName": "Test System Quality", "title": "fts5_build_tag_documented"}
 	t.Run("fts5_build_tag_documented", func(t *testing.T) {
 		// The -tags fts5 build tag is required for SQLite FTS5 support.
 		// If the Makefile or build instructions don't mention it,
@@ -3022,10 +3120,12 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 //   - A conftest.py must exist with fixtures for brain test infrastructure.
 //   - The Makefile must have a target that runs brain unit tests.
 //   - Brain tests must NOT import from core (brain is an untrusted tenant — no Go code access).
+// TRACE: {"suite": "CORE", "case": "1571", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "02", "title": "UnitBrainStage"}
 func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 	root := findProjectRoot(t)
 	brainTestDir := filepath.Join(root, "brain", "tests")
 
+	// TRACE: {"suite": "CORE", "case": "1572", "section": "30", "sectionName": "Test System Quality", "title": "brain_test_files_exist_and_follow_convention"}
 	t.Run("brain_test_files_exist_and_follow_convention", func(t *testing.T) {
 		// Python test files must exist in brain/tests/ and follow the test_*.py
 		// naming convention. pytest discovers tests via this naming pattern.
@@ -3049,6 +3149,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		t.Logf("found %d Python test files in brain/tests/", len(testFiles))
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1573", "section": "30", "sectionName": "Test System Quality", "title": "conftest_exists_with_fixtures"}
 	t.Run("conftest_exists_with_fixtures", func(t *testing.T) {
 		// brain/tests/conftest.py must exist and provide shared test fixtures.
 		// Without conftest.py, tests would lack mock factories, auth tokens,
@@ -3072,6 +3173,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1574", "section": "30", "sectionName": "Test System Quality", "title": "brain_subsystems_covered_by_tests"}
 	t.Run("brain_subsystems_covered_by_tests", func(t *testing.T) {
 		// The unit-brain CI stage must exercise all major Brain subsystems.
 		// Each subsystem needs at least one dedicated test file.
@@ -3108,6 +3210,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1575", "section": "30", "sectionName": "Test System Quality", "title": "test_files_contain_test_functions_or_classes"}
 	t.Run("test_files_contain_test_functions_or_classes", func(t *testing.T) {
 		// Python test files must contain actual test functions (def test_*) or
 		// test classes (class Test*). Files with only helpers contribute no tests.
@@ -3139,6 +3242,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1576", "section": "30", "sectionName": "Test System Quality", "title": "makefile_has_pytest_target"}
 	t.Run("makefile_has_pytest_target", func(t *testing.T) {
 		// The Makefile must include `pytest` in its test target so that
 		// `make test` actually runs brain unit tests as a CI gate.
@@ -3153,6 +3257,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1577", "section": "30", "sectionName": "Test System Quality", "title": "total_test_function_count_is_substantial"}
 	t.Run("total_test_function_count_is_substantial", func(t *testing.T) {
 		// A meaningful CI gate needs a substantial number of test functions.
 		// Count all test function/class declarations across brain/tests/.
@@ -3183,6 +3288,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		t.Logf("unit-brain: %d test functions across all brain test files", totalFunctions)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1578", "section": "30", "sectionName": "Test System Quality", "title": "brain_tests_do_not_import_go_core"}
 	t.Run("brain_tests_do_not_import_go_core", func(t *testing.T) {
 		// Brain is an untrusted tenant — brain tests must NEVER import Go core
 		// packages directly. The brain communicates with core exclusively via
@@ -3232,6 +3338,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1579", "section": "30", "sectionName": "Test System Quality", "title": "factories_module_exists"}
 	t.Run("factories_module_exists", func(t *testing.T) {
 		// The brain test suite should have a factories module for creating
 		// test data consistently. This prevents test fragility from ad-hoc
@@ -3272,9 +3379,11 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 //   - Files in the top-level tests/ directory that target legacy dina.* modules
 //     should be marked as legacy or compat (not unmarked).
 //   - The `-m legacy` flag must be valid (not trigger PytestUnknownMarkWarning).
+// TRACE: {"suite": "CORE", "case": "1580", "section": "30", "sectionName": "Test System Quality", "subsection": "09", "scenario": "01", "title": "LegacyTestsInExplicitProfile"}
 func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "1581", "section": "30", "sectionName": "Test System Quality", "title": "legacy_marker_defined_in_pyproject"}
 	t.Run("legacy_marker_defined_in_pyproject", func(t *testing.T) {
 		// pyproject.toml must define the 'legacy' marker. Without this definition,
 		// `pytest -m legacy` would trigger PytestUnknownMarkWarning and the marker
@@ -3287,6 +3396,7 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1582", "section": "30", "sectionName": "Test System Quality", "title": "legacy_marker_has_meaningful_description"}
 	t.Run("legacy_marker_has_meaningful_description", func(t *testing.T) {
 		// The legacy marker definition must describe what it means — otherwise
 		// developers won't know when to apply it. The description should mention
@@ -3312,6 +3422,7 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1583", "section": "30", "sectionName": "Test System Quality", "title": "addopts_does_not_auto_exclude_legacy"}
 	t.Run("addopts_does_not_auto_exclude_legacy", func(t *testing.T) {
 		// pyproject.toml's addopts must NOT auto-exclude legacy tests.
 		// If addopts contains `-m 'not legacy'`, then `pytest -m legacy` would
@@ -3337,6 +3448,7 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1584", "section": "30", "sectionName": "Test System Quality", "title": "makefile_excludes_legacy_from_default_pipeline"}
 	t.Run("makefile_excludes_legacy_from_default_pipeline", func(t *testing.T) {
 		// The Makefile's test target must exclude legacy tests via -m 'not legacy'.
 		// This is the mechanism that separates legacy from default: Makefile excludes
@@ -3349,6 +3461,7 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1585", "section": "30", "sectionName": "Test System Quality", "title": "legacy_or_compat_markers_on_old_test_files"}
 	t.Run("legacy_or_compat_markers_on_old_test_files", func(t *testing.T) {
 		// Top-level tests/test_*.py files that import from legacy dina.* modules
 		// (dina.models, dina.memory, etc.) should be tagged with @pytest.mark.legacy
@@ -3410,6 +3523,7 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1586", "section": "30", "sectionName": "Test System Quality", "title": "legacy_exclusion_is_pytest_not_filter"}
 	t.Run("legacy_exclusion_is_pytest_not_filter", func(t *testing.T) {
 		// The Makefile's exclusion mechanism must use pytest's -m flag
 		// (marker-based filtering), not file-path exclusion (--ignore).
@@ -3429,6 +3543,7 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1587", "section": "30", "sectionName": "Test System Quality", "title": "marker_infrastructure_self_consistent"}
 	t.Run("marker_infrastructure_self_consistent", func(t *testing.T) {
 		// The three components of legacy test separation must be consistent:
 		// 1. pyproject.toml defines the marker
@@ -3478,9 +3593,11 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 //     mock fallback when real API calls fail.
 //   - The Makefile must have a test-integration target that activates Docker mode.
 //   - Health check infrastructure must exist so tests wait for services.
+// TRACE: {"suite": "CORE", "case": "1588", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "04", "title": "IntegrationRealStage"}
 func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "1589", "section": "30", "sectionName": "Test System Quality", "title": "integration_conftest_implements_dual_mode"}
 	t.Run("integration_conftest_implements_dual_mode", func(t *testing.T) {
 		// The integration conftest.py must implement the dual-mode fixture pattern:
 		// when DINA_INTEGRATION=docker, fixtures return Real* classes backed by
@@ -3504,6 +3621,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1590", "section": "30", "sectionName": "Test System Quality", "title": "real_client_classes_exist_with_inheritance"}
 	t.Run("real_client_classes_exist_with_inheritance", func(t *testing.T) {
 		// Real* client classes must exist and inherit from Mock* counterparts.
 		// Inheritance ensures interface compatibility: tests that work with mocks
@@ -3539,6 +3657,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1591", "section": "30", "sectionName": "Test System Quality", "title": "strict_real_mode_prevents_mock_fallback"}
 	t.Run("strict_real_mode_prevents_mock_fallback", func(t *testing.T) {
 		// Strict-real mode (DINA_STRICT_REAL=1) must exist in real_clients.py.
 		// When active, any API failure raises RuntimeError instead of returning None.
@@ -3564,6 +3683,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1592", "section": "30", "sectionName": "Test System Quality", "title": "union_compose_exists_with_isolation"}
 	t.Run("union_compose_exists_with_isolation", func(t *testing.T) {
 		// The union Docker Compose file must exist with fixed ports
 		// and all actors for integration + E2E + release + system tests.
@@ -3585,6 +3705,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1593", "section": "30", "sectionName": "Test System Quality", "title": "test_stack_services_class_exists"}
 	t.Run("test_stack_services_class_exists", func(t *testing.T) {
 		// TestStackServices provides URLs, tokens, and key extraction
 		// for all test tiers without managing Docker lifecycle.
@@ -3598,6 +3719,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1594", "section": "30", "sectionName": "Test System Quality", "title": "makefile_has_integration_target_with_docker"}
 	t.Run("makefile_has_integration_target_with_docker", func(t *testing.T) {
 		// The Makefile must have a test-integration target that:
 		// 1. Starts Docker containers
@@ -3622,6 +3744,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1595", "section": "30", "sectionName": "Test System Quality", "title": "retry_on_429_for_rate_limited_apis"}
 	t.Run("retry_on_429_for_rate_limited_apis", func(t *testing.T) {
 		// Real HTTP clients must retry on 429 (rate limit) responses.
 		// Without retry logic, tests would fail intermittently when multiple
@@ -3642,6 +3765,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1596", "section": "30", "sectionName": "Test System Quality", "title": "integration_tests_cover_major_subsystems"}
 	t.Run("integration_tests_cover_major_subsystems", func(t *testing.T) {
 		// The integration test directory must contain test files covering major
 		// subsystems. Without comprehensive test files, the integration-real CI
@@ -3666,6 +3790,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 		t.Logf("integration-real: %d test files in tests/integration/", testFiles)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1597", "section": "30", "sectionName": "Test System Quality", "title": "ed25519_signing_for_real_requests"}
 	t.Run("ed25519_signing_for_real_requests", func(t *testing.T) {
 		// Real HTTP clients must sign requests with Ed25519 service keys.
 		// Core validates every brain request with signature verification.
@@ -3700,9 +3825,11 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 //   - E2E test suites must cover all 3 critical paths mentioned in the requirement.
 //   - Init containers (keygen-*) must provision SLIP-0010 derived service keys.
 //   - E2E conftest.py must skip the entire suite when Docker is not available.
+// TRACE: {"suite": "CORE", "case": "1598", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "05", "title": "E2ESmokeRealStage"}
 func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "1599", "section": "30", "sectionName": "Test System Quality", "title": "multi_node_compose_has_4_actors"}
 	t.Run("multi_node_compose_has_4_actors", func(t *testing.T) {
 		// The union Docker Compose file must define 4 actor pairs (Core+Brain each).
 		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
@@ -3721,6 +3848,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1600", "section": "30", "sectionName": "Test System Quality", "title": "keygen_init_containers_provision_keys"}
 	t.Run("keygen_init_containers_provision_keys", func(t *testing.T) {
 		// Each actor must have a keygen init container that derives SLIP-0010
 		// service keys from its master seed BEFORE Core/Brain start.
@@ -3739,24 +3867,25 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
-	t.Run("e2e_conftest_skips_without_docker", func(t *testing.T) {
-		// The E2E conftest.py must skip the entire suite when DINA_E2E != 'docker'.
+	// TRACE: {"suite": "CORE", "case": "1601", "section": "30", "sectionName": "Test System Quality", "title": "e2e_conftest_fails_without_docker"}
+	t.Run("e2e_conftest_fails_without_docker", func(t *testing.T) {
+		// The E2E conftest.py must fail hard when DINA_E2E != 'docker'.
 		// E2E tests CANNOT run without Docker containers — there is no mock fallback.
-		// This is a safety guard: running E2E without Docker would produce
-		// confusing failures or false passes.
+		// pytest.UsageError prevents silent execution without Docker.
 		conftest := readProjectFile(t, root, filepath.Join("tests", "e2e", "conftest.py"))
 
 		if !strings.Contains(conftest, "DINA_E2E") {
 			t.Fatal("E2E conftest.py must check DINA_E2E env var")
 		}
 
-		// Must call pytest.skip when Docker is not available.
-		if !strings.Contains(conftest, "pytest.skip") {
-			t.Fatal("E2E conftest.py must call pytest.skip when DINA_E2E != 'docker' — " +
+		// Must raise UsageError (hard fail) when Docker is not available.
+		if !strings.Contains(conftest, "pytest.UsageError") {
+			t.Fatal("E2E conftest.py must raise pytest.UsageError when DINA_E2E != 'docker' — " +
 				"E2E tests cannot run without Docker containers")
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1602", "section": "30", "sectionName": "Test System Quality", "title": "real_home_node_class_exists"}
 	t.Run("real_home_node_class_exists", func(t *testing.T) {
 		// RealHomeNode must exist as the E2E actor implementation backed by
 		// real HTTP calls to Go Core. Without RealHomeNode, E2E tests would
@@ -3775,6 +3904,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1603", "section": "30", "sectionName": "Test System Quality", "title": "real_d2d_network_class_exists"}
 	t.Run("real_d2d_network_class_exists", func(t *testing.T) {
 		// RealD2DNetwork must exist for testing Dina-to-Dina encrypted messaging
 		// over real HTTP connections between Docker containers.
@@ -3786,6 +3916,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1604", "section": "30", "sectionName": "Test System Quality", "title": "test_stack_services_used_by_e2e"}
 	t.Run("test_stack_services_used_by_e2e", func(t *testing.T) {
 		// E2E conftest must use TestStackServices (not its own Docker lifecycle).
 		conftest := readProjectFile(t, root, filepath.Join("tests", "e2e", "conftest.py"))
@@ -3795,6 +3926,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1605", "section": "30", "sectionName": "Test System Quality", "title": "critical_path_d2d_messaging_tests_exist"}
 	t.Run("critical_path_d2d_messaging_tests_exist", func(t *testing.T) {
 		// E2E suite must have tests for D2D messaging — this is one of the 3
 		// critical paths specified in the requirement. D2D is the foundation of
@@ -3831,6 +3963,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1606", "section": "30", "sectionName": "Test System Quality", "title": "critical_path_vault_crud_tests_exist"}
 	t.Run("critical_path_vault_crud_tests_exist", func(t *testing.T) {
 		// E2E suite must have tests for vault CRUD operations — the second
 		// critical path. Vault is the encrypted SQLCipher storage for all
@@ -3869,6 +4002,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1607", "section": "30", "sectionName": "Test System Quality", "title": "critical_path_pii_scrub_tests_exist"}
 	t.Run("critical_path_pii_scrub_tests_exist", func(t *testing.T) {
 		// E2E suite must have tests for PII scrubbing — the third critical path.
 		// PII must never leave the Home Node: the 3-tier scrubbing pipeline
@@ -3905,6 +4039,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1608", "section": "30", "sectionName": "Test System Quality", "title": "e2e_suite_has_sufficient_test_coverage"}
 	t.Run("e2e_suite_has_sufficient_test_coverage", func(t *testing.T) {
 		// The E2E suite must have enough test suites to cover the critical paths
 		// comprehensively. A minimal E2E suite with 1-2 test files is insufficient.
@@ -3929,6 +4064,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 		t.Logf("e2e-smoke-real: %d test suite files in tests/e2e/", suiteCount)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1609", "section": "30", "sectionName": "Test System Quality", "title": "allowed_endpoints_include_all_actors"}
 	t.Run("allowed_endpoints_include_all_actors", func(t *testing.T) {
 		// The union compose must configure DINA_ALLOWED_ENDPOINTS for cross-node D2D.
 		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
@@ -3960,9 +4096,11 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 //     the legacy exclusion.
 //   - Integration, E2E, and system test directories must NOT contain unmarked
 //     legacy tests (tests importing from dina.* without a legacy marker).
+// TRACE: {"suite": "CORE", "case": "1610", "section": "30", "sectionName": "Test System Quality", "subsection": "09", "scenario": "02", "title": "DefaultPipelineExcludesLegacy"}
 func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "1611", "section": "30", "sectionName": "Test System Quality", "title": "makefile_default_test_excludes_legacy"}
 	t.Run("makefile_default_test_excludes_legacy", func(t *testing.T) {
 		// The Makefile's default `test` target must exclude legacy tests.
 		// This is the primary CI gate: `make test` runs during every CI build,
@@ -3995,6 +4133,7 @@ func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1612", "section": "30", "sectionName": "Test System Quality", "title": "legacy_exclusion_is_in_pytest_not_go_test"}
 	t.Run("legacy_exclusion_is_in_pytest_not_go_test", func(t *testing.T) {
 		// The legacy exclusion must be in the pytest command (brain/Python tests),
 		// not in the `go test` command. Go has no legacy tests, so the exclusion
@@ -4010,6 +4149,7 @@ func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1613", "section": "30", "sectionName": "Test System Quality", "title": "all_legacy_files_have_module_level_marker"}
 	t.Run("all_legacy_files_have_module_level_marker", func(t *testing.T) {
 		// Every Python test file that imports from legacy dina.* modules must have
 		// `pytestmark = pytest.mark.legacy` at module level. Module-level markers
@@ -4076,6 +4216,7 @@ func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1614", "section": "30", "sectionName": "Test System Quality", "title": "integration_dir_has_no_unmarked_legacy"}
 	t.Run("integration_dir_has_no_unmarked_legacy", func(t *testing.T) {
 		// Integration tests (tests/integration/) must NOT contain imports from
 		// legacy dina.* modules. Integration tests target the v0.4 Core↔Brain
@@ -4115,6 +4256,7 @@ func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1615", "section": "30", "sectionName": "Test System Quality", "title": "e2e_dir_has_no_unmarked_legacy"}
 	t.Run("e2e_dir_has_no_unmarked_legacy", func(t *testing.T) {
 		// E2E tests (tests/e2e/) must NOT contain imports from legacy dina.* modules.
 		// E2E tests work with real Docker containers via HTTP, not Python packages.
@@ -4151,6 +4293,7 @@ func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1616", "section": "30", "sectionName": "Test System Quality", "title": "run_all_tests_does_not_run_legacy"}
 	t.Run("run_all_tests_does_not_run_legacy", func(t *testing.T) {
 		// The master test runner (run_all_tests.sh) must not bypass the legacy
 		// exclusion. It chains 3 suites (integration, user stories, release) —
@@ -4170,6 +4313,7 @@ func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T)
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "1617", "section": "30", "sectionName": "Test System Quality", "title": "legacy_marker_count_matches_legacy_files"}
 	t.Run("legacy_marker_count_matches_legacy_files", func(t *testing.T) {
 		// Verify that the number of files with `pytestmark = pytest.mark.legacy`
 		// matches the number of files that import from dina.* modules.

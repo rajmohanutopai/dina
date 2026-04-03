@@ -44,24 +44,67 @@ do_compose() {
 
 health_check_all() {
   local FAILED=0
-  echo "=== Health checks ==="
-  wait_healthy "alonso-core (19100)"     "http://localhost:19100/healthz" || FAILED=1
-  wait_healthy "sancho-core (19300)"     "http://localhost:19300/healthz" || FAILED=1
-  wait_healthy "chairmaker-core (19500)" "http://localhost:19500/healthz" || FAILED=1
-  wait_healthy "albert-core (19700)"     "http://localhost:19700/healthz" || FAILED=1
-  wait_healthy "alonso-brain (19200)"    "http://localhost:19200/healthz" || FAILED=1
-  wait_healthy "sancho-brain (19400)"    "http://localhost:19400/healthz" || FAILED=1
-  wait_healthy "chairmaker-brain (19600)" "http://localhost:19600/healthz" || FAILED=1
-  wait_healthy "albert-brain (19800)"    "http://localhost:19800/healthz" || FAILED=1
-  wait_healthy "plc (2582)"             "http://localhost:2582/healthz" || FAILED=1
-  wait_healthy "pds (2583)"             "http://localhost:2583/xrpc/_health" || FAILED=1
-  wait_healthy "appview (3001)"         "http://localhost:3001/health" || FAILED=1
-  wait_tcp     "postgres (5433)"        "localhost" 5433 || FAILED=1
+  local CHECKED=0
+  local TOTAL=12
+  local FAIL_LIST=""
+
+  _check() {
+    local name="$1" url="$2" retries="${3:-30}"
+    for i in $(seq 1 "$retries"); do
+      if curl -sf "$url" > /dev/null 2>&1; then
+        CHECKED=$((CHECKED + 1))
+        printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+        return 0
+      fi
+      sleep 1
+    done
+    CHECKED=$((CHECKED + 1))
+    FAIL_LIST="$FAIL_LIST $name"
+    FAILED=1
+    printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+    return 1
+  }
+  _check_tcp() {
+    local name="$1" host="$2" port="$3" retries="${4:-30}"
+    for i in $(seq 1 "$retries"); do
+      if python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('$host',$port)); s.close()" 2>/dev/null; then
+        CHECKED=$((CHECKED + 1))
+        printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+        return 0
+      fi
+      sleep 1
+    done
+    CHECKED=$((CHECKED + 1))
+    FAIL_LIST="$FAIL_LIST $name"
+    FAILED=1
+    printf "\r  Health checks: %s/%s " "$CHECKED" "$TOTAL"
+    return 1
+  }
+
+  printf "  Health checks: 0/%s " "$TOTAL"
+  _check "alonso-core"     "http://localhost:19100/healthz" || true
+  _check "sancho-core"     "http://localhost:19300/healthz" || true
+  _check "chairmaker-core" "http://localhost:19500/healthz" || true
+  _check "albert-core"     "http://localhost:19700/healthz" || true
+  _check "alonso-brain"    "http://localhost:19200/healthz" || true
+  _check "sancho-brain"    "http://localhost:19400/healthz" || true
+  _check "chairmaker-brain" "http://localhost:19600/healthz" || true
+  _check "albert-brain"    "http://localhost:19800/healthz" || true
+  _check "plc"             "http://localhost:2582/healthz" || true
+  _check "pds"             "http://localhost:2583/xrpc/_health" || true
+  _check "appview"         "http://localhost:3001/health" || true
+  _check_tcp "postgres"    "localhost" 5433 || true
+
+  if [ "$FAILED" -eq 0 ]; then
+    printf "\r  Health checks: %s/%s ✓                    \n" "$TOTAL" "$TOTAL"
+  else
+    printf "\r  Health checks: FAILED —%s\n" "$FAIL_LIST"
+  fi
   return $FAILED
 }
 
 extract_keys() {
-  echo "=== Extracting service keys ==="
+  printf "  Extracting service keys... "
   rm -rf "$KEY_DIR"
   for actor in alonso sancho chairmaker albert; do
     for role in core brain; do
@@ -72,11 +115,10 @@ extract_keys() {
         > "$dir/${role}_ed25519_private.pem" 2>/dev/null || true
     done
   done
-  echo "  Keys extracted to $KEY_DIR/"
+  echo "done"
 }
 
 write_manifest() {
-  echo "=== Writing manifest ==="
   cat > "$MANIFEST" <<MANIFEST
 {
   "project": "$PROJECT",
@@ -112,10 +154,11 @@ Usage: ./prepare_non_unit_env.sh [command]
 
 Commands:
   up        Build, start, health-check, extract keys, write manifest (default)
-  down      Tear down the test stack and remove volumes (images kept)
+  down      Tear down (preserves PDS/PLC identity volumes)
+  down-all  Tear down and remove ALL volumes (wipes identities — needs re-setup)
   purge     Tear down and remove all images (including postgres, pds, etc.)
   purge-dina  Tear down and remove only Dina images (keep postgres, pds, plc)
-  restart   Tear down then bring up fresh
+  restart   Tear down then bring up fresh (preserves identities)
   status    Health-check all services (no start/stop)
   keys      Re-extract service keys from running containers
   logs      Show last 50 lines from all containers
@@ -124,10 +167,10 @@ Commands:
 
 Examples:
   ./prepare_non_unit_env.sh up           # bring up the stack
-  ./prepare_non_unit_env.sh down         # tear down
+  ./prepare_non_unit_env.sh down         # tear down (identity preserved)
+  ./prepare_non_unit_env.sh down-all     # tear down + wipe ALL volumes
   ./prepare_non_unit_env.sh status       # check health
   ./prepare_non_unit_env.sh logs         # view logs
-  ./prepare_non_unit_env.sh purge-dina   # remove Dina images (keep infra)
 USAGE
 }
 
@@ -136,14 +179,55 @@ USAGE
 # ---------------------------------------------------------------------------
 
 cmd_up() {
-  echo "=== Tearing down any existing test stack ==="
-  do_compose down -v --remove-orphans 2>/dev/null || true
+  # --- Tear down (preserve volumes — identity + PDS/PLC persist) ---
+  printf "  Tearing down existing stack... "
+  do_compose down --remove-orphans >/dev/null 2>&1 || true
+  echo "done"
 
-  echo "=== Building all images ==="
-  do_compose build
+  # --- Build ---
+  printf "  Building images... "
+  if ! do_compose build >/dev/null 2>&1; then
+    echo "FAILED"
+    exit 1
+  fi
+  echo "done"
 
-  echo "=== Starting all services ==="
-  do_compose up -d --wait
+  # --- Verify + restore identity state if needed ---
+  # Validates each actor's identity (DID, key paths) against fixture.
+  # Restores from saved state if missing, corrupted, or mismatched.
+  local ID_STATE="tests/fixtures/identity-state"
+  if [ -d "$ID_STATE" ]; then
+    python3 scripts/seed_test_identities.py --check-and-restore
+    if [ $? -ne 0 ]; then
+      echo "  WARNING: Identity restore had issues — Core may create new DIDs on first boot"
+    fi
+  fi
+
+  # --- Start ---
+  printf "  Starting services... "
+  if ! do_compose up -d >/dev/null 2>&1; then
+    echo "FAILED — retrying with --force-recreate"
+    do_compose up -d --force-recreate >/dev/null 2>&1 || true
+  fi
+  echo "done"
+
+  # --- Wait for healthy (in-place progress) ---
+  for i in $(seq 1 120); do
+    HEALTHY=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -c "healthy" || true)
+    WITH_HC=$(do_compose ps --format "{{.Name}} {{.Status}}" 2>/dev/null | grep -cE "healthy|unhealthy|starting" || true)
+    TOTAL=$(do_compose ps --format "{{.Name}}" 2>/dev/null | wc -l | tr -d ' ')
+    printf "\r  Waiting for healthy: %s/%s containers (%s total) " "$HEALTHY" "$WITH_HC" "$TOTAL"
+    if [ "$HEALTHY" = "$WITH_HC" ] && [ "$WITH_HC" -gt 0 ]; then
+      printf "\r  Waiting for healthy: %s/%s containers (%s total) ✓\n" "$HEALTHY" "$WITH_HC" "$TOTAL"
+      break
+    fi
+    if [ "$i" = "120" ]; then
+      printf "\r  Waiting for healthy: %s/%s containers — TIMEOUT\n" "$HEALTHY" "$WITH_HC"
+      do_compose ps 2>/dev/null
+      exit 1
+    fi
+    sleep 2
+  done
 
   if ! health_check_all; then
     echo ""
@@ -157,12 +241,21 @@ cmd_up() {
   echo "=== Test stack ready ==="
 }
 
+
 cmd_down() {
-  echo "=== Tearing down test stack ==="
-  do_compose down -v --remove-orphans
+  printf "  Tearing down test stack (preserving volumes)... "
+  do_compose down --remove-orphans >/dev/null 2>&1 || true
   rm -f "$MANIFEST"
   rm -rf "$KEY_DIR"
-  echo "=== Stack removed (images kept for faster rebuild) ==="
+  echo "done"
+}
+
+cmd_down_all() {
+  printf "  Tearing down test stack (removing ALL volumes)... "
+  do_compose down -v --remove-orphans >/dev/null 2>&1 || true
+  rm -f "$MANIFEST"
+  rm -rf "$KEY_DIR"
+  echo "done"
 }
 
 cmd_purge() {
@@ -227,6 +320,7 @@ START_TIME=$SECONDS
 case "$CMD" in
   up)       cmd_up ;;
   down)     cmd_down ;;
+  down-all) cmd_down_all ;;
   purge)      cmd_purge ;;
   purge-dina) cmd_purge_dina ;;
   restart)    cmd_restart ;;

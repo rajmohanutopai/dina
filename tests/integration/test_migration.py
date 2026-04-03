@@ -34,6 +34,7 @@ class TestSchemaMigration:
     """Schema version bumps, pre-flight backups, and rollback."""
 
 # TST-INT-324
+    # TRACE: {"suite": "INT", "case": "0324", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "01", "title": "schema_migration_on_upgrade"}
     def test_schema_migration_on_upgrade(
         self,
         mock_schema_migration: MockSchemaMigration,
@@ -63,6 +64,7 @@ class TestSchemaMigration:
         assert mock_schema_migration.rolled_back is True
 
 # TST-INT-325
+    # TRACE: {"suite": "INT", "case": "0325", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "02", "title": "data_preserved_across_upgrade"}
     def test_data_preserved_across_upgrade(
         self,
         mock_schema_migration: MockSchemaMigration,
@@ -90,6 +92,7 @@ class TestSchemaMigration:
         assert "contact_alice" in results
 
 # TST-INT-326
+    # TRACE: {"suite": "INT", "case": "0326", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "03", "title": "rollback_after_failed_migration"}
     def test_rollback_after_failed_migration(
         self,
         mock_schema_migration: MockSchemaMigration,
@@ -112,6 +115,7 @@ class TestSchemaMigration:
         assert mock_schema_migration.current_version == original_version
 
 # TST-INT-327
+    # TRACE: {"suite": "INT", "case": "0327", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "04", "title": "config_format_change"}
     def test_config_format_change(
         self,
         mock_vault: MockVault,
@@ -158,6 +162,7 @@ class TestSchemaMigration:
         assert mock_vault.retrieve(1, config_key) is None
 
 # TST-INT-333
+    # TRACE: {"suite": "INT", "case": "0333", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "05", "title": "schema_migration_identity_sqlite"}
     def test_schema_migration_identity_sqlite(
         self,
         mock_schema_migration: MockSchemaMigration,
@@ -187,6 +192,7 @@ class TestSchemaMigration:
         assert meta["did"] == original_did
 
 # TST-INT-334
+    # TRACE: {"suite": "INT", "case": "0334", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "06", "title": "schema_migration_persona_vault"}
     def test_schema_migration_persona_vault(
         self,
         mock_schema_migration: MockSchemaMigration,
@@ -235,6 +241,7 @@ class TestSchemaMigration:
         assert mock_schema_migration.backup is not None
 
 # TST-INT-335
+    # TRACE: {"suite": "INT", "case": "0335", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "07", "title": "schema_migration_partial_failure"}
     def test_schema_migration_partial_failure(
         self,
         mock_vault: MockVault,
@@ -269,6 +276,7 @@ class TestSchemaMigration:
                                    persona=PersonaType.CONSUMER) is not None
 
 # TST-INT-336
+    # TRACE: {"suite": "INT", "case": "0336", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "01", "scenario": "08", "title": "fts5_rebuild_after_schema_change"}
     def test_fts5_rebuild_after_schema_change(
         self,
         mock_schema_migration: MockSchemaMigration,
@@ -310,6 +318,7 @@ class TestExportImport:
     """Data portability via dina export / dina import."""
 
 # TST-INT-328
+    # TRACE: {"suite": "INT", "case": "0328", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "02", "scenario": "01", "title": "export_import_roundtrip"}
     def test_export_import_roundtrip(
         self,
         mock_vault: MockVault,
@@ -367,6 +376,7 @@ class TestExportImport:
         assert fresh_vault.retrieve(1, "nonexistent_key") is None
 
 # TST-INT-329
+    # TRACE: {"suite": "INT", "case": "0329", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "02", "scenario": "02", "title": "export_import_preserves_did_identity"}
     def test_export_import_preserves_did_identity(
         self,
         mock_vault: MockVault,
@@ -387,6 +397,7 @@ class TestExportImport:
         assert mock_identity.root_did == original_did
 
 # TST-INT-332
+    # TRACE: {"suite": "INT", "case": "0332", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "02", "scenario": "03", "title": "import_rejects_tampered_archive"}
     def test_import_rejects_tampered_archive(
         self,
         mock_vault: MockVault,
@@ -427,6 +438,7 @@ class TestHostingLevelMigration:
     """Moving between cloud, self-hosted, and local deployments."""
 
 # TST-INT-330
+    # TRACE: {"suite": "INT", "case": "0330", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "03", "scenario": "01", "title": "migration_between_hosting_levels"}
     def test_migration_between_hosting_levels(
         self,
         mock_vault: MockVault,
@@ -462,6 +474,7 @@ class TestHostingLevelMigration:
         assert self_hosted_vault.retrieve(0, "hosting")["level"] == "self-hosted"
 
 # TST-INT-331
+    # TRACE: {"suite": "INT", "case": "0331", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "03", "scenario": "02", "title": "same_docker_image_across_hosting_levels"}
     def test_same_docker_image_across_hosting_levels(
         self,
         mock_deployment_profile: MockDeploymentProfile,
@@ -498,6 +511,7 @@ class TestDeviceRepairing:
     """Import invalidates existing device tokens."""
 
 # TST-INT-337
+    # TRACE: {"suite": "INT", "case": "0337", "section": "12", "sectionName": "Upgrade & Migration", "subsection": "04", "scenario": "01", "title": "import_invalidates_all_device_tokens"}
     def test_import_invalidates_all_device_tokens(
         self,
         mock_vault: MockVault,

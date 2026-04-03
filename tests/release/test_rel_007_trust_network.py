@@ -17,6 +17,7 @@ class TestTrustNetwork:
     """Real API tests for REL-007: trust network via AppView."""
 
     # REL-007
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "01", "title": "rel_007_trust_resolve_endpoint_exists"}
     def test_rel_007_trust_resolve_endpoint_exists(
         self, core_url, auth_headers,
     ) -> None:
@@ -35,6 +36,7 @@ class TestTrustNetwork:
         )
 
     # REL-007
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "02", "title": "rel_007_trust_resolve_requires_did_param"}
     def test_rel_007_trust_resolve_requires_did_param(
         self, core_url, auth_headers,
     ) -> None:
@@ -47,6 +49,7 @@ class TestTrustNetwork:
         assert resp.status_code == 400
 
     # REL-007
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "03", "title": "rel_007_trust_cache_endpoint"}
     def test_rel_007_trust_cache_endpoint(
         self, core_url, auth_headers,
     ) -> None:
@@ -61,6 +64,7 @@ class TestTrustNetwork:
         assert "entries" in data
 
     # REL-007
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "04", "title": "rel_007_trust_stats_endpoint"}
     def test_rel_007_trust_stats_endpoint(
         self, core_url, auth_headers,
     ) -> None:
@@ -73,6 +77,7 @@ class TestTrustNetwork:
         assert resp.status_code == 200
 
     # REL-007
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "05", "title": "rel_007_trust_sync_endpoint"}
     def test_rel_007_trust_sync_endpoint(
         self, core_url, auth_headers,
     ) -> None:
@@ -90,6 +95,7 @@ class TestTrustNetwork:
         )
 
     # REL-007
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "06", "title": "rel_007_appview_accessible_from_core"}
     def test_rel_007_appview_accessible_from_core(
         self, core_url, auth_headers,
     ) -> None:

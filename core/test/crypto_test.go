@@ -30,6 +30,7 @@ import (
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0265", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "DeriveRootIdentityKey"}
 func TestCrypto_2_2_DeriveRootIdentityKey(t *testing.T) {
 	impl := realHDKey
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
@@ -54,6 +55,7 @@ func TestCrypto_2_2_DeriveRootIdentityKey(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0266", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "DerivePersonaKey"}
 func TestCrypto_2_2_DerivePersonaKey(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -98,6 +100,7 @@ func TestCrypto_2_2_DerivePersonaKey(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0267", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "Determinism"}
 func TestCrypto_2_2_Determinism(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -115,6 +118,7 @@ func TestCrypto_2_2_Determinism(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0268", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "DifferentPathsDifferentKeys"}
 func TestCrypto_2_2_DifferentPathsDifferentKeys(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -131,6 +135,7 @@ func TestCrypto_2_2_DifferentPathsDifferentKeys(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0269", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "HardenedOnlyEnforced"}
 func TestCrypto_2_2_HardenedOnlyEnforced(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -143,6 +148,7 @@ func TestCrypto_2_2_HardenedOnlyEnforced(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0270", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "KnownTestVectors"}
 func TestCrypto_2_2_KnownTestVectors(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -193,6 +199,7 @@ func TestCrypto_2_2_KnownTestVectors(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0271", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "PurposeIsolation"}
 func TestCrypto_2_2_PurposeIsolation(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -216,6 +223,7 @@ func TestCrypto_2_2_PurposeIsolation(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0272", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "Purpose44Forbidden"}
 func TestCrypto_2_2_Purpose44Forbidden(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -239,6 +247,7 @@ func TestCrypto_2_2_Purpose44Forbidden(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0273", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "SameMnemonicIndependentTrees"}
 func TestCrypto_2_2_SameMnemonicIndependentTrees(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -257,6 +266,7 @@ func TestCrypto_2_2_SameMnemonicIndependentTrees(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0274", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "SiblingUnlinkability"}
 func TestCrypto_2_2_SiblingUnlinkability(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -285,6 +295,7 @@ func TestCrypto_2_2_SiblingUnlinkability(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0275", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "GoImplementation"}
 func TestCrypto_2_2_GoImplementation(t *testing.T) {
 	// Code audit test: verify that the SLIP-0010 implementation uses
 	// stellar/go (github.com/stellar/go/exp/crypto/derivation) or an
@@ -304,6 +315,7 @@ func TestCrypto_2_2_GoImplementation(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0276", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "CanonicalPersonaIndexes"}
 func TestCrypto_2_2_CanonicalPersonaIndexes(t *testing.T) {
 	impl := realHDKey
 	// impl = slip0010.New()
@@ -344,6 +356,7 @@ func TestCrypto_2_2_CanonicalPersonaIndexes(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0277", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "CustomPersonaIndex7Plus"}
 func TestCrypto_2_2_CustomPersonaIndex7Plus(t *testing.T) {
 	impl := realHDKey
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
@@ -383,6 +396,7 @@ func TestCrypto_2_2_CustomPersonaIndex7Plus(t *testing.T) {
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
+// TRACE: {"suite": "CORE", "case": "0278", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "02", "scenario": "01", "title": "DerivationIndexStored"}
 func TestCrypto_2_2_DerivationIndexStored(t *testing.T) {
 	// Verify that persona records include the derivation_index field.
 	// This test checks the PersonaManager contract: when a persona is
@@ -413,6 +427,7 @@ func TestCrypto_2_2_DerivationIndexStored(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0279", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "DerivePerPersonaDEK"}
 func TestCrypto_2_3_DerivePerPersonaDEK(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -451,6 +466,7 @@ func TestCrypto_2_3_DerivePerPersonaDEK(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0280", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "DifferentPersonasDifferentDEKs"}
 func TestCrypto_2_3_DifferentPersonasDifferentDEKs(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -468,6 +484,7 @@ func TestCrypto_2_3_DifferentPersonasDifferentDEKs(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0281", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "Determinism"}
 func TestCrypto_2_3_Determinism(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -485,6 +502,7 @@ func TestCrypto_2_3_Determinism(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0282", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "KnownHKDFTestVectors"}
 func TestCrypto_2_3_KnownHKDFTestVectors(t *testing.T) {
 	impl := realVaultDEKDeriver
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
@@ -521,6 +539,7 @@ func TestCrypto_2_3_KnownHKDFTestVectors(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0283", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "AllInfoStrings"}
 func TestCrypto_2_3_AllInfoStrings(t *testing.T) {
 	impl := realVaultDEKDeriver
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
@@ -553,6 +572,7 @@ func TestCrypto_2_3_AllInfoStrings(t *testing.T) {
 	// DeriveVaultDEK constructs "dina:vault:<personaID>:v1" — the fixture
 	// must agree, otherwise the fixture is out of sync with production code.
 	for name, expectedInfo := range testutil.HKDFInfoStrings {
+		// TRACE: {"suite": "CORE", "case": "0284", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "info_format/"}
 		t.Run("info_format/"+name, func(t *testing.T) {
 			productionInfo := "dina:vault:" + name + ":v1"
 			testutil.RequireEqual(t, expectedInfo, productionInfo)
@@ -563,6 +583,7 @@ func TestCrypto_2_3_AllInfoStrings(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0285", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "CompromiseIsolation"}
 func TestCrypto_2_3_CompromiseIsolation(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -587,6 +608,7 @@ func TestCrypto_2_3_CompromiseIsolation(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0286", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "CustomPersonaInfoString"}
 func TestCrypto_2_3_CustomPersonaInfoString(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -619,6 +641,7 @@ func TestCrypto_2_3_CustomPersonaInfoString(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0287", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "BackupEncryptionKey"}
 func TestCrypto_2_3_BackupEncryptionKey(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -643,6 +666,7 @@ func TestCrypto_2_3_BackupEncryptionKey(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0288", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "ArchiveKey"}
 func TestCrypto_2_3_ArchiveKey(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -671,6 +695,7 @@ func TestCrypto_2_3_ArchiveKey(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0289", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "ArchiveSeparateFromBackup"}
 func TestCrypto_2_3_ArchiveSeparateFromBackup(t *testing.T) {
 	impl := realVaultDEKDeriver
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
@@ -706,6 +731,7 @@ func TestCrypto_2_3_ArchiveSeparateFromBackup(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0290", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "ClientSyncKey"}
 func TestCrypto_2_3_ClientSyncKey(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -720,6 +746,7 @@ func TestCrypto_2_3_ClientSyncKey(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0291", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "TrustSigningKey"}
 func TestCrypto_2_3_TrustSigningKey(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -734,6 +761,7 @@ func TestCrypto_2_3_TrustSigningKey(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0292", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "UserSaltRandom32Bytes"}
 func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -766,6 +794,7 @@ func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0293", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "UserSaltGeneratedOnce"}
 func TestCrypto_2_3_UserSaltGeneratedOnce(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -797,6 +826,7 @@ func TestCrypto_2_3_UserSaltGeneratedOnce(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0294", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "UserSaltPersistedAcrossReboots"}
 func TestCrypto_2_3_UserSaltPersistedAcrossReboots(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -820,6 +850,7 @@ func TestCrypto_2_3_UserSaltPersistedAcrossReboots(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0295", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "UserSaltInExport"}
 func TestCrypto_2_3_UserSaltInExport(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -851,6 +882,7 @@ func TestCrypto_2_3_UserSaltInExport(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0296", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "DifferentSaltDifferentDEKs"}
 func TestCrypto_2_3_DifferentSaltDifferentDEKs(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -874,6 +906,7 @@ func TestCrypto_2_3_DifferentSaltDifferentDEKs(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
+// TRACE: {"suite": "CORE", "case": "0297", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "03", "scenario": "01", "title": "UserSaltAbsentStartupError"}
 func TestCrypto_2_3_UserSaltAbsentStartupError(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
@@ -890,6 +923,7 @@ func TestCrypto_2_3_UserSaltAbsentStartupError(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0298", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "HashPassphrase"}
 func TestCrypto_2_4_HashPassphrase(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -907,6 +941,7 @@ func TestCrypto_2_4_HashPassphrase(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0299", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "VerifyCorrect"}
 func TestCrypto_2_4_VerifyCorrect(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -929,6 +964,7 @@ func TestCrypto_2_4_VerifyCorrect(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0300", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "VerifyWrong"}
 func TestCrypto_2_4_VerifyWrong(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -951,6 +987,7 @@ func TestCrypto_2_4_VerifyWrong(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0301", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "DefaultParameters"}
 func TestCrypto_2_4_DefaultParameters(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -982,6 +1019,7 @@ func TestCrypto_2_4_DefaultParameters(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0302", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "UniqueSalts"}
 func TestCrypto_2_4_UniqueSalts(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -1006,6 +1044,7 @@ func TestCrypto_2_4_UniqueSalts(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0303", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "ConfigurableParameters"}
 func TestCrypto_2_4_ConfigurableParameters(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -1028,6 +1067,7 @@ func TestCrypto_2_4_ConfigurableParameters(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0304", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "RunsOnceNotPerRequest"}
 func TestCrypto_2_4_RunsOnceNotPerRequest(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -1080,6 +1120,7 @@ func TestCrypto_2_4_RunsOnceNotPerRequest(t *testing.T) {
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
+// TRACE: {"suite": "CORE", "case": "0305", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "04", "scenario": "01", "title": "PassphraseChangeReWrapOnly"}
 func TestCrypto_2_4_PassphraseChangeReWrapOnly(t *testing.T) {
 	impl := realKEKDeriver
 	// impl = keyderiver.New()
@@ -1108,6 +1149,7 @@ func TestCrypto_2_4_PassphraseChangeReWrapOnly(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
+// TRACE: {"suite": "CORE", "case": "0306", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "05", "scenario": "01", "title": "SignMessage"}
 func TestCrypto_2_5_SignMessage(t *testing.T) {
 	impl := realSigner
 	testutil.RequireImplementation(t, impl, "Signer")
@@ -1139,6 +1181,7 @@ func TestCrypto_2_5_SignMessage(t *testing.T) {
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
+// TRACE: {"suite": "CORE", "case": "0307", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "05", "scenario": "01", "title": "VerifyValid"}
 func TestCrypto_2_5_VerifyValid(t *testing.T) {
 	impl := realSigner
 	// impl = signer.New()
@@ -1156,6 +1199,7 @@ func TestCrypto_2_5_VerifyValid(t *testing.T) {
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
+// TRACE: {"suite": "CORE", "case": "0308", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "05", "scenario": "01", "title": "VerifyTampered"}
 func TestCrypto_2_5_VerifyTampered(t *testing.T) {
 	impl := realSigner
 	// impl = signer.New()
@@ -1180,6 +1224,7 @@ func TestCrypto_2_5_VerifyTampered(t *testing.T) {
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
+// TRACE: {"suite": "CORE", "case": "0309", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "05", "scenario": "01", "title": "VerifyWrongKey"}
 func TestCrypto_2_5_VerifyWrongKey(t *testing.T) {
 	impl := realSigner
 	// impl = signer.New()
@@ -1205,6 +1250,7 @@ func TestCrypto_2_5_VerifyWrongKey(t *testing.T) {
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
+// TRACE: {"suite": "CORE", "case": "0310", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "05", "scenario": "01", "title": "CanonicalJSON"}
 func TestCrypto_2_5_CanonicalJSON(t *testing.T) {
 	impl := realSigner
 	testutil.RequireImplementation(t, impl, "Signer")
@@ -1251,6 +1297,7 @@ func TestCrypto_2_5_CanonicalJSON(t *testing.T) {
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
+// TRACE: {"suite": "CORE", "case": "0311", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "05", "scenario": "01", "title": "EmptyMessage"}
 func TestCrypto_2_5_EmptyMessage(t *testing.T) {
 	impl := realSigner
 	// impl = signer.New()
@@ -1274,6 +1321,7 @@ func TestCrypto_2_5_EmptyMessage(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
+// TRACE: {"suite": "CORE", "case": "0312", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "06", "scenario": "01", "title": "ConvertPrivateKey"}
 func TestCrypto_2_6_ConvertPrivateKey(t *testing.T) {
 	sImpl := realSigner
 	testutil.RequireImplementation(t, sImpl, "Signer")
@@ -1308,6 +1356,7 @@ func TestCrypto_2_6_ConvertPrivateKey(t *testing.T) {
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
+// TRACE: {"suite": "CORE", "case": "0313", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "06", "scenario": "01", "title": "ConvertPublicKey"}
 func TestCrypto_2_6_ConvertPublicKey(t *testing.T) {
 	sImpl := realSigner
 	// sImpl = signer.New()
@@ -1344,6 +1393,7 @@ func TestCrypto_2_6_ConvertPublicKey(t *testing.T) {
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
+// TRACE: {"suite": "CORE", "case": "0314", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "06", "scenario": "01", "title": "Roundtrip"}
 func TestCrypto_2_6_Roundtrip(t *testing.T) {
 	sImpl := realSigner
 	// sImpl = signer.New()
@@ -1392,6 +1442,7 @@ func TestCrypto_2_6_Roundtrip(t *testing.T) {
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
+// TRACE: {"suite": "CORE", "case": "0315", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "06", "scenario": "01", "title": "OneWayProperty"}
 func TestCrypto_2_6_OneWayProperty(t *testing.T) {
 	sImpl := realSigner
 	// sImpl = signer.New()
@@ -1417,6 +1468,7 @@ func TestCrypto_2_6_OneWayProperty(t *testing.T) {
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
+// TRACE: {"suite": "CORE", "case": "0316", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "06", "scenario": "01", "title": "EphemeralPerMessage"}
 func TestCrypto_2_6_EphemeralPerMessage(t *testing.T) {
 	// Each crypto_box_seal uses a fresh ephemeral keypair.
 	// Two seals of the same plaintext must produce different ciphertext.
@@ -1451,6 +1503,7 @@ func TestCrypto_2_6_EphemeralPerMessage(t *testing.T) {
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
+// TRACE: {"suite": "CORE", "case": "0317", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "06", "scenario": "01", "title": "ConsciousReuse"}
 func TestCrypto_2_6_ConsciousReuse(t *testing.T) {
 	// Code audit test: a single Ed25519 keypair is converted to X25519
 	// once, and the same X25519 keys are reused for all encryption
@@ -1485,6 +1538,7 @@ func TestCrypto_2_6_ConsciousReuse(t *testing.T) {
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
+// TRACE: {"suite": "CORE", "case": "0318", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "06", "scenario": "01", "title": "EphemeralZeroed"}
 func TestCrypto_2_6_EphemeralZeroed(t *testing.T) {
 	// After sealing, the ephemeral private key must be zeroed from memory.
 	// This is a design/code audit test. Functionally, we verify that
@@ -1526,6 +1580,7 @@ func TestCrypto_2_6_EphemeralZeroed(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
+// TRACE: {"suite": "CORE", "case": "0319", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "07", "scenario": "01", "title": "SealMessage"}
 func TestCrypto_2_7_SealMessage(t *testing.T) {
 	impl := realEncryptor
 	testutil.RequireImplementation(t, impl, "Encryptor")
@@ -1564,6 +1619,7 @@ func TestCrypto_2_7_SealMessage(t *testing.T) {
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
+// TRACE: {"suite": "CORE", "case": "0320", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "07", "scenario": "01", "title": "OpenSealed"}
 func TestCrypto_2_7_OpenSealed(t *testing.T) {
 	impl := realEncryptor
 	// impl = box.New()
@@ -1596,6 +1652,7 @@ func TestCrypto_2_7_OpenSealed(t *testing.T) {
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
+// TRACE: {"suite": "CORE", "case": "0321", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "07", "scenario": "01", "title": "WrongRecipient"}
 func TestCrypto_2_7_WrongRecipient(t *testing.T) {
 	impl := realEncryptor
 	// impl = box.New()
@@ -1636,6 +1693,7 @@ func TestCrypto_2_7_WrongRecipient(t *testing.T) {
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
+// TRACE: {"suite": "CORE", "case": "0322", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "07", "scenario": "01", "title": "TamperedCiphertext"}
 func TestCrypto_2_7_TamperedCiphertext(t *testing.T) {
 	impl := realEncryptor
 	// impl = box.New()
@@ -1673,6 +1731,7 @@ func TestCrypto_2_7_TamperedCiphertext(t *testing.T) {
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
+// TRACE: {"suite": "CORE", "case": "0323", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "07", "scenario": "01", "title": "EmptyPlaintext"}
 func TestCrypto_2_7_EmptyPlaintext(t *testing.T) {
 	impl := realEncryptor
 	// impl = box.New()
@@ -1704,6 +1763,7 @@ func TestCrypto_2_7_EmptyPlaintext(t *testing.T) {
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
+// TRACE: {"suite": "CORE", "case": "0324", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "07", "scenario": "01", "title": "LargeMessage"}
 func TestCrypto_2_7_LargeMessage(t *testing.T) {
 	impl := realEncryptor
 	// impl = box.New()
@@ -1744,6 +1804,7 @@ func TestCrypto_2_7_LargeMessage(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
+// TRACE: {"suite": "CORE", "case": "0325", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "01", "title": "WrapKey"}
 func TestCrypto_2_8_WrapKey(t *testing.T) {
 	impl := realKeyWrapper
 	// impl = wrapper.New()
@@ -1756,6 +1817,7 @@ func TestCrypto_2_8_WrapKey(t *testing.T) {
 }
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
+// TRACE: {"suite": "CORE", "case": "0326", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "01", "title": "UnwrapCorrect"}
 func TestCrypto_2_8_UnwrapCorrect(t *testing.T) {
 	impl := realKeyWrapper
 	// impl = wrapper.New()
@@ -1770,6 +1832,7 @@ func TestCrypto_2_8_UnwrapCorrect(t *testing.T) {
 }
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
+// TRACE: {"suite": "CORE", "case": "0327", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "01", "title": "UnwrapWrong"}
 func TestCrypto_2_8_UnwrapWrong(t *testing.T) {
 	impl := realKeyWrapper
 	// impl = wrapper.New()
@@ -1788,6 +1851,7 @@ func TestCrypto_2_8_UnwrapWrong(t *testing.T) {
 }
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
+// TRACE: {"suite": "CORE", "case": "0328", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "01", "title": "TamperedBlob"}
 func TestCrypto_2_8_TamperedBlob(t *testing.T) {
 	impl := realKeyWrapper
 	// impl = wrapper.New()
@@ -1808,6 +1872,7 @@ func TestCrypto_2_8_TamperedBlob(t *testing.T) {
 }
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
+// TRACE: {"suite": "CORE", "case": "0329", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "01", "title": "NonceUniqueness"}
 func TestCrypto_2_8_NonceUniqueness(t *testing.T) {
 	impl := realKeyWrapper
 	// impl = wrapper.New()
@@ -1850,6 +1915,7 @@ func xorBytes(a, b []byte) []byte {
 }
 
 // TST-CORE-880
+// TRACE: {"suite": "CORE", "case": "0330", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "06", "title": "KeyGenerationUsesSecureRandom"}
 func TestCrypto_2_8_6_KeyGenerationUsesSecureRandom(t *testing.T) {
 	// Verify that Go's Ed25519 key generation uses crypto/rand (not weak entropy).
 	// ed25519.GenerateKey(nil) uses crypto/rand.Reader internally.
@@ -1885,6 +1951,7 @@ func TestCrypto_2_8_6_KeyGenerationUsesSecureRandom(t *testing.T) {
 }
 
 // TST-CORE-881
+// TRACE: {"suite": "CORE", "case": "0331", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "07", "title": "ArchiveKeySurvivesBackupKeyRotation"}
 func TestCrypto_2_8_7_ArchiveKeySurvivesBackupKeyRotation(t *testing.T) {
 	// Archive key survives backup key rotation (separate HKDF derivations).
 	impl := realVaultDEKDeriver
@@ -1899,6 +1966,7 @@ func TestCrypto_2_8_7_ArchiveKeySurvivesBackupKeyRotation(t *testing.T) {
 }
 
 // TST-CORE-882
+// TRACE: {"suite": "CORE", "case": "0332", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "08", "scenario": "08", "title": "ClientSyncKeyUsedForSyncEncryption"}
 func TestCrypto_2_8_8_ClientSyncKeyUsedForSyncEncryption(t *testing.T) {
 	// Client sync key used for sync encryption, trust key for signing.
 	impl := realVaultDEKDeriver
@@ -1916,6 +1984,7 @@ func TestCrypto_2_8_8_ClientSyncKeyUsedForSyncEncryption(t *testing.T) {
 // §2.9 K256 Deterministic Derivation from Master Seed
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0333", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "DeriveK256Deterministic"}
 func TestCrypto_2_9_DeriveK256Deterministic(t *testing.T) {
 	// Same seed always produces the same k256 key.
 	impl := realHDKey
@@ -1936,6 +2005,7 @@ func TestCrypto_2_9_DeriveK256Deterministic(t *testing.T) {
 	testutil.RequireBytesEqual(t, key1, key2)
 }
 
+// TRACE: {"suite": "CORE", "case": "0334", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256DifferentFromEd25519"}
 func TestCrypto_2_9_K256DifferentFromEd25519(t *testing.T) {
 	// K256 at m/9999'/2'/0' must differ from Ed25519 at m/9999'/0'.
 	impl := realHDKey
@@ -1957,6 +2027,7 @@ func TestCrypto_2_9_K256DifferentFromEd25519(t *testing.T) {
 	testutil.RequireBytesNotEqual(t, k256Key, ed25519Priv[:32])
 }
 
+// TRACE: {"suite": "CORE", "case": "0335", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256DifferentPaths"}
 func TestCrypto_2_9_K256DifferentPaths(t *testing.T) {
 	// Different k256 derivation paths produce different keys.
 	impl := realHDKey
@@ -1976,6 +2047,7 @@ func TestCrypto_2_9_K256DifferentPaths(t *testing.T) {
 	testutil.RequireBytesNotEqual(t, key100, key1)
 }
 
+// TRACE: {"suite": "CORE", "case": "0336", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256EmptySeedRejected"}
 func TestCrypto_2_9_K256EmptySeedRejected(t *testing.T) {
 	deriver := dinacrypto.NewSLIP0010Deriver()
 	_, err := deriver.DerivePathK256(nil, "m/9999'/2'/0'")
@@ -1988,6 +2060,7 @@ func TestCrypto_2_9_K256EmptySeedRejected(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0337", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256BIP44Forbidden"}
 func TestCrypto_2_9_K256BIP44Forbidden(t *testing.T) {
 	deriver := dinacrypto.NewSLIP0010Deriver()
 	_, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/44'/0'")
@@ -1996,6 +2069,7 @@ func TestCrypto_2_9_K256BIP44Forbidden(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0338", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256ParseableByAtcrypto"}
 func TestCrypto_2_9_K256ParseableByAtcrypto(t *testing.T) {
 	// Derived k256 key must be parseable by atcrypto.
 	deriver := dinacrypto.NewSLIP0010Deriver()
@@ -2019,6 +2093,7 @@ func TestCrypto_2_9_K256ParseableByAtcrypto(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0339", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256ManagerWithSeed"}
 func TestCrypto_2_9_K256ManagerWithSeed(t *testing.T) {
 	// K256KeyManager with seed derives deterministically and persists to disk.
 	tmpDir := t.TempDir()
@@ -2053,6 +2128,7 @@ func TestCrypto_2_9_K256ManagerWithSeed(t *testing.T) {
 	testutil.RequireBytesEqual(t, key1.Bytes(), key2.Bytes())
 }
 
+// TRACE: {"suite": "CORE", "case": "0340", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256ManagerBackwardCompat"}
 func TestCrypto_2_9_K256ManagerBackwardCompat(t *testing.T) {
 	// A manager without seed falls back to random generation (legacy path).
 	tmpDir := t.TempDir()
@@ -2071,6 +2147,7 @@ func TestCrypto_2_9_K256ManagerBackwardCompat(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0341", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "K256ManagerExistingKeyPreferred"}
 func TestCrypto_2_9_K256ManagerExistingKeyPreferred(t *testing.T) {
 	// If a key exists on disk (from random generation), it is loaded even
 	// when a seed is later provided. This ensures backward compatibility:
@@ -2097,6 +2174,7 @@ func TestCrypto_2_9_K256ManagerExistingKeyPreferred(t *testing.T) {
 	testutil.RequireBytesEqual(t, randomKey.Bytes(), loadedKey.Bytes())
 }
 
+// TRACE: {"suite": "CORE", "case": "0342", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "09", "scenario": "01", "title": "KeyDeriverRotationKey"}
 func TestCrypto_2_9_KeyDeriverRotationKey(t *testing.T) {
 	// KeyDeriver.DeriveRotationKey produces the same result as direct SLIP-0010.
 	deriver := dinacrypto.NewSLIP0010Deriver()
@@ -2119,6 +2197,7 @@ func TestCrypto_2_9_KeyDeriverRotationKey(t *testing.T) {
 // §2.10 Service Key Derivation (m/9999'/3'/...)
 // --------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "0343", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "10", "scenario": "01", "title": "DeriveServiceKeyDeterministic"}
 func TestCrypto_2_10_1_DeriveServiceKeyDeterministic(t *testing.T) {
 	// DeriveServiceKey at the same index always produces the same key.
 	slip := dinacrypto.NewSLIP0010Deriver()
@@ -2132,6 +2211,7 @@ func TestCrypto_2_10_1_DeriveServiceKeyDeterministic(t *testing.T) {
 	testutil.RequireBytesEqual(t, key1.Seed(), key2.Seed())
 }
 
+// TRACE: {"suite": "CORE", "case": "0344", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "10", "scenario": "02", "title": "DeriveServiceKeyDistinctIndexes"}
 func TestCrypto_2_10_2_DeriveServiceKeyDistinctIndexes(t *testing.T) {
 	// Different service indexes produce different keys.
 	slip := dinacrypto.NewSLIP0010Deriver()
@@ -2148,6 +2228,7 @@ func TestCrypto_2_10_2_DeriveServiceKeyDistinctIndexes(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0345", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "10", "scenario": "03", "title": "DeriveServiceKeyMatchesSLIP0010Path"}
 func TestCrypto_2_10_3_DeriveServiceKeyMatchesSLIP0010Path(t *testing.T) {
 	// DeriveServiceKey(seed, 0) must produce the same key as
 	// DerivePath(seed, "m/9999'/3'/0'").
@@ -2165,6 +2246,7 @@ func TestCrypto_2_10_3_DeriveServiceKeyMatchesSLIP0010Path(t *testing.T) {
 	testutil.RequireBytesEqual(t, []byte(serviceKey), directPriv)
 }
 
+// TRACE: {"suite": "CORE", "case": "0346", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "10", "scenario": "04", "title": "DeriveServiceKeyCrossLanguage"}
 func TestCrypto_2_10_4_DeriveServiceKeyCrossLanguage(t *testing.T) {
 	// Verify Go derivation matches the Python provision_derived_service_keys.py
 	// output for TestEd25519Seed. This ensures install-time PEM files will
@@ -2198,6 +2280,7 @@ func TestCrypto_2_10_4_DeriveServiceKeyCrossLanguage(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-061
+// TRACE: {"suite": "CORE", "case": "0347", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "01", "scenario": "06", "title": "MasterSeedIsTheDEK"}
 func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 	// Requirement (§2.1, row 6):
 	//   The 512-bit BIP-39 seed is used directly as key material for all
@@ -2219,6 +2302,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 	seed := testutil.TestMnemonicSeed // 64-byte BIP-39 seed
 	salt := testutil.TestUserSalt[:]
 
+	// TRACE: {"suite": "CORE", "case": "0348", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "seed_deterministic_derivation"}
 	t.Run("seed_deterministic_derivation", func(t *testing.T) {
 		// Same seed + persona + salt → identical DEK every time.
 		// This proves the seed IS the root key material (not discarded or
@@ -2243,6 +2327,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0349", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "different_seeds_different_DEKs"}
 	t.Run("different_seeds_different_DEKs", func(t *testing.T) {
 		// Contrast: different seed → different DEK.
 		// Without this, the test would pass even if DeriveVaultDEK ignored
@@ -2275,6 +2360,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0350", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "persona_isolation_from_same_seed"}
 	t.Run("persona_isolation_from_same_seed", func(t *testing.T) {
 		// Two personas derived from the SAME seed must get different DEKs.
 		// This tests HKDF info string differentiation ("dina:vault:<persona>:v1").
@@ -2299,6 +2385,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0351", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "key_wrap_round_trip"}
 	t.Run("key_wrap_round_trip", func(t *testing.T) {
 		// In security mode, the master seed is wrapped on disk:
 		//   wrapped = AES-256-GCM(KEK, seed)
@@ -2325,6 +2412,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0352", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "wrapped_differs_from_raw"}
 	t.Run("wrapped_differs_from_raw", func(t *testing.T) {
 		// Wrapping must not be a no-op — wrapped bytes must differ from raw seed.
 		kek := testutil.TestKEK[:]
@@ -2356,6 +2444,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0353", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "wrong_KEK_fails_unwrap"}
 	t.Run("wrong_KEK_fails_unwrap", func(t *testing.T) {
 		// Wrapping with one KEK and unwrapping with a different KEK must fail.
 		// This proves the KEK actually protects the seed.
@@ -2372,6 +2461,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0354", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "derived_DEK_encrypts_data"}
 	t.Run("derived_DEK_encrypts_data", func(t *testing.T) {
 		// End-to-end: seed → HKDF → DEK → AES-256-GCM encrypt → decrypt.
 		// Proves the DEK derived from the master seed is usable key material.
@@ -2406,6 +2496,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-964
+// TRACE: {"suite": "CORE", "case": "0355", "section": "29", "sectionName": "Adversarial & Security", "subsection": "06", "scenario": "01", "title": "CrossPersonaDEKIsolation5Personas"}
 func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 	// Requirement (§29.6):
 	//   Same master seed + same user salt + 5 different persona names must
@@ -2434,6 +2525,7 @@ func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 		deks[i] = dek
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0356", "section": "29", "sectionName": "Adversarial & Security", "title": "all_deks_are_32_bytes"}
 	t.Run("all_deks_are_32_bytes", func(t *testing.T) {
 		for i, dek := range deks {
 			if len(dek) != 32 {
@@ -2442,6 +2534,7 @@ func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0357", "section": "29", "sectionName": "Adversarial & Security", "title": "all_10_pairwise_combinations_distinct"}
 	t.Run("all_10_pairwise_combinations_distinct", func(t *testing.T) {
 		// 5 choose 2 = 10 pairs.
 		pairs := 0
@@ -2456,6 +2549,7 @@ func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0358", "section": "29", "sectionName": "Adversarial & Security", "title": "deterministic_re_derivation"}
 	t.Run("deterministic_re_derivation", func(t *testing.T) {
 		// Re-derive every persona DEK and verify it matches the original.
 		for i, p := range personas {
@@ -2465,6 +2559,7 @@ func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0359", "section": "29", "sectionName": "Adversarial & Security", "title": "different_seed_produces_different_deks"}
 	t.Run("different_seed_produces_different_deks", func(t *testing.T) {
 		// Contrast: same personas + salt but different seed → all DEKs differ.
 		altSeed := make([]byte, 64)
@@ -2478,6 +2573,7 @@ func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0360", "section": "29", "sectionName": "Adversarial & Security", "title": "different_salt_produces_different_deks"}
 	t.Run("different_salt_produces_different_deks", func(t *testing.T) {
 		// Contrast: same seed + personas but different salt → all DEKs differ.
 		altSalt := make([]byte, 32)
@@ -2502,6 +2598,7 @@ func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 // seeds) must be able to exchange NaCl sealed-box messages by converting their
 // Ed25519 keys to X25519. Node A seals to Node B's public key, Node B opens
 // with their private key, and vice versa. Cross-contamination must fail.
+// TRACE: {"suite": "CORE", "case": "0361", "section": "30", "sectionName": "Test System Quality", "subsection": "11", "scenario": "04", "title": "CrossNodeEd25519ToX25519SealedBoxExchange"}
 func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) {
 	sImpl := realSigner
 	testutil.RequireImplementation(t, sImpl, "Signer")
@@ -2547,6 +2644,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 	testutil.RequireBytesNotEqual(t, x25519PubA, x25519PubB)
 	testutil.RequireBytesNotEqual(t, x25519PrivA, x25519PrivB)
 
+	// TRACE: {"suite": "CORE", "case": "0362", "section": "30", "sectionName": "Test System Quality", "title": "node_A_seals_to_node_B_and_B_opens"}
 	t.Run("node_A_seals_to_node_B_and_B_opens", func(t *testing.T) {
 		// Node A encrypts a message intended for Node B.
 		message := []byte("Hello from Node A to Node B — cross-node NaCl sealed box")
@@ -2559,6 +2657,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 		testutil.RequireBytesEqual(t, message, opened)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0363", "section": "30", "sectionName": "Test System Quality", "title": "node_B_seals_to_node_A_and_A_opens"}
 	t.Run("node_B_seals_to_node_A_and_A_opens", func(t *testing.T) {
 		// Reverse direction: Node B encrypts for Node A.
 		message := []byte("Hello from Node B to Node A — reverse direction test")
@@ -2571,6 +2670,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 		testutil.RequireBytesEqual(t, message, opened)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0364", "section": "30", "sectionName": "Test System Quality", "title": "cross_contamination_fails_wrong_private_key"}
 	t.Run("cross_contamination_fails_wrong_private_key", func(t *testing.T) {
 		// A message sealed to Node B's public key must NOT be openable
 		// with Node A's private key.
@@ -2585,6 +2685,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0365", "section": "30", "sectionName": "Test System Quality", "title": "cross_contamination_fails_mismatched_pub_priv"}
 	t.Run("cross_contamination_fails_mismatched_pub_priv", func(t *testing.T) {
 		// Try opening with Node B's public key but Node A's private key — must fail.
 		message := []byte("sealed for B only — mismatch test")
@@ -2597,6 +2698,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0366", "section": "30", "sectionName": "Test System Quality", "title": "ed25519_signature_interop_across_nodes"}
 	t.Run("ed25519_signature_interop_across_nodes", func(t *testing.T) {
 		// Node A signs a message with Ed25519, Node B verifies using Node A's
 		// Ed25519 public key. This proves Ed25519 identity verification works
@@ -2618,6 +2720,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0367", "section": "30", "sectionName": "Test System Quality", "title": "sign_seal_unseal_verify_full_cross_node_roundtrip"}
 	t.Run("sign_seal_unseal_verify_full_cross_node_roundtrip", func(t *testing.T) {
 		// Full cross-node roundtrip: Node A signs a message with Ed25519, seals
 		// the message+signature with NaCl to Node B's X25519 public key. Node B
@@ -2661,6 +2764,7 @@ func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) 
 // extracts the envelope, verifies the Ed25519 signature. The test covers
 // the exact wire format used by Core's transport layer.
 // TST-CORE-1222
+// TRACE: {"suite": "CORE", "case": "0368", "section": "30", "sectionName": "Test System Quality", "subsection": "11", "scenario": "01", "title": "RealCrossNodeD2DSignEncryptDecryptVerify"}
 func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 	sImpl := realSigner
 	testutil.RequireImplementation(t, sImpl, "Signer")
@@ -2696,6 +2800,7 @@ func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 	x25519PrivB, err := convImpl.Ed25519ToX25519Private(privB)
 	testutil.RequireNoError(t, err)
 
+	// TRACE: {"suite": "CORE", "case": "0369", "section": "30", "sectionName": "Test System Quality", "title": "node_a_to_node_b_full_d2d_pipeline"}
 	t.Run("node_a_to_node_b_full_d2d_pipeline", func(t *testing.T) {
 		// Step 1: Node A creates the plaintext message.
 		message := []byte(`{"type":"nudge","content":"Time to take a break","from":"did:plc:nodeA"}`)
@@ -2772,6 +2877,7 @@ func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0370", "section": "30", "sectionName": "Test System Quality", "title": "bidirectional_exchange"}
 	t.Run("bidirectional_exchange", func(t *testing.T) {
 		// Both nodes exchange messages simultaneously. Each verifies the other.
 		msgAtoB := []byte(`{"from":"nodeA","to":"nodeB","msg":"hello B"}`)
@@ -2820,6 +2926,7 @@ func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 		testutil.RequireBytesEqual(t, msgBtoA, decMsg2)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0371", "section": "30", "sectionName": "Test System Quality", "title": "tampered_ciphertext_fails_verification"}
 	t.Run("tampered_ciphertext_fails_verification", func(t *testing.T) {
 		// Node A sends a message. An attacker tampers with the sealed payload.
 		message := []byte(`{"sensitive":"vault data"}`)
@@ -2842,6 +2949,7 @@ func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0372", "section": "30", "sectionName": "Test System Quality", "title": "forged_signature_detected"}
 	t.Run("forged_signature_detected", func(t *testing.T) {
 		// Attacker creates a message with a valid-looking envelope but signs
 		// with their own key (not Node A's). Node B must detect the forgery.
@@ -2882,6 +2990,7 @@ func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 // side of recovery: given the SAME seed (which a correct mnemonic produces),
 // ALL derived keys are byte-identical across two independent derivation runs.
 // This proves full identity restoration is possible from just the mnemonic.
+// TRACE: {"suite": "CORE", "case": "0373", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "01", "scenario": "07", "title": "MnemonicRecoveryReDeriveEverything"}
 func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	kd := dinacrypto.NewKeyDeriver(slip)
@@ -2893,6 +3002,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 	// Simulate two independent derivation runs (original install vs recovery).
 	// Both must produce byte-identical output at every level.
 
+	// TRACE: {"suite": "CORE", "case": "0374", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "root_signing_key_deterministic"}
 	t.Run("root_signing_key_deterministic", func(t *testing.T) {
 		// The root identity signing key must be identical across recovery.
 		// This key generates the DID — if it differs, the identity is lost.
@@ -2906,6 +3016,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 		testutil.RequireBytesLen(t, []byte(priv1), 64)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0375", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "all_persona_signing_keys_deterministic"}
 	t.Run("all_persona_signing_keys_deterministic", func(t *testing.T) {
 		// Every persona's signing key must be identical after recovery.
 		// Without this, persona-specific signatures won't verify.
@@ -2927,6 +3038,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0376", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "all_persona_vault_deks_deterministic"}
 	t.Run("all_persona_vault_deks_deterministic", func(t *testing.T) {
 		// Every persona's vault DEK must be identical after recovery.
 		// Without this, encrypted vault data is inaccessible.
@@ -2941,6 +3053,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0377", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "service_keys_deterministic"}
 	t.Run("service_keys_deterministic", func(t *testing.T) {
 		// Core (index 0) and Brain (index 1) service keys must match after recovery.
 		// Without this, inter-service auth breaks.
@@ -2953,6 +3066,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0378", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "did_key_deterministic_from_root_pubkey"}
 	t.Run("did_key_deterministic_from_root_pubkey", func(t *testing.T) {
 		// The DID derived from the root public key must be identical.
 		// This is the user's permanent identity — it MUST survive recovery.
@@ -2973,6 +3087,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0379", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "cross_layer_isolation_preserved_after_recovery"}
 	t.Run("cross_layer_isolation_preserved_after_recovery", func(t *testing.T) {
 		// Critical: even though all keys are derived from one seed,
 		// they must be cryptographically isolated. Root key != persona key != DEK.
@@ -3049,6 +3164,7 @@ func ed25519DIDKey(pub []byte) string {
 // no backdoor. This is by design: sovereignty = responsibility.
 // This test validates that a DIFFERENT seed (simulating loss of the original)
 // produces a completely different identity at every derivation layer.
+// TRACE: {"suite": "CORE", "case": "0380", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "01", "scenario": "09", "title": "LoseDeviceAndPaperIdentityGone"}
 func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	kd := dinacrypto.NewKeyDeriver(slip)
@@ -3064,6 +3180,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		lostSeed[i] ^= 0xFF
 	}
 
+	// TRACE: {"suite": "CORE", "case": "0381", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "root_key_irrecoverable"}
 	t.Run("root_key_irrecoverable", func(t *testing.T) {
 		// A different seed produces a completely different root signing key.
 		// The user's DID changes, and the original identity is GONE.
@@ -3074,6 +3191,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		testutil.RequireBytesNotEqual(t, origPub, lostPub)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0382", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "did_irrecoverable"}
 	t.Run("did_irrecoverable", func(t *testing.T) {
 		// The DID derived from a wrong seed is completely different.
 		// No server can fix this — the DID is a pure function of the seed.
@@ -3086,6 +3204,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0383", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "all_persona_keys_irrecoverable"}
 	t.Run("all_persona_keys_irrecoverable", func(t *testing.T) {
 		// Every persona's signing key changes with a different seed.
 		// Nothing signed under the original identity can be reproduced.
@@ -3100,6 +3219,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0384", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "vault_deks_irrecoverable"}
 	t.Run("vault_deks_irrecoverable", func(t *testing.T) {
 		// Every persona's vault DEK changes with a different seed.
 		// ALL encrypted data in ALL vaults becomes permanently inaccessible.
@@ -3113,6 +3233,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0385", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "service_keys_irrecoverable"}
 	t.Run("service_keys_irrecoverable", func(t *testing.T) {
 		// Service keys change — inter-service auth with the original Core/Brain pair fails.
 		for _, idx := range []uint32{0, 1} {
@@ -3126,6 +3247,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0386", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "single_bit_change_still_irrecoverable"}
 	t.Run("single_bit_change_still_irrecoverable", func(t *testing.T) {
 		// Even a SINGLE bit difference in the seed produces a completely
 		// different identity. There's no "close enough" in cryptography.
@@ -3145,6 +3267,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		testutil.RequireBytesNotEqual(t, origDEK, nearDEK)
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0387", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "no_server_side_recovery_possible"}
 	t.Run("no_server_side_recovery_possible", func(t *testing.T) {
 		// This test validates the DESIGN PRINCIPLE: all key material is
 		// derived deterministically from the seed. There is no "recovery
@@ -3177,6 +3300,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 // Go Core MUST guarantee that seed → keys is perfectly deterministic.
 // This test calls every derivation function TWICE with the same seed
 // and verifies byte-exact identity of all outputs.
+// TRACE: {"suite": "CORE", "case": "0388", "section": "29", "sectionName": "Adversarial & Security", "subsection": "08", "scenario": "03", "title": "DeterministicSeedDerivation"}
 func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	kd := dinacrypto.NewKeyDeriver(slip)
@@ -3185,6 +3309,7 @@ func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 
 	seed := testutil.TestMnemonicSeed
 
+	// TRACE: {"suite": "CORE", "case": "0389", "section": "29", "sectionName": "Adversarial & Security", "title": "slip0010_determinism_all_paths"}
 	t.Run("slip0010_determinism_all_paths", func(t *testing.T) {
 		// SLIP-0010 derivation at EVERY standard path must be deterministic.
 		paths := []string{
@@ -3206,6 +3331,7 @@ func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0390", "section": "29", "sectionName": "Adversarial & Security", "title": "hkdf_determinism_all_personas"}
 	t.Run("hkdf_determinism_all_personas", func(t *testing.T) {
 		// HKDF-SHA256 DEK derivation for every persona must be deterministic.
 		personas := []string{"identity", "general", "health", "financial", "social", "consumer", "professional"}
@@ -3218,6 +3344,7 @@ func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0391", "section": "29", "sectionName": "Adversarial & Security", "title": "keyderiver_high_level_determinism"}
 	t.Run("keyderiver_high_level_determinism", func(t *testing.T) {
 		// High-level KeyDeriver functions wrapping SLIP-0010 must be deterministic.
 		// Root signing key.
@@ -3243,6 +3370,7 @@ func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0392", "section": "29", "sectionName": "Adversarial & Security", "title": "independent_instances_same_output"}
 	t.Run("independent_instances_same_output", func(t *testing.T) {
 		// Two independently-created deriver instances must produce
 		// identical output. This proves there's no hidden state.
@@ -3266,9 +3394,11 @@ func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 // the mnemonic ↔ entropy conversion using the Trezor reference library.
 // Both sides must agree: the same mnemonic always produces the same seed,
 // and that seed feeds deterministic key derivation.
+// TRACE: {"suite": "CORE", "case": "0393", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "01", "scenario": "02", "title": "MnemonicToSeedDerivation"}
 func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 	root := findProjectRoot(t)
 
+	// TRACE: {"suite": "CORE", "case": "0394", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "go_test_vector_is_standard_bip39_512bit_seed"}
 	t.Run("go_test_vector_is_standard_bip39_512bit_seed", func(t *testing.T) {
 		// The TestMnemonicSeed fixture must be exactly 64 bytes (512 bits).
 		// BIP-39 PBKDF2-HMAC-SHA512 always produces 512 bits regardless of input.
@@ -3278,6 +3408,7 @@ func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0395", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "go_test_vector_matches_known_bip39_output"}
 	t.Run("go_test_vector_matches_known_bip39_output", func(t *testing.T) {
 		// The "abandon" x 23 + "art" test vector is the most widely used BIP-39
 		// test vector. Its PBKDF2-HMAC-SHA512(mnemonic, "mnemonic", 2048) output
@@ -3303,6 +3434,7 @@ func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0396", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "go_fixtures_document_pbkdf2_derivation"}
 	t.Run("go_fixtures_document_pbkdf2_derivation", func(t *testing.T) {
 		// The fixtures file must explicitly document that the seed comes from
 		// PBKDF2-HMAC-SHA512 with 2048 iterations and salt = "mnemonic".
@@ -3323,6 +3455,7 @@ func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0397", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "seed_feeds_slip0010_derivation_correctly"}
 	t.Run("seed_feeds_slip0010_derivation_correctly", func(t *testing.T) {
 		// The 64-byte seed from PBKDF2 must produce valid SLIP-0010 keys.
 		// If the seed were wrong (e.g., truncated or from a different mnemonic),
@@ -3373,6 +3506,7 @@ func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0398", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "python_roundtrip_uses_to_mnemonic_and_to_entropy"}
 	t.Run("python_roundtrip_uses_to_mnemonic_and_to_entropy", func(t *testing.T) {
 		// The Python CLI converts entropy → mnemonic (for backup display) and
 		// mnemonic → entropy (for recovery). These use the Trezor library's
@@ -3405,6 +3539,7 @@ func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0399", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "seed_hkdf_derivation_uses_full_64_bytes"}
 	t.Run("seed_hkdf_derivation_uses_full_64_bytes", func(t *testing.T) {
 		// HKDF-SHA256 DEK derivation must use the full 64-byte seed as IKM.
 		// Truncating the seed would reduce entropy and weaken vault encryption.

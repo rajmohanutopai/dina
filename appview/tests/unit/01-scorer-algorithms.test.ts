@@ -86,6 +86,7 @@ function makeAttestation(overrides: Partial<TrustScoreInput['attestationsAbout']
 // Traces to: Architecture §"Trust Score Algorithm", Fix 12 (convergence + zero-trust)
 // ---------------------------------------------------------------------------
 describe('§1.1 Trust Score', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0001", "section": "01", "sectionName": "General", "title": "UT-TS-001: all-positive attestations -> high score"}
   it('UT-TS-001: all-positive attestations -> high score', () => {
     // Input: 10 positive attestations from vouched, scored authors
     // Expected: overallScore > 0.7, sentiment component > 0.9
@@ -106,6 +107,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.components.sentiment).toBeGreaterThan(0.9)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0002", "section": "01", "sectionName": "General", "title": "UT-TS-002: all-negative attestations -> low score"}
   it('UT-TS-002: all-negative attestations -> low score', () => {
     // Input: 10 negative attestations from vouched, scored authors
     // Expected: overallScore < 0.35, sentiment component < 0.01
@@ -124,6 +126,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.components.sentiment).toBeLessThan(0.01)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0003", "section": "01", "sectionName": "General", "title": "UT-TS-003: mixed sentiment -> mid-range score"}
   it('UT-TS-003: mixed sentiment -> mid-range score', () => {
     // Input: 5 positive, 3 neutral, 2 negative
     // Expected: overallScore between 0.4 and 0.7
@@ -142,6 +145,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.overallScore).toBeLessThan(0.7)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0004", "section": "01", "sectionName": "General", "title": "UT-TS-004: zero attestations -> neutral default"}
   it('UT-TS-004: zero attestations -> neutral default', () => {
     // Input: Empty attestationsAbout array
     // Expected: sentiment component = 0.5 (no data = neutral)
@@ -151,6 +155,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.components.sentiment).toBe(0.5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0005", "section": "01", "sectionName": "General", "title": "UT-TS-005: no vouches -> low vouch component"}
   it('UT-TS-005: no vouches -> low vouch component', () => {
     // Input: vouchCount = 0
     // Expected: vouch component = 0.1
@@ -161,6 +166,7 @@ describe('§1.1 Trust Score', () => {
     expect(result).toBe(0.1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0006", "section": "01", "sectionName": "General", "title": "UT-TS-006: 10 vouches -> near-maximum vouch signal"}
   it('UT-TS-006: 10 vouches -> near-maximum vouch signal', () => {
     // Input: vouchCount = 10
     // Expected: vouch component > 0.9
@@ -171,6 +177,7 @@ describe('§1.1 Trust Score', () => {
     expect(result).toBeGreaterThan(0.9)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0007", "section": "01", "sectionName": "General", "title": "UT-TS-007: logarithmic vouch diminishing returns"}
   it('UT-TS-007: logarithmic vouch diminishing returns', () => {
     // Input: vouchCount = 100 vs vouchCount = 10
     // Expected: Difference < 0.15 (logarithmic curve)
@@ -184,6 +191,7 @@ describe('§1.1 Trust Score', () => {
     expect(vouch100 - vouch10).toBeLessThan(0.15)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0008", "section": "01", "sectionName": "General", "title": "UT-TS-008: high-confidence vouch bonus"}
   it('UT-TS-008: high-confidence vouch bonus', () => {
     // Input: highConfidenceVouches = 4
     // Expected: vouch component includes +0.2 bonus
@@ -200,6 +208,7 @@ describe('§1.1 Trust Score', () => {
     expect(vouchBonus - vouchNoBonus).toBeCloseTo(0.2, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0009", "section": "01", "sectionName": "General", "title": "UT-TS-009: no review history -> zero reviewer score"}
   it('UT-TS-009: no review history -> zero reviewer score', () => {
     // Input: totalAttestationsBy = 0
     // Expected: reviewer component = 0.0 (Fix 12: zero-trust default)
@@ -210,6 +219,7 @@ describe('§1.1 Trust Score', () => {
     expect(result).toBe(0.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0010", "section": "01", "sectionName": "General", "title": "UT-TS-010: high deletion rate -> harsh penalty"}
   it('UT-TS-010: high deletion rate -> harsh penalty', () => {
     // Input: tombstoneCount = 5, totalAttestationsBy = 10
     // Expected: reviewer component < 0.1
@@ -221,6 +231,7 @@ describe('§1.1 Trust Score', () => {
     expect(result).toBeLessThan(0.1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0011", "section": "01", "sectionName": "General", "title": "UT-TS-011: high evidence rate -> bonus"}
   it('UT-TS-011: high evidence rate -> bonus', () => {
     // Input: withEvidenceCount = 8, totalAttestationsBy = 10
     // Expected: reviewer component boosted by evidence term
@@ -239,6 +250,7 @@ describe('§1.1 Trust Score', () => {
     expect(withEvid - noEvid).toBeCloseTo(0.2, 1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0012", "section": "01", "sectionName": "General", "title": "UT-TS-012: helpful ratio -> positive signal"}
   it('UT-TS-012: helpful ratio -> positive signal', () => {
     // Input: helpfulReactions = 90, unhelpfulReactions = 10
     // Expected: reviewer component includes helpfulness boost
@@ -253,6 +265,7 @@ describe('§1.1 Trust Score', () => {
     expect(result).toBeGreaterThan(0.5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0013", "section": "01", "sectionName": "General", "title": "UT-TS-013: network component logarithmic"}
   it('UT-TS-013: network component logarithmic', () => {
     // Input: inboundEdgeCount = 50
     // Expected: network component near 1.0
@@ -264,6 +277,7 @@ describe('§1.1 Trust Score', () => {
     expect(result).toBeCloseTo(1.0, 1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0014", "section": "01", "sectionName": "General", "title": "UT-TS-014: delegation inbound bonus"}
   it('UT-TS-014: delegation inbound bonus', () => {
     // Input: delegationInboundCount = 5
     // Expected: network component includes +0.2 delegation term
@@ -280,6 +294,7 @@ describe('§1.1 Trust Score', () => {
     expect(withDel - noDel).toBeCloseTo(0.2, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0015", "section": "01", "sectionName": "General", "title": "UT-TS-015: critical flag -> 70% reduction"}
   it('UT-TS-015: critical flag -> 70% reduction', () => {
     // Input: flagSeverities = ['critical']
     // Expected: raw score multiplied by 0.3
@@ -302,6 +317,7 @@ describe('§1.1 Trust Score', () => {
     expect(rawCritical).toBeCloseTo(rawNoFlag * 0.3, 2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0016", "section": "01", "sectionName": "General", "title": "UT-TS-016: serious flag -> 40% reduction"}
   it('UT-TS-016: serious flag -> 40% reduction', () => {
     // Input: flagSeverities = ['serious']
     // Expected: raw score multiplied by 0.6
@@ -321,6 +337,7 @@ describe('§1.1 Trust Score', () => {
     expect(rawSerious).toBeCloseTo(rawNoFlag * 0.6, 2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0017", "section": "01", "sectionName": "General", "title": "UT-TS-017: warning flag -> 15% reduction"}
   it('UT-TS-017: warning flag -> 15% reduction', () => {
     // Input: flagSeverities = ['warning']
     // Expected: raw score multiplied by 0.85
@@ -340,6 +357,7 @@ describe('§1.1 Trust Score', () => {
     expect(rawWarning).toBeCloseTo(rawNoFlag * 0.85, 2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0018", "section": "01", "sectionName": "General", "title": "UT-TS-018: multiple flags compound"}
   it('UT-TS-018: multiple flags compound', () => {
     // Input: flagSeverities = ['serious', 'warning']
     // Expected: raw * 0.6 * 0.85
@@ -359,6 +377,7 @@ describe('§1.1 Trust Score', () => {
     expect(rawCompound).toBeCloseTo(rawNoFlag * 0.6 * 0.85, 2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0019", "section": "01", "sectionName": "General", "title": "UT-TS-019: tombstone threshold -> 60% penalty"}
   it('UT-TS-019: tombstone threshold -> 60% penalty', () => {
     // Input: tombstoneCount >= COORDINATION_TOMBSTONE_THRESHOLD (3)
     // Expected: raw multiplied by 0.4
@@ -382,6 +401,7 @@ describe('§1.1 Trust Score', () => {
     expect(tomb.overallScore).toBeLessThan(noTomb.overallScore * 0.6)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0020", "section": "01", "sectionName": "General", "title": "UT-TS-020: damping factor applied (Fix 12)"}
   it('UT-TS-020: damping factor applied (Fix 12)', () => {
     // Input: Any input
     // Expected: overallScore = 0.85 * raw + 0.15 * 0.1
@@ -405,6 +425,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.overallScore).toBeCloseTo(expected, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0021", "section": "01", "sectionName": "General", "title": "UT-TS-021: damping guarantees minimum floor"}
   it('UT-TS-021: damping guarantees minimum floor', () => {
     // Input: All zero inputs, maximum penalties
     // Expected: overallScore >= 0.015 (BASE_SCORE * (1 - DAMPING))
@@ -417,6 +438,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.overallScore).toBeGreaterThanOrEqual(floor)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0022", "section": "01", "sectionName": "General", "title": "UT-TS-022: score clamped to [0, 1]"}
   it('UT-TS-022: score clamped to [0, 1]', () => {
     // Input: Extreme positive inputs
     // Expected: overallScore <= 1.0
@@ -442,6 +464,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.overallScore).toBeLessThanOrEqual(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0023", "section": "01", "sectionName": "General", "title": "UT-TS-023: score clamped to [0, 1] (low end)"}
   it('UT-TS-023: score clamped to [0, 1] (low end)', () => {
     // Input: Extreme negative inputs
     // Expected: overallScore >= 0.0
@@ -454,6 +477,7 @@ describe('§1.1 Trust Score', () => {
     expect(result.overallScore).toBeGreaterThanOrEqual(0.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0024", "section": "01", "sectionName": "General", "title": "UT-TS-024: recency decay \u2014 fresh attestation weighted more"}
   it('UT-TS-024: recency decay — fresh attestation weighted more', () => {
     // Input: Attestation from 1 day ago vs 365 days ago
     // Expected: Fresh attestation has significantly higher weight
@@ -489,6 +513,7 @@ describe('§1.1 Trust Score', () => {
     expect(sentimentFreshPos).toBeGreaterThan(sentimentOldPos)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0025", "section": "01", "sectionName": "General", "title": "UT-TS-025: evidence multiplier (1.3x)"}
   it('UT-TS-025: evidence multiplier (1.3x)', () => {
     // Input: Attestation with evidence vs without
     // Expected: Evidence attestation weighted 30% higher
@@ -519,6 +544,7 @@ describe('§1.1 Trust Score', () => {
     expect(CONSTANTS.EVIDENCE_MULTIPLIER).toBe(1.3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0026", "section": "01", "sectionName": "General", "title": "UT-TS-026: verified multiplier (1.5x)"}
   it('UT-TS-026: verified multiplier (1.5x)', () => {
     // Input: Attestation with isVerified=true vs false
     // Expected: Verified attestation weighted 50% higher
@@ -544,6 +570,7 @@ describe('§1.1 Trust Score', () => {
     expect(CONSTANTS.VERIFIED_MULTIPLIER).toBe(1.5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0027", "section": "01", "sectionName": "General", "title": "UT-TS-027: bilateral/cosignature multiplier (1.4x)"}
   it('UT-TS-027: bilateral/cosignature multiplier (1.4x)', () => {
     // Input: Attestation with hasCosignature=true
     // Expected: Cosigned attestation weighted 40% higher
@@ -569,6 +596,7 @@ describe('§1.1 Trust Score', () => {
     expect(CONSTANTS.BILATERAL_MULTIPLIER).toBe(1.4)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0028", "section": "01", "sectionName": "General", "title": "UT-TS-028: Fix 12: zero-trust default"}
   it('UT-TS-028: Fix 12: zero-trust default', () => {
     // Input: authorTrustScore = null (unscored)
     // Expected: Author weight = 0.0, attestation contributes nothing
@@ -582,6 +610,7 @@ describe('§1.1 Trust Score', () => {
     expect(sentiment).toBe(0.5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0029", "section": "01", "sectionName": "General", "title": "UT-TS-029: Fix 12: vouch-gating"}
   it('UT-TS-029: Fix 12: vouch-gating', () => {
     // Input: authorTrustScore = 0.8 but authorHasInboundVouch = false
     // Expected: Author weight = 0.0 despite high score
@@ -595,6 +624,7 @@ describe('§1.1 Trust Score', () => {
     expect(sentiment).toBe(0.5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0030", "section": "01", "sectionName": "General", "title": "UT-TS-030: Fix 12: vouch-gating passes"}
   it('UT-TS-030: Fix 12: vouch-gating passes', () => {
     // Input: authorTrustScore = 0.8, authorHasInboundVouch = true
     // Expected: Author weight = 0.8, attestation contributes normally
@@ -608,6 +638,7 @@ describe('§1.1 Trust Score', () => {
     expect(sentiment).toBe(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0031", "section": "01", "sectionName": "General", "title": "UT-TS-031: Fix 12: sybil resistance"}
   it('UT-TS-031: Fix 12: sybil resistance', () => {
     // Input: 1000 attestations from unvouched DIDs
     // Expected: overallScore unchanged from zero-attestation baseline
@@ -623,6 +654,7 @@ describe('§1.1 Trust Score', () => {
     expect(sybilResult.components.sentiment).toBe(baseline.components.sentiment)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0032", "section": "01", "sectionName": "General", "title": "UT-TS-032: confidence \u2014 zero signals"}
   it('UT-TS-032: confidence — zero signals', () => {
     // Input: All input counts = 0
     // Expected: confidence = 0.0
@@ -632,6 +664,7 @@ describe('§1.1 Trust Score', () => {
     expect(confidence).toBe(0.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0033", "section": "01", "sectionName": "General", "title": "UT-TS-033: confidence \u2014 few signals"}
   it('UT-TS-033: confidence — few signals', () => {
     // Input: totalSignals = 2 (< 3)
     // Expected: confidence = 0.2
@@ -642,6 +675,7 @@ describe('§1.1 Trust Score', () => {
     expect(confidence).toBe(0.2)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0034", "section": "01", "sectionName": "General", "title": "UT-TS-034: confidence \u2014 some signals"}
   it('UT-TS-034: confidence — some signals', () => {
     // Input: totalSignals = 8 (< 10)
     // Expected: confidence = 0.4
@@ -652,6 +686,7 @@ describe('§1.1 Trust Score', () => {
     expect(confidence).toBe(0.4)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0035", "section": "01", "sectionName": "General", "title": "UT-TS-035: confidence \u2014 moderate signals"}
   it('UT-TS-035: confidence — moderate signals', () => {
     // Input: totalSignals = 15 (< 30)
     // Expected: confidence = 0.6
@@ -662,6 +697,7 @@ describe('§1.1 Trust Score', () => {
     expect(confidence).toBe(0.6)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0036", "section": "01", "sectionName": "General", "title": "UT-TS-036: confidence \u2014 many signals"}
   it('UT-TS-036: confidence — many signals', () => {
     // Input: totalSignals = 50 (< 100)
     // Expected: confidence = 0.8
@@ -672,6 +708,7 @@ describe('§1.1 Trust Score', () => {
     expect(confidence).toBe(0.8)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0037", "section": "01", "sectionName": "General", "title": "UT-TS-037: confidence \u2014 high signals"}
   it('UT-TS-037: confidence — high signals', () => {
     // Input: totalSignals = 100+
     // Expected: confidence = 0.95
@@ -682,6 +719,7 @@ describe('§1.1 Trust Score', () => {
     expect(confidence).toBe(0.95)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0038", "section": "01", "sectionName": "General", "title": "UT-TS-038: component weights sum to 1.0"}
   it('UT-TS-038: component weights sum to 1.0', () => {
     // Input: Verify constants
     // Expected: SENTIMENT_WEIGHT + VOUCH_WEIGHT + REVIEWER_WEIGHT + NETWORK_WEIGHT = 1.0
@@ -689,6 +727,7 @@ describe('§1.1 Trust Score', () => {
     expect(sum).toBeCloseTo(1.0, 10)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0039", "section": "01", "sectionName": "General", "title": "UT-TS-039: neutral sentiment counted as half positive"}
   it('UT-TS-039: neutral sentiment counted as half positive', () => {
     // Input: 10 neutral attestations from trusted authors
     // Expected: sentiment component = 0.5
@@ -707,6 +746,7 @@ describe('§1.1 Trust Score', () => {
 // Traces to: Architecture §"Scorer Jobs — refresh-reviewer-stats"
 // ---------------------------------------------------------------------------
 describe('§1.2 Reviewer Quality', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0040", "section": "01", "sectionName": "General", "title": "UT-RQ-001: corroboration rate calculation"}
   it('UT-RQ-001: corroboration rate calculation', () => {
     // Input: 7 of 10 attestations corroborated by others
     // Expected: corroborationRate = 0.7
@@ -725,6 +765,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.corroborationRate).toBeCloseTo(0.7, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0041", "section": "01", "sectionName": "General", "title": "UT-RQ-002: deletion rate calculation"}
   it('UT-RQ-002: deletion rate calculation', () => {
     // Input: 2 disputed deletions out of 20 attestations
     // Expected: deletionRate = 0.1
@@ -743,6 +784,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.deletionRate).toBeCloseTo(0.1, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0042", "section": "01", "sectionName": "General", "title": "UT-RQ-003: evidence rate calculation"}
   it('UT-RQ-003: evidence rate calculation', () => {
     // Input: 15 of 20 attestations have evidence
     // Expected: evidenceRate = 0.75
@@ -761,6 +803,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.evidenceRate).toBeCloseTo(0.75, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0043", "section": "01", "sectionName": "General", "title": "UT-RQ-004: helpful ratio \u2014 all helpful"}
   it('UT-RQ-004: helpful ratio — all helpful', () => {
     // Input: helpfulReactions = 100, unhelpfulReactions = 0
     // Expected: averageHelpfulRatio = 1.0
@@ -779,6 +822,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.helpfulRatio).toBe(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0044", "section": "01", "sectionName": "General", "title": "UT-RQ-005: helpful ratio \u2014 no reactions"}
   it('UT-RQ-005: helpful ratio — no reactions', () => {
     // Input: helpfulReactions = 0, unhelpfulReactions = 0
     // Expected: averageHelpfulRatio = 0.5 (neutral default)
@@ -797,6 +841,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.helpfulRatio).toBe(0.5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0045", "section": "01", "sectionName": "General", "title": "UT-RQ-006: revocation rate"}
   it('UT-RQ-006: revocation rate', () => {
     // Input: 3 revocations out of 30 attestations
     // Expected: revocationRate = 0.1
@@ -815,6 +860,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.revocationRate).toBeCloseTo(0.1, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0046", "section": "01", "sectionName": "General", "title": "UT-RQ-007: agent-generated flag detection"}
   it('UT-RQ-007: agent-generated flag detection', () => {
     // Input: isAgent = true if > 50% of attestations are isAgentGenerated
     // Expected: isAgent correctly detected
@@ -840,6 +886,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.overallQuality).toBeLessThanOrEqual(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0047", "section": "01", "sectionName": "General", "title": "UT-RQ-008: active domains extraction"}
   it('UT-RQ-008: active domains extraction', () => {
     // Input: Attestations spanning 5 domains
     // Expected: activeDomains contains all 5 unique domains
@@ -863,6 +910,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.overallQuality).toBeGreaterThan(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0048", "section": "01", "sectionName": "General", "title": "UT-RQ-009: coordination flag count propagation"}
   it('UT-RQ-009: coordination flag count propagation', () => {
     // Input: 2 coordination flags detected
     // Expected: coordinationFlagCount = 2
@@ -887,6 +935,7 @@ describe('§1.2 Reviewer Quality', () => {
     expect(result.overallQuality).toBeLessThan(0.8)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0049", "section": "01", "sectionName": "General", "title": "UT-RQ-010: zero attestations -> zero rates"}
   it('UT-RQ-010: zero attestations -> zero rates', () => {
     // Input: No attestations by this DID
     // Expected: All rates = 0, no division by zero
@@ -930,6 +979,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     }
   }
 
+  // TRACE: {"suite": "APPVIEW", "case": "0050", "section": "01", "sectionName": "General", "title": "UT-SA-001: weighted score calculation"}
   it('UT-SA-001: weighted score calculation', () => {
     // Input: 3 positive, 1 negative
     // Expected: weightedScore reflects ratio
@@ -946,6 +996,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result.weightedScore).toBeCloseTo(0.75, 1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0051", "section": "01", "sectionName": "General", "title": "UT-SA-002: confidence from attestation count"}
   it('UT-SA-002: confidence from attestation count', () => {
     // Input: 50 attestations
     // Expected: confidence > 0.7
@@ -955,6 +1006,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result.confidence).toBeGreaterThan(0.7)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0052", "section": "01", "sectionName": "General", "title": "UT-SA-003: dimension summary aggregation"}
   it('UT-SA-003: dimension summary aggregation', () => {
     // Input: 10 attestations with "quality: met/exceeded"
     // Expected: dimensionSummary shows distribution per dimension
@@ -973,6 +1025,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result.dimensionSummary.quality.exceeded).toBe(4)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0053", "section": "01", "sectionName": "General", "title": "UT-SA-004: authenticity consensus \u2014 majority positive"}
   it('UT-SA-004: authenticity consensus — majority positive', () => {
     // Input: 8 verified-authentic, 2 suspicious
     // Expected: authenticityConsensus = "authentic"
@@ -990,6 +1043,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result).toHaveProperty('authenticityConsensus')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0054", "section": "01", "sectionName": "General", "title": "UT-SA-005: authenticity consensus \u2014 split opinion"}
   it('UT-SA-005: authenticity consensus — split opinion', () => {
     // Input: 5 authentic, 5 suspicious
     // Expected: authenticityConfidence < 0.5
@@ -1004,6 +1058,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result).toHaveProperty('authenticityConfidence')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0055", "section": "01", "sectionName": "General", "title": "UT-SA-006: would-recommend rate"}
   it('UT-SA-006: would-recommend rate', () => {
     // Input: 7 of 10 reviewers rated positive
     // Expected: wouldRecommendRate = 0.7
@@ -1016,6 +1071,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result.wouldRecommendRate).toBeCloseTo(0.7, 5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0056", "section": "01", "sectionName": "General", "title": "UT-SA-007: attestation velocity"}
   it('UT-SA-007: attestation velocity', () => {
     // Input: 10 attestations in last 7 days
     // Expected: velocity = ~1.4/day
@@ -1030,6 +1086,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result.velocity).toBeCloseTo(10 / 30, 1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0057", "section": "01", "sectionName": "General", "title": "UT-SA-008: empty attestation list"}
   it('UT-SA-008: empty attestation list', () => {
     // Input: No attestations for subject
     // Expected: All aggregations = zero/null, no errors
@@ -1050,6 +1107,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result.velocity).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0058", "section": "01", "sectionName": "General", "title": "UT-SA-009: verified attestation count"}
   it('UT-SA-009: verified attestation count', () => {
     // Input: 3 of 10 have verification records
     // Expected: verifiedAttestationCount = 3
@@ -1062,6 +1120,7 @@ describe('§1.3 Sentiment Aggregation', () => {
     expect(result.verifiedCount).toBe(3)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0059", "section": "01", "sectionName": "General", "title": "UT-SA-010: lastAttestationAt tracking"}
   it('UT-SA-010: lastAttestationAt tracking', () => {
     // Input: Most recent attestation = 2026-02-20
     // Expected: lastAttestationAt = 2026-02-20
@@ -1085,6 +1144,7 @@ describe('§1.3 Sentiment Aggregation', () => {
 // Traces to: Architecture §"Scorer Jobs — detect-coordination, detect-sybil"
 // ---------------------------------------------------------------------------
 describe('§1.4 Anomaly Detection', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0060", "section": "01", "sectionName": "General", "title": "UT-AD-001: coordination detection \u2014 temporal burst"}
   it('UT-AD-001: coordination detection — temporal burst', () => {
     // Input: 20 attestations for same subject within 1 hour
     // Expected: Flagged as coordinated campaign
@@ -1107,6 +1167,7 @@ describe('§1.4 Anomaly Detection', () => {
     expect(results[0].subjectId).toBe('subject-1')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0061", "section": "01", "sectionName": "General", "title": "UT-AD-002: coordination detection \u2014 below threshold"}
   it('UT-AD-002: coordination detection — below threshold', () => {
     // Input: 5 attestations for same subject within 48 hours
     // Expected: Not flagged
@@ -1131,6 +1192,7 @@ describe('§1.4 Anomaly Detection', () => {
     expect(results.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0062", "section": "01", "sectionName": "General", "title": "UT-AD-003: sybil cluster detection \u2014 correlated timing"}
   it('UT-AD-003: sybil cluster detection — correlated timing', () => {
     // Input: 5 DIDs all created attestations within same 5-minute window
     // Expected: Flagged as potential sybil cluster
@@ -1155,6 +1217,7 @@ describe('§1.4 Anomaly Detection', () => {
     expect(results[0].confidence).toBeGreaterThan(0.5)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0063", "section": "01", "sectionName": "General", "title": "UT-AD-004: sybil detection \u2014 minimum cluster size"}
   it('UT-AD-004: sybil detection — minimum cluster size', () => {
     // Input: 2 correlated DIDs (below SYBIL_MIN_CLUSTER_SIZE = 3)
     // Expected: Not flagged
@@ -1173,6 +1236,7 @@ describe('§1.4 Anomaly Detection', () => {
     expect(results.length).toBe(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0064", "section": "01", "sectionName": "General", "title": "UT-AD-005: statistical outlier \u2014 sentiment flip"}
   it('UT-AD-005: statistical outlier — sentiment flip', () => {
     // Input: Subject normally positive, sudden burst of 10 negative
     // Expected: Anomaly event generated
@@ -1195,6 +1259,7 @@ describe('§1.4 Anomaly Detection', () => {
     expect(results[0].isCoordinated).toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0065", "section": "01", "sectionName": "General", "title": "UT-AD-006: no anomalies in normal traffic"}
   it('UT-AD-006: no anomalies in normal traffic', () => {
     // Input: Steady stream of diverse attestations
     // Expected: Zero anomaly events
@@ -1223,6 +1288,7 @@ describe('§1.4 Anomaly Detection', () => {
 // Traces to: Architecture §"Resolve Endpoint — computeRecommendation"
 // ---------------------------------------------------------------------------
 describe('§1.5 Recommendation', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0066", "section": "01", "sectionName": "General", "title": "UT-RC-001: proceed \u2014 high trust, no flags"}
   it('UT-RC-001: proceed — high trust, no flags', () => {
     // Input: scores.weightedScore > 0.8, no flags
     // Expected: action = "proceed", trustLevel = "high"
@@ -1250,6 +1316,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.action).toBe('proceed')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0067", "section": "01", "sectionName": "General", "title": "UT-RC-002: caution \u2014 moderate trust"}
   it('UT-RC-002: caution — moderate trust', () => {
     // Input: scores.weightedScore = 0.5, no flags
     // Expected: action = "caution", trustLevel = "moderate"
@@ -1277,6 +1344,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.action).toBe('caution')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0068", "section": "01", "sectionName": "General", "title": "UT-RC-003: verify \u2014 low trust, active flags"}
   it('UT-RC-003: verify — low trust, active flags', () => {
     // Input: scores.weightedScore = 0.3, 2 flags
     // Expected: action = "verify", trustLevel = "low"
@@ -1307,6 +1375,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.action).toBe('verify')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0069", "section": "01", "sectionName": "General", "title": "UT-RC-004: avoid \u2014 very low trust, critical flag"}
   it('UT-RC-004: avoid — very low trust, critical flag', () => {
     // Input: overallTrustScore < 0.1, critical flag
     // Expected: action = "avoid", trustLevel = "untrusted"
@@ -1335,6 +1404,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.trustLevel).toBe('very-low')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0070", "section": "01", "sectionName": "General", "title": "UT-RC-005: context: before-transaction -> stricter"}
   it('UT-RC-005: context: before-transaction -> stricter', () => {
     // Input: Same scores, context = "before-transaction"
     // Expected: Lower trustLevel threshold
@@ -1366,6 +1436,7 @@ describe('§1.5 Recommendation', () => {
     expect(resultGeneral.trustLevel === 'high' || resultGeneral.action === 'proceed').toBe(true)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0071", "section": "01", "sectionName": "General", "title": "UT-RC-006: context: general-lookup -> lenient"}
   it('UT-RC-006: context: general-lookup -> lenient', () => {
     // Input: Same scores, context = "general-lookup"
     // Expected: Higher tolerance for low scores
@@ -1396,6 +1467,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.action).not.toBe('avoid')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0072", "section": "01", "sectionName": "General", "title": "UT-RC-007: graph context boosts trusted"}
   it('UT-RC-007: graph context boosts trusted', () => {
     // Input: graphContext.shortestPath = 1, trustedAttestors.length > 0
     // Expected: Trust level boosted
@@ -1436,6 +1508,7 @@ describe('§1.5 Recommendation', () => {
     expect(withGraph.reasoning).toContain('Direct trust connection')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0073", "section": "01", "sectionName": "General", "title": "UT-RC-008: no scores -> unknown"}
   it('UT-RC-008: no scores -> unknown', () => {
     // Input: scores = null, didProfile = null
     // Expected: action = "verify", reasoning explains no data
@@ -1453,6 +1526,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.reasoning).toContain('No trust data')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0074", "section": "01", "sectionName": "General", "title": "UT-RC-009: reasoning includes flag types"}
   it('UT-RC-009: reasoning includes flag types', () => {
     // Input: Active flags present
     // Expected: reasoning mentions specific flag types
@@ -1483,6 +1557,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.reasoning).toContain('coordination')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0075", "section": "01", "sectionName": "General", "title": "UT-RC-010: authenticity suspicious -> lower trust"}
   it('UT-RC-010: authenticity suspicious -> lower trust', () => {
     // Input: authenticity.predominantAssessment = "suspicious"
     // Expected: Trust level reduced
@@ -1515,6 +1590,7 @@ describe('§1.5 Recommendation', () => {
     expect(result).toHaveProperty('confidence')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0076", "section": "01", "sectionName": "General", "title": "UT-RC-011: domain-specific score used when available"}
   it('UT-RC-011: domain-specific score used when available', () => {
     // Input: domain = "food", domainScore exists
     // Expected: Domain-specific score used over general score
@@ -1546,6 +1622,7 @@ describe('§1.5 Recommendation', () => {
     expect(result.confidence).toBeGreaterThan(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0077", "section": "01", "sectionName": "General", "title": "UT-RC-012: graph timeout handled gracefully"}
   it('UT-RC-012: graph timeout handled gracefully', () => {
     // Input: graphContext.mutualConnections = null
     // Expected: Recommendation proceeds without graph signal

@@ -94,6 +94,7 @@ def auth_headers():
 
 # TST-BRAIN-270
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0270", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "01", "title": "dashboard_loads"}
 async def test_admin_8_1_1_dashboard_loads(client, auth_headers) -> None:
     """SS8.1.1: Dashboard loads -- GET /admin/ returns 200 with system status."""
     resp = client.get("/admin/", headers=auth_headers)
@@ -112,6 +113,7 @@ async def test_admin_8_1_1_dashboard_loads(client, auth_headers) -> None:
 
 # TST-BRAIN-271
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0271", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "02", "title": "system_status"}
 async def test_admin_8_1_2_system_status(client, auth_headers) -> None:
     """SS8.1.2: System status display -- all services healthy shows green."""
     resp = client.get("/admin/status", headers=auth_headers)
@@ -123,6 +125,7 @@ async def test_admin_8_1_2_system_status(client, auth_headers) -> None:
 
 # TST-BRAIN-272
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0272", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "03", "title": "degraded_status"}
 async def test_admin_8_1_3_degraded_status(mock_core, admin_config) -> None:
     """SS8.1.3: Degraded status -- LLM unreachable shows degraded indicator."""
     # Use a core that raises on health check to simulate degradation
@@ -140,6 +143,7 @@ async def test_admin_8_1_3_degraded_status(mock_core, admin_config) -> None:
 
 # TST-BRAIN-273
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0273", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "04", "title": "recent_activity"}
 async def test_admin_8_1_4_recent_activity(client, auth_headers) -> None:
     """SS8.1.4: Recent activity -- verify dashboard endpoint returns activity data."""
     # The dashboard endpoint returns status info
@@ -156,6 +160,7 @@ async def test_admin_8_1_4_recent_activity(client, auth_headers) -> None:
 
 # TST-BRAIN-274
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0274", "section": "08", "sectionName": "Admin UI", "subsection": "02", "scenario": "01", "title": "list_contacts"}
 async def test_admin_8_2_1_list_contacts(client, auth_headers) -> None:
     """SS8.2.1: List contacts -- GET /admin/contacts/ returns list."""
     resp = client.get("/admin/contacts/", headers=auth_headers)
@@ -166,6 +171,7 @@ async def test_admin_8_2_1_list_contacts(client, auth_headers) -> None:
 
 # TST-BRAIN-275
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0275", "section": "08", "sectionName": "Admin UI", "subsection": "02", "scenario": "02", "title": "add_contact"}
 async def test_admin_8_2_2_add_contact(client, auth_headers) -> None:
     """SS8.2.2: Add contact -- POST form creates contact via core API."""
     new_contact = {
@@ -184,6 +190,7 @@ async def test_admin_8_2_2_add_contact(client, auth_headers) -> None:
 # TST-BRAIN-276
 # TST-BRAIN-474 Admin update contact calls PUT /v1/contacts/{did}
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0276", "section": "08", "sectionName": "Admin UI", "subsection": "02", "scenario": "03", "title": "edit_sharing_policy"}
 async def test_admin_8_2_3_edit_sharing_policy(client, auth_headers) -> None:
     """SS8.2.3: Edit sharing policy -- change contact's sharing tier."""
     updated_contact = {
@@ -205,6 +212,7 @@ async def test_admin_8_2_3_edit_sharing_policy(client, auth_headers) -> None:
 # TST-BRAIN-277
 # TST-BRAIN-475 Admin delete contact calls DELETE /v1/contacts/{did}
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0277", "section": "08", "sectionName": "Admin UI", "subsection": "02", "scenario": "04", "title": "remove_contact"}
 async def test_admin_8_2_4_remove_contact(client, auth_headers) -> None:
     """SS8.2.4: Remove contact -- delete action removes via core API."""
     resp = client.delete(
@@ -224,6 +232,7 @@ async def test_admin_8_2_4_remove_contact(client, auth_headers) -> None:
 
 # TST-BRAIN-278
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0278", "section": "08", "sectionName": "Admin UI", "subsection": "03", "scenario": "01", "title": "list_devices"}
 async def test_admin_8_3_1_list_devices(client, auth_headers, mock_core) -> None:
     """SS8.3.1: List devices -- table with paired devices and last-seen."""
     mock_core.list_devices = AsyncMock(return_value=[make_device()])
@@ -238,6 +247,7 @@ async def test_admin_8_3_1_list_devices(client, auth_headers, mock_core) -> None
 
 # TST-BRAIN-279
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0279", "section": "08", "sectionName": "Admin UI", "subsection": "03", "scenario": "02", "title": "initiate_pairing"}
 async def test_admin_8_3_2_initiate_pairing(client, auth_headers) -> None:
     """SS8.3.2: Initiate pairing -- pairing code displayed."""
     # Pairing is a core feature; admin UI displays the code
@@ -248,6 +258,7 @@ async def test_admin_8_3_2_initiate_pairing(client, auth_headers) -> None:
 
 # TST-BRAIN-280
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0280", "section": "08", "sectionName": "Admin UI", "subsection": "03", "scenario": "03", "title": "revoke_device"}
 async def test_admin_8_3_3_revoke_device(client, auth_headers, mock_core) -> None:
     """SS8.3.3: Revoke device -- DELETE /admin/devices/{id} returns 204."""
     mock_core.revoke_device = AsyncMock(return_value=None)
@@ -263,6 +274,7 @@ async def test_admin_8_3_3_revoke_device(client, auth_headers, mock_core) -> Non
 
 # TST-BRAIN-281
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0281", "section": "08", "sectionName": "Admin UI", "subsection": "04", "scenario": "01", "title": "list_personas"}
 async def test_admin_8_4_1_list_personas(client, auth_headers, mock_core) -> None:
     """SS8.4.1: List personas -- dashboard returns persona count from core."""
     mock_core.list_personas.return_value = ["personal", "work"]
@@ -276,6 +288,7 @@ async def test_admin_8_4_1_list_personas(client, auth_headers, mock_core) -> Non
 
 # TST-BRAIN-282
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0282", "section": "08", "sectionName": "Admin UI", "subsection": "04", "scenario": "02", "title": "create_persona"}
 async def test_admin_8_4_2_create_persona(admin_app, auth_headers) -> None:
     """SS8.4.2: Admin dashboard reflects personas from core.
 
@@ -300,6 +313,7 @@ async def test_admin_8_4_2_create_persona(admin_app, auth_headers) -> None:
 
 # TST-BRAIN-283
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0283", "section": "08", "sectionName": "Admin UI", "subsection": "04", "scenario": "03", "title": "change_persona_tier"}
 async def test_admin_8_4_3_change_persona_tier(client, auth_headers, mock_core) -> None:
     """SS8.4.3: Change persona tier -- Open to Locked.
 
@@ -318,6 +332,7 @@ async def test_admin_8_4_3_change_persona_tier(client, auth_headers, mock_core) 
 
 # TST-BRAIN-284
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0284", "section": "08", "sectionName": "Admin UI", "subsection": "04", "scenario": "04", "title": "delete_persona"}
 async def test_admin_8_4_4_delete_persona(client, auth_headers) -> None:
     """SS8.4.4: Delete persona -- vault wiped, keys removed."""
     persona = make_persona(persona_id="to_delete")
@@ -334,6 +349,7 @@ async def test_admin_8_4_4_delete_persona(client, auth_headers) -> None:
 # TST-BRAIN-285
 # TST-BRAIN-497 Dashboard escapes item.summary in innerHTML
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0285", "section": "08", "sectionName": "Admin UI", "subsection": "05", "scenario": "01", "title": "xss_contact_name"}
 async def test_admin_8_5_1_xss_contact_name(client, auth_headers) -> None:
     """SS8.5.1: XSS in contact name -- HTML-escaped in template output.
 
@@ -374,6 +390,7 @@ async def test_admin_8_5_1_xss_contact_name(client, auth_headers) -> None:
 
 # TST-BRAIN-286
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0286", "section": "08", "sectionName": "Admin UI", "subsection": "05", "scenario": "02", "title": "csrf_protection"}
 async def test_admin_8_5_2_csrf_protection(client) -> None:
     """SS8.5.2: CSRF on forms -- submit without auth token returns 403."""
     # No Authorization header -> 401 (HTTPBearer returns 401 for missing credentials)
@@ -386,6 +403,7 @@ async def test_admin_8_5_2_csrf_protection(client) -> None:
 
 # TST-BRAIN-287
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0287", "section": "08", "sectionName": "Admin UI", "subsection": "05", "scenario": "03", "title": "sql_injection_search"}
 async def test_admin_8_5_3_sql_injection_search(client, auth_headers) -> None:
     """SS8.5.3: SQL injection via contact fields -- safely handled.
 
@@ -433,6 +451,7 @@ async def test_admin_8_5_3_sql_injection_search(client, auth_headers) -> None:
 # TST-BRAIN-288
 # TST-BRAIN-499 No inline onclick handlers in templates
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0288", "section": "08", "sectionName": "Admin UI", "subsection": "05", "scenario": "04", "title": "template_injection"}
 async def test_admin_8_5_4_template_injection(client, auth_headers) -> None:
     """SS8.5.4: Template injection -- user input auto-escaped by Jinja2."""
     malicious_input = "{{ 7*7 }}"
@@ -453,6 +472,7 @@ async def test_admin_8_5_4_template_injection(client, auth_headers) -> None:
 
 
 # TST-BRAIN-456
+# TRACE: {"suite": "BRAIN", "case": "0456", "section": "08", "sectionName": "Admin UI", "subsection": "06", "scenario": "01", "title": "auth_wrong_token"}
 def test_admin_8_6_1_auth_wrong_token(client) -> None:
     """Admin rejects request with wrong CLIENT_TOKEN."""
     resp = client.get("/admin/", headers={"Authorization": "Bearer wrong-token"})
@@ -460,6 +480,7 @@ def test_admin_8_6_1_auth_wrong_token(client) -> None:
 
 
 # TST-BRAIN-457
+# TRACE: {"suite": "BRAIN", "case": "0457", "section": "08", "sectionName": "Admin UI", "subsection": "06", "scenario": "02", "title": "auth_no_token"}
 def test_admin_8_6_2_auth_no_token(client) -> None:
     """Admin rejects request without Authorization header."""
     resp = client.get("/admin/")
@@ -471,6 +492,7 @@ def test_admin_8_6_2_auth_no_token(client) -> None:
 # ---------------------------------------------------------------------------
 
 
+# TRACE: {"suite": "BRAIN", "case": "0001", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "22", "title": "admin_trust_page_loads"}
 def test_admin_trust_page_loads(client, auth_headers) -> None:
     """Trust page renders HTML when accessed with valid auth."""
     resp = client.get("/admin/trust-page", headers=auth_headers)
@@ -478,6 +500,7 @@ def test_admin_trust_page_loads(client, auth_headers) -> None:
     assert "Trust Neighborhood" in resp.text
 
 
+# TRACE: {"suite": "BRAIN", "case": "0002", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "23", "title": "admin_trust_cache_api"}
 def test_admin_trust_cache_api(client, auth_headers) -> None:
     """Trust cache API returns entries list."""
     resp = client.get("/admin/api/trust/cache", headers=auth_headers)
@@ -487,6 +510,7 @@ def test_admin_trust_cache_api(client, auth_headers) -> None:
     assert isinstance(data, dict)
 
 
+# TRACE: {"suite": "BRAIN", "case": "0003", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "24", "title": "admin_trust_stats_api"}
 def test_admin_trust_stats_api(client, auth_headers) -> None:
     """Trust stats API returns count and last sync."""
     resp = client.get("/admin/api/trust/stats", headers=auth_headers)
@@ -495,6 +519,7 @@ def test_admin_trust_stats_api(client, auth_headers) -> None:
     assert isinstance(data, dict)
 
 
+# TRACE: {"suite": "BRAIN", "case": "0004", "section": "08", "sectionName": "Admin UI", "subsection": "01", "scenario": "25", "title": "admin_trust_sync_api"}
 def test_admin_trust_sync_api(client, auth_headers) -> None:
     """Trust sync API accepts POST and returns result."""
     resp = client.post("/admin/api/trust/sync", headers=auth_headers)

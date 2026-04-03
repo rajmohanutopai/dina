@@ -36,6 +36,7 @@ def _mock_response(status=200, json_data=None, text="ok"):
 # ── Health ───────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0001", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "01", "title": "healthz"}
 def test_healthz(config):
     resp = _mock_response(json_data={"status": "ok"})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -45,6 +46,7 @@ def test_healthz(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0002", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "02", "title": "readyz"}
 def test_readyz(config):
     resp = _mock_response(json_data={"status": "ok"})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -57,6 +59,7 @@ def test_readyz(config):
 # ── Personas ─────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0003", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "03", "title": "list_personas"}
 def test_list_personas(config):
     resp = _mock_response(json_data=[{"id": "persona-personal", "name": "personal"}])
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -67,6 +70,7 @@ def test_list_personas(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0004", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "04", "title": "create_persona"}
 def test_create_persona(config):
     resp = _mock_response(json_data={"id": "persona-work", "status": "created"})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -76,6 +80,7 @@ def test_create_persona(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0005", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "05", "title": "unlock_persona"}
 def test_unlock_persona(config):
     resp = _mock_response(json_data={"status": "unlocked"})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -88,6 +93,7 @@ def test_unlock_persona(config):
 # ── Devices ──────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0006", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "06", "title": "list_devices"}
 def test_list_devices(config):
     resp = _mock_response(json_data={"devices": [{"id": "d-1", "name": "laptop"}]})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -97,6 +103,7 @@ def test_list_devices(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0007", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "07", "title": "initiate_pairing"}
 def test_initiate_pairing(config):
     resp = _mock_response(json_data={"code": "123456", "expires_in": 300})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -106,6 +113,7 @@ def test_initiate_pairing(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0008", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "08", "title": "revoke_device"}
 def test_revoke_device(config):
     resp = _mock_response(status=204)
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -117,6 +125,7 @@ def test_revoke_device(config):
 # ── Identity ─────────────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0009", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "09", "title": "get_did"}
 def test_get_did(config):
     resp = _mock_response(json_data={"id": "did:key:z6Mk..."})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -126,6 +135,7 @@ def test_get_did(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0010", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "10", "title": "sign_data"}
 def test_sign_data(config):
     resp = _mock_response(json_data={"signature": "aabb" * 32})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -138,6 +148,7 @@ def test_sign_data(config):
 # ── Error handling ───────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0011", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "11", "title": "connect_error"}
 def test_connect_error(config):
     with patch.object(httpx.Client, "request", side_effect=httpx.ConnectError("fail")):
         client = AdminClient(config)
@@ -146,6 +157,7 @@ def test_connect_error(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0012", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "12", "title": "socket_error_file_not_found"}
 def test_socket_error_file_not_found(config):
     """Socket transport raises AdminClientError with helpful message for missing socket."""
     client = AdminClient.__new__(AdminClient)
@@ -156,6 +168,7 @@ def test_socket_error_file_not_found(config):
         client._request("GET", "/healthz")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0013", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "13", "title": "socket_error_permission_denied"}
 def test_socket_error_permission_denied(config):
     """Socket transport raises AdminClientError for permission errors."""
     client = AdminClient.__new__(AdminClient)
@@ -166,6 +179,7 @@ def test_socket_error_permission_denied(config):
         client._request("GET", "/healthz")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0014", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "14", "title": "socket_error_connection_refused"}
 def test_socket_error_connection_refused(config):
     """Socket transport raises AdminClientError for refused connections."""
     client = AdminClient.__new__(AdminClient)
@@ -176,6 +190,7 @@ def test_socket_error_connection_refused(config):
         client._request("GET", "/healthz")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0015", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "15", "title": "not_implemented_error"}
 def test_not_implemented_error(config):
     resp = MagicMock()
     resp.status_code = 501
@@ -190,6 +205,7 @@ def test_not_implemented_error(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0016", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "16", "title": "server_error"}
 def test_server_error(config):
     resp = MagicMock()
     resp.status_code = 500
@@ -204,6 +220,7 @@ def test_server_error(config):
         client.close()
 
 
+# TRACE: {"suite": "ADMIN", "case": "0017", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "17", "title": "timeout_error"}
 def test_timeout_error(config):
     """Timeout surfaces as AdminClientError, not raw httpx exception."""
     client = AdminClient.__new__(AdminClient)
@@ -214,6 +231,7 @@ def test_timeout_error(config):
         client._request("GET", "/healthz")
 
 
+# TRACE: {"suite": "ADMIN", "case": "0018", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "18", "title": "generic_request_error"}
 def test_generic_request_error(config):
     """Unexpected httpx.RequestError surfaces as AdminClientError."""
     client = AdminClient.__new__(AdminClient)
@@ -227,6 +245,7 @@ def test_generic_request_error(config):
 # ── Context manager ──────────────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0019", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "19", "title": "context_manager"}
 def test_context_manager(config):
     resp = _mock_response(json_data={"status": "ok"})
     with patch.object(httpx.Client, "request", return_value=resp):
@@ -238,6 +257,7 @@ def test_context_manager(config):
 # ── No Authorization header ─────────────────────────────────────────────────
 
 
+# TRACE: {"suite": "ADMIN", "case": "0020", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "20", "title": "no_bearer_header"}
 def test_no_bearer_header(config):
     """Socket-only client never sends Authorization header."""
     client = AdminClient(config)
@@ -263,6 +283,7 @@ class _HealthHandler(BaseHTTPRequestHandler):
         pass  # suppress logs
 
 
+# TRACE: {"suite": "ADMIN", "case": "0021", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "01", "title": "socket_integration_no_bearer"}
 def test_socket_integration_no_bearer():
     """Integration: AdminClient connects over a real Unix socket and sends no Bearer token."""
     # Use /tmp for short path (macOS AF_UNIX 104-char limit)

@@ -33,6 +33,7 @@ afterAll(async () => {
 // 11.1 Schema Correctness
 // ---------------------------------------------------------------------------
 describe('11.1 Schema Correctness', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0538", "section": "01", "sectionName": "General", "title": "IT-DB-001: migrations run cleanly"}
   it('IT-DB-001: migrations run cleanly', async () => {
     // Description: Fresh database, apply all migrations
     // Expected: No errors
@@ -40,6 +41,7 @@ describe('11.1 Schema Correctness', () => {
     expect(result.rows[0].ok).toBe(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0539", "section": "01", "sectionName": "General", "title": "IT-DB-002: all 27 tables exist"}
   it('IT-DB-002: all 27 tables exist', async () => {
     // Description: Query information_schema for all expected tables
     // Expected: All 27 expected tables present
@@ -65,6 +67,7 @@ describe('11.1 Schema Correctness', () => {
     expect(tableNames.length).toBe(27)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0540", "section": "01", "sectionName": "General", "title": "IT-DB-003: attestations -- primary key on uri"}
   it('IT-DB-003: attestations -- primary key on uri', async () => {
     // Description: Duplicate uri insert
     // Expected: Constraint violation (without onConflict)
@@ -83,6 +86,7 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0541", "section": "01", "sectionName": "General", "title": "IT-DB-004: trust_edges -- unique on sourceUri"}
   it('IT-DB-004: trust_edges -- unique on sourceUri', async () => {
     // Description: Duplicate sourceUri insert
     // Expected: Constraint violation
@@ -101,6 +105,7 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0542", "section": "01", "sectionName": "General", "title": "IT-DB-005: tombstones -- unique on originalUri"}
   it('IT-DB-005: tombstones -- unique on originalUri', async () => {
     // Description: Duplicate originalUri insert
     // Expected: Constraint violation
@@ -119,6 +124,7 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0543", "section": "01", "sectionName": "General", "title": "IT-DB-006: subjects -- primary key on id"}
   it('IT-DB-006: subjects -- primary key on id', async () => {
     // Description: Duplicate id insert
     // Expected: Constraint violation
@@ -137,6 +143,7 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0544", "section": "01", "sectionName": "General", "title": "IT-DB-007: did_profiles -- primary key on did"}
   it('IT-DB-007: did_profiles -- primary key on did', async () => {
     // Description: Duplicate did insert
     // Expected: Constraint violation
@@ -155,6 +162,7 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0545", "section": "01", "sectionName": "General", "title": "IT-DB-008: subject_scores -- primary key on subjectId"}
   it('IT-DB-008: subject_scores -- primary key on subjectId', async () => {
     // Description: Duplicate subjectId insert
     // Expected: Constraint violation
@@ -179,6 +187,7 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0546", "section": "01", "sectionName": "General", "title": "IT-DB-009: subject_scores -- foreign key to subjects"}
   it('IT-DB-009: subject_scores -- foreign key to subjects', async () => {
     // Description: Insert with non-existent subjectId
     // Expected: Foreign key violation
@@ -195,6 +204,7 @@ describe('11.1 Schema Correctness', () => {
 // 11.2 Index Verification
 // ---------------------------------------------------------------------------
 describe('11.2 Index Verification', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0547", "section": "01", "sectionName": "General", "title": "IT-DB-010: attestations indexes exist"}
   it('IT-DB-010: attestations indexes exist', async () => {
     // Description: Query pg_indexes
     // Expected: All attestation indexes present
@@ -221,6 +231,7 @@ describe('11.2 Index Verification', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0548", "section": "01", "sectionName": "General", "title": "IT-DB-011: trust_edges indexes exist"}
   it('IT-DB-011: trust_edges indexes exist', async () => {
     // Description: Query pg_indexes
     // Expected: trust_edges indexes present
@@ -241,6 +252,7 @@ describe('11.2 Index Verification', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0549", "section": "01", "sectionName": "General", "title": "IT-DB-012: Fix 9: partial index on needs_recalc (did_profiles)"}
   it('IT-DB-012: Fix 9: partial index on needs_recalc (did_profiles)', async () => {
     // Description: Query pg_indexes for did_profiles
     // Expected: did_profiles_needs_recalc_idx with WHERE clause
@@ -255,6 +267,7 @@ describe('11.2 Index Verification', () => {
     expect((partialIdx as any).indexdef).toContain('needs_recalc = true')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0550", "section": "01", "sectionName": "General", "title": "IT-DB-013: Fix 9: partial index on subject_scores"}
   it('IT-DB-013: Fix 9: partial index on subject_scores', async () => {
     // Description: Query pg_indexes
     // Expected: subject_scores_needs_recalc_idx with WHERE clause
@@ -269,6 +282,7 @@ describe('11.2 Index Verification', () => {
     expect((partialIdx as any).indexdef).toContain('needs_recalc = true')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0551", "section": "01", "sectionName": "General", "title": "IT-DB-014: GIN index on tags"}
   it('IT-DB-014: GIN index on tags', async () => {
     // Description: Query pg_indexes
     // Expected: attestations_tags_idx using GIN
@@ -280,6 +294,7 @@ describe('11.2 Index Verification', () => {
     expect((result.rows[0] as any).indexdef).toContain('gin')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0552", "section": "01", "sectionName": "General", "title": "IT-DB-015: GIN index on identifiers_json"}
   it('IT-DB-015: GIN index on identifiers_json', async () => {
     // Description: Query pg_indexes for subjects
     // Expected: subjects_identifiers_idx using GIN
@@ -291,6 +306,7 @@ describe('11.2 Index Verification', () => {
     expect((result.rows[0] as any).indexdef).toContain('gin')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0553", "section": "01", "sectionName": "General", "title": "IT-DB-016: tsvector search index"}
   it('IT-DB-016: tsvector search index', async () => {
     // Description: Full-text search query plan uses index
     // Expected: Verify to_tsvector can be used on the search_content column
@@ -311,6 +327,7 @@ describe('11.2 Index Verification', () => {
     expect(searchResult.rows).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0554", "section": "01", "sectionName": "General", "title": "IT-DB-017: partial index on author_scoped_did"}
   it('IT-DB-017: partial index on author_scoped_did', async () => {
     // Description: Query pg_indexes
     // Expected: WHERE author_scoped_did IS NOT NULL
@@ -323,6 +340,7 @@ describe('11.2 Index Verification', () => {
     expect((result.rows[0] as any).indexdef).toContain('author_scoped_did IS NOT NULL')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0555", "section": "01", "sectionName": "General", "title": "IT-DB-018: partial index on canonical_subject_id"}
   it('IT-DB-018: partial index on canonical_subject_id', async () => {
     // Description: Query pg_indexes
     // Expected: WHERE canonical_subject_id IS NOT NULL
@@ -335,6 +353,7 @@ describe('11.2 Index Verification', () => {
     expect((result.rows[0] as any).indexdef).toContain('canonical_subject_id IS NOT NULL')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0556", "section": "01", "sectionName": "General", "title": "IT-DB-019: tombstone indexes exist"}
   it('IT-DB-019: tombstone indexes exist', async () => {
     // Description: Query pg_indexes for tombstones
     // Expected: tombstones_author_idx, tombstones_subject_idx, tombstones_deleted_idx
@@ -348,6 +367,7 @@ describe('11.2 Index Verification', () => {
     expect(indexNames).toContain('tombstones_deleted_idx')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0557", "section": "01", "sectionName": "General", "title": "IT-DB-020: subjects DID index exists"}
   it('IT-DB-020: subjects DID index exists', async () => {
     // Description: Query pg_indexes for subjects
     // Expected: subjects_did_idx
@@ -358,6 +378,7 @@ describe('11.2 Index Verification', () => {
     expect(indexNames).toContain('subjects_did_idx')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0558", "section": "01", "sectionName": "General", "title": "IT-DB-021: domain_scores table exists with indexes"}
   it('IT-DB-021: domain_scores table exists with indexes', async () => {
     // Description: Query pg_indexes for domain_scores
     // Expected: Primary key and relevant indexes present
@@ -377,6 +398,7 @@ describe('11.2 Index Verification', () => {
 // 11.3 Query Performance
 // ---------------------------------------------------------------------------
 describe('11.3 Query Performance', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0559", "section": "01", "sectionName": "General", "title": "IT-DB-022: attestation lookup by subject -- uses index"}
   it('IT-DB-022: attestation lookup by subject -- uses index', async () => {
     // Description: EXPLAIN on subject lookup
     // Expected: Index scan, not seq scan
@@ -387,6 +409,7 @@ describe('11.3 Query Performance', () => {
     expect(plan).toContain('Index')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0560", "section": "01", "sectionName": "General", "title": "IT-DB-023: trust_edge lookup by from_did -- uses index"}
   it('IT-DB-023: trust_edge lookup by from_did -- uses index', async () => {
     // Description: EXPLAIN on from_did lookup
     // Expected: Index scan
@@ -397,6 +420,7 @@ describe('11.3 Query Performance', () => {
     expect(plan).toContain('Index')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0561", "section": "01", "sectionName": "General", "title": "IT-DB-024: dirty flag query -- uses partial index"}
   it('IT-DB-024: dirty flag query -- uses partial index', async () => {
     // Description: EXPLAIN on WHERE needs_recalc = true
     // Expected: Partial index scan
@@ -413,6 +437,7 @@ describe('11.3 Query Performance', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0562", "section": "01", "sectionName": "General", "title": "IT-DB-025: full-text search -- uses GIN index"}
   it('IT-DB-025: full-text search -- uses GIN index', async () => {
     // Description: EXPLAIN on GIN-indexed tags array with containment operator
     // Expected: GIN index scan on the tags array column

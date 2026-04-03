@@ -42,6 +42,7 @@ beforeEach(async () => {
 // §3.1 Trust Edge Creation + Removal (IT-TE-001..012) — 12 tests
 // ---------------------------------------------------------------------------
 describe('§3.1 Trust Edge Creation + Removal', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0377", "section": "01", "sectionName": "General", "title": "IT-TE-001: vouch create \u2192 trust edge added"}
   it('IT-TE-001: vouch create → trust edge added', async () => {
     const collection = 'com.dina.trust.vouch'
     const rkey = 'te001'
@@ -71,6 +72,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edges[0].weight).toBeCloseTo(1.0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0378", "section": "01", "sectionName": "General", "title": "IT-TE-002: endorsement create \u2192 trust edge added"}
   it('IT-TE-002: endorsement create → trust edge added', async () => {
     const collection = 'com.dina.trust.endorsement'
     const rkey = 'te002'
@@ -101,6 +103,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edges[0].domain).toBe('typescript')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0379", "section": "01", "sectionName": "General", "title": "IT-TE-003: delegation create \u2192 trust edge added"}
   it('IT-TE-003: delegation create → trust edge added', async () => {
     const collection = 'com.dina.trust.delegation'
     const rkey = 'te003'
@@ -131,6 +134,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edges[0].domain).toBe('attestation')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0380", "section": "01", "sectionName": "General", "title": "IT-TE-004: cosigned attestation \u2192 trust edge added"}
   it('IT-TE-004: cosigned attestation → trust edge added', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'te004'
@@ -164,6 +168,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edges[0].edgeType).toBe('positive-attestation')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0381", "section": "01", "sectionName": "General", "title": "IT-TE-005: positive DID attestation \u2192 trust edge added"}
   it('IT-TE-005: positive DID attestation → trust edge added', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'te005'
@@ -193,6 +198,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edges[0].toDid).toBe(SUBJECT_DID)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0382", "section": "01", "sectionName": "General", "title": "IT-TE-006: vouch delete \u2192 trust edge removed"}
   it('IT-TE-006: vouch delete → trust edge removed', async () => {
     const collection = 'com.dina.trust.vouch'
     const rkey = 'te006'
@@ -225,6 +231,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edgesAfter).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0383", "section": "01", "sectionName": "General", "title": "IT-TE-007: endorsement delete \u2192 trust edge removed"}
   it('IT-TE-007: endorsement delete → trust edge removed', async () => {
     const collection = 'com.dina.trust.endorsement'
     const rkey = 'te007'
@@ -257,6 +264,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edgesAfter).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0384", "section": "01", "sectionName": "General", "title": "IT-TE-008: delegation delete \u2192 trust edge removed"}
   it('IT-TE-008: delegation delete → trust edge removed', async () => {
     const collection = 'com.dina.trust.delegation'
     const rkey = 'te008'
@@ -289,6 +297,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edgesAfter).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0385", "section": "01", "sectionName": "General", "title": "IT-TE-009: Fix 1: idempotent edge creation"}
   it('IT-TE-009: Fix 1: idempotent edge creation', async () => {
     const collection = 'com.dina.trust.vouch'
     const rkey = 'te009'
@@ -318,6 +327,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edges).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0386", "section": "01", "sectionName": "General", "title": "IT-TE-010: multiple edge types from same author to same target"}
   it('IT-TE-010: multiple edge types from same author to same target', async () => {
     // Create vouch
     const vouchUri = makeUri('com.dina.trust.vouch', 'te010-vouch')
@@ -383,6 +393,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edgeTypes).toEqual(['delegation', 'endorsement', 'vouch'])
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0387", "section": "01", "sectionName": "General", "title": "IT-TE-011: negative DID attestation \u2192 no trust edge"}
   it('IT-TE-011: negative DID attestation → no trust edge', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'te011'
@@ -412,6 +423,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     expect(edges).toHaveLength(0)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0388", "section": "01", "sectionName": "General", "title": "IT-TE-012: delete record with no trust edge \u2192 no-op"}
   it('IT-TE-012: delete record with no trust edge → no-op', async () => {
     // Create a flag (flags do NOT create trust edges)
     const collection = 'com.dina.trust.flag'

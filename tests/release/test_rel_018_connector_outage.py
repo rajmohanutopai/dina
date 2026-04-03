@@ -16,6 +16,7 @@ class TestConnectorOutage:
     """Real API tests for REL-018: graceful degradation."""
 
     # REL-018
+    # TRACE: {"suite": "REL", "case": "0018", "section": "18", "sectionName": "Connector Outage", "subsection": "01", "scenario": "01", "title": "rel_018_core_usable_without_brain_features"}
     def test_rel_018_core_usable_without_brain_features(
         self, api: httpx.Client,
     ) -> None:
@@ -43,6 +44,7 @@ class TestConnectorOutage:
         assert resp.status_code == 200
 
     # REL-018
+    # TRACE: {"suite": "REL", "case": "0018", "section": "18", "sectionName": "Connector Outage", "subsection": "01", "scenario": "02", "title": "rel_018_healthz_reports_service_status"}
     def test_rel_018_healthz_reports_service_status(
         self, core_url,
     ) -> None:
@@ -56,6 +58,7 @@ class TestConnectorOutage:
         )
 
     # REL-018
+    # TRACE: {"suite": "REL", "case": "0018", "section": "18", "sectionName": "Connector Outage", "subsection": "01", "scenario": "03", "title": "rel_018_error_on_brain_failure_is_clear"}
     def test_rel_018_error_on_brain_failure_is_clear(
         self, core_url, auth_headers,
     ) -> None:
@@ -78,6 +81,7 @@ class TestConnectorOutage:
         assert isinstance(data, dict), "Error response should be JSON, not raw text"
 
     # REL-018
+    # TRACE: {"suite": "REL", "case": "0018", "section": "18", "sectionName": "Connector Outage", "subsection": "01", "scenario": "04", "title": "rel_018_did_works_independently"}
     def test_rel_018_did_works_independently(
         self, core_url, auth_headers,
     ) -> None:

@@ -35,6 +35,7 @@ var (
 // ---------- §3.1 DID Generation & Persistence (10 scenarios) ----------
 
 // TST-CORE-130
+// TRACE: {"suite": "CORE", "case": "0820", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "GenerateRootDID"}
 func TestIdentity_3_1_1_GenerateRootDID(t *testing.T) {
 	impl := realDIDManager
 	// impl = identity.NewDIDManager(testutil.TempDir(t))
@@ -64,6 +65,7 @@ func TestIdentity_3_1_1_GenerateRootDID(t *testing.T) {
 }
 
 // TST-CORE-131
+// TRACE: {"suite": "CORE", "case": "0821", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "02", "title": "LoadExistingDID"}
 func TestIdentity_3_1_2_LoadExistingDID(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -85,6 +87,7 @@ func TestIdentity_3_1_2_LoadExistingDID(t *testing.T) {
 }
 
 // TST-CORE-132
+// TRACE: {"suite": "CORE", "case": "0822", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "03", "title": "DIDDocumentStructure"}
 func TestIdentity_3_1_3_DIDDocumentStructure(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -123,6 +126,7 @@ func TestIdentity_3_1_3_DIDDocumentStructure(t *testing.T) {
 }
 
 // TST-CORE-133
+// TRACE: {"suite": "CORE", "case": "0823", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "04", "title": "MultiplePersonaDIDs"}
 func TestIdentity_3_1_4_MultiplePersonaDIDs(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -160,6 +164,7 @@ func TestIdentity_3_1_4_MultiplePersonaDIDs(t *testing.T) {
 }
 
 // TST-CORE-134
+// TRACE: {"suite": "CORE", "case": "0824", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "05", "title": "DIDDocumentServiceEndpoint"}
 func TestIdentity_3_1_5_DIDDocumentServiceEndpoint(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -170,6 +175,7 @@ func TestIdentity_3_1_5_DIDDocumentServiceEndpoint(t *testing.T) {
 }
 
 // TST-CORE-135
+// TRACE: {"suite": "CORE", "case": "0825", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "06", "title": "PLCDirectorySignedOpsOnly"}
 func TestIdentity_3_1_6_PLCDirectorySignedOpsOnly(t *testing.T) {
 	// Code audit: PLC Directory must only store signed operations.
 	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
@@ -202,6 +208,7 @@ func TestIdentity_3_1_6_PLCDirectorySignedOpsOnly(t *testing.T) {
 }
 
 // TST-CORE-136
+// TRACE: {"suite": "CORE", "case": "0826", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "07", "title": "SecondRootGenerationRejected"}
 func TestIdentity_3_1_7_SecondRootGenerationRejected(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -218,6 +225,7 @@ func TestIdentity_3_1_7_SecondRootGenerationRejected(t *testing.T) {
 }
 
 // TST-CORE-137
+// TRACE: {"suite": "CORE", "case": "0827", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "08", "title": "RootIdentityCreatedAtTimestamp"}
 func TestIdentity_3_1_8_RootIdentityCreatedAtTimestamp(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -255,6 +263,7 @@ func TestIdentity_3_1_8_RootIdentityCreatedAtTimestamp(t *testing.T) {
 }
 
 // TST-CORE-138
+// TRACE: {"suite": "CORE", "case": "0828", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "09", "title": "DeviceOriginFingerprint"}
 func TestIdentity_3_1_9_DeviceOriginFingerprint(t *testing.T) {
 	// Fresh DIDManager for isolation.
 	dir := t.TempDir()
@@ -294,6 +303,7 @@ func TestIdentity_3_1_9_DeviceOriginFingerprint(t *testing.T) {
 }
 
 // TST-CORE-139
+// TRACE: {"suite": "CORE", "case": "0829", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "10", "title": "MultikeyZ6MkPrefix"}
 func TestIdentity_3_1_10_MultikeyZ6MkPrefix(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -338,6 +348,7 @@ func TestIdentity_3_1_10_MultikeyZ6MkPrefix(t *testing.T) {
 // ---------- §3.1.1 Key Rotation (5 scenarios) ----------
 
 // TST-CORE-140
+// TRACE: {"suite": "CORE", "case": "0830", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "1_RotateSigningKey"}
 func TestIdentity_3_1_1_1_RotateSigningKey(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -400,6 +411,7 @@ func TestIdentity_3_1_1_1_RotateSigningKey(t *testing.T) {
 }
 
 // TST-CORE-141
+// TRACE: {"suite": "CORE", "case": "0831", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "2_RotationPreservesDID"}
 func TestIdentity_3_1_1_2_RotationPreservesDID(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -424,6 +436,7 @@ func TestIdentity_3_1_1_2_RotationPreservesDID(t *testing.T) {
 }
 
 // TST-CORE-142
+// TRACE: {"suite": "CORE", "case": "0832", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "3_OldKeyInvalidAfterRotation"}
 func TestIdentity_3_1_1_3_OldKeyInvalidAfterRotation(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -496,6 +509,7 @@ func TestIdentity_3_1_1_3_OldKeyInvalidAfterRotation(t *testing.T) {
 }
 
 // TST-CORE-143
+// TRACE: {"suite": "CORE", "case": "0833", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "4_RotationOpSignedByOldKey"}
 func TestIdentity_3_1_1_4_RotationOpSignedByOldKey(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -545,6 +559,7 @@ func TestIdentity_3_1_1_4_RotationOpSignedByOldKey(t *testing.T) {
 }
 
 // TST-CORE-144
+// TRACE: {"suite": "CORE", "case": "0834", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "5_RecoveryKeysCanReclaimDID"}
 func TestIdentity_3_1_1_5_RecoveryKeysCanReclaimDID(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
@@ -574,6 +589,7 @@ func TestIdentity_3_1_1_5_RecoveryKeysCanReclaimDID(t *testing.T) {
 }
 
 // TST-CORE-145a
+// TRACE: {"suite": "CORE", "case": "0835", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "01", "title": "6_DeterministicRotationEnforcement"}
 func TestIdentity_3_1_1_6_DeterministicRotationEnforcement(t *testing.T) {
 	// When masterSeed + keyDeriver are set, Rotate() must reject keys that
 	// don't match the deterministic next generation.
@@ -616,6 +632,7 @@ func TestIdentity_3_1_1_6_DeterministicRotationEnforcement(t *testing.T) {
 // ---------- §3.1.2 did:web Fallback (5 scenarios) ----------
 
 // TST-CORE-145
+// TRACE: {"suite": "CORE", "case": "0836", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "02", "title": "1_DIDWebResolution"}
 func TestIdentity_3_1_2_1_DIDWebResolution(t *testing.T) {
 	// did:web resolution should return "not yet implemented" error.
 	dm := identity.NewDIDManager("")
@@ -627,6 +644,7 @@ func TestIdentity_3_1_2_1_DIDWebResolution(t *testing.T) {
 }
 
 // TST-CORE-146
+// TRACE: {"suite": "CORE", "case": "0837", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "02", "title": "2_DIDWebSameKeypair"}
 func TestIdentity_3_1_2_2_DIDWebSameKeypair(t *testing.T) {
 	// §3.1.2.2: did:web must use the same Ed25519 keypair as did:plc.
 	// Verify via source audit that identity adapter uses Ed25519 throughout,
@@ -662,6 +680,7 @@ func TestIdentity_3_1_2_2_DIDWebSameKeypair(t *testing.T) {
 }
 
 // TST-CORE-147
+// TRACE: {"suite": "CORE", "case": "0838", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "02", "title": "3_RotationPLCToDIDWeb"}
 func TestIdentity_3_1_2_3_RotationPLCToDIDWeb(t *testing.T) {
 	// Architecture test: verify that the Rotate method exists in the DID manager,
 	// enabling future rotation from did:plc to did:web.
@@ -680,6 +699,7 @@ func TestIdentity_3_1_2_3_RotationPLCToDIDWeb(t *testing.T) {
 }
 
 // TST-CORE-148
+// TRACE: {"suite": "CORE", "case": "0839", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "02", "title": "4_DIDWebPiggybacksIngress"}
 func TestIdentity_3_1_2_4_DIDWebPiggybacksIngress(t *testing.T) {
 	// Architecture test: did:web resolution uses the existing HTTP infrastructure
 	// (Go core already has net/http). Verify the DIDManager has the ResolveWeb stub.
@@ -698,6 +718,7 @@ func TestIdentity_3_1_2_4_DIDWebPiggybacksIngress(t *testing.T) {
 }
 
 // TST-CORE-149
+// TRACE: {"suite": "CORE", "case": "0840", "section": "03", "sectionName": "Identity (DID)", "subsection": "01", "scenario": "02", "title": "5_DIDWebTradeoffAcknowledged"}
 func TestIdentity_3_1_2_5_DIDWebTradeoffAcknowledged(t *testing.T) {
 	// Architecture acknowledgment: did:web depends on DNS, which is a centralized system.
 	// This is a known tradeoff documented in the design. The primary method is did:plc.
@@ -728,6 +749,7 @@ func TestIdentity_3_1_2_5_DIDWebTradeoffAcknowledged(t *testing.T) {
 // ---------- §3.2 Persona Management (13 scenarios) ----------
 
 // TST-CORE-150
+// TRACE: {"suite": "CORE", "case": "0841", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "01", "title": "CreatePersona"}
 func TestIdentity_3_2_1_CreatePersona(t *testing.T) {
 	impl := realPersonaManager
 	testutil.RequireImplementation(t, impl, "PersonaManager")
@@ -765,6 +787,7 @@ func TestIdentity_3_2_1_CreatePersona(t *testing.T) {
 }
 
 // TST-CORE-151
+// TRACE: {"suite": "CORE", "case": "0842", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "02", "title": "ListPersonas"}
 func TestIdentity_3_2_2_ListPersonas(t *testing.T) {
 	impl := realPersonaManager
 	testutil.RequireImplementation(t, impl, "PersonaManager")
@@ -807,6 +830,7 @@ func TestIdentity_3_2_2_ListPersonas(t *testing.T) {
 }
 
 // TST-CORE-152
+// TRACE: {"suite": "CORE", "case": "0843", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "03", "title": "DeletePersona"}
 func TestIdentity_3_2_3_DeletePersona(t *testing.T) {
 	impl := testutil.NewMockPersonaManager()
 	id, _ := impl.Create(idCtx, "work", "standard")
@@ -817,6 +841,7 @@ func TestIdentity_3_2_3_DeletePersona(t *testing.T) {
 }
 
 // TST-CORE-153
+// TRACE: {"suite": "CORE", "case": "0844", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "04", "title": "DeleteFileRemovesPersona"}
 func TestIdentity_3_2_4_DeleteFileRemovesPersona(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	ctx := context.Background()
@@ -852,6 +877,7 @@ func TestIdentity_3_2_4_DeleteFileRemovesPersona(t *testing.T) {
 }
 
 // TST-CORE-154
+// TRACE: {"suite": "CORE", "case": "0845", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "05", "title": "PersonaIsolation"}
 func TestIdentity_3_2_5_PersonaIsolation(t *testing.T) {
 	vm := realVaultManager
 	testutil.RequireImplementation(t, vm, "VaultManager")
@@ -880,6 +906,7 @@ func TestIdentity_3_2_5_PersonaIsolation(t *testing.T) {
 }
 
 // TST-CORE-155
+// TRACE: {"suite": "CORE", "case": "0846", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "06", "title": "DefaultPersonaExists"}
 func TestIdentity_3_2_6_DefaultPersonaExists(t *testing.T) {
 	impl := identity.NewPersonaManager()
 	testutil.RequireImplementation(t, impl, "PersonaManager")
@@ -906,6 +933,7 @@ func TestIdentity_3_2_6_DefaultPersonaExists(t *testing.T) {
 }
 
 // TST-CORE-156
+// TRACE: {"suite": "CORE", "case": "0847", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "07", "title": "PerPersonaFileLayout"}
 func TestIdentity_3_2_7_PerPersonaFileLayout(t *testing.T) {
 	// Fresh PersonaManager — no shared state.
 	pm := identity.NewPersonaManager()
@@ -954,6 +982,7 @@ func TestIdentity_3_2_7_PerPersonaFileLayout(t *testing.T) {
 }
 
 // TST-CORE-157
+// TRACE: {"suite": "CORE", "case": "0848", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "08", "title": "PerPersonaIndependentDEK"}
 func TestIdentity_3_2_8_PerPersonaIndependentDEK(t *testing.T) {
 	impl := realVaultDEKDeriver
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
@@ -978,6 +1007,7 @@ func TestIdentity_3_2_8_PerPersonaIndependentDEK(t *testing.T) {
 }
 
 // TST-CORE-158
+// TRACE: {"suite": "CORE", "case": "0849", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "09", "title": "LockedPersonaOpaqueBytes"}
 func TestIdentity_3_2_9_LockedPersonaOpaqueBytes(t *testing.T) {
 	// §3.2.9: Locked persona must report IsLocked=true; open/restricted must not.
 	pm := identity.NewPersonaManager()
@@ -1009,12 +1039,14 @@ func TestIdentity_3_2_9_LockedPersonaOpaqueBytes(t *testing.T) {
 }
 
 // TST-CORE-159
+// TRACE: {"suite": "CORE", "case": "0850", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "10", "title": "SelectiveUnlockWithTTL"}
 func TestIdentity_3_2_10_SelectiveUnlockWithTTL(t *testing.T) {
 	impl := realPersonaManager
 	testutil.RequireImplementation(t, impl, "PersonaManager")
 }
 
 // TST-CORE-160
+// TRACE: {"suite": "CORE", "case": "0851", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "11", "title": "PersonaKeySignsDIDComm"}
 func TestIdentity_3_2_11_PersonaKeySignsDIDComm(t *testing.T) {
 	// §3.2.11: Each persona must have its own key for DIDComm signing.
 	// Verify via source analysis that persona keys are used, not root key.
@@ -1048,6 +1080,7 @@ func TestIdentity_3_2_11_PersonaKeySignsDIDComm(t *testing.T) {
 }
 
 // TST-CORE-161
+// TRACE: {"suite": "CORE", "case": "0852", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "12", "title": "PersonaKeySignsTrustNetwork"}
 func TestIdentity_3_2_12_PersonaKeySignsTrustNetwork(t *testing.T) {
 	// Architecture test: verify persona key is used for trust network entries.
 	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
@@ -1087,6 +1120,7 @@ func TestIdentity_3_2_12_PersonaKeySignsTrustNetwork(t *testing.T) {
 }
 
 // TST-CORE-162
+// TRACE: {"suite": "CORE", "case": "0853", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "13", "title": "NoCrossCompartmentCode"}
 func TestIdentity_3_2_13_NoCrossCompartmentCode(t *testing.T) {
 	// Code audit: no function crosses persona boundaries without root key check.
 	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
@@ -1103,6 +1137,7 @@ func TestIdentity_3_2_13_NoCrossCompartmentCode(t *testing.T) {
 // ---------- §3.3 Persona Gatekeeper (15 scenarios) ----------
 
 // TST-CORE-163
+// TRACE: {"suite": "CORE", "case": "0854", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "01", "title": "AccessOpenTier"}
 func TestIdentity_3_3_1_AccessOpenTier(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	testutil.RequireImplementation(t, pm, "PersonaManager")
@@ -1129,6 +1164,7 @@ func TestIdentity_3_3_1_AccessOpenTier(t *testing.T) {
 }
 
 // TST-CORE-164
+// TRACE: {"suite": "CORE", "case": "0855", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "02", "title": "AccessRestrictedTier"}
 func TestIdentity_3_3_2_AccessRestrictedTier(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	testutil.RequireImplementation(t, pm, "PersonaManager")
@@ -1164,6 +1200,7 @@ func TestIdentity_3_3_2_AccessRestrictedTier(t *testing.T) {
 }
 
 // TST-CORE-165
+// TRACE: {"suite": "CORE", "case": "0856", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "03", "title": "AccessLockedTierWithoutUnlock"}
 func TestIdentity_3_3_3_AccessLockedTierWithoutUnlock(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(idCtx, "financial", "locked", testutil.TestPassphraseHash)
@@ -1185,6 +1222,7 @@ func TestIdentity_3_3_3_AccessLockedTierWithoutUnlock(t *testing.T) {
 }
 
 // TST-CORE-166
+// TRACE: {"suite": "CORE", "case": "0857", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "04", "title": "UnlockLockedPersona"}
 func TestIdentity_3_3_4_UnlockLockedPersona(t *testing.T) {
 	impl := testutil.NewMockPersonaManager()
 	impl.Create(idCtx, "financial", "locked")
@@ -1195,6 +1233,7 @@ func TestIdentity_3_3_4_UnlockLockedPersona(t *testing.T) {
 }
 
 // TST-CORE-167
+// TRACE: {"suite": "CORE", "case": "0858", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "05", "title": "LockedPersonaTTLExpiry"}
 func TestIdentity_3_3_5_LockedPersonaTTLExpiry(t *testing.T) {
 	// Unlock with short TTL, wait, verify auto-locked.
 	pm := identity.NewPersonaManager()
@@ -1224,6 +1263,7 @@ func TestIdentity_3_3_5_LockedPersonaTTLExpiry(t *testing.T) {
 }
 
 // TST-CORE-168
+// TRACE: {"suite": "CORE", "case": "0859", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "06", "title": "LockedPersonaReLock"}
 func TestIdentity_3_3_6_LockedPersonaReLock(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
@@ -1255,6 +1295,7 @@ func TestIdentity_3_3_6_LockedPersonaReLock(t *testing.T) {
 }
 
 // TST-CORE-169
+// TRACE: {"suite": "CORE", "case": "0860", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "07", "title": "AuditLogForRestrictedAccess"}
 func TestIdentity_3_3_7_AuditLogForRestrictedAccess(t *testing.T) {
 	// Access a restricted persona, check audit log records the event.
 	pm := identity.NewPersonaManager()
@@ -1277,6 +1318,7 @@ func TestIdentity_3_3_7_AuditLogForRestrictedAccess(t *testing.T) {
 }
 
 // TST-CORE-170
+// TRACE: {"suite": "CORE", "case": "0861", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "08", "title": "NotificationOnRestrictedAccess"}
 func TestIdentity_3_3_8_NotificationOnRestrictedAccess(t *testing.T) {
 	pm := identity.NewPersonaManager()
 
@@ -1307,6 +1349,7 @@ func TestIdentity_3_3_8_NotificationOnRestrictedAccess(t *testing.T) {
 }
 
 // TST-CORE-171
+// TRACE: {"suite": "CORE", "case": "0862", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "09", "title": "LockedPersonaUnlockFlow"}
 func TestIdentity_3_3_9_LockedPersonaUnlockFlow(t *testing.T) {
 	// Create a locked persona, unlock with correct passphrase, verify IsLocked=false.
 	pm := identity.NewPersonaManager()
@@ -1329,6 +1372,7 @@ func TestIdentity_3_3_9_LockedPersonaUnlockFlow(t *testing.T) {
 }
 
 // TST-CORE-172
+// TRACE: {"suite": "CORE", "case": "0863", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "10", "title": "LockedPersonaUnlockDenied"}
 func TestIdentity_3_3_10_LockedPersonaUnlockDenied(t *testing.T) {
 	pm := identity.NewPersonaManager()
 
@@ -1367,6 +1411,7 @@ func TestIdentity_3_3_10_LockedPersonaUnlockDenied(t *testing.T) {
 }
 
 // TST-CORE-173
+// TRACE: {"suite": "CORE", "case": "0864", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "11", "title": "LockedPersonaUnlockTTLExpires"}
 func TestIdentity_3_3_11_LockedPersonaUnlockTTLExpires(t *testing.T) {
 	// Same as 3_3_5 — unlock with short TTL, verify expiry.
 	pm := identity.NewPersonaManager()
@@ -1394,6 +1439,7 @@ func TestIdentity_3_3_11_LockedPersonaUnlockTTLExpires(t *testing.T) {
 }
 
 // TST-CORE-174
+// TRACE: {"suite": "CORE", "case": "0865", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "12", "title": "CrossPersonaParallelReads"}
 func TestIdentity_3_3_12_CrossPersonaParallelReads(t *testing.T) {
 	// Concurrent goroutines creating/accessing different personas.
 	pm := identity.NewPersonaManager()
@@ -1443,6 +1489,7 @@ func TestIdentity_3_3_12_CrossPersonaParallelReads(t *testing.T) {
 }
 
 // TST-CORE-175
+// TRACE: {"suite": "CORE", "case": "0866", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "13", "title": "GetPersonasForContactDerived"}
 func TestIdentity_3_3_13_GetPersonasForContactDerived(t *testing.T) {
 	// Add a contact to a persona, query GetPersonasForContact.
 	pm := identity.NewPersonaManager()
@@ -1466,6 +1513,7 @@ func TestIdentity_3_3_13_GetPersonasForContactDerived(t *testing.T) {
 }
 
 // TST-CORE-176
+// TRACE: {"suite": "CORE", "case": "0867", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "14", "title": "GetPersonasForContactLockedInvisible"}
 func TestIdentity_3_3_14_GetPersonasForContactLockedInvisible(t *testing.T) {
 	// Lock a persona, verify contact query excludes it.
 	pm := identity.NewPersonaManager()
@@ -1497,6 +1545,7 @@ func TestIdentity_3_3_14_GetPersonasForContactLockedInvisible(t *testing.T) {
 }
 
 // TST-CORE-177
+// TRACE: {"suite": "CORE", "case": "0868", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "15", "title": "TierConfigInConfigJSON"}
 func TestIdentity_3_3_15_TierConfigInConfigJSON(t *testing.T) {
 	// Verify persona tier structure is valid — all tier values are recognized.
 	pm := identity.NewPersonaManager()
@@ -1531,6 +1580,7 @@ func TestIdentity_3_3_15_TierConfigInConfigJSON(t *testing.T) {
 // ---------- §3.3b 4-Tier Persona Model + Sessions ----------
 
 // TST-CORE-TIER-001
+// TRACE: {"suite": "CORE", "case": "0869", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "16", "title": "ValidTier"}
 func TestIdentity_3_3_16_ValidTier(t *testing.T) {
 	// ValidTier accepts only the 4 tier names.
 	valid := []string{"default", "standard", "sensitive", "locked"}
@@ -1548,6 +1598,7 @@ func TestIdentity_3_3_16_ValidTier(t *testing.T) {
 }
 
 // TST-CORE-TIER-002
+// TRACE: {"suite": "CORE", "case": "0870", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "17", "title": "CreateWithNewTiers"}
 func TestIdentity_3_3_17_CreateWithNewTiers(t *testing.T) {
 	pm := identity.NewPersonaManager()
 
@@ -1573,6 +1624,7 @@ func TestIdentity_3_3_17_CreateWithNewTiers(t *testing.T) {
 }
 
 // TST-CORE-TIER-003
+// TRACE: {"suite": "CORE", "case": "0871", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "18", "title": "AccessPersonaDefaultTier"}
 func TestIdentity_3_3_18_AccessPersonaDefaultTier(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(idCtx, "gen", "default")
@@ -1609,6 +1661,7 @@ func TestIdentity_3_3_18_AccessPersonaDefaultTier(t *testing.T) {
 }
 
 // TST-CORE-TIER-004
+// TRACE: {"suite": "CORE", "case": "0872", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "19", "title": "AccessPersonaStandardDeniesAgentWithoutSession"}
 func TestIdentity_3_3_19_AccessPersonaStandardDeniesAgentWithoutSession(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(idCtx, "consumer", "standard")
@@ -1634,6 +1687,7 @@ func TestIdentity_3_3_19_AccessPersonaStandardDeniesAgentWithoutSession(t *testi
 }
 
 // TST-CORE-TIER-005
+// TRACE: {"suite": "CORE", "case": "0873", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "20", "title": "AccessPersonaSensitiveDeniesAllNonUser"}
 func TestIdentity_3_3_20_AccessPersonaSensitiveDeniesAllNonUser(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(idCtx, "health", "sensitive")
@@ -1659,6 +1713,7 @@ func TestIdentity_3_3_20_AccessPersonaSensitiveDeniesAllNonUser(t *testing.T) {
 }
 
 // TST-CORE-TIER-006
+// TRACE: {"suite": "CORE", "case": "0874", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "21", "title": "SessionStartAndGrant"}
 func TestIdentity_3_3_21_SessionStartAndGrant(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	// Use sensitive tier — standard tier auto-approves with just a session.
@@ -1699,6 +1754,7 @@ func TestIdentity_3_3_21_SessionStartAndGrant(t *testing.T) {
 }
 
 // TST-CORE-TIER-007
+// TRACE: {"suite": "CORE", "case": "0875", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "22", "title": "SessionEndRevokesGrants"}
 func TestIdentity_3_3_22_SessionEndRevokesGrants(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	// Use sensitive tier — standard auto-approves with session.
@@ -1727,6 +1783,7 @@ func TestIdentity_3_3_22_SessionEndRevokesGrants(t *testing.T) {
 }
 
 // TST-CORE-TIER-008
+// TRACE: {"suite": "CORE", "case": "0876", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "23", "title": "SessionReconnect"}
 func TestIdentity_3_3_23_SessionReconnect(t *testing.T) {
 	pm := identity.NewPersonaManager()
 
@@ -1742,6 +1799,7 @@ func TestIdentity_3_3_23_SessionReconnect(t *testing.T) {
 }
 
 // TST-CORE-TIER-009
+// TRACE: {"suite": "CORE", "case": "0877", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "24", "title": "ApprovalLifecycle"}
 func TestIdentity_3_3_24_ApprovalLifecycle(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(idCtx, "health2", "sensitive")
@@ -1785,6 +1843,7 @@ func TestIdentity_3_3_24_ApprovalLifecycle(t *testing.T) {
 }
 
 // TST-CORE-TIER-010
+// TRACE: {"suite": "CORE", "case": "0878", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "25", "title": "ApprovalDeny"}
 func TestIdentity_3_3_25_ApprovalDeny(t *testing.T) {
 	pm := identity.NewPersonaManager()
 
@@ -1815,6 +1874,7 @@ func TestIdentity_3_3_25_ApprovalDeny(t *testing.T) {
 }
 
 // TST-CORE-TIER-011
+// TRACE: {"suite": "CORE", "case": "0879", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "26", "title": "LockedTierDeniesAgentEvenUnlocked"}
 func TestIdentity_3_3_26_LockedTierDeniesAgentEvenUnlocked(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	_, err := pm.Create(idCtx, "finance", "locked", testutil.TestPassphraseHash)
@@ -1847,6 +1907,7 @@ func TestIdentity_3_3_26_LockedTierDeniesAgentEvenUnlocked(t *testing.T) {
 }
 
 // TST-CORE-TIER-012
+// TRACE: {"suite": "CORE", "case": "0880", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "27", "title": "SingleUseGrantConsumed"}
 func TestIdentity_3_3_27_SingleUseGrantConsumed(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	// Use sensitive tier — standard auto-approves, single-use grants
@@ -1877,6 +1938,7 @@ func TestIdentity_3_3_27_SingleUseGrantConsumed(t *testing.T) {
 }
 
 // TST-CORE-TIER-013
+// TRACE: {"suite": "CORE", "case": "0881", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "28", "title": "CrossAgentSessionIsolation"}
 func TestIdentity_3_3_28_CrossAgentSessionIsolation(t *testing.T) {
 	pm := identity.NewPersonaManager()
 	// Use sensitive tier — standard auto-approves for any agent with a session.
@@ -1907,6 +1969,7 @@ func TestIdentity_3_3_28_CrossAgentSessionIsolation(t *testing.T) {
 }
 
 // TST-CORE-TIER-014
+// TRACE: {"suite": "CORE", "case": "0882", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "29", "title": "EndToEndApprovalFlow"}
 func TestIdentity_3_3_29_EndToEndApprovalFlow(t *testing.T) {
 	// Full flow: agent → sensitive denied → request approval → approve → access granted → end session → denied + vault closed
 	pm := identity.NewPersonaManager()
@@ -1974,6 +2037,7 @@ func TestIdentity_3_3_29_EndToEndApprovalFlow(t *testing.T) {
 }
 
 // TST-CORE-TIER-015
+// TRACE: {"suite": "CORE", "case": "0883", "section": "03", "sectionName": "Identity (DID)", "subsection": "03", "scenario": "30", "title": "SingleUseGrantClosesVault"}
 func TestIdentity_3_3_30_SingleUseGrantClosesVault(t *testing.T) {
 	// Single-use grant on sensitive persona: vault opens, access succeeds, vault closes after consumption
 	pm := identity.NewPersonaManager()
@@ -2018,12 +2082,14 @@ func TestIdentity_3_3_30_SingleUseGrantClosesVault(t *testing.T) {
 // ---------- §3.4 Contact Directory (9 scenarios) ----------
 
 // TST-CORE-178
+// TRACE: {"suite": "CORE", "case": "0884", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "01", "title": "AddContact"}
 func TestIdentity_3_4_1_AddContact(t *testing.T) {
 	impl := realContactDirectory
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
 }
 
 // TST-CORE-179
+// TRACE: {"suite": "CORE", "case": "0885", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "02", "title": "ResolveContactDID"}
 func TestIdentity_3_4_2_ResolveContactDID(t *testing.T) {
 	impl := identity.NewContactDirectory()
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
@@ -2051,6 +2117,7 @@ func TestIdentity_3_4_2_ResolveContactDID(t *testing.T) {
 }
 
 // TST-CORE-180
+// TRACE: {"suite": "CORE", "case": "0886", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "03", "title": "UpdateContactTrustLevel"}
 func TestIdentity_3_4_3_UpdateContactTrustLevel(t *testing.T) {
 	impl := realContactDirectory
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
@@ -2120,6 +2187,7 @@ func TestIdentity_3_4_3_UpdateContactTrustLevel(t *testing.T) {
 
 // TST-CORE-181
 // TST-CORE-1053 DELETE /v1/contacts/{did} removes contact
+// TRACE: {"suite": "CORE", "case": "0887", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "04", "title": "DeleteContact"}
 func TestIdentity_3_4_4_DeleteContact(t *testing.T) {
 	impl := identity.NewContactDirectory()
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
@@ -2167,6 +2235,7 @@ func TestIdentity_3_4_4_DeleteContact(t *testing.T) {
 }
 
 // TST-CORE-182
+// TRACE: {"suite": "CORE", "case": "0888", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "05", "title": "PerPersonaContactRouting"}
 func TestIdentity_3_4_5_PerPersonaContactRouting(t *testing.T) {
 	// Per-persona contact routing: a contact added to persona "work"
 	// should route to "work" only, not to "general".
@@ -2213,6 +2282,7 @@ func TestIdentity_3_4_5_PerPersonaContactRouting(t *testing.T) {
 }
 
 // TST-CORE-183
+// TRACE: {"suite": "CORE", "case": "0889", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "06", "title": "ContactsTableNoPersonaColumn"}
 func TestIdentity_3_4_6_ContactsTableNoPersonaColumn(t *testing.T) {
 	// Schema validation: contacts table must NOT have a persona column.
 	// Contacts are global — persona isolation is at the vault level.
@@ -2264,6 +2334,7 @@ func TestIdentity_3_4_6_ContactsTableNoPersonaColumn(t *testing.T) {
 }
 
 // TST-CORE-184
+// TRACE: {"suite": "CORE", "case": "0890", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "07", "title": "ContactsFullSchemaValidation"}
 func TestIdentity_3_4_7_ContactsFullSchemaValidation(t *testing.T) {
 	// Schema validation: contacts table has all required columns.
 	impl := realSchemaInspector
@@ -2287,6 +2358,7 @@ func TestIdentity_3_4_7_ContactsFullSchemaValidation(t *testing.T) {
 }
 
 // TST-CORE-185
+// TRACE: {"suite": "CORE", "case": "0891", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "08", "title": "TrustLevelEnumValidation"}
 func TestIdentity_3_4_8_TrustLevelEnumValidation(t *testing.T) {
 	impl := identity.NewContactDirectory()
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
@@ -2311,6 +2383,7 @@ func TestIdentity_3_4_8_TrustLevelEnumValidation(t *testing.T) {
 }
 
 // TST-CORE-186
+// TRACE: {"suite": "CORE", "case": "0892", "section": "03", "sectionName": "Identity (DID)", "subsection": "04", "scenario": "09", "title": "ContactsTrustIndex"}
 func TestIdentity_3_4_9_ContactsTrustIndex(t *testing.T) {
 	// Schema validation: idx_contacts_trust index exists for efficient trust-level queries.
 	impl := realSchemaInspector
@@ -2324,6 +2397,7 @@ func TestIdentity_3_4_9_ContactsTrustIndex(t *testing.T) {
 // ---------- §3.5 Device Registry (4 scenarios) ----------
 
 // TST-CORE-187
+// TRACE: {"suite": "CORE", "case": "0893", "section": "03", "sectionName": "Identity (DID)", "subsection": "05", "scenario": "01", "title": "RegisterDevice"}
 func TestIdentity_3_5_1_RegisterDevice(t *testing.T) {
 	impl := identity.NewDeviceRegistry()
 	testutil.RequireImplementation(t, impl, "DeviceRegistry")
@@ -2356,6 +2430,7 @@ func TestIdentity_3_5_1_RegisterDevice(t *testing.T) {
 }
 
 // TST-CORE-188
+// TRACE: {"suite": "CORE", "case": "0894", "section": "03", "sectionName": "Identity (DID)", "subsection": "05", "scenario": "02", "title": "ListDevices"}
 func TestIdentity_3_5_2_ListDevices(t *testing.T) {
 	impl := identity.NewDeviceRegistry()
 	testutil.RequireImplementation(t, impl, "DeviceRegistry")
@@ -2405,6 +2480,7 @@ func TestIdentity_3_5_2_ListDevices(t *testing.T) {
 }
 
 // TST-CORE-189
+// TRACE: {"suite": "CORE", "case": "0895", "section": "03", "sectionName": "Identity (DID)", "subsection": "05", "scenario": "03", "title": "RevokeDevice"}
 func TestIdentity_3_5_3_RevokeDevice(t *testing.T) {
 	impl := identity.NewDeviceRegistry()
 
@@ -2443,6 +2519,7 @@ func TestIdentity_3_5_3_RevokeDevice(t *testing.T) {
 }
 
 // TST-CORE-190
+// TRACE: {"suite": "CORE", "case": "0896", "section": "03", "sectionName": "Identity (DID)", "subsection": "05", "scenario": "04", "title": "MaxDeviceLimit"}
 func TestIdentity_3_5_4_MaxDeviceLimit(t *testing.T) {
 	impl := identity.NewDeviceRegistry()
 	testutil.RequireImplementation(t, impl, "DeviceRegistry")
@@ -2489,6 +2566,7 @@ func TestIdentity_3_5_4_MaxDeviceLimit(t *testing.T) {
 // ---------- §3.6 Recovery (5 scenarios) ----------
 
 // TST-CORE-191
+// TRACE: {"suite": "CORE", "case": "0897", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "01", "title": "SplitMasterSeed"}
 func TestIdentity_3_6_1_SplitMasterSeed(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
@@ -2521,6 +2599,7 @@ func TestIdentity_3_6_1_SplitMasterSeed(t *testing.T) {
 }
 
 // TST-CORE-192
+// TRACE: {"suite": "CORE", "case": "0898", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "02", "title": "ReconstructWithThreshold"}
 func TestIdentity_3_6_2_ReconstructWithThreshold(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
@@ -2551,6 +2630,7 @@ func TestIdentity_3_6_2_ReconstructWithThreshold(t *testing.T) {
 }
 
 // TST-CORE-193
+// TRACE: {"suite": "CORE", "case": "0899", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "03", "title": "ReconstructFewerThanThreshold"}
 func TestIdentity_3_6_3_ReconstructFewerThanThreshold(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
@@ -2572,6 +2652,7 @@ func TestIdentity_3_6_3_ReconstructFewerThanThreshold(t *testing.T) {
 }
 
 // TST-CORE-194
+// TRACE: {"suite": "CORE", "case": "0900", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "04", "title": "ReconstructWithInvalidShare"}
 func TestIdentity_3_6_4_ReconstructWithInvalidShare(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
@@ -2608,6 +2689,7 @@ func TestIdentity_3_6_4_ReconstructWithInvalidShare(t *testing.T) {
 }
 
 // TST-CORE-195
+// TRACE: {"suite": "CORE", "case": "0901", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "05", "title": "ShareFormat"}
 func TestIdentity_3_6_5_ShareFormat(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
@@ -2639,6 +2721,7 @@ func TestIdentity_3_6_5_ShareFormat(t *testing.T) {
 }
 
 // TST-CORE-926
+// TRACE: {"suite": "CORE", "case": "0902", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "06", "title": "IngressTierChange_DIDDocRotation"}
 func TestIdentity_3_6_6_IngressTierChange_DIDDocRotation(t *testing.T) {
 	// §3.6.6: DID resolution requirements:
 	// 1. Unknown DIDs must return error (MEDIUM-10), not synthetic document.
@@ -2694,6 +2777,7 @@ func TestIdentity_3_6_6_IngressTierChange_DIDDocRotation(t *testing.T) {
 }
 
 // TST-CORE-927
+// TRACE: {"suite": "CORE", "case": "0903", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "07", "title": "TrustRingLevelsDefinedInCode"}
 func TestIdentity_3_6_7_TrustRingLevelsDefinedInCode(t *testing.T) {
 	// §3.6.7: Trust ring levels must be well-defined in code.
 	// Production supports: blocked, unknown, trusted.
@@ -2727,6 +2811,7 @@ func TestIdentity_3_6_7_TrustRingLevelsDefinedInCode(t *testing.T) {
 }
 
 // TST-CORE-928
+// TRACE: {"suite": "CORE", "case": "0904", "section": "03", "sectionName": "Identity (DID)", "subsection": "06", "scenario": "08", "title": "NoMCPOrOpenClawVaultAccess"}
 func TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess(t *testing.T) {
 	// §3.6.8: MCP and OpenClaw credentials must NEVER access vault, identity,
 	// persona, or admin endpoints. Only brain and client tokens are recognized.
@@ -2777,6 +2862,7 @@ func TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess(t *testing.T) {
 
 // ---------- §3.7 DID Metadata Persistence ----------
 
+// TRACE: {"suite": "CORE", "case": "0905", "section": "03", "sectionName": "Identity (DID)", "subsection": "07", "scenario": "01", "title": "MetadataPersisted"}
 func TestIdentity_3_7_1_MetadataPersisted(t *testing.T) {
 	// Creating a DID persists metadata to did_metadata.json.
 	tmpDir := t.TempDir()
@@ -2814,6 +2900,7 @@ func TestIdentity_3_7_1_MetadataPersisted(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0906", "section": "03", "sectionName": "Identity (DID)", "subsection": "07", "scenario": "02", "title": "MetadataLocalOnlyNoRotationKey"}
 func TestIdentity_3_7_2_MetadataLocalOnlyNoRotationKey(t *testing.T) {
 	// Local-only DID has empty rotation key path.
 	tmpDir := t.TempDir()
@@ -2839,6 +2926,7 @@ func TestIdentity_3_7_2_MetadataLocalOnlyNoRotationKey(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0907", "section": "03", "sectionName": "Identity (DID)", "subsection": "07", "scenario": "03", "title": "MetadataLoadNoFile"}
 func TestIdentity_3_7_3_MetadataLoadNoFile(t *testing.T) {
 	// LoadDIDMetadata returns nil when no file exists (not an error).
 	tmpDir := t.TempDir()
@@ -2853,6 +2941,7 @@ func TestIdentity_3_7_3_MetadataLoadNoFile(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0908", "section": "03", "sectionName": "Identity (DID)", "subsection": "07", "scenario": "04", "title": "MetadataRoundTrip"}
 func TestIdentity_3_7_4_MetadataRoundTrip(t *testing.T) {
 	// Metadata survives a manager reload (new instance, same dataDir).
 	tmpDir := t.TempDir()
@@ -2888,6 +2977,7 @@ func TestIdentity_3_7_4_MetadataRoundTrip(t *testing.T) {
 
 // ---------- §3.8 DID Restoration from Seed ----------
 
+// TRACE: {"suite": "CORE", "case": "0909", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "01", "title": "RestoreDIDFromMetadata"}
 func TestIdentity_3_8_1_RestoreDIDFromMetadata(t *testing.T) {
 	// Full round-trip: create DID, load metadata on new manager, restore.
 	tmpDir := t.TempDir()
@@ -2935,6 +3025,7 @@ func TestIdentity_3_8_1_RestoreDIDFromMetadata(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0910", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "02", "title": "RestoreDIDDeterministic"}
 func TestIdentity_3_8_2_RestoreDIDDeterministic(t *testing.T) {
 	// Restoring with the same key always produces the same DID.
 	tmpDir := t.TempDir()
@@ -2981,6 +3072,7 @@ func TestIdentity_3_8_2_RestoreDIDDeterministic(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0911", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "03", "title": "RestoreRejectsDuplicate"}
 func TestIdentity_3_8_3_RestoreRejectsDuplicate(t *testing.T) {
 	// RestoreDID rejects if the DID is already loaded.
 	tmpDir := t.TempDir()
@@ -3012,6 +3104,7 @@ func TestIdentity_3_8_3_RestoreRejectsDuplicate(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0912", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "04", "title": "RestoreRejectsNilMetadata"}
 func TestIdentity_3_8_4_RestoreRejectsNilMetadata(t *testing.T) {
 	mgr := identity.NewDIDManager(t.TempDir())
 	pub, _, _ := ed25519.GenerateKey(nil)
@@ -3022,6 +3115,7 @@ func TestIdentity_3_8_4_RestoreRejectsNilMetadata(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0913", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "05", "title": "RestoreRejectsInvalidKey"}
 func TestIdentity_3_8_5_RestoreRejectsInvalidKey(t *testing.T) {
 	mgr := identity.NewDIDManager(t.TempDir())
 	meta := &identity.DIDMetadata{
@@ -3036,6 +3130,7 @@ func TestIdentity_3_8_5_RestoreRejectsInvalidKey(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0914", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "06", "title": "RestorePreservesMetadataFields"}
 func TestIdentity_3_8_6_RestorePreservesMetadataFields(t *testing.T) {
 	// After restore, metadata on disk is unchanged.
 	tmpDir := t.TempDir()
@@ -3077,6 +3172,7 @@ func TestIdentity_3_8_6_RestorePreservesMetadataFields(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0915", "section": "03", "sectionName": "Identity (DID)", "subsection": "08", "scenario": "07", "title": "RestoreHydratesGeneration"}
 func TestIdentity_3_8_7_RestoreHydratesGeneration(t *testing.T) {
 	// RestoreDID must hydrate signingGeneration from metadata so that
 	// subsequent Rotate() calls start from the correct generation.
@@ -3114,6 +3210,7 @@ func TestIdentity_3_8_7_RestoreHydratesGeneration(t *testing.T) {
 
 // ---------- §3.9 Identity Export / Import ----------
 
+// TRACE: {"suite": "CORE", "case": "0916", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "01", "title": "ExportBundle"}
 func TestIdentity_3_9_1_ExportBundle(t *testing.T) {
 	// ExportIdentity creates a valid bundle file with integrity HMAC.
 	dataDir := t.TempDir()
@@ -3171,6 +3268,7 @@ func TestIdentity_3_9_1_ExportBundle(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0917", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "02", "title": "ExportRequiresDID"}
 func TestIdentity_3_9_2_ExportRequiresDID(t *testing.T) {
 	// ExportIdentity fails if no DID has been created.
 	mgr := identity.NewDIDManager(t.TempDir())
@@ -3180,6 +3278,7 @@ func TestIdentity_3_9_2_ExportRequiresDID(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0918", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "03", "title": "ImportBundleSecrets"}
 func TestIdentity_3_9_3_ImportBundleSecrets(t *testing.T) {
 	// ImportIdentitySecrets writes wrapped seed and salt to a new directory.
 	bundle := &identity.IdentityBundle{
@@ -3217,6 +3316,7 @@ func TestIdentity_3_9_3_ImportBundleSecrets(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0919", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "04", "title": "ImportRefusesOverwrite"}
 func TestIdentity_3_9_4_ImportRefusesOverwrite(t *testing.T) {
 	// ImportIdentitySecrets refuses to overwrite existing secrets.
 	secretsDir := t.TempDir()
@@ -3241,6 +3341,7 @@ func TestIdentity_3_9_4_ImportRefusesOverwrite(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0920", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "05", "title": "LoadBundleRejectsInvalid"}
 func TestIdentity_3_9_5_LoadBundleRejectsInvalid(t *testing.T) {
 	// LoadIdentityBundle rejects files with wrong version or missing fields.
 	tmpDir := t.TempDir()
@@ -3270,6 +3371,7 @@ func TestIdentity_3_9_5_LoadBundleRejectsInvalid(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0921", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "06", "title": "FullExportImportRoundTrip"}
 func TestIdentity_3_9_6_FullExportImportRoundTrip(t *testing.T) {
 	// End-to-end: create DID → export → verify integrity → import → restore.
 	origDataDir := t.TempDir()
@@ -3363,6 +3465,7 @@ func TestIdentity_3_9_6_FullExportImportRoundTrip(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0922", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "07", "title": "IntegrityDetectsTamperedMetadata"}
 func TestIdentity_3_9_7_IntegrityDetectsTamperedMetadata(t *testing.T) {
 	// A bundle with tampered metadata fails integrity verification.
 	dataDir := t.TempDir()
@@ -3393,6 +3496,7 @@ func TestIdentity_3_9_7_IntegrityDetectsTamperedMetadata(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0923", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "08", "title": "IntegrityFailsWithWrongSeed"}
 func TestIdentity_3_9_8_IntegrityFailsWithWrongSeed(t *testing.T) {
 	// Integrity check fails when verified with a different seed.
 	dataDir := t.TempDir()
@@ -3420,6 +3524,7 @@ func TestIdentity_3_9_8_IntegrityFailsWithWrongSeed(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "0924", "section": "03", "sectionName": "Identity (DID)", "subsection": "09", "scenario": "09", "title": "RestorePersistedMetadataAvailableForExport"}
 func TestIdentity_3_9_9_RestorePersistedMetadataAvailableForExport(t *testing.T) {
 	// After RestoreDID, metadata is persisted so ExportIdentity works.
 	dataDir := t.TempDir()
@@ -3461,6 +3566,7 @@ func TestIdentity_3_9_9_RestorePersistedMetadataAvailableForExport(t *testing.T)
 // --------------------------------------------------------------------------
 
 // TST-CORE-063
+// TRACE: {"suite": "CORE", "case": "0925", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "01", "scenario": "01", "title": "MnemonicRecovery_SameDID"}
 func TestIdentity_2_1_MnemonicRecovery_SameDID(t *testing.T) {
 	// Requirement: Enter known test mnemonic → Same did:plc identity as original.
 	// DID must be preserved across recovery — same mnemonic produces the same
@@ -3468,6 +3574,7 @@ func TestIdentity_2_1_MnemonicRecovery_SameDID(t *testing.T) {
 	hdKey := realHDKey
 	testutil.RequireImplementation(t, hdKey, "HDKeyDeriver")
 
+	// TRACE: {"suite": "CORE", "case": "0926", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "full_recovery_pipeline"}
 	t.Run("full_recovery_pipeline", func(t *testing.T) {
 		// --- Step 1: Original identity creation (first machine) ---
 		// Derive root signing key from BIP-39 seed via SLIP-0010 at m/9999'/0'/0'.
@@ -3510,6 +3617,7 @@ func TestIdentity_2_1_MnemonicRecovery_SameDID(t *testing.T) {
 			"signature from original key must be verifiable with recovered key")
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0927", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "different_mnemonic_different_DID"}
 	t.Run("different_mnemonic_different_DID", func(t *testing.T) {
 		// Negative: a different BIP-39 seed must produce a DIFFERENT DID.
 		// This ensures the DID is cryptographically bound to the mnemonic.
@@ -3540,6 +3648,7 @@ func TestIdentity_2_1_MnemonicRecovery_SameDID(t *testing.T) {
 		}
 	})
 
+	// TRACE: {"suite": "CORE", "case": "0928", "section": "02", "sectionName": "Key Derivation & Cryptography", "title": "all_persona_keys_recoverable"}
 	t.Run("all_persona_keys_recoverable", func(t *testing.T) {
 		// Verify that ALL persona keys (not just root) are deterministically
 		// recoverable from the same seed. This ensures full identity restoration.

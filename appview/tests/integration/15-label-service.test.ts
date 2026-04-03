@@ -93,6 +93,7 @@ async function insertDelegation(opts: {
 }
 
 describe('15.1 Label Detectors', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0588", "section": "01", "sectionName": "General", "title": "IT-LBL-001: fake-review detector -- correlated timing"}
   it('IT-LBL-001: fake-review detector -- correlated timing', async () => {
     // Insert N attestations from different DIDs for same subject within minutes
     // Use subjectDid so all attestations resolve to the same Tier 1 subject
@@ -132,6 +133,7 @@ describe('15.1 Label Detectors', () => {
     expect(Number(rows[0].total_reviews)).toBe(10)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0589", "section": "01", "sectionName": "General", "title": "IT-LBL-002: ai-generated detector -- undisclosed"}
   it('IT-LBL-002: ai-generated detector -- undisclosed', async () => {
     // Insert attestations with isAgentGenerated=true
     for (let i = 0; i < 5; i++) {
@@ -164,6 +166,7 @@ describe('15.1 Label Detectors', () => {
     expect(Number(authorRow.ai_rate)).toBe(1.0) // 100% AI-generated
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0590", "section": "01", "sectionName": "General", "title": "IT-LBL-003: self-promotion detector"}
   it('IT-LBL-003: self-promotion detector', async () => {
     // Author reviewing their own DID
     const selfDid = 'did:plc:selfPromoter'
@@ -196,6 +199,7 @@ describe('15.1 Label Detectors', () => {
     expect(rows[0].subject_did).toBe(selfDid)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0591", "section": "01", "sectionName": "General", "title": "IT-LBL-004: coordinated detector"}
   it('IT-LBL-004: coordinated detector', async () => {
     // Group of DIDs all reviewing same subject (use subjectDid for Tier 1 resolution)
     const targetSubjectDid = 'did:plc:coordinatedTarget'
@@ -229,6 +233,7 @@ describe('15.1 Label Detectors', () => {
     expect(rows[0].sentiment).toBe('positive')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0592", "section": "01", "sectionName": "General", "title": "IT-LBL-005: conflict-of-interest detector"}
   it('IT-LBL-005: conflict-of-interest detector', async () => {
     // Author has delegation from subject DID
     const authorDid = 'did:plc:conflictAuthor'
@@ -275,6 +280,7 @@ describe('15.1 Label Detectors', () => {
     expect(conflictRow.author_did).toBe(authorDid)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0593", "section": "01", "sectionName": "General", "title": "IT-LBL-006: no labels for clean reviews"}
   it('IT-LBL-006: no labels for clean reviews', async () => {
     // Normal, diverse, independent reviews spread over time
     const diverseDids = Array.from({ length: 5 }, (_, i) => `did:plc:clean${i}`)

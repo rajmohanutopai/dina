@@ -41,6 +41,7 @@ beforeEach(async () => {
 // §5 Idempotency (IT-IDP-001..007) — 7 tests
 // ---------------------------------------------------------------------------
 describe('§5 Idempotency (Fix 1)', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0404", "section": "01", "sectionName": "General", "title": "IT-IDP-001: Fix 1: replay attestation 10 times \u2192 1 row"}
   it('IT-IDP-001: Fix 1: replay attestation 10 times → 1 row', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'idp001'
@@ -71,6 +72,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0405", "section": "01", "sectionName": "General", "title": "IT-IDP-002: Fix 1: replay vouch 10 times \u2192 1 row"}
   it('IT-IDP-002: Fix 1: replay vouch 10 times → 1 row', async () => {
     const collection = 'com.dina.trust.vouch'
     const rkey = 'idp002'
@@ -105,6 +107,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     expect(edges).toHaveLength(1)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0406", "section": "01", "sectionName": "General", "title": "IT-IDP-003: Fix 1: replay reaction \u2192 onConflictDoNothing"}
   it('IT-IDP-003: Fix 1: replay reaction → onConflictDoNothing', async () => {
     const collection = 'com.dina.trust.reaction'
     const rkey = 'idp003'
@@ -136,6 +139,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     expect(rows[0].reaction).toBe('helpful')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0407", "section": "01", "sectionName": "General", "title": "IT-IDP-004: Fix 1: replay with changed data \u2192 updated"}
   it('IT-IDP-004: Fix 1: replay with changed data → updated', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'idp004'
@@ -183,6 +187,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     expect(after[0].sentiment).toBe('negative')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0408", "section": "01", "sectionName": "General", "title": "IT-IDP-005: Fix 1: all 19 handler types \u2014 replay safe"}
   it('IT-IDP-005: Fix 1: all 19 handler types — replay safe', async () => {
     // One record per handler type, each replayed twice
     const handlerConfigs = [
@@ -411,6 +416,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     }
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0409", "section": "01", "sectionName": "General", "title": "IT-IDP-006: Fix 1: crash simulation \u2014 cursor replay"}
   it('IT-IDP-006: Fix 1: crash simulation — cursor replay', async () => {
     const collection = 'com.dina.trust.attestation'
     const handler = routeHandler(collection)!
@@ -462,6 +468,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     expect(countAfter[0].count).toBe(100)
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0410", "section": "01", "sectionName": "General", "title": "IT-IDP-007: Fix 1: concurrent replay \u2014 same event from two workers"}
   it('IT-IDP-007: Fix 1: concurrent replay — same event from two workers', async () => {
     const collection = 'com.dina.trust.attestation'
     const rkey = 'idp007'

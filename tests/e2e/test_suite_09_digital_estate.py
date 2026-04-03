@@ -37,7 +37,8 @@ class TestDigitalEstate:
     # -----------------------------------------------------------------
     # TST-E2E-043  SSS Custodian Recovery
     # -----------------------------------------------------------------
-    def test_sss_custodian_recovery(self, don_alonso: HomeNode) -> None:
+    # TRACE: {"suite": "E2E", "case": "0043", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "01", "title": "sss_custodian_recovery"}
+    def test_sss_custodian_recovery(self, don_alonso: HomeNode, albert: HomeNode) -> None:
         # TST-E2E-043
         """Submit SSS shares one by one. With 2 of 3 required shares the
         estate is NOT activated. Once the third share arrives the estate
@@ -82,13 +83,14 @@ class TestDigitalEstate:
         plan = don_alonso.estate_plan
         assert plan.default_action == "destroy"
         assert len(plan.beneficiaries) >= 1
-        assert plan.beneficiaries[0].did == "did:plc:albert"
+        assert plan.beneficiaries[0].did == albert.did
         assert "general" in plan.beneficiaries[0].personas
         assert "health" in plan.beneficiaries[0].personas
 
     # -----------------------------------------------------------------
     # TST-E2E-044  Beneficiary Key Delivery
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0044", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "02", "title": "beneficiary_key_delivery"}
     def test_beneficiary_key_delivery(
         self,
         don_alonso: HomeNode,
@@ -126,7 +128,7 @@ class TestDigitalEstate:
             b.delivery_confirmed = False
 
         # Ensure Albert is online
-        d2d_network.set_online("did:plc:albert", True)
+        d2d_network.set_online(albert.did, True)
 
         # Record traffic baseline
         traffic_before = len(d2d_network.captured_traffic)
@@ -134,9 +136,9 @@ class TestDigitalEstate:
         # --- Deliver keys ---
         delivery_results = don_alonso.deliver_estate_keys()
 
-        assert "did:plc:albert" in delivery_results, \
+        assert albert.did in delivery_results, \
             "Delivery results must include Albert's DID"
-        assert delivery_results["did:plc:albert"] is True, \
+        assert delivery_results[albert.did] is True, \
             "Keys must be successfully delivered to Albert"
 
         # --- Verify D2D traffic was generated ---
@@ -169,7 +171,7 @@ class TestDigitalEstate:
         # Verify the estate plan specifies only personal + health
         albert_beneficiary = [
             b for b in don_alonso.estate_plan.beneficiaries
-            if b.did == "did:plc:albert"
+            if b.did == albert.did
         ][0]
         assert set(albert_beneficiary.personas) == {"general", "health"}, \
             "Albert should only receive general and health persona keys"
@@ -179,7 +181,7 @@ class TestDigitalEstate:
         estate_traffic = estate_messages[0]
         # estate_traffic is captured by MockD2DNetwork.deliver() — check
         # the payload that was sent
-        assert estate_traffic["to"] == "did:plc:albert", (
+        assert estate_traffic["to"] == albert.did, (
             "Estate keys message must be addressed to Albert"
         )
 
@@ -210,7 +212,7 @@ class TestDigitalEstate:
         # If there's a second beneficiary, test offline behavior
         other_beneficiaries = [
             b for b in don_alonso.estate_plan.beneficiaries
-            if b.did != "did:plc:albert"
+            if b.did != albert.did
         ]
         if other_beneficiaries:
             other_b = other_beneficiaries[0]
@@ -229,6 +231,7 @@ class TestDigitalEstate:
     # -----------------------------------------------------------------
     # TST-E2E-045  Destruction Gated on Delivery
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0045", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "03", "title": "destruction_gated_on_delivery"}
     def test_destruction_gated_on_delivery(
         self,
         fresh_don_alonso: HomeNode,
@@ -273,7 +276,7 @@ class TestDigitalEstate:
         node.set_estate_plan(EstatePlan(
             beneficiaries=[
                 EstateBeneficiary(
-                    did="did:plc:albert",
+                    did=albert.did,
                     personas=["general", "health"],
                     access_level="full_decrypt",
                 ),
@@ -296,11 +299,11 @@ class TestDigitalEstate:
 
         # --- Colleague goes offline ---
         d2d_network.set_online("did:plc:colleague_test", False)
-        d2d_network.set_online("did:plc:albert", True)
+        d2d_network.set_online(albert.did, True)
 
         # Attempt delivery: Albert succeeds, colleague fails
         delivery_round_1 = node.deliver_estate_keys()
-        assert delivery_round_1["did:plc:albert"] is True, \
+        assert delivery_round_1[albert.did] is True, \
             "Albert (online) must receive keys"
         assert delivery_round_1["did:plc:colleague_test"] is False, \
             "Colleague (offline) must NOT receive keys"
@@ -349,9 +352,11 @@ class TestDigitalEstate:
     # -----------------------------------------------------------------
     # TST-E2E-046  SSS Recovery with Physical Shares
     # -----------------------------------------------------------------
+    # TRACE: {"suite": "E2E", "case": "0046", "section": "09", "sectionName": "Digital Estate", "subsection": "01", "scenario": "04", "title": "sss_recovery_with_physical_shares"}
     def test_sss_recovery_with_physical_shares(
         self,
         don_alonso: HomeNode,
+        albert: HomeNode,
     ) -> None:
         # TST-E2E-046
         """Mix of physical and digital shares to meet the threshold.
@@ -459,5 +464,5 @@ class TestDigitalEstate:
         assert plan.default_action == "destroy"
         assert plan.custodian_total == 5
         assert len(plan.beneficiaries) >= 1
-        assert plan.beneficiaries[0].did == "did:plc:albert"
+        assert plan.beneficiaries[0].did == albert.did
         assert "general" in plan.beneficiaries[0].personas

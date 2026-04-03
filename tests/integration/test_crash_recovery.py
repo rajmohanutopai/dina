@@ -56,6 +56,7 @@ class TestCoreCrash:
     """Core process crashes — outbox, WAL, WS, and spool must survive."""
 
     # TST-INT-138
+    # TRACE: {"suite": "INT", "case": "0138", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "01", "scenario": "01", "title": "core_crash_pending_outbox_persists"}
     def test_core_crash_pending_outbox_persists(
         self,
         mock_dina: MockDinaCore,
@@ -115,6 +116,7 @@ class TestCoreCrash:
         assert len(mock_outbox.get_pending()) == 0
 
     # TST-INT-139
+    # TRACE: {"suite": "INT", "case": "0139", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "01", "scenario": "02", "title": "core_crash_during_vault_write_wal_protects"}
     def test_core_crash_during_vault_write_wal_protects(
         self,
         mock_vault: MockVault,
@@ -167,6 +169,7 @@ class TestCoreCrash:
         assert mock_vault.retrieve(1, "pre_crash_key") == {"status": "committed"}
 
     # TST-INT-140
+    # TRACE: {"suite": "INT", "case": "0140", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "01", "scenario": "03", "title": "core_crash_ws_clients_detect_disconnect"}
     def test_core_crash_ws_clients_detect_disconnect(
         self,
         mock_ws_server: MockWebSocketServer,
@@ -216,6 +219,7 @@ class TestCoreCrash:
         assert conn_a2.received[0].type == "whisper"
 
     # TST-INT-141
+    # TRACE: {"suite": "INT", "case": "0141", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "01", "scenario": "04", "title": "core_crash_locked_persona_spool_survives"}
     def test_core_crash_locked_persona_spool_survives(
         self,
         mock_inbox_spool: MockInboxSpool,
@@ -265,6 +269,7 @@ class TestBrainCrash:
     """Brain process crashes — checkpoints, idempotent retries, briefing."""
 
     # TST-INT-142
+    # TRACE: {"suite": "INT", "case": "0142", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "02", "scenario": "01", "title": "brain_crash_scratchpad_checkpoint_resume"}
     def test_brain_crash_scratchpad_checkpoint_resume(
         self,
         mock_scratchpad: MockScratchpad,
@@ -319,6 +324,7 @@ class TestBrainCrash:
         assert not mock_scratchpad.has_checkpoint(task_id)
 
     # TST-INT-143
+    # TRACE: {"suite": "INT", "case": "0143", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "02", "scenario": "02", "title": "brain_crash_no_checkpoint_starts_fresh"}
     def test_brain_crash_no_checkpoint_starts_fresh(
         self,
         mock_scratchpad: MockScratchpad,
@@ -357,6 +363,7 @@ class TestBrainCrash:
         assert mock_scratchpad.load(task_id)["step"] == 1
 
     # TST-INT-144
+    # TRACE: {"suite": "INT", "case": "0144", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "02", "scenario": "03", "title": "brain_crash_during_llm_call_idempotent_retry"}
     def test_brain_crash_during_llm_call_idempotent_retry(
         self,
         mock_brain: MockPythonBrain,
@@ -396,6 +403,7 @@ class TestBrainCrash:
         assert len(cloud_entries) >= 2  # original route + retry route
 
     # TST-INT-145
+    # TRACE: {"suite": "INT", "case": "0145", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "02", "scenario": "04", "title": "brain_crash_pending_briefing_reconstructed"}
     def test_brain_crash_pending_briefing_reconstructed(
         self,
         mock_dina: MockDinaCore,
@@ -471,6 +479,7 @@ class TestLLMCrash:
     """LLM process failures — timeout, OOM fallback, corrupted model."""
 
     # TST-INT-146
+    # TRACE: {"suite": "INT", "case": "0146", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "03", "scenario": "01", "title": "llm_crash_during_inference_graceful_error"}
     def test_llm_crash_during_inference_graceful_error(
         self,
         mock_brain: MockPythonBrain,
@@ -507,6 +516,7 @@ class TestLLMCrash:
         assert len(mock_brain.reasoned) == 2
 
     # TST-INT-147
+    # TRACE: {"suite": "INT", "case": "0147", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "03", "scenario": "02", "title": "llm_oom_fallback_to_cloud"}
     def test_llm_oom_fallback_to_cloud(
         self,
         mock_llm_router: MockLLMRouter,
@@ -563,6 +573,7 @@ class TestLLMCrash:
         )
 
     # TST-INT-148
+    # TRACE: {"suite": "INT", "case": "0148", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "03", "scenario": "03", "title": "corrupted_model_file_halts_routing"}
     def test_corrupted_model_file_halts_routing(
         self,
         mock_llm_router: MockLLMRouter,
@@ -612,6 +623,7 @@ class TestPowerLoss:
     """Abrupt power loss — WAL mode and disk-full recovery."""
 
     # TST-INT-149
+    # TRACE: {"suite": "INT", "case": "0149", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "04", "scenario": "01", "title": "power_loss_all_sqlite_wal_mode"}
     def test_power_loss_all_sqlite_wal_mode(
         self,
         mock_vault: MockVault,
@@ -649,6 +661,7 @@ class TestPowerLoss:
         assert mock_vault.retrieve(1, "after_power_loss") == {"recovered": True}
 
     # TST-INT-150
+    # TRACE: {"suite": "INT", "case": "0150", "section": "06", "sectionName": "Crash Recovery & Resilience", "subsection": "04", "scenario": "02", "title": "disk_full_vault_rejects_writes_existing_data_preserved"}
     def test_disk_full_vault_rejects_writes_existing_data_preserved(
         self,
         mock_vault: MockVault,

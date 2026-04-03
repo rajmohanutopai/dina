@@ -33,6 +33,7 @@ from .factories import (
 
 # TST-BRAIN-467
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0467", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "send_d2d_base64_json"}
 async def test_fix_19_1_1_send_d2d_base64_json():
     """send_d2d produces base64-encoded JSON body (no raw bytes)."""
     from src.adapter.core_http import CoreHTTPClient
@@ -67,6 +68,7 @@ async def test_fix_19_1_1_send_d2d_base64_json():
 
 # TST-BRAIN-468
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0468", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "02", "title": "send_d2d_valid_wire_json"}
 async def test_fix_19_1_2_send_d2d_valid_wire_json():
     """send_d2d request is valid JSON at wire level."""
     from src.adapter.core_http import CoreHTTPClient
@@ -104,6 +106,7 @@ async def test_fix_19_1_2_send_d2d_valid_wire_json():
 # TST-BRAIN-470
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0470", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "02", "title": "sensitive_persona_scrubbed"}
 async def test_fix_19_2_2_sensitive_persona_scrubbed():
     """Sensitive persona prompt scrubbed before cloud LLM."""
     from src.service.entity_vault import EntityVaultService
@@ -143,6 +146,7 @@ async def test_fix_19_2_2_sensitive_persona_scrubbed():
 # TST-BRAIN-471
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0471", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "03", "title": "open_persona_scrubbed_when_cloud_exists"}
 async def test_fix_19_2_3_open_persona_scrubbed_when_cloud_exists():
     """Open persona prompt is scrubbed when cloud providers are configured.
 
@@ -189,6 +193,7 @@ async def test_fix_19_2_3_open_persona_scrubbed_when_cloud_exists():
 
 
 # TST-BRAIN-681
+# TRACE: {"suite": "BRAIN", "case": "0681", "section": "23", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "05", "title": "rehydrate_bare_faker_name"}
 def test_rehydrate_bare_faker_name():
     """F08: Rehydrate only matches exact vault keys — not bare inner values.
 
@@ -226,6 +231,7 @@ def test_rehydrate_bare_faker_name():
 # TST-BRAIN-682
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0682", "section": "23", "sectionName": "Code Review Fix Verification", "subsection": "01", "scenario": "06", "title": "pii_preserve_instruction_prepended_when_vault_exists"}
 async def test_pii_preserve_instruction_prepended_when_vault_exists():
     """PII preserve instruction is prepended to scrubbed prompts.
 
@@ -298,6 +304,7 @@ def _make_provider(name: str, is_local: bool):
 
 
 # TST-BRAIN-472
+# TRACE: {"suite": "BRAIN", "case": "0472", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "01", "title": "llm_router_config_keys"}
 def test_fix_19_3_1_llm_router_config_keys():
     """LLMRouter receives preferred_cloud and cloud_llm_consent keys."""
     from src.service.llm_router import LLMRouter
@@ -317,6 +324,7 @@ def test_fix_19_3_1_llm_router_config_keys():
 
 # TST-BRAIN-473
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0473", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "03", "scenario": "02", "title": "reconfigure_correct_keys"}
 async def test_fix_19_3_2_reconfigure_correct_keys():
     """Reconfigure callback passes correct keys and affects routing."""
     from src.service.llm_router import LLMRouter
@@ -403,6 +411,7 @@ def _build_guardian():
 
 # TST-BRAIN-476
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0476", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "01", "title": "fiduciary_notify_failure_no_ack"}
 async def test_fix_19_5_1_fiduciary_notify_failure_no_ack():
     """Fiduciary notify failure -> task NOT ACKed (re-queued)."""
     guardian, core = _build_guardian()
@@ -432,6 +441,7 @@ async def test_fix_19_5_1_fiduciary_notify_failure_no_ack():
 
 # TST-BRAIN-477
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0477", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "02", "title": "solicited_notify_failure_still_acked"}
 async def test_fix_19_5_2_solicited_notify_failure_still_acked():
     """Solicited notify failure -> task still ACKed."""
     guardian, core = _build_guardian()
@@ -451,6 +461,7 @@ async def test_fix_19_5_2_solicited_notify_failure_still_acked():
 
 # TST-BRAIN-478
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0478", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "05", "scenario": "03", "title": "engagement_notify_failure_still_acked"}
 async def test_fix_19_5_3_engagement_notify_failure_still_acked():
     """Engagement events never call notify; task is still ACKed.
 
@@ -482,6 +493,7 @@ async def test_fix_19_5_3_engagement_notify_failure_still_acked():
 
 
 # TST-BRAIN-479
+# TRACE: {"suite": "BRAIN", "case": "0479", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "06", "scenario": "01", "title": "concurrent_mcp_no_crosswire"}
 def test_fix_19_6_1_concurrent_mcp_no_crosswire():
     """Concurrent MCP requests don't cross-wire -- session has lock."""
     from src.adapter.mcp_stdio import _StdioSession
@@ -499,6 +511,7 @@ def test_fix_19_6_1_concurrent_mcp_no_crosswire():
 
 # TST-BRAIN-480
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0480", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "06", "scenario": "02", "title": "mcp_id_mismatch_raises"}
 async def test_fix_19_6_2_mcp_id_mismatch_raises():
     """MCP response ID mismatch raises MCPError."""
     from src.adapter.mcp_stdio import MCPStdioClient, _StdioSession, _next_id
@@ -526,6 +539,7 @@ async def test_fix_19_6_2_mcp_id_mismatch_raises():
 
 
 # TST-BRAIN-481
+# TRACE: {"suite": "BRAIN", "case": "0481", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "06", "scenario": "03", "title": "mcp_session_has_lock"}
 def test_fix_19_6_3_mcp_session_has_lock():
     """MCP session has asyncio.Lock field."""
     from src.adapter.mcp_stdio import _StdioSession
@@ -570,6 +584,7 @@ def _build_admin_client():
 
 
 # TST-BRAIN-483
+# TRACE: {"suite": "BRAIN", "case": "0483", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "07", "scenario": "02", "title": "secure_flag_https"}
 def test_fix_19_7_2_secure_flag_https():
     """Secure flag: login sets cookie with secure=False on HTTP TestClient."""
     client = _build_admin_client()
@@ -587,6 +602,7 @@ def test_fix_19_7_2_secure_flag_https():
 
 
 # TST-BRAIN-484
+# TRACE: {"suite": "BRAIN", "case": "0484", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "07", "scenario": "03", "title": "secure_flag_unset_http"}
 def test_fix_19_7_3_secure_flag_unset_http():
     """Secure flag unset on HTTP -- cookie is accessible over plain HTTP."""
     client = _build_admin_client()
@@ -612,6 +628,7 @@ def test_fix_19_7_3_secure_flag_unset_http():
 
 
 # TST-BRAIN-485
+# TRACE: {"suite": "BRAIN", "case": "0485", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "07", "scenario": "04", "title": "logout_clears_cookie"}
 def test_fix_19_7_4_logout_clears_cookie():
     """POST /admin/logout clears cookie."""
     client = _build_admin_client()
@@ -643,6 +660,7 @@ def test_fix_19_7_4_logout_clears_cookie():
 
 
 # TST-BRAIN-486
+# TRACE: {"suite": "BRAIN", "case": "0486", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "07", "scenario": "05", "title": "logout_form_post"}
 def test_fix_19_7_5_logout_form_post():
     """Logout form uses POST (not GET link)."""
     client = _build_admin_client()
@@ -664,6 +682,7 @@ def test_fix_19_7_5_logout_form_post():
 
 
 # TST-BRAIN-488
+# TRACE: {"suite": "BRAIN", "case": "0488", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "02", "title": "tldextract_cache_set"}
 def test_fix_19_8_2_tldextract_cache_set():
     """TLDEXTRACT_CACHE set before Presidio init in restricted FS."""
     # The PresidioScrubber.__init__ sets TLDEXTRACT_CACHE if not already set.
@@ -698,6 +717,7 @@ def test_fix_19_8_2_tldextract_cache_set():
 
 
 # TST-BRAIN-489
+# TRACE: {"suite": "BRAIN", "case": "0489", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "03", "title": "mcp_commands_from_env"}
 def test_fix_19_8_3_mcp_commands_from_env():
     """MCP commands loaded from DINA_MCP_SERVERS."""
     from src.adapter.mcp_stdio import MCPStdioClient
@@ -711,6 +731,7 @@ def test_fix_19_8_3_mcp_commands_from_env():
 
 
 # TST-BRAIN-490
+# TRACE: {"suite": "BRAIN", "case": "0490", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "04", "title": "empty_mcp_config_inert"}
 def test_fix_19_8_4_empty_mcp_config_inert():
     """Empty MCP config is inert."""
     from src.adapter.mcp_stdio import MCPStdioClient
@@ -726,6 +747,7 @@ def test_fix_19_8_4_empty_mcp_config_inert():
 
 
 # TST-BRAIN-491
+# TRACE: {"suite": "BRAIN", "case": "0491", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "05", "title": "presidio_primary"}
 def test_fix_19_8_5_presidio_primary():
     """PresidioScrubber used as primary when available."""
     try:
@@ -746,8 +768,14 @@ def test_fix_19_8_5_presidio_primary():
 
 
 # TST-BRAIN-492
+# TRACE: {"suite": "BRAIN", "case": "0492", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "06", "title": "spacy_fallback"}
 def test_fix_19_8_6_spacy_fallback():
-    """Fallback to SpacyScrubber when Presidio unavailable."""
+    """SpacyScrubber only scrubs structured PII (no PERSON/ORG/LOC).
+
+    Names, orgs, and locations pass through unchanged. The spaCy fallback
+    is intentionally limited — without Presidio, only DATE/NORP entities
+    are replaced. This test verifies the policy is enforced.
+    """
     try:
         import spacy
         spacy.load("en_core_web_sm")
@@ -760,27 +788,20 @@ def test_fix_19_8_6_spacy_fallback():
     text = "John Smith works at Google in San Francisco"
     scrubbed, entities = scrubber.scrub(text)
 
-    # Must detect PII entities
-    assert len(entities) > 0, "SpacyScrubber should detect PII entities"
-    entity_types = {e["type"] for e in entities}
-    assert entity_types & {"PERSON", "ORG", "LOC"}, (
-        f"Expected PERSON/ORG/LOC in {entity_types}"
+    # Names, orgs, locations pass through (structured PII only policy)
+    assert "John Smith" in scrubbed, "Person names must pass through"
+    assert "Google" in scrubbed, "Org names must pass through"
+    assert "San Francisco" in scrubbed, "Location names must pass through"
+
+    # No PERSON/ORG/LOC entities should be reported by scrub()
+    ner_types = {e["type"] for e in entities} & {"PERSON", "ORG", "LOC"}
+    assert len(ner_types) == 0, (
+        f"scrub() must not report PERSON/ORG/LOC, got: {ner_types}"
     )
-
-    # Scrubbed text must not contain original PII values
-    assert "John Smith" not in scrubbed
-    # Scrubbed text must contain replacement tokens
-    assert "[PERSON_1]" in scrubbed
-
-    # Each entity must have type, value, token keys
-    for ent in entities:
-        assert "type" in ent
-        assert "value" in ent
-        assert "token" in ent
-        assert ent["token"] in scrubbed
 
 
 # TST-BRAIN-493
+# TRACE: {"suite": "BRAIN", "case": "0493", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "08", "scenario": "07", "title": "none_fallback"}
 def test_fix_19_8_7_none_fallback():
     """Fallback to None when no scrubber available."""
     # The scrubber fallback chain in main.py ends with scrubber = None.
@@ -816,6 +837,7 @@ def test_fix_19_8_7_none_fallback():
 # TST-BRAIN-494
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0494", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "01", "title": "handle_reason_exception_500"}
 async def test_fix_19_9_1_handle_reason_exception_500():
     """_handle_reason exception surfaces (re-raised)."""
     guardian, core = _build_guardian()
@@ -831,6 +853,7 @@ async def test_fix_19_9_1_handle_reason_exception_500():
 # TST-BRAIN-495
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0495", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "02", "title": "process_crash_status_error"}
 async def test_fix_19_9_2_process_crash_status_error():
     """Process crash returns status='error'."""
     guardian, core = _build_guardian()
@@ -853,6 +876,7 @@ async def test_fix_19_9_2_process_crash_status_error():
 # TST-BRAIN-496
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="V1: NER disabled, mocks need V2 update")
+# TRACE: {"suite": "BRAIN", "case": "0496", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "09", "scenario": "03", "title": "reason_no_empty_result"}
 async def test_fix_19_9_3_reason_no_empty_result():
     """Reason empty result on exception prevented -- exception propagates."""
     guardian, core = _build_guardian()
@@ -871,6 +895,7 @@ async def test_fix_19_9_3_reason_no_empty_result():
 
 
 # TST-BRAIN-498
+# TRACE: {"suite": "BRAIN", "case": "0498", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "02", "title": "contacts_escapes_did_attribute"}
 def test_fix_19_10_2_contacts_escapes_did_attribute():
     """Contacts template escapes DID in title attribute via escapeHtml JS function."""
     # Read the contacts template and verify escapeHtml is used for DID rendering.
@@ -911,6 +936,7 @@ def test_fix_19_10_2_contacts_escapes_did_attribute():
 
 # TST-BRAIN-500
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0500", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "01", "title": "lifespan_starts_sync"}
 async def test_fix_19_11_1_lifespan_starts_sync():
     """ASGI lifespan starts sync background task."""
     from src.service.sync_engine import SyncEngine
@@ -936,6 +962,7 @@ async def test_fix_19_11_1_lifespan_starts_sync():
 
 # TST-BRAIN-501
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0501", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "02", "title": "sync_failure_no_crash"}
 async def test_fix_19_11_2_sync_failure_no_crash():
     """Sync cycle failure doesn't crash the loop."""
     from src.service.sync_engine import SyncEngine
@@ -968,6 +995,7 @@ async def test_fix_19_11_2_sync_failure_no_crash():
 
 # TST-BRAIN-502
 @pytest.mark.asyncio
+# TRACE: {"suite": "BRAIN", "case": "0502", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "11", "scenario": "03", "title": "lifespan_shutdown_cancels"}
 async def test_fix_19_11_3_lifespan_shutdown_cancels():
     """Lifespan shutdown cancels sync task."""
     # Simulate the lifespan pattern from main.py: create task, cancel on shutdown.

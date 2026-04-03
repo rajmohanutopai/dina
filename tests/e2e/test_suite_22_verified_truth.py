@@ -40,6 +40,7 @@ class TestVerifiedTruth:
     """
 
     # TST-E2E-116
+    # TRACE: {"suite": "E2E", "case": "0116", "section": "22", "sectionName": "Verified Truth", "subsection": "01", "scenario": "01", "title": "product_research_zero_trust_data"}
     def test_product_research_zero_trust_data(
         self,
         don_alonso: HomeNode,
@@ -160,6 +161,7 @@ class TestVerifiedTruth:
         )
 
     # TST-E2E-117
+    # TRACE: {"suite": "E2E", "case": "0117", "section": "22", "sectionName": "Verified Truth", "subsection": "01", "scenario": "02", "title": "product_research_sparse_conflicting_data"}
     def test_product_research_sparse_conflicting_data(
         self,
         don_alonso: HomeNode,
@@ -352,6 +354,7 @@ class TestVerifiedTruth:
         )
 
     # TST-E2E-118
+    # TRACE: {"suite": "E2E", "case": "0118", "section": "22", "sectionName": "Verified Truth", "subsection": "01", "scenario": "03", "title": "product_research_dense_trust_data_consensus"}
     def test_product_research_dense_trust_data_consensus(
         self,
         don_alonso: HomeNode,
@@ -621,6 +624,7 @@ class TestVerifiedTruth:
             "flagged, not presented as current."
         ),
     )
+    # TRACE: {"suite": "E2E", "case": "0011", "section": "22", "sectionName": "Verified Truth", "subsection": "01", "scenario": "04", "title": "product_research_stale_reviews"}
     def test_product_research_stale_reviews(
         self,
         don_alonso: HomeNode,
@@ -843,6 +847,7 @@ class TestVerifiedTruth:
             "trust queries are not wired into the reasoning pipeline."
         ),
     )
+    # TRACE: {"suite": "E2E", "case": "0012", "section": "22", "sectionName": "Verified Truth", "subsection": "01", "scenario": "05", "title": "product_research_ring_level_weighting"}
     def test_product_research_ring_level_weighting(
         self,
         don_alonso: HomeNode,

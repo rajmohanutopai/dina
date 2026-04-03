@@ -153,7 +153,7 @@ def _api_request(
 
 
 # ---------------------------------------------------------------------------
-# RealPIIScrubber — chains Go Core Tier 1 regex + Brain Tier 2 NER
+# RealPIIScrubber — chains Go Core Tier 1 regex + Brain Tier 2 structured PII
 # ---------------------------------------------------------------------------
 
 class RealPIIScrubber(MockPIIScrubber):
@@ -315,7 +315,7 @@ class RealPIIScrubber(MockPIIScrubber):
         return result, replacements
 
     def scrub_full(self, text: str) -> tuple[str, dict[str, str]]:
-        """Full pipeline: Tier 1 (Go Core regex) + Tier 2 (Brain NER).
+        """Full pipeline: Tier 1 (Go Core regex) + Tier 2 (Brain structured PII).
 
         Chains both tiers and merges the entity vaults.
         Falls back to mock if either tier fails (tier-level fallback
@@ -701,13 +701,26 @@ class RealHomeNode(HomeNode):
         key so subsequent kv_get() returns 404 (None), not an empty string.
         Raises on failure to prevent silent cross-test leakage.
         """
+        errors = []
         for key in self._kv_keys_written:
-            # KV items are stored with ID "kv:<key>" in the vault
-            _api_request(
-                "delete",
-                f"{self._core_url}/v1/vault/item/kv:{key}",
-                headers=self._headers(),
-                raise_on_fail=True,
+            # KV items are stored with ID "kv:<key>" in the vault.
+            # Call httpx directly (not _api_request) to get the raw status code,
+            # since _api_request returns None for any non-2xx including 404.
+            url = f"{self._core_url}/v1/vault/item/kv:{key}"
+            try:
+                resp = httpx.request(
+                    "DELETE", url, headers=self._headers(), timeout=10,
+                )
+                # 2xx and 404 are acceptable (deleted or already gone).
+                if resp.status_code not in (200, 204, 404):
+                    errors.append(f"kv:{key} → {resp.status_code}")
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                errors.append(f"kv:{key} → {type(exc).__name__}")
+        if errors:
+            # Don't clear tracked keys — preserve for debug/retry.
+            raise RuntimeError(
+                f"clear_real_kv: failed to delete {len(errors)} key(s): "
+                + ", ".join(errors)
             )
         self._kv_keys_written.clear()
 

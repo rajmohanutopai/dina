@@ -36,6 +36,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-482
+// TRACE: {"suite": "CORE", "case": "2043", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "01", "scenario": "01", "title": "WSUpgradeAccepted"}
 func TestWS_9_1_1_WSUpgradeAccepted(t *testing.T) {
 	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
@@ -48,6 +49,7 @@ func TestWS_9_1_1_WSUpgradeAccepted(t *testing.T) {
 }
 
 // TST-CORE-483
+// TRACE: {"suite": "CORE", "case": "2044", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "01", "scenario": "02", "title": "Ed25519AuthViaMarkAuthenticated"}
 func TestWS_9_1_2_Ed25519AuthViaMarkAuthenticated(t *testing.T) {
 	// WebSocket auth is Ed25519-only: the HTTP auth middleware verifies the
 	// device signature on the upgrade request and sets the identity in context.
@@ -74,6 +76,7 @@ func TestWS_9_1_2_Ed25519AuthViaMarkAuthenticated(t *testing.T) {
 }
 
 // TST-CORE-484
+// TRACE: {"suite": "CORE", "case": "2045", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "01", "scenario": "03", "title": "UnauthenticatedUpgradeRejected"}
 func TestWS_9_1_3_UnauthenticatedUpgradeRejected(t *testing.T) {
 	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
@@ -100,6 +103,7 @@ func TestWS_9_1_3_UnauthenticatedUpgradeRejected(t *testing.T) {
 }
 
 // TST-CORE-487
+// TRACE: {"suite": "CORE", "case": "2046", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "01", "scenario": "06", "title": "PreAuthIdentityCarriesDeviceName"}
 func TestWS_9_1_6_PreAuthIdentityCarriesDeviceName(t *testing.T) {
 	// Ed25519 auth: the auth middleware sets the device identity in context.
 	// ServeWS extracts it into PreAuthIdentity. authHandshake calls
@@ -115,6 +119,7 @@ func TestWS_9_1_6_PreAuthIdentityCarriesDeviceName(t *testing.T) {
 }
 
 // TST-CORE-488
+// TRACE: {"suite": "CORE", "case": "2047", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "01", "scenario": "07", "title": "GracefulDisconnect"}
 func TestWS_9_1_7_GracefulDisconnect(t *testing.T) {
 	// §9.1.7: Client sends close frame → server acknowledges, resources cleaned,
 	// device marked offline. Messages buffered for client must be cleaned up.
@@ -159,6 +164,7 @@ func TestWS_9_1_7_GracefulDisconnect(t *testing.T) {
 }
 
 // TST-CORE-489
+// TRACE: {"suite": "CORE", "case": "2048", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "01", "scenario": "08", "title": "AbnormalDisconnect"}
 func TestWS_9_1_8_AbnormalDisconnect(t *testing.T) {
 	// Requirement: TCP drop → server detects via ping timeout (3 missed pongs) → cleanup.
 	// Exercise the real HeartbeatManager disconnect detection lifecycle.
@@ -204,6 +210,7 @@ func TestWS_9_1_8_AbnormalDisconnect(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-490
+// TRACE: {"suite": "CORE", "case": "2049", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "02", "scenario": "01", "title": "QueryMessage"}
 func TestWS_9_2_1_QueryMessage(t *testing.T) {
 	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
@@ -219,6 +226,7 @@ func TestWS_9_2_1_QueryMessage(t *testing.T) {
 }
 
 // TST-CORE-491
+// TRACE: {"suite": "CORE", "case": "2050", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "02", "scenario": "02", "title": "QueryWithPersonaField"}
 func TestWS_9_2_2_QueryWithPersonaField(t *testing.T) {
 	// §9.2 #2: Query with persona field — verify the handler accepts a query
 	// bearing a persona field, routes it through the brain router with the
@@ -259,6 +267,7 @@ func TestWS_9_2_2_QueryWithPersonaField(t *testing.T) {
 }
 
 // TST-CORE-492
+// TRACE: {"suite": "CORE", "case": "2051", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "02", "scenario": "03", "title": "CommandMessage"}
 func TestWS_9_2_3_CommandMessage(t *testing.T) {
 	// Requirement: §9.2 #3 — Command message type is executed by core,
 	// result returned with reply_to matching the original request ID.
@@ -303,6 +312,7 @@ func TestWS_9_2_3_CommandMessage(t *testing.T) {
 }
 
 // TST-CORE-493
+// TRACE: {"suite": "CORE", "case": "2052", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "02", "scenario": "04", "title": "ACKMessage"}
 func TestWS_9_2_4_ACKMessage(t *testing.T) {
 	// Fresh WSHandler + MessageBuffer — no shared state.
 	handler := ws.NewWSHandler(
@@ -346,6 +356,7 @@ func TestWS_9_2_4_ACKMessage(t *testing.T) {
 }
 
 // TST-CORE-494
+// TRACE: {"suite": "CORE", "case": "2053", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "02", "scenario": "05", "title": "PongMessage"}
 func TestWS_9_2_5_PongMessage(t *testing.T) {
 	// Fresh WSHandler + HeartbeatManager to verify pong recording.
 	hb := ws.NewHeartbeatManager(nil)
@@ -375,6 +386,7 @@ func TestWS_9_2_5_PongMessage(t *testing.T) {
 }
 
 // TST-CORE-495
+// TRACE: {"suite": "CORE", "case": "2054", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "02", "scenario": "06", "title": "MissingIDField"}
 func TestWS_9_2_6_MissingIDField(t *testing.T) {
 	// §9.2 #6: Missing id field → error response with code 400.
 	// Fresh WSHandler to avoid shared state.
@@ -414,6 +426,7 @@ func TestWS_9_2_6_MissingIDField(t *testing.T) {
 }
 
 // TST-CORE-496
+// TRACE: {"suite": "CORE", "case": "2055", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "02", "scenario": "07", "title": "UnknownMessageType"}
 func TestWS_9_2_7_UnknownMessageType(t *testing.T) {
 	// §9.2 #7: Unknown message type → error response with reply_to,
 	// connection NOT dropped (extensible protocol).
@@ -458,6 +471,7 @@ func TestWS_9_2_7_UnknownMessageType(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-497
+// TRACE: {"suite": "CORE", "case": "2056", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "01", "title": "WhisperStreamChunked"}
 func TestWS_9_3_1_WhisperStreamChunked(t *testing.T) {
 	// Requirement: §9.3 #1 — Brain streams response to a query; core returns a
 	// whisper envelope with reply_to linking back to the original request ID,
@@ -509,6 +523,7 @@ func TestWS_9_3_1_WhisperStreamChunked(t *testing.T) {
 }
 
 // TST-CORE-498
+// TRACE: {"suite": "CORE", "case": "2057", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "02", "title": "WhisperFinalResponse"}
 func TestWS_9_3_2_WhisperFinalResponse(t *testing.T) {
 	// Requirement: §9.3 #2 — Brain completes response → final whisper with
 	// reply_to matching the original request ID, payload includes text and
@@ -552,6 +567,7 @@ func TestWS_9_3_2_WhisperFinalResponse(t *testing.T) {
 }
 
 // TST-CORE-499
+// TRACE: {"suite": "CORE", "case": "2058", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "03", "title": "ProactiveWhisper"}
 func TestWS_9_3_3_ProactiveWhisper(t *testing.T) {
 	// Use a fresh hub to avoid test isolation issues from shared realWSHub.
 	impl := ws.NewWSHub()
@@ -604,6 +620,7 @@ func TestWS_9_3_3_ProactiveWhisper(t *testing.T) {
 }
 
 // TST-CORE-500
+// TRACE: {"suite": "CORE", "case": "2059", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "04", "title": "SystemNotification"}
 func TestWS_9_3_4_SystemNotification(t *testing.T) {
 	// Fresh WSHub to verify system notification delivery via Broadcast.
 	hub := ws.NewWSHub()
@@ -651,6 +668,7 @@ func TestWS_9_3_4_SystemNotification(t *testing.T) {
 }
 
 // TST-CORE-501
+// TRACE: {"suite": "CORE", "case": "2060", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "05", "title": "ErrorResponse"}
 func TestWS_9_3_5_ErrorResponse(t *testing.T) {
 	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
@@ -667,6 +685,7 @@ func TestWS_9_3_5_ErrorResponse(t *testing.T) {
 }
 
 // TST-CORE-502
+// TRACE: {"suite": "CORE", "case": "2061", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "06", "title": "ReplyToMeansResponse"}
 func TestWS_9_3_6_ReplyToMeansResponse(t *testing.T) {
 	// Fresh WSHandler with no brain router — returns stub "brain not connected".
 	handler := ws.NewWSHandler(
@@ -702,6 +721,7 @@ func TestWS_9_3_6_ReplyToMeansResponse(t *testing.T) {
 }
 
 // TST-CORE-503
+// TRACE: {"suite": "CORE", "case": "2062", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "07", "title": "NoReplyToMeansProactive"}
 func TestWS_9_3_7_NoReplyToMeansProactive(t *testing.T) {
 	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
@@ -727,6 +747,7 @@ func TestWS_9_3_7_NoReplyToMeansProactive(t *testing.T) {
 }
 
 // TST-CORE-504
+// TRACE: {"suite": "CORE", "case": "2063", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "03", "scenario": "08", "title": "WhisperStreamTerminatedByFinalWhisper"}
 func TestWS_9_3_8_WhisperStreamTerminatedByFinalWhisper(t *testing.T) {
 	// Fresh WSHandler with no brain router — synchronous response path.
 	handler := ws.NewWSHandler(nil)
@@ -765,6 +786,7 @@ func TestWS_9_3_8_WhisperStreamTerminatedByFinalWhisper(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-505
+// TRACE: {"suite": "CORE", "case": "2064", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "04", "scenario": "01", "title": "CoreSendsPingEvery30s"}
 func TestWS_9_4_1_CoreSendsPingEvery30s(t *testing.T) {
 	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
@@ -775,6 +797,7 @@ func TestWS_9_4_1_CoreSendsPingEvery30s(t *testing.T) {
 }
 
 // TST-CORE-506
+// TRACE: {"suite": "CORE", "case": "2065", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "04", "scenario": "02", "title": "ClientRespondsWithPong"}
 func TestWS_9_4_2_ClientRespondsWithPong(t *testing.T) {
 	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
@@ -786,6 +809,7 @@ func TestWS_9_4_2_ClientRespondsWithPong(t *testing.T) {
 }
 
 // TST-CORE-507
+// TRACE: {"suite": "CORE", "case": "2066", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "04", "scenario": "03", "title": "PongTimeout10Seconds"}
 func TestWS_9_4_3_PongTimeout10Seconds(t *testing.T) {
 	// §9.4 #3: Pong timeout is exactly 10 seconds. No pong within 10s → missed pong.
 	hm := ws.NewHeartbeatManager(nil)
@@ -811,6 +835,7 @@ func TestWS_9_4_3_PongTimeout10Seconds(t *testing.T) {
 }
 
 // TST-CORE-508
+// TRACE: {"suite": "CORE", "case": "2067", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "04", "scenario": "04", "title": "ThreeMissedPongsDisconnect"}
 func TestWS_9_4_4_ThreeMissedPongsDisconnect(t *testing.T) {
 	// §9.4 #4: 3 consecutive missed pongs → disconnect.
 	hm := ws.NewHeartbeatManager(nil)
@@ -843,6 +868,7 @@ func TestWS_9_4_4_ThreeMissedPongsDisconnect(t *testing.T) {
 }
 
 // TST-CORE-509
+// TRACE: {"suite": "CORE", "case": "2068", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "04", "scenario": "05", "title": "PongResetsCounter"}
 func TestWS_9_4_5_PongResetsCounter(t *testing.T) {
 	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
@@ -859,6 +885,7 @@ func TestWS_9_4_5_PongResetsCounter(t *testing.T) {
 }
 
 // TST-CORE-510
+// TRACE: {"suite": "CORE", "case": "2069", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "04", "scenario": "06", "title": "PingIncludesTimestamp"}
 func TestWS_9_4_6_PingIncludesTimestamp(t *testing.T) {
 	// §9.4 #6: Ping message must include ts field (Unix timestamp) for clock drift detection.
 	var captured []byte
@@ -897,6 +924,7 @@ func TestWS_9_4_6_PingIncludesTimestamp(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-511
+// TRACE: {"suite": "CORE", "case": "2070", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "01", "title": "ClientTemporarilyDisconnected"}
 func TestWS_9_5_1_ClientTemporarilyDisconnected(t *testing.T) {
 	// §9.5 #1: Messages during disconnect are buffered and returned in FIFO order on reconnect.
 	// Fresh buffer to avoid shared state.
@@ -936,6 +964,7 @@ func TestWS_9_5_1_ClientTemporarilyDisconnected(t *testing.T) {
 }
 
 // TST-CORE-512
+// TRACE: {"suite": "CORE", "case": "2071", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "02", "title": "BufferCapMax50"}
 func TestWS_9_5_2_BufferCapMax50(t *testing.T) {
 	buf := ws.NewMessageBuffer()
 	testutil.RequireImplementation(t, buf, "MessageBuffer")
@@ -977,6 +1006,7 @@ func TestWS_9_5_2_BufferCapMax50(t *testing.T) {
 }
 
 // TST-CORE-513
+// TRACE: {"suite": "CORE", "case": "2072", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "03", "title": "BufferOrderingPreserved"}
 func TestWS_9_5_3_BufferOrderingPreserved(t *testing.T) {
 	buf := ws.NewMessageBuffer()
 	testutil.RequireImplementation(t, buf, "MessageBuffer")
@@ -1012,6 +1042,7 @@ func TestWS_9_5_3_BufferOrderingPreserved(t *testing.T) {
 }
 
 // TST-CORE-514
+// TRACE: {"suite": "CORE", "case": "2073", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "04", "title": "BufferTTL5Minutes"}
 func TestWS_9_5_4_BufferTTL5Minutes(t *testing.T) {
 	// §9.5 #4: Buffer TTL must be 5 minutes (300 seconds).
 	// Fresh buffer to avoid shared state.
@@ -1033,6 +1064,7 @@ func TestWS_9_5_4_BufferTTL5Minutes(t *testing.T) {
 }
 
 // TST-CORE-515
+// TRACE: {"suite": "CORE", "case": "2074", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "05", "title": "ClientACKsBufferedMessages"}
 func TestWS_9_5_5_ClientACKsBufferedMessages(t *testing.T) {
 	buf := ws.NewMessageBuffer()
 	testutil.RequireImplementation(t, buf, "MessageBuffer")
@@ -1074,6 +1106,7 @@ func TestWS_9_5_5_ClientACKsBufferedMessages(t *testing.T) {
 }
 
 // TST-CORE-516
+// TRACE: {"suite": "CORE", "case": "2075", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "06", "title": "BufferPerDevice"}
 func TestWS_9_5_6_BufferPerDevice(t *testing.T) {
 	buf := ws.NewMessageBuffer()
 	testutil.RequireImplementation(t, buf, "MessageBuffer")
@@ -1123,6 +1156,7 @@ func TestWS_9_5_6_BufferPerDevice(t *testing.T) {
 }
 
 // TST-CORE-517
+// TRACE: {"suite": "CORE", "case": "2076", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "07", "title": "BufferWithinTTLAllDelivered"}
 func TestWS_9_5_7_BufferWithinTTLAllDelivered(t *testing.T) {
 	// §9.5 #7: Client disconnected within TTL → all buffered messages delivered.
 	// Fresh buffer to avoid shared state.
@@ -1162,6 +1196,7 @@ func TestWS_9_5_7_BufferWithinTTLAllDelivered(t *testing.T) {
 }
 
 // TST-CORE-518
+// TRACE: {"suite": "CORE", "case": "2077", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "08", "title": "WhyFiveMinNotLonger"}
 func TestWS_9_5_8_WhyFiveMinNotLonger(t *testing.T) {
 	// §9.5 #8: TTL is exactly 5 minutes (300s). Stale replay is worse than fresh briefing.
 	buf := ws.NewMessageBuffer()
@@ -1181,6 +1216,7 @@ func TestWS_9_5_8_WhyFiveMinNotLonger(t *testing.T) {
 }
 
 // TST-CORE-519
+// TRACE: {"suite": "CORE", "case": "2078", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "09", "title": "ReconnectionRequiresReAuth"}
 func TestWS_9_5_9_ReconnectionRequiresReAuth(t *testing.T) {
 	// §9.5 #9: On reconnect, the client must re-authenticate via a new
 	// Ed25519-signed HTTP upgrade. Server-side: new handler instance has
@@ -1211,6 +1247,7 @@ func TestWS_9_5_9_ReconnectionRequiresReAuth(t *testing.T) {
 }
 
 // TST-CORE-911
+// TRACE: {"suite": "CORE", "case": "2079", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "10", "title": "FCMWakeupPayloadEmpty"}
 func TestWS_9_5_10_FCMWakeupPayloadEmpty(t *testing.T) {
 	// §9.5.10: FCM/APNs wake-up payload must be data-free — only structural
 	// fields (type), no user data, PII, or message content.
@@ -1261,6 +1298,7 @@ func TestWS_9_5_10_FCMWakeupPayloadEmpty(t *testing.T) {
 }
 
 // TST-CORE-912
+// TRACE: {"suite": "CORE", "case": "2080", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "11", "title": "Ed25519AuthUpdatesTracking"}
 func TestWS_9_5_11_Ed25519AuthUpdatesTracking(t *testing.T) {
 	// Ed25519 auth: authHandshake calls MarkAuthenticated with the device ID
 	// from PreAuthIdentity. IsAuthenticated tracks the connection.
@@ -1287,6 +1325,7 @@ func TestWS_9_5_11_Ed25519AuthUpdatesTracking(t *testing.T) {
 }
 
 // TST-CORE-913
+// TRACE: {"suite": "CORE", "case": "2081", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "05", "scenario": "12", "title": "DevicePushViaAuthenticatedWebSocket"}
 func TestWS_9_5_12_DevicePushViaAuthenticatedWebSocket(t *testing.T) {
 	// Requirement: Server can push vault updates to authenticated WebSocket clients.
 	// The WSHub must deliver messages to registered clients and buffer for unregistered.
@@ -1334,6 +1373,7 @@ func TestWS_9_5_12_DevicePushViaAuthenticatedWebSocket(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-WS-PREAUTH-001
+// TRACE: {"suite": "CORE", "case": "2082", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "06", "scenario": "01", "title": "PreAuthSkipsTokenHandshake"}
 func TestWS_9_6_1_PreAuthSkipsTokenHandshake(t *testing.T) {
 	// When the HTTP upgrade request is Ed25519-authenticated, the WebSocket
 	// connection is admitted without a token handshake. The PreAuthIdentity
@@ -1350,6 +1390,7 @@ func TestWS_9_6_1_PreAuthSkipsTokenHandshake(t *testing.T) {
 }
 
 // TST-CORE-WS-PREAUTH-002
+// TRACE: {"suite": "CORE", "case": "2083", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "06", "scenario": "02", "title": "EmptyPreAuthRejected"}
 func TestWS_9_6_2_EmptyPreAuthRejected(t *testing.T) {
 	// Empty or nil PreAuthIdentity → authHandshake returns ErrAuthFailed.
 	// WebSocket is Ed25519-only: unsigned upgrades are rejected.
@@ -1362,6 +1403,7 @@ func TestWS_9_6_2_EmptyPreAuthRejected(t *testing.T) {
 }
 
 // TST-CORE-WS-PREAUTH-003
+// TRACE: {"suite": "CORE", "case": "2084", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "06", "scenario": "03", "title": "SignedUpgradeThroughMiddleware"}
 func TestWS_9_6_3_SignedUpgradeThroughMiddleware(t *testing.T) {
 	// End-to-end: Ed25519-signed GET /ws through the real auth + authz
 	// middleware chain. Proves the middleware sets the right context values
@@ -1419,6 +1461,7 @@ func TestWS_9_6_3_SignedUpgradeThroughMiddleware(t *testing.T) {
 }
 
 // TST-CORE-WS-PREAUTH-004
+// TRACE: {"suite": "CORE", "case": "2085", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "06", "scenario": "04", "title": "UnsignedUpgradeRejectedByMiddleware"}
 func TestWS_9_6_4_UnsignedUpgradeRejectedByMiddleware(t *testing.T) {
 	// Negative: unsigned GET /ws is rejected by auth middleware (401).
 	tv := auth.NewTokenValidator(map[string]string{})
@@ -1441,6 +1484,7 @@ func TestWS_9_6_4_UnsignedUpgradeRejectedByMiddleware(t *testing.T) {
 }
 
 // TST-CORE-WS-PREAUTH-005
+// TRACE: {"suite": "CORE", "case": "2086", "section": "09", "sectionName": "WebSocket Protocol", "subsection": "06", "scenario": "05", "title": "BearerTokenUpgradeRejectedByAuthz"}
 func TestWS_9_6_5_BearerTokenUpgradeRejectedByAuthz(t *testing.T) {
 	// Negative: admin bearer token on /ws is rejected because the pre-auth
 	// check requires kind=client + scope=device (Ed25519 device signature).

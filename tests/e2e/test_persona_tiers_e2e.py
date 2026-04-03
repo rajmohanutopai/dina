@@ -48,6 +48,7 @@ def _get(node, path):
 class TestE2ETierEnforcement:
     """Full E2E persona tier flow on a real node."""
 
+    # TRACE: {"suite": "E2E", "case": "0001", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "01", "title": "e2e_create_all_tiers"}
     def test_e2e_create_all_tiers(self, alonso) -> None:
         """Create personas with all 4 tiers on a real node."""
         ts = int(time.time())
@@ -57,6 +58,7 @@ class TestE2ETierEnforcement:
             })
             assert resp.status_code in (201, 409), f"{tier}: {resp.status_code} {resp.text}"
 
+    # TRACE: {"suite": "E2E", "case": "0002", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "02", "title": "e2e_general_persona_queryable"}
     def test_e2e_general_persona_queryable(self, alonso) -> None:
         """The 'general' default persona is queryable without any session."""
         resp = _post(alonso, "/v1/vault/query", {
@@ -64,6 +66,7 @@ class TestE2ETierEnforcement:
         })
         assert resp.status_code == 200, f"general query failed: {resp.text}"
 
+    # TRACE: {"suite": "E2E", "case": "0003", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "03", "title": "e2e_session_lifecycle"}
     def test_e2e_session_lifecycle(self, alonso) -> None:
         """Session start → list → end on real node."""
         name = f"e2e_sess_{int(time.time())}"
@@ -78,6 +81,7 @@ class TestE2ETierEnforcement:
         r = _post(alonso, "/v1/session/end", {"name": name})
         assert r.status_code == 200
 
+    # TRACE: {"suite": "E2E", "case": "0004", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "04", "title": "e2e_locked_persona_denied"}
     def test_e2e_locked_persona_denied(self, alonso) -> None:
         """Locked persona query returns 403."""
         name = f"e2e_locked_{int(time.time())}"
@@ -89,6 +93,7 @@ class TestE2ETierEnforcement:
         })
         assert resp.status_code == 403
 
+    # TRACE: {"suite": "E2E", "case": "0005", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "05", "title": "e2e_sensitive_unlock_query_lock"}
     def test_e2e_sensitive_unlock_query_lock(self, alonso) -> None:
         """Sensitive persona: create → query fails → unlock → query succeeds → lock → query fails."""
         name = f"e2e_sens_{int(time.time())}"
@@ -127,6 +132,7 @@ class TestE2ETierEnforcement:
         })
         assert r.status_code == 403
 
+    # TRACE: {"suite": "E2E", "case": "0006", "section": "08", "sectionName": "Sensitive Personas", "subsection": "01", "scenario": "06", "title": "e2e_approval_list"}
     def test_e2e_approval_list(self, alonso) -> None:
         """GET /v1/persona/approvals works on real node."""
         resp = _get(alonso, "/v1/persona/approvals")

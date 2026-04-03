@@ -51,6 +51,7 @@ class TestProductResearchPurchase:
     reporting."""
 
 # TST-E2E-013
+    # TRACE: {"suite": "E2E", "case": "0013", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "01", "title": "product_research_via_reviewbot"}
     def test_product_research_via_reviewbot(
         self,
         don_alonso: HomeNode,
@@ -146,6 +147,7 @@ class TestProductResearchPurchase:
         assert response.get("requester_trust_ring") == don_alonso.trust_ring.value
 
 # TST-E2E-014
+    # TRACE: {"suite": "E2E", "case": "0014", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "02", "title": "trust_network_check"}
     def test_trust_network_check(
         self,
         don_alonso: HomeNode,
@@ -244,6 +246,7 @@ class TestProductResearchPurchase:
         assert appview.query_product("nonexistent_chair") is None
 
 # TST-E2E-015
+    # TRACE: {"suite": "E2E", "case": "0015", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "03", "title": "cart_handover"}
     def test_cart_handover(
         self,
         don_alonso: HomeNode,
@@ -392,6 +395,7 @@ class TestProductResearchPurchase:
         )
 
 # TST-E2E-016
+    # TRACE: {"suite": "E2E", "case": "0016", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "04", "title": "d2d_commerce_persona_gating"}
     def test_d2d_commerce_persona_gating(
         self,
         don_alonso: HomeNode,
@@ -406,9 +410,11 @@ class TestProductResearchPurchase:
         # Don Alonso sends commerce inquiry to ChairMaker
         msg = don_alonso.send_d2d(
             to_did=chairmaker.did,
-            message_type="dina/commerce/inquiry",
+            message_type="coordination.request",
             payload={
-                "type": "dina/commerce/inquiry",
+                "type": "coordination.request",
+                "action": "ask_availability",
+                "context": "Herman Miller Aeron inquiry",
                 "product": "Herman Miller Aeron",
                 "buyer_persona": "consumer",
                 # NOTE: No personal name, no health data, no financial details
@@ -425,7 +431,7 @@ class TestProductResearchPurchase:
             "Commerce payload must contain the product inquiry"
         )
         assert msg.payload.get("buyer_persona") == "consumer"
-        assert msg.payload.get("type") == "dina/commerce/inquiry"
+        assert msg.payload.get("type") == "coordination.request"
 
         # ------------------------------------------------------------------
         # 2. Persona gating: no personal/health/financial data leaked
@@ -453,7 +459,7 @@ class TestProductResearchPurchase:
         chairmaker_recv = chairmaker.get_audit_entries("d2d_receive")
         commerce_recvs = [
             e for e in chairmaker_recv
-            if e.details.get("type") == "dina/commerce/inquiry"
+            if e.details.get("type") == "coordination.request"
             and e.details.get("from_did") == don_alonso.did
         ]
         assert len(commerce_recvs) == 1, (
@@ -479,13 +485,14 @@ class TestProductResearchPurchase:
         commerce_sends = [
             e for e in send_audits
             if e.details.get("contact_did") == chairmaker.did
-            and e.details.get("type") == "dina/commerce/inquiry"
+            and e.details.get("type") == "coordination.request"
         ]
         assert len(commerce_sends) == 1, (
             f"Expected exactly 1 commerce send audit, got {len(commerce_sends)}"
         )
 
 # TST-E2E-017
+    # TRACE: {"suite": "E2E", "case": "0017", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "05", "title": "cold_start_web_search"}
     def test_cold_start_web_search(
         self,
         don_alonso: HomeNode,
@@ -543,6 +550,7 @@ class TestProductResearchPurchase:
         assert last_intent.details["risk"] == ActionRisk.SAFE.name
 
 # TST-E2E-018
+    # TRACE: {"suite": "E2E", "case": "0018", "section": "03", "sectionName": "Product Research", "subsection": "01", "scenario": "06", "title": "outcome_reporting"}
     def test_outcome_reporting(
         self,
         don_alonso: HomeNode,

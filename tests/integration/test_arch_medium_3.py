@@ -30,6 +30,7 @@ from tests.integration.mocks import (
 # ---------------------------------------------------------------------------
 
 # TST-INT-665
+# TRACE: {"suite": "INT", "case": "0665", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "01", "title": "wrong_admin_login_rejected_cleanly"}
 def test_wrong_admin_login_rejected_cleanly(
     mock_admin_api: MockAdminAPI,
 ):
@@ -39,6 +40,7 @@ def test_wrong_admin_login_rejected_cleanly(
 
 
 # TST-INT-666
+# TRACE: {"suite": "INT", "case": "0666", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "02", "title": "logout_invalidates_session"}
 def test_logout_invalidates_session(
     mock_admin_api: MockAdminAPI,
 ):
@@ -62,6 +64,7 @@ def test_logout_invalidates_session(
 
 
 # TST-INT-667
+# TRACE: {"suite": "INT", "case": "0667", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "03", "title": "session_expiry_forces_reauth"}
 def test_session_expiry_forces_reauth(
     mock_admin_api: MockAdminAPI,
 ):
@@ -100,6 +103,7 @@ def test_session_expiry_forces_reauth(
 
 
 # TST-INT-668
+# TRACE: {"suite": "INT", "case": "0668", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "04", "title": "locked_node_admin_returns_unlock_required"}
 def test_locked_node_admin_returns_unlock_required(
     mock_admin_api: MockAdminAPI,
     mock_vault: MockVault,
@@ -138,6 +142,7 @@ def test_locked_node_admin_returns_unlock_required(
 
 
 # TST-INT-669
+# TRACE: {"suite": "INT", "case": "0669", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "05", "title": "admin_session_survives_core_restart"}
 def test_admin_session_survives_core_restart(
     mock_admin_api: MockAdminAPI,
 ):
@@ -160,6 +165,7 @@ def test_admin_session_survives_core_restart(
 # ---------------------------------------------------------------------------
 
 # TST-INT-670
+# TRACE: {"suite": "INT", "case": "0670", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "06", "title": "reconnect_reestablishes_session"}
 def test_reconnect_reestablishes_session(
     mock_ws_session_mgr: MockWSSessionManager,
 ):
@@ -184,6 +190,7 @@ def test_reconnect_reestablishes_session(
 
 
 # TST-INT-671
+# TRACE: {"suite": "INT", "case": "0671", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "07", "title": "reconnect_no_stale_replay"}
 def test_reconnect_no_stale_replay(
     mock_ws_session_mgr: MockWSSessionManager,
 ):
@@ -214,6 +221,7 @@ def test_reconnect_no_stale_replay(
 
 
 # TST-INT-672
+# TRACE: {"suite": "INT", "case": "0672", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "08", "title": "device_online_offline_tracks_lifecycle"}
 def test_device_online_offline_tracks_lifecycle(
     mock_ws_session_mgr: MockWSSessionManager,
 ):
@@ -238,6 +246,7 @@ def test_device_online_offline_tracks_lifecycle(
 
 
 # TST-INT-673
+# TRACE: {"suite": "INT", "case": "0673", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "09", "title": "unauth_socket_closes_after_timeout"}
 def test_unauth_socket_closes_after_timeout(
     mock_ws_session_mgr: MockWSSessionManager,
 ):
@@ -260,6 +269,7 @@ def test_unauth_socket_closes_after_timeout(
 # ---------------------------------------------------------------------------
 
 # TST-INT-674
+# TRACE: {"suite": "INT", "case": "0674", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "10", "title": "poisoned_content_no_outbound_side_effect"}
 def test_poisoned_content_no_outbound_side_effect(
     mock_vault: MockVault,
     mock_outbox: MockOutbox,
@@ -285,6 +295,7 @@ def test_poisoned_content_no_outbound_side_effect(
 
 
 # TST-INT-675
+# TRACE: {"suite": "INT", "case": "0675", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "11", "title": "sender_receives_structured_not_raw"}
 def test_sender_receives_structured_not_raw(
     mock_outbox: MockOutbox,
 ):
@@ -312,6 +323,7 @@ def test_sender_receives_structured_not_raw(
 
 
 # TST-INT-676
+# TRACE: {"suite": "INT", "case": "0676", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "12", "title": "mcp_allowlist_blocks_disallowed_tools"}
 def test_mcp_allowlist_blocks_disallowed_tools():
     """Create a set of allowed_tools, verify send_email/http_post/
     execute_command are NOT in the allowlist."""
@@ -332,6 +344,7 @@ def test_mcp_allowlist_blocks_disallowed_tools():
 
 
 # TST-INT-677
+# TRACE: {"suite": "INT", "case": "0677", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "13", "title": "user_directed_egress_allowed_autonomous_blocked"}
 def test_user_directed_egress_allowed_autonomous_blocked():
     """Define an egress policy mock that checks trigger_type.
     User-directed passes, autonomous blocked."""
@@ -354,6 +367,7 @@ def test_user_directed_egress_allowed_autonomous_blocked():
 
 
 # TST-INT-678
+# TRACE: {"suite": "INT", "case": "0678", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "14", "title": "vault_query_limits_enforced"}
 def test_vault_query_limits_enforced(
     mock_vault_query: MockVaultQuery,
 ):
@@ -381,6 +395,7 @@ def test_vault_query_limits_enforced(
 # ---------------------------------------------------------------------------
 
 # TST-INT-679
+# TRACE: {"suite": "INT", "case": "0679", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "15", "title": "tier1_fiduciary_interrupts"}
 def test_tier1_fiduciary_interrupts(
     mock_classifier: MockSilenceClassifier,
 ):
@@ -392,6 +407,7 @@ def test_tier1_fiduciary_interrupts(
 
 
 # TST-INT-680
+# TRACE: {"suite": "INT", "case": "0680", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "16", "title": "tier2_solicited_notifies"}
 def test_tier2_solicited_notifies(
     mock_classifier: MockSilenceClassifier,
 ):
@@ -401,6 +417,7 @@ def test_tier2_solicited_notifies(
 
 
 # TST-INT-681
+# TRACE: {"suite": "INT", "case": "0681", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "17", "title": "tier3_engagement_queues"}
 def test_tier3_engagement_queues(
     mock_classifier: MockSilenceClassifier,
 ):
@@ -412,6 +429,7 @@ def test_tier3_engagement_queues(
 
 
 # TST-INT-682
+# TRACE: {"suite": "INT", "case": "0682", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "18", "title": "briefing_drains_queued_tier3"}
 def test_briefing_drains_queued_tier3(
     mock_classifier: MockSilenceClassifier,
 ):
@@ -445,6 +463,7 @@ def test_briefing_drains_queued_tier3(
 
 
 # TST-INT-683
+# TRACE: {"suite": "INT", "case": "0683", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "19", "title": "crash_during_briefing_no_duplicates"}
 def test_crash_during_briefing_no_duplicates(
     mock_classifier: MockSilenceClassifier,
 ):
@@ -490,6 +509,7 @@ def test_crash_during_briefing_no_duplicates(
 # ---------------------------------------------------------------------------
 
 # TST-INT-684
+# TRACE: {"suite": "INT", "case": "0684", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "20", "title": "expired_message_stored_silently"}
 def test_expired_message_stored_silently(
     mock_dead_drop: MockDeadDropIngress,
 ):
@@ -510,6 +530,7 @@ def test_expired_message_stored_silently(
 
 
 # TST-INT-685
+# TRACE: {"suite": "INT", "case": "0685", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "21", "title": "full_spool_rejects_new_preserves_existing"}
 def test_full_spool_rejects_new_preserves_existing(
     mock_dead_drop: MockDeadDropIngress,
 ):
@@ -540,6 +561,7 @@ def test_full_spool_rejects_new_preserves_existing(
 
 
 # TST-INT-686
+# TRACE: {"suite": "INT", "case": "0686", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "22", "title": "crash_restart_preserves_spool"}
 def test_crash_restart_preserves_spool(
     mock_dead_drop: MockDeadDropIngress,
 ):
@@ -571,6 +593,7 @@ def test_crash_restart_preserves_spool(
 # ---------------------------------------------------------------------------
 
 # TST-INT-687
+# TRACE: {"suite": "INT", "case": "0687", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "23", "title": "backfill_to_live_no_duplicates"}
 def test_backfill_to_live_no_duplicates(
     mock_app_view: MockAppView,
 ):
@@ -602,6 +625,7 @@ def test_backfill_to_live_no_duplicates(
 
 
 # TST-INT-688
+# TRACE: {"suite": "INT", "case": "0688", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "24", "title": "subject_canonicalization"}
 def test_subject_canonicalization(
     mock_app_view: MockAppView,
 ):
@@ -638,6 +662,7 @@ def test_subject_canonicalization(
 
 
 # TST-INT-689
+# TRACE: {"suite": "INT", "case": "0689", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "25", "title": "aggregate_recomputes_after_amendment"}
 def test_aggregate_recomputes_after_amendment(
     mock_app_view: MockAppView,
 ):
@@ -671,6 +696,7 @@ def test_aggregate_recomputes_after_amendment(
 
 
 # TST-INT-690
+# TRACE: {"suite": "INT", "case": "0690", "section": "18", "sectionName": "Architecture Validation (Medium)", "subsection": "01", "scenario": "26", "title": "tombstone_removes_from_query"}
 def test_tombstone_removes_from_query(
     mock_app_view: MockAppView,
 ):

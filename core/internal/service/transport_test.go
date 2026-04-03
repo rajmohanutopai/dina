@@ -249,6 +249,7 @@ func newTestTransportService(outbox *mockOutboxManager, deliverer *mockDeliverer
 // Tests: Outbox Retry Logic (Fix 3)
 // ---------------------------------------------------------------------------
 
+// TRACE: {"suite": "CORE", "case": "2145", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "01", "title": "Task_8_OutboxFailedMessageRetriedAfterBackoff"}
 func TestTask_8_OutboxFailedMessageRetriedAfterBackoff(t *testing.T) {
 	// A failed message whose NextRetry has elapsed should be picked up
 	// by ProcessOutbox and retried (delivered successfully).
@@ -299,6 +300,7 @@ func TestTask_8_OutboxFailedMessageRetriedAfterBackoff(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2146", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "01", "title": "Task_8_OutboxMaxRetriesSkipped"}
 func TestTask_8_OutboxMaxRetriesSkipped(t *testing.T) {
 	// A message with Retries >= 5 should be skipped (dead-letter).
 	outbox := newMockOutboxManager()
@@ -356,6 +358,7 @@ func TestTask_8_OutboxMaxRetriesSkipped(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2147", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "01", "title": "Task_8_OutboxSuccessfulRetryMarksDelivered"}
 func TestTask_8_OutboxSuccessfulRetryMarksDelivered(t *testing.T) {
 	// A failed message that is successfully retried should be marked as delivered.
 	outbox := newMockOutboxManager()
@@ -404,6 +407,7 @@ func TestTask_8_OutboxSuccessfulRetryMarksDelivered(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2148", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "01", "title": "Task_8_OutboxRetryCountIncrementsOnFailure"}
 func TestTask_8_OutboxRetryCountIncrementsOnFailure(t *testing.T) {
 	// When a retry fails, the retry count should increment.
 	outbox := newMockOutboxManager()
@@ -455,6 +459,7 @@ func TestTask_8_OutboxRetryCountIncrementsOnFailure(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2149", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "01", "title": "Task_8_OutboxMessagesAboveMaxRetriesNeverDelivered"}
 func TestTask_8_OutboxMessagesAboveMaxRetriesNeverDelivered(t *testing.T) {
 	// Messages with retries 5, 6, 10 should all be skipped.
 	outbox := newMockOutboxManager()
@@ -502,6 +507,7 @@ func TestTask_8_OutboxMessagesAboveMaxRetriesNeverDelivered(t *testing.T) {
 	}
 }
 
+// TRACE: {"suite": "CORE", "case": "2150", "section": "07", "sectionName": "Transport Layer", "subsection": "06", "scenario": "01", "title": "Task_8_OutboxRetryBelowMaxIsProcessed"}
 func TestTask_8_OutboxRetryBelowMaxIsProcessed(t *testing.T) {
 	// Messages with retries < 5 should be processed (attempted).
 	outbox := newMockOutboxManager()

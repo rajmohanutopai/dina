@@ -75,6 +75,7 @@ class TestClientSync:
     checkpoints, conflict resolution, append-only data model."""
 
     # TST-INT-365
+    # TRACE: {"suite": "INT", "case": "0365", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "01", "title": "home_node_available_when_clients_offline"}
     def test_home_node_available_when_clients_offline(
         self,
         mock_dina: MockDinaCore,
@@ -107,7 +108,7 @@ class TestClientSync:
         scrubbed, replacements = mock_dina.go_core.pii_scrub(
             "Rajmohan at rajmohan@email.com"
         )
-        assert "Rajmohan" not in scrubbed
+        assert "rajmohan@email.com" not in scrubbed
         assert len(replacements) >= 1
 
         # Counter-proof: client is still offline — queuing works, not pushing
@@ -115,6 +116,7 @@ class TestClientSync:
         assert len(mock_rich_client.offline_queue) == 1
 
     # TST-INT-366
+    # TRACE: {"suite": "INT", "case": "0366", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "02", "title": "client_offline_no_effect_on_home_node"}
     def test_client_offline_no_effect_on_home_node(
         self,
         mock_dina: MockDinaCore,
@@ -159,6 +161,7 @@ class TestClientSync:
         assert mock_dina.vault.retrieve(1, "data_c") is None
 
     # TST-INT-372
+    # TRACE: {"suite": "INT", "case": "0372", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "03", "title": "multiple_rich_clients_sync_consistently"}
     def test_multiple_rich_clients_sync_consistently(
         self,
         mock_dina: MockDinaCore,
@@ -188,6 +191,7 @@ class TestClientSync:
             assert client_b.local_cache[key] == client_c.local_cache[key]
 
     # TST-INT-373
+    # TRACE: {"suite": "INT", "case": "0373", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "04", "title": "checkpoint_mechanism"}
     def test_checkpoint_mechanism(
         self,
         mock_rich_client: MockRichClient,
@@ -216,6 +220,7 @@ class TestClientSync:
         assert "b" in mock_rich_client.local_cache
 
     # TST-INT-375
+    # TRACE: {"suite": "INT", "case": "0375", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "05", "title": "conflict_resolution_last_write_wins"}
     def test_conflict_resolution_last_write_wins(
         self,
         mock_dina: MockDinaCore,
@@ -234,6 +239,7 @@ class TestClientSync:
         assert result["author"] == "laptop"
 
     # TST-INT-376
+    # TRACE: {"suite": "INT", "case": "0376", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "06", "title": "conflict_resolution_flagged_for_review"}
     def test_conflict_resolution_flagged_for_review(
         self,
         mock_dina: MockDinaCore,
@@ -283,6 +289,7 @@ class TestClientSync:
         assert solo["version"] == 1  # no overwrite occurred
 
     # TST-INT-377
+    # TRACE: {"suite": "INT", "case": "0377", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "07", "title": "most_data_append_only"}
     def test_most_data_append_only(
         self,
         mock_dina: MockDinaCore,
@@ -337,6 +344,7 @@ class TestTEEEnclaves:
     """Trusted Execution Environment enclave contracts."""
 
     # TST-INT-382
+    # TRACE: {"suite": "INT", "case": "0382", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "01", "title": "enclave_attestation_verified_by_client"}
     def test_enclave_attestation_verified_by_client(
         self,
         mock_dina: MockDinaCore,
@@ -378,6 +386,7 @@ class TestTEEEnclaves:
         assert stored["signature"] == sig
 
     # TST-INT-383
+    # TRACE: {"suite": "INT", "case": "0383", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "02", "title": "host_root_cannot_read_enclave_memory"}
     def test_host_root_cannot_read_enclave_memory(
         self,
         mock_vault: MockVault,
@@ -415,6 +424,7 @@ class TestTEEEnclaves:
         assert mock_identity.verify(b"tampered_operation", signature) is False
 
     # TST-INT-384
+    # TRACE: {"suite": "INT", "case": "0384", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "02", "scenario": "03", "title": "enclave_sealed_keys"}
     def test_enclave_sealed_keys(
         self,
         mock_identity: MockIdentity,
@@ -460,6 +470,7 @@ class TestProgressiveDisclosure:
     user is not overwhelmed on day one."""
 
     # TST-INT-385
+    # TRACE: {"suite": "INT", "case": "0385", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "01", "title": "day_1_email_calendar_basic_nudges"}
     def test_day_1_email_calendar_basic_nudges(
         self,
         mock_onboarding: MockOnboardingManager,
@@ -489,6 +500,7 @@ class TestProgressiveDisclosure:
         assert "recovery" in day_7.lower() or "24-word" in day_7.lower()
 
     # TST-INT-386
+    # TRACE: {"suite": "INT", "case": "0386", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "02", "title": "day_7_mnemonic_backup_prompt"}
     def test_day_7_mnemonic_backup_prompt(
         self,
         mock_onboarding: MockOnboardingManager,
@@ -502,6 +514,7 @@ class TestProgressiveDisclosure:
             or "mnemonic" in prompt.lower()
 
     # TST-INT-387
+    # TRACE: {"suite": "INT", "case": "0387", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "03", "title": "day_14_telegram_connector_prompt"}
     def test_day_14_telegram_connector_prompt(
         self,
         mock_onboarding: MockOnboardingManager,
@@ -531,6 +544,7 @@ class TestProgressiveDisclosure:
             "Telegram should only appear in day 14 prompt, not day 7"
 
     # TST-INT-388
+    # TRACE: {"suite": "INT", "case": "0388", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "04", "title": "day_30_persona_compartments_prompt"}
     def test_day_30_persona_compartments_prompt(
         self,
         mock_onboarding: MockOnboardingManager,
@@ -544,6 +558,7 @@ class TestProgressiveDisclosure:
             or "financial" in prompt.lower() or "separate" in prompt.lower()
 
     # TST-INT-389
+    # TRACE: {"suite": "INT", "case": "0389", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "03", "scenario": "05", "title": "month_3_power_user_discovery"}
     def test_month_3_power_user_discovery(
         self,
         mock_onboarding: MockOnboardingManager,
@@ -589,6 +604,7 @@ class TestLocalLLMProfiles:
     (4 containers with llama-server)."""
 
     # TST-INT-390
+    # TRACE: {"suite": "INT", "case": "0390", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "01", "title": "profile_local_llm_adds_llama_container"}
     def test_profile_local_llm_adds_llama_container(
         self,
         mock_compose_local_llm: MockDockerCompose,
@@ -602,6 +618,7 @@ class TestLocalLLMProfiles:
         assert "dina-brain-net" in llama.networks
 
     # TST-INT-391
+    # TRACE: {"suite": "INT", "case": "0391", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "02", "title": "without_profile_three_containers_only"}
     def test_without_profile_three_containers_only(
         self,
         mock_compose: MockDockerCompose,
@@ -613,6 +630,7 @@ class TestLocalLLMProfiles:
         assert "llama" not in mock_compose.containers
 
     # TST-INT-392
+    # TRACE: {"suite": "INT", "case": "0392", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "03", "title": "brain_routes_to_llama_when_available"}
     def test_brain_routes_to_llama_when_available(
         self,
         mock_llm_router: MockLLMRouter,
@@ -631,6 +649,7 @@ class TestLocalLLMProfiles:
         assert target == LLMTarget.LOCAL
 
     # TST-INT-393
+    # TRACE: {"suite": "INT", "case": "0393", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "04", "title": "brain_falls_back_to_cloud_when_llama_absent"}
     def test_brain_falls_back_to_cloud_when_llama_absent(
         self,
         mock_cloud_llm_router: MockLLMRouter,
@@ -646,6 +665,7 @@ class TestLocalLLMProfiles:
         assert target == LLMTarget.CLOUD
 
     # TST-INT-394
+    # TRACE: {"suite": "INT", "case": "0394", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "04", "scenario": "05", "title": "pii_scrubbing_without_llama_cloud_mode"}
     def test_pii_scrubbing_without_llama_cloud_mode(
         self,
         mock_cloud_llm_router: MockLLMRouter,
@@ -663,7 +683,8 @@ class TestLocalLLMProfiles:
         # PII scrubbing still works via regex patterns (no LLM needed)
         text = "Rajmohan lives at 123 Main Street"
         scrubbed, _ = mock_scrubber.scrub(text)
-        assert "Rajmohan" not in scrubbed
+        # Names pass through (intentional), addresses scrubbed
+        assert "Rajmohan" in scrubbed
         assert "123 Main Street" not in scrubbed
         assert mock_scrubber.validate_clean(scrubbed)
 
@@ -678,6 +699,7 @@ class TestIngressTiers:
     (Cloudflare), Sovereign (Yggdrasil)."""
 
     # TST-INT-395
+    # TRACE: {"suite": "INT", "case": "0395", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "01", "title": "community_tier_tailscale_funnel"}
     def test_community_tier_tailscale_funnel(
         self,
         mock_ingress_community: MockIngressTier,
@@ -689,6 +711,7 @@ class TestIngressTiers:
         assert mock_ingress_community.tls is True
 
     # TST-INT-396
+    # TRACE: {"suite": "INT", "case": "0396", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "02", "title": "production_tier_cloudflare_tunnel"}
     def test_production_tier_cloudflare_tunnel(self) -> None:
         """Production tier endpoint uses a custom domain via
         Cloudflare Tunnel."""
@@ -698,6 +721,7 @@ class TestIngressTiers:
         assert tier.tls is True
 
     # TST-INT-397
+    # TRACE: {"suite": "INT", "case": "0397", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "03", "title": "sovereign_tier_yggdrasil_ipv6"}
     def test_sovereign_tier_yggdrasil_ipv6(self) -> None:
         """Sovereign tier uses Yggdrasil mesh IPv6 endpoint."""
         ipv6 = "200:abcd:1234:5678::1"
@@ -707,6 +731,7 @@ class TestIngressTiers:
         assert tier.endpoint.startswith("https://[")
 
     # TST-INT-398
+    # TRACE: {"suite": "INT", "case": "0398", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "04", "title": "tier_change_triggers_did_rotation"}
     def test_tier_change_triggers_did_rotation(
         self,
         mock_identity: MockIdentity,
@@ -761,6 +786,7 @@ class TestIngressTiers:
         assert plc.resolve("did:plc:UnknownDID000000000000000") is None
 
     # TST-INT-399
+    # TRACE: {"suite": "INT", "case": "0399", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "05", "title": "multiple_tiers_simultaneously"}
     def test_multiple_tiers_simultaneously(self) -> None:
         """A Home Node can be reachable via multiple ingress tiers
         at the same time."""
@@ -780,6 +806,7 @@ class TestIngressTiers:
         assert tier_types == {"community", "production", "sovereign"}
 
     # TST-INT-400
+    # TRACE: {"suite": "INT", "case": "0400", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "05", "scenario": "06", "title": "foundation_relay_wildcard"}
     def test_foundation_relay_wildcard(
         self,
         mock_relay,
@@ -822,6 +849,7 @@ class TestForwardSecrecy:
     """Noise XX handshake, session key ratchet, forward secrecy."""
 
     # TST-INT-401
+    # TRACE: {"suite": "INT", "case": "0401", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "06", "scenario": "01", "title": "noise_xx_handshake_mutual_authentication"}
     def test_noise_xx_handshake_mutual_authentication(
         self,
         mock_noise_session: MockNoiseSession,
@@ -839,6 +867,7 @@ class TestForwardSecrecy:
         assert mock_noise_session.ratchet_count == 0
 
     # TST-INT-402
+    # TRACE: {"suite": "INT", "case": "0402", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "06", "scenario": "02", "title": "key_compromise_does_not_expose_past_messages"}
     def test_key_compromise_does_not_expose_past_messages(
         self,
         mock_noise_session: MockNoiseSession,
@@ -865,6 +894,7 @@ class TestForwardSecrecy:
         assert key_after_msg_2 in mock_noise_session.past_keys
 
     # TST-INT-403
+    # TRACE: {"suite": "INT", "case": "0403", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "06", "scenario": "03", "title": "session_ratchet_key_rotates"}
     def test_session_ratchet_key_rotates(
         self,
         mock_noise_session: MockNoiseSession,
@@ -898,6 +928,7 @@ class TestAppViewIndexer:
     tracking."""
 
     # TST-INT-404
+    # TRACE: {"suite": "INT", "case": "0404", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "01", "title": "firehose_consumer_filters_correctly"}
     def test_firehose_consumer_filters_correctly(
         self,
         mock_app_view: MockAppView,
@@ -922,6 +953,7 @@ class TestAppViewIndexer:
         assert "com.other.app.record" not in lexicons
 
     # TST-INT-405
+    # TRACE: {"suite": "INT", "case": "0405", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "02", "title": "cryptographic_verification_on_every_record"}
     def test_cryptographic_verification_on_every_record(
         self,
         mock_verification_layer: MockVerificationLayer,
@@ -940,6 +972,7 @@ class TestAppViewIndexer:
         assert mock_verification_layer.layer1_checks == 2
 
     # TST-INT-406
+    # TRACE: {"suite": "INT", "case": "0406", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "03", "title": "query_api_trust_by_did"}
     def test_query_api_trust_by_did(
         self,
         mock_app_view: MockAppView,
@@ -962,6 +995,7 @@ class TestAppViewIndexer:
         assert len(bob_records) == 1
 
     # TST-INT-407
+    # TRACE: {"suite": "INT", "case": "0407", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "04", "title": "query_api_product_trust"}
     def test_query_api_product_trust(
         self,
         mock_app_view: MockAppView,
@@ -987,6 +1021,7 @@ class TestAppViewIndexer:
         assert len(aeron_reviews) == 1
 
     # TST-INT-408
+    # TRACE: {"suite": "INT", "case": "0408", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "05", "title": "query_api_bot_scores"}
     def test_query_api_bot_scores(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -1009,6 +1044,7 @@ class TestAppViewIndexer:
         assert mock_trust_network.get_bot_score(bot_did) == 0.0
 
     # TST-INT-409
+    # TRACE: {"suite": "INT", "case": "0409", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "06", "title": "signed_payloads_in_api_responses"}
     def test_signed_payloads_in_api_responses(
         self,
         mock_app_view: MockAppView,
@@ -1046,6 +1082,7 @@ class TestAppViewIndexer:
         assert verify_ok is True
 
     # TST-INT-410
+    # TRACE: {"suite": "INT", "case": "0410", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "07", "title": "aggregate_scores_deterministic"}
     def test_aggregate_scores_deterministic(
         self,
         mock_app_view: MockAppView,
@@ -1072,6 +1109,7 @@ class TestAppViewIndexer:
         assert score_1 == 80.0  # (90+80+70)/3
 
     # TST-INT-411
+    # TRACE: {"suite": "INT", "case": "0411", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "07", "scenario": "08", "title": "cursor_tracking_crash_recovery"}
     def test_cursor_tracking_crash_recovery(
         self,
         mock_app_view: MockAppView,
@@ -1111,6 +1149,7 @@ class TestThreeLayerVerification:
     consensus check, direct PDS spot-check."""
 
     # TST-INT-412
+    # TRACE: {"suite": "INT", "case": "0412", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "08", "scenario": "01", "title": "layer_1_cryptographic_proof"}
     def test_layer_1_cryptographic_proof(
         self,
         mock_verification_layer: MockVerificationLayer,
@@ -1123,6 +1162,7 @@ class TestThreeLayerVerification:
         assert mock_verification_layer.layer1_checks == 1
 
     # TST-INT-413
+    # TRACE: {"suite": "INT", "case": "0413", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "08", "scenario": "02", "title": "layer_2_consensus_check"}
     def test_layer_2_consensus_check(
         self,
         mock_verification_layer: MockVerificationLayer,
@@ -1144,6 +1184,7 @@ class TestThreeLayerVerification:
         assert mock_verification_layer.layer2_checks == 2
 
     # TST-INT-414
+    # TRACE: {"suite": "INT", "case": "0414", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "08", "scenario": "03", "title": "layer_3_direct_pds_spot_check"}
     def test_layer_3_direct_pds_spot_check(
         self,
         mock_verification_layer: MockVerificationLayer,
@@ -1167,6 +1208,7 @@ class TestThreeLayerVerification:
         assert mock_verification_layer.layer3_checks == 2
 
     # TST-INT-415
+    # TRACE: {"suite": "INT", "case": "0415", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "08", "scenario": "04", "title": "dishonest_appview_abandoned"}
     def test_dishonest_appview_abandoned(
         self,
         mock_verification_layer: MockVerificationLayer,
@@ -1230,6 +1272,7 @@ class TestTimestampAnchoring:
     timestamps."""
 
     # TST-INT-416
+    # TRACE: {"suite": "INT", "case": "0416", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "09", "scenario": "01", "title": "merkle_root_hash_to_l2"}
     def test_merkle_root_hash_to_l2(
         self,
         mock_timestamp_anchor: MockTimestampAnchor,
@@ -1254,6 +1297,7 @@ class TestTimestampAnchoring:
         assert len(mock_timestamp_anchor.anchored_roots) == 1
 
     # TST-INT-417
+    # TRACE: {"suite": "INT", "case": "0417", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "09", "scenario": "02", "title": "merkle_proof_verification"}
     def test_merkle_proof_verification(
         self,
         mock_timestamp_anchor: MockTimestampAnchor,
@@ -1311,6 +1355,7 @@ class TestTimestampAnchoring:
         ) is False
 
     # TST-INT-418
+    # TRACE: {"suite": "INT", "case": "0418", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "09", "scenario": "03", "title": "merkle_root_reveals_nothing"}
     def test_merkle_root_reveals_nothing(
         self,
         mock_timestamp_anchor: MockTimestampAnchor,
@@ -1331,6 +1376,7 @@ class TestTimestampAnchoring:
         assert len(merkle_root) == 64
 
     # TST-INT-419
+    # TRACE: {"suite": "INT", "case": "0419", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "09", "scenario": "04", "title": "deletion_and_anchoring_compatible"}
     def test_deletion_and_anchoring_compatible(
         self,
         mock_timestamp_anchor: MockTimestampAnchor,
@@ -1378,6 +1424,7 @@ class TestBotProtocol:
     links, trust routing, discovery, anonymity, push."""
 
     # TST-INT-420
+    # TRACE: {"suite": "INT", "case": "0420", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "01", "title": "bot_query_format"}
     def test_bot_query_format(
         self,
         mock_review_bot: MockReviewBot,
@@ -1421,6 +1468,7 @@ class TestBotProtocol:
         assert matched["recommendations"][0]["product"] == "ThinkPad"
 
     # TST-INT-421
+    # TRACE: {"suite": "INT", "case": "0421", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "02", "title": "bot_signature_verification"}
     def test_bot_signature_verification(
         self,
         mock_review_bot: MockReviewBot,
@@ -1437,6 +1485,7 @@ class TestBotProtocol:
         assert len(result["bot_signature"]) > 0
 
     # TST-INT-422
+    # TRACE: {"suite": "INT", "case": "0422", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "03", "title": "attribution_mandatory"}
     def test_attribution_mandatory(
         self,
         mock_review_bot: MockReviewBot,
@@ -1475,6 +1524,7 @@ class TestBotProtocol:
         assert "bot_signature" in unknown
 
     # TST-INT-423
+    # TRACE: {"suite": "INT", "case": "0423", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "04", "title": "deep_link_pattern_default"}
     def test_deep_link_pattern_default(
         self,
         mock_review_bot: MockReviewBot,
@@ -1499,6 +1549,7 @@ class TestBotProtocol:
                 "http" in source["deep_link"]
 
     # TST-INT-424
+    # TRACE: {"suite": "INT", "case": "0424", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "05", "title": "bot_trust_auto_route_on_low_score"}
     def test_bot_trust_auto_route_on_low_score(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -1526,6 +1577,7 @@ class TestBotProtocol:
         assert should_use_bad is False
 
     # TST-INT-425
+    # TRACE: {"suite": "INT", "case": "0425", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "06", "title": "bot_trust_scoring_factors"}
     def test_bot_trust_scoring_factors(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -1547,6 +1599,7 @@ class TestBotProtocol:
         assert mock_trust_network.get_bot_score(bot_did) == 70.0
 
     # TST-INT-426
+    # TRACE: {"suite": "INT", "case": "0426", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "07", "title": "bot_discovery_decentralized_registry"}
     def test_bot_discovery_decentralized_registry(
         self,
         mock_review_bot: MockReviewBot,
@@ -1584,6 +1637,7 @@ class TestBotProtocol:
         assert result["bot_did"] == mock_review_bot.bot_did
 
     # TST-INT-427
+    # TRACE: {"suite": "INT", "case": "0427", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "08", "title": "bot_to_bot_recommendation"}
     def test_bot_to_bot_recommendation(
         self,
         mock_review_bot: MockReviewBot,
@@ -1626,6 +1680,7 @@ class TestBotProtocol:
         assert "laptop" in mock_review_bot.queries[1]["query"]
 
     # TST-INT-428
+    # TRACE: {"suite": "INT", "case": "0428", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "09", "title": "requester_anonymity_trust_ring_only"}
     def test_requester_anonymity_trust_ring_only(
         self,
         mock_review_bot: MockReviewBot,
@@ -1648,6 +1703,7 @@ class TestBotProtocol:
         assert "from_did" not in logged
 
     # TST-INT-429
+    # TRACE: {"suite": "INT", "case": "0429", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "10", "scenario": "10", "title": "android_fcm_wake_only_push"}
     def test_android_fcm_wake_only_push(
         self,
     ) -> None:
@@ -1676,6 +1732,7 @@ class TestPushNotifications:
     UnifiedPush."""
 
     # TST-INT-430
+    # TRACE: {"suite": "INT", "case": "0430", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "11", "scenario": "01", "title": "ios_apns_wake_only_push"}
     def test_ios_apns_wake_only_push(self) -> None:
         """iOS: APNs push notification contains NO user data."""
         apns_provider = MockPushProvider(platform="apns")
@@ -1689,6 +1746,7 @@ class TestPushNotifications:
         assert not apns_provider.payloads_contain_user_data()
 
     # TST-INT-431
+    # TRACE: {"suite": "INT", "case": "0431", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "11", "scenario": "02", "title": "push_payload_contains_no_user_data"}
     def test_push_payload_contains_no_user_data(
         self,
         mock_push_provider: MockPushProvider,
@@ -1709,6 +1767,7 @@ class TestPushNotifications:
             assert payload.title == "Dina"
 
     # TST-INT-432
+    # TRACE: {"suite": "INT", "case": "0432", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "11", "scenario": "03", "title": "push_suppressed_when_ws_active"}
     def test_push_suppressed_when_ws_active(
         self,
         mock_ws_server: MockWebSocketServer,
@@ -1768,6 +1827,7 @@ class TestPushNotifications:
             "Disconnected WS must not appear active"
 
     # TST-INT-433
+    # TRACE: {"suite": "INT", "case": "0433", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "11", "scenario": "04", "title": "unified_push_no_google_dependency"}
     def test_unified_push_no_google_dependency(self) -> None:
         """Phase 2: UnifiedPush provides push without Google (FCM)
         dependency."""
@@ -1793,6 +1853,7 @@ class TestDeploymentProfiles:
     guarantees, sensitive persona enforcement."""
 
     # TST-INT-434
+    # TRACE: {"suite": "INT", "case": "0434", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "12", "scenario": "01", "title": "cloud_profile_three_containers"}
     def test_cloud_profile_three_containers(self) -> None:
         """Cloud LLM profile starts 3 containers: core, brain, pds."""
         profile = MockDeploymentProfile(profile="cloud")
@@ -1801,6 +1862,7 @@ class TestDeploymentProfiles:
         assert set(profile.containers) == {"core", "brain", "pds"}
 
     # TST-INT-435
+    # TRACE: {"suite": "INT", "case": "0435", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "12", "scenario": "02", "title": "local_llm_profile_four_containers"}
     def test_local_llm_profile_four_containers(self) -> None:
         """Local LLM profile starts 4 containers: core, brain, pds, llama."""
         profile = MockDeploymentProfile(profile="local-llm")
@@ -1809,6 +1871,7 @@ class TestDeploymentProfiles:
         assert "llama" in profile.containers
 
     # TST-INT-436
+    # TRACE: {"suite": "INT", "case": "0436", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "12", "scenario": "03", "title": "profile_switch_cloud_to_local"}
     def test_profile_switch_cloud_to_local(self) -> None:
         """Switching from cloud to local-llm adds the llama container."""
         cloud = MockDockerCompose(profile="")
@@ -1826,6 +1889,7 @@ class TestDeploymentProfiles:
         assert "pds" in local.containers
 
     # TST-INT-437
+    # TRACE: {"suite": "INT", "case": "0437", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "12", "scenario": "04", "title": "profile_switch_local_to_cloud"}
     def test_profile_switch_local_to_cloud(
         self,
         mock_cloud_llm_router: MockLLMRouter,
@@ -1845,6 +1909,7 @@ class TestDeploymentProfiles:
         assert target == LLMTarget.CLOUD
 
     # TST-INT-438
+    # TRACE: {"suite": "INT", "case": "0438", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "12", "scenario": "05", "title": "always_local_guarantees"}
     def test_always_local_guarantees(
         self,
         mock_llm_router: MockLLMRouter,
@@ -1863,6 +1928,7 @@ class TestDeploymentProfiles:
         assert target_general == LLMTarget.CLOUD
 
     # TST-INT-439
+    # TRACE: {"suite": "INT", "case": "0439", "section": "16", "sectionName": "Deferred (Phase 2+)", "subsection": "12", "scenario": "06", "title": "sensitive_persona_rule_enforced"}
     def test_sensitive_persona_rule_enforced(
         self,
         mock_cloud_llm_router: MockLLMRouter,
