@@ -12,6 +12,7 @@ dependencies = [
     "base58==2.1.1",
     "argon2-cffi==25.1.0",
     "mnemonic==0.21",
+    "fastmcp>=2.0",
 ]
 
 [project.scripts]

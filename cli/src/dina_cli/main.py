@@ -403,24 +403,48 @@ def _extract_category(item: dict) -> str:
 @click.option("--count", default=1, type=int, help="Number of items affected")
 @click.option("--reversible", is_flag=True, help="Action is reversible")
 @click.option("--session", required=True, help="Session ID (create with: dina session start)")
+@click.option("--context", "context_json", default=None,
+              help="JSON object with action details shown in approval notification "
+                   "(e.g. '{\"to\":\"user@example.com\",\"subject\":\"Report\"}')")
 @click.pass_context
-def validate(ctx: click.Context, action: str, description: str, count: int, reversible: bool, session: str) -> None:
-    """Check if an action is approved by user policy."""
+def validate(ctx: click.Context, action: str, description: str, count: int,
+             reversible: bool, session: str, context_json: str | None) -> None:
+    """Check if an action is approved by user policy.
+
+    \b
+    The --context flag adds structured metadata to the approval notification.
+    The human reviewing the action sees this context in Telegram.
+    Example:
+      dina validate --session ses_xxx send_email "Send report" \\
+        --context '{"to":"user@co.com","subject":"Q4 Report","attachments":["report.pdf"]}'
+    """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     config = ctx.obj["config"]
 
+    # Parse optional context
+    context: dict | None = None
+    if context_json:
+        try:
+            context = json.loads(context_json)
+        except json.JSONDecodeError:
+            raise click.BadParameter(f"Invalid JSON: {context_json}", param_hint="--context")
+
     try:
+        payload: dict = {
+            "action": action,
+            "target": description,
+            "count": count,
+            "reversible": reversible,
+        }
+        if context:
+            payload["context"] = context
+
         result = client.process_event({
             "type": "agent_intent",
             "action": action,
             "target": description,
-            "payload": {
-                "action": action,
-                "target": description,
-                "count": count,
-                "reversible": reversible,
-            },
+            "payload": payload,
         }, session=session)
         approved = result.get("approved", False)
         requires = result.get("requires_approval", False)
@@ -1673,3 +1697,22 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
             client.session_end(session_name)
         except Exception:
             pass
+
+
+# ── MCP Server ───────────────────────────────────────────────────────────
+
+
+@cli.command("mcp-server")
+def mcp_server() -> None:
+    """Run Dina as an MCP server (stdio transport).
+
+    \b
+    For OpenClaw:
+      mcp.servers.dina = { command: "dina", args: ["mcp-server"] }
+
+    \b
+    For Claude Code:
+      claude mcp add dina -- dina mcp-server
+    """
+    from .mcp_server import run_server
+    run_server()

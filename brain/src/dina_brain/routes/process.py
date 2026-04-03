@@ -64,6 +64,7 @@ class AgentIntentEvent(_EventBase):
     risk_level: str | None = None
     trust_level: str | None = None
     session: str | None = None
+    payload: dict | None = None
 
 
 class DelegationRequestEvent(_EventBase):

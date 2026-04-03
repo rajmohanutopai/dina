@@ -41,6 +41,23 @@ SANCHO_BOT = "regression_test_dina_sancho_bot"
 OWNER_ID = int(_ENV.get("SANITY_OWNER_TELEGRAM_ID", "0"))
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_before_run(tg: SanityTelegramClient) -> None:
+    """Clean stale state from prior runs before tests start."""
+    import time
+
+    # Delete stale contacts on both bots
+    for bot in [ALONSO_BOT, SANCHO_BOT]:
+        for contact in ["Sancho", "Alonso"]:
+            r = tg.send_and_wait(bot, f"/contact delete {contact}", timeout=10)
+            if r:
+                print(f"  Cleanup: @{bot} /contact delete {contact} → {r[:60]}")
+            time.sleep(1)
+
+    # Small delay to let deletions settle
+    time.sleep(2)
+
+
 @pytest.fixture(scope="session")
 def tg() -> SanityTelegramClient:
     """Telethon client logged in as the owner."""

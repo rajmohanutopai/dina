@@ -274,38 +274,10 @@ class TelegramService:
                     log.debug("telegram.suppressed_error", exc_info=_exc)
                     break
 
-            # Check staging status for reminder plan (set during processing).
-            # The plan is stored in Core KV by the staging processor so any
-            # caller (Telegram, dina-admin, CLI) can retrieve it.
-            reminder_lines = []
-            plan = None
-            if result_msg.startswith("Stored"):
-                # Small delay — KV write completes before resolve, but
-                # allow propagation time.
-                await asyncio.sleep(1)
-                try:
-                    kv_key = f"reminder_plan:{staging_id}"
-                    plan_raw = await self._core.get_kv(kv_key)
-                    log.info("telegram.remember.kv_read key=%s found=%s", kv_key, plan_raw is not None)
-                    if plan_raw:
-                        import json as _json
-                        plan = _json.loads(plan_raw)
-                        for r in plan.get("reminders", []):
-                            fire = r.get("fire_at", "")
-                            msg = r.get("message", "")
-                            time_str = _format_local_time(fire)
-                            emoji = {"birthday": "🎂", "appointment": "📅",
-                                     "payment_due": "💳", "deadline": "⏰"}.get(
-                                         r.get("kind", ""), "🔔")
-                            reminder_lines.append(f"{emoji} {time_str} — {msg}")
-                except Exception as _exc:
-                    log.debug("telegram.suppressed_error", exc_info=_exc)
-
-            if plan and plan.get("reminders"):
-                await ch.send(RichResponse(text=result_msg))
-                await self.send_reminder_plan(update.effective_chat.id, plan)
-            else:
-                await ch.send(RichResponse(text=result_msg))
+            # Reminder plan notification is sent by the staging processor
+            # (staging_processor.py:267) — don't duplicate it here.
+            # Just send the "Stored in X vault" confirmation.
+            await ch.send(RichResponse(text=result_msg))
         except Exception as exc:
             log.error(
                 "telegram.remember_failed",
@@ -755,6 +727,11 @@ class TelegramService:
                     await ch.send(ErrorResponse(text="Failed to delete reminder."))
             return
 
+        # Intent approval buttons (Approve / Deny agent actions).
+        if data.startswith("intent_approve ") or data.startswith("intent_deny "):
+            await self._handle_intent_callback(update, ch, data)
+            return
+
         # Trust publish buttons (Publish / Cancel).
         if data.startswith("trust_yes:") or data == "trust_no":
             await self._handle_trust_callback(update, ch)
@@ -766,6 +743,53 @@ class TelegramService:
         response = await self.handle_approval_response(data)
         if response and ch:
             await ch.edit(RichResponse(text=response))
+
+    async def _handle_intent_callback(self, update: Update, ch: Any, data: str) -> None:
+        """Handle Approve/Deny buttons for agent intent proposals."""
+        query = update.callback_query
+        await query.answer()
+
+        if data.startswith("intent_approve "):
+            proposal_id = data[len("intent_approve "):].strip()
+            try:
+                # Call Brain's own proposals API (same process)
+                from .guardian import GuardianLoop
+                guardian = self._guardian
+                if guardian and hasattr(guardian, "_pending_proposals"):
+                    import time as _time
+                    p = guardian._pending_proposals.get(proposal_id)
+                    if p and p.get("status") == "pending":
+                        p["status"] = "approved"
+                        p["updated_at"] = _time.time()
+                        p["decision_reason"] = "Approved via Telegram"
+                        await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
+                    else:
+                        await ch.edit(ErrorResponse(text="Proposal not found or already processed."))
+                else:
+                    await ch.edit(ErrorResponse(text="Guardian not available."))
+            except Exception as exc:
+                log.warning("telegram.intent_approve_failed", extra={"id": proposal_id, "error": str(exc)})
+                await ch.edit(ErrorResponse(text="Approval failed. Try via admin CLI."))
+
+        elif data.startswith("intent_deny "):
+            proposal_id = data[len("intent_deny "):].strip()
+            try:
+                guardian = self._guardian
+                if guardian and hasattr(guardian, "_pending_proposals"):
+                    import time as _time
+                    p = guardian._pending_proposals.get(proposal_id)
+                    if p and p.get("status") == "pending":
+                        p["status"] = "denied"
+                        p["updated_at"] = _time.time()
+                        p["decision_reason"] = "Denied via Telegram"
+                        await ch.edit(RichResponse(text=f"🚫 Denied: `{proposal_id}`"))
+                    else:
+                        await ch.edit(ErrorResponse(text="Proposal not found or already processed."))
+                else:
+                    await ch.edit(ErrorResponse(text="Guardian not available."))
+            except Exception as exc:
+                log.warning("telegram.intent_deny_failed", extra={"id": proposal_id, "error": str(exc)})
+                await ch.edit(ErrorResponse(text="Denial failed. Try via admin CLI."))
 
     # ------------------------------------------------------------------
     # Access control

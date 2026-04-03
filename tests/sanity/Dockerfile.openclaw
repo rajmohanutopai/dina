@@ -4,10 +4,14 @@
 # Build:
 #   docker build -f tests/sanity/Dockerfile.openclaw -t dina-sanity-openclaw .
 #
-# The container expects these env vars at runtime:
+# Runtime env vars:
 #   GOOGLE_API_KEY       — Gemini API key
 #   DINA_CORE_URL        — Core URL (e.g. http://host.docker.internal:18100)
 #   DINA_PAIRING_CODE    — from dina-admin device pair (injected by test)
+#   GOG_KEYRING_PASSWORD — gog keyring password (for Gmail OAuth token decryption)
+#
+# Runtime volume mount (for Gmail):
+#   -v tests/sanity/gog-auth:/root/.config/gogcli
 
 FROM node:22-slim
 
@@ -24,16 +28,26 @@ RUN curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard \
 COPY cli/ /tmp/dina-cli/
 RUN pip install --break-system-packages /tmp/dina-cli/ && rm -rf /tmp/dina-cli/
 
+# Install gog (Google CLI for Gmail/Calendar integration)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://github.com/steipete/gogcli/releases/latest/download/gogcli_0.12.0_linux_${ARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin gog && chmod +x /usr/local/bin/gog
+
 # Create directories
-RUN mkdir -p /root/.openclaw/skills /root/.openclaw/workspace /root/.openclaw/logs
+RUN mkdir -p /root/.openclaw/skills /root/.openclaw/workspace /root/.openclaw/logs /root/.config/gog
 
 # Copy Dina skill into OpenClaw's bundled skills path
 RUN mkdir -p /usr/local/lib/node_modules/openclaw/skills/dina
 COPY docs/dina-openclaw-skill.md /usr/local/lib/node_modules/openclaw/skills/dina/SKILL.md
 
+# gog auth is mounted at runtime via -v, NOT baked into image
+RUN mkdir -p /root/.config/gogcli
+
 # Copy setup script
 COPY tests/sanity/openclaw-setup.sh /usr/local/bin/openclaw-setup.sh
 RUN chmod +x /usr/local/bin/openclaw-setup.sh
+
+# GOG_KEYRING_PASSWORD must be passed at runtime via -e, NOT baked here
 
 # Gateway port
 EXPOSE 3000

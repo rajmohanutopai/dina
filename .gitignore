@@ -273,3 +273,5 @@ tests/sanity/*.session-journal
 tests/sanity/regression-alonso/
 tests/sanity/regression-sancho/
 tests/sanity/config-*.json
+tests/sanity/gmail_credentials.json
+tests/sanity/gog-auth/

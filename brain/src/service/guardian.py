@@ -1228,6 +1228,10 @@ class GuardianLoop:
         in their response to the client.
         """
         proposal_id = str(uuid4())
+        # Extract context from payload (structured metadata for approval UX)
+        payload = intent.get("payload") or {}
+        context = payload.get("context") if isinstance(payload, dict) else None
+
         proposal = {
             "action": intent.get("action", ""),
             "target": intent.get("target", ""),
@@ -1239,11 +1243,67 @@ class GuardianLoop:
             "kind": "intent",
             "status": "pending",
         }
+        if context and isinstance(context, dict):
+            proposal["context"] = context
         self._pending_proposals[proposal_id] = proposal
         await self._evict_proposals()
         await self._persist_proposals()
 
+        # Notify via Telegram so the human can approve from their phone.
+        await self._notify_intent_approval(proposal_id, proposal)
+
         return proposal_id
+
+    async def _notify_intent_approval(
+        self, proposal_id: str, proposal: dict
+    ) -> None:
+        """Send intent approval notification to Telegram with context details."""
+        if not self._telegram or not hasattr(self._telegram, "_bot"):
+            return
+        try:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+            action = proposal.get("action", "unknown")
+            target = proposal.get("target", "")
+            risk = proposal.get("risk", "MODERATE")
+            context = proposal.get("context") or {}
+
+            # Build message with context details
+            lines = [f"🔔 *Agent action requires approval*\n"]
+            lines.append(f"Action: `{action}`")
+            if target:
+                lines.append(f"Target: _{target}_")
+            lines.append(f"Risk: *{risk}*")
+
+            # Render context fields (to, subject, attachments, etc.)
+            if context:
+                lines.append("")
+                for key, value in context.items():
+                    if isinstance(value, list):
+                        value = ", ".join(str(v) for v in value)
+                    lines.append(f"{key}: {value}")
+
+            msg = "\n".join(lines)
+
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Approve",
+                        callback_data=f"intent_approve {proposal_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "🚫 Deny",
+                        callback_data=f"intent_deny {proposal_id}",
+                    ),
+                ],
+            ])
+
+            for chat_id in self._telegram._paired_users:
+                await self._telegram._bot.send_message(
+                    chat_id, msg, parse_mode="Markdown", reply_markup=keyboard,
+                )
+        except Exception as exc:
+            log.warning("guardian.intent_notify_failed", extra={"error": str(exc)})
 
     # ------------------------------------------------------------------
     # Daily Briefing (SS2.5)

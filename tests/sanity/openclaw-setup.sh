@@ -31,6 +31,18 @@ cat > "$CONFIG_FILE" <<CONF
     },
   },
 
+  mcp: {
+    servers: {
+      dina: {
+        command: "dina",
+        args: ["mcp-server"],
+        env: {
+          DINA_CONFIG_DIR: "/root/.dina/cli",
+        },
+      },
+    },
+  },
+
   logging: {
     level: "info",
   },
@@ -56,6 +68,14 @@ if [ -n "${DINA_PAIRING_CODE:-}" ] && [ -n "${DINA_CORE_URL:-}" ]; then
     dina status || true
 else
     echo "==> Skipping dina pairing (no DINA_PAIRING_CODE)"
+fi
+
+echo "==> Checking gog (Gmail CLI)"
+export GOG_KEYRING_PASSWORD="${GOG_KEYRING_PASSWORD:-rajmohan}"
+if gog gmail search "is:unread" --limit 1 --account dinaworker85@gmail.com >/dev/null 2>&1; then
+    echo "  gog: Gmail authenticated (dinaworker85@gmail.com)"
+else
+    echo "  gog: auth check failed (token may need refresh)"
 fi
 
 echo "==> Starting OpenClaw gateway (port 3000, token: ${OC_TOKEN:0:8}...)"

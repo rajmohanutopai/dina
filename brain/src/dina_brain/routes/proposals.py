@@ -86,3 +86,43 @@ async def proposal_list() -> dict:
     ]
 
     return {"proposals": pending_intents}
+
+
+@router.post("/v1/proposals/{proposal_id}/approve")
+async def proposal_approve(proposal_id: str) -> dict:
+    """Approve a pending intent proposal."""
+    if _guardian is None:
+        raise HTTPException(status_code=503, detail="Guardian not initialised")
+
+    proposals = getattr(_guardian, "_pending_proposals", {})
+    stored = proposals.get(proposal_id)
+    if stored is None or stored.get("kind") != "intent":
+        raise HTTPException(status_code=404, detail="Unknown proposal_id")
+    if stored.get("status") != "pending":
+        raise HTTPException(status_code=409, detail=f"Proposal already {stored.get('status')}")
+
+    import time
+    stored["status"] = "approved"
+    stored["updated_at"] = time.time()
+    stored["decision_reason"] = "Approved via API"
+    return {"id": proposal_id, "status": "approved"}
+
+
+@router.post("/v1/proposals/{proposal_id}/deny")
+async def proposal_deny(proposal_id: str) -> dict:
+    """Deny a pending intent proposal."""
+    if _guardian is None:
+        raise HTTPException(status_code=503, detail="Guardian not initialised")
+
+    proposals = getattr(_guardian, "_pending_proposals", {})
+    stored = proposals.get(proposal_id)
+    if stored is None or stored.get("kind") != "intent":
+        raise HTTPException(status_code=404, detail="Unknown proposal_id")
+    if stored.get("status") != "pending":
+        raise HTTPException(status_code=409, detail=f"Proposal already {stored.get('status')}")
+
+    import time
+    stored["status"] = "denied"
+    stored["updated_at"] = time.time()
+    stored["decision_reason"] = "Denied via API"
+    return {"id": proposal_id, "status": "denied"}

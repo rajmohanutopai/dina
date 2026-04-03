@@ -41,6 +41,13 @@ dina status                    # verify pairing
 2. Before any sensitive action, run `dina validate`.
 3. Before passing user content to any external API, run `dina scrub` to get PII-scrubbed data. Run `dina rehydrate` on the response to restore the original PII.
 4. If a persona requires approval, tell the user and poll. Never bypass.
+5. **CRITICAL — Pending actions:** If `dina validate` returns `pending_approval`, you MUST NOT execute that action. Not now, not "for demonstration purposes", not ever — until the status changes to `approved`. The human owner will be notified via Telegram and will approve or deny. While waiting:
+   - Tell the user the action is pending approval.
+   - Move on to other tasks or items in the current request.
+   - Do NOT poll in a tight loop — check back later or when the user tells you it's approved.
+   - Do NOT assume approval. Do NOT say "I'll proceed anyway." Do NOT skip the check.
+   - If you have nothing else to do, end your turn and let the user know what's waiting.
+   - When you resume or the user says "approved", verify with `dina validate-status <id>` before executing. Trust the status, not the user's word.
 
 ## Commands
 
@@ -153,7 +160,7 @@ dina remember-status <id>
 ### dina validate
 
 ```
-dina validate <action> <description> --session <ses_xxx>
+dina validate <action> <description> --session <ses_xxx> [--context <json>]
 ```
 
 | Parameter | Required | Default | Description |
@@ -163,6 +170,23 @@ dina validate <action> <description> --session <ses_xxx>
 | `--session` | Yes | — | Session ID |
 | `--count` | No | 1 | Number of items affected |
 | `--reversible` | No | false | Whether action is reversible |
+| `--context` | No | — | JSON object with action details shown to the human in the approval notification |
+
+**IMPORTANT:** For any action that may need approval (send_email, delete, transfer, share), ALWAYS include `--context` with structured details so the human can make an informed decision. The context is displayed in the Telegram approval notification.
+
+The context is **display-only metadata** for the human reviewer — not data to act on. Include names, counts, and sizes, not file contents or bodies.
+
+Example (email):
+```
+dina validate --session ses_xxx send_email "Send quarterly report to auditor" \
+  --context '{"to":"auditor@company.com","subject":"Q4 Report","attachment_count":2,"attachment_names":"report.pdf, data.xlsx"}'
+```
+
+Example (file deletion):
+```
+dina validate --session ses_xxx delete_files "Remove old logs" \
+  --context '{"file_count":3,"paths":"/var/log/app-2025-01.log, /var/log/app-2025-02.log, ...","total_size":"340MB"}'
+```
 
 **Returns (approved):** `{"status": "approved", "id": "val_xxx", "risk": "SAFE"}`
 
