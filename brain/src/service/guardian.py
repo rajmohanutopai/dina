@@ -1268,14 +1268,14 @@ class GuardianLoop:
             risk = proposal.get("risk", "MODERATE")
             context = proposal.get("context") or {}
 
-            # Build message with context details
-            lines = [f"🔔 *Agent action requires approval*\n"]
-            lines.append(f"Action: `{action}`")
+            # Build message — plain text to avoid Markdown parse errors
+            # (target/context may contain special characters)
+            lines = [f"🔔 Agent action requires approval\n"]
+            lines.append(f"Action: {action}")
             if target:
-                lines.append(f"Target: _{target}_")
-            lines.append(f"Risk: *{risk}*")
+                lines.append(f"Target: {target}")
+            lines.append(f"Risk: {risk}")
 
-            # Render context fields (to, subject, attachments, etc.)
             if context:
                 lines.append("")
                 for key, value in context.items():
@@ -1300,7 +1300,7 @@ class GuardianLoop:
 
             for chat_id in self._telegram._paired_users:
                 await self._telegram._bot.send_message(
-                    chat_id, msg, parse_mode="Markdown", reply_markup=keyboard,
+                    chat_id, msg, reply_markup=keyboard,
                 )
         except Exception as exc:
             log.warning("guardian.intent_notify_failed", extra={"error": str(exc)})

@@ -29,6 +29,13 @@ cat > "$CONFIG_FILE" <<CONF
       mode: "token",
       token: "${OC_TOKEN}",
     },
+    http: {
+      endpoints: {
+        chatCompletions: {
+          enabled: true,
+        },
+      },
+    },
   },
 
   mcp: {
@@ -49,10 +56,11 @@ cat > "$CONFIG_FILE" <<CONF
 }
 CONF
 
-# Set Gemini API key via openclaw config (schema-validated)
+# Set Gemini API key via openclaw config
 openclaw config set env.GOOGLE_API_KEY "${GOOGLE_API_KEY:-}" 2>/dev/null || true
 
 chmod 700 "$CONFIG_DIR"
+
 chmod 600 "$CONFIG_FILE"
 
 echo "==> Configuring dina-agent (headless)"

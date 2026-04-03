@@ -752,17 +752,35 @@ class TelegramService:
         if data.startswith("intent_approve "):
             proposal_id = data[len("intent_approve "):].strip()
             try:
-                # Call Brain's own proposals API (same process)
-                from .guardian import GuardianLoop
                 guardian = self._guardian
                 if guardian and hasattr(guardian, "_pending_proposals"):
                     import time as _time
+                    import json as _json
                     p = guardian._pending_proposals.get(proposal_id)
                     if p and p.get("status") == "pending":
                         p["status"] = "approved"
                         p["updated_at"] = _time.time()
                         p["decision_reason"] = "Approved via Telegram"
-                        await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
+
+                        # Update any linked task record to "delegated"
+                        context = p.get("context") or {}
+                        task_id = context.get("task_id", "")
+                        if task_id and self._core:
+                            try:
+                                raw = await self._core.get_kv(f"task:{task_id}")
+                                if raw:
+                                    task = _json.loads(raw)
+                                    task["status"] = "delegated"
+                                    task["approved_at"] = _time.time()
+                                    await self._core.set_kv(
+                                        f"task:{task_id}", _json.dumps(task),
+                                    )
+                            except Exception:
+                                pass  # best-effort
+
+                        await ch.edit(RichResponse(
+                            text=f"✅ Approved: `{proposal_id}`"
+                        ))
                     else:
                         await ch.edit(ErrorResponse(text="Proposal not found or already processed."))
                 else:
@@ -1142,6 +1160,128 @@ class TelegramService:
             log.warning("trust_publish_failed", extra={"cmd": cmd, "error": str(exc)})
         finally:
             self._pending_trust = None
+
+    # ── Task Delegation (/task) ──────────────────────────────────────
+
+    async def handle_task(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/task <description> — delegate an autonomous task to OpenClaw.
+
+        Flow:
+          1. Validate intent (research → MODERATE → needs approval)
+          2. After approval, store task reference and inform OpenClaw
+          3. OpenClaw runs autonomously (calls back via MCP for safety/vault)
+          4. OpenClaw notifies Dina when done via dina_task_update MCP tool
+        """
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        text = " ".join(context.args) if context.args else ""
+        if not text:
+            await ch.send(BotResponse(
+                text="Usage: /task Describe what you want done\n"
+                "Example: /task Research the best standing desks under $300"
+            ))
+            return
+
+        import json as _json
+        from uuid import uuid4
+
+        task_id = f"task-{uuid4().hex[:8]}"
+
+        # Step 1: Validate the intent
+        result = await self._guardian.process_event({
+            "type": "agent_intent",
+            "action": "research",
+            "target": text[:200],
+            "agent_did": "openclaw",
+            "trust_level": "verified",
+            "payload": {
+                "action": "research",
+                "target": text[:200],
+                "context": {"task_id": task_id, "source": "telegram"},
+            },
+        })
+
+        action = result.get("action", "")
+        risk = result.get("risk", "SAFE")
+        proposal_id = result.get("proposal_id", "")
+
+        if action == "deny":
+            await ch.send(ErrorResponse(text=f"Task denied: {result.get('reason', 'blocked')}"))
+            return
+
+        # Store task reference in KV
+        task_record = {
+            "task_id": task_id,
+            "description": text,
+            "status": "pending_approval" if result.get("requires_approval") else "delegated",
+            "proposal_id": proposal_id,
+            "risk": risk,
+            "created_at": time.time(),
+        }
+        try:
+            await self._core.set_kv(f"task:{task_id}", _json.dumps(task_record))
+        except Exception:
+            pass  # best-effort
+
+        if result.get("requires_approval"):
+            await ch.send(RichResponse(
+                text=f"📋 Task queued: _{_escape_markdown(text[:100])}_\n\n"
+                f"Risk: *{risk}* — needs your approval.\n"
+                f"Task ID: `{task_id}`"
+            ))
+        else:
+            # Auto-approved — mark as delegated
+            task_record["status"] = "delegated"
+            try:
+                await self._core.set_kv(f"task:{task_id}", _json.dumps(task_record))
+            except Exception:
+                pass
+            await ch.send(RichResponse(
+                text=f"📋 Task delegated to OpenClaw: _{_escape_markdown(text[:100])}_\n\n"
+                f"Task ID: `{task_id}`\n"
+                f"OpenClaw will handle this autonomously. "
+                f"I'll notify you when it's done."
+            ))
+
+    async def handle_task_status(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/taskstatus <task_id> — check the status of a delegated task."""
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        task_id = " ".join(context.args).strip() if context.args else ""
+        if not task_id:
+            await ch.send(BotResponse(text="Usage: /taskstatus <task_id>"))
+            return
+
+        import json as _json
+        try:
+            # Check task record
+            raw = await self._core.get_kv(f"task:{task_id}")
+            if not raw:
+                await ch.send(ErrorResponse(text=f"Task `{task_id}` not found."))
+                return
+            task = _json.loads(raw)
+
+            # Check if OpenClaw has reported completion
+            status_raw = await self._core.get_kv(f"task:{task_id}:status")
+            if status_raw:
+                status_update = _json.loads(status_raw)
+                task["status"] = status_update.get("status", task["status"])
+                task["result"] = status_update.get("result", "")
+
+            lines = [f"📋 Task: `{task_id}`"]
+            lines.append(f"Description: _{_escape_markdown(task.get('description', '')[:100])}_")
+            lines.append(f"Status: *{task.get('status', 'unknown')}*")
+            if task.get("result"):
+                lines.append(f"Result: {task['result'][:200]}")
+            await ch.send(RichResponse(text="\n".join(lines)))
+        except Exception as exc:
+            await ch.send(ErrorResponse(text=f"Error: {exc}"))
 
     # ── Contact Management (/contact) ──────────────────────────────────
 

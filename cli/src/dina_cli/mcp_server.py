@@ -152,6 +152,43 @@ def dina_remember(text: str, session: str, category: str = "") -> dict:
 
 
 @mcp.tool()
+def dina_task_update(task_id: str, status: str, result: str, session: str) -> dict:
+    """Report task progress or completion back to Dina.
+
+    IMPORTANT: Call this when a delegated task is complete, failed, or has
+    a progress update. Dina stores the result and notifies the user.
+
+    Args:
+        task_id: The task ID from the original delegation
+        status: 'completed', 'failed', 'in_progress'
+        result: Human-readable summary of what was done or what failed
+        session: Session ID
+    """
+    c = _get_client()
+    import json as _json
+    update = {"task_id": task_id, "status": status, "result": result}
+    c.kv_set(f"task:{task_id}:status", _json.dumps(update), session=session)
+
+    # Store as memory if completed
+    if status == "completed":
+        c.remember(f"Task {task_id} completed: {result}", session=session)
+
+    # Trigger a notification to the user via Core's notify endpoint
+    try:
+        emoji = {"completed": "✅", "failed": "❌", "in_progress": "⏳"}.get(status, "📋")
+        c._request(c._core, "POST", "/v1/notify", json={
+            "type": "task_update",
+            "title": f"{emoji} Task {status}",
+            "body": f"Task `{task_id}`: {result[:200]}",
+            "priority": "solicited",
+        })
+    except Exception:
+        pass  # best-effort notification
+
+    return {"stored": True, "task_id": task_id, "status": status}
+
+
+@mcp.tool()
 def dina_scrub(text: str) -> dict:
     """Remove PII from text. Returns scrubbed text + pii_id for rehydration.
     Always scrub before passing user content to external APIs."""
