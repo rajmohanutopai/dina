@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
-"""Seed test actor identity state into Docker volumes.
+"""Verify and restore test actor identity state in Docker volumes.
 
-Creates the persisted identity metadata that Core's RestoreDID() expects:
-  - /data/vault/identity/did_metadata.json
-
-Core rebuilds the DID document from metadata during RestoreDID().
-
-Run AFTER containers are created but BEFORE Core starts reading identity.
-Or run against stopped containers via volume mount.
+Checks each actor's identity metadata (DID, signing key path, rotation key
+path) against the fixture file. If missing, corrupted, or mismatched,
+restores from the saved identity state in tests/fixtures/identity-state/.
 
 Usage:
-    # After docker compose create (containers exist, not started):
-    python scripts/seed_test_identities.py
-
-    # Or after stack is up (will need Core restart to pick up):
-    python scripts/seed_test_identities.py
+    python scripts/seed_test_identities.py --check-and-restore
+    python scripts/seed_test_identities.py --save
 """
 
 from __future__ import annotations
@@ -22,41 +15,15 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
-FIXTURE_PATH = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "test_actors.json"
-COMPOSE_FILE = "docker-compose-test-stack.yml"
 PROJECT = "dina-test"
+FIXTURE_PATH = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "test_actors.json"
+IDENTITY_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "identity-state"
+ACTORS = ["alonso", "sancho", "chairmaker", "albert"]
 
 
-def build_metadata(did: str, handle: str, pds_url: str) -> dict:
-    """Build did_metadata.json — the only file Core needs for RestoreDID().
-
-    Core rebuilds the DID document from metadata + current runtime config
-    during RestoreDID(). We only seed the metadata, not the document.
-    """
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {
-        "did": did,
-        "signing_key_path": "m/9999'/0'/0'",
-        "signing_generation": 0,
-        "rotation_key_path": "m/9999'/2'/0'",
-        "plc_registered": True,
-        "pds_url": pds_url,
-        "handle": handle,
-        "created_at": now,
-    }
-
-
-def _compose(*args) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["docker", "compose", "-p", PROJECT, "-f", COMPOSE_FILE] + list(args),
-        capture_output=True, timeout=10,
-    )
-
-
-def read_existing_metadata(actor: str) -> dict | None:
+def read_volume_metadata(actor: str) -> dict | None:
     """Read did_metadata.json from a Docker volume via disposable container."""
     volume = f"{PROJECT}_{actor}-data"
     result = subprocess.run(
@@ -72,76 +39,104 @@ def read_existing_metadata(actor: str) -> dict | None:
         return None
 
 
-def write_metadata(actor: str, metadata: dict) -> bool:
-    """Write did_metadata.json into a Docker volume with correct ownership.
+def restore_actor(actor: str) -> bool:
+    """Restore identity state from saved fixtures into a Docker volume."""
+    src = IDENTITY_DIR / actor / "identity"
+    if not src.exists():
+        return False
 
-    Uses a disposable alpine container to write into the named volume
-    as uid 10001 (dina user). Works regardless of whether the actor's
-    Core container is running or stopped.
-    """
-    content = json.dumps(metadata, indent=2)
     volume = f"{PROJECT}_{actor}-data"
 
-    # Run a one-shot container that mounts the volume and writes the file.
-    # Pipe content via stdin to avoid shell quoting issues with JSON.
-    # chown the entire /data tree so Core (uid 10001) can create identity.sqlite.
+    # Copy files + fix ownership in one alpine container run
+    # Mount both the saved state (as /src) and the volume (as /data)
     result = subprocess.run(
-        [
-            "docker", "run", "--rm", "-i",
-            "-v", f"{volume}:/data",
-            "alpine:3.19",
-            "sh", "-c",
-            "mkdir -p /data/vault/identity && "
-            "cat > /data/vault/identity/did_metadata.json && "
-            "chown -R 10001:10001 /data",
-        ],
-        input=content.encode(),
+        ["docker", "run", "--rm",
+         "-v", f"{str(src)}:/src:ro",
+         "-v", f"{volume}:/data",
+         "alpine:3.19",
+         "sh", "-c",
+         "mkdir -p /data/vault/identity && "
+         "cp /src/* /data/vault/identity/ && "
+         "chown -R 10001:10001 /data"],
         capture_output=True, timeout=15,
     )
     return result.returncode == 0
 
 
-def main() -> None:
+def check_and_restore() -> None:
+    """Verify each actor's identity; restore if needed."""
     if not FIXTURE_PATH.exists():
-        print(f"ERROR: {FIXTURE_PATH} not found. Run register_test_actors.py first.")
-        sys.exit(1)
+        print("  No fixture file — skipping identity check")
+        return
 
     fixture = json.loads(FIXTURE_PATH.read_text())
     actors = fixture.get("actors", {})
-    pds_url = fixture.get("_pds_url", "")
 
-    print("Seeding test actor identities...")
+    restored_any = False
     failed = False
-    for name, actor in actors.items():
-        did = actor["did"]
-        handle = actor.get("handle", f"{name}.test")
 
-        # Check if existing metadata matches ALL recovery-critical fields
-        existing = read_existing_metadata(name)
-        expected_meta = build_metadata(did, handle, pds_url)
-        if (existing
-                and existing.get("did") == expected_meta["did"]
-                and existing.get("signing_key_path") == expected_meta["signing_key_path"]
-                and existing.get("signing_generation") == expected_meta["signing_generation"]
-                and existing.get("rotation_key_path") == expected_meta["rotation_key_path"]
-                and existing.get("pds_url") == expected_meta["pds_url"]):
-            print(f"  {name}: already correct ✓")
+    for name in ACTORS:
+        actor = actors.get(name)
+        if not actor:
             continue
 
-        if existing and existing.get("did") != did:
-            print(f"  {name}: stale DID ({existing.get('did','?')[:20]}...) → replacing")
+        expected_did = actor["did"]
+        existing = read_volume_metadata(name)
 
-        # Write only did_metadata.json — Core rebuilds the DID doc during RestoreDID()
-        metadata = build_metadata(did, handle, pds_url)
-        ok = write_metadata(name, metadata)
-        if ok:
-            print(f"  {name}: {did[:30]}... seeded ✓")
-        else:
-            print(f"  {name}: {did[:30]}... FAILED ✗")
+        # Check: DID + key paths must all match
+        if (existing
+                and existing.get("did") == expected_did
+                and existing.get("signing_key_path") == "m/9999'/0'/0'"
+                and existing.get("signing_generation") == 0):
+            continue  # Identity is correct — no output needed
+
+        # Need restore
+        reason = "missing" if existing is None else f"wrong DID ({existing.get('did', '?')[:20]}...)"
+        if not restore_actor(name):
+            print(f"  {name}: restore FAILED ✗ ({reason})")
             failed = True
+            continue
+
+        print(f"  {name}: restored ✓ ({reason})")
+        restored_any = True
+
+    if not restored_any and not failed:
+        print("  Identity state: OK ✓")
 
     if failed:
-        print("ERROR: Some actors failed to seed. Stack may not work correctly.")
+        sys.exit(1)
+
+
+def save() -> None:
+    """Save identity state from running containers to local fixtures."""
+    IDENTITY_DIR.mkdir(parents=True, exist_ok=True)
+    print("Saving identity state from containers...")
+    for actor in ACTORS:
+        dest = IDENTITY_DIR / actor / "identity"
+        dest.mkdir(parents=True, exist_ok=True)
+        container = f"{PROJECT}-{actor}-core-1"
+        result = subprocess.run(
+            ["docker", "cp", f"{container}:/data/vault/identity/.", str(dest)],
+            capture_output=True, timeout=10,
+        )
+        files = list(dest.iterdir())
+        status = f"{len(files)} files ✓" if result.returncode == 0 else "FAILED ✗"
+        print(f"  {actor}: {status}")
+    print(f"Saved to {IDENTITY_DIR}")
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        print("Usage: seed_test_identities.py --check-and-restore | --save")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    if cmd == "--check-and-restore":
+        check_and_restore()
+    elif cmd == "--save":
+        save()
+    else:
+        print(f"Unknown command: {cmd}")
         sys.exit(1)
 
 

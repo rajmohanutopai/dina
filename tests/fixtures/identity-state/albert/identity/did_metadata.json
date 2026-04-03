@@ -1,0 +1,10 @@
+{
+  "did": "did:plc:aboxjwmefrj2rqzf2n6j7hav",
+  "signing_key_path": "m/9999'/0'/0'",
+  "signing_generation": 0,
+  "rotation_key_path": "m/9999'/2'/0'",
+  "plc_registered": true,
+  "pds_url": "http://pds:3000",
+  "handle": "albert.test",
+  "created_at": "2026-04-03T06:30:08Z"
+}

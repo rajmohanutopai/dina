@@ -184,7 +184,7 @@ cmd_up() {
   do_compose down --remove-orphans >/dev/null 2>&1 || true
   echo "done"
 
-  # --- Build + start ---
+  # --- Build ---
   printf "  Building images... "
   if ! do_compose build >/dev/null 2>&1; then
     echo "FAILED"
@@ -192,6 +192,18 @@ cmd_up() {
   fi
   echo "done"
 
+  # --- Verify + restore identity state if needed ---
+  # Validates each actor's identity (DID, key paths) against fixture.
+  # Restores from saved state if missing, corrupted, or mismatched.
+  local ID_STATE="tests/fixtures/identity-state"
+  if [ -d "$ID_STATE" ]; then
+    python3 scripts/seed_test_identities.py --check-and-restore
+    if [ $? -ne 0 ]; then
+      echo "  WARNING: Identity restore had issues — Core may create new DIDs on first boot"
+    fi
+  fi
+
+  # --- Start ---
   printf "  Starting services... "
   if ! do_compose up -d >/dev/null 2>&1; then
     echo "FAILED — retrying with --force-recreate"
