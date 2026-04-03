@@ -710,8 +710,17 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     "--config", "config_file", default=None, type=click.Path(exists=True),
     help="Non-interactive: JSON config file with keys: core_url, device_name, config_location, pairing_code",
 )
+@click.option("--headless", is_flag=True, default=False, help="Non-interactive mode with CLI flags (no prompts)")
+@click.option("--core-url", default=None, help="[headless] Core URL (e.g. http://localhost:8100)")
+@click.option("--device-name", default=None, help="[headless] Device name")
+@click.option("--pairing-code", default=None, help="[headless] Pairing code from dina-admin device pair")
+@click.option("--config-dir", default=None, help="[headless] Config directory (default: .dina/cli in cwd)")
 @click.pass_context
-def configure(ctx: click.Context, role: str, config_file: str | None) -> None:
+def configure(
+    ctx: click.Context, role: str, config_file: str | None,
+    headless: bool, core_url: str | None, device_name: str | None,
+    pairing_code: str | None, config_dir: str | None,
+) -> None:
     """Set up connection to a Dina Home Node.
 
     \b
@@ -720,7 +729,12 @@ def configure(ctx: click.Context, role: str, config_file: str | None) -> None:
       dina configure --role agent
 
     \b
-    Non-interactive (for testing/automation):
+    Headless (no prompts — for automation/CI):
+      dina configure --headless --core-url http://localhost:8100 \\
+        --pairing-code 123456 --device-name sanity-agent --role agent
+
+    \b
+    Non-interactive (JSON config file):
       dina configure --config setup.json
 
     \b
@@ -733,6 +747,17 @@ def configure(ctx: click.Context, role: str, config_file: str | None) -> None:
         "generate_keypair": true           // true = always generate new keypair
       }
     """
+    # ── Headless mode: all params from CLI flags, zero prompts ──
+    if headless:
+        _configure_headless(
+            core_url=core_url or "http://localhost:8100",
+            device_name=device_name or _default_device_name(),
+            role=role,
+            pairing_code=pairing_code or "",
+            config_dir_path=config_dir,
+        )
+        return
+
     # Load non-interactive config if provided.
     cfg_input: dict = {}
     if config_file:
@@ -917,6 +942,60 @@ def _default_device_name() -> str:
     """Generate a default device name from hostname."""
     import platform
     return f"{platform.node()}-cli"
+
+
+def _configure_headless(
+    core_url: str, device_name: str, role: str,
+    pairing_code: str, config_dir_path: str | None,
+) -> None:
+    """Headless configure: all params from CLI flags, zero prompts."""
+    from .config import set_config_dir
+    from .signing import CLIIdentity
+
+    # Set config directory
+    if config_dir_path:
+        cfg_dir = Path(config_dir_path) / ".dina" / "cli"
+    else:
+        cfg_dir = Path.cwd() / ".dina" / "cli"
+    set_config_dir(cfg_dir)
+
+    click.echo(f"  Config dir: {cfg_dir}")
+    click.echo(f"  Core URL: {core_url}")
+    click.echo(f"  Device: {device_name}")
+    click.echo(f"  Role: {role}")
+
+    # Generate keypair (always fresh in headless mode)
+    identity = CLIIdentity()
+    if identity.exists:
+        _try_unpair(core_url, identity)
+    click.echo("  Generating Ed25519 keypair...")
+    identity.generate()
+    click.echo(f"  DID: {identity.did()}")
+
+    # Pair with Core
+    if pairing_code:
+        _pair_with_key(core_url, identity, device_name, role, pairing_code=pairing_code)
+    else:
+        click.echo("  No --pairing-code provided — skipping pairing.")
+
+    # Save config
+    values: dict[str, Any] = {
+        "core_url": core_url,
+        "device_name": device_name,
+        "role": role,
+    }
+    path = save_config(values)
+    click.echo(f"  Configuration saved to {path}")
+
+    # Quick health check
+    try:
+        resp = httpx.get(f"{core_url}/healthz", timeout=5.0)
+        if resp.status_code == 200:
+            click.echo(f"  Core: Connected")
+        else:
+            click.echo(f"  Core: {resp.status_code}", err=True)
+    except Exception as exc:
+        click.echo(f"  Core: unreachable ({exc})", err=True)
 
 
 def _try_unpair(core_url: str, identity: Any) -> None:

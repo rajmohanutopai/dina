@@ -1,0 +1,42 @@
+# OpenClaw + dina-agent container for sanity testing.
+# Runs OpenClaw gateway with Dina skill installed.
+#
+# Build:
+#   docker build -f tests/sanity/Dockerfile.openclaw -t dina-sanity-openclaw .
+#
+# The container expects these env vars at runtime:
+#   GOOGLE_API_KEY       — Gemini API key
+#   DINA_CORE_URL        — Core URL (e.g. http://host.docker.internal:18100)
+#   DINA_PAIRING_CODE    — from dina-admin device pair (injected by test)
+
+FROM node:22-slim
+
+# Python for dina-agent
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install OpenClaw (no onboarding)
+RUN curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard \
+    || npm install -g openclaw@latest
+
+# Install dina-agent from local source (includes --headless support)
+COPY cli/ /tmp/dina-cli/
+RUN pip install --break-system-packages /tmp/dina-cli/ && rm -rf /tmp/dina-cli/
+
+# Create directories
+RUN mkdir -p /root/.openclaw/skills /root/.openclaw/workspace /root/.openclaw/logs
+
+# Copy Dina skill into OpenClaw's bundled skills path
+RUN mkdir -p /usr/local/lib/node_modules/openclaw/skills/dina
+COPY docs/dina-openclaw-skill.md /usr/local/lib/node_modules/openclaw/skills/dina/SKILL.md
+
+# Copy setup script
+COPY tests/sanity/openclaw-setup.sh /usr/local/bin/openclaw-setup.sh
+RUN chmod +x /usr/local/bin/openclaw-setup.sh
+
+# Gateway port
+EXPOSE 3000
+
+# Setup + start gateway
+CMD ["/usr/local/bin/openclaw-setup.sh"]

@@ -14,12 +14,16 @@ _LOCAL_CONFIG_DIR = Path.cwd() / ".dina" / "cli"
 
 
 def _resolve_config_dir() -> Path:
-    """Find config directory: local (.dina/cli/) first, then global (~/.dina/cli/).
+    """Find config directory: env override, then local, then global.
 
-    For multi-instance: each Dina project has .dina/cli/ in its directory.
-    The user runs commands from the project folder, and the local config is used.
-    Single-instance: ~/.dina/cli/ is the global default.
+    Priority:
+      1. DINA_CONFIG_DIR env var (for automation / multi-instance testing)
+      2. Local .dina/cli/ in cwd (multi-instance: run from project folder)
+      3. Global ~/.dina/cli/ (single-instance default)
     """
+    env_dir = os.environ.get("DINA_CONFIG_DIR")
+    if env_dir:
+        return Path(env_dir)
     if (_LOCAL_CONFIG_DIR / "config.json").exists():
         return _LOCAL_CONFIG_DIR
     return _GLOBAL_CONFIG_DIR

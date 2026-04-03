@@ -26,9 +26,9 @@ Dina:
 Emma loves dinosaurs
 ```
 
-## She Creates Reminders
+## She Creates Life Reminders
 
-Dina sets reminders for you automatically based on your messages - these reminders are enriched by what Dina knows about the people and situation
+Dina remembers your life and help sets reminders for the smooth functioning. Dina does not do Calendar (that is task agent like openclaws job) - it is more about telling you based on your memories, or when other Dina connects to you etc. These reminders are enriched again based on your memories. The memory is stored securely in vault, and those are used to create reminders.
 
 ```
 You:
