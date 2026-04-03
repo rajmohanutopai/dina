@@ -390,16 +390,17 @@ func TestConfig_14_4_DefaultValues(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// §14.1 DINA_OWN_DID Env Var Loading
+// §14.1 DINA_OWN_DID Env Var Loading (deprecated — identity from persisted metadata)
 // --------------------------------------------------------------------------
 
 // TST-CORE-1035 TST-CORE-1056
 // TRACE: {"suite": "CORE", "case": "0246", "section": "14", "sectionName": "Configuration", "subsection": "01", "scenario": "04", "title": "OwnDIDLoadedFromEnvVar"}
 func TestConfig_14_1_4_OwnDIDLoadedFromEnvVar(t *testing.T) {
 	// Requirement (§14.1):
-	//   The DINA_OWN_DID environment variable must be loaded into
-	//   Config.OwnDID. This DID identifies the node's own identity
-	//   for outbound D2D messages and DID resolution.
+	//   The DINA_OWN_DID environment variable is still loaded into
+	//   Config.OwnDID for backward compatibility, but identity now
+	//   comes from persisted metadata (RestoreDID). The env var is
+	//   no longer used to drive runtime identity in main.go.
 	//
 	// Anti-tautological design:
 	//   1. When set, OwnDID contains the exact env var value

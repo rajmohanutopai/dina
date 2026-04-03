@@ -179,37 +179,24 @@ USAGE
 # ---------------------------------------------------------------------------
 
 cmd_up() {
-  # --- Tear down ---
-  # Stop containers but PRESERVE ALL volumes (identity + PDS/PLC data).
-  # Vault content is cleared via API after startup (setup_personas in conftest).
+  # --- Tear down (preserve volumes — identity + PDS/PLC persist) ---
   printf "  Tearing down existing stack... "
   do_compose down --remove-orphans >/dev/null 2>&1 || true
   echo "done"
 
-  # --- Build ---
+  # --- Build + start ---
   printf "  Building images... "
-  BUILD_LOG=$(mktemp)
-  if ! do_compose build >"$BUILD_LOG" 2>&1; then
+  if ! do_compose build >/dev/null 2>&1; then
     echo "FAILED"
-    echo "  Build errors:"
-    grep -iE "error|FAIL" "$BUILD_LOG" | tail -20 | sed 's/^/    /'
-    rm -f "$BUILD_LOG"
     exit 1
   fi
-  IMAGES_BUILT=$(grep -ciE " Built$" "$BUILD_LOG" || true)
-  rm -f "$BUILD_LOG"
-  echo "done ($IMAGES_BUILT images)"
+  echo "done"
 
-  # --- Start ---
   printf "  Starting services... "
-  START_LOG=$(mktemp)
-  if ! do_compose up -d >"$START_LOG" 2>&1; then
-    echo "FAILED"
-    tail -10 "$START_LOG" | sed 's/^/    /'
-    rm -f "$START_LOG"
-    exit 1
+  if ! do_compose up -d >/dev/null 2>&1; then
+    echo "FAILED — retrying with --force-recreate"
+    do_compose up -d --force-recreate >/dev/null 2>&1 || true
   fi
-  rm -f "$START_LOG"
   echo "done"
 
   # --- Wait for healthy (in-place progress) ---
@@ -237,72 +224,11 @@ cmd_up() {
     exit 1
   fi
 
-  # Seed the local PLC with real DIDs from the fixture file.
-  # Each Core uses DINA_OWN_DID (a real did:plc), but the local PLC
-  # is ephemeral. We register minimal DID documents so the PLC resolver
-  # can find endpoints and keys for D2D routing.
-  seed_plc
-
   extract_keys
   write_manifest
   echo "=== Test stack ready ==="
 }
 
-seed_plc() {
-  local FIXTURE="tests/fixtures/test_actors.json"
-  if [ ! -f "$FIXTURE" ]; then
-    echo "  WARNING: $FIXTURE not found — skipping PLC seed"
-    return
-  fi
-
-  printf "  Seeding PLC with test actor DIDs... "
-  python3 - "$FIXTURE" <<'PYEOF'
-import json, sys, time
-import httpx
-
-fixture = json.load(open(sys.argv[1]))
-plc_url = "http://localhost:2582"
-
-# Wait for PLC to be ready
-for _ in range(10):
-    try:
-        r = httpx.get(f"{plc_url}/healthz", timeout=3)
-        if r.status_code == 200:
-            break
-    except Exception:
-        pass
-    time.sleep(1)
-
-# Wait for Cores to register their DIDs + update PLC
-# (UpdatePLCDocument runs async in goroutine at startup)
-time.sleep(5)
-
-# Check which DIDs are already on PLC (from UpdatePLCDocument)
-registered = 0
-for name, actor in fixture.get("actors", {}).items():
-    did = actor["did"]
-    r = httpx.get(f"{plc_url}/{did}", timeout=5)
-    if r.status_code == 200:
-        registered += 1
-
-if registered == len(fixture.get("actors", {})):
-    print(f"done ({registered} DIDs already registered)")
-    sys.exit(0)
-
-# If not all registered, wait longer for Core's async PLC update
-time.sleep(10)
-registered = 0
-for name, actor in fixture.get("actors", {}).items():
-    did = actor["did"]
-    r = httpx.get(f"{plc_url}/{did}", timeout=5)
-    if r.status_code == 200:
-        registered += 1
-    else:
-        print(f"\n    WARNING: {name} ({did}) not on PLC")
-
-print(f"done ({registered}/{len(fixture['actors'])} DIDs)")
-PYEOF
-}
 
 cmd_down() {
   printf "  Tearing down test stack (preserving volumes)... "

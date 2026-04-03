@@ -31,10 +31,40 @@ logger = logging.getLogger("plc")
 
 app = FastAPI(title="Dina Fake PLC Directory", version="0.1.0")
 
+
+@app.on_event("startup")
+async def _startup() -> None:
+    _load_registry()
+
 # ---------------------------------------------------------------------------
-# In-memory storage: did -> {operations: [...], timestamps: [...]}
+# Persistent storage: did -> {operations: [...], timestamps: [...]}
+# Persisted to /data/plc_registry.json so DID registrations survive restarts.
 # ---------------------------------------------------------------------------
+_STORAGE_PATH = "/data/plc_registry.json"
 _registry: dict[str, dict[str, Any]] = {}
+
+
+def _load_registry() -> None:
+    """Load registry from disk if it exists."""
+    import os
+    if os.path.exists(_STORAGE_PATH):
+        try:
+            with open(_STORAGE_PATH) as f:
+                _registry.update(json.load(f))
+            logger.info("Loaded %d DIDs from %s", len(_registry), _STORAGE_PATH)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load PLC registry: %s", e)
+
+
+def _save_registry() -> None:
+    """Persist registry to disk."""
+    import os
+    os.makedirs(os.path.dirname(_STORAGE_PATH) or ".", exist_ok=True)
+    try:
+        with open(_STORAGE_PATH, "w") as f:
+            json.dump(_registry, f)
+    except OSError as e:
+        logger.warning("Failed to save PLC registry: %s", e)
 
 DID_CONTEXT = [
     "https://www.w3.org/ns/did/v1",
@@ -135,6 +165,7 @@ async def create_or_update(did: str, request: Request) -> JSONResponse:
     _registry[did]["operations"].append(op)
     _registry[did]["timestamps"].append(now)
 
+    _save_registry()
     logger.info("Stored operation for %s (total: %d)", did, len(_registry[did]["operations"]))
     return JSONResponse(content=None, status_code=200)
 

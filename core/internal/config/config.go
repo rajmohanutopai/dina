@@ -28,7 +28,7 @@ type Config struct {
 	PDSHandle        string `json:"pds_handle"`
 	PDSEmail         string `json:"pds_email"`
 	ClientToken      string `json:"client_token"`
-	OwnDID           string `json:"own_did"`
+	OwnDID           string `json:"own_did"` // Deprecated: identity comes from persisted metadata, not env override.
 	AppViewURL       string `json:"appview_url"`
 	AllowedOrigins   string `json:"allowed_origins"`
 	TrustedProxies   string `json:"trusted_proxies"`   // comma-separated CIDRs for XFF trust

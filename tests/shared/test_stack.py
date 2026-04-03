@@ -114,13 +114,29 @@ class TestStackServices:
 
     # --- Actor DIDs (dynamic, from real PLC-registered identities) ---
 
-    def actor_did(self, actor: str, retries: int = 30, delay: float = 2.0) -> str:
+    def actor_did(self, actor: str, retries: int = 3, delay: float = 1.0) -> str:
         """Return the real PLC-registered DID for an actor.
 
-        Reads from the permanent fixture file first (instant, no network).
-        Falls back to Core API if fixture is missing or actor not found.
+        Try the running Core first (fast, 3 retries). If unavailable,
+        fall back to the committed fixture file.
         """
-        # Fast path: read from committed fixture file
+        import time
+        url = self.core_url(actor)
+        for attempt in range(retries):
+            try:
+                headers = {"Authorization": f"Bearer {self.client_token}"}
+                resp = httpx.get(f"{url}/v1/did", headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    did = data.get("did") or data.get("id") or ""
+                    if did.startswith("did:"):
+                        return did
+            except (httpx.ConnectError, httpx.TimeoutException):
+                pass
+            if attempt < retries - 1:
+                time.sleep(delay)
+
+        # Fallback: read from fixture file
         fixture_path = Path(__file__).resolve().parent.parent / "fixtures" / "test_actors.json"
         if fixture_path.exists():
             import json as _json
@@ -128,26 +144,9 @@ class TestStackServices:
             if actor in actors:
                 return actors[actor]["did"]
 
-        # Fallback: fetch from running Core (for first-time setup)
-        import time
-        url = self.core_url(actor)
-        last_err = ""
-        for attempt in range(retries):
-            try:
-                headers = {"Authorization": f"Bearer {self.client_token}"}
-                resp = httpx.get(f"{url}/v1/did", headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    did = data.get("did") or data.get("id") or ""
-                    if did.startswith("did:"):
-                        return did
-                last_err = f"status={resp.status_code} body={resp.text[:200]}"
-            except (httpx.ConnectError, httpx.TimeoutException) as exc:
-                last_err = str(exc)
-            time.sleep(delay)
         raise RuntimeError(
             f"Could not fetch DID for actor '{actor}' from {url}/v1/did "
-            f"after {retries} attempts: {last_err}"
+            f"and no fixture file found"
         )
 
     # --- Actors ---
