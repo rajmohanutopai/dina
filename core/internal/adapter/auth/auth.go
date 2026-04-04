@@ -1214,6 +1214,7 @@ func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 		"/v1/did",
 		"/v1/contacts",
 		"/v1/trust",
+		"/v1/agent/tasks",  // delegated task create + queue-by-proposal
 		"/v1/notify",
 		"/v1/reminder",
 		"/v1/reminders",

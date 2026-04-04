@@ -761,22 +761,9 @@ class TelegramService:
                 if status == "error":
                     await ch.edit(ErrorResponse(text=result.get("error", "Approval failed.")))
                 else:
-                    # Queue any linked delegated task (idempotent).
-                    # This path bypasses Core's HandleApprove, so there is no
-                    # second hook — if this fails, the task stays stuck.
-                    queue_ok = True
-                    if self._core:
-                        try:
-                            await self._core.queue_task_by_proposal(proposal_id)
-                        except Exception as qe:
-                            queue_ok = False
-                            log.warning("telegram.task_queue_failed",
-                                        extra={"proposal_id": proposal_id, "error": str(qe)})
-                    if queue_ok:
-                        await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
-                    else:
-                        await ch.edit(RichResponse(
-                            text=f"✅ Approved: `{proposal_id}`\n⚠️ Task queueing failed — retry via admin CLI."))
+                    # Task queueing happens inside Guardian's _handle_intent_approved
+                    # (atomic with the approval). No separate queue call needed.
+                    await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
             except Exception as exc:
                 log.warning("telegram.intent_approve_failed", extra={"id": proposal_id, "error": str(exc)})
                 await ch.edit(ErrorResponse(text="Approval failed. Try via admin CLI."))

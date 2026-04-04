@@ -1555,6 +1555,23 @@ func main() {
 		}()
 	}
 
+	// Session sweeper — ends agent sessions older than 6 hours.
+	// Safety net for sessions that were never properly ended
+	// (agent crash, teardown failure, leaked grants).
+	go func() {
+		const maxSessionAge = 6 * 60 * 60 // 6 hours in seconds
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			n, err := personaMgr.ExpireStaleSessions(context.Background(), maxSessionAge)
+			if err != nil {
+				slog.Warn("session_sweeper.failed", "error", err)
+			} else if n > 0 {
+				slog.Info("session_sweeper.expired", "count", n, "max_age_hours", 6)
+			}
+		}
+	}()
+
 	// Intent proposal lifecycle — approve/deny/status/list
 	intentProposalH := &handler.IntentProposalHandler{Brain: agentBrain, BrainHTTP: agentBrain, DelegatedTasks: delegatedTaskStore}
 	mux.HandleFunc("/v1/intent/proposals/", func(w http.ResponseWriter, r *http.Request) {

@@ -2770,6 +2770,18 @@ class GuardianLoop:
                 error=str(exc),
             )
 
+        # Queue any linked delegated task — done here so approval + queue
+        # are atomic (same call, same process, no separate HTTP hop).
+        if self._core and hasattr(self._core, "queue_task_by_proposal"):
+            try:
+                await self._core.queue_task_by_proposal(proposal_id)
+            except Exception as exc:
+                log.warning(
+                    "guardian.intent_approved.queue_task_failed",
+                    proposal_id=proposal_id,
+                    error=str(exc),
+                )
+
         log.info(
             "guardian.intent_approved",
             proposal_id=proposal_id,

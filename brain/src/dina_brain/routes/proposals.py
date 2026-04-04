@@ -102,22 +102,9 @@ async def proposal_approve(proposal_id: str) -> dict:
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("error", "approval failed"))
 
-    # Queue any linked delegated task (idempotent).
-    # This path bypasses Core's HandleApprove — no second hook.
-    queue_warning = ""
-    core = getattr(_guardian, "_core", None)
-    if core and hasattr(core, "queue_task_by_proposal"):
-        try:
-            await core.queue_task_by_proposal(proposal_id)
-        except Exception as qe:
-            queue_warning = f"task queueing failed: {qe}"
-            log.warning("proposals.task_queue_failed",
-                        extra={"proposal_id": proposal_id, "error": str(qe)})
-
-    resp: dict = {"id": proposal_id, "status": "approved"}
-    if queue_warning:
-        resp["warning"] = queue_warning
-    return resp
+    # Task queueing happens inside Guardian's _handle_intent_approved
+    # (atomic with the approval). No separate queue call needed.
+    return {"id": proposal_id, "status": "approved"}
 
 
 @router.post("/v1/proposals/{proposal_id}/deny")

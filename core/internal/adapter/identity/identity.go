@@ -1386,6 +1386,45 @@ func (pm *PersonaManager) ListSessions(_ context.Context, agentDID string) ([]do
 	return result, nil
 }
 
+// ExpireStaleSessions ends active sessions older than maxAgeSec.
+// Safety net for sessions that were never properly ended.
+func (pm *PersonaManager) ExpireStaleSessions(_ context.Context, maxAgeSec int64) (int, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	cutoff := time.Now().Unix() - maxAgeSec
+	count := 0
+	for i, s := range pm.sessions {
+		if s.Status == domain.SessionActive && s.CreatedAt > 0 && s.CreatedAt < cutoff {
+			// End the stale session — revoke grants, close sensitive vaults.
+			var personasToClose []string
+			for _, g := range s.Grants {
+				pID := canonicalPersonaID(g.PersonaID)
+				p, ok := pm.personas[pID]
+				if ok && p.Tier == "sensitive" {
+					personasToClose = append(personasToClose, pID)
+				}
+			}
+
+			pm.sessions[i].Status = domain.SessionEnded
+			pm.sessions[i].EndedAt = time.Now().Unix()
+			pm.sessions[i].Grants = nil
+
+			for _, pID := range personasToClose {
+				if pm.grantOpenedVaults[pID] && !pm.anyActiveGrantForPersona(pID) && pm.OnLock != nil {
+					pm.OnLock(strings.TrimPrefix(pID, "persona-"))
+					delete(pm.grantOpenedVaults, pID)
+				}
+			}
+			count++
+		}
+	}
+	if count > 0 {
+		pm.persistState()
+	}
+	return count, nil
+}
+
 // AddGrant adds a persona access grant to a session.
 func (pm *PersonaManager) AddGrant(_ context.Context, sessionID, personaID, scope, grantedBy string) error {
 	pm.mu.Lock()

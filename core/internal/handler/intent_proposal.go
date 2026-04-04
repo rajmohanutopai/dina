@@ -70,25 +70,16 @@ func (h *IntentProposalHandler) HandleApprove(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Queue any linked delegated task (idempotent — no-op if no task exists for this proposal).
-	var queueWarning string
+	// Redundant idempotent queue — Guardian already queues in _handle_intent_approved,
+	// but this catches the case where Core's endpoint is called directly (dina-admin).
 	if h.DelegatedTasks != nil {
 		if qErr := h.DelegatedTasks.QueueByProposalID(r.Context(), proposalID); qErr != nil {
-			queueWarning = qErr.Error()
 			slog.Warn("delegated_task.queue_on_approve_failed",
 				"proposal_id", proposalID, "error", qErr)
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if queueWarning != "" {
-		// Merge warning into the response so the caller knows.
-		var merged map[string]interface{}
-		if json.Unmarshal(resp, &merged) == nil {
-			merged["task_queue_warning"] = queueWarning
-			resp, _ = json.Marshal(merged)
-		}
-	}
 	w.Write(resp)
 }
 
