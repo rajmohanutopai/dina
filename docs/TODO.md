@@ -44,7 +44,8 @@ Obviously security of others also has to be maintained, so, Idenity.sqlite conta
   3. Channel protocol is incomplete — has send() but TelegramChannel also has edit(). Protocol mismatch.                                                                                                             
   4. Outbound notifications bypass the channel — send_nudge, send_reminder_plan use self._bot.send_message() directly.                                                                                               
   5. _ch(context) returns Any — no type safety.                                                                                                                                                                      
-                                                                                                                                                                                                                     
+  6. `docs/interaction/formatting.md` is pending — canonical response formatting contract across Telegram, CLI, web, OpenClaw, and internal systems.                                                                         
+	                                                                                                                                                                                                                     
   The proper step 2 would be: handlers return typed response objects (not formatted strings), and each channel knows how to render them. That makes CLI/web channels trivially different renderers over the same     
   data.                                                                                                                                                                                                              
 
@@ -2371,4 +2372,3 @@ Missing scenario:
 - Trust for organizations vs individuals
 - How do institutional attestations differ from personal ones?
 ```
-
