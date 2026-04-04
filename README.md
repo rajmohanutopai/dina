@@ -85,6 +85,7 @@ Now imagine the same thing, everywhere in your life:
 - Dead internet theory becomes real. You can't differentiate between what is made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina checks against the Trust Network, and only items with verified provenance are shown to you.
 - You promised your daughter you'd read her a book next sunday. Dina reminds you Sunday morning. *"Read 'The Little Prince' to Emma. She said it is her favourite book."*
 - Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
+- You are waiting for a bus. Your Dina contacts the bus drivers Dina. What time will you reach my location (xyz location)? Bus Drivers Dina checks their internal database and Google Maps Traffic and tells - will reach in 45 minutes
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
 
