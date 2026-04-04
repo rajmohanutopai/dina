@@ -64,6 +64,7 @@ class AgentIntentEvent(_EventBase):
     risk_level: str | None = None
     trust_level: str | None = None
     session: str | None = None
+    payload: dict | None = None
 
 
 class DelegationRequestEvent(_EventBase):
@@ -261,6 +262,7 @@ class ProcessEventResponse(BaseModel):
     risk: str | None = None
     approved: bool | None = None
     requires_approval: bool | None = None
+    proposal_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -339,4 +341,5 @@ async def process_event(
         risk=result.get("risk"),
         approved=result.get("approved"),
         requires_approval=result.get("requires_approval"),
+        proposal_id=result.get("proposal_id"),
     )

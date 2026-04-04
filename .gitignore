@@ -264,3 +264,15 @@ appview/dist/
 issues.txt
 marketing.txt
 api/core-api.bundled.yaml
+# Instance data (secrets, keys, env) — created by install.sh --instance
+instances/
+
+tests/sanity/.env.sanity
+tests/sanity/*.session
+tests/sanity/*.session-journal
+tests/sanity/*.lock
+tests/sanity/regression-alonso/
+tests/sanity/regression-sancho/
+tests/sanity/config-*.json
+tests/sanity/gmail_credentials.json
+tests/sanity/gog-auth/

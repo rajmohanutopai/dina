@@ -7,13 +7,14 @@ package domain
 // with the same name). Different agents can have different active sessions.
 // Sessions persist across process restarts for crash recovery.
 type AgentSession struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`       // human-readable, unique per agent
-	AgentDID  string        `json:"agent_did"`
-	Status    string        `json:"status"`      // "active", "ended"
-	Grants    []AccessGrant `json:"grants"`      // persona grants scoped to this session
-	CreatedAt int64         `json:"created_at"`
-	EndedAt   int64         `json:"ended_at,omitempty"`
+	ID             string        `json:"id"`
+	Name           string        `json:"name"`            // human-readable, unique per agent
+	AgentDID       string        `json:"agent_did"`
+	Status         string        `json:"status"`           // "active", "ended"
+	Grants         []AccessGrant `json:"grants"`           // persona grants scoped to this session
+	CreatedAt      int64         `json:"created_at"`
+	LastActivityAt int64         `json:"last_activity_at"` // updated on grant/check/heartbeat
+	EndedAt        int64         `json:"ended_at,omitempty"`
 }
 
 // Session statuses.

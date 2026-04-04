@@ -274,38 +274,10 @@ class TelegramService:
                     log.debug("telegram.suppressed_error", exc_info=_exc)
                     break
 
-            # Check staging status for reminder plan (set during processing).
-            # The plan is stored in Core KV by the staging processor so any
-            # caller (Telegram, dina-admin, CLI) can retrieve it.
-            reminder_lines = []
-            plan = None
-            if result_msg.startswith("Stored"):
-                # Small delay — KV write completes before resolve, but
-                # allow propagation time.
-                await asyncio.sleep(1)
-                try:
-                    kv_key = f"reminder_plan:{staging_id}"
-                    plan_raw = await self._core.get_kv(kv_key)
-                    log.info("telegram.remember.kv_read key=%s found=%s", kv_key, plan_raw is not None)
-                    if plan_raw:
-                        import json as _json
-                        plan = _json.loads(plan_raw)
-                        for r in plan.get("reminders", []):
-                            fire = r.get("fire_at", "")
-                            msg = r.get("message", "")
-                            time_str = _format_local_time(fire)
-                            emoji = {"birthday": "🎂", "appointment": "📅",
-                                     "payment_due": "💳", "deadline": "⏰"}.get(
-                                         r.get("kind", ""), "🔔")
-                            reminder_lines.append(f"{emoji} {time_str} — {msg}")
-                except Exception as _exc:
-                    log.debug("telegram.suppressed_error", exc_info=_exc)
-
-            if plan and plan.get("reminders"):
-                await ch.send(RichResponse(text=result_msg))
-                await self.send_reminder_plan(update.effective_chat.id, plan)
-            else:
-                await ch.send(RichResponse(text=result_msg))
+            # Reminder plan notification is sent by the staging processor
+            # (staging_processor.py:267) — don't duplicate it here.
+            # Just send the "Stored in X vault" confirmation.
+            await ch.send(RichResponse(text=result_msg))
         except Exception as exc:
             log.error(
                 "telegram.remember_failed",
@@ -755,6 +727,11 @@ class TelegramService:
                     await ch.send(ErrorResponse(text="Failed to delete reminder."))
             return
 
+        # Intent approval buttons (Approve / Deny agent actions).
+        if data.startswith("intent_approve ") or data.startswith("intent_deny "):
+            await self._handle_intent_callback(update, ch, data)
+            return
+
         # Trust publish buttons (Publish / Cancel).
         if data.startswith("trust_yes:") or data == "trust_no":
             await self._handle_trust_callback(update, ch)
@@ -766,6 +743,49 @@ class TelegramService:
         response = await self.handle_approval_response(data)
         if response and ch:
             await ch.edit(RichResponse(text=response))
+
+    async def _handle_intent_callback(self, update: Update, ch: Any, data: str) -> None:
+        """Handle Approve/Deny buttons for agent intent proposals."""
+        query = update.callback_query
+        await query.answer()
+
+        if data.startswith("intent_approve "):
+            proposal_id = data[len("intent_approve "):].strip()
+            try:
+                # Route through the real Guardian approval flow (persistence + audit).
+                result = await self._guardian.process_event({
+                    "type": "intent_approved",
+                    "payload": {"proposal_id": proposal_id},
+                })
+                status = result.get("status", "")
+                if status == "error":
+                    await ch.edit(ErrorResponse(text=result.get("error", "Approval failed.")))
+                else:
+                    qw = result.get("queue_warning", "")
+                    if qw:
+                        await ch.edit(RichResponse(
+                            text=f"✅ Approved: `{proposal_id}`\n⚠️ Task queueing failed: {qw}"))
+                    else:
+                        await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
+            except Exception as exc:
+                log.warning("telegram.intent_approve_failed", extra={"id": proposal_id, "error": str(exc)})
+                await ch.edit(ErrorResponse(text="Approval failed. Try via admin CLI."))
+
+        elif data.startswith("intent_deny "):
+            proposal_id = data[len("intent_deny "):].strip()
+            try:
+                result = await self._guardian.process_event({
+                    "type": "intent_denied",
+                    "payload": {"proposal_id": proposal_id, "reason": "Denied via Telegram"},
+                })
+                status = result.get("status", "")
+                if status == "error":
+                    await ch.edit(ErrorResponse(text=result.get("error", "Denial failed.")))
+                else:
+                    await ch.edit(RichResponse(text=f"🚫 Denied: `{proposal_id}`"))
+            except Exception as exc:
+                log.warning("telegram.intent_deny_failed", extra={"id": proposal_id, "error": str(exc)})
+                await ch.edit(ErrorResponse(text="Denial failed. Try via admin CLI."))
 
     # ------------------------------------------------------------------
     # Access control
@@ -1118,6 +1138,114 @@ class TelegramService:
             log.warning("trust_publish_failed", extra={"cmd": cmd, "error": str(exc)})
         finally:
             self._pending_trust = None
+
+    # ── Task Delegation (/task) ──────────────────────────────────────
+
+    async def handle_task(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/task <description> — delegate an autonomous task to OpenClaw.
+
+        Creates a durable delegated task in Core. The agent-daemon claims
+        and executes it after approval.
+        """
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        text = " ".join(context.args) if context.args else ""
+        if not text:
+            await ch.send(BotResponse(
+                text="Usage: /task Describe what you want done\n"
+                "Example: /task Research the best standing desks under $300"
+            ))
+            return
+
+        from uuid import uuid4
+
+        task_id = f"task-{uuid4().hex[:8]}"
+
+        # Validate the intent
+        result = await self._guardian.process_event({
+            "type": "agent_intent",
+            "action": "research",
+            "target": text[:200],
+            "agent_did": "openclaw",
+            "trust_level": "verified",
+            "payload": {
+                "action": "research",
+                "target": text[:200],
+                "context": {"task_id": task_id, "source": "telegram"},
+            },
+        })
+
+        action = result.get("action", "")
+        risk = result.get("risk", "SAFE")
+        proposal_id = result.get("proposal_id", "")
+        requires_approval = bool(result.get("requires_approval"))
+
+        if action == "deny":
+            await ch.send(ErrorResponse(text=f"Task denied: {result.get('reason', 'blocked')}"))
+            return
+
+        # Create durable task in Core (replaces KV storage)
+        try:
+            await self._core.create_delegated_task(
+                task_id=task_id,
+                description=text,
+                origin="telegram",
+                proposal_id=proposal_id,
+                idempotency_key=f"task-{task_id}",
+                requires_approval=requires_approval,
+            )
+        except Exception as exc:
+            log.warning("telegram.task_create_failed", extra={"error": str(exc)})
+            await ch.send(ErrorResponse(text="Failed to create task. Try again."))
+            return
+
+        if requires_approval:
+            await ch.send(RichResponse(
+                text=f"📋 Task queued: _{_escape_markdown(text[:100])}_\n\n"
+                f"Risk: *{risk}* — needs your approval.\n"
+                f"Task ID: `{task_id}`"
+            ))
+        else:
+            await ch.send(RichResponse(
+                text=f"📋 Task delegated: _{_escape_markdown(text[:100])}_\n\n"
+                f"Task ID: `{task_id}`\n"
+                f"Agent will pick this up automatically."
+            ))
+
+    async def handle_task_status(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/taskstatus <task_id> — check the status of a delegated task."""
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        task_id = " ".join(context.args).strip() if context.args else ""
+        if not task_id:
+            await ch.send(BotResponse(text="Usage: /taskstatus <task_id>"))
+            return
+
+        try:
+            task = await self._core.get_delegated_task(task_id)
+            if task is None:
+                await ch.send(ErrorResponse(text=f"Task `{task_id}` not found."))
+                return
+
+            lines = [f"📋 Task: `{task_id}`"]
+            lines.append(f"Description: _{_escape_markdown(task.get('description', '')[:100])}_")
+            lines.append(f"Status: *{task.get('status', 'unknown')}*")
+            if task.get("progress_note"):
+                lines.append(f"Progress: {task['progress_note'][:200]}")
+            if task.get("result_summary"):
+                lines.append(f"Result: {task['result_summary'][:200]}")
+            if task.get("error"):
+                lines.append(f"Error: {task['error'][:200]}")
+            await ch.send(RichResponse(text="\n".join(lines)))
+        except Exception as exc:
+            log.warning("telegram.taskstatus_failed", extra={"task_id": task_id, "error": str(exc)})
+            await ch.send(ErrorResponse(text=f"Could not fetch task status. Core may be unavailable."))
 
     # ── Contact Management (/contact) ──────────────────────────────────
 

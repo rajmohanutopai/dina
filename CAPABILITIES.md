@@ -26,9 +26,9 @@ Dina:
 Emma loves dinosaurs
 ```
 
-## She Creates Reminders
+## She Creates Life Reminders
 
-Dina sets reminders for you automatically based on your messages - these reminders are enriched by what Dina knows about the people and situation
+Dina remembers your life and help sets reminders for the smooth functioning. Dina does not do Calendar (that is task agent like openclaws job) - it is more about telling you based on your memories, or when other Dina connects to you etc. These reminders are enriched again based on your memories. The memory is stored securely in vault, and those are used to create reminders.
 
 ```
 You:
@@ -151,28 +151,107 @@ You can configure what's safe and what's not.
 
 ---
 
+## She Delegates Tasks to Agents
+
+You tell Dina what you need done. Dina delegates to OpenClaw (or any agent), monitors execution, and reports back — all through Telegram.
+
+```
+You:
+/task Find the top 3 best-selling fiction books on Amazon right now
+
+Dina:
+📋 Task queued: Find the top 3 best-selling fiction books on Amazon right now
+Risk: MODERATE — needs your approval.
+Task ID: task-5dab0386
+
+🔔 Agent action requires approval
+Action: research
+[Approve] [Deny]
+
+You tap [Approve]
+
+✅ Approved
+```
+
+Dina's agent daemon picks up the task, submits it to OpenClaw, and moves on immediately (fire-and-forget). OpenClaw runs autonomously — browsing the web, using Dina's MCP tools for vault access — and reports back when done.
+
+```
+You:
+/taskstatus task-5dab0386
+
+Dina:
+📋 Task: task-5dab0386
+Description: Find the top 3 best-selling fiction books on Amazon right now
+Status: completed
+Result: Found the top 3 best-selling fiction books on Amazon:
+1. Project Hail Mary by Andy Weir
+2. Theo of Golden: A Novel by Allen Levi
+3. Game On: An Into Darkness Novel by Brianna Labuskes
+```
+
+Tasks can take minutes, hours, or days. You don't wait — Dina tracks the lifecycle:
+- **pending_approval** → waiting for your approval in Telegram
+- **queued** → ready for the agent daemon to pick up
+- **claimed** → daemon assigned it
+- **running** → OpenClaw is working on it
+- **completed** / **failed** → done, check `/taskstatus`
+
+The agent uses Dina's MCP tools during execution — `dina_validate` before risky actions, `dina_ask` for vault context, `dina_remember` to store findings. All scoped to a session that's automatically cleaned up when the task ends.
+
+---
+
 ## Integrating with OpenClaw
 
+OpenClaw connects to Dina via MCP (Model Context Protocol). Dina runs as an MCP server inside OpenClaw, exposing tools for vault access, action gating, and PII scrubbing.
+
 ```bash
-# client machine (where openclaw or other agents run)
+# Install Dina CLI
 pip install dina-agent
-dina status
 
-# pair with dina home node
-./dina-admin device pair # generate pairing code at home node
-dina configure # use pairing code to pair
+# Pair with your Dina Home Node
+./dina-admin device pair          # generates pairing code
+dina configure --role agent       # pairs the device
 
-# start a session and interact
-dina session start --name "tea research"   # returns session ID
+# OpenClaw config (openclaw.json)
+# mcp.servers.dina = { command: "dina", args: ["mcp-server"] }
+```
+
+### MCP Tools Available to OpenClaw
+
+| Tool | What it does |
+|------|-------------|
+| `dina_session_start` | Start a scoped session |
+| `dina_session_end` | End session, revoke grants |
+| `dina_validate` | Check if an action is approved (safe/risky/blocked) |
+| `dina_validate_status` | Poll approval status |
+| `dina_ask` | Query the encrypted vault |
+| `dina_remember` | Store a fact in the vault |
+| `dina_scrub` | Remove PII from text |
+| `dina_task_complete` | Report task completion |
+| `dina_task_fail` | Report task failure |
+| `dina_task_progress` | Report intermediate progress |
+
+### Agent Daemon
+
+The `dina agent-daemon` runs as a persistent background process. It polls for queued tasks, submits them to OpenClaw via HTTP hooks, and moves on immediately. No blocking, no waiting.
+
+```bash
+dina agent-daemon --poll-interval 15 --lease-duration 300
+```
+
+### Direct CLI Usage
+
+For interactive agent work (not delegated tasks):
+
+```bash
+dina session start --name "tea research"
 dina remember "I like strong cardamom tea" --session <session-id>
 dina ask "what kind of tea do I like?" --session <session-id>
+dina validate --session <session-id> search "best tea shop nearby"
 dina session end <session-id>
 ```
 
-Use [`docs/dina-openclaw-skill.md`](./docs/dina-openclaw-skill.md) - any AI agent (OpenClaw, and other agents) can use Dina for Unique ID, encrypted memory, PII scrubbing, and action gating. Please download and update the file for your specific use cases.
-<br/>
-
-An example integration is shown below
+Use [`docs/dina-openclaw-skill.md`](./docs/dina-openclaw-skill.md) — any AI agent (OpenClaw, and other agents) can use Dina for identity, encrypted memory, PII scrubbing, and action gating.
 
 ![OpenClaw](./docs/images/openclaw-dina.png)
 ---

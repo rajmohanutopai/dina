@@ -403,24 +403,48 @@ def _extract_category(item: dict) -> str:
 @click.option("--count", default=1, type=int, help="Number of items affected")
 @click.option("--reversible", is_flag=True, help="Action is reversible")
 @click.option("--session", required=True, help="Session ID (create with: dina session start)")
+@click.option("--context", "context_json", default=None,
+              help="JSON object with action details shown in approval notification "
+                   "(e.g. '{\"to\":\"user@example.com\",\"subject\":\"Report\"}')")
 @click.pass_context
-def validate(ctx: click.Context, action: str, description: str, count: int, reversible: bool, session: str) -> None:
-    """Check if an action is approved by user policy."""
+def validate(ctx: click.Context, action: str, description: str, count: int,
+             reversible: bool, session: str, context_json: str | None) -> None:
+    """Check if an action is approved by user policy.
+
+    \b
+    The --context flag adds structured metadata to the approval notification.
+    The human reviewing the action sees this context in Telegram.
+    Example:
+      dina validate --session ses_xxx send_email "Send report" \\
+        --context '{"to":"user@co.com","subject":"Q4 Report","attachments":["report.pdf"]}'
+    """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     config = ctx.obj["config"]
 
+    # Parse optional context
+    context: dict | None = None
+    if context_json:
+        try:
+            context = json.loads(context_json)
+        except json.JSONDecodeError:
+            raise click.BadParameter(f"Invalid JSON: {context_json}", param_hint="--context")
+
     try:
+        payload: dict = {
+            "action": action,
+            "target": description,
+            "count": count,
+            "reversible": reversible,
+        }
+        if context:
+            payload["context"] = context
+
         result = client.process_event({
             "type": "agent_intent",
             "action": action,
             "target": description,
-            "payload": {
-                "action": action,
-                "target": description,
-                "count": count,
-                "reversible": reversible,
-            },
+            "payload": payload,
         }, session=session)
         approved = result.get("approved", False)
         requires = result.get("requires_approval", False)
@@ -710,8 +734,17 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     "--config", "config_file", default=None, type=click.Path(exists=True),
     help="Non-interactive: JSON config file with keys: core_url, device_name, config_location, pairing_code",
 )
+@click.option("--headless", is_flag=True, default=False, help="Non-interactive mode with CLI flags (no prompts)")
+@click.option("--core-url", default=None, help="[headless] Core URL (e.g. http://localhost:8100)")
+@click.option("--device-name", default=None, help="[headless] Device name")
+@click.option("--pairing-code", default=None, help="[headless] Pairing code from dina-admin device pair")
+@click.option("--config-dir", default=None, help="[headless] Config directory (default: .dina/cli in cwd)")
 @click.pass_context
-def configure(ctx: click.Context, role: str, config_file: str | None) -> None:
+def configure(
+    ctx: click.Context, role: str, config_file: str | None,
+    headless: bool, core_url: str | None, device_name: str | None,
+    pairing_code: str | None, config_dir: str | None,
+) -> None:
     """Set up connection to a Dina Home Node.
 
     \b
@@ -720,7 +753,12 @@ def configure(ctx: click.Context, role: str, config_file: str | None) -> None:
       dina configure --role agent
 
     \b
-    Non-interactive (for testing/automation):
+    Headless (no prompts — for automation/CI):
+      dina configure --headless --core-url http://localhost:8100 \\
+        --pairing-code 123456 --device-name sanity-agent --role agent
+
+    \b
+    Non-interactive (JSON config file):
       dina configure --config setup.json
 
     \b
@@ -733,6 +771,17 @@ def configure(ctx: click.Context, role: str, config_file: str | None) -> None:
         "generate_keypair": true           // true = always generate new keypair
       }
     """
+    # ── Headless mode: all params from CLI flags, zero prompts ──
+    if headless:
+        _configure_headless(
+            core_url=core_url or "http://localhost:8100",
+            device_name=device_name or _default_device_name(),
+            role=role,
+            pairing_code=pairing_code or "",
+            config_dir_path=config_dir,
+        )
+        return
+
     # Load non-interactive config if provided.
     cfg_input: dict = {}
     if config_file:
@@ -917,6 +966,60 @@ def _default_device_name() -> str:
     """Generate a default device name from hostname."""
     import platform
     return f"{platform.node()}-cli"
+
+
+def _configure_headless(
+    core_url: str, device_name: str, role: str,
+    pairing_code: str, config_dir_path: str | None,
+) -> None:
+    """Headless configure: all params from CLI flags, zero prompts."""
+    from .config import set_config_dir
+    from .signing import CLIIdentity
+
+    # Set config directory
+    if config_dir_path:
+        cfg_dir = Path(config_dir_path) / ".dina" / "cli"
+    else:
+        cfg_dir = Path.cwd() / ".dina" / "cli"
+    set_config_dir(cfg_dir)
+
+    click.echo(f"  Config dir: {cfg_dir}")
+    click.echo(f"  Core URL: {core_url}")
+    click.echo(f"  Device: {device_name}")
+    click.echo(f"  Role: {role}")
+
+    # Generate keypair (always fresh in headless mode)
+    identity = CLIIdentity()
+    if identity.exists:
+        _try_unpair(core_url, identity)
+    click.echo("  Generating Ed25519 keypair...")
+    identity.generate()
+    click.echo(f"  DID: {identity.did()}")
+
+    # Pair with Core
+    if pairing_code:
+        _pair_with_key(core_url, identity, device_name, role, pairing_code=pairing_code)
+    else:
+        click.echo("  No --pairing-code provided — skipping pairing.")
+
+    # Save config
+    values: dict[str, Any] = {
+        "core_url": core_url,
+        "device_name": device_name,
+        "role": role,
+    }
+    path = save_config(values)
+    click.echo(f"  Configuration saved to {path}")
+
+    # Quick health check
+    try:
+        resp = httpx.get(f"{core_url}/healthz", timeout=5.0)
+        if resp.status_code == 200:
+            click.echo(f"  Core: Connected")
+        else:
+            click.echo(f"  Core: {resp.status_code}", err=True)
+    except Exception as exc:
+        click.echo(f"  Core: unreachable ({exc})", err=True)
 
 
 def _try_unpair(core_url: str, identity: Any) -> None:
@@ -1544,12 +1647,13 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
         if not json_mode:
             click.echo(f"  Delegating to OpenClaw: {description}")
 
-        # Construct OpenClaw client with real paired device identity.
-        # Fail fast if identity is broken — unsigned Gateway calls will
-        # produce confusing auth errors downstream.
+        # Construct OpenClaw client with OpenClaw-compatible device auth.
+        # Gateway device identity is the key fingerprint + raw public key,
+        # not the Dina DID used for Core HTTP signing.
         identity = client._identity
         try:
-            device_did = identity.did()
+            device_id = identity.device_fingerprint()
+            device_public_key = identity.public_key_base64url()
             _identity_ref = identity  # capture for lambda closure
             sign_fn = lambda data: bytes.fromhex(_identity_ref.sign_data(data))
         except Exception as exc:
@@ -1560,9 +1664,12 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
         openclaw = OpenClawClient(
             config.openclaw_url,
             token=config.openclaw_token,
-            device_id=device_did,
+            device_id=device_id,
+            device_public_key=device_public_key,
             device_name=config.device_name or "dina-cli",
             sign_fn=sign_fn,
+            device_token=getattr(config, "openclaw_device_token", ""),
+            save_device_token=_config_mod.save_openclaw_device_token,
         )
         try:
             result = openclaw.run_task(description, dina_session=session_name)
@@ -1594,3 +1701,41 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
             client.session_end(session_name)
         except Exception:
             pass
+
+
+# ── MCP Server ───────────────────────────────────────────────────────────
+
+
+@cli.command("mcp-server")
+def mcp_server() -> None:
+    """Run Dina as an MCP server (stdio transport).
+
+    \b
+    For OpenClaw:
+      mcp.servers.dina = { command: "dina", args: ["mcp-server"] }
+
+    \b
+    For Claude Code:
+      claude mcp add dina -- dina mcp-server
+    """
+    from .mcp_server import run_server
+    run_server()
+
+
+@cli.command("agent-daemon")
+@click.option("--poll-interval", default=15, type=int, help="Seconds between claim polls (default 15)")
+@click.option("--lease-duration", default=300, type=int, help="Lease duration in seconds (default 300)")
+def agent_daemon(poll_interval: int, lease_duration: int) -> None:
+    """Run the persistent agent daemon.
+
+    \b
+    Polls Core for queued delegated tasks, launches OpenClaw to execute
+    them, and reports results back. Runs until SIGINT/SIGTERM.
+
+    \b
+    Requires:
+      - Paired device with role=agent (dina configure --role agent)
+      - OpenClaw Gateway running (DINA_OPENCLAW_URL + DINA_OPENCLAW_TOKEN)
+    """
+    from .agent_daemon import run_daemon
+    run_daemon(poll_interval=poll_interval, lease_duration=lease_duration)

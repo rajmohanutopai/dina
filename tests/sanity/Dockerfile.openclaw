@@ -1,0 +1,69 @@
+# OpenClaw + dina-agent container for sanity testing.
+# Runs OpenClaw gateway with Dina skill installed.
+#
+# Build:
+#   docker build -f tests/sanity/Dockerfile.openclaw -t dina-sanity-openclaw .
+#
+# Runtime env vars:
+#   GOOGLE_API_KEY       — Gemini API key
+#   DINA_CORE_URL        — Core URL (e.g. http://host.docker.internal:18100)
+#   DINA_PAIRING_CODE    — from dina-admin device pair (injected by test)
+#   GOG_KEYRING_PASSWORD — gog keyring password (for Gmail OAuth token decryption)
+#   DINA_HOOK_CALLBACK_TOKEN — Bearer token for Core callback endpoints
+#   DINA_OPENCLAW_HOOK_TOKEN — Token for /hooks/dina-task submission
+#
+# Runtime volume mount (for Gmail):
+#   -v tests/sanity/gog-auth:/root/.config/gogcli
+
+FROM node:22-slim
+
+# Python + Chromium for dina-agent + OpenClaw browser tool
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv curl ca-certificates \
+    chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+# Tell OpenClaw where Chromium is + Docker-safe flags
+ENV CHROME_PATH=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
+ENV PUPPETEER_CHROMIUM_REVISION=skip
+
+# Install OpenClaw (no onboarding)
+RUN curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard \
+    || npm install -g openclaw@latest
+
+# Install dina-agent from local source (includes --headless support)
+COPY cli/ /tmp/dina-cli/
+RUN pip install --break-system-packages /tmp/dina-cli/ && rm -rf /tmp/dina-cli/
+
+# Install gog (Google CLI for Gmail/Calendar integration)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://github.com/steipete/gogcli/releases/latest/download/gogcli_0.12.0_linux_${ARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin gog && chmod +x /usr/local/bin/gog
+
+# Create directories
+RUN mkdir -p /root/.openclaw/skills /root/.openclaw/workspace /root/.openclaw/logs /root/.config/gog
+
+# Copy Dina skill into OpenClaw's bundled skills path
+RUN mkdir -p /usr/local/lib/node_modules/openclaw/skills/dina
+COPY docs/dina-openclaw-skill.md /usr/local/lib/node_modules/openclaw/skills/dina/SKILL.md
+
+# gog auth is mounted at runtime via -v, NOT baked into image
+RUN mkdir -p /root/.config/gogcli
+
+# Copy OpenClaw agent_end hook (production module, installed into OpenClaw runtime)
+RUN mkdir -p /root/.openclaw/hooks
+COPY cli/src/dina_cli/openclaw_hook.py /root/.openclaw/hooks/dina_callback.py
+
+# Copy setup script
+COPY tests/sanity/openclaw-setup.sh /usr/local/bin/openclaw-setup.sh
+RUN chmod +x /usr/local/bin/openclaw-setup.sh
+
+# GOG_KEYRING_PASSWORD must be passed at runtime via -e, NOT baked here
+
+# Gateway port
+EXPOSE 3000
+
+# Setup + start gateway
+CMD ["/usr/local/bin/openclaw-setup.sh"]

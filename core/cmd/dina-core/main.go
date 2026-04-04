@@ -1487,8 +1487,128 @@ func main() {
 	// Agent Safety Layer — proxies to brain's guardian
 	mux.HandleFunc("/v1/agent/validate", agentH.HandleValidate)
 
+	// Delegated task API — durable agent task queue
+	delegatedTaskStore := newDelegatedTaskStore(vaultMgr)
+	if delegatedTaskStore != nil {
+		delegatedTaskH := &handler.DelegatedTaskHandler{
+			Tasks:    delegatedTaskStore,
+			Devices:  deviceSvc,
+			Sessions: personaMgr,
+		}
+		mux.HandleFunc("/v1/agent/tasks", func(w http.ResponseWriter, r *http.Request) {
+			// Exact match only (no trailing slash)
+			if r.URL.Path != "/v1/agent/tasks" {
+				http.NotFound(w, r)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				delegatedTaskH.HandleList(w, r)
+			case http.MethodPost:
+				delegatedTaskH.HandleCreate(w, r)
+			default:
+				http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+		})
+		mux.HandleFunc("/v1/agent/tasks/claim", delegatedTaskH.HandleClaim)
+		mux.HandleFunc("/v1/agent/tasks/queue-by-proposal", delegatedTaskH.HandleQueueByProposal)
+		mux.HandleFunc("/v1/agent/tasks/", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			switch {
+			case strings.HasSuffix(path, "/heartbeat"):
+				delegatedTaskH.HandleHeartbeat(w, r)
+			case strings.HasSuffix(path, "/complete"):
+				delegatedTaskH.HandleComplete(w, r)
+			case strings.HasSuffix(path, "/fail"):
+				delegatedTaskH.HandleFail(w, r)
+			case strings.HasSuffix(path, "/progress"):
+				delegatedTaskH.HandleProgress(w, r)
+			case strings.HasSuffix(path, "/running"):
+				delegatedTaskH.HandleMarkRunning(w, r)
+			default:
+				delegatedTaskH.HandleGet(w, r)
+			}
+		})
+
+		// Internal callback endpoints for OpenClaw agent_end hooks.
+		// Authenticated by dedicated Bearer token, not device Ed25519.
+		callbackToken := os.Getenv("DINA_HOOK_CALLBACK_TOKEN")
+		if callbackToken != "" {
+			callbackH := &handler.DelegatedTaskCallbackHandler{
+				Tasks:         delegatedTaskStore,
+				Sessions:      personaMgr,
+				CallbackToken: callbackToken,
+			}
+			// List all tasks (unfiltered) for reconciler
+			mux.HandleFunc("/v1/internal/delegated-tasks", func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/internal/delegated-tasks" {
+					callbackH.HandleList(w, r)
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mux.HandleFunc("/v1/internal/delegated-tasks/", func(w http.ResponseWriter, r *http.Request) {
+				path := r.URL.Path
+				switch {
+				case strings.HasSuffix(path, "/complete"):
+					callbackH.HandleComplete(w, r)
+				case strings.HasSuffix(path, "/fail"):
+					callbackH.HandleFail(w, r)
+				case strings.HasSuffix(path, "/progress"):
+					callbackH.HandleProgress(w, r)
+				default:
+					http.NotFound(w, r)
+				}
+			})
+			slog.Info("delegated_task.callback_endpoints_registered")
+		}
+
+		// Lease expiry goroutine — requeues claimed tasks (not running) every 60s
+		go func() {
+			ticker := time.NewTicker(60 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				expired, err := delegatedTaskStore.ExpireLeases(context.Background())
+				if err != nil {
+					slog.Warn("delegated_task.lease_expiry_failed", "error", err)
+					continue
+				}
+				for _, t := range expired {
+					slog.Info("delegated_task.lease_expired", "task_id", t.ID, "agent_did", t.AgentDID, "session", t.SessionName)
+					if t.SessionName != "" && t.AgentDID != "" {
+						err := personaMgr.EndSession(context.Background(), t.AgentDID, t.SessionName)
+						if err != nil {
+							// "not found" is normal (task may expire before session_start).
+							// Other errors are logged at WARN — session TTL is the backstop.
+							slog.Warn("delegated_task.session_cleanup_failed",
+								"task_id", t.ID, "agent_did", t.AgentDID,
+								"session", t.SessionName, "error", err)
+						}
+					}
+				}
+			}
+		}()
+	}
+
+	// Session sweeper — ends agent sessions older than 6 hours.
+	// Safety net for sessions that were never properly ended
+	// (agent crash, teardown failure, leaked grants).
+	go func() {
+		const maxSessionAge = 6 * 60 * 60 // 6 hours in seconds
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			n, err := personaMgr.ExpireStaleSessions(context.Background(), maxSessionAge)
+			if err != nil {
+				slog.Warn("session_sweeper.failed", "error", err)
+			} else if n > 0 {
+				slog.Info("session_sweeper.expired", "count", n, "max_age_hours", 6)
+			}
+		}
+	}()
+
 	// Intent proposal lifecycle — approve/deny/status/list
-	intentProposalH := &handler.IntentProposalHandler{Brain: agentBrain, BrainHTTP: agentBrain}
+	intentProposalH := &handler.IntentProposalHandler{Brain: agentBrain, BrainHTTP: agentBrain, DelegatedTasks: delegatedTaskStore}
 	mux.HandleFunc("/v1/intent/proposals/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		switch {

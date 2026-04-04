@@ -86,3 +86,40 @@ async def proposal_list() -> dict:
     ]
 
     return {"proposals": pending_intents}
+
+
+@router.post("/v1/proposals/{proposal_id}/approve")
+async def proposal_approve(proposal_id: str) -> dict:
+    """Approve a pending intent proposal via the real Guardian flow."""
+    if _guardian is None:
+        raise HTTPException(status_code=503, detail="Guardian not initialised")
+
+    # Route through Guardian's intent_approved handler (persistence + audit).
+    result = await _guardian.process_event({
+        "type": "intent_approved",
+        "payload": {"proposal_id": proposal_id},
+    })
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("error", "approval failed"))
+
+    resp: dict = {"id": proposal_id, "status": "approved"}
+    qw = result.get("queue_warning", "")
+    if qw:
+        resp["queue_warning"] = qw
+    return resp
+
+
+@router.post("/v1/proposals/{proposal_id}/deny")
+async def proposal_deny(proposal_id: str) -> dict:
+    """Deny a pending intent proposal via the real Guardian flow."""
+    if _guardian is None:
+        raise HTTPException(status_code=503, detail="Guardian not initialised")
+
+    result = await _guardian.process_event({
+        "type": "intent_denied",
+        "payload": {"proposal_id": proposal_id, "reason": "Denied via API"},
+    })
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("error", "denial failed"))
+
+    return {"id": proposal_id, "status": "denied"}

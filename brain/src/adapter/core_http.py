@@ -601,12 +601,65 @@ class CoreHTTPClient:
 
     # -- Notifications -------------------------------------------------------
 
-    async def notify(self, device_id: str, payload: dict) -> None:
+    async def notify(self, device_id: str, payload: dict, priority: str = "solicited") -> None:
         """POST /v1/notify — broadcast notification to connected devices."""
         await self._request(
             "POST",
             "/v1/notify",
-            json={"message": json.dumps(payload)},
+            json={"message": json.dumps(payload), "priority": priority},
+        )
+
+    # -- Delegated tasks ------------------------------------------------------
+
+    async def create_delegated_task(
+        self,
+        task_id: str,
+        description: str,
+        origin: str = "telegram",
+        proposal_id: str = "",
+        idempotency_key: str = "",
+        requires_approval: bool = False,
+    ) -> dict:
+        """POST /v1/agent/tasks — create a delegated task."""
+        resp = await self._request(
+            "POST",
+            "/v1/agent/tasks",
+            json={
+                "id": task_id,
+                "description": description,
+                "origin": origin,
+                "proposal_id": proposal_id,
+                "idempotency_key": idempotency_key,
+                "requires_approval": requires_approval,
+            },
+        )
+        return resp.json()
+
+    async def get_delegated_task(self, task_id: str) -> dict | None:
+        """GET /v1/agent/tasks/{id} — fetch a delegated task.
+        Returns None only for 404. Other errors are raised."""
+        try:
+            resp = await self._request("GET", f"/v1/agent/tasks/{task_id}")
+            return resp.json()
+        except Exception as exc:
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                return None
+            raise
+
+    async def list_delegated_tasks(self, status: str = "") -> list[dict]:
+        """GET /v1/agent/tasks — list delegated tasks."""
+        params = {}
+        if status:
+            params["status"] = status
+        resp = await self._request("GET", "/v1/agent/tasks", params=params)
+        return resp.json().get("tasks", [])
+
+    async def queue_task_by_proposal(self, proposal_id: str) -> None:
+        """POST /v1/agent/tasks/queue-by-proposal — transition task to queued."""
+        await self._request(
+            "POST",
+            "/v1/agent/tasks/queue-by-proposal",
+            json={"proposal_id": proposal_id},
         )
 
     # -- Task queue ACK ------------------------------------------------------

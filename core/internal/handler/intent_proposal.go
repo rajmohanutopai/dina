@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // IntentProposalHandler proxies intent proposal lifecycle operations
@@ -28,10 +30,14 @@ type IntentProposalHandler struct {
 		GetProposalStatus(proposalID string) ([]byte, error)
 		ListProposals() ([]byte, error)
 	}
+
+	// DelegatedTasks queues linked delegated tasks on approval.
+	// May be nil if CGO is unavailable.
+	DelegatedTasks port.DelegatedTaskStore
 }
 
 // HandleApprove handles POST /v1/intent/proposals/{id}/approve.
-// Admin only — sends intent_approved event to Brain.
+// Admin only — sends intent_approved event to Brain, then queues any linked delegated task.
 func (h *IntentProposalHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -64,7 +70,27 @@ func (h *IntentProposalHandler) HandleApprove(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Redundant idempotent queue — Guardian already queues in _handle_intent_approved,
+	// but this catches the case where Core's endpoint is called directly (dina-admin).
+	var queueWarning string
+	if h.DelegatedTasks != nil {
+		if qErr := h.DelegatedTasks.QueueByProposalID(r.Context(), proposalID); qErr != nil {
+			queueWarning = qErr.Error()
+			slog.Warn("delegated_task.queue_on_approve_failed",
+				"proposal_id", proposalID, "error", qErr)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
+	if queueWarning != "" {
+		var merged map[string]interface{}
+		if json.Unmarshal(resp, &merged) == nil {
+			merged["queue_warning"] = queueWarning
+			if out, err := json.Marshal(merged); err == nil {
+				resp = out
+			}
+		}
+	}
 	w.Write(resp)
 }
 

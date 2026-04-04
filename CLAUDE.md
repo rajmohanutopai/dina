@@ -52,7 +52,7 @@ appview/            TypeScript AppView — decentralized Trust Network
                     PostgreSQL backend, 19 AT Protocol record types
                     Port 3000 (xRPC API)
 
-cli/                Python CLI — Ed25519 signed requests, device pairing, OpenClaw skill
+cli/                Python CLI — Ed25519 signed requests, device pairing, MCP server, OpenClaw skill
 admin-cli/          Admin CLI tool (dina-admin)
 ```
 
@@ -287,6 +287,10 @@ Full stack: 2× Core+Brain + PLC + PDS + Jetstream + AppView + Postgres via `doc
 
 `DINA_RELEASE=docker` with `ReleaseDockerServices` + dummy-agent container. `agent_paired` fixture runs full pairing ceremony: generates Ed25519 keypair in container, writes CLI config, pairs via Core API (initiate → complete). 4 personas: personal, health, financial, consumer.
 
+#### Sanity Tests (`tests/sanity/`)
+
+21 tests through real Telegram, OpenClaw (MCP), and Gmail. Three containers: Regression Alonso (18100), Sancho (18300), OpenClaw (13000). OpenClaw uses Dina via MCP server (`dina mcp-server`). Secrets in `tests/sanity/.env.sanity` (gitignored). See `docs/sanity-testing.md` for full guide.
+
 #### Key Patterns Across All Tiers
 
 - **Session-scoped services**: Docker stacks start once per session, not per test
@@ -335,7 +339,7 @@ appview/                TypeScript AppView (Trust Network)
     db/                    Drizzle ORM, PostgreSQL queries
     config/                Zod-validated config, constants, lexicons
 
-cli/                    Python CLI (Ed25519 signed requests, pairing)
+cli/                    Python CLI (Ed25519 signed requests, pairing, MCP server)
 admin-cli/              Admin CLI (dina-admin)
 scripts/                Test runner, utilities
 tests/                  Integration + E2E tests

@@ -75,8 +75,8 @@ x-brain-env: &brain-env
 # -- Keygen init container base (derives SLIP-0010 service keys from seed) --
 x-keygen-base: &keygen-base
   build:
-    context: ./brain
-    dockerfile: Dockerfile
+    context: ./scripts
+    dockerfile: Dockerfile.keygen
   entrypoint: ["sh", "-c"]
   command:
     - >

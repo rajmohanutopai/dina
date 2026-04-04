@@ -27,4 +27,9 @@ type AgentSessionManager interface {
 
 	// CheckGrant checks if a session has an active grant for a persona.
 	CheckGrant(ctx context.Context, sessionID, personaID string) (bool, error)
+
+	// ExpireStaleSessions ends active sessions older than maxAgeSec.
+	// Returns the number of sessions expired. Used as a safety net for
+	// sessions that were never properly ended (agent crash, teardown failure).
+	ExpireStaleSessions(ctx context.Context, maxAgeSec int64) (int, error)
 }

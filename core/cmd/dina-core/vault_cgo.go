@@ -72,6 +72,12 @@ func newD2DOutboxManager(backend vaultBackend) port.OutboxManager {
 	return sqlite.NewD2DOutboxManager(pool)
 }
 
+// newDelegatedTaskStore returns a SQLite-backed delegated task store using identity.sqlite.
+func newDelegatedTaskStore(backend vaultBackend) port.DelegatedTaskStore {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewDelegatedTaskStore(pool)
+}
+
 // readAdminKV reads an admin config value from the general persona's KV store.
 // Keys are stored as "kv:admin:<key>" in the vault_items table.
 // Returns "" if the key is not found or the general persona is not open.

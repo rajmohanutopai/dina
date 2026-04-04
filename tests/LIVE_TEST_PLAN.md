@@ -915,7 +915,7 @@ pair a second CLI (from Sancho's .venv) to Default's Core URL (port 8100).
 
 The Default instance has Telegram configured:
 - `DINA_TELEGRAM_TOKEN` in `.env`
-- `DINA_TELEGRAM_ALLOWED_USERS=149547426`
+- `DINA_TELEGRAM_ALLOWED_USERS=<your_telegram_user_id>`
 
 Test flow:
 1. Send message to bot in Telegram → verify response comes back

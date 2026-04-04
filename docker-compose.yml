@@ -50,6 +50,7 @@ services:
       - DINA_PDS_EMAIL=${DINA_PDS_EMAIL:-dina@example.com}
       - DINA_MSGBOX_URL=${DINA_MSGBOX_URL:-wss://mailbox.dinakernel.com}
       - DINA_APPVIEW_URL=${DINA_APPVIEW_URL:-https://appview.dinakernel.com}
+      - DINA_HOOK_CALLBACK_TOKEN=${DINA_HOOK_CALLBACK_TOKEN:-}
       - DINA_KNOWN_PEERS=${DINA_KNOWN_PEERS:-}
       - DINA_ALLOWED_ENDPOINTS=${DINA_ALLOWED_ENDPOINTS:-}
     secrets:

@@ -1228,6 +1228,10 @@ class GuardianLoop:
         in their response to the client.
         """
         proposal_id = str(uuid4())
+        # Extract context from payload (structured metadata for approval UX)
+        payload = intent.get("payload") or {}
+        context = payload.get("context") if isinstance(payload, dict) else None
+
         proposal = {
             "action": intent.get("action", ""),
             "target": intent.get("target", ""),
@@ -1239,11 +1243,67 @@ class GuardianLoop:
             "kind": "intent",
             "status": "pending",
         }
+        if context and isinstance(context, dict):
+            proposal["context"] = context
         self._pending_proposals[proposal_id] = proposal
         await self._evict_proposals()
         await self._persist_proposals()
 
+        # Notify via Telegram so the human can approve from their phone.
+        await self._notify_intent_approval(proposal_id, proposal)
+
         return proposal_id
+
+    async def _notify_intent_approval(
+        self, proposal_id: str, proposal: dict
+    ) -> None:
+        """Send intent approval notification to Telegram with context details."""
+        if not self._telegram or not hasattr(self._telegram, "_bot"):
+            return
+        try:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+            action = proposal.get("action", "unknown")
+            target = proposal.get("target", "")
+            risk = proposal.get("risk", "MODERATE")
+            context = proposal.get("context") or {}
+
+            # Build message — plain text to avoid Markdown parse errors
+            # (target/context may contain special characters)
+            lines = [f"🔔 Agent action requires approval\n"]
+            lines.append(f"Action: {action}")
+            if target:
+                lines.append(f"Target: {target}")
+            lines.append(f"Risk: {risk}")
+
+            if context:
+                lines.append("")
+                for key, value in context.items():
+                    if isinstance(value, list):
+                        value = ", ".join(str(v) for v in value)
+                    lines.append(f"{key}: {value}")
+
+            msg = "\n".join(lines)
+
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Approve",
+                        callback_data=f"intent_approve {proposal_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "🚫 Deny",
+                        callback_data=f"intent_deny {proposal_id}",
+                    ),
+                ],
+            ])
+
+            for chat_id in self._telegram._paired_users:
+                await self._telegram._bot.send_message(
+                    chat_id, msg, reply_markup=keyboard,
+                )
+        except Exception as exc:
+            log.warning("guardian.intent_notify_failed", extra={"error": str(exc)})
 
     # ------------------------------------------------------------------
     # Daily Briefing (SS2.5)
@@ -2710,13 +2770,29 @@ class GuardianLoop:
                 error=str(exc),
             )
 
+        # Queue any linked delegated task. Not truly atomic (separate HTTP
+        # call to Core), but converged in one code path. If this fails,
+        # the response includes a warning and Core's HandleApprove provides
+        # a redundant idempotent retry.
+        queue_warning = ""
+        if self._core and hasattr(self._core, "queue_task_by_proposal"):
+            try:
+                await self._core.queue_task_by_proposal(proposal_id)
+            except Exception as exc:
+                queue_warning = str(exc)
+                log.warning(
+                    "guardian.intent_approved.queue_task_failed",
+                    proposal_id=proposal_id,
+                    error=str(exc),
+                )
+
         log.info(
             "guardian.intent_approved",
             proposal_id=proposal_id,
             action=stored.get("action", ""),
         )
 
-        return {
+        result = {
             "status": "ok",
             "action": "intent_approved",
             "proposal_id": proposal_id,
@@ -2729,6 +2805,9 @@ class GuardianLoop:
                 "agent_did": stored.get("agent_did", ""),
             },
         }
+        if queue_warning:
+            result["queue_warning"] = queue_warning
+        return result
 
     async def _handle_intent_denied(self, event: dict) -> dict:
         """Handle user denial of a flagged agent intent.

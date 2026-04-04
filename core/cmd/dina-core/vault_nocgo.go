@@ -83,6 +83,11 @@ func newD2DOutboxManager(_ vaultBackend) port.OutboxManager {
 	return transport.NewOutboxManager(100)
 }
 
+// newDelegatedTaskStore returns nil in no-CGO mode.
+func newDelegatedTaskStore(_ vaultBackend) port.DelegatedTaskStore {
+	return nil
+}
+
 // readAdminKV is a no-op in no-CGO mode (in-memory vault has no persistence).
 func readAdminKV(_ vaultBackend, _ string) string {
 	return ""

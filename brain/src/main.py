@@ -528,6 +528,8 @@ def create_app() -> FastAPI:
                     "flag": telegram_service.handle_flag,
                     "trust": telegram_service.handle_trust,
                     "contact": telegram_service.handle_contact,
+                    "task": telegram_service.handle_task,
+                    "taskstatus": telegram_service.handle_task_status,
                     "status": telegram_service.handle_status,
                 },
                 callback_query_handler=telegram_service.handle_callback_query,
