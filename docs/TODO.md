@@ -1,9 +1,44 @@
 # OpenAPI Issue
 OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
 
-# Health Summary vs Details
+# Intra-Vault Sensitivity Levels
 
-There could be health summary which might be ok for brain to access if the reasons are there. For example - if I were to think about chairs, brain should know that I have back pain, so I should search for ergonomic chairs. But brain need not know that L4 vertebra has an issue etc - how to handle that is still pending. Same way, it should know that I will buy medium cost to maybe a bit high cost chair - but I will never buy extremely cheap or extremely costly chair. The idea being that brain does not need to know my bank details - but it should know my financial preferences.
+Currently, vault = domain AND sensitivity. Health vault is locked, general vault is open. But real life is more nuanced:
+
+- "I have diabetes" — I might share this openly, it helps agents find the right food or chair
+- "I have HIV" or "I had a psychiatric episode" — I would never want this leaked, even within the health vault
+- "My budget is around $500 for office items" — fine for agents to know
+- "My account balance is $12,340 at Chase ending 0102" — never share
+
+The fix: separate vault (domain) from sensitivity level (access control within the domain).
+
+**Proposed model:**
+
+Each vault item gets a sensitivity tag:
+- `summary` — safe to share with Brain/agents for reasoning (e.g. "has back pain", "moderate budget")
+- `detail` — accessible only with session grant (e.g. "L4-L5 disc herniation", "$500 budget range")
+- `restricted` — accessible only with explicit per-item approval (e.g. specific diagnoses, account numbers)
+
+Brain can always see `summary` items for reasoning. When someone asks about chairs, Brain knows about back pain (summary) without seeing the MRI report (restricted).
+
+**How it works in practice:**
+- User stores "My HbA1c is 9%, very high" → health vault, detail sensitivity
+- User stores "I have chronic back pain" → health vault, summary sensitivity  
+- User stores "Diagnosed with condition X in 2024" → health vault, restricted sensitivity
+- Agent asks for chair recommendation → Brain sees "has back pain" (summary), searches appropriately
+- Agent asks for full medical history → approval required for detail + restricted items
+
+This applies to all vaults:
+- Finance: "budget is moderate" (summary) vs "account number 12345" (restricted)
+- Work: "works in engineering" (summary) vs "salary is $180K" (restricted)
+- General: most items are summary by default
+
+**Implementation notes:**
+- Add `sensitivity` field to `vault_items` table: `summary` | `detail` | `restricted`
+- Default to `detail` for health/finance, `summary` for general/work
+- Brain's vault query filters by sensitivity based on caller + session grants
+- LLM classification can suggest sensitivity at ingestion time
+- User can override via Telegram: "remember (private) My diagnosis is..."
 
 # Security
 
@@ -27,6 +62,16 @@ Obviously security of others also has to be maintained, so, Idenity.sqlite conta
   4. Persona "default" not found — authz_error access_denied persona=default (3 times, status 404)                                                                                                                   
 
 2. when i sent 2 days later message it went and created a reminder saying 460 seconds remaining etc
+
+
+# Interaction Architecture Docs
+
+- `docs/interaction/full_interaction_areas.md` — full problem-space inventory of Dina interaction areas
+- `docs/interaction/domains.md` — consolidated user domains, interaction modes, sensitivity, and execution model
+- `docs/interaction/d2d_domains.md` — Dina-to-Dina capability systems and primary pillars
+- `docs/interaction/interaction_topologies.md` — counterparty types, execution paths, and federated execution
+- `docs/interaction/context_resolution.md` — grounding and reference resolution needed before fulfillment
+- `docs/interaction/formatting.md` — canonical response formatting contract across channels and systems
 
 
 # Better Reply Architecture
