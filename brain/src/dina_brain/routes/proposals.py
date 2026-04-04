@@ -102,9 +102,11 @@ async def proposal_approve(proposal_id: str) -> dict:
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("error", "approval failed"))
 
-    # Task queueing happens inside Guardian's _handle_intent_approved
-    # (atomic with the approval). No separate queue call needed.
-    return {"id": proposal_id, "status": "approved"}
+    resp: dict = {"id": proposal_id, "status": "approved"}
+    qw = result.get("queue_warning", "")
+    if qw:
+        resp["queue_warning"] = qw
+    return resp
 
 
 @router.post("/v1/proposals/{proposal_id}/deny")

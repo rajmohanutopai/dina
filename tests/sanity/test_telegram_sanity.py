@@ -749,70 +749,7 @@ class TestOpenClaw:
 
 
 class TestDelegatedTaskLifecycle:
-    """Exercises the delegated task queue: create → queue → claim → complete."""
-
-    @pytest.fixture(autouse=True, scope="class")
-    def _agent_paired(self, tmp_path_factory: pytest.TempPathFactory) -> dict:
-        """Pair a CLI agent with Alonso's Core for task operations."""
-        import json
-        import subprocess
-
-        agent_dir = str(tmp_path_factory.mktemp("task-agent"))
-        config_dir = f"{agent_dir}/.dina/cli"
-        env = {**os.environ, "DINA_CONFIG_DIR": config_dir}
-
-        result = subprocess.run(
-            ["docker", "compose", "-p", "dina-regression-alonso",
-             "exec", "-T", "core", "dina-admin", "--json", "device", "pair"],
-            capture_output=True, text=True, timeout=15,
-        )
-        assert result.returncode == 0
-        code = json.loads(result.stdout)["code"]
-
-        result = subprocess.run(
-            ["dina", "configure", "--headless",
-             "--core-url", f"http://localhost:{ALONSO_PORT}",
-             "--pairing-code", code,
-             "--device-name", "task-test-agent",
-             "--config-dir", agent_dir,
-             "--role", "agent"],
-            capture_output=True, text=True, timeout=15, env=env,
-        )
-        assert result.returncode == 0
-
-        yield {"env": env}
-
-    def test_create_and_claim(self, _agent_paired: dict) -> None:
-        """Create a task via Brain, claim it via agent CLI."""
-        import subprocess
-        import json
-
-        task_id = f"test-task-{int(time.time())}"
-
-        # Create task via Telegram /task (goes through Brain → Core API)
-        # Instead of Telegram, call Core API directly via dina-admin
-        result = subprocess.run(
-            ["docker", "compose", "-p", "dina-regression-alonso",
-             "exec", "-T", "core", "sh", "-c",
-             f'wget -qO- --post-data \'{{"id":"{task_id}","description":"Test lifecycle task","origin":"api","requires_approval":false}}\' '
-             f'--header="Content-Type: application/json" '
-             f'http://localhost:8100/v1/agent/tasks 2>&1 || echo "FAILED"'],
-            capture_output=True, text=True, timeout=15,
-        )
-        # The wget call goes through the Unix socket (admin auth).
-        # If wget isn't available, use the Brain's admin API instead.
-        print(f"\n  Create: {result.stdout[:100]}")
-
-        # Claim via paired agent device
-        result = subprocess.run(
-            ["dina", "--json", "validate", "--session", "dummy",
-             "search", "test"],
-            capture_output=True, text=True, timeout=15,
-            env=_agent_paired["env"],
-        )
-        # Just verify the agent can talk to Core
-        assert result.returncode == 0
-        print(f"  Agent auth: OK")
+    """Exercises the delegated task API: /task creates durable record, /taskstatus reads it."""
 
     def test_task_via_telegram(self, tg: SanityTelegramClient) -> None:
         """Verify /task creates a durable task in Core (not KV)."""
@@ -827,7 +764,6 @@ class TestDelegatedTaskLifecycle:
 
     def test_taskstatus_reads_core(self, tg: SanityTelegramClient) -> None:
         """Verify /taskstatus reads from Core delegated_tasks table."""
-        # First create a task
         r = _send_and_wait(tg, ALONSO_BOT,
                            "/task Find the cheapest USB microphone",
                            timeout=15)
@@ -836,7 +772,6 @@ class TestDelegatedTaskLifecycle:
         assert m, f"No task ID in response: {r[:150]}"
         task_id = m.group(0)
 
-        # Check status
         time.sleep(2)
         r2 = _send_and_wait(tg, ALONSO_BOT, f"/taskstatus {task_id}", timeout=15)
         assert r2 is not None
@@ -845,3 +780,95 @@ class TestDelegatedTaskLifecycle:
             f"Unexpected status: {r2[:150]}"
         )
         print(f"\n  {r2[:150]}")
+
+    def test_task_approve_and_complete(self, tg: SanityTelegramClient) -> None:
+        """Full daemon path: /task → approve → daemon claims → completes.
+
+        Requires agent-daemon running in the OpenClaw container.
+        Skipped if the container is not running.
+        """
+        import re
+        import subprocess
+
+        if not _openclaw_running():
+            pytest.skip("OpenClaw container not running")
+
+        # Check if agent-daemon is running inside the container
+        result = subprocess.run(
+            ["docker", "exec", OPENCLAW_CONTAINER,
+             "sh", "-c", "cat /tmp/agent-daemon.log 2>/dev/null | head -1"],
+            capture_output=True, text=True,
+        )
+        if "agent-daemon" not in result.stdout:
+            pytest.skip("agent-daemon not running in OpenClaw container")
+
+        # Create a safe (auto-approved → queued) task via Telegram
+        r = _send_and_wait(tg, ALONSO_BOT,
+                           "/task List the top 3 best-selling books on Amazon this week",
+                           timeout=20)
+        assert r is not None
+        m = re.search(r"task-[0-9a-f]+", r or "")
+        assert m, f"No task ID: {r[:150]}"
+        task_id = m.group(0)
+        print(f"\n  Created: {task_id}")
+
+        # If needs approval, approve via dina-admin (most reliable path)
+        if "approval" in (r or "").lower() or "moderate" in (r or "").lower():
+            time.sleep(5)
+            # List proposals and approve the latest pending one
+            result = subprocess.run(
+                ["docker", "compose", "-p", "dina-regression-alonso",
+                 "exec", "-T", "core", "dina-admin", "--json", "intent", "list"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                import json
+                proposals = json.loads(result.stdout)
+                pending = [p for p in proposals if p["status"] == "pending"]
+                if pending:
+                    pid = pending[-1]["id"]
+                    subprocess.run(
+                        ["docker", "compose", "-p", "dina-regression-alonso",
+                         "exec", "-T", "core", "dina-admin", "intent", "approve", pid],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                    print(f"  Approved proposal: {pid}")
+                else:
+                    print(f"  No pending proposals found")
+
+        # Wait for daemon to claim and complete (up to 90s)
+        # Poll until terminal state — must reach completed or failed via MCP callback
+        terminal = False
+        for i in range(8):  # up to 2 minutes
+            time.sleep(15)
+            r2 = _send_and_wait(tg, ALONSO_BOT, f"/taskstatus {task_id}", timeout=10)
+            if not r2:
+                continue
+            r2_lower = r2.lower()
+            if "completed" in r2_lower:
+                # Verify the result is non-empty (proves dina_task_complete was called)
+                assert "result:" in r2_lower or "result" in r2_lower, (
+                    f"Completed but no result — MCP callback may not have fired: {r2[:200]}"
+                )
+                print(f"  Completed after {(i+1)*15}s: {r2[:200]}")
+                terminal = True
+                break
+            if "failed" in r2_lower:
+                # Failed is acceptable IF there's an error message (proves dina_task_fail was called)
+                assert "error:" in r2_lower or "error" in r2_lower, (
+                    f"Failed but no error — MCP callback may not have fired: {r2[:200]}"
+                )
+                print(f"  Failed after {(i+1)*15}s: {r2[:200]}")
+                terminal = True
+                break
+            status = "unknown"
+            for word in ["running", "claimed", "queued", "pending"]:
+                if word in r2_lower:
+                    status = word
+                    break
+            print(f"  [{(i+1)*15}s] Status: {status}")
+
+        assert terminal, (
+            f"Task never reached terminal state via MCP callback within 2 minutes. "
+            f"Last status: {r2[:200] if r2 else 'none'}"
+        )

@@ -8,7 +8,7 @@ const (
 	DelegatedPendingApproval DelegatedTaskStatus = "pending_approval"
 	DelegatedQueued          DelegatedTaskStatus = "queued"
 	DelegatedClaimed         DelegatedTaskStatus = "claimed"
-	DelegatedRunning         DelegatedTaskStatus = "running"   // v1: not used (forward compat)
+	DelegatedRunning         DelegatedTaskStatus = "running"
 	DelegatedCompleted       DelegatedTaskStatus = "completed"
 	DelegatedFailed          DelegatedTaskStatus = "failed"
 	DelegatedCancelled       DelegatedTaskStatus = "cancelled"

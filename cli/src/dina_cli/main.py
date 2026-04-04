@@ -1647,12 +1647,13 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
         if not json_mode:
             click.echo(f"  Delegating to OpenClaw: {description}")
 
-        # Construct OpenClaw client with real paired device identity.
-        # Fail fast if identity is broken — unsigned Gateway calls will
-        # produce confusing auth errors downstream.
+        # Construct OpenClaw client with OpenClaw-compatible device auth.
+        # Gateway device identity is the key fingerprint + raw public key,
+        # not the Dina DID used for Core HTTP signing.
         identity = client._identity
         try:
-            device_did = identity.did()
+            device_id = identity.device_fingerprint()
+            device_public_key = identity.public_key_base64url()
             _identity_ref = identity  # capture for lambda closure
             sign_fn = lambda data: bytes.fromhex(_identity_ref.sign_data(data))
         except Exception as exc:
@@ -1663,9 +1664,12 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
         openclaw = OpenClawClient(
             config.openclaw_url,
             token=config.openclaw_token,
-            device_id=device_did,
+            device_id=device_id,
+            device_public_key=device_public_key,
             device_name=config.device_name or "dina-cli",
             sign_fn=sign_fn,
+            device_token=getattr(config, "openclaw_device_token", ""),
+            save_device_token=_config_mod.save_openclaw_device_token,
         )
         try:
             result = openclaw.run_task(description, dina_session=session_name)

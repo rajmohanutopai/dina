@@ -108,31 +108,88 @@ func (s *DelegatedTaskStore) List(ctx context.Context, status string, limit int)
 }
 
 // Claim atomically grabs the oldest queued task.
+// Uses a transaction (SQLite 3.33.0 doesn't support RETURNING).
 func (s *DelegatedTaskStore) Claim(ctx context.Context, agentDID string, leaseSec int) (*domain.DelegatedTask, error) {
 	leaseExpires := now() + int64(leaseSec)
 	ts := now()
+	db := s.db()
 
-	row := s.db().QueryRowContext(ctx,
-		`UPDATE delegated_tasks
-		 SET status = 'claimed', agent_did = ?, lease_expires_at = ?, updated_at = ?,
-		     session_name = 'task-' || id
-		 WHERE id = (
-		     SELECT id FROM delegated_tasks
-		     WHERE status = 'queued'
-		     ORDER BY created_at ASC
-		     LIMIT 1
-		 )
-		 RETURNING id, proposal_id, session_name, description, origin, status, agent_did,
-		           lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
-		           error, created_at, updated_at`,
-		agentDID, leaseExpires, ts,
-	)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
 
-	task, err := s.scanOne(row)
+	// Find the oldest queued task.
+	var taskID string
+	err = tx.QueryRowContext(ctx,
+		`SELECT id FROM delegated_tasks WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`,
+	).Scan(&taskID)
 	if err == sql.ErrNoRows {
 		return nil, nil // no work available
 	}
-	return task, err
+	if err != nil {
+		return nil, err
+	}
+
+	// Claim it.
+	sessionName := "task-" + taskID
+	_, err = tx.ExecContext(ctx,
+		`UPDATE delegated_tasks
+		 SET status = 'claimed', agent_did = ?, lease_expires_at = ?, updated_at = ?,
+		     session_name = ?
+		 WHERE id = ? AND status = 'queued'`,
+		agentDID, leaseExpires, ts, sessionName, taskID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read back the full task.
+	row := tx.QueryRowContext(ctx,
+		`SELECT id, proposal_id, session_name, description, origin, status, agent_did,
+		        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
+		        error, created_at, updated_at
+		 FROM delegated_tasks WHERE id = ?`, taskID,
+	)
+	task, err := s.scanOne(row)
+	if err != nil {
+		return nil, err
+	}
+
+	return task, tx.Commit()
+}
+
+// MarkRunning transitions claimed → running after OpenClaw accepts execution.
+// Clears lease. Idempotent if already running with same runID.
+func (s *DelegatedTaskStore) MarkRunning(ctx context.Context, id, agentDID, runID string) error {
+	// Try the normal transition first.
+	result, err := s.db().ExecContext(ctx,
+		`UPDATE delegated_tasks SET status = 'running', run_id = ?, lease_expires_at = 0, updated_at = ?
+		 WHERE id = ? AND agent_did = ? AND status = 'claimed'`,
+		runID, now(), id, agentDID,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n > 0 {
+		return nil
+	}
+
+	// Check if already running with same run_id (idempotent).
+	var currentStatus, currentRunID string
+	err = s.db().QueryRowContext(ctx,
+		`SELECT status, run_id FROM delegated_tasks WHERE id = ? AND agent_did = ?`,
+		id, agentDID,
+	).Scan(&currentStatus, &currentRunID)
+	if err != nil {
+		return fmt.Errorf("task %s not found or not owned by %s", id, agentDID)
+	}
+	if currentStatus == "running" && currentRunID == runID {
+		return nil // idempotent
+	}
+	return fmt.Errorf("task %s cannot transition to running (current status: %s)", id, currentStatus)
 }
 
 // Heartbeat extends the lease for a claimed task.
@@ -170,7 +227,7 @@ func (s *DelegatedTaskStore) UpdateProgress(ctx context.Context, id, agentDID, m
 	return nil
 }
 
-// Complete marks a task as completed.
+// Complete marks a task as completed. Idempotent: already completed = no-op success.
 func (s *DelegatedTaskStore) Complete(ctx context.Context, id, agentDID, result string) error {
 	res, err := s.db().ExecContext(ctx,
 		`UPDATE delegated_tasks SET status = 'completed', result_summary = ?, updated_at = ?
@@ -182,12 +239,18 @@ func (s *DelegatedTaskStore) Complete(ctx context.Context, id, agentDID, result 
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
+		// Check if already terminal — idempotent no-op.
+		var current string
+		s.db().QueryRowContext(ctx, `SELECT status FROM delegated_tasks WHERE id = ?`, id).Scan(&current)
+		if current == "completed" || current == "failed" {
+			return nil // already terminal
+		}
 		return fmt.Errorf("task %s not found or not owned by %s", id, agentDID)
 	}
 	return nil
 }
 
-// Fail marks a task as failed.
+// Fail marks a task as failed. Idempotent: already terminal = no-op success.
 func (s *DelegatedTaskStore) Fail(ctx context.Context, id, agentDID, errMsg string) error {
 	res, err := s.db().ExecContext(ctx,
 		`UPDATE delegated_tasks SET status = 'failed', error = ?, updated_at = ?
@@ -199,6 +262,11 @@ func (s *DelegatedTaskStore) Fail(ctx context.Context, id, agentDID, errMsg stri
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
+		var current string
+		s.db().QueryRowContext(ctx, `SELECT status FROM delegated_tasks WHERE id = ?`, id).Scan(&current)
+		if current == "completed" || current == "failed" {
+			return nil // already terminal
+		}
 		return fmt.Errorf("task %s not found or not owned by %s", id, agentDID)
 	}
 	return nil
@@ -235,7 +303,7 @@ func (s *DelegatedTaskStore) ExpireLeases(ctx context.Context) ([]domain.Delegat
 		        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
 		        error, created_at, updated_at
 		 FROM delegated_tasks
-		 WHERE status IN ('claimed', 'running') AND lease_expires_at > 0 AND lease_expires_at < ?`,
+		 WHERE status = 'claimed' AND lease_expires_at > 0 AND lease_expires_at < ?`,
 		ts,
 	)
 	if err != nil {

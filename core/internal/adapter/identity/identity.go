@@ -1305,13 +1305,15 @@ func (pm *PersonaManager) StartSession(_ context.Context, agentDID, name string)
 		}
 	}
 
+	now := time.Now().Unix()
 	sess := domain.AgentSession{
-		ID:        generateSessionID(),
-		Name:      name,
-		AgentDID:  agentDID,
-		Status:    domain.SessionActive,
-		Grants:    []domain.AccessGrant{},
-		CreatedAt: time.Now().Unix(),
+		ID:             generateSessionID(),
+		Name:           name,
+		AgentDID:       agentDID,
+		Status:         domain.SessionActive,
+		Grants:         []domain.AccessGrant{},
+		CreatedAt:      now,
+		LastActivityAt: now,
 	}
 	pm.sessions = append(pm.sessions, sess)
 	pm.persistState()
@@ -1395,7 +1397,12 @@ func (pm *PersonaManager) ExpireStaleSessions(_ context.Context, maxAgeSec int64
 	cutoff := time.Now().Unix() - maxAgeSec
 	count := 0
 	for i, s := range pm.sessions {
-		if s.Status == domain.SessionActive && s.CreatedAt > 0 && s.CreatedAt < cutoff {
+		// Use LastActivityAt if available (updated on start/grant), fall back to CreatedAt.
+		lastActive := s.LastActivityAt
+		if lastActive == 0 {
+			lastActive = s.CreatedAt
+		}
+		if s.Status == domain.SessionActive && lastActive > 0 && lastActive < cutoff {
 			// End the stale session — revoke grants, close sensitive vaults.
 			var personasToClose []string
 			for _, g := range s.Grants {
@@ -1447,6 +1454,7 @@ func (pm *PersonaManager) AddGrant(_ context.Context, sessionID, personaID, scop
 				grant.ExpiresAt = time.Now().Add(1 * time.Hour).Unix() // default 1h
 			}
 			pm.sessions[i].Grants = append(pm.sessions[i].Grants, grant)
+			pm.sessions[i].LastActivityAt = time.Now().Unix()
 			pm.persistState()
 			return nil
 		}
@@ -1456,13 +1464,18 @@ func (pm *PersonaManager) AddGrant(_ context.Context, sessionID, personaID, scop
 
 // CheckGrant checks if a session has an active grant for a persona.
 func (pm *PersonaManager) CheckGrant(_ context.Context, sessionID, personaID string) (bool, error) {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 
 	pID := canonicalPersonaID(personaID)
 	now := time.Now().Unix()
-	for _, s := range pm.sessions {
+	for i, s := range pm.sessions {
 		if (s.ID == sessionID || s.Name == sessionID) && s.Status == domain.SessionActive {
+			// Refresh activity timestamp so the sweeper knows this session is in use.
+			if now-pm.sessions[i].LastActivityAt > 300 { // persist at most every 5 minutes
+				pm.sessions[i].LastActivityAt = now
+				pm.persistState()
+			}
 			for _, g := range s.Grants {
 				gPID := canonicalPersonaID(g.PersonaID)
 				if gPID == pID && (g.ExpiresAt == 0 || g.ExpiresAt > now) {

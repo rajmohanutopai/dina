@@ -30,6 +30,11 @@ type DelegatedTaskStore interface {
 	// Sets session_name = "task-" + id server-side. Returns nil if no work available.
 	Claim(ctx context.Context, agentDID string, leaseSec int) (*domain.DelegatedTask, error)
 
+	// MarkRunning transitions a task from claimed to running after OpenClaw accepts it.
+	// Clears lease (running tasks are not lease-based). Idempotent if already running
+	// with the same runID. Rejects other transitions.
+	MarkRunning(ctx context.Context, id, agentDID, runID string) error
+
 	// Heartbeat extends the lease for a claimed task. Only the claiming agent can heartbeat.
 	Heartbeat(ctx context.Context, id, agentDID string, leaseSec int) error
 

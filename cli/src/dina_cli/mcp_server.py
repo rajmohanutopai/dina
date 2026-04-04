@@ -149,20 +149,47 @@ def dina_remember(text: str, session: str, category: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Task progress (optional — daemon handles terminal states)
+# Task lifecycle — called by agent when task work is done
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool()
-def dina_task_progress(task_id: str, message: str) -> dict:
-    """Report progress on a running task.
+def dina_task_complete(task_id: str, result: str) -> dict:
+    """Report that a delegated task is complete.
 
-    Optional: the agent-daemon handles completion/failure. This tool is
-    for intermediate progress updates only (e.g. "Found 2 of 3 results").
-    Do NOT use this for completion or failure — the daemon handles those.
+    IMPORTANT: Call this when you have finished the task. Include a summary
+    of what you did and any results. The user will see this in /taskstatus.
 
     Args:
-        task_id: The task ID from the original delegation
+        task_id: The task ID (from the task prompt)
+        result: Human-readable summary of what was accomplished
+    """
+    c = _get_client()
+    c.task_complete(task_id, result)
+    return {"status": "completed", "task_id": task_id}
+
+
+@mcp.tool()
+def dina_task_fail(task_id: str, error: str) -> dict:
+    """Report that a delegated task failed.
+
+    Call this if you cannot complete the task for any reason.
+
+    Args:
+        task_id: The task ID (from the task prompt)
+        error: What went wrong
+    """
+    c = _get_client()
+    c.task_fail(task_id, error)
+    return {"status": "failed", "task_id": task_id}
+
+
+@mcp.tool()
+def dina_task_progress(task_id: str, message: str) -> dict:
+    """Report progress on a running task (optional).
+
+    Args:
+        task_id: The task ID (from the task prompt)
         message: Human-readable progress note
     """
     c = _get_client()

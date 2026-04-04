@@ -55,6 +55,9 @@ func (m *mockSessionManager) AddGrant(_ context.Context, _, _, _, _ string) erro
 func (m *mockSessionManager) CheckGrant(_ context.Context, _, _ string) (bool, error) {
 	return false, nil
 }
+func (m *mockSessionManager) ExpireStaleSessions(_ context.Context, _ int64) (int, error) {
+	return 0, nil
+}
 
 // --------------------------------------------------------------------------
 // TST-CORE-920: Empty name generates a default starting with "SName-".

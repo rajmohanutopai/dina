@@ -348,6 +348,39 @@ func (h *DelegatedTaskHandler) HandleFail(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]string{"status": "failed"})
 }
 
+// HandleMarkRunning handles POST /v1/agent/tasks/{id}/running.
+// Transitions claimed → running after OpenClaw accepts execution.
+func (h *DelegatedTaskHandler) HandleMarkRunning(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	_, agentDID, _ := callerInfo(r)
+	if !h.isAgentDevice(r, agentDID) {
+		jsonError(w, "only agent-role devices can mark tasks running", http.StatusForbidden)
+		return
+	}
+
+	taskID := extractSubTaskID(r.URL.Path, "/running")
+	if taskID == "" {
+		jsonError(w, "task_id required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		RunID string `json:"run_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	if err := h.Tasks.MarkRunning(r.Context(), taskID, agentDID, req.RunID); err != nil {
+		jsonError(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "running"})
+}
+
 // HandleProgress handles POST /v1/agent/tasks/{id}/progress.
 func (h *DelegatedTaskHandler) HandleProgress(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

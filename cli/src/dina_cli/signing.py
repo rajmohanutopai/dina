@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import secrets
@@ -139,6 +140,22 @@ class CLIIdentity:
         """
         encoded = base58.b58encode(_ED25519_MULTICODEC + self._raw_public_key())
         return f"z{encoded.decode('ascii')}"
+
+    def public_key_base64url(self) -> str:
+        """Return the raw public key as base64url without padding.
+
+        OpenClaw's device-auth handshake expects raw Ed25519 public-key bytes,
+        not a DID or multibase wrapper.
+        """
+        return base64.urlsafe_b64encode(self._raw_public_key()).decode("ascii").rstrip("=")
+
+    def device_fingerprint(self) -> str:
+        """Return the OpenClaw device fingerprint for this keypair.
+
+        OpenClaw derives device IDs as the SHA-256 hex digest of the raw
+        Ed25519 public key.
+        """
+        return hashlib.sha256(self._raw_public_key()).hexdigest()
 
     # -- Data signing ----------------------------------------------------------
 

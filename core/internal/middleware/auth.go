@@ -87,6 +87,12 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// /v1/internal/* endpoints have their own Bearer token auth.
+		// Bypass the normal Ed25519/token middleware.
+		if strings.HasPrefix(r.URL.Path, "/v1/internal/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// /admin/* is authenticated by Brain admin session/login middleware.
 		// Core acts as a transport proxy for this path.
 		if r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/") {

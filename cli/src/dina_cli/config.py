@@ -52,6 +52,8 @@ class Config:
     role: str = "user"         # "user" or "agent" — set during configure
     openclaw_url: str = ""     # ws://localhost:3000 — OpenClaw Gateway
     openclaw_token: str = ""   # Gateway auth token
+    openclaw_device_token: str = ""  # Cached per-device Gateway token
+    openclaw_hook_token: str = ""    # Token for /hooks/dina-task submission
 
 
 def _load_saved() -> dict:
@@ -78,6 +80,16 @@ def save_config(values: dict) -> Path:
     return CONFIG_FILE
 
 
+def save_openclaw_device_token(token: str) -> Path:
+    """Persist or clear the cached OpenClaw device token."""
+    saved = _load_saved()
+    if token:
+        saved["openclaw_device_token"] = token
+    else:
+        saved.pop("openclaw_device_token", None)
+    return save_config(saved)
+
+
 def load_config() -> Config:
     """Build Config from saved file + env overrides.
 
@@ -101,6 +113,16 @@ def load_config() -> Config:
     role = saved.get("role") or "user"
     openclaw_url = os.environ.get("DINA_OPENCLAW_URL") or saved.get("openclaw_url") or ""
     openclaw_token = os.environ.get("DINA_OPENCLAW_TOKEN") or saved.get("openclaw_token") or ""
+    openclaw_device_token = (
+        os.environ.get("DINA_OPENCLAW_DEVICE_TOKEN")
+        or saved.get("openclaw_device_token")
+        or ""
+    )
+    openclaw_hook_token = (
+        os.environ.get("DINA_OPENCLAW_HOOK_TOKEN")
+        or saved.get("openclaw_hook_token")
+        or ""
+    )
 
     return Config(
         core_url=core_url,
@@ -109,4 +131,6 @@ def load_config() -> Config:
         role=role,
         openclaw_url=openclaw_url,
         openclaw_token=openclaw_token,
+        openclaw_device_token=openclaw_device_token,
+        openclaw_hook_token=openclaw_hook_token,
     )

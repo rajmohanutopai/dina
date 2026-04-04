@@ -72,14 +72,25 @@ func (h *IntentProposalHandler) HandleApprove(w http.ResponseWriter, r *http.Req
 
 	// Redundant idempotent queue — Guardian already queues in _handle_intent_approved,
 	// but this catches the case where Core's endpoint is called directly (dina-admin).
+	var queueWarning string
 	if h.DelegatedTasks != nil {
 		if qErr := h.DelegatedTasks.QueueByProposalID(r.Context(), proposalID); qErr != nil {
+			queueWarning = qErr.Error()
 			slog.Warn("delegated_task.queue_on_approve_failed",
 				"proposal_id", proposalID, "error", qErr)
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	if queueWarning != "" {
+		var merged map[string]interface{}
+		if json.Unmarshal(resp, &merged) == nil {
+			merged["queue_warning"] = queueWarning
+			if out, err := json.Marshal(merged); err == nil {
+				resp = out
+			}
+		}
+	}
 	w.Write(resp)
 }
 

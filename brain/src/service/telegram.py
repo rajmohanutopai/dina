@@ -761,9 +761,12 @@ class TelegramService:
                 if status == "error":
                     await ch.edit(ErrorResponse(text=result.get("error", "Approval failed.")))
                 else:
-                    # Task queueing happens inside Guardian's _handle_intent_approved
-                    # (atomic with the approval). No separate queue call needed.
-                    await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
+                    qw = result.get("queue_warning", "")
+                    if qw:
+                        await ch.edit(RichResponse(
+                            text=f"✅ Approved: `{proposal_id}`\n⚠️ Task queueing failed: {qw}"))
+                    else:
+                        await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
             except Exception as exc:
                 log.warning("telegram.intent_approve_failed", extra={"id": proposal_id, "error": str(exc)})
                 await ch.edit(ErrorResponse(text="Approval failed. Try via admin CLI."))

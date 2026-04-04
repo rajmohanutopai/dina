@@ -52,6 +52,18 @@ cat > "$CONFIG_FILE" <<CONF
     },
   },
 
+  hooks: {
+    enabled: true,
+    token: "dina-hooks-token-${OC_TOKEN}",
+    allowRequestSessionKey: true,
+    allowedSessionKeyPrefixes: ["hook:"],
+  },
+
+  browser: {
+    noSandbox: true,
+    headless: true,
+  },
+
   logging: {
     level: "info",
   },
@@ -87,6 +99,19 @@ if gog gmail search "is:unread" --limit 1 --account dinaworker85@gmail.com >/dev
 else
     echo "  gog: auth check failed (token may need refresh)"
 fi
+
+echo "==> Setting up callback hook env"
+# For the OpenClaw agent_end hook → Dina Core callback
+export DINA_CORE_CALLBACK_URL="${DINA_CORE_URL}"
+export DINA_HOOK_CALLBACK_TOKEN="${DINA_HOOK_CALLBACK_TOKEN:-dina-callback-sanity-token}"
+
+echo "==> Starting dina agent-daemon (background)"
+export DINA_CONFIG_DIR=/root/.dina/cli
+export DINA_OPENCLAW_URL="http://localhost:3000"
+export DINA_OPENCLAW_HOOK_TOKEN="dina-hooks-token-${OC_TOKEN}"
+dina agent-daemon --poll-interval 10 --lease-duration 300 > /tmp/agent-daemon.log 2>&1 &
+DAEMON_PID=$!
+echo "  agent-daemon PID: ${DAEMON_PID}"
 
 echo "==> Starting OpenClaw gateway (port 3000, token: ${OC_TOKEN:0:8}...)"
 exec openclaw gateway

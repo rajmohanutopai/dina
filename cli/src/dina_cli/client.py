@@ -409,6 +409,13 @@ class DinaClient:
             json={"error": error},
         )
 
+    def mark_running(self, task_id: str, run_id: str = "") -> None:
+        """Mark task as running after OpenClaw accepts (POST /v1/agent/tasks/{id}/running)."""
+        self._request(
+            self._core, "POST", f"/v1/agent/tasks/{task_id}/running",
+            json={"run_id": run_id},
+        )
+
     def task_progress(self, task_id: str, message: str) -> None:
         """Update progress on a claimed task (POST /v1/agent/tasks/{id}/progress)."""
         self._request(

@@ -2770,12 +2770,16 @@ class GuardianLoop:
                 error=str(exc),
             )
 
-        # Queue any linked delegated task — done here so approval + queue
-        # are atomic (same call, same process, no separate HTTP hop).
+        # Queue any linked delegated task. Not truly atomic (separate HTTP
+        # call to Core), but converged in one code path. If this fails,
+        # the response includes a warning and Core's HandleApprove provides
+        # a redundant idempotent retry.
+        queue_warning = ""
         if self._core and hasattr(self._core, "queue_task_by_proposal"):
             try:
                 await self._core.queue_task_by_proposal(proposal_id)
             except Exception as exc:
+                queue_warning = str(exc)
                 log.warning(
                     "guardian.intent_approved.queue_task_failed",
                     proposal_id=proposal_id,
@@ -2788,7 +2792,7 @@ class GuardianLoop:
             action=stored.get("action", ""),
         )
 
-        return {
+        result = {
             "status": "ok",
             "action": "intent_approved",
             "proposal_id": proposal_id,
@@ -2801,6 +2805,9 @@ class GuardianLoop:
                 "agent_did": stored.get("agent_did", ""),
             },
         }
+        if queue_warning:
+            result["queue_warning"] = queue_warning
+        return result
 
     async def _handle_intent_denied(self, event: dict) -> dict:
         """Handle user denial of a flagged agent intent.

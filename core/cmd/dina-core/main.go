@@ -1523,12 +1523,47 @@ func main() {
 				delegatedTaskH.HandleFail(w, r)
 			case strings.HasSuffix(path, "/progress"):
 				delegatedTaskH.HandleProgress(w, r)
+			case strings.HasSuffix(path, "/running"):
+				delegatedTaskH.HandleMarkRunning(w, r)
 			default:
 				delegatedTaskH.HandleGet(w, r)
 			}
 		})
 
-		// Lease expiry goroutine — requeues tasks with expired leases every 60s
+		// Internal callback endpoints for OpenClaw agent_end hooks.
+		// Authenticated by dedicated Bearer token, not device Ed25519.
+		callbackToken := os.Getenv("DINA_HOOK_CALLBACK_TOKEN")
+		if callbackToken != "" {
+			callbackH := &handler.DelegatedTaskCallbackHandler{
+				Tasks:         delegatedTaskStore,
+				Sessions:      personaMgr,
+				CallbackToken: callbackToken,
+			}
+			// List all tasks (unfiltered) for reconciler
+			mux.HandleFunc("/v1/internal/delegated-tasks", func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/internal/delegated-tasks" {
+					callbackH.HandleList(w, r)
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mux.HandleFunc("/v1/internal/delegated-tasks/", func(w http.ResponseWriter, r *http.Request) {
+				path := r.URL.Path
+				switch {
+				case strings.HasSuffix(path, "/complete"):
+					callbackH.HandleComplete(w, r)
+				case strings.HasSuffix(path, "/fail"):
+					callbackH.HandleFail(w, r)
+				case strings.HasSuffix(path, "/progress"):
+					callbackH.HandleProgress(w, r)
+				default:
+					http.NotFound(w, r)
+				}
+			})
+			slog.Info("delegated_task.callback_endpoints_registered")
+		}
+
+		// Lease expiry goroutine — requeues claimed tasks (not running) every 60s
 		go func() {
 			ticker := time.NewTicker(60 * time.Second)
 			defer ticker.Stop()
