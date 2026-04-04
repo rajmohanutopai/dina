@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -21,6 +23,8 @@ type Logging struct {
 }
 
 // statusWriter wraps http.ResponseWriter to capture the response status code.
+// It also implements http.Hijacker and http.Flusher by delegating to the
+// underlying writer, so WebSocket upgrades and SSE work through this middleware.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
@@ -29,6 +33,21 @@ type statusWriter struct {
 func (sw *statusWriter) WriteHeader(code int) {
 	sw.status = code
 	sw.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack implements http.Hijacker for WebSocket upgrade support.
+func (sw *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := sw.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+}
+
+// Flush implements http.Flusher for streaming/SSE support.
+func (sw *statusWriter) Flush() {
+	if fl, ok := sw.ResponseWriter.(http.Flusher); ok {
+		fl.Flush()
+	}
 }
 
 // Handler returns middleware that logs each request with structured fields.

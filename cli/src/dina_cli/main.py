@@ -1716,3 +1716,22 @@ def mcp_server() -> None:
     """
     from .mcp_server import run_server
     run_server()
+
+
+@cli.command("agent-daemon")
+@click.option("--poll-interval", default=15, type=int, help="Seconds between claim polls (default 15)")
+@click.option("--lease-duration", default=300, type=int, help="Lease duration in seconds (default 300)")
+def agent_daemon(poll_interval: int, lease_duration: int) -> None:
+    """Run the persistent agent daemon.
+
+    \b
+    Polls Core for queued delegated tasks, launches OpenClaw to execute
+    them, and reports results back. Runs until SIGINT/SIGTERM.
+
+    \b
+    Requires:
+      - Paired device with role=agent (dina configure --role agent)
+      - OpenClaw Gateway running (DINA_OPENCLAW_URL + DINA_OPENCLAW_TOKEN)
+    """
+    from .agent_daemon import run_daemon
+    run_daemon(poll_interval=poll_interval, lease_duration=lease_duration)

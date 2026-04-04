@@ -88,22 +88,38 @@ func (h *WSHub) Unregister(clientID string) error {
 }
 
 // Broadcast sends a message to all connected clients.
+// Messages are delivered immediately via the conn's outbound channel.
+// Also buffered in messages map for replay on reconnect.
 func (h *WSHub) Broadcast(message []byte) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for clientID := range h.clients {
+	for clientID, conn := range h.clients {
 		h.messages[clientID] = append(h.messages[clientID], message)
+		if c, ok := conn.(*Conn); ok {
+			select {
+			case c.out <- message:
+			default:
+				// Channel full — message is still in the buffer for replay.
+			}
+		}
 	}
 	return nil
 }
 
 // Send sends a message to a specific client.
-// If the client is not currently connected, the message is silently buffered
-// for delivery when the client reconnects.
+// Delivered immediately if connected, otherwise buffered for reconnect.
 func (h *WSHub) Send(clientID string, message []byte) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.messages[clientID] = append(h.messages[clientID], message)
+	if conn, ok := h.clients[clientID]; ok {
+		if c, ok := conn.(*Conn); ok {
+			select {
+			case c.out <- message:
+			default:
+			}
+		}
+	}
 	return nil
 }
 

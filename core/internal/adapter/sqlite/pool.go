@@ -493,6 +493,45 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v4 complete")
 	}
 
+	// --- Identity migration v7: delegated_tasks (agent task queue) ---
+	if !hasTable(db, "delegated_tasks") {
+		slog.Info("sqlite: applying identity migration v7 (delegated_tasks)")
+
+		_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS delegated_tasks (
+			id               TEXT PRIMARY KEY,
+			proposal_id      TEXT NOT NULL DEFAULT '',
+			session_name     TEXT NOT NULL DEFAULT '',
+			description      TEXT NOT NULL,
+			origin           TEXT NOT NULL DEFAULT 'telegram'
+				CHECK (origin IN ('telegram','admin','cli','api')),
+			status           TEXT NOT NULL DEFAULT 'created'
+				CHECK (status IN ('created','pending_approval','queued','claimed',
+				                  'running','completed','failed','cancelled','expired')),
+			agent_did        TEXT NOT NULL DEFAULT '',
+			lease_expires_at INTEGER NOT NULL DEFAULT 0,
+			run_id           TEXT NOT NULL DEFAULT '',
+			idempotency_key  TEXT NOT NULL DEFAULT '',
+			result_summary   TEXT NOT NULL DEFAULT '',
+			progress_note    TEXT NOT NULL DEFAULT '',
+			error            TEXT NOT NULL DEFAULT '',
+			created_at       INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+			updated_at       INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+		) WITHOUT ROWID`)
+		if err != nil {
+			return fmt.Errorf("identity v7: create delegated_tasks: %w", err)
+		}
+
+		db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_dt_status ON delegated_tasks(status, created_at)`)
+		db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_dt_proposal ON delegated_tasks(proposal_id)`)
+		db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_dt_lease ON delegated_tasks(lease_expires_at)
+			WHERE status IN ('claimed','running')`)
+
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (7, 'Delegated task queue for agent delegation')`)
+
+		slog.Info("sqlite: identity migration v7 complete")
+	}
+
 	return nil
 }
 
@@ -523,6 +562,7 @@ var validMigrationTables = map[string]bool{
 	"pending_reason":    true,
 	"scenario_policies": true,
 	"d2d_outbox":        true,
+	"delegated_tasks":   true,
 }
 
 // hasColumn checks whether a table has a specific column.

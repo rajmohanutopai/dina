@@ -374,3 +374,67 @@ class DinaClient:
             self._core, "GET", f"/v1/intent/proposals/{proposal_id}/status",
         )
         return resp.json()
+
+    # -- Delegated tasks -------------------------------------------------------
+
+    def claim_task(self, lease_seconds: int = 300) -> dict | None:
+        """Claim the next queued delegated task (POST /v1/agent/tasks/claim).
+        Returns task dict or None if no work available."""
+        resp = self._request(
+            self._core, "POST", "/v1/agent/tasks/claim",
+            json={"lease_seconds": lease_seconds},
+        )
+        if resp.status_code == 204:
+            return None
+        return resp.json()
+
+    def task_heartbeat(self, task_id: str, lease_seconds: int = 300) -> None:
+        """Extend lease on a claimed task (POST /v1/agent/tasks/{id}/heartbeat)."""
+        self._request(
+            self._core, "POST", f"/v1/agent/tasks/{task_id}/heartbeat",
+            json={"lease_seconds": lease_seconds},
+        )
+
+    def task_complete(self, task_id: str, result: str) -> None:
+        """Mark task as completed (POST /v1/agent/tasks/{id}/complete)."""
+        self._request(
+            self._core, "POST", f"/v1/agent/tasks/{task_id}/complete",
+            json={"result": result},
+        )
+
+    def task_fail(self, task_id: str, error: str) -> None:
+        """Mark task as failed (POST /v1/agent/tasks/{id}/fail)."""
+        self._request(
+            self._core, "POST", f"/v1/agent/tasks/{task_id}/fail",
+            json={"error": error},
+        )
+
+    def task_progress(self, task_id: str, message: str) -> None:
+        """Update progress on a claimed task (POST /v1/agent/tasks/{id}/progress)."""
+        self._request(
+            self._core, "POST", f"/v1/agent/tasks/{task_id}/progress",
+            json={"message": message},
+        )
+
+    def get_task(self, task_id: str) -> dict | None:
+        """Get a delegated task by ID (GET /v1/agent/tasks/{id}).
+        Returns None only for 404. Other errors are raised."""
+        try:
+            resp = self._request(
+                self._core, "GET", f"/v1/agent/tasks/{task_id}",
+            )
+            return resp.json()
+        except DinaClientError as e:
+            if "404" in str(e) or "not found" in str(e).lower():
+                return None
+            raise
+
+    def list_tasks(self, status: str = "") -> list[dict]:
+        """List delegated tasks (GET /v1/agent/tasks)."""
+        params = {}
+        if status:
+            params["status"] = status
+        resp = self._request(
+            self._core, "GET", "/v1/agent/tasks", params=params,
+        )
+        return resp.json().get("tasks", [])

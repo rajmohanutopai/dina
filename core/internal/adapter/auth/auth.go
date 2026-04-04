@@ -1120,6 +1120,7 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			// NOTE: /v1/notify removed from device allowlist (CXH3).
 			// Only Brain should push notifications to connected devices.
 			"/v1/agent/validate",    // action gating
+			"/v1/agent/tasks",       // delegated task lifecycle (role-checked in handler)
 			"/v1/intent/proposals",  // intent proposal status polling (ownership-checked in handler)
 			"/v1/audit/query",       // FH1: read-only audit query — /v1/audit/append is admin-only
 			// NOTE: /v1/approvals is NOT in the prefix list — devices get

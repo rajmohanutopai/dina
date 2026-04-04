@@ -90,39 +90,47 @@ async def proposal_list() -> dict:
 
 @router.post("/v1/proposals/{proposal_id}/approve")
 async def proposal_approve(proposal_id: str) -> dict:
-    """Approve a pending intent proposal."""
+    """Approve a pending intent proposal via the real Guardian flow."""
     if _guardian is None:
         raise HTTPException(status_code=503, detail="Guardian not initialised")
 
-    proposals = getattr(_guardian, "_pending_proposals", {})
-    stored = proposals.get(proposal_id)
-    if stored is None or stored.get("kind") != "intent":
-        raise HTTPException(status_code=404, detail="Unknown proposal_id")
-    if stored.get("status") != "pending":
-        raise HTTPException(status_code=409, detail=f"Proposal already {stored.get('status')}")
+    # Route through Guardian's intent_approved handler (persistence + audit).
+    result = await _guardian.process_event({
+        "type": "intent_approved",
+        "payload": {"proposal_id": proposal_id},
+    })
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("error", "approval failed"))
 
-    import time
-    stored["status"] = "approved"
-    stored["updated_at"] = time.time()
-    stored["decision_reason"] = "Approved via API"
-    return {"id": proposal_id, "status": "approved"}
+    # Queue any linked delegated task (idempotent).
+    # This path bypasses Core's HandleApprove — no second hook.
+    queue_warning = ""
+    core = getattr(_guardian, "_core", None)
+    if core and hasattr(core, "queue_task_by_proposal"):
+        try:
+            await core.queue_task_by_proposal(proposal_id)
+        except Exception as qe:
+            queue_warning = f"task queueing failed: {qe}"
+            log.warning("proposals.task_queue_failed",
+                        extra={"proposal_id": proposal_id, "error": str(qe)})
+
+    resp: dict = {"id": proposal_id, "status": "approved"}
+    if queue_warning:
+        resp["warning"] = queue_warning
+    return resp
 
 
 @router.post("/v1/proposals/{proposal_id}/deny")
 async def proposal_deny(proposal_id: str) -> dict:
-    """Deny a pending intent proposal."""
+    """Deny a pending intent proposal via the real Guardian flow."""
     if _guardian is None:
         raise HTTPException(status_code=503, detail="Guardian not initialised")
 
-    proposals = getattr(_guardian, "_pending_proposals", {})
-    stored = proposals.get(proposal_id)
-    if stored is None or stored.get("kind") != "intent":
-        raise HTTPException(status_code=404, detail="Unknown proposal_id")
-    if stored.get("status") != "pending":
-        raise HTTPException(status_code=409, detail=f"Proposal already {stored.get('status')}")
+    result = await _guardian.process_event({
+        "type": "intent_denied",
+        "payload": {"proposal_id": proposal_id, "reason": "Denied via API"},
+    })
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("error", "denial failed"))
 
-    import time
-    stored["status"] = "denied"
-    stored["updated_at"] = time.time()
-    stored["decision_reason"] = "Denied via API"
     return {"id": proposal_id, "status": "denied"}

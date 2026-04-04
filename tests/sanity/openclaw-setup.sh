@@ -45,6 +45,8 @@ cat > "$CONFIG_FILE" <<CONF
         args: ["mcp-server"],
         env: {
           DINA_CONFIG_DIR: "/root/.dina/cli",
+          OPENCLAW_TOKEN: "${OC_TOKEN}",
+          DINA_OPENCLAW_URL: "http://localhost:3000",
         },
       },
     },

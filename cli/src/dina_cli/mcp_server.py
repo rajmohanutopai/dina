@@ -5,6 +5,8 @@ OpenClaw config:
   mcp: { servers: { dina: { command: "dina", args: ["mcp-server"] } } }
 
 All tools use the same Ed25519 signed HTTP client as the CLI.
+Pure tool server — no background threads, no WS listeners.
+Task execution is handled by `dina agent-daemon` (separate process).
 """
 
 from __future__ import annotations
@@ -147,45 +149,30 @@ def dina_remember(text: str, session: str, category: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# PII scrubbing
+# Task progress (optional — daemon handles terminal states)
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool()
-def dina_task_update(task_id: str, status: str, result: str, session: str) -> dict:
-    """Report task progress or completion back to Dina.
+def dina_task_progress(task_id: str, message: str) -> dict:
+    """Report progress on a running task.
 
-    IMPORTANT: Call this when a delegated task is complete, failed, or has
-    a progress update. Dina stores the result and notifies the user.
+    Optional: the agent-daemon handles completion/failure. This tool is
+    for intermediate progress updates only (e.g. "Found 2 of 3 results").
+    Do NOT use this for completion or failure — the daemon handles those.
 
     Args:
         task_id: The task ID from the original delegation
-        status: 'completed', 'failed', 'in_progress'
-        result: Human-readable summary of what was done or what failed
-        session: Session ID
+        message: Human-readable progress note
     """
     c = _get_client()
-    import json as _json
-    update = {"task_id": task_id, "status": status, "result": result}
-    c.kv_set(f"task:{task_id}:status", _json.dumps(update), session=session)
+    c.task_progress(task_id, message)
+    return {"status": "ok", "task_id": task_id}
 
-    # Store as memory if completed
-    if status == "completed":
-        c.remember(f"Task {task_id} completed: {result}", session=session)
 
-    # Trigger a notification to the user via Core's notify endpoint
-    try:
-        emoji = {"completed": "✅", "failed": "❌", "in_progress": "⏳"}.get(status, "📋")
-        c._request(c._core, "POST", "/v1/notify", json={
-            "type": "task_update",
-            "title": f"{emoji} Task {status}",
-            "body": f"Task `{task_id}`: {result[:200]}",
-            "priority": "solicited",
-        })
-    except Exception:
-        pass  # best-effort notification
-
-    return {"stored": True, "task_id": task_id, "status": status}
+# ---------------------------------------------------------------------------
+# PII scrubbing
+# ---------------------------------------------------------------------------
 
 
 @mcp.tool()
@@ -209,5 +196,5 @@ def dina_status() -> dict:
 
 
 def run_server():
-    """Entry point for `dina mcp-server`."""
+    """Entry point for `dina mcp-server`. Pure tool server, no background threads."""
     mcp.run(transport="stdio")

@@ -752,39 +752,31 @@ class TelegramService:
         if data.startswith("intent_approve "):
             proposal_id = data[len("intent_approve "):].strip()
             try:
-                guardian = self._guardian
-                if guardian and hasattr(guardian, "_pending_proposals"):
-                    import time as _time
-                    import json as _json
-                    p = guardian._pending_proposals.get(proposal_id)
-                    if p and p.get("status") == "pending":
-                        p["status"] = "approved"
-                        p["updated_at"] = _time.time()
-                        p["decision_reason"] = "Approved via Telegram"
-
-                        # Update any linked task record to "delegated"
-                        context = p.get("context") or {}
-                        task_id = context.get("task_id", "")
-                        if task_id and self._core:
-                            try:
-                                raw = await self._core.get_kv(f"task:{task_id}")
-                                if raw:
-                                    task = _json.loads(raw)
-                                    task["status"] = "delegated"
-                                    task["approved_at"] = _time.time()
-                                    await self._core.set_kv(
-                                        f"task:{task_id}", _json.dumps(task),
-                                    )
-                            except Exception:
-                                pass  # best-effort
-
-                        await ch.edit(RichResponse(
-                            text=f"✅ Approved: `{proposal_id}`"
-                        ))
-                    else:
-                        await ch.edit(ErrorResponse(text="Proposal not found or already processed."))
+                # Route through the real Guardian approval flow (persistence + audit).
+                result = await self._guardian.process_event({
+                    "type": "intent_approved",
+                    "payload": {"proposal_id": proposal_id},
+                })
+                status = result.get("status", "")
+                if status == "error":
+                    await ch.edit(ErrorResponse(text=result.get("error", "Approval failed.")))
                 else:
-                    await ch.edit(ErrorResponse(text="Guardian not available."))
+                    # Queue any linked delegated task (idempotent).
+                    # This path bypasses Core's HandleApprove, so there is no
+                    # second hook — if this fails, the task stays stuck.
+                    queue_ok = True
+                    if self._core:
+                        try:
+                            await self._core.queue_task_by_proposal(proposal_id)
+                        except Exception as qe:
+                            queue_ok = False
+                            log.warning("telegram.task_queue_failed",
+                                        extra={"proposal_id": proposal_id, "error": str(qe)})
+                    if queue_ok:
+                        await ch.edit(RichResponse(text=f"✅ Approved: `{proposal_id}`"))
+                    else:
+                        await ch.edit(RichResponse(
+                            text=f"✅ Approved: `{proposal_id}`\n⚠️ Task queueing failed — retry via admin CLI."))
             except Exception as exc:
                 log.warning("telegram.intent_approve_failed", extra={"id": proposal_id, "error": str(exc)})
                 await ch.edit(ErrorResponse(text="Approval failed. Try via admin CLI."))
@@ -792,19 +784,15 @@ class TelegramService:
         elif data.startswith("intent_deny "):
             proposal_id = data[len("intent_deny "):].strip()
             try:
-                guardian = self._guardian
-                if guardian and hasattr(guardian, "_pending_proposals"):
-                    import time as _time
-                    p = guardian._pending_proposals.get(proposal_id)
-                    if p and p.get("status") == "pending":
-                        p["status"] = "denied"
-                        p["updated_at"] = _time.time()
-                        p["decision_reason"] = "Denied via Telegram"
-                        await ch.edit(RichResponse(text=f"🚫 Denied: `{proposal_id}`"))
-                    else:
-                        await ch.edit(ErrorResponse(text="Proposal not found or already processed."))
+                result = await self._guardian.process_event({
+                    "type": "intent_denied",
+                    "payload": {"proposal_id": proposal_id, "reason": "Denied via Telegram"},
+                })
+                status = result.get("status", "")
+                if status == "error":
+                    await ch.edit(ErrorResponse(text=result.get("error", "Denial failed.")))
                 else:
-                    await ch.edit(ErrorResponse(text="Guardian not available."))
+                    await ch.edit(RichResponse(text=f"🚫 Denied: `{proposal_id}`"))
             except Exception as exc:
                 log.warning("telegram.intent_deny_failed", extra={"id": proposal_id, "error": str(exc)})
                 await ch.edit(ErrorResponse(text="Denial failed. Try via admin CLI."))
@@ -1168,11 +1156,8 @@ class TelegramService:
     ) -> None:
         """/task <description> — delegate an autonomous task to OpenClaw.
 
-        Flow:
-          1. Validate intent (research → MODERATE → needs approval)
-          2. After approval, store task reference and inform OpenClaw
-          3. OpenClaw runs autonomously (calls back via MCP for safety/vault)
-          4. OpenClaw notifies Dina when done via dina_task_update MCP tool
+        Creates a durable delegated task in Core. The agent-daemon claims
+        and executes it after approval.
         """
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
@@ -1185,12 +1170,11 @@ class TelegramService:
             ))
             return
 
-        import json as _json
         from uuid import uuid4
 
         task_id = f"task-{uuid4().hex[:8]}"
 
-        # Step 1: Validate the intent
+        # Validate the intent
         result = await self._guardian.process_event({
             "type": "agent_intent",
             "action": "research",
@@ -1207,43 +1191,38 @@ class TelegramService:
         action = result.get("action", "")
         risk = result.get("risk", "SAFE")
         proposal_id = result.get("proposal_id", "")
+        requires_approval = bool(result.get("requires_approval"))
 
         if action == "deny":
             await ch.send(ErrorResponse(text=f"Task denied: {result.get('reason', 'blocked')}"))
             return
 
-        # Store task reference in KV
-        task_record = {
-            "task_id": task_id,
-            "description": text,
-            "status": "pending_approval" if result.get("requires_approval") else "delegated",
-            "proposal_id": proposal_id,
-            "risk": risk,
-            "created_at": time.time(),
-        }
+        # Create durable task in Core (replaces KV storage)
         try:
-            await self._core.set_kv(f"task:{task_id}", _json.dumps(task_record))
-        except Exception:
-            pass  # best-effort
+            await self._core.create_delegated_task(
+                task_id=task_id,
+                description=text,
+                origin="telegram",
+                proposal_id=proposal_id,
+                idempotency_key=f"task-{task_id}",
+                requires_approval=requires_approval,
+            )
+        except Exception as exc:
+            log.warning("telegram.task_create_failed", extra={"error": str(exc)})
+            await ch.send(ErrorResponse(text="Failed to create task. Try again."))
+            return
 
-        if result.get("requires_approval"):
+        if requires_approval:
             await ch.send(RichResponse(
                 text=f"📋 Task queued: _{_escape_markdown(text[:100])}_\n\n"
                 f"Risk: *{risk}* — needs your approval.\n"
                 f"Task ID: `{task_id}`"
             ))
         else:
-            # Auto-approved — mark as delegated
-            task_record["status"] = "delegated"
-            try:
-                await self._core.set_kv(f"task:{task_id}", _json.dumps(task_record))
-            except Exception:
-                pass
             await ch.send(RichResponse(
-                text=f"📋 Task delegated to OpenClaw: _{_escape_markdown(text[:100])}_\n\n"
+                text=f"📋 Task delegated: _{_escape_markdown(text[:100])}_\n\n"
                 f"Task ID: `{task_id}`\n"
-                f"OpenClaw will handle this autonomously. "
-                f"I'll notify you when it's done."
+                f"Agent will pick this up automatically."
             ))
 
     async def handle_task_status(
@@ -1258,30 +1237,25 @@ class TelegramService:
             await ch.send(BotResponse(text="Usage: /taskstatus <task_id>"))
             return
 
-        import json as _json
         try:
-            # Check task record
-            raw = await self._core.get_kv(f"task:{task_id}")
-            if not raw:
+            task = await self._core.get_delegated_task(task_id)
+            if task is None:
                 await ch.send(ErrorResponse(text=f"Task `{task_id}` not found."))
                 return
-            task = _json.loads(raw)
-
-            # Check if OpenClaw has reported completion
-            status_raw = await self._core.get_kv(f"task:{task_id}:status")
-            if status_raw:
-                status_update = _json.loads(status_raw)
-                task["status"] = status_update.get("status", task["status"])
-                task["result"] = status_update.get("result", "")
 
             lines = [f"📋 Task: `{task_id}`"]
             lines.append(f"Description: _{_escape_markdown(task.get('description', '')[:100])}_")
             lines.append(f"Status: *{task.get('status', 'unknown')}*")
-            if task.get("result"):
-                lines.append(f"Result: {task['result'][:200]}")
+            if task.get("progress_note"):
+                lines.append(f"Progress: {task['progress_note'][:200]}")
+            if task.get("result_summary"):
+                lines.append(f"Result: {task['result_summary'][:200]}")
+            if task.get("error"):
+                lines.append(f"Error: {task['error'][:200]}")
             await ch.send(RichResponse(text="\n".join(lines)))
         except Exception as exc:
-            await ch.send(ErrorResponse(text=f"Error: {exc}"))
+            log.warning("telegram.taskstatus_failed", extra={"task_id": task_id, "error": str(exc)})
+            await ch.send(ErrorResponse(text=f"Could not fetch task status. Core may be unavailable."))
 
     # ── Contact Management (/contact) ──────────────────────────────────
 
