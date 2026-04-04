@@ -194,7 +194,7 @@ class TestRemember:
         print(f"\n  Created: {r[:120]}")
 
         # Wait for reminder to fire (up to 3 minutes)
-        msgs = _check_new_messages(tg, ALONSO_BOT, before, timeout=180)
+        msgs = _check_new_messages(tg, ALONSO_BOT, before, timeout=90)
         fired = [m for m in msgs if "monitor stand" in m.lower() or "amazon" in m.lower()]
         assert fired, (
             f"Reminder did not fire within 3 minutes. Messages: {[m[:80] for m in msgs]}"

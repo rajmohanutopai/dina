@@ -270,6 +270,7 @@ instances/
 tests/sanity/.env.sanity
 tests/sanity/*.session
 tests/sanity/*.session-journal
+tests/sanity/*.lock
 tests/sanity/regression-alonso/
 tests/sanity/regression-sancho/
 tests/sanity/config-*.json

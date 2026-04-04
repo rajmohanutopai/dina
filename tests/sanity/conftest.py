@@ -46,16 +46,17 @@ def _cleanup_before_run(tg: SanityTelegramClient) -> None:
     """Clean stale state from prior runs before tests start."""
     import time
 
-    # Delete stale contacts on both bots
+    # Delete stale contacts on both bots (with delays to avoid rate limits)
     for bot in [ALONSO_BOT, SANCHO_BOT]:
         for contact in ["Sancho", "Alonso"]:
             r = tg.send_and_wait(bot, f"/contact delete {contact}", timeout=10)
             if r:
                 print(f"  Cleanup: @{bot} /contact delete {contact} → {r[:60]}")
-            time.sleep(1)
+            time.sleep(2)
+        time.sleep(3)  # pause between bots
 
-    # Small delay to let deletions settle
-    time.sleep(2)
+    # Let deletions settle
+    time.sleep(3)
 
 
 @pytest.fixture(scope="session")

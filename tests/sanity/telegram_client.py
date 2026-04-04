@@ -2,40 +2,72 @@
 
 Sends messages AS the user to bots and reads bot responses.
 Session must be created first (one-time interactive login).
+
+If the session expires (AuthKeyUnregisteredError), delete the session
+file and re-run create_session.py:
+    rm tests/sanity/sanity_session.session
+    python tests/sanity/create_session.py
 """
 
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import time
 from pathlib import Path
 
 from telethon import TelegramClient
+from telethon.errors import AuthKeyUnregisteredError
 
 
 SESSION_PATH = str(Path(__file__).parent / "sanity_session")
+LOCK_PATH = Path(__file__).parent / "sanity_session.lock"
 
 
 class SanityTelegramClient:
-    """Sends messages to Telegram bots and reads responses."""
+    """Sends messages to Telegram bots and reads responses.
+
+    Uses a file lock to prevent concurrent access to the session file,
+    which can cause Telegram to invalidate the auth key.
+    """
 
     def __init__(self, api_id: int, api_hash: str):
         self._api_id = api_id
         self._api_hash = api_hash
         self._client: TelegramClient | None = None
         self._loop = asyncio.new_event_loop()
+        self._lock_fd = None
 
     def start(self) -> None:
+        # Acquire file lock to prevent concurrent session use
+        self._lock_fd = open(LOCK_PATH, "w")
+        try:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(
+                "Another process is using the Telethon session. "
+                "Wait for it to finish or kill it."
+            )
+
         async def _start():
             client = TelegramClient(SESSION_PATH, self._api_id, self._api_hash)
             await client.connect()
-            if not await client.is_user_authorized():
+            try:
+                if not await client.is_user_authorized():
+                    raise RuntimeError(
+                        "Telethon session expired or not created.\n"
+                        "  1. rm tests/sanity/sanity_session.session\n"
+                        "  2. python tests/sanity/create_session.py"
+                    )
+                self._client = client
+                me = await client.get_me()
+                print(f"  Telegram: logged in as {me.first_name} (ID: {me.id})")
+            except AuthKeyUnregisteredError:
                 raise RuntimeError(
-                    "Telethon session not authorized. Run: python tests/sanity/create_session.py"
+                    "Telegram invalidated the auth key (too many sessions or IP change).\n"
+                    "  1. rm tests/sanity/sanity_session.session\n"
+                    "  2. python tests/sanity/create_session.py"
                 )
-            self._client = client
-            me = await client.get_me()
-            print(f"  Telegram: logged in as {me.first_name} (ID: {me.id})")
 
         self._loop.run_until_complete(_start())
 
@@ -44,6 +76,11 @@ class SanityTelegramClient:
             coro = self._client.disconnect()
             if coro is not None:
                 self._loop.run_until_complete(coro)
+        # Release file lock
+        if self._lock_fd:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            self._lock_fd.close()
+            self._lock_fd = None
 
     def send_and_wait(
         self, bot_username: str, text: str, timeout: int = 30
@@ -60,6 +97,9 @@ class SanityTelegramClient:
         self, bot_username: str, text: str, timeout: int
     ) -> str | None:
         entity = await self._client.get_entity(bot_username)
+
+        # Rate limit: brief pause before sending to avoid Telegram flood limits
+        await asyncio.sleep(1)
 
         # Send the message and record its ID
         sent = await self._client.send_message(entity, text)
@@ -149,10 +189,8 @@ class SanityTelegramClient:
             return f"Button '{button_text}' not found"
 
         # Phase 3: wait for the edited/new message after click
-        click_time = time.time()
         after_click_id = button_msg.id
         deadline = time.time() + timeout
-        last_text = None
         while time.time() < deadline:
             await asyncio.sleep(2)
             # Check if the button message was edited (common pattern)
@@ -172,7 +210,7 @@ class SanityTelegramClient:
             if fresh and fresh.text != button_msg.text:
                 return fresh.text
 
-        return last_text
+        return None
 
     def get_last_bot_message(self, bot_username: str) -> str | None:
         """Get the most recent message FROM the bot (not from us)."""
