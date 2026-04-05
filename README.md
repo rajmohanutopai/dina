@@ -14,6 +14,7 @@
 * **What Works Now:** [Usage Guide](./CAPABILITIES.md)
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **Start Here:** [Open dina.html](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
+* **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) — This repository is the first implementation of the Dina Protocol.
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.

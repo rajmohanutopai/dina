@@ -493,6 +493,79 @@ Commands such as:
 
 are better modeled as operator and control modes, not user intent modes.
 
+## Outbound Delivery Modes
+
+The interaction model also needs a Dina -> human delivery taxonomy.
+
+These are not slash commands.
+
+They describe how Dina speaks first when silence would be wrong, risky, or simply less useful than aggregation.
+
+1. `briefing`
+
+- aggregated, priority-ranked summary
+
+Examples:
+
+- morning briefing
+- end-of-day summary
+
+2. `alert`
+
+- immediate proactive notice
+
+Examples:
+
+- license renewal is due
+- safety-relevant delay or failure
+
+3. `update`
+
+- non-terminal progress or state change
+
+Examples:
+
+- delegated task is running
+- provider request moved to a new state
+
+4. `completion`
+
+- solicited work reached a useful terminal point
+
+Examples:
+
+- research task finished
+- watched bus is now 5 minutes away
+
+5. `failure`
+
+- solicited work failed or became invalid
+
+Examples:
+
+- task failed
+- watch lost subscription or provider feed
+
+6. `clarification`
+
+- Dina needs more input before safely continuing
+
+Examples:
+
+- which Sancho?
+- which bus stop do you mean by here?
+
+7. `escalation`
+
+- previously lower-priority item now needs interruption
+
+Examples:
+
+- ignored request becomes urgent
+- deadline slippage now causes harm if missed
+
+These delivery modes are the outbound complement to user interaction modes such as `ask`, `plan`, and `monitor`.
+
 ## Sensitivity Model
 
 The domain model should work with a separate sensitivity classification:

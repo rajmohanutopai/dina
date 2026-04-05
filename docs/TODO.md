@@ -15,11 +15,11 @@ The fix: separate vault (domain) from sensitivity level (access control within t
 **Proposed model:**
 
 Each vault item gets a sensitivity tag:
-- `summary` — safe to share with Brain/agents for reasoning (e.g. "has back pain", "moderate budget")
-- `detail` — accessible only with session grant (e.g. "L4-L5 disc herniation", "$500 budget range")
-- `restricted` — accessible only with explicit per-item approval (e.g. specific diagnoses, account numbers)
+- `open` — safe to share with Brain/agents for reasoning (e.g. "has back pain", "moderate budget")
+- `guarded` — accessible only with session grant (e.g. "L4-L5 disc herniation", "$500 budget range")
+- `sealed` — accessible only with explicit per-item approval (e.g. specific diagnoses, account numbers)
 
-Brain can always see `summary` items for reasoning. When someone asks about chairs, Brain knows about back pain (summary) without seeing the MRI report (restricted).
+Brain can always see `open` items for reasoning. When someone asks about chairs, Brain knows about back pain (summary) without seeing the MRI report (restricted).
 
 **How it works in practice:**
 - User stores "My HbA1c is 9%, very high" → health vault, detail sensitivity
@@ -34,8 +34,8 @@ This applies to all vaults:
 - General: most items are summary by default
 
 **Implementation notes:**
-- Add `sensitivity` field to `vault_items` table: `summary` | `detail` | `restricted`
-- Default to `detail` for health/finance, `summary` for general/work
+- Add `sensitivity` field to `vault_items` table: `open` | `guarded` | `sealed`
+- Default to `guarded` for health/finance, `open` for general/work
 - Brain's vault query filters by sensitivity based on caller + session grants
 - LLM classification can suggest sensitivity at ingestion time
 - User can override via Telegram: "remember (private) My diagnosis is..."

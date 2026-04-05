@@ -743,6 +743,67 @@ When `federated_execution` is involved, the remote Dina should expose a clear li
 
 The caller should rely on these fields, not on any knowledge of the remote Dina's internal task system.
 
+## Caller-Side Human Delivery
+
+Federated execution does not end when the remote Dina reports `completed` or `failed`.
+
+There is a second leg:
+
+- remote Dina -> caller Dina
+- caller Dina -> human
+
+That second leg should be explicit in the topology.
+
+### Caller-Side Delivery Choices
+
+After a remote Dina reports state, the caller Dina may:
+
+- return inline immediately
+- create a completion notification
+- create a failure notification
+- include the result in a briefing
+- escalate proactively if silence would cause harm
+
+### Why this matters
+
+Two systems can both implement D2D lifecycles correctly and still feel very different to the user if one silently drops async failures while the other surfaces them properly.
+
+So the topology should include:
+
+- machine-to-machine lifecycle
+- human-facing delivery decision
+
+### Typical Mapping
+
+- `completed` + user waiting inline -> inline answer
+- `completed` + delegated task -> completion notice or status update
+- `failed` + low urgency -> status + briefing inclusion
+- `failed` + high urgency or fiduciary impact -> proactive failure alert
+
+## Failure and Escalation Topology
+
+Asynchronous failure is not just a status field.
+
+It is a topology transition.
+
+Example:
+
+1. user asks Dina to watch a bus
+2. Dina asks a transit Dina or provider to monitor it
+3. remote provider subscription breaks
+4. remote side reports failure, or caller detects polling failure
+5. caller Dina decides whether to:
+   - retry silently
+   - notify as `failure`
+   - escalate because silence now causes harm
+
+This applies equally to:
+
+- delegated tasks
+- watches
+- provider requests
+- outbound sends waiting on delivery
+
 ## Recommended Routing Logic
 
 For each user request, Dina should determine:
