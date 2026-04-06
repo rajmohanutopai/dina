@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -13,16 +15,22 @@ import (
 
 // ContactHandler serves the /v1/contacts endpoints.
 type ContactHandler struct {
-	Contacts        port.ContactDirectory
-	Sharing         port.SharingPolicyManager
+	Contacts         port.ContactDirectory
+	Aliases          port.ContactAliasStore
+	Sharing          port.SharingPolicyManager
 	ScenarioPolicies port.ScenarioPolicyManager
 }
 
 // addContactRequest is the JSON body for POST /v1/contacts.
+// Relationship and DataResponsibility are pointer types to distinguish
+// "omitted" (nil) from "present" — this determines whether
+// responsibility_explicit is set on creation.
 type addContactRequest struct {
-	DID        string `json:"did"`
-	Name       string `json:"name"`
-	TrustLevel string `json:"trust_level"`
+	DID                string  `json:"did"`
+	Name               string  `json:"name"`
+	TrustLevel         string  `json:"trust_level"`
+	Relationship       *string `json:"relationship,omitempty"`
+	DataResponsibility *string `json:"data_responsibility,omitempty"`
 }
 
 // setPolicyRequest is the JSON body for PUT /v1/contacts/{did}/policy.
@@ -41,6 +49,21 @@ func (h *ContactHandler) HandleListContacts(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		http.Error(w, `{"error":"failed to list contacts"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Populate aliases from the alias store.
+	if h.Aliases != nil {
+		allAliases, err := h.Aliases.ListAllAliases(r.Context())
+		if err == nil {
+			for i := range contacts {
+				if aliases, ok := allAliases[contacts[i].DID]; ok {
+					contacts[i].Aliases = aliases
+					if len(aliases) > 0 {
+						contacts[i].Alias = aliases[0] // compatibility
+					}
+				}
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -73,7 +96,40 @@ func (h *ContactHandler) HandleAddContact(w http.ResponseWriter, r *http.Request
 		trustLevel = "unknown"
 	}
 
-	if err := h.Contacts.Add(r.Context(), req.DID, req.Name, trustLevel); err != nil {
+	// Relationship defaults to "unknown".
+	relationship := domain.RelationshipUnknown
+	if req.Relationship != nil {
+		relationship = *req.Relationship
+		if !domain.ValidContactRelationships[relationship] {
+			http.Error(w, `{"error":"invalid relationship value"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	// DataResponsibility: nil → derive from relationship (not explicit).
+	// Non-nil → validate and mark as explicitly set.
+	var dataResponsibility string
+	responsibilityExplicit := false
+	if req.DataResponsibility != nil {
+		dataResponsibility = *req.DataResponsibility
+		if dataResponsibility == "self" || !domain.ValidDataResponsibility[dataResponsibility] {
+			http.Error(w, `{"error":"invalid data_responsibility value (self not allowed)"}`, http.StatusBadRequest)
+			return
+		}
+		responsibilityExplicit = true
+	} else {
+		dataResponsibility = domain.DefaultResponsibility(relationship)
+	}
+
+	// Bidirectional uniqueness: reject if name collides with an existing alias.
+	if h.Aliases != nil {
+		if existingDID, err := h.Aliases.ResolveAlias(r.Context(), req.Name); err == nil && existingDID != "" {
+			http.Error(w, `{"error":"name conflicts with an existing contact alias"}`, http.StatusConflict)
+			return
+		}
+	}
+
+	if err := h.Contacts.Add(r.Context(), req.DID, req.Name, trustLevel, relationship, dataResponsibility, responsibilityExplicit); err != nil {
 		http.Error(w, `{"error":"failed to add contact"}`, http.StatusInternalServerError)
 		return
 	}
@@ -244,9 +300,11 @@ func (h *ContactHandler) HandleSetScenarios(w http.ResponseWriter, r *http.Reque
 
 // updateContactRequest is the JSON body for PUT /v1/contacts/{did}.
 type updateContactRequest struct {
-	Name        string `json:"name"`
-	TrustLevel  string `json:"trust_level"`
-	LastContact int64  `json:"last_contact"`
+	Name               string  `json:"name"`
+	TrustLevel         string  `json:"trust_level"`
+	LastContact        int64   `json:"last_contact"`
+	Relationship       *string `json:"relationship,omitempty"`
+	DataResponsibility *string `json:"data_responsibility,omitempty"`
 }
 
 // HandleUpdateContact handles PUT /v1/contacts/{did}.
@@ -269,6 +327,13 @@ func (h *ContactHandler) HandleUpdateContact(w http.ResponseWriter, r *http.Requ
 	}
 
 	if req.Name != "" {
+		// Bidirectional uniqueness: reject if new name collides with an existing alias.
+		if h.Aliases != nil {
+			if existingDID, err := h.Aliases.ResolveAlias(r.Context(), req.Name); err == nil && existingDID != "" && existingDID != did {
+				http.Error(w, `{"error":"name conflicts with an existing contact alias"}`, http.StatusConflict)
+				return
+			}
+		}
 		if err := h.Contacts.UpdateName(r.Context(), did, req.Name); err != nil {
 			slog.Warn("failed to update contact name", "did", did, "error", err)
 			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
@@ -288,6 +353,34 @@ func (h *ContactHandler) HandleUpdateContact(w http.ResponseWriter, r *http.Requ
 		if err := h.Contacts.UpdateLastContact(r.Context(), did, req.LastContact); err != nil {
 			slog.Warn("failed to update contact last_contact", "did", did, "error", err)
 			// Non-fatal — don't block the response for a timestamp update.
+		}
+	}
+
+	// Update precedence: data_responsibility first (sets explicit=true),
+	// then relationship (won't recompute since explicit is already true).
+	if req.DataResponsibility != nil {
+		dr := *req.DataResponsibility
+		if dr == "self" || !domain.ValidDataResponsibility[dr] {
+			http.Error(w, `{"error":"invalid data_responsibility value"}`, http.StatusBadRequest)
+			return
+		}
+		if err := h.Contacts.UpdateDataResponsibility(r.Context(), did, dr); err != nil {
+			slog.Warn("failed to update contact data_responsibility", "did", did, "error", err)
+			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if req.Relationship != nil {
+		rel := *req.Relationship
+		if !domain.ValidContactRelationships[rel] {
+			http.Error(w, `{"error":"invalid relationship value"}`, http.StatusBadRequest)
+			return
+		}
+		if err := h.Contacts.UpdateRelationship(r.Context(), did, rel); err != nil {
+			slog.Warn("failed to update contact relationship", "did", did, "error", err)
+			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -318,10 +411,26 @@ func (h *ContactHandler) HandleDeleteContact(w http.ResponseWriter, r *http.Requ
 		did = raw
 	}
 
-	if err := h.Contacts.Delete(r.Context(), did); err != nil {
-		slog.Warn("failed to delete contact", "did", did, "error", err)
-		http.Error(w, `{"error":"failed to delete contact"}`, http.StatusInternalServerError)
-		return
+	// Use transactional delete if alias store supports it (SQLite).
+	type txDeleter interface {
+		DeleteContactWithAliases(ctx context.Context, did string) error
+	}
+	if td, ok := h.Aliases.(txDeleter); ok {
+		if err := td.DeleteContactWithAliases(r.Context(), did); err != nil {
+			slog.Warn("failed to delete contact", "did", did, "error", err)
+			http.Error(w, `{"error":"failed to delete contact"}`, http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Fallback: delete aliases first, then contact (non-transactional).
+		if h.Aliases != nil {
+			_ = h.Aliases.DeleteAllForContact(r.Context(), did)
+		}
+		if err := h.Contacts.Delete(r.Context(), did); err != nil {
+			slog.Warn("failed to delete contact", "did", did, "error", err)
+			http.Error(w, `{"error":"failed to delete contact"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -374,4 +483,126 @@ func extractDIDFromPath(path, prefix, suffix string) string {
 	did := strings.TrimPrefix(path, prefix)
 	did = strings.TrimSuffix(did, suffix)
 	return did
+}
+
+// ---------------------------------------------------------------------------
+// Alias endpoints
+// ---------------------------------------------------------------------------
+
+type addAliasRequest struct {
+	Alias string `json:"alias"`
+}
+
+// HandleAddAlias handles POST /v1/contacts/{did}/aliases.
+func (h *ContactHandler) HandleAddAlias(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.Aliases == nil {
+		http.Error(w, `{"error":"alias store not configured"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Extract DID: path is /v1/contacts/{did}/aliases
+	path := r.URL.Path
+	if r.URL.RawPath != "" {
+		path = r.URL.RawPath
+	}
+	trimmed := strings.TrimPrefix(path, "/v1/contacts/")
+	trimmed = strings.TrimSuffix(trimmed, "/aliases")
+	did, err := url.PathUnescape(trimmed)
+	if err != nil || did == "" {
+		http.Error(w, `{"error":"missing DID in path"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req addAliasRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Aliases.AddAlias(r.Context(), did, req.Alias); err != nil {
+		if strings.Contains(err.Error(), "conflicts") || strings.Contains(err.Error(), "already belongs") {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusConflict)
+		} else {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"status": "alias_added", "alias": req.Alias})
+}
+
+// HandleRemoveAlias handles DELETE /v1/contacts/{did}/aliases/{alias}.
+func (h *ContactHandler) HandleRemoveAlias(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.Aliases == nil {
+		http.Error(w, `{"error":"alias store not configured"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Extract DID and alias from path: /v1/contacts/{did}/aliases/{alias}
+	path := r.URL.Path
+	if r.URL.RawPath != "" {
+		path = r.URL.RawPath
+	}
+	trimmed := strings.TrimPrefix(path, "/v1/contacts/")
+	parts := strings.SplitN(trimmed, "/aliases/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, `{"error":"missing DID or alias in path"}`, http.StatusBadRequest)
+		return
+	}
+	did, _ := url.PathUnescape(parts[0])
+	alias, _ := url.PathUnescape(parts[1])
+
+	if err := h.Aliases.RemoveAlias(r.Context(), did, alias); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "alias_removed"})
+}
+
+// HandleListAliases handles GET /v1/contacts/{did}/aliases.
+func (h *ContactHandler) HandleListAliases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.Aliases == nil {
+		http.Error(w, `{"error":"alias store not configured"}`, http.StatusInternalServerError)
+		return
+	}
+
+	path := r.URL.Path
+	if r.URL.RawPath != "" {
+		path = r.URL.RawPath
+	}
+	trimmed := strings.TrimPrefix(path, "/v1/contacts/")
+	trimmed = strings.TrimSuffix(trimmed, "/aliases")
+	did, _ := url.PathUnescape(trimmed)
+	if did == "" {
+		http.Error(w, `{"error":"missing DID in path"}`, http.StatusBadRequest)
+		return
+	}
+
+	aliases, err := h.Aliases.ListAliases(r.Context(), did)
+	if err != nil {
+		http.Error(w, `{"error":"failed to list aliases"}`, http.StatusInternalServerError)
+		return
+	}
+	if aliases == nil {
+		aliases = []string{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"aliases": aliases})
 }

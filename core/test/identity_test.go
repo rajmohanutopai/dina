@@ -2104,7 +2104,7 @@ func TestIdentity_3_4_2_ResolveContactDID(t *testing.T) {
 
 	// Positive: add a contact then resolve by name returns the DID.
 	contactDID := "did:key:z6MkResolveTest"
-	err = impl.Add(ctx, contactDID, "Alice", "unknown")
+	err = impl.Add(ctx, contactDID, "Alice", "unknown", "friend", "external", false)
 	testutil.RequireNoError(t, err)
 
 	resolvedDID, err := impl.Resolve(ctx, "Alice")
@@ -2132,7 +2132,7 @@ func TestIdentity_3_4_3_UpdateContactTrustLevel(t *testing.T) {
 		"expected ErrContactNotFound for unknown DID, got: "+err.Error())
 
 	// Add a contact with initial trust level "unknown".
-	err = impl.Add(ctx, contactDID, "TrustTestContact", "unknown")
+	err = impl.Add(ctx, contactDID, "TrustTestContact", "unknown", "friend", "external", false)
 	testutil.RequireNoError(t, err)
 
 	// Verify initial trust level via List.
@@ -2202,7 +2202,7 @@ func TestIdentity_3_4_4_DeleteContact(t *testing.T) {
 		"expected ErrContactNotFound for unknown DID, got: "+err.Error())
 
 	// Positive: add contact, verify it exists, delete, verify gone.
-	err = impl.Add(ctx, contactDID, "ToDelete", "unknown")
+	err = impl.Add(ctx, contactDID, "ToDelete", "unknown", "friend", "external", false)
 	testutil.RequireNoError(t, err)
 
 	// Verify it exists via List.
@@ -2250,7 +2250,7 @@ func TestIdentity_3_4_5_PerPersonaContactRouting(t *testing.T) {
 
 	// Add a contact to the global directory.
 	contactDID := "did:key:z6MkWorkColleague"
-	err = cd.Add(idCtx, contactDID, "Alice", "trusted")
+	err = cd.Add(idCtx, contactDID, "Alice", "trusted", "colleague", "external", false)
 	testutil.RequireNoError(t, err)
 
 	// Associate the contact with the "work" persona only.
@@ -2369,7 +2369,7 @@ func TestIdentity_3_4_8_TrustLevelEnumValidation(t *testing.T) {
 	validLevels := []string{"blocked", "unknown", "trusted"}
 	for i, level := range validLevels {
 		did := fmt.Sprintf("did:plc:trust-enum-%d", i)
-		err := impl.Add(ctx, did, fmt.Sprintf("contact-%d", i), level)
+		err := impl.Add(ctx, did, fmt.Sprintf("contact-%d", i), level, "friend", "external", false)
 		testutil.RequireNoError(t, err)
 	}
 
@@ -2377,7 +2377,7 @@ func TestIdentity_3_4_8_TrustLevelEnumValidation(t *testing.T) {
 	invalidLevels := []string{"", "verified", "admin", "TRUSTED", "Blocked"}
 	for i, level := range invalidLevels {
 		did := fmt.Sprintf("did:plc:trust-invalid-%d", i)
-		err := impl.Add(ctx, did, fmt.Sprintf("invalid-%d", i), level)
+		err := impl.Add(ctx, did, fmt.Sprintf("invalid-%d", i), level, "friend", "external", false)
 		testutil.RequireError(t, err)
 	}
 }
@@ -2790,7 +2790,7 @@ func TestIdentity_3_6_7_TrustRingLevelsDefinedInCode(t *testing.T) {
 	validLevels := []string{"blocked", "unknown", "trusted"}
 	for i, level := range validLevels {
 		did := fmt.Sprintf("did:key:z6MkTrust%d", i)
-		err := cd.Add(ctx, did, fmt.Sprintf("Trust-%s", level), level)
+		err := cd.Add(ctx, did, fmt.Sprintf("Trust-%s", level), level, "friend", "external", false)
 		testutil.RequireNoError(t, err)
 
 		// Verify the trust level is stored correctly.
@@ -2802,7 +2802,7 @@ func TestIdentity_3_6_7_TrustRingLevelsDefinedInCode(t *testing.T) {
 	invalidLevels := []string{"unverified", "verified", "skin_in_game", "admin", ""}
 	for _, level := range invalidLevels {
 		did := fmt.Sprintf("did:key:z6MkInvalid%s", level)
-		err := cd.Add(ctx, did, "Invalid", level)
+		err := cd.Add(ctx, did, "Invalid", level, "friend", "external", false)
 		testutil.RequireError(t, err)
 	}
 

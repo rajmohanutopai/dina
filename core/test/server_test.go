@@ -863,9 +863,9 @@ func TestServer_15_3_4_GetContacts(t *testing.T) {
 	testutil.RequireEqual(t, len(contacts), 0)
 
 	// Positive: add contacts and verify they appear in GetContacts.
-	err = impl.AddContact("did:plc:alice", "Alice", "trusted")
+	err = impl.AddContact("did:plc:alice", "Alice", "trusted", "friend", "external")
 	testutil.RequireNoError(t, err)
-	err = impl.AddContact("did:plc:bob", "Bob", "verified")
+	err = impl.AddContact("did:plc:bob", "Bob", "verified", "colleague", "external")
 	testutil.RequireNoError(t, err)
 
 	contacts, err = impl.GetContacts()
@@ -888,7 +888,7 @@ func TestServer_15_3_5_AddContact(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #5: POST /v1/contacts → 201.
-	err := impl.AddContact("did:plc:test123", "Alice", "trusted")
+	err := impl.AddContact("did:plc:test123", "Alice", "trusted", "friend", "external")
 	testutil.RequireNoError(t, err)
 }
 

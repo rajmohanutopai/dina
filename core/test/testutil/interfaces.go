@@ -504,7 +504,7 @@ type IdentityAPI interface {
 	// GetContacts performs GET /v1/contacts.
 	GetContacts() ([]domain.Contact, error)
 	// AddContact performs POST /v1/contacts.
-	AddContact(did, name, trustLevel string) error
+	AddContact(did, name, trustLevel, relationship, dataResponsibility string) error
 	// RegisterDevice performs POST /v1/devices.
 	RegisterDevice(name string, tokenHash []byte) (string, error)
 	// ListDevices performs GET /v1/devices.

@@ -459,6 +459,8 @@ func main() {
 	}
 
 	contactDir := newContactDirectory(vaultMgr)
+	aliasStore := newContactAliasStore(vaultMgr)
+	personStore := newPersonStore(vaultMgr)
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
 
@@ -1341,7 +1343,11 @@ func main() {
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed, StagingInbox: stagingInbox, PendingReasons: pendingReasonStore, Brain: brain}
 	sessionH := &handler.SessionHandler{Sessions: personaMgr}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: ownDID}
-	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr, ScenarioPolicies: scenarioPolicyMgr}
+	contactH := &handler.ContactHandler{Contacts: contactDir, Aliases: aliasStore, Sharing: sharingMgr, ScenarioPolicies: scenarioPolicyMgr}
+	var personH *handler.PersonHandler
+	if personStore != nil {
+		personH = &handler.PersonHandler{People: personStore}
+	}
 	piiH := &handler.PIIHandler{Scrubber: scrubber, Brain: brain}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
 	exportH := &handler.ExportHandler{Migration: migrationSvc}
@@ -1458,6 +1464,18 @@ func main() {
 		} else if strings.HasSuffix(r.URL.Path, "/scenarios") {
 			// /v1/contacts/{did}/scenarios → scenario policy handlers
 			routeByMethod(contactH.HandleListScenarios, contactH.HandleSetScenarios)(w, r)
+		} else if strings.Contains(r.URL.Path, "/aliases") {
+			// /v1/contacts/{did}/aliases or /v1/contacts/{did}/aliases/{alias}
+			switch r.Method {
+			case http.MethodGet:
+				contactH.HandleListAliases(w, r)
+			case http.MethodPost:
+				contactH.HandleAddAlias(w, r)
+			case http.MethodDelete:
+				contactH.HandleRemoveAlias(w, r)
+			default:
+				http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			}
 		} else {
 			// /v1/contacts/{did} → update/delete handlers
 			switch r.Method {
@@ -1470,6 +1488,47 @@ func main() {
 			}
 		}
 	})
+
+	// People API (person memory layer)
+	if personH != nil {
+		mux.HandleFunc("/v1/people/apply-extraction", personH.HandleApplyExtraction)
+		mux.HandleFunc("/v1/people/merge", personH.HandleMergePeople)
+		mux.HandleFunc("/v1/people", routeByMethod(personH.HandleListPeople, nil))
+		mux.HandleFunc("/v1/people/", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			switch {
+			case strings.HasSuffix(path, "/confirm"):
+				if strings.Contains(path, "/surfaces/") {
+					personH.HandleConfirmSurface(w, r)
+				} else {
+					personH.HandleConfirmPerson(w, r)
+				}
+			case strings.HasSuffix(path, "/reject"):
+				if strings.Contains(path, "/surfaces/") {
+					personH.HandleRejectSurface(w, r)
+				} else {
+					personH.HandleRejectPerson(w, r)
+				}
+			case strings.HasSuffix(path, "/link-contact"):
+				personH.HandleLinkContact(w, r)
+			case strings.Contains(path, "/surfaces/"):
+				if r.Method == http.MethodDelete {
+					personH.HandleDetachSurface(w, r)
+				} else {
+					http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+				}
+			default:
+				switch r.Method {
+				case http.MethodGet:
+					personH.HandleGetPerson(w, r)
+				case http.MethodDelete:
+					personH.HandleDeletePerson(w, r)
+				default:
+					http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+				}
+			}
+		})
+	}
 
 	// Trust Cache API
 	mux.HandleFunc("/v1/trust/cache", trustH.HandleListCache)

@@ -45,11 +45,20 @@ def _make_tool_call_response(calls: list[dict]) -> dict:
 @pytest.fixture
 def mock_core_client() -> AsyncMock:
     """Mock core client for vault operations."""
+    from unittest.mock import MagicMock
+
     client = AsyncMock()
     client.list_personas.return_value = ["personal", "consumer"]
     client.search_vault.return_value = []
     client.query_vault.return_value = []
     client.health.return_value = {"status": "ok"}
+
+    # Default _request mock returns empty contacts so the alias-hint path
+    # in VaultContextAssembler.reason() works cleanly without warnings.
+    default_resp = MagicMock()
+    default_resp.json.return_value = {"contacts": []}
+    client._request = AsyncMock(return_value=default_resp)
+
     return client
 
 
@@ -528,6 +537,78 @@ class TestVaultContextAssembler:
         assert "model" in result
         assert "vault_context_used" in result
         assert "tools_called" in result
+
+    @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0587", "section": "26", "sectionName": "Contact Alias Support", "subsection": "04", "scenario": "04", "title": "reason_injects_alias_hints"}
+    async def test_reason_injects_alias_hints_for_mentioned_contact(
+        self, mock_core_client, mock_llm_router,
+    ):
+        """reason() injects alias hints into the system prompt for mentioned contacts."""
+        from unittest.mock import MagicMock
+        from src.service.vault_context import VaultContextAssembler
+
+        # Mock _request to return contacts with aliases.
+        contact_response = MagicMock()
+        contact_response.json.return_value = {
+            "contacts": [
+                {"did": "did:plc:emma", "display_name": "Emma",
+                 "aliases": ["my daughter", "my kid"]},
+                {"did": "did:plc:sancho", "display_name": "Sancho",
+                 "aliases": ["my buddy"]},
+            ]
+        }
+        mock_core_client._request = AsyncMock(return_value=contact_response)
+
+        mock_llm_router.route.return_value = _make_text_response("Emma likes dinosaurs")
+
+        assembler = VaultContextAssembler(
+            core=mock_core_client, llm_router=mock_llm_router,
+        )
+        result = await assembler.reason("What does Emma like?")
+
+        # Verify the LLM was called and the system prompt contains alias hints.
+        assert mock_llm_router.route.called
+        call_kwargs = mock_llm_router.route.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages", [])
+        system_msg = next((m for m in messages if m.get("role") == "system"), None)
+        assert system_msg is not None
+        system_text = system_msg["content"]
+        # Emma is mentioned → her aliases should be in the system prompt.
+        assert "my daughter" in system_text
+        assert "my kid" in system_text
+        # Sancho is NOT mentioned → his aliases should NOT be in the system prompt.
+        assert "my buddy" not in system_text
+
+    @pytest.mark.asyncio
+    # TRACE: {"suite": "BRAIN", "case": "0588", "section": "26", "sectionName": "Contact Alias Support", "subsection": "04", "scenario": "05", "title": "reason_no_alias_leak"}
+    async def test_reason_no_alias_leak_for_unmentioned_contacts(
+        self, mock_core_client, mock_llm_router,
+    ):
+        """reason() does NOT inject aliases for contacts not in the query."""
+        from unittest.mock import MagicMock
+        from src.service.vault_context import VaultContextAssembler
+
+        contact_response = MagicMock()
+        contact_response.json.return_value = {
+            "contacts": [
+                {"did": "did:plc:emma", "display_name": "Emma",
+                 "aliases": ["my daughter"]},
+            ]
+        }
+        mock_core_client._request = AsyncMock(return_value=contact_response)
+        mock_llm_router.route.return_value = _make_text_response("answer")
+
+        assembler = VaultContextAssembler(
+            core=mock_core_client, llm_router=mock_llm_router,
+        )
+        result = await assembler.reason("What is the weather today?")
+
+        call_kwargs = mock_llm_router.route.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages", [])
+        system_msg = next((m for m in messages if m.get("role") == "system"), None)
+        assert system_msg is not None
+        # No contact mentioned → no alias hints.
+        assert "my daughter" not in system_msg["content"]
 
 
 # =========================================================================

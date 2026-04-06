@@ -50,17 +50,29 @@ func (d *SQLiteContactDirectory) GetTrustLevel(did string) string {
 
 // Add inserts a new contact. If the DID already exists the call is a no-op
 // (INSERT OR IGNORE) so callers can safely retry.
-func (d *SQLiteContactDirectory) Add(ctx context.Context, did, name, trustLevel string) error {
+// Validates relationship and data_responsibility at the storage boundary.
+func (d *SQLiteContactDirectory) Add(ctx context.Context, did, name, trustLevel, relationship, dataResponsibility string, responsibilityExplicit bool) error {
 	db := d.db()
 	if db == nil {
 		return fmt.Errorf("sqlite contacts: identity database not open")
 	}
 
+	if !domain.ValidContactRelationships[relationship] {
+		return fmt.Errorf("sqlite contacts: invalid relationship %q", relationship)
+	}
+	if !domain.ValidDataResponsibility[dataResponsibility] {
+		return fmt.Errorf("sqlite contacts: invalid data_responsibility %q", dataResponsibility)
+	}
+
 	now := time.Now().Unix()
+	explicit := 0
+	if responsibilityExplicit {
+		explicit = 1
+	}
 	_, err := db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO contacts (did, display_name, trust_level, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		did, name, trustLevel, now, now,
+		`INSERT OR IGNORE INTO contacts (did, display_name, trust_level, relationship, data_responsibility, responsibility_explicit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		did, name, trustLevel, relationship, dataResponsibility, explicit, now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite contacts: add: %w", err)
@@ -132,6 +144,80 @@ func (d *SQLiteContactDirectory) UpdateName(ctx context.Context, did, name strin
 	return nil
 }
 
+// UpdateRelationship changes a contact's relationship. If data_responsibility
+// was auto-defaulted (responsibility_explicit=false), it is recomputed from
+// the new relationship. If the user explicitly set it, it is preserved.
+func (d *SQLiteContactDirectory) UpdateRelationship(ctx context.Context, did, relationship string) error {
+	db := d.db()
+	if db == nil {
+		return fmt.Errorf("sqlite contacts: identity database not open")
+	}
+
+	if !domain.ValidContactRelationships[relationship] {
+		return fmt.Errorf("sqlite contacts: invalid relationship %q", relationship)
+	}
+
+	now := time.Now().Unix()
+
+	// Read current explicit flag.
+	var explicit int
+	err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(responsibility_explicit, 0) FROM contacts WHERE did = ?`, did,
+	).Scan(&explicit)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("sqlite contacts: contact %q not found", did)
+	}
+	if err != nil {
+		return fmt.Errorf("sqlite contacts: read explicit flag: %w", err)
+	}
+
+	if explicit == 0 {
+		// Auto-defaulted: recompute data_responsibility from new relationship.
+		newResp := domain.DefaultResponsibility(relationship)
+		_, err = db.ExecContext(ctx,
+			`UPDATE contacts SET relationship = ?, data_responsibility = ?, updated_at = ? WHERE did = ?`,
+			relationship, newResp, now, did,
+		)
+	} else {
+		// Explicitly set: preserve data_responsibility.
+		_, err = db.ExecContext(ctx,
+			`UPDATE contacts SET relationship = ?, updated_at = ? WHERE did = ?`,
+			relationship, now, did,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("sqlite contacts: update relationship: %w", err)
+	}
+	return nil
+}
+
+// UpdateDataResponsibility explicitly sets data_responsibility and marks it
+// as user-overridden (responsibility_explicit=true). "self" is rejected.
+func (d *SQLiteContactDirectory) UpdateDataResponsibility(ctx context.Context, did, dataResponsibility string) error {
+	db := d.db()
+	if db == nil {
+		return fmt.Errorf("sqlite contacts: identity database not open")
+	}
+
+	if !domain.ValidDataResponsibility[dataResponsibility] {
+		return fmt.Errorf("sqlite contacts: invalid data_responsibility %q", dataResponsibility)
+	}
+
+	now := time.Now().Unix()
+	res, err := db.ExecContext(ctx,
+		`UPDATE contacts SET data_responsibility = ?, responsibility_explicit = 1, updated_at = ? WHERE did = ?`,
+		dataResponsibility, now, did,
+	)
+	if err != nil {
+		return fmt.Errorf("sqlite contacts: update data_responsibility: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("sqlite contacts: contact %q not found", did)
+	}
+	return nil
+}
+
 // Delete removes a contact by DID.
 func (d *SQLiteContactDirectory) Delete(ctx context.Context, did string) error {
 	db := d.db()
@@ -163,7 +249,10 @@ func (d *SQLiteContactDirectory) List(ctx context.Context) ([]domain.Contact, er
 		`SELECT did, display_name, trust_level, sharing_tier, notes,
 		        created_at, updated_at,
 		        COALESCE(source, ''), COALESCE(source_confidence, ''),
-		        COALESCE(last_contact, 0)
+		        COALESCE(last_contact, 0),
+		        COALESCE(relationship, 'unknown'),
+		        COALESCE(data_responsibility, 'external'),
+		        COALESCE(responsibility_explicit, 0)
 		 FROM contacts`,
 	)
 	if err != nil {
@@ -179,12 +268,14 @@ func (d *SQLiteContactDirectory) List(ctx context.Context) ([]domain.Contact, er
 			createdAt, updatedAt             int64
 			source, sourceConfidence         string
 			lastContact                      int64
+			explicit                         int
 		)
 		if err := rows.Scan(
 			&c.DID, &c.Name, &c.TrustLevel,
 			&sharingTier, &notes,
 			&createdAt, &updatedAt,
 			&source, &sourceConfidence, &lastContact,
+			&c.Relationship, &c.DataResponsibility, &explicit,
 		); err != nil {
 			return nil, fmt.Errorf("sqlite contacts: scan: %w", err)
 		}
@@ -192,6 +283,7 @@ func (d *SQLiteContactDirectory) List(ctx context.Context) ([]domain.Contact, er
 		c.Source = source
 		c.SourceConfidence = sourceConfidence
 		c.LastContact = lastContact
+		c.ResponsibilityExplicit = explicit == 1
 		contacts = append(contacts, c)
 	}
 	return contacts, rows.Err()

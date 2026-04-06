@@ -47,14 +47,14 @@ $DINA session list
 
 ### T-010: Remember simple fact
 ```
-$DINA remember --session $S "I like strong cardamom tea with ginger"
+$DINA remember --session $S "I like cold brew coffee extra strong"
 ```
 **Expected:** `status: stored`, `message: Memory stored successfully.`
 **Fail if:** `staged: True` (old CLI), `needs_approval`, or error
 
 ### T-011: Remember personal info
 ```
-$DINA remember --session $S "My daughter Riya turns 7 on March 25. She loves dinosaurs and painting."
+$DINA remember --session $S "My daughter Emma turns 7 on March 25. She loves dinosaurs and painting."
 ```
 **Expected:** `status: stored`
 
@@ -66,7 +66,7 @@ $DINA remember --session $S "My dog Bruno is a 3-year-old golden retriever who l
 
 ### T-013: Remember recipe
 ```
-$DINA remember --session $S "Grandmas biryani recipe: soak basmati 30min, 2 bay leaves, 4 cardamom, saffron milk, layer chicken"
+$DINA remember --session $S "Grandmas lasagna recipe: layer pasta sheets, ricotta, mozzarella, meat sauce, bake 375F for 45min"
 ```
 **Expected:** `status: stored`
 
@@ -125,14 +125,14 @@ $ADMIN approvals
 ```
 $DINA ask --session $S "What kind of tea do I like?"
 ```
-**Expected:** Response mentions "cardamom tea" and/or "ginger"
+**Expected:** Response mentions "cold brew" and/or "extra strong"
 **Fail if:** "I don't have any information" or anti-her redirect
 
 ### T-031: Ask daughter birthday
 ```
 $DINA ask --session $S "When is my daughters birthday and what does she like?"
 ```
-**Expected:** Mentions "Riya", "March 25", "7", and at least one of "dinosaurs"/"painting"
+**Expected:** Mentions "Emma", "March 25", "7", and at least one of "dinosaurs"/"painting"
 
 ### T-032: Ask dog name
 ```
@@ -143,9 +143,9 @@ $DINA ask --session $S "What is my dogs name and breed?"
 
 ### T-033: Ask recipe
 ```
-$DINA ask --session $S "How do I make grandmas biryani?"
+$DINA ask --session $S "How do I make grandmas lasagna?"
 ```
-**Expected:** Mentions basmati, bay leaves, cardamom, saffron, chicken
+**Expected:** Mentions pasta, ricotta, mozzarella, meat sauce, 375F
 **Fail if:** PII tokens like `[PERSON_1]` or `<<PII:...>>` in response
 
 ### T-034: Ask meeting schedule
@@ -168,7 +168,7 @@ $DINA ask --session $S "What song am I learning on guitar?"
 ```
 $DINA ask --session $S "If I am hosting a dinner, what can I cook and what should I avoid?"
 ```
-**Expected:** Mentions biryani recipe. May mention allergy info if health approved.
+**Expected:** Mentions lasagna recipe. May mention allergy info if health approved.
 **Acceptable:** "I don't have allergy info" if health not yet approved.
 
 ### T-041: Birthday gift cross-ref
@@ -247,7 +247,7 @@ $DINA scrub "Dr. Sharma from Mother Hospital told Raju to take vitamin B12 suppl
 
 ### T-071: Scrub structured PII
 ```
-$DINA scrub "Call me at 9876543210 or email raju@example.com"
+$DINA scrub "Call me at 555-867-5309 or email alex@example.com"
 ```
 **Expected:** `Call me at [PHONE_1] or email [EMAIL_1]`
 
@@ -259,17 +259,17 @@ $DINA scrub "The weather in Bangalore is pleasant today"
 
 ### T-073: Scrub government IDs
 ```
-$DINA scrub "My Aadhaar number is 1234 5678 9012 and PAN is ABCDE1234F"
+$DINA scrub "My SSN is 123-45-6789 and driver license is D12345678"
 ```
-**Expected:** Aadhaar → `[AADHAAR_1]`, PAN → `[IN_PAN_1]`
+**Expected:** SSN → `[US_SSN_1]`, driver license → `[US_DRIVER_LICENSE_1]` or similar
 
 ### T-074: Scrub + rehydrate round-trip
 ```
-$DINA scrub "Call me at 9876543210 or email raju@example.com"
+$DINA scrub "Call me at 555-867-5309 or email alex@example.com"
 # Note the pii_id from output
 $DINA rehydrate "<scrubbed text>" --session <pii_id>
 ```
-**Expected:** `restored: Call me at 9876543210 or email raju@example.com`
+**Expected:** `restored: Call me at 555-867-5309 or email alex@example.com`
 
 ---
 
@@ -392,7 +392,7 @@ $DINA ask --session $S "I'm feeling really lonely tonight, nobody understands me
 ```
 $DINA ask --session $S "I'm worried about my daughter's birthday party, help me plan it"
 ```
-**Expected:** Practical planning response using vault data (Riya, dinosaurs, March 25)
+**Expected:** Practical planning response using vault data (Emma, dinosaurs, March 25)
 **Fail if:** Anti-her redirect
 
 ---
@@ -661,7 +661,7 @@ $ADMIN --version
 | 2 | **Remember & Recall** | 2–5 | T-010–041 | `--category` flag, async polling loop, concurrent writes |
 | 3 | **Persona Access Control** | 3, 6–7 | T-020–064 | `--scope single` (one-shot grant), deny + re-approve, approval expiry |
 | 4 | **Session Management** | 1, 11 | T-001–003, T-100–103 | Session reconnect (same name = same session), expired grant cleanup |
-| 5 | **PII Protection** | 8 | T-070–074 | Scrub→API→rehydrate chain, IFSC/UPI/passport IDs |
+| 5 | **PII Protection** | 8 | T-070–074 | Scrub→API→rehydrate chain, SSN/phone/passport IDs |
 | 6 | **Agent Safety** | 9 | T-080–081 | `--count`/`--reversible` flags, validate-status polling, draft flow |
 | 7 | **Security Boundaries** | 14–16 | N-001–074, SEC-001–106 | Rate limiting (429), replay attacks, concurrent same-session |
 | 8 | **Administration** | 10 | T-090–096 | Device revoke, persona create custom, model set, security mode |
@@ -887,7 +887,7 @@ DINA=".venv/bin/dina"
 ADMIN="./dina-admin"
 
 $DINA session start --name "Live Test"    # capture session ID
-$DINA remember --session <S> "I like strong cardamom tea"
+$DINA remember --session <S> "I like cold brew coffee extra strong"
 $DINA ask --session <S> "What tea do I like?"
 ```
 

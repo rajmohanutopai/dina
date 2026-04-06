@@ -1096,6 +1096,145 @@ paths:
         "201":
           description: Contact added.
 
+  /v1/contacts/{did}/aliases:
+    get:
+      summary: List aliases for a contact
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Alias list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aliases:
+                    type: array
+                    items:
+                      type: string
+    post:
+      summary: Add an alias for a contact
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alias]
+              properties:
+                alias:
+                  type: string
+      responses:
+        "201":
+          description: Alias added.
+        "400":
+          description: Invalid alias (too short, pronoun, matches own name).
+        "409":
+          description: Alias conflicts with another contact's name or alias.
+
+  /v1/contacts/{did}/aliases/{alias}:
+    delete:
+      summary: Remove an alias from a contact
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: alias
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Alias removed.
+        "404":
+          description: Alias not found.
+
+  # ── People (Person Memory Layer) ──
+
+  /v1/people:
+    get:
+      summary: List all people with surfaces
+      responses:
+        "200":
+          description: People list.
+
+  /v1/people/apply-extraction:
+    post:
+      summary: Apply person identity extraction result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_item_id, extractor_version, results]
+              properties:
+                source_item_id:
+                  type: string
+                extractor_version:
+                  type: string
+                results:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      canonical_name:
+                        type: string
+                      relationship_hint:
+                        type: string
+                      surfaces:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            surface:
+                              type: string
+                            surface_type:
+                              type: string
+                            confidence:
+                              type: string
+                              enum: [high, medium, low]
+                      source_excerpt:
+                        type: string
+      responses:
+        "201":
+          description: Extraction applied.
+        "200":
+          description: Idempotent duplicate (skipped).
+
+  /v1/people/merge:
+    post:
+      summary: Merge two people into one
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keep_person_id, merge_person_id]
+              properties:
+                keep_person_id:
+                  type: string
+                merge_person_id:
+                  type: string
+      responses:
+        "200":
+          description: Merged.
+
   # ── Devices ──
 
   /v1/devices:

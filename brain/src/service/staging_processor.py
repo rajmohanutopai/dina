@@ -72,6 +72,8 @@ class StagingProcessor:
         self._selector = persona_selector
         self._reminder_planner = reminder_planner
         self._telegram = telegram
+        self._person_extractor = None  # Set externally after construction.
+        self._last_attribution_corrections: list[dict] = []
 
     async def process_pending(self, limit: int = 10) -> int:
         """Claim and classify pending staging items.
@@ -329,35 +331,45 @@ class StagingProcessor:
 
                 log.info("staging.resolved", id=item_id, personas=personas)
 
-                # Surface ambiguous routing for daily brief.
-                if routing_meta and routing_meta.get("status") == "ambiguous":
-                    log.info("staging.routing_ambiguous",
-                        id=item_id,
-                        candidates=routing_meta.get("candidates", []),
-                        reason=routing_meta.get("reason", ""),
-                    )
-                    # Store as a brief-surfaceable event via Core KV
-                    try:
-                        brief_item = json.dumps({
-                            "type": "routing_ambiguous",
-                            "item_id": item_id,
-                            "summary": base_classified.get("summary", ""),
-                            "candidates": routing_meta.get("candidates", []),
-                            "reason": routing_meta.get("reason", ""),
-                        })
-                        await self._core.set_kv(
-                            f"brief:routing_ambiguous:{item_id}", brief_item,
+                # Surface routing review items for daily brief.
+                if routing_meta:
+                    review_kind = routing_meta.get("kind") or routing_meta.get("status", "")
+                    if review_kind in ("ambiguous", "ambiguous_persona", "unresolved_subject_ownership"):
+                        log.info("staging.routing_review",
+                            id=item_id, kind=review_kind,
+                            reason=routing_meta.get("reason", ""),
                         )
-                        # Append to index so Guardian can find all pending items
-                        index_raw = await self._core.get_kv("brief:routing_ambiguous_index")
-                        index = json.loads(index_raw) if index_raw else []
-                        if item_id not in index:
-                            index.append(item_id)
+                        try:
+                            brief_item = json.dumps({
+                                "type": f"routing_{review_kind}",
+                                "kind": review_kind,
+                                "item_id": item_id,
+                                "summary": base_classified.get("summary", ""),
+                                **{k: v for k, v in routing_meta.items()
+                                   if k not in ("kind", "type")},
+                            })
                             await self._core.set_kv(
-                                "brief:routing_ambiguous_index", json.dumps(index),
+                                f"brief:routing_review:{item_id}", brief_item,
                             )
-                    except Exception:
-                        pass  # best-effort
+                            index_raw = await self._core.get_kv("brief:routing_review_index")
+                            index = json.loads(index_raw) if index_raw else []
+                            if item_id not in index:
+                                index.append(item_id)
+                                await self._core.set_kv(
+                                    "brief:routing_review_index", json.dumps(index),
+                                )
+                        except Exception:
+                            pass  # best-effort
+
+                # Enqueue person identity extraction (async, post-publish).
+                if self._person_extractor and item.type in ("note", ""):
+                    body = item.body or item.summary or ""
+                    if body.strip():
+                        try:
+                            await self._person_extractor.extract(body, item_id)
+                        except Exception as exc:
+                            log.warning("staging.person_extract_failed",
+                                id=item_id, error=str(exc))
 
             except ApprovalRequiredError as exc:
                 # Core already marked the item as pending_unlock and created
@@ -382,25 +394,86 @@ class StagingProcessor:
         """Classify item into one or more personas. Highest sensitivity first.
 
         Returns (persona_list, routing_meta). routing_meta is set when
-        routing was ambiguous — for daily brief surfacing.
+        routing was ambiguous or subject ownership is unresolved.
         All names are validated against the registry when available.
         """
+        # Clear stale attribution corrections from prior items.
+        self._last_attribution_corrections = []
+
+        # --- Step 1: Deterministic subject attribution (always runs) ---
+        text = (item.get("body", "") + " " + item.get("summary", "")).strip()
+        attributions = self._run_subject_attribution(text)
+
+        # Inject attribution candidates into item for LLM context.
+        if attributions:
+            item["attribution_candidates"] = [
+                {
+                    "id": i + 1,
+                    "subject": (a.contact.name if a.contact else a.subject_bucket),
+                    "fact": a.hit.keyword,
+                    "domain": a.hit.domain,
+                    "bucket": a.subject_bucket,
+                }
+                for i, a in enumerate(attributions)
+            ]
+            # Mentioned contacts for LLM awareness.
+            seen_dids: set[str] = set()
+            mentioned = []
+            for a in attributions:
+                if a.contact and a.contact.did not in seen_dids:
+                    seen_dids.add(a.contact.did)
+                    mentioned.append({
+                        "name": a.contact.name,
+                        "relationship": a.contact.relationship,
+                        "data_responsibility": a.contact.data_responsibility,
+                    })
+            if mentioned:
+                item["mentioned_contacts"] = mentioned
+
+        # --- Step 2: Primary classification (LLM or deterministic) ---
         primary, routing_meta = await self._classify_persona_with_meta(item)
 
-        # Check for secondary persona signals in the content.
-        text = (item.get("body", "") + " " + item.get("summary", "")).lower()
+        # --- Step 3: Apply LLM attribution corrections if available ---
+        if attributions and self._last_attribution_corrections:
+            attributions = self._apply_llm_corrections(
+                attributions, self._last_attribution_corrections
+            )
+            self._last_attribution_corrections = []
 
-        health_words = {"pain", "health", "medical", "doctor", "diagnosis", "symptom"}
-        work_words = {"work", "productivity", "office", "meeting", "deadline", "project"}
-        finance_words = {"invoice", "payment", "bill", "salary", "tax", "bank"}
+        # --- Step 4: Responsibility override on primary ---
+        primary, override_meta = self._apply_responsibility_override(
+            primary, attributions, text
+        )
+        if override_meta and not routing_meta:
+            routing_meta = override_meta
+        elif override_meta and routing_meta:
+            # Merge: unresolved subject takes priority.
+            routing_meta.update(override_meta)
 
-        has_health = any(w in text for w in health_words)
-        has_work = any(w in text for w in work_words)
-        has_finance = any(w in text for w in finance_words)
+        # --- Step 5: Secondary expansion with responsibility filter ---
+        text_lower = text.lower()
+        from .sensitive_signals import has_health_signal, has_finance_signal, has_work_signal
 
-        # Resolve secondary signals to installed personas via prefix match.
+        has_health = has_health_signal(text_lower)
+        has_work = has_work_signal(text_lower)
+        has_finance = has_finance_signal(text_lower)
+
+        # Check if all sensitive attributions were overridden by the routing matrix.
+        # An attribution is "overridden" when the matrix says its domain should
+        # NOT go to a sensitive vault for that responsibility level.
+        all_sensitive_overridden = False
+        if attributions:
+            sensitive_attrs = [a for a in attributions if a.hit.domain in ("health", "finance")]
+            if sensitive_attrs:
+                all_overridden = True
+                for a in sensitive_attrs:
+                    if self._keeps_sensitive(a.data_responsibility, a.hit.domain):
+                        all_overridden = False
+                        break
+                all_sensitive_overridden = all_overridden
+
         secondary = set()
-        if has_health:
+        if has_health and not all_sensitive_overridden:
             p = self._find_persona_by_prefix("health")
             if p and p != primary:
                 secondary.add(p)
@@ -408,7 +481,7 @@ class StagingProcessor:
             p = self._find_persona_by_prefix("work")
             if p and p != primary:
                 secondary.add(p)
-        if has_finance:
+        if has_finance and not all_sensitive_overridden:
             p = self._find_persona_by_prefix("financ")
             if p and p != primary:
                 secondary.add(p)
@@ -419,6 +492,153 @@ class StagingProcessor:
                 result.append(p)
 
         return result, routing_meta
+
+    @staticmethod
+    def _keeps_sensitive(responsibility: str, domain: str) -> bool:
+        """Apply the routing matrix: does this responsibility keep sensitive routing?
+
+        Returns True if the fact should stay in a sensitive vault.
+        """
+        if responsibility == "self":
+            return True
+        if responsibility == "household":
+            return True
+        if responsibility == "care" and domain == "health":
+            return True
+        if responsibility == "financial" and domain == "finance":
+            return True
+        if responsibility == "unresolved":
+            return True  # Conservative: keep sensitive, flag for review
+        # external, or care+finance, or financial+health → general
+        return False
+
+    # -- Subject attribution helpers ----------------------------------------
+
+    def _run_subject_attribution(self, text: str) -> list:
+        """Run deterministic subject attribution. Returns FactAttribution list."""
+        if not text or not self._trust_scorer:
+            return []
+        try:
+            from .contact_matcher import ContactMatcher
+            from .subject_attributor import SubjectAttributor
+
+            # Build ContactMatcher from trust_scorer's contact cache.
+            contact_dicts = []
+            for c in self._trust_scorer._contacts.values():
+                contact_dicts.append({
+                    "name": c.name or "",
+                    "did": c.did or "",
+                    "relationship": getattr(c, "relationship", "unknown") or "unknown",
+                    "data_responsibility": getattr(c, "data_responsibility", "external") or "external",
+                })
+
+            matcher = ContactMatcher(contact_dicts) if contact_dicts else None
+            attributor = SubjectAttributor(matcher)
+            return attributor.attribute(text)
+        except Exception as exc:
+            log.warning("staging.attribution_failed", error=str(exc))
+            return []
+
+    def _apply_llm_corrections(self, attributions: list, corrections: list[dict]) -> list:
+        """Apply LLM attribution corrections by stable ID."""
+        from .subject_attributor import FactAttribution
+        correction_map = {c.get("id"): c for c in corrections if "id" in c}
+        if not correction_map:
+            return attributions
+
+        updated = []
+        for i, a in enumerate(attributions):
+            cid = i + 1  # 1-indexed IDs
+            if cid in correction_map:
+                corrected = correction_map[cid]
+                new_bucket = corrected.get("corrected_bucket", a.subject_bucket)
+                # Map bucket to data_responsibility.
+                resp_map = {
+                    "self_explicit": "self",
+                    "household_implicit": "household",
+                    "known_contact": a.data_responsibility,
+                    "unknown_third_party": "external",
+                    "unresolved": "unresolved",
+                }
+                new_resp = resp_map.get(new_bucket, a.data_responsibility)
+                updated.append(FactAttribution(
+                    hit=a.hit,
+                    subject_bucket=new_bucket,
+                    contact=a.contact,
+                    data_responsibility=new_resp,
+                ))
+            else:
+                updated.append(a)
+        return updated
+
+    def _apply_responsibility_override(
+        self, primary: str, attributions: list, text: str = ""
+    ) -> tuple[str, dict | None]:
+        """Apply per-fact responsibility routing override.
+
+        Returns (possibly_overridden_primary, routing_meta_or_none).
+        """
+        if not attributions:
+            return primary, None
+
+        # Only override health/finance primaries.
+        if primary not in ("health", "finance"):
+            # Check if primary matches a health/finance-prefixed persona.
+            is_sensitive_primary = any(
+                primary.startswith(p) for p in ("health", "finance", "financ", "medical")
+            )
+            if not is_sensitive_primary:
+                return primary, None
+
+        sensitive_domain = "health" if primary.startswith("health") or primary.startswith("medical") else "finance"
+
+        # Evaluate each sensitive attribution.
+        keeps_sensitive = False
+        has_unresolved = False
+        unresolved_facts = []
+
+        for a in attributions:
+            if a.hit.domain not in ("health", "finance"):
+                continue
+
+            resp = a.data_responsibility
+            domain = a.hit.domain
+
+            if resp == "unresolved":
+                has_unresolved = True
+                keeps_sensitive = True
+                # Extract surrounding context (up to 60 chars around the hit).
+                start = max(0, a.hit.span[0] - 20)
+                end = min(len(text), a.hit.span[1] + 40) if text else a.hit.span[1]
+                snippet = text[start:end].strip() if text else a.hit.keyword
+                unresolved_facts.append({
+                    "text": snippet,
+                    "domain": domain,
+                    "span": list(a.hit.span),
+                })
+            elif self._keeps_sensitive(resp, domain):
+                keeps_sensitive = True
+
+        routing_meta = None
+        if has_unresolved:
+            routing_meta = {
+                "kind": "unresolved_subject_ownership",
+                "unresolved_facts": unresolved_facts,
+                "reason": "Sensitive fact could not be safely attributed",
+                "suggested_action": "review_and_attribute",
+            }
+
+        if keeps_sensitive:
+            return primary, routing_meta
+        else:
+            # All sensitive facts belong to external contacts → override to general.
+            log.info(
+                "staging.responsibility_override",
+                original=primary,
+                overridden_to="general",
+                attribution_count=len(attributions),
+            )
+            return "general", routing_meta
 
     async def _classify_persona_with_meta(self, item: dict) -> tuple[str, dict | None]:
         """Classify item into a single persona, returning routing metadata.
@@ -493,6 +713,9 @@ class StagingProcessor:
                     if result.has_event:
                         self._last_event_hint = result.event_hint
                         log.info("staging.event_detected", hint=result.event_hint)
+                    # Capture attribution corrections for responsibility override.
+                    if result.attribution_corrections:
+                        self._last_attribution_corrections = result.attribution_corrections
                     return result.primary
             except Exception:
                 pass

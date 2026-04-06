@@ -697,19 +697,36 @@ class CoreHTTPClient:
         return [Contact.model_validate(c) for c in data.get("contacts", [])]
 
     async def add_contact(
-        self, did: str, name: str, trust_level: str = "unknown", sharing_tier: str = ""
+        self,
+        did: str,
+        name: str,
+        trust_level: str = "unknown",
+        sharing_tier: str = "",
+        relationship: str = "",
+        data_responsibility: str = "",
     ) -> dict:
         """POST /v1/contacts — add contact to core directory."""
         body: dict[str, str] = {"did": did, "name": name, "trust_level": trust_level}
         if sharing_tier:
             body["sharing_tier"] = sharing_tier
+        if relationship:
+            body["relationship"] = relationship
+        if data_responsibility:
+            body["data_responsibility"] = data_responsibility
         resp = await self._request("POST", "/v1/contacts", json=body)
         return resp.json()
 
     async def update_contact(
-        self, did: str, *, name: str = "", trust_level: str = "", sharing_tier: str = ""
+        self,
+        did: str,
+        *,
+        name: str = "",
+        trust_level: str = "",
+        sharing_tier: str = "",
+        relationship: str = "",
+        data_responsibility: str = "",
     ) -> dict:
-        """PUT /v1/contacts/{did} — update contact name/trust/sharing."""
+        """PUT /v1/contacts/{did} — update contact fields (partial)."""
         body: dict[str, str] = {}
         if name:
             body["name"] = name
@@ -717,8 +734,38 @@ class CoreHTTPClient:
             body["trust_level"] = trust_level
         if sharing_tier:
             body["sharing_tier"] = sharing_tier
+        if relationship:
+            body["relationship"] = relationship
+        if data_responsibility:
+            body["data_responsibility"] = data_responsibility
         resp = await self._request("PUT", f"/v1/contacts/{did}", json=body)
         return resp.json()
+
+    async def add_alias(self, did: str, alias: str) -> dict:
+        """POST /v1/contacts/{did}/aliases — add alias."""
+        import urllib.parse
+        resp = await self._request(
+            "POST", f"/v1/contacts/{urllib.parse.quote(did, safe='')}/aliases",
+            json={"alias": alias},
+        )
+        return resp.json()
+
+    async def remove_alias(self, did: str, alias: str) -> dict:
+        """DELETE /v1/contacts/{did}/aliases/{alias} — remove alias."""
+        import urllib.parse
+        resp = await self._request(
+            "DELETE",
+            f"/v1/contacts/{urllib.parse.quote(did, safe='')}/aliases/{urllib.parse.quote(alias, safe='')}",
+        )
+        return resp.json()
+
+    async def list_aliases(self, did: str) -> list[str]:
+        """GET /v1/contacts/{did}/aliases — list aliases."""
+        import urllib.parse
+        resp = await self._request(
+            "GET", f"/v1/contacts/{urllib.parse.quote(did, safe='')}/aliases",
+        )
+        return resp.json().get("aliases", [])
 
     async def delete_contact(self, did: str) -> dict:
         """DELETE /v1/contacts/{did} — remove contact from directory."""

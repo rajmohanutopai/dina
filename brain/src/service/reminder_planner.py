@@ -18,79 +18,9 @@ from typing import Any
 
 import structlog
 
+from ..prompts import PROMPT_REMINDER_PLANNER_SYSTEM as _PLANNER_PROMPT
+
 log = structlog.get_logger(__name__)
-
-_PLANNER_PROMPT = """\
-You are a personal reminder planner. The user just stored some information \
-that includes a time-bound event. Your job is to create smart, actionable \
-reminders so the user doesn't forget.
-
-Think about what a thoughtful personal assistant would set up:
-- For a birthday: a reminder to buy a gift the day before, and a morning \
-  reminder to call and wish them.
-- For a vaccination: a reminder to prepare the night before, and a morning \
-  reminder on the day.
-- For a payment: a day-before reminder to ensure funds, and a morning reminder \
-  on the due date.
-- For a meeting: a reminder 1 hour before.
-
-Today's date and time: {today}
-
-THE EVENT (this is what the user stored — your reminders MUST be about THIS):
-"{content}"
-
-{vault_context}
-
-CRITICAL: Create reminders ONLY about the event above. \
-The vault context is supplementary — use it to enrich the reminder \
-(e.g. mention what someone likes), but NEVER create reminders about \
-vault items that are unrelated to the event. If the event says \
-"Alonso is arriving", your reminder must be about Alonso arriving, \
-not about vehicle insurance or anything else from the vault.
-
-Create reminders. Each reminder has:
-- fire_at: ISO datetime with timezone (when to notify the user)
-- message: short, factual notification (1 sentence max)
-- kind: birthday / appointment / payment_due / deadline / reminder
-
-Rules:
-- Don't create reminders for dates in the past.
-- Use the user's timezone: {timezone}.
-- Tone: polite and informative, never emotional or commanding. \
-  State what's happening, when, and any useful context. \
-  No cheerleading, no exclamation marks, no motivational language. \
-  Suggest, don't order. \
-  Good: "Your gym session is in 30 minutes." \
-  Good: "Emma's 7th birthday is tomorrow. She likes dinosaurs and painting." \
-  Good: "Gym session tomorrow at 7am — you may want to pack your bag tonight." \
-  Bad: "Rise and shine! You've got this!" \
-  Bad: "Don't forget Emma's big day!" \
-  Bad: "Pack bag tonight."
-- If the event is today or tomorrow, still create useful reminders for \
-  remaining time slots that haven't passed.
-- When someone is arriving or you are meeting someone, create ONE reminder \
-  that includes ALL relevant context about that person from the vault. \
-  Do not split facts across multiple reminders — combine them into one \
-  message so the user gets a single, complete briefing. \
-  Good: "Sancho is arriving in 10 minutes. He likes strong cardamom tea. \
-  His mother was unwell last week — you may want to ask how she is doing." \
-  Bad: two separate reminders, one about tea and one about his mother.
-
-Respond with JSON:
-{{
-  "reminders": [
-    {{
-      "fire_at": "2026-03-25T18:00:00Z",
-      "message": "James's birthday is tomorrow — he loves craft beer, maybe pick up a nice bottle?",
-      "kind": "birthday"
-    }}
-  ],
-  "summary": "One-line summary of what was planned, e.g. '2 reminders set for James's birthday'"
-}}
-
-If no reminders make sense (e.g. the date is in the past, or the content \
-has no actionable temporal event), return {{"reminders": [], "summary": "No reminders needed."}}.
-"""
 
 
 class ReminderPlanner:

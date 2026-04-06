@@ -771,7 +771,7 @@ func TestFixVerify_31_5_1_UpdateContact(t *testing.T) {
 	testutil.RequireError(t, err)
 
 	// Add a contact.
-	err = cd.Add(ctx, testDID, originalName, "trusted")
+	err = cd.Add(ctx, testDID, originalName, "trusted", "friend", "external", false)
 	testutil.RequireNoError(t, err)
 
 	// Verify the contact was added with the original name.
@@ -833,7 +833,7 @@ func TestFixVerify_31_5_3_AdminUICallsCoreAPI(t *testing.T) {
 	testDID := "did:plc:admin-ui-test"
 
 	// Step 1: Add contact via core API (not vault hack).
-	err := cd.Add(ctx, testDID, "Admin UI Contact", "unknown")
+	err := cd.Add(ctx, testDID, "Admin UI Contact", "unknown", "friend", "external", false)
 	if err != nil {
 		t.Fatalf("Add error: %v", err)
 	}

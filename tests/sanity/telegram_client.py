@@ -39,15 +39,34 @@ class SanityTelegramClient:
         self._lock_fd = None
 
     def start(self) -> None:
-        # Acquire file lock to prevent concurrent session use
+        # Acquire file lock to prevent concurrent session use.
+        # Retries with timeout instead of instant fail, and cleans up
+        # stale locks from killed processes.
         self._lock_fd = open(LOCK_PATH, "w")
-        try:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError(
-                "Another process is using the Telethon session. "
-                "Wait for it to finish or kill it."
-            )
+        acquired = False
+        for attempt in range(10):  # up to 10 seconds
+            try:
+                fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:
+                if attempt == 0:
+                    # Check if the holding process is still alive.
+                    self._try_clean_stale_lock()
+                time.sleep(1)
+
+        if not acquired:
+            # Last resort: force-clean and retry once.
+            self._force_clean_session_locks()
+            self._lock_fd.close()
+            self._lock_fd = open(LOCK_PATH, "w")
+            try:
+                fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError(
+                    "Another process is using the Telethon session after 10s wait. "
+                    "Kill it manually: lsof tests/sanity/sanity_session.session"
+                )
 
         async def _start():
             client = TelegramClient(SESSION_PATH, self._api_id, self._api_hash)
@@ -72,15 +91,46 @@ class SanityTelegramClient:
         self._loop.run_until_complete(_start())
 
     def stop(self) -> None:
-        if self._client:
-            coro = self._client.disconnect()
-            if coro is not None:
-                self._loop.run_until_complete(coro)
-        # Release file lock
+        try:
+            if self._client:
+                coro = self._client.disconnect()
+                if coro is not None:
+                    self._loop.run_until_complete(coro)
+        except Exception:
+            pass  # don't let disconnect failure prevent lock cleanup
+        # Always release file lock.
         if self._lock_fd:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
-            self._lock_fd.close()
+            try:
+                fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+                self._lock_fd.close()
+            except Exception:
+                pass
             self._lock_fd = None
+
+    def _try_clean_stale_lock(self) -> None:
+        """Check if the process holding the lock is dead. If so, clean up."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["lsof", str(SESSION_PATH)],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                # No process holding the session file — lock is stale.
+                print("  Telethon: stale lock detected, cleaning up...")
+                self._force_clean_session_locks()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _force_clean_session_locks() -> None:
+        """Remove all SQLite lock/journal files for the Telethon session."""
+        for suffix in (".lock", ".session-journal", ".session-wal", ".session-shm"):
+            p = Path(str(SESSION_PATH) + suffix) if suffix != ".lock" else LOCK_PATH
+            try:
+                p.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def send_and_wait(
         self, bot_username: str, text: str, timeout: int = 30

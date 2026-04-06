@@ -121,13 +121,7 @@ _TRUST_RELEVANT_QUERY = re.compile(
 # tokens verbatim in its response, enabling rehydration to restore the
 # original values. Opaque tokens like [PERSON_1] are unambiguous —
 # the LLM cannot rephrase them, so exact-match rehydration works.
-_PII_PRESERVE_INSTRUCTION = (
-    "IMPORTANT: This text contains privacy placeholders in square brackets "
-    "(e.g. [PERSON_1], [ORG_1], [LOC_1]). "
-    "You MUST use these exact tokens — including the brackets — "
-    "whenever you refer to the corresponding person, place, or "
-    "organization. Never replace them with real names or drop the brackets.\n\n"
-)
+from ..prompts import PROMPT_PII_PRESERVE_INSTRUCTION as _PII_PRESERVE_INSTRUCTION
 
 # ---------------------------------------------------------------------------
 # Anti-Her deterministic fallback filters (Law 4: Never Replace a Human)
@@ -429,7 +423,11 @@ _PROMISE_BRIEFING_PATTERNS = re.compile(
 # never reaches an LLM call that could route to cloud.
 # ---------------------------------------------------------------------------
 
-_GUARD_SCAN_PROMPT = """\
+from ..prompts import PROMPT_GUARD_SCAN_SYSTEM as _GUARD_SCAN_PROMPT  # noqa: E402
+from ..prompts import PROMPT_ANTI_HER_CLASSIFY_SYSTEM as _ANTI_HER_CLASSIFY_PROMPT  # noqa: E402
+from ..prompts import PROMPT_SILENCE_CLASSIFY_SYSTEM as _SILENCE_CLASSIFY_PROMPT  # noqa: E402
+
+_GUARD_SCAN_PROMPT_OLD = """\
 Analyze this assistant response for safety violations. Return ONLY valid JSON.
 
 IMPORTANT: All sentence arrays MUST contain only integer indices (e.g. [1, 3, 5]), \
@@ -509,7 +507,7 @@ ASSISTANT RESPONSE (sentences numbered):
 # Routed as lightweight task for speed.
 # ---------------------------------------------------------------------------
 
-_ANTI_HER_CLASSIFY_PROMPT = """\
+_ANTI_HER_CLASSIFY_PROMPT_OLD = """\
 Classify whether this user message is seeking emotional companionship \
 from the AI. Return ONLY valid JSON.
 
@@ -550,7 +548,7 @@ USER MESSAGE:
 # Routed as lightweight task (local preferred, Flash Lite fallback).
 # ---------------------------------------------------------------------------
 
-_SILENCE_CLASSIFY_PROMPT = """\
+_SILENCE_CLASSIFY_PROMPT_OLD = """\
 Classify this event into a Silence-First priority tier. Return ONLY valid JSON.
 
 {{
@@ -1646,51 +1644,75 @@ class GuardianLoop:
             return {"action": "staging_drain", "error": str(exc)}
 
     async def _scan_routing_ambiguity(self) -> None:
-        """Surface items routed to general due to ambiguous persona match.
+        """Surface items needing routing review in the daily briefing.
 
-        Reads brief:routing_ambiguous:* KV records written by StagingProcessor
-        and adds them to the briefing queue. Does NOT delete them here —
-        cleanup happens in _cleanup_routing_ambiguity() after the briefing
-        is fully assembled and returned successfully.
+        Reads brief:routing_review:* KV records written by StagingProcessor.
+        Handles two kinds (discriminated by routing_meta.kind):
+          - ambiguous_persona: item stored in general due to ambiguous persona match
+          - unresolved_subject_ownership: sensitive fact couldn't be attributed to a subject
+
+        Also reads legacy brief:routing_ambiguous:* keys for backward compat.
+        Does NOT delete records here — cleanup happens after briefing is assembled.
         """
-        try:
-            index_raw = await self._core.get_kv("brief:routing_ambiguous_index")
-        except Exception:
-            return
-        if not index_raw:
-            return
-
-        try:
-            item_ids = json.loads(index_raw)
-        except (json.JSONDecodeError, TypeError):
-            return
-
-        for item_id in item_ids:
+        # Scan new unified index first.
+        for index_key, item_prefix in [
+            ("brief:routing_review_index", "brief:routing_review:"),
+            ("brief:routing_ambiguous_index", "brief:routing_ambiguous:"),  # legacy
+        ]:
             try:
-                raw = await self._core.get_kv(f"brief:routing_ambiguous:{item_id}")
-                if not raw:
-                    continue
-                data = json.loads(raw)
-                candidates = data.get("candidates", [])
-                reason = data.get("reason", "")
-                summary = data.get("summary", "")
-                self._briefing_items.append({
-                    "type": "routing_review",
-                    "priority": "solicited",
-                    "body": (
-                        f"'{summary}' was stored in 'general' because routing was ambiguous. "
-                        f"Candidate personas: {', '.join(candidates)}. {reason}"
-                    ),
-                    "source": "persona_router",
-                    "persona_id": "general",
-                    "item_id": item_id,
-                })
-                self._routing_ambiguity_surfaced.append(item_id)
+                index_raw = await self._core.get_kv(index_key)
             except Exception:
-                pass
+                continue
+            if not index_raw:
+                continue
+
+            try:
+                item_ids = json.loads(index_raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            for item_id in item_ids:
+                if item_id in self._routing_ambiguity_surfaced:
+                    continue  # already surfaced from other index
+                try:
+                    raw = await self._core.get_kv(f"{item_prefix}{item_id}")
+                    if not raw:
+                        continue
+                    data = json.loads(raw)
+                    kind = data.get("kind", data.get("type", "ambiguous"))
+                    summary = data.get("summary", "")
+
+                    if kind == "unresolved_subject_ownership":
+                        facts = data.get("unresolved_facts", [])
+                        fact_texts = [f.get("text", "") for f in facts if f.get("text")]
+                        body = (
+                            f"'{summary}' contains sensitive data that could not be "
+                            f"attributed to a specific person: {', '.join(fact_texts)}. "
+                            f"{data.get('reason', '')}"
+                        )
+                    else:
+                        candidates = data.get("candidates", [])
+                        reason = data.get("reason", "")
+                        body = (
+                            f"'{summary}' was stored in 'general' because routing was ambiguous. "
+                            f"Candidate personas: {', '.join(candidates)}. {reason}"
+                        )
+
+                    self._briefing_items.append({
+                        "type": "routing_review",
+                        "priority": "solicited",
+                        "body": body,
+                        "source": "persona_router",
+                        "persona_id": "general",
+                        "item_id": item_id,
+                        "review_kind": kind,
+                    })
+                    self._routing_ambiguity_surfaced.append(item_id)
+                except Exception:
+                    pass
 
     async def _cleanup_routing_ambiguity(self) -> None:
-        """Delete surfaced routing-ambiguity KV records.
+        """Delete surfaced routing-review KV records.
 
         Called only after generate_briefing() has successfully assembled
         the briefing, so records are never lost on mid-briefing failure.
@@ -1698,22 +1720,24 @@ class GuardianLoop:
         if not self._routing_ambiguity_surfaced:
             return
         for item_id in self._routing_ambiguity_surfaced:
+            for prefix in ("brief:routing_review:", "brief:routing_ambiguous:"):
+                try:
+                    await self._core.set_kv(f"{prefix}{item_id}", "")
+                except Exception:
+                    pass
+        # Update both indexes.
+        for index_key in ("brief:routing_review_index", "brief:routing_ambiguous_index"):
             try:
-                await self._core.set_kv(f"brief:routing_ambiguous:{item_id}", "")
+                index_raw = await self._core.get_kv(index_key)
+                if index_raw:
+                    index = json.loads(index_raw)
+                    remaining = [i for i in index if i not in self._routing_ambiguity_surfaced]
+                    await self._core.set_kv(
+                        index_key,
+                        json.dumps(remaining) if remaining else "",
+                    )
             except Exception:
                 pass
-        # Update index
-        try:
-            index_raw = await self._core.get_kv("brief:routing_ambiguous_index")
-            if index_raw:
-                index = json.loads(index_raw)
-                remaining = [i for i in index if i not in self._routing_ambiguity_surfaced]
-                await self._core.set_kv(
-                    "brief:routing_ambiguous_index",
-                    json.dumps(remaining) if remaining else "",
-                )
-        except Exception:
-            pass
         self._routing_ambiguity_surfaced.clear()
 
     # ------------------------------------------------------------------

@@ -1944,13 +1944,19 @@ func (cd *ContactDirectory) IsContact(did string) bool {
 	return ok
 }
 
-// Add adds a contact with a DID, display name, and trust level.
-func (cd *ContactDirectory) Add(_ context.Context, did, name, trustLevel string) error {
+// Add adds a contact with a DID, display name, trust level, relationship, and data responsibility.
+func (cd *ContactDirectory) Add(_ context.Context, did, name, trustLevel, relationship, dataResponsibility string, responsibilityExplicit bool) error {
 	cd.mu.Lock()
 	defer cd.mu.Unlock()
 
 	if !validTrustLevels[trustLevel] {
 		return ErrInvalidTrustLevel
+	}
+	if !domain.ValidContactRelationships[relationship] {
+		return fmt.Errorf("invalid relationship: %s", relationship)
+	}
+	if !domain.ValidDataResponsibility[dataResponsibility] {
+		return fmt.Errorf("invalid data_responsibility: %s", dataResponsibility)
 	}
 
 	if _, exists := cd.contacts[did]; exists {
@@ -1958,10 +1964,13 @@ func (cd *ContactDirectory) Add(_ context.Context, did, name, trustLevel string)
 	}
 
 	cd.contacts[did] = &domain.Contact{
-		DID:           did,
-		Name:          name,
-		TrustLevel:    trustLevel,
-		SharingPolicy: "{}",
+		DID:                   did,
+		Name:                  name,
+		TrustLevel:            trustLevel,
+		SharingPolicy:         "{}",
+		Relationship:          relationship,
+		DataResponsibility:    dataResponsibility,
+		ResponsibilityExplicit: responsibilityExplicit,
 	}
 	cd.byName[name] = did
 
@@ -2016,7 +2025,42 @@ func (cd *ContactDirectory) UpdateName(_ context.Context, did, name string) erro
 	return nil
 }
 
-// Delete removes a contact.
+// UpdateRelationship changes a contact's relationship and auto-derives data responsibility
+// unless the responsibility was explicitly set.
+func (cd *ContactDirectory) UpdateRelationship(_ context.Context, did, relationship string) error {
+	if !domain.ValidContactRelationships[relationship] {
+		return fmt.Errorf("invalid relationship: %s", relationship)
+	}
+	cd.mu.Lock()
+	defer cd.mu.Unlock()
+	c, ok := cd.contacts[did]
+	if !ok {
+		return ErrContactNotFound
+	}
+	c.Relationship = relationship
+	if !c.ResponsibilityExplicit {
+		c.DataResponsibility = domain.DefaultResponsibility(relationship)
+	}
+	return nil
+}
+
+// UpdateDataResponsibility explicitly sets a contact's data responsibility classification.
+func (cd *ContactDirectory) UpdateDataResponsibility(_ context.Context, did, dataResponsibility string) error {
+	cd.mu.Lock()
+	defer cd.mu.Unlock()
+	c, ok := cd.contacts[did]
+	if !ok {
+		return ErrContactNotFound
+	}
+	if !domain.ValidDataResponsibility[dataResponsibility] {
+		return fmt.Errorf("invalid data_responsibility: %s", dataResponsibility)
+	}
+	c.DataResponsibility = dataResponsibility
+	c.ResponsibilityExplicit = true
+	return nil
+}
+
+// UpdateLastContact updates the last-contact timestamp for a contact.
 func (cd *ContactDirectory) UpdateLastContact(_ context.Context, did string, timestamp int64) error {
 	cd.mu.Lock()
 	defer cd.mu.Unlock()

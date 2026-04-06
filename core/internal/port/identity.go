@@ -63,13 +63,26 @@ type PersonaManager interface {
 
 // ContactDirectory manages the contact registry in identity.sqlite.
 type ContactDirectory interface {
-	Add(ctx context.Context, did, name, trustLevel string) error
+	Add(ctx context.Context, did, name, trustLevel, relationship, dataResponsibility string, responsibilityExplicit bool) error
 	Resolve(ctx context.Context, name string) (string, error)
 	UpdateTrust(ctx context.Context, did, trustLevel string) error
 	UpdateName(ctx context.Context, did, name string) error
+	UpdateRelationship(ctx context.Context, did, relationship string) error
+	UpdateDataResponsibility(ctx context.Context, did, dataResponsibility string) error
 	UpdateLastContact(ctx context.Context, did string, timestamp int64) error
 	Delete(ctx context.Context, did string) error
 	List(ctx context.Context) ([]domain.Contact, error)
+}
+
+// ContactAliasStore manages multiple aliases per contact.
+// Separate from ContactDirectory to keep alias lifecycle independent.
+type ContactAliasStore interface {
+	AddAlias(ctx context.Context, did, alias string) error
+	RemoveAlias(ctx context.Context, did, alias string) error
+	ListAliases(ctx context.Context, did string) ([]string, error)
+	ResolveAlias(ctx context.Context, alias string) (string, error)        // normalized alias → DID
+	ListAllAliases(ctx context.Context) (map[string][]string, error)       // DID → aliases
+	DeleteAllForContact(ctx context.Context, did string) error
 }
 
 // DeviceRegistry manages paired device records.

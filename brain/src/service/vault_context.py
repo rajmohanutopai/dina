@@ -566,7 +566,9 @@ class ToolExecutor:
 # ReasoningAgent — agentic tool-calling loop
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT = """\
+from ..prompts import PROMPT_VAULT_CONTEXT_SYSTEM as _SYSTEM_PROMPT
+
+_SYSTEM_PROMPT_OLD = """\
 You are Dina, a sovereign personal AI assistant. You have access to the user's \
 encrypted persona vaults containing personal context — health records, purchase \
 history, work patterns, family details, financial data, and product reviews.
@@ -695,6 +697,7 @@ class ReasoningAgent:
         agent_did: str = "",
         session: str = "",
         user_origin: str = "",
+        contact_hints: list[dict] | None = None,
     ) -> dict:
         """Run the agentic reasoning loop.
 
@@ -755,6 +758,18 @@ class ReasoningAgent:
         system = _SYSTEM_PROMPT
         if self._owner_name:
             system += f"\n\nThe user's name is {self._owner_name}."
+
+        # Inject contact alias hints for recall expansion (Phase A).
+        contact_hints = contact_hints or []
+        if contact_hints:
+            hints_text = "\n\nContact alias mappings (use these when searching the vault — " \
+                "the user may store facts using either the name or an alias):\n"
+            for h in contact_hints:
+                aliases = ", ".join(h.get("aliases", []))
+                if aliases:
+                    hints_text += f"- {h['name']}: also known as {aliases}\n"
+            system += hints_text
+
         messages: list[dict] = [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
@@ -886,6 +901,7 @@ class VaultContextAssembler:
         persona_tier: str = "open",
         entity_vault: Any = None,
         provider: str | None = None,
+        contact_hints: list[dict] | None = None,
     ) -> tuple[str, bool]:
         """Enrich a prompt with vault context via agentic reasoning.
 
@@ -907,6 +923,7 @@ class VaultContextAssembler:
         """
         result = await self._agent.reason(
             prompt, persona_tier, entity_vault=entity_vault, provider=provider,
+            contact_hints=contact_hints or [],
         )
         content = result.get("content", prompt)
         was_enriched = result.get("vault_context_used", False)
@@ -938,7 +955,53 @@ class VaultContextAssembler:
             When set (e.g. ``"telegram"``), Core auto-unlocks sensitive
             persona vaults for user-originated requests.
         """
+        # Build contact alias hints ONLY for contacts mentioned in the query.
+        # This avoids leaking unrelated contact aliases into the prompt.
+        contact_hints = []
+        try:
+            resp = await self._agent._core._request("GET", "/v1/contacts")
+            contacts = resp.json().get("contacts", [])
+            from .contact_matcher import ContactMatcher
+            matcher = ContactMatcher(contacts)
+            mentions = matcher.find_mentions(prompt)
+            mentioned_dids = {m.did for m in mentions}
+            for c in contacts:
+                aliases = c.get("aliases", [])
+                if not aliases:
+                    continue
+                did = c.get("did", "")
+                if did in mentioned_dids:
+                    name = c.get("display_name") or c.get("name", "")
+                    contact_hints.append({"name": name, "aliases": aliases})
+        except Exception:
+            pass  # best-effort — agent works without hints
+
+        # Also resolve person surfaces for recall expansion.
+        # Person hints use the same format as contact hints (name + synonyms).
+        # Only confirmed surfaces are used. Contact aliases take priority.
+        try:
+            from .person_resolver import PersonResolver
+            resolver = PersonResolver(self._agent._core)
+            await resolver.refresh()
+            resolved = resolver.resolve(prompt)
+            for rp in resolved:
+                # Skip if this person is already covered by a contact hint.
+                already_covered = any(
+                    h["name"].lower() == rp.canonical_name.lower()
+                    for h in contact_hints
+                )
+                if already_covered:
+                    continue
+                if rp.surfaces:
+                    contact_hints.append({
+                        "name": rp.canonical_name or rp.surfaces[0],
+                        "aliases": [s for s in rp.surfaces if s.lower() != (rp.canonical_name or "").lower()],
+                    })
+        except Exception:
+            pass  # best-effort
+
         return await self._agent.reason(
             prompt, persona_tier, entity_vault=entity_vault, provider=provider,
             agent_did=agent_did, session=session, user_origin=user_origin,
+            contact_hints=contact_hints,
         )

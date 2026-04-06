@@ -63,6 +63,16 @@ func newContactDirectory(_ vaultBackend) contactDirectoryFull {
 	return identity.NewContactDirectory()
 }
 
+// newContactAliasStore returns an in-memory alias store (no CGO — dev/test only).
+func newContactAliasStore(_ vaultBackend) port.ContactAliasStore {
+	return identity.NewInMemoryAliasStore(nil)
+}
+
+// newPersonStore returns nil in no-CGO mode (person memory disabled without SQLite).
+func newPersonStore(_ vaultBackend) port.PersonStore {
+	return nil
+}
+
 // newReminderScheduler returns an in-memory reminder scheduler (no CGO — dev/test only).
 func newReminderScheduler(_ vaultBackend) port.ReminderScheduler {
 	return taskqueue.NewReminderScheduler()

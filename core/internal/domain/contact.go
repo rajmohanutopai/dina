@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // ScenarioTier controls how a D2D message family is handled for a given contact.
 // Applied symmetrically on inbound and outbound.
 type ScenarioTier string
@@ -19,16 +21,97 @@ const (
 
 // Contact holds contact directory data stored in identity.sqlite.
 type Contact struct {
-	DID              string `json:"did"`
-	Name             string `json:"name"`
-	Alias            string `json:"alias"`
-	TrustLevel       string `json:"trust_level"`       // blocked, unknown, trusted, verified
-	TrustRing        int    `json:"trust_ring"`         // 0=unverified, 1=inner circle, 2=verified, 3=transactional
-	SharingPolicy    string `json:"sharing_policy"`     // JSON blob
-	ResolutionPolicy string `json:"resolution_policy"`  // late_binding (ring 1), plaintext (ring 2-3), blocked (ring 0)
-	Source           string `json:"source"`              // who provided this contact data
-	SourceConfidence string `json:"source_confidence"`   // high, medium, low
-	LastContact      int64  `json:"last_contact"`        // unix timestamp of last interaction
+	DID                   string `json:"did"`
+	Name                  string `json:"name"`
+	Alias                 string   `json:"alias"`                   // compatibility: aliases[0] at serialization boundary
+	Aliases               []string `json:"aliases,omitempty"`        // canonical multi-alias list (populated from alias store)
+	TrustLevel            string `json:"trust_level"`            // blocked, unknown, trusted, verified
+	TrustRing             int    `json:"trust_ring"`              // 0=unverified, 1=inner circle, 2=verified, 3=transactional
+	Relationship          string `json:"relationship"`            // spouse, child, parent, sibling, friend, colleague, acquaintance, unknown
+	DataResponsibility    string `json:"data_responsibility"`     // household, care, financial, external
+	ResponsibilityExplicit bool  `json:"responsibility_explicit"` // true if user explicitly set data_responsibility (read-only in API)
+	SharingPolicy         string `json:"sharing_policy"`          // JSON blob
+	ResolutionPolicy      string `json:"resolution_policy"`       // late_binding (ring 1), plaintext (ring 2-3), blocked (ring 0)
+	Source                string `json:"source"`                   // who provided this contact data
+	SourceConfidence      string `json:"source_confidence"`        // high, medium, low
+	LastContact           int64  `json:"last_contact"`             // unix timestamp of last interaction
+}
+
+// Relationship values.
+const (
+	RelationshipSpouse       = "spouse"
+	RelationshipChild        = "child"
+	RelationshipParent       = "parent"
+	RelationshipSibling      = "sibling"
+	RelationshipFriend       = "friend"
+	RelationshipColleague    = "colleague"
+	RelationshipAcquaintance = "acquaintance"
+	RelationshipUnknown      = "unknown"
+)
+
+// ValidContactRelationships is the set of accepted contact relationship values.
+// Named differently from ValidRelationships in trust.go (trust network graph relationships).
+var ValidContactRelationships = map[string]bool{
+	RelationshipSpouse: true, RelationshipChild: true,
+	RelationshipParent: true, RelationshipSibling: true,
+	RelationshipFriend: true, RelationshipColleague: true,
+	RelationshipAcquaintance: true, RelationshipUnknown: true,
+}
+
+// DataResponsibility values — routing signal for persona classification.
+// "self" is a pipeline-only bucket, NOT storable on contacts.
+const (
+	ResponsibilityHousehold = "household" // spouse/child: their sensitive data = user's own
+	ResponsibilityCare      = "care"      // medical caregiver: health→health, finance→general
+	ResponsibilityFinancial = "financial" // financial guardian: health→general, finance→finance
+	ResponsibilityExternal  = "external"  // all sensitive data → general
+)
+
+// ValidDataResponsibility is the set of accepted data_responsibility values.
+// "self" is intentionally excluded — it is a pipeline-only classification bucket.
+var ValidDataResponsibility = map[string]bool{
+	ResponsibilityHousehold: true,
+	ResponsibilityCare:      true,
+	ResponsibilityFinancial: true,
+	ResponsibilityExternal:  true,
+}
+
+// DefaultResponsibility returns the default data_responsibility for a relationship.
+// Spouse and child default to household; all others default to external.
+func DefaultResponsibility(relationship string) string {
+	switch relationship {
+	case RelationshipSpouse, RelationshipChild:
+		return ResponsibilityHousehold
+	default:
+		return ResponsibilityExternal
+	}
+}
+
+// ReservedAliases are pronouns and generic terms that cannot be used as aliases.
+var ReservedAliases = map[string]bool{
+	"he": true, "she": true, "they": true, "him": true, "her": true,
+	"them": true, "his": true, "hers": true, "their": true, "theirs": true,
+	"i": true, "me": true, "my": true, "mine": true, "we": true, "us": true,
+}
+
+// ValidateAlias checks if an alias is acceptable. Returns an error message or "".
+func ValidateAlias(alias string) string {
+	normalized := strings.ToLower(strings.TrimSpace(alias))
+	if normalized == "" {
+		return "alias cannot be empty"
+	}
+	if len(normalized) < 2 {
+		return "alias must be at least 2 characters"
+	}
+	if ReservedAliases[normalized] {
+		return "alias cannot be a pronoun or reserved word"
+	}
+	return ""
+}
+
+// NormalizeAlias returns the lowercase trimmed form for uniqueness checks.
+func NormalizeAlias(alias string) string {
+	return strings.ToLower(strings.TrimSpace(alias))
 }
 
 // Trust ring constants.

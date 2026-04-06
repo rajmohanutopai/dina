@@ -162,9 +162,11 @@ class TestAsk:
     """LLM reasoning works through Telegram."""
 
     def test_ask_question(self, tg: SanityTelegramClient) -> None:
-        r = _send_and_wait(tg, ALONSO_BOT, "/ask What is a good standing desk for home office?", timeout=60)
+        r = _send_and_wait(tg, ALONSO_BOT, "/ask What is a good standing desk for home office?", timeout=90)
         assert len(r) > 50, f"Response too short: {r[:100]}"
         print(f"\n  Response: {r[:150]}...")
+        # Settle: avoid late LLM response leaking into next test
+        time.sleep(5)
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +180,7 @@ class TestRemember:
     def test_remember_stores(self, tg: SanityTelegramClient) -> None:
         """Store a fact in the vault."""
         r = _send_and_wait(tg, ALONSO_BOT,
-                           "/remember Sancho likes strong filter coffee and always brings jaggery sweets",
+                           "/remember Sancho likes cold brew coffee extra strong and always brings homemade brownies",
                            timeout=30)
         assert any(w in r.lower() for w in ["stored", "vault", "remembered", "noted"]), (
             f"Not confirmed: {r[:150]}"
@@ -194,7 +196,7 @@ class TestRemember:
         print(f"\n  Created: {r[:120]}")
 
         # Wait for reminder to fire (up to 3 minutes)
-        msgs = _check_new_messages(tg, ALONSO_BOT, before, timeout=90)
+        msgs = _check_new_messages(tg, ALONSO_BOT, before, timeout=180)
         fired = [m for m in msgs if "monitor stand" in m.lower() or "amazon" in m.lower()]
         assert fired, (
             f"Reminder did not fire within 3 minutes. Messages: {[m[:80] for m in msgs]}"
@@ -237,7 +239,7 @@ class TestSanchoMoment:
     def test_sancho_remembers_alonso_context(self, tg: SanityTelegramClient) -> None:
         """Sancho stores context about Alonso for nudge assembly."""
         r = _send_and_wait(tg, SANCHO_BOT,
-                           "/remember Alonso prefers masala chai and usually brings homemade murukku",
+                           "/remember When Alonso visits, he likes cold brew coffee extra strong and usually brings homemade banana bread",
                            timeout=30)
         assert any(w in r.lower() for w in ["stored", "vault"]), f"Not stored: {r[:100]}"
         print(f"\n  {r[:100]}")
@@ -251,14 +253,14 @@ class TestSanchoMoment:
         print(f"\n  {r[:100]}")
 
     def test_sancho_receives_contextual_nudge(self, tg: SanityTelegramClient) -> None:
-        """Sancho receives notification WITH vault context (masala chai / murukku)."""
+        """Sancho receives notification WITH vault context (cold brew / banana bread)."""
         before = time.time() - 15  # account for test ordering delay
         msgs = _check_new_messages(tg, SANCHO_BOT, before, timeout=30)
 
         # Look for nudge with vault context
         all_text = " ".join(msgs).lower()
         has_arrival = "alonso" in all_text or "arriving" in all_text or "leaving" in all_text
-        has_context = "chai" in all_text or "murukku" in all_text or "masala" in all_text
+        has_context = "cold brew" in all_text or "banana bread" in all_text or "banana" in all_text
 
         assert has_arrival, f"No arrival notification: {[m[:80] for m in msgs]}"
         if has_context:

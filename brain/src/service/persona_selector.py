@@ -18,6 +18,7 @@ from typing import Any
 
 import structlog
 
+from ..prompts import PROMPT_PERSONA_CLASSIFY_SYSTEM as _SYSTEM_PROMPT
 from .persona_registry import PersonaInfo, PersonaRegistry
 
 log = structlog.get_logger(__name__)
@@ -33,35 +34,9 @@ class SelectionResult:
     reason: str = ""
     has_event: bool = False
     event_hint: str = ""
-
-
-_SYSTEM_PROMPT = """\
-You are a data classifier for a personal AI system.
-The user has encrypted vaults (personas). Each persona has a name, tier, \
-and description explaining what data belongs there.
-
-You have TWO jobs:
-
-1. **Classify** which vault an incoming item belongs to.
-   Choose ONLY from the available personas listed below.
-   Do NOT invent new persona names.
-   When uncertain, prefer the default-tier persona.
-
-2. **Detect temporal events** — if the content mentions a date, deadline, \
-   appointment, birthday, payment, or any time-bound event, set \
-   has_event=true and provide a brief event_hint. Do NOT plan reminders — \
-   just flag that a temporal event exists. Another system will handle planning.
-
-Respond with a JSON object:
-{
-  "primary": "<persona_name>",
-  "secondary": [],
-  "confidence": 0.0-1.0,
-  "reason": "short explanation",
-  "has_event": true/false,
-  "event_hint": "brief description if has_event is true, e.g. 'birthday tomorrow', 'vaccination 27th March'"
-}
-"""
+    attribution_corrections: list[dict] = field(default_factory=list)
+    # LLM corrections to deterministic attributions, by stable ID:
+    # [{"id": 1, "corrected_bucket": "self_explicit", "reason": "..."}]
 
 
 class PersonaSelector:
@@ -147,6 +122,16 @@ class PersonaSelector:
             "body_preview": (item.get("body", "") or "")[:300],
         }
 
+        # Include mentioned contacts for relationship-aware routing.
+        mentioned = item.get("mentioned_contacts")
+        if mentioned:
+            item_context["mentioned_contacts"] = mentioned
+
+        # Include attribution candidates for LLM correction.
+        attribution_candidates = item.get("attribution_candidates")
+        if attribution_candidates:
+            item_context["attribution_candidates"] = attribution_candidates
+
         import datetime as _dt
         today = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
 
@@ -207,6 +192,7 @@ class PersonaSelector:
                 reason=reason,
                 has_event=bool(data.get("has_event", False)),
                 event_hint=data.get("event_hint", ""),
+                attribution_corrections=data.get("attribution_corrections", []),
             )
         except (json.JSONDecodeError, ValueError, KeyError) as exc:
             log.warning("persona_selector.parse_failed", error=str(exc))

@@ -115,7 +115,17 @@ class UserCommandService:
         except Exception as exc:
             return CommandResult(ok=False, message=f"Failed to list contacts: {exc}")
 
-    async def add_contact(self, name: str, did: str) -> CommandResult:
+    _VALID_RELATIONSHIPS = frozenset({
+        "spouse", "child", "parent", "sibling", "friend",
+        "colleague", "acquaintance", "unknown",
+    })
+    _VALID_RESPONSIBILITIES = frozenset({
+        "household", "care", "financial", "external",
+    })
+
+    async def add_contact(
+        self, name: str, did: str, relationship: str = "unknown",
+    ) -> CommandResult:
         """Add a contact. Validates name and DID before adding."""
         err = validate_name(name)
         if err:
@@ -132,18 +142,112 @@ class UserCommandService:
                 message=f"Contact '{name}' already exists. Delete it first or use a different name.",
             )
 
+        body: dict = {"did": did, "name": name, "trust_level": "verified"}
+        if relationship and relationship != "unknown":
+            if relationship not in self._VALID_RELATIONSHIPS:
+                return CommandResult(
+                    ok=False,
+                    message=f"Invalid relationship. Valid: {', '.join(sorted(self._VALID_RELATIONSHIPS))}",
+                )
+            body["relationship"] = relationship
+
         try:
-            await self._core._request(
-                "POST", "/v1/contacts",
-                json={"did": did, "name": name, "trust_level": "verified"},
-            )
+            await self._core._request("POST", "/v1/contacts", json=body)
             return CommandResult(
                 ok=True,
                 message=f"Contact added: {name}",
-                data={"name": name, "did": did},
+                data={"name": name, "did": did, "relationship": relationship},
             )
         except Exception as exc:
             return CommandResult(ok=False, message=f"Failed to add contact: {exc}")
+
+    async def set_relationship(self, name: str, relationship: str) -> CommandResult:
+        """Set the relationship type for an existing contact.
+
+        Also recomputes data_responsibility unless it was explicitly overridden.
+        """
+        if relationship not in self._VALID_RELATIONSHIPS:
+            return CommandResult(
+                ok=False,
+                message=f"Invalid relationship. Valid: {', '.join(sorted(self._VALID_RELATIONSHIPS))}",
+            )
+
+        did = await self.resolve_contact_did(name)
+        if not did:
+            return CommandResult(ok=False, message=f"Contact '{name}' not found.")
+
+        try:
+            await self._core._request(
+                "PUT", f"/v1/contacts/{urllib.parse.quote(did, safe='')}",
+                json={"relationship": relationship},
+            )
+            return CommandResult(
+                ok=True,
+                message=f"Relationship for {name} set to {relationship}.",
+            )
+        except Exception as exc:
+            return CommandResult(ok=False, message=f"Failed to update: {exc}")
+
+    async def set_responsibility(self, name: str, data_responsibility: str) -> CommandResult:
+        """Explicitly set data_responsibility for a contact.
+
+        Overrides the auto-derived default. 'self' is not allowed.
+        """
+        if data_responsibility not in self._VALID_RESPONSIBILITIES:
+            return CommandResult(
+                ok=False,
+                message=f"Invalid responsibility. Valid: {', '.join(sorted(self._VALID_RESPONSIBILITIES))}",
+            )
+
+        did = await self.resolve_contact_did(name)
+        if not did:
+            return CommandResult(ok=False, message=f"Contact '{name}' not found.")
+
+        try:
+            await self._core._request(
+                "PUT", f"/v1/contacts/{urllib.parse.quote(did, safe='')}",
+                json={"data_responsibility": data_responsibility},
+            )
+            return CommandResult(
+                ok=True,
+                message=f"Data responsibility for {name} set to {data_responsibility}.",
+            )
+        except Exception as exc:
+            return CommandResult(ok=False, message=f"Failed to update: {exc}")
+
+    async def add_alias(self, name: str, alias: str) -> CommandResult:
+        """Add an alias for a contact."""
+        alias = alias.strip()
+        if not alias or len(alias) < 2:
+            return CommandResult(ok=False, message="Alias must be at least 2 characters.")
+
+        did = await self.resolve_contact_did(name)
+        if not did:
+            return CommandResult(ok=False, message=f"Contact '{name}' not found.")
+
+        try:
+            await self._core.add_alias(did, alias)
+            return CommandResult(
+                ok=True,
+                message=f"Alias '{alias}' added for {name}.",
+            )
+        except Exception as exc:
+            msg = str(exc)
+            if "conflicts" in msg or "already belongs" in msg:
+                return CommandResult(ok=False, message=msg)
+            return CommandResult(ok=False, message=f"Failed to add alias: {exc}")
+
+    async def remove_alias(self, name: str, alias: str) -> CommandResult:
+        """Remove an alias from a contact."""
+        did = await self.resolve_contact_did(name)
+        if not did:
+            return CommandResult(ok=False, message=f"Contact '{name}' not found.")
+
+        try:
+            await self._core.remove_alias(did, alias)
+            return CommandResult(ok=True, message=f"Alias '{alias}' removed from {name}.")
+        except Exception as exc:
+            return CommandResult(ok=False, message=f"Failed to remove alias: {exc}")
 
     async def delete_contact(self, name: str) -> CommandResult:
         """Delete a contact by name."""

@@ -181,6 +181,18 @@ VaultItem:
       type: string
       x-go-name: ConnectorID
 
+ContactRelationship:
+  type: string
+  enum: [spouse, child, parent, sibling, friend, colleague, acquaintance, unknown]
+  description: Social relationship of the contact to the owner.
+
+DataResponsibility:
+  type: string
+  enum: [household, care, financial, external]
+  description: >
+    Routing signal for persona classification. Determines how the contact's
+    sensitive data is routed. "self" is a pipeline-only bucket and is NOT storable.
+
 Contact:
   type: object
   required: [did, name]
@@ -191,8 +203,25 @@ Contact:
       type: string
     alias:
       type: string
+      description: Compatibility field — populated from aliases[0].
+    aliases:
+      type: array
+      items:
+        type: string
+      description: All aliases for this contact. Canonical multi-alias list.
     trust_level:
       $ref: '#/TrustLevel'
+    relationship:
+      $ref: '#/ContactRelationship'
+    data_responsibility:
+      $ref: '#/DataResponsibility'
+    responsibility_explicit:
+      type: boolean
+      readOnly: true
+      description: >
+        True if the user explicitly set data_responsibility. Server-derived,
+        never sent by clients. On relationship change, data_responsibility
+        is recomputed from the new relationship only if this is false.
     sharing_policy:
       type: string
       description: JSON-encoded sharing policy.

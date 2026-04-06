@@ -48,40 +48,13 @@ _PERSONA_MAP: dict[str, tuple[Sensitivity, str]] = {
 # Layer 2: Keyword signals → domain + sensitivity
 # ---------------------------------------------------------------------------
 
-_HEALTH_STRONG = re.compile(
-    r"\b(?:diagnosis|prescription|symptom|blood\s*(?:sugar|pressure|test)|"
-    r"cholesterol|A1C|biopsy|MRI|CT\s*scan|radiology|oncology|pathology|"
-    r"medication|dosage|insulin|chemotherapy|surgery|hospital|clinic|"
-    r"patient|medical\s*record|lab\s*result|hemoglobin|platelet|"
-    r"x-ray|ultrasound|ecg|ekg)\b",
-    re.IGNORECASE,
-)
-
-_HEALTH_WEAK = re.compile(
-    r"\b(?:doctor|health|wellness|diet|exercise|weight|sleep|"
-    r"headache|fever|cold|flu|allergy|vitamin)\b",
-    re.IGNORECASE,
-)
-
-_FINANCE_STRONG = re.compile(
-    r"\b(?:bank\s*account|credit\s*card|debit\s*card|loan|mortgage|"
-    r"tax\s*return|salary|income|investment|portfolio|"
-    r"aadhaar|pan\s*card|pan\s*number|ifsc|neft|rtgs|upi|"
-    r"account\s*number|routing\s*number|swift|iban)\b",
-    re.IGNORECASE,
-)
-
-_FINANCE_WEAK = re.compile(
-    r"\b(?:money|payment|price|cost|budget|expense|savings|"
-    r"insurance|premium|interest\s*rate)\b",
-    re.IGNORECASE,
-)
-
-_LEGAL_STRONG = re.compile(
-    r"\b(?:lawsuit|subpoena|deposition|court\s*order|litigation|"
-    r"attorney|lawyer|legal\s*counsel|affidavit|indictment|"
-    r"bail|probation|verdict|plea|custody|restraining\s*order)\b",
-    re.IGNORECASE,
+# Keyword patterns imported from shared module — single source of truth.
+from .sensitive_signals import (
+    HEALTH_STRONG as _HEALTH_STRONG,
+    HEALTH_WEAK as _HEALTH_WEAK,
+    FINANCE_STRONG as _FINANCE_STRONG,
+    FINANCE_WEAK as _FINANCE_WEAK,
+    LEGAL_STRONG as _LEGAL_STRONG,
 )
 
 

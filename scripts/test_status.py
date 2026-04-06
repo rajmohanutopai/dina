@@ -1230,6 +1230,14 @@ SUITES = {
         "parser": "pytest",
         "test_dir": "admin-cli/tests",
     },
+    "prompt": {
+        "name": "Prompt (LLM)",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+                "tests/prompt/"],
+        "cwd": None,
+        "parser": "pytest",
+        "test_dir": "tests/prompt",
+    },
     "appview": {
         "name": "AppView (TS)",
         "cmd": ["npx", "vitest", "run", "tests/unit/", "--reporter=verbose"],
@@ -1993,7 +2001,7 @@ def parse_args(argv: list[str]) -> dict:
         elif a in ("-v", "--verbose"):
             opts["verbose"] = True
         elif a == "--unit":
-            opts["suite"] = "core,brain,cli,admin_cli,appview"
+            opts["suite"] = "core,brain,cli,admin_cli,appview,prompt"
         elif a == "--suite" and i + 1 < len(argv):
             i += 1
             opts["suite"] = argv[i].lower()

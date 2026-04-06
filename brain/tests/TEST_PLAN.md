@@ -1299,6 +1299,164 @@
 
 ---
 
+## 25. Contact Relationship & Responsibility-Aware Routing
+
+### 25.1 Contact Matcher
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-512]** Basic name match | "Sancho has allergies" | Match: Sancho, external |
+| 2 | **[TST-BRAIN-513]** Case-insensitive match | "sancho likes coffee" | Match: Sancho |
+| 3 | **[TST-BRAIN-514]** No match | "Dave likes pizza" | No matches |
+| 4 | **[TST-BRAIN-515]** Multi-contact match | "Emma and Sancho have allergies" | 2 matches |
+| 5 | **[TST-BRAIN-516]** Longest-match-first | "Mary Jane has allergies" | Match: Mary Jane (not partial) |
+| 6 | **[TST-BRAIN-517]** Word boundary | "John has migraines" | Match: John (not Jo) |
+| 7 | **[TST-BRAIN-518]** Duplicate same contact | "Emma likes dinosaurs and Emma has allergies" | 2 separate mentions |
+| 8 | **[TST-BRAIN-519]** Span positions | "Sancho has allergies" | span=(0,6) |
+| 9 | **[TST-BRAIN-520]** Min name length | Contact "A" | Not matched |
+| 10 | **[TST-BRAIN-521]** Empty contacts | No contacts | No matches |
+| 11 | **[TST-BRAIN-522]** Empty text | "" | No matches |
+
+### 25.2 Subject Attributor
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-523]** Self-explicit | "My blood pressure is high" | self_explicit/health |
+| 2 | **[TST-BRAIN-524]** Known contact external | "Sancho has allergy" | known_contact/external |
+| 3 | **[TST-BRAIN-525]** Known contact household | "Emma has allergy" | known_contact/household |
+| 4 | **[TST-BRAIN-526]** Household implicit | "My daughter has allergy" | household_implicit |
+| 5 | **[TST-BRAIN-527]** Unknown third party | "My colleague has migraines" | unknown_third_party |
+| 6 | **[TST-BRAIN-528]** Unresolved pronoun | "He has allergies" | unresolved |
+| 7 | **[TST-BRAIN-529]** No sensitive signal | "Sancho likes cold brew" | No hits |
+| 8 | **[TST-BRAIN-530]** Multi-fact different subjects | "Emma allergy + Sancho taxes" | 2 attributions |
+| 9 | **[TST-BRAIN-531]** Self + external same sentence | "My BP + Sancho allergies" | self + external |
+| 10 | **[TST-BRAIN-532]** Coordinated subjects | "Emma and Sancho have allergies" | 2 attributions |
+| 11 | **[TST-BRAIN-533]** Coordinated later fact not leaked | "Emma+Sancho allergies, Sancho taxes" | taxes → Sancho only |
+| 12 | **[TST-BRAIN-534]** Pronoun carry-forward | "Mom BP high and her insurance due" | Both → Mom |
+| 13 | **[TST-BRAIN-535]** No subject personal state | "Blood pressure is 130/85" | self_explicit |
+| 14 | **[TST-BRAIN-536]** No subject topical | "Hospital changed policy" | unresolved |
+| 15 | **[TST-BRAIN-537]** Unknown proper name | "John has diabetes" | unresolved |
+| 16 | **[TST-BRAIN-538]** Parent role phrase | "My mother BP high" | unknown_third_party |
+| 17 | **[TST-BRAIN-539]** Empty text | "" | No attributions |
+
+### 25.3 Staging Responsibility Override
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-540]** Self keeps health | self/health | health |
+| 2 | **[TST-BRAIN-541]** Self keeps finance | self/finance | finance |
+| 3 | **[TST-BRAIN-542]** Household keeps health | household/health | health |
+| 4 | **[TST-BRAIN-543]** Household keeps finance | household/finance | finance |
+| 5 | **[TST-BRAIN-544]** Care keeps health | care/health | health |
+| 6 | **[TST-BRAIN-545]** Care overrides finance | care/finance | general |
+| 7 | **[TST-BRAIN-546]** Financial overrides health | financial/health | general |
+| 8 | **[TST-BRAIN-547]** Financial keeps finance | financial/finance | finance |
+| 9 | **[TST-BRAIN-548]** External overrides health | external/health | general |
+| 10 | **[TST-BRAIN-549]** External overrides finance | external/finance | general |
+| 11 | **[TST-BRAIN-550]** Unresolved keeps sensitive | unresolved/health | health + review |
+| 12 | **[TST-BRAIN-551]** External override to general | primary=health, all external | general |
+| 13 | **[TST-BRAIN-552]** Self keeps sensitive | primary=health, self present | health |
+| 14 | **[TST-BRAIN-553]** Household keeps sensitive | primary=health, household | health |
+| 15 | **[TST-BRAIN-554]** Care keeps health | primary=health, care | health |
+| 16 | **[TST-BRAIN-555]** Care overrides finance | primary=finance, care | general |
+| 17 | **[TST-BRAIN-556]** Financial overrides health | primary=health, financial | general |
+| 18 | **[TST-BRAIN-557]** Financial keeps finance | primary=finance, financial | finance |
+| 19 | **[TST-BRAIN-558]** Mixed self + external | self + external | health (self keeps) |
+| 20 | **[TST-BRAIN-559]** Unresolved review meta | unresolved facts | kind=unresolved_subject_ownership |
+| 21 | **[TST-BRAIN-560]** Non-sensitive primary unchanged | primary=general | general |
+| 22 | **[TST-BRAIN-561]** No attributions | empty list | primary unchanged |
+
+## 26. Contact Alias Support
+
+### 26.1 Alias Matching
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-562]** Alias resolves to contact DID | "my daughter" alias → Emma | did:plc:emma |
+| 2 | **[TST-BRAIN-563]** Multiple aliases same contact | "my daughter" and "my kid" → Emma | Same DID |
+| 3 | **[TST-BRAIN-564]** Name and alias in same text | "Emma is my daughter" | 2 mentions, same DID |
+| 4 | **[TST-BRAIN-565]** Alias longest match first | "my mother" → Mom | Not partial "my" |
+| 5 | **[TST-BRAIN-566]** Alias carries responsibility | "my daughter" → household | data_responsibility correct |
+| 6 | **[TST-BRAIN-567]** Short alias word boundary | "Em" in "Emergency" | No match |
+| 7 | **[TST-BRAIN-568]** Short alias standalone | "Em has a cold" | Match → Emma |
+| 8 | **[TST-BRAIN-569]** Alias case insensitive | "MY DAUGHTER" | Match → Emma |
+| 9 | **[TST-BRAIN-570]** Contact without aliases | No aliases registered | Only name matches |
+| 10 | **[TST-BRAIN-571]** Overlapping alias and name | "my wife Sarah" | 2 separate matches |
+
+### 26.2 Alias Precedence in Routing
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-572]** Alias wins over kinship | "my daughter has allergy" (alias) | known_contact, not household_implicit |
+| 2 | **[TST-BRAIN-573]** Alias kid variant | "my kid has allergy" (alias) | known_contact (Emma) |
+| 3 | **[TST-BRAIN-574]** Mother alias wins over role | "my mother has BP" (alias) | known_contact (Mom, external) |
+| 4 | **[TST-BRAIN-575]** Wife alias wins over kinship | "my wife has allergies" (alias) | known_contact (Sarah, household) |
+| 5 | **[TST-BRAIN-576]** Kinship fallback no alias | "my daughter" (no alias registered) | household_implicit |
+| 6 | **[TST-BRAIN-577]** Unmatched role stays third party | "my colleague has migraines" | unknown_third_party |
+| 7 | **[TST-BRAIN-578]** Mixed alias + name | "Emma and my buddy have allergies" | Emma(household) + Sancho(external) |
+
+### 26.3 Alias Routing Override
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-579]** Alias household keeps health | Emma via alias, household | health |
+| 2 | **[TST-BRAIN-580]** Alias external overrides | Sancho via alias, external | general |
+| 3 | **[TST-BRAIN-581]** Mother alias external | Mom via alias, external | general |
+| 4 | **[TST-BRAIN-582]** Wife alias household | Sarah via alias, household | health |
+| 5 | **[TST-BRAIN-583]** Mixed alias household + external | Emma + Sancho via aliases | health (household keeps) |
+
+### 26.4 Alias Recall Hints
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-584]** Build hints from contacts | ContactMatcher + filter | Only mentioned contact hints |
+| 2 | **[TST-BRAIN-585]** Alias mention triggers hints | "What does my daughter like?" | Emma's DID in mentioned set |
+| 3 | **[TST-BRAIN-586]** No hints for unmentioned | "What is the weather?" | Empty mentions |
+| 4 | **[TST-BRAIN-587]** Reason injects alias hints (end-to-end) | VaultContextAssembler.reason() | System prompt has "my daughter, my kid" for Emma |
+| 5 | **[TST-BRAIN-588]** Reason no alias leak (end-to-end) | VaultContextAssembler.reason() | Unmentioned contact aliases absent from prompt |
+
+## 27. Person Identity Linking
+
+### 27.1 Person Link Extractor
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-589]** High confidence naming | "My daughter's name is Emma" | Person created with name + role_phrase surfaces |
+| 2 | **[TST-BRAIN-590]** Medium confidence | "Our daughter Emma went to school" | Surfaces marked medium |
+| 3 | **[TST-BRAIN-591]** No links | "The weather is nice" | Nothing applied |
+| 4 | **[TST-BRAIN-592]** LLM failure | LLM exception | Nothing learned, no error |
+| 5 | **[TST-BRAIN-593]** Invalid JSON | "not json" from LLM | Nothing learned |
+| 6 | **[TST-BRAIN-594]** Social reference excluded | "Emma met my daughter" | No links |
+| 7 | **[TST-BRAIN-595]** Empty text | "" | Nothing extracted |
+| 8 | **[TST-BRAIN-596]** Multiple links | Two people in one note | Both created |
+| 9 | **[TST-BRAIN-597]** Name only no role | "Sancho is my friend" | Name surface only |
+
+### 27.2 Person Resolver
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-598]** Resolve by name | "What does Emma like?" | Emma with all surfaces |
+| 2 | **[TST-BRAIN-599]** Resolve by surface | "What does my daughter like?" | Resolves to Emma |
+| 3 | **[TST-BRAIN-600]** Resolve multiple | "Emma and Sancho" | Both resolved |
+| 4 | **[TST-BRAIN-601]** Resolve dedup | "Emma and my daughter" | One Emma entry |
+| 5 | **[TST-BRAIN-602]** No match | "What does Dave like?" | Empty |
+| 6 | **[TST-BRAIN-603]** Search expansion | "Emma" query | Expands to "my daughter" |
+| 7 | **[TST-BRAIN-604]** Expand via surface | "my daughter" query | Expands to "Emma" |
+| 8 | **[TST-BRAIN-605]** Empty text | "" | Empty |
+| 9 | **[TST-BRAIN-606]** No match expansion | "weather" | No expansion |
+
+### 27.3 Extraction Parsing
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-607]** Valid JSON | Proper identity_links JSON | Parsed correctly |
+| 2 | **[TST-BRAIN-608]** Markdown fenced | \`\`\`json ... \`\`\` | Parsed correctly |
+| 3 | **[TST-BRAIN-609]** Empty links | {"identity_links": []} | Empty list |
+| 4 | **[TST-BRAIN-610]** Invalid JSON | "not json" | Empty list |
+| 5 | **[TST-BRAIN-611]** Missing key | {"other": "data"} | Empty list |
+
+---
+
 ## Appendix A: Test Fixtures
 
 - **Sample emails**: 100 emails across categories (promotions, social, primary, updates) for ingestion testing

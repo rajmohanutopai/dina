@@ -298,10 +298,10 @@ func (a *IdentityAPI) GetContacts() ([]Contact, error) {
 }
 
 // AddContact performs POST /v1/contacts.
-func (a *IdentityAPI) AddContact(did, name, trustLevel string) error {
+func (a *IdentityAPI) AddContact(did, name, trustLevel, relationship, dataResponsibility string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.contacts = append(a.contacts, Contact{DID: did, Name: name, TrustLevel: trustLevel})
+	a.contacts = append(a.contacts, Contact{DID: did, Name: name, TrustLevel: trustLevel, Relationship: relationship, DataResponsibility: dataResponsibility})
 	return nil
 }
 

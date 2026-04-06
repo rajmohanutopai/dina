@@ -22,32 +22,8 @@ log = logging.getLogger(__name__)
 # so items can be re-enriched with the new prompt.
 _PROMPT_VERSION = 1
 
-# Enrichment LLM prompt — single call produces both L0 and L1.
-_ENRICH_PROMPT = """\
-Given the following content, produce a JSON object with exactly two fields:
-- "l0": one sentence describing what this is, who it's from, and when. \
-Include the source/sender name and date if available.
-- "l1": one paragraph summarizing the key facts. Preserve all names, dates, \
-and numbers exactly. Do not infer unstated facts. Do not add opinions.
-
-{provenance_instruction}
-
-Content type: {item_type}
-Source: {source}
-Sender: {sender}
-Subject: {summary}
-
---- Content ---
-{body}
---- End Content ---
-
-Respond with ONLY the JSON object, no other text."""
-
-_LOW_TRUST_INSTRUCTION = (
-    'IMPORTANT: This content is from an unverified source. '
-    'Start l0 with "Unverified {source_desc} claims..." '
-    'Start l1 with "An unverified source claims..."'
-)
+from ..prompts import PROMPT_ENRICHMENT_USER as _ENRICH_PROMPT  # noqa: E402
+from ..prompts import PROMPT_ENRICHMENT_LOW_TRUST_INSTRUCTION as _LOW_TRUST_INSTRUCTION  # noqa: E402
 
 
 class EnrichmentService:

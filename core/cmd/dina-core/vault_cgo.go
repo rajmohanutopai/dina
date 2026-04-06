@@ -48,6 +48,18 @@ func newContactDirectory(backend vaultBackend) contactDirectoryFull {
 	return sqlite.NewSQLiteContactDirectory(pool)
 }
 
+// newContactAliasStore returns a SQLite-backed alias store using identity.sqlite.
+func newContactAliasStore(backend vaultBackend) port.ContactAliasStore {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewSQLiteContactAliasStore(pool)
+}
+
+// newPersonStore returns a SQLite-backed person store using identity.sqlite.
+func newPersonStore(backend vaultBackend) port.PersonStore {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewSQLitePersonStore(pool)
+}
+
 // newReminderScheduler returns a SQLite-backed reminder scheduler using identity.sqlite.
 func newReminderScheduler(backend vaultBackend) port.ReminderScheduler {
 	pool := backend.(*sqlite.VaultAdapter).Pool()

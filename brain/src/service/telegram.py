@@ -1263,6 +1263,10 @@ class TelegramService:
                 "  /contact add Name: did:plc:...\n"
                 "  /contact delete Name\n"
                 "  /contact list\n"
+                "  /contact alias Name: my daughter\n"
+                "  /contact unalias Name: my daughter\n"
+                "  /contact relationship Name friend\n"
+                "  /contact responsibility Name care\n"
                 "  /contact cleanup"
             ))
             return
@@ -1283,7 +1287,19 @@ class TelegramService:
                 name = c.get("display_name", "") or c.get("name", "?")
                 did = c.get("did", "?")
                 trust = c.get("trust_level", "")
-                lines.append(f"  {name} — `{did[:35]}...` {trust}")
+                rel = c.get("relationship", "unknown")
+                resp = c.get("data_responsibility", "external")
+                explicit = c.get("responsibility_explicit", False)
+                # Always show relationship and responsibility so the user
+                # can see the full routing state. "*" marks explicit overrides.
+                resp_label = resp
+                if explicit:
+                    resp_label += "*"
+                suffix = f" {trust} ({rel}/{resp_label})"
+                aliases = c.get("aliases", [])
+                if aliases:
+                    suffix += f" aliases: {', '.join(aliases)}"
+                lines.append(f"  {name} — `{did[:35]}...`{suffix}")
             await ch.send(RichResponse(
                 text=f"*Contacts ({len(contacts)}):*\n" + "\n".join(lines),
             ))
@@ -1318,6 +1334,63 @@ class TelegramService:
             await ch.send(BotResponse(text=result.message))
             return
 
+        if action == "alias":
+            rest = " ".join(args[1:])
+            if ":" not in rest:
+                await ch.send(BotResponse(
+                    text="Usage: /contact alias Name: my daughter\n"
+                    "Example: /contact alias Emma: my kid"
+                ))
+                return
+            name, alias = rest.split(":", 1)
+            name = name.strip()
+            alias = alias.strip()
+            result = await self._cmds.add_alias(name, alias)
+            await ch.send(BotResponse(text=result.message))
+            return
+
+        if action == "unalias":
+            rest = " ".join(args[1:])
+            if ":" not in rest:
+                await ch.send(BotResponse(
+                    text="Usage: /contact unalias Name: my daughter"
+                ))
+                return
+            name, alias = rest.split(":", 1)
+            name = name.strip()
+            alias = alias.strip()
+            result = await self._cmds.remove_alias(name, alias)
+            await ch.send(BotResponse(text=result.message))
+            return
+
+        if action == "relationship":
+            if len(args) < 3:
+                await ch.send(BotResponse(
+                    text="Usage: /contact relationship Name friend\n"
+                    "Values: spouse, child, parent, sibling, friend, colleague, acquaintance"
+                ))
+                return
+            # Last arg is the relationship value, everything in between is the name.
+            relationship = args[-1].lower()
+            name = " ".join(args[1:-1])
+            result = await self._cmds.set_relationship(name, relationship)
+            await ch.send(BotResponse(text=result.message))
+            return
+
+        if action == "responsibility":
+            if len(args) < 3:
+                await ch.send(BotResponse(
+                    text="Usage: /contact responsibility Name care\n"
+                    "Values: household, care, financial, external"
+                ))
+                return
+            # Last arg is the responsibility value, everything in between is the name.
+            responsibility = args[-1].lower()
+            name = " ".join(args[1:-1])
+            result = await self._cmds.set_responsibility(name, responsibility)
+            await ch.send(BotResponse(text=result.message))
+            return
+
         if action == "cleanup":
             result = await self._cmds.cleanup_contacts()
             await ch.send(BotResponse(text=result.message))
@@ -1328,5 +1401,9 @@ class TelegramService:
             "  /contact add Name: did:plc:...\n"
             "  /contact delete Name\n"
             "  /contact list\n"
+            "  /contact alias Name: my daughter\n"
+            "  /contact unalias Name: my daughter\n"
+            "  /contact relationship Name friend\n"
+            "  /contact responsibility Name care\n"
             "  /contact cleanup"
         ))

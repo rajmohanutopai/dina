@@ -134,6 +134,42 @@ func (e CompletePairingRequestRole) Valid() bool {
 	}
 }
 
+// Defines values for ContactRelationship.
+const (
+	ContactRelationshipAcquaintance ContactRelationship = "acquaintance"
+	ContactRelationshipChild        ContactRelationship = "child"
+	ContactRelationshipColleague    ContactRelationship = "colleague"
+	ContactRelationshipFriend       ContactRelationship = "friend"
+	ContactRelationshipParent       ContactRelationship = "parent"
+	ContactRelationshipSibling      ContactRelationship = "sibling"
+	ContactRelationshipSpouse       ContactRelationship = "spouse"
+	ContactRelationshipUnknown      ContactRelationship = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ContactRelationship enum.
+func (e ContactRelationship) Valid() bool {
+	switch e {
+	case ContactRelationshipAcquaintance:
+		return true
+	case ContactRelationshipChild:
+		return true
+	case ContactRelationshipColleague:
+		return true
+	case ContactRelationshipFriend:
+		return true
+	case ContactRelationshipParent:
+		return true
+	case ContactRelationshipSibling:
+		return true
+	case ContactRelationshipSpouse:
+		return true
+	case ContactRelationshipUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreatePersonaRequestTier.
 const (
 	CreatePersonaRequestTierDefault   CreatePersonaRequestTier = "default"
@@ -188,6 +224,30 @@ func (e CreatePersonaResponseVault) Valid() bool {
 	case Closed:
 		return true
 	case Open:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DataResponsibility.
+const (
+	Care      DataResponsibility = "care"
+	External  DataResponsibility = "external"
+	Financial DataResponsibility = "financial"
+	Household DataResponsibility = "household"
+)
+
+// Valid indicates whether the value is a known member of the DataResponsibility enum.
+func (e DataResponsibility) Valid() bool {
+	switch e {
+	case Care:
+		return true
+	case External:
+		return true
+	case Financial:
+		return true
+	case Household:
 		return true
 	default:
 		return false
@@ -442,31 +502,31 @@ func (e StoreReminderRequestKind) Valid() bool {
 
 // Defines values for TrustLevel.
 const (
-	TrustLevelBlocked          TrustLevel = "blocked"
-	TrustLevelTrusted          TrustLevel = "trusted"
-	TrustLevelUnknown          TrustLevel = "unknown"
-	TrustLevelUntrusted        TrustLevel = "untrusted"
-	TrustLevelUnverified       TrustLevel = "unverified"
-	TrustLevelVerified         TrustLevel = "verified"
-	TrustLevelVerifiedActioned TrustLevel = "verified_actioned"
+	Blocked          TrustLevel = "blocked"
+	Trusted          TrustLevel = "trusted"
+	Unknown          TrustLevel = "unknown"
+	Untrusted        TrustLevel = "untrusted"
+	Unverified       TrustLevel = "unverified"
+	Verified         TrustLevel = "verified"
+	VerifiedActioned TrustLevel = "verified_actioned"
 )
 
 // Valid indicates whether the value is a known member of the TrustLevel enum.
 func (e TrustLevel) Valid() bool {
 	switch e {
-	case TrustLevelBlocked:
+	case Blocked:
 		return true
-	case TrustLevelTrusted:
+	case Trusted:
 		return true
-	case TrustLevelUnknown:
+	case Unknown:
 		return true
-	case TrustLevelUntrusted:
+	case Untrusted:
 		return true
-	case TrustLevelUnverified:
+	case Unverified:
 		return true
-	case TrustLevelVerified:
+	case Verified:
 		return true
-	case TrustLevelVerifiedActioned:
+	case VerifiedActioned:
 		return true
 	default:
 		return false
@@ -629,6 +689,27 @@ func (e PostV1ApprovalsIdApproveJSONBodyScope) Valid() bool {
 	}
 }
 
+// Defines values for PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence.
+const (
+	High   PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence = "high"
+	Low    PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence = "low"
+	Medium PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence = "medium"
+)
+
+// Valid indicates whether the value is a known member of the PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence enum.
+func (e PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence) Valid() bool {
+	switch e {
+	case High:
+		return true
+	case Low:
+		return true
+	case Medium:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PostV1PersonaApproveJSONBodyScope.
 const (
 	Session PostV1PersonaApproveJSONBodyScope = "session"
@@ -778,10 +859,23 @@ type CompletePairingResponse struct {
 
 // Contact defines model for Contact.
 type Contact struct {
-	Alias       string `json:"alias,omitempty"`
-	Did         string `json:"did"`
-	LastContact int64  `json:"last_contact,omitempty"`
-	Name        string `json:"name"`
+	// Alias Compatibility field — populated from aliases[0].
+	Alias string `json:"alias,omitempty"`
+
+	// Aliases All aliases for this contact. Canonical multi-alias list.
+	Aliases []string `json:"aliases,omitempty"`
+
+	// DataResponsibility Routing signal for persona classification. Determines how the contact's sensitive data is routed. "self" is a pipeline-only bucket and is NOT storable.
+	DataResponsibility DataResponsibility `json:"data_responsibility,omitempty"`
+	Did                string             `json:"did"`
+	LastContact        int64              `json:"last_contact,omitempty"`
+	Name               string             `json:"name"`
+
+	// Relationship Social relationship of the contact to the owner.
+	Relationship ContactRelationship `json:"relationship,omitempty"`
+
+	// ResponsibilityExplicit True if the user explicitly set data_responsibility. Server-derived, never sent by clients. On relationship change, data_responsibility is recomputed from the new relationship only if this is false.
+	ResponsibilityExplicit bool `json:"responsibility_explicit,omitempty"`
 
 	// SharingPolicy JSON-encoded sharing policy.
 	SharingPolicy    string  `json:"sharing_policy,omitempty"`
@@ -796,6 +890,9 @@ type Contact struct {
 type ContactListResponse struct {
 	Contacts []Contact `json:"contacts,omitempty"`
 }
+
+// ContactRelationship Social relationship of the contact to the owner.
+type ContactRelationship string
 
 // CreatePersonaRequest defines model for CreatePersonaRequest.
 type CreatePersonaRequest struct {
@@ -819,6 +916,9 @@ type CreatePersonaResponseStatus string
 
 // CreatePersonaResponseVault defines model for CreatePersonaResponse.Vault.
 type CreatePersonaResponseVault string
+
+// DataResponsibility Routing signal for persona classification. Determines how the contact's sensitive data is routed. "self" is a pipeline-only bucket and is NOT storable.
+type DataResponsibility string
 
 // DeviceListResponse defines model for DeviceListResponse.
 type DeviceListResponse struct {
@@ -1420,11 +1520,41 @@ type GetV1AuditQueryParams struct {
 	Limit     int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// PostV1ContactsDidAliasesJSONBody defines parameters for PostV1ContactsDidAliases.
+type PostV1ContactsDidAliasesJSONBody struct {
+	Alias string `json:"alias"`
+}
+
 // PostV1MsgSendJSONBody defines parameters for PostV1MsgSend.
 type PostV1MsgSendJSONBody struct {
 	Body string `json:"body"`
 	To   string `json:"to"`
 	Type string `json:"type"`
+}
+
+// PostV1PeopleApplyExtractionJSONBody defines parameters for PostV1PeopleApplyExtraction.
+type PostV1PeopleApplyExtractionJSONBody struct {
+	ExtractorVersion string `json:"extractor_version"`
+	Results          []struct {
+		CanonicalName    string `json:"canonical_name,omitempty"`
+		RelationshipHint string `json:"relationship_hint,omitempty"`
+		SourceExcerpt    string `json:"source_excerpt,omitempty"`
+		Surfaces         []struct {
+			Confidence  PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence `json:"confidence,omitempty"`
+			Surface     string                                                       `json:"surface,omitempty"`
+			SurfaceType string                                                       `json:"surface_type,omitempty"`
+		} `json:"surfaces,omitempty"`
+	} `json:"results"`
+	SourceItemId string `json:"source_item_id"`
+}
+
+// PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence defines parameters for PostV1PeopleApplyExtraction.
+type PostV1PeopleApplyExtractionJSONBodyResultsSurfacesConfidence string
+
+// PostV1PeopleMergeJSONBody defines parameters for PostV1PeopleMerge.
+type PostV1PeopleMergeJSONBody struct {
+	KeepPersonId  string `json:"keep_person_id"`
+	MergePersonId string `json:"merge_person_id"`
 }
 
 // PostV1PersonaApproveJSONBody defines parameters for PostV1PersonaApprove.
@@ -1533,6 +1663,9 @@ type PostV1AuditAppendJSONRequestBody = AuditAppendRequest
 // PostV1ContactsJSONRequestBody defines body for PostV1Contacts for application/json ContentType.
 type PostV1ContactsJSONRequestBody = AddContactRequest
 
+// PostV1ContactsDidAliasesJSONRequestBody defines body for PostV1ContactsDidAliases for application/json ContentType.
+type PostV1ContactsDidAliasesJSONRequestBody PostV1ContactsDidAliasesJSONBody
+
 // PostV1DidSignJSONRequestBody defines body for PostV1DidSign for application/json ContentType.
 type PostV1DidSignJSONRequestBody = SignRequest
 
@@ -1550,6 +1683,12 @@ type PostV1NotifyJSONRequestBody = NotifyRequest
 
 // PostV1PairCompleteJSONRequestBody defines body for PostV1PairComplete for application/json ContentType.
 type PostV1PairCompleteJSONRequestBody = CompletePairingRequest
+
+// PostV1PeopleApplyExtractionJSONRequestBody defines body for PostV1PeopleApplyExtraction for application/json ContentType.
+type PostV1PeopleApplyExtractionJSONRequestBody PostV1PeopleApplyExtractionJSONBody
+
+// PostV1PeopleMergeJSONRequestBody defines body for PostV1PeopleMerge for application/json ContentType.
+type PostV1PeopleMergeJSONRequestBody PostV1PeopleMergeJSONBody
 
 // PostV1PersonaApproveJSONRequestBody defines body for PostV1PersonaApprove for application/json ContentType.
 type PostV1PersonaApproveJSONRequestBody PostV1PersonaApproveJSONBody

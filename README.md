@@ -14,7 +14,7 @@
 * **What Works Now:** [Usage Guide](./CAPABILITIES.md)
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **Start Here:** [Open dina.html](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
-* **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) — This repository is the first implementation of the Dina Protocol.
+* **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) 
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
@@ -74,9 +74,9 @@ cd dina
 
 ## What is Dina?
 
-Imagine this. Your friend Sancho is coming over. As he leaves his house, his Dina quietly lets your Dina know. Your Dina remembers that Sancho's mother was unwell last time you met. She reminds you to put the kettle on - he likes cardamom tea, and he likes his tea strong. And suggests clearing your calendar for the next two hours.
+Imagine this. Your friend Sancho is coming over. As he leaves his house, his Dina quietly lets your Dina know. Your Dina remembers that Sancho's mother was unwell last time you met. She reminds you to get the cold brew ready - he likes it extra strong. And suggests clearing your calendar for the next two hours.
 
-You open the door. You hand him hot, strong cardamom tea. You ask about his mother. Sancho smiles. "She is fine, thank you for asking".
+You open the door. You hand him a glass of cold brew. You ask about his mother. Sancho smiles. "She is fine, thank you for asking".
 
 That's Dina. A personal agent that makes you more thoughtful, more present, and more human.
 
@@ -274,7 +274,7 @@ So the real trust score is a composite:
 
 ```
 Trust = f(
-    identity anchors     → Aadhaar? LinkedIn?  (optional, but weighted)
+    identity anchors     → Government ID? LinkedIn?  (optional, but weighted)
     transaction history  → real money moved, over how long
     outcome data         → did they return it? still using it?
     peer attestations    → other verified Dinas vouch for them

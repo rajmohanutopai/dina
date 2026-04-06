@@ -532,6 +532,117 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v7 complete")
 	}
 
+	// --- Identity migration v8: contact relationship + data responsibility ---
+	// Per-column guards so a partial crash leaves the schema repairable on next start.
+	v8Applied := false
+	if !hasColumn(db, "contacts", "relationship") {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN relationship TEXT NOT NULL DEFAULT 'unknown'`); err != nil {
+			if !isAlterColumnExists(err) {
+				return fmt.Errorf("identity v8: add relationship: %w", err)
+			}
+		}
+		v8Applied = true
+	}
+	if !hasColumn(db, "contacts", "data_responsibility") {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN data_responsibility TEXT NOT NULL DEFAULT 'external'`); err != nil {
+			if !isAlterColumnExists(err) {
+				return fmt.Errorf("identity v8: add data_responsibility: %w", err)
+			}
+		}
+		v8Applied = true
+	}
+	if !hasColumn(db, "contacts", "responsibility_explicit") {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN responsibility_explicit INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if !isAlterColumnExists(err) {
+				return fmt.Errorf("identity v8: add responsibility_explicit: %w", err)
+			}
+		}
+		v8Applied = true
+	}
+	if v8Applied {
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (8, 'Contact relationship and data responsibility')`)
+		slog.Info("sqlite: identity migration v8 complete")
+	} else if hasColumn(db, "contacts", "relationship") &&
+		hasColumn(db, "contacts", "data_responsibility") &&
+		hasColumn(db, "contacts", "responsibility_explicit") {
+		// Repair: all columns exist but version row may be missing (crash after ALTERs, before INSERT).
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (8, 'Contact relationship and data responsibility')`)
+	}
+
+	// --- Identity migration v9: contact_aliases table ---
+	if !hasTable(db, "contact_aliases") {
+		slog.Info("sqlite: applying identity migration v9 (contact_aliases)")
+		_, err := db.ExecContext(ctx, `
+			CREATE TABLE IF NOT EXISTS contact_aliases (
+				contact_did      TEXT NOT NULL,
+				alias            TEXT NOT NULL,
+				normalized_alias TEXT NOT NULL,
+				source           TEXT NOT NULL DEFAULT 'manual',
+				created_at       INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+				PRIMARY KEY (contact_did, normalized_alias)
+			) WITHOUT ROWID`)
+		if err != nil {
+			return fmt.Errorf("identity v9: create contact_aliases: %w", err)
+		}
+		db.ExecContext(ctx,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_alias_normalized ON contact_aliases(normalized_alias)`)
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (9, 'Contact aliases table')`)
+		slog.Info("sqlite: identity migration v9 complete")
+	}
+
+	// --- Identity migration v10: people + person_surfaces tables ---
+	if !hasTable(db, "people") {
+		slog.Info("sqlite: applying identity migration v10 (person memory)")
+		stmts := []string{
+			`CREATE TABLE IF NOT EXISTS people (
+				person_id         TEXT PRIMARY KEY,
+				canonical_name    TEXT DEFAULT '',
+				contact_did       TEXT DEFAULT '',
+				relationship_hint TEXT DEFAULT '',
+				status            TEXT NOT NULL DEFAULT 'suggested',
+				created_from      TEXT NOT NULL DEFAULT 'llm',
+				created_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+				updated_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+			) WITHOUT ROWID`,
+			`CREATE TABLE IF NOT EXISTS person_surfaces (
+				id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+				person_id           TEXT NOT NULL,
+				surface             TEXT NOT NULL,
+				normalized_surface  TEXT NOT NULL,
+				surface_type        TEXT NOT NULL DEFAULT 'name',
+				status              TEXT NOT NULL DEFAULT 'suggested',
+				confidence          TEXT NOT NULL DEFAULT 'medium',
+				source_item_id      TEXT DEFAULT '',
+				source_excerpt      TEXT DEFAULT '',
+				extractor_version   TEXT NOT NULL DEFAULT '',
+				created_from        TEXT NOT NULL DEFAULT 'llm',
+				created_at          INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+				updated_at          INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_person_surface_normalized ON person_surfaces(normalized_surface)`,
+			`CREATE INDEX IF NOT EXISTS idx_person_surface_person ON person_surfaces(person_id, normalized_surface)`,
+			`CREATE INDEX IF NOT EXISTS idx_person_surface_source ON person_surfaces(source_item_id)`,
+			`CREATE TABLE IF NOT EXISTS person_extraction_log (
+				source_item_id    TEXT NOT NULL,
+				extractor_version TEXT NOT NULL,
+				fingerprint       TEXT NOT NULL,
+				applied_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+				PRIMARY KEY (source_item_id, extractor_version, fingerprint)
+			) WITHOUT ROWID`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("identity v10: %w", err)
+			}
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (10, 'Person memory layer')`)
+		slog.Info("sqlite: identity migration v10 complete")
+	}
+
 	return nil
 }
 
