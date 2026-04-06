@@ -37,6 +37,11 @@ RUN curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard \
 COPY cli/ /tmp/dina-cli/
 RUN pip install --break-system-packages /tmp/dina-cli/ && rm -rf /tmp/dina-cli/
 
+# Install Hermes agent (official installer, --skip-setup for headless, --no-venv to use system Python)
+RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+    | bash -s -- --skip-setup --no-venv 2>/dev/null \
+    || echo "WARNING: Hermes install failed — --runner hermes will not be available"
+
 # Install gog (Google CLI for Gmail/Calendar integration)
 RUN ARCH=$(dpkg --print-architecture) && \
     curl -sL "https://github.com/steipete/gogcli/releases/latest/download/gogcli_0.12.0_linux_${ARCH}.tar.gz" \

@@ -377,12 +377,16 @@ class DinaClient:
 
     # -- Delegated tasks -------------------------------------------------------
 
-    def claim_task(self, lease_seconds: int = 300) -> dict | None:
+    def claim_task(self, lease_seconds: int = 300, runner_filter: str = "") -> dict | None:
         """Claim the next queued delegated task (POST /v1/agent/tasks/claim).
+        If runner_filter is set, only claims tasks matching that runner.
         Returns task dict or None if no work available."""
+        body: dict = {"lease_seconds": lease_seconds}
+        if runner_filter:
+            body["runner_filter"] = runner_filter
         resp = self._request(
             self._core, "POST", "/v1/agent/tasks/claim",
-            json={"lease_seconds": lease_seconds},
+            json=body,
         )
         if resp.status_code == 204:
             return None
@@ -395,25 +399,34 @@ class DinaClient:
             json={"lease_seconds": lease_seconds},
         )
 
-    def task_complete(self, task_id: str, result: str) -> None:
+    def task_complete(self, task_id: str, result: str, assigned_runner: str = "") -> None:
         """Mark task as completed (POST /v1/agent/tasks/{id}/complete)."""
+        body: dict = {"result": result}
+        if assigned_runner:
+            body["assigned_runner"] = assigned_runner
         self._request(
             self._core, "POST", f"/v1/agent/tasks/{task_id}/complete",
-            json={"result": result},
+            json=body,
         )
 
-    def task_fail(self, task_id: str, error: str) -> None:
+    def task_fail(self, task_id: str, error: str, assigned_runner: str = "") -> None:
         """Mark task as failed (POST /v1/agent/tasks/{id}/fail)."""
+        body: dict = {"error": error}
+        if assigned_runner:
+            body["assigned_runner"] = assigned_runner
         self._request(
             self._core, "POST", f"/v1/agent/tasks/{task_id}/fail",
-            json={"error": error},
+            json=body,
         )
 
-    def mark_running(self, task_id: str, run_id: str = "") -> None:
-        """Mark task as running after OpenClaw accepts (POST /v1/agent/tasks/{id}/running)."""
+    def mark_running(self, task_id: str, run_id: str = "", assigned_runner: str = "") -> None:
+        """Mark task as running (POST /v1/agent/tasks/{id}/running)."""
+        body: dict = {"run_id": run_id}
+        if assigned_runner:
+            body["assigned_runner"] = assigned_runner
         self._request(
             self._core, "POST", f"/v1/agent/tasks/{task_id}/running",
-            json={"run_id": run_id},
+            json=body,
         )
 
     def task_progress(self, task_id: str, message: str) -> None:

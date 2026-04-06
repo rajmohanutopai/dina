@@ -13,7 +13,11 @@ dependencies = [
     "argon2-cffi==25.1.0",
     "mnemonic==0.21",
     "fastmcp>=2.0",
+    "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+hermes = ["hermes-agent"]  # Optional: enables --runner hermes. Install per Hermes docs.
 
 [project.scripts]
 dina = "dina_cli.main:cli"

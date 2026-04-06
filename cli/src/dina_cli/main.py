@@ -1544,29 +1544,25 @@ def session_list(ctx: click.Context) -> None:
 @click.option("--timeout", default=300, type=int, help="Approval poll timeout in seconds (30–1800, default 300)")
 @click.pass_context
 def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> None:
-    """Delegate an autonomous task to OpenClaw.
+    """Delegate an autonomous task to an agent runner.
 
     Dina validates the task-level intent once (research -> moderate, requires
-    approval). After approval, OpenClaw runs autonomously and calls back
+    approval). After approval, the configured runner executes autonomously and calls back
     to Dina (ask, validate, remember) at its own discretion.
 
-    Requires OpenClaw Gateway: DINA_OPENCLAW_URL + DINA_OPENCLAW_TOKEN.
+    Requires a configured runner (OpenClaw, Hermes, etc.) and agent role.
     """
     _load_cfg(ctx)
     config = ctx.obj["config"]
     json_mode = ctx.obj["json"]
-
-    if not config.openclaw_url:
-        raise click.UsageError(
-            "OpenClaw not configured. Set DINA_OPENCLAW_URL or run 'dina configure'."
-        )
 
     if config.role != "agent":
         raise click.UsageError(
             "dina task requires agent role. Re-pair with: dina configure --role agent"
         )
 
-    from .openclaw import OpenClawClient, OpenClawError
+    from .agent_runner import build_task_prompt, RunnerResult
+    from .runner_registry import get_runner as _get_runner
 
     client = _make_client(ctx)
     session_name = f"task-{uuid.uuid4().hex[:8]}"
@@ -1643,46 +1639,41 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
                 print_error_with_trace(f"Approval timeout ({timeout}s). Retry later.", json_mode, client.req_id)
                 return
 
-        # 3. Invoke OpenClaw.
+        # 3. Execute via runner abstraction.
+        runner_name = getattr(config, "agent_runner", "") or os.environ.get("DINA_AGENT_RUNNER", "") or "openclaw"
         if not json_mode:
-            click.echo(f"  Delegating to OpenClaw: {description}")
+            click.echo(f"  Delegating to {runner_name}: {description}")
 
-        # Construct OpenClaw client with OpenClaw-compatible device auth.
-        # Gateway device identity is the key fingerprint + raw public key,
-        # not the Dina DID used for Core HTTP signing.
-        identity = client._identity
         try:
-            device_id = identity.device_fingerprint()
-            device_public_key = identity.public_key_base64url()
-            _identity_ref = identity  # capture for lambda closure
-            sign_fn = lambda data: bytes.fromhex(_identity_ref.sign_data(data))
-        except Exception as exc:
-            raise click.UsageError(
-                f"Cannot load device identity for OpenClaw handshake: {exc}. "
-                f"Re-pair with: dina configure --role agent"
-            ) from exc
-        openclaw = OpenClawClient(
-            config.openclaw_url,
-            token=config.openclaw_token,
-            device_id=device_id,
-            device_public_key=device_public_key,
-            device_name=config.device_name or "dina-cli",
-            sign_fn=sign_fn,
-            device_token=getattr(config, "openclaw_device_token", ""),
-            save_device_token=_config_mod.save_openclaw_device_token,
-        )
-        try:
-            result = openclaw.run_task(description, dina_session=session_name)
-        except OpenClawError as exc:
-            print_error_with_trace(f"OpenClaw error: {exc}", json_mode, client.req_id)
+            runner = _get_runner(runner_name, config=config)
+            runner.validate_config()
+        except RuntimeError as exc:
+            print_error_with_trace(f"Runner error: {exc}", json_mode, client.req_id)
             return
-        finally:
-            openclaw.close()
+
+        task_dict = {"id": f"interactive-{uuid.uuid4().hex[:8]}", "description": description}
+        prompt = build_task_prompt(task_dict, session_name, runner_name)
+        runner_result = runner.execute(task_dict, prompt, session_name)
+
+        if runner_result.state == "failed":
+            print_error_with_trace(f"Runner failed: {runner_result.error}", json_mode, client.req_id)
+            return
+
+        if runner_result.state == "running":
+            # Fire-and-forget runners (OpenClaw) — task continues in background.
+            if not json_mode:
+                click.echo(f"  Task submitted (run_id={runner_result.run_id or 'none'})")
+                click.echo(f"  Check status via: dina task-status")
+            # For fire-and-forget, we don't store a result yet — it comes via callback.
+            result = {"summary": "Task submitted to runner", "status": "running"}
+        else:
+            # Inline runners (Hermes) — result is already available.
+            result = {"summary": runner_result.summary or description[:200], "data": runner_result.metadata}
 
         # 4. Store final summary via staging (auto-caveated for agent-role CLI).
         summary = result.get("summary", description[:200])
         client.staging_ingest({
-            "source": "openclaw",
+            "source": runner_name,
             "source_id": f"task-{uuid.uuid4().hex[:12]}",
             "type": "note",
             "summary": f"Task result: {summary}",
@@ -1725,17 +1716,72 @@ def mcp_server() -> None:
 @cli.command("agent-daemon")
 @click.option("--poll-interval", default=15, type=int, help="Seconds between claim polls (default 15)")
 @click.option("--lease-duration", default=300, type=int, help="Lease duration in seconds (default 300)")
-def agent_daemon(poll_interval: int, lease_duration: int) -> None:
+@click.option("--runner", default="", type=str, help="Runner: openclaw, hermes, or auto (default from config/env)")
+def agent_daemon(poll_interval: int, lease_duration: int, runner: str) -> None:
     """Run the persistent agent daemon.
 
     \b
-    Polls Core for queued delegated tasks, launches OpenClaw to execute
-    them, and reports results back. Runs until SIGINT/SIGTERM.
+    Polls Core for queued delegated tasks, executes via the configured runner
+    (OpenClaw, Hermes, etc.), and reports results back. Runs until SIGINT/SIGTERM.
 
     \b
     Requires:
       - Paired device with role=agent (dina configure --role agent)
-      - OpenClaw Gateway running (DINA_OPENCLAW_URL + DINA_OPENCLAW_TOKEN)
+      - Runner-specific config (OpenClaw: DINA_OPENCLAW_URL; Hermes: hermes package)
     """
     from .agent_daemon import run_daemon
-    run_daemon(poll_interval=poll_interval, lease_duration=lease_duration)
+    run_daemon(poll_interval=poll_interval, lease_duration=lease_duration, runner_name=runner)
+
+
+# ---------------------------------------------------------------------------
+# setup-agent: configure integration with an agent runner
+# ---------------------------------------------------------------------------
+
+
+@cli.group("setup-agent")
+def setup_agent_group() -> None:
+    """Configure integration with an agent runner (OpenClaw or Hermes).
+
+    \b
+    Assumes device is already paired (dina configure --role agent).
+    Registers dina mcp-server with the runner and stores config.
+
+    \b
+    Usage:
+      dina setup-agent openclaw --url ws://localhost:3000
+      dina setup-agent hermes
+      dina setup-agent hermes --model google/gemini-2.5-flash --start
+    """
+    pass
+
+
+@setup_agent_group.command("openclaw")
+@click.option("--url", default="", help="OpenClaw Gateway URL (ws://...)")
+@click.option("--token", default="", help="OpenClaw Gateway auth token")
+@click.option("--hook-token", default="", help="Hook submission token")
+@click.option("--start", is_flag=True, help="Start the agent daemon after setup")
+def setup_openclaw_cmd(url: str, token: str, hook_token: str, start: bool) -> None:
+    """Configure Dina integration with OpenClaw."""
+    from .setup_agent import setup_openclaw
+    click.echo("Setting up OpenClaw integration...")
+    setup_openclaw(
+        openclaw_url=url,
+        openclaw_token=token,
+        hook_token=hook_token,
+        start_daemon=start,
+    )
+    click.echo("Done.")
+
+
+@setup_agent_group.command("hermes")
+@click.option("--model", default="", help="Hermes model (default: google/gemini-2.5-flash)")
+@click.option("--start", is_flag=True, help="Start the agent daemon after setup")
+def setup_hermes_cmd(model: str, start: bool) -> None:
+    """Configure Dina integration with Hermes."""
+    from .setup_agent import setup_hermes
+    click.echo("Setting up Hermes integration...")
+    setup_hermes(
+        hermes_model=model,
+        start_daemon=start,
+    )
+    click.echo("Done.")

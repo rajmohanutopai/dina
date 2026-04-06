@@ -593,6 +593,28 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v9 complete")
 	}
 
+	// --- Identity migration v11: delegated task runner fields ---
+	if !hasColumn(db, "delegated_tasks", "requested_runner") {
+		slog.Info("sqlite: applying identity migration v11 (task runner fields)")
+		for _, stmt := range []string{
+			`ALTER TABLE delegated_tasks ADD COLUMN requested_runner TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE delegated_tasks ADD COLUMN assigned_runner TEXT NOT NULL DEFAULT ''`,
+		} {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				if !isAlterColumnExists(err) {
+					return fmt.Errorf("identity v11: %w", err)
+				}
+			}
+		}
+		// Repair: if assigned_runner exists but version row missing.
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (11, 'Delegated task runner fields')`)
+		slog.Info("sqlite: identity migration v11 complete")
+	} else if hasColumn(db, "delegated_tasks", "assigned_runner") {
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (11, 'Delegated task runner fields')`)
+	}
+
 	// --- Identity migration v10: people + person_surfaces tables ---
 	if !hasTable(db, "people") {
 		slog.Info("sqlite: applying identity migration v10 (person memory)")

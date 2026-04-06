@@ -2,10 +2,15 @@
 
 Provides Telethon-based client for sending messages AS the user to bots
 and reading bot responses. Also provides Bot API helpers.
+
+Runner selection:
+  DINA_TEST_RUNNER=hermes pytest tests/sanity/ ...  → Hermes runner
+  DINA_TEST_RUNNER=openclaw pytest tests/sanity/ ... → OpenClaw runner (default)
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import httpx
@@ -75,6 +80,31 @@ def owner_id() -> int:
     if not OWNER_ID:
         pytest.skip("SANITY_OWNER_TELEGRAM_ID not set")
     return OWNER_ID
+
+
+# ---------------------------------------------------------------------------
+# Runner selection
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--runner", default="", help="Agent runner: openclaw, hermes (default: from DINA_TEST_RUNNER env or openclaw)"
+    )
+
+
+@pytest.fixture(scope="session")
+def active_runner(request) -> str:
+    """Which runner the sanity tests should test against."""
+    runner = request.config.getoption("--runner") or os.environ.get("DINA_TEST_RUNNER", "") or "openclaw"
+    return runner.lower()
+
+
+def requires_runner(runner_name: str):
+    """Pytest marker: skip test if active runner doesn't match."""
+    return pytest.mark.skipif(
+        os.environ.get("DINA_TEST_RUNNER", "openclaw").lower() != runner_name,
+        reason=f"requires --runner {runner_name}",
+    )
 
 
 @pytest.fixture(scope="session")

@@ -54,6 +54,7 @@ class Config:
     openclaw_token: str = ""   # Gateway auth token
     openclaw_device_token: str = ""  # Cached per-device Gateway token
     openclaw_hook_token: str = ""    # Token for /hooks/dina-task submission
+    agent_runner: str = ""           # Default runner: "openclaw", "hermes", or "" (defaults to openclaw)
 
 
 def _load_saved() -> dict:
@@ -123,6 +124,7 @@ def load_config() -> Config:
         or saved.get("openclaw_hook_token")
         or ""
     )
+    agent_runner = os.environ.get("DINA_AGENT_RUNNER") or saved.get("agent_runner") or ""
 
     return Config(
         core_url=core_url,
@@ -133,4 +135,5 @@ def load_config() -> Config:
         openclaw_token=openclaw_token,
         openclaw_device_token=openclaw_device_token,
         openclaw_hook_token=openclaw_hook_token,
+        agent_runner=agent_runner,
     )

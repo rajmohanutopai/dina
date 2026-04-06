@@ -37,10 +37,10 @@ func now() int64 {
 // Create inserts a new delegated task. Returns port.ErrDelegatedTaskExists on duplicate ID.
 func (s *DelegatedTaskStore) Create(ctx context.Context, task domain.DelegatedTask) error {
 	_, err := s.db().ExecContext(ctx,
-		`INSERT INTO delegated_tasks (id, proposal_id, description, origin, status, idempotency_key, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO delegated_tasks (id, proposal_id, description, origin, status, requested_runner, idempotency_key, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID, task.ProposalID, task.Description, task.Origin,
-		string(task.Status), task.IdempotencyKey, now(), now(),
+		string(task.Status), task.RequestedRunner, task.IdempotencyKey, now(), now(),
 	)
 	if err != nil && (strings.Contains(err.Error(), "UNIQUE constraint") || strings.Contains(err.Error(), "PRIMARY KEY")) {
 		return port.ErrDelegatedTaskExists
@@ -52,7 +52,8 @@ func (s *DelegatedTaskStore) Create(ctx context.Context, task domain.DelegatedTa
 func (s *DelegatedTaskStore) GetByID(ctx context.Context, id string) (*domain.DelegatedTask, error) {
 	return s.scanOne(s.db().QueryRowContext(ctx,
 		`SELECT id, proposal_id, session_name, description, origin, status, agent_did,
-		        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
+		        lease_expires_at, run_id, COALESCE(requested_runner,''), COALESCE(assigned_runner,''),
+		        idempotency_key, result_summary, progress_note,
 		        error, created_at, updated_at
 		 FROM delegated_tasks WHERE id = ?`, id))
 }
@@ -64,7 +65,8 @@ func (s *DelegatedTaskStore) GetByProposalID(ctx context.Context, proposalID str
 	}
 	return s.scanOne(s.db().QueryRowContext(ctx,
 		`SELECT id, proposal_id, session_name, description, origin, status, agent_did,
-		        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
+		        lease_expires_at, run_id, COALESCE(requested_runner,''), COALESCE(assigned_runner,''),
+		        idempotency_key, result_summary, progress_note,
 		        error, created_at, updated_at
 		 FROM delegated_tasks WHERE proposal_id = ? LIMIT 1`, proposalID))
 }
@@ -79,14 +81,16 @@ func (s *DelegatedTaskStore) List(ctx context.Context, status string, limit int)
 	if status != "" {
 		rows, err = s.db().QueryContext(ctx,
 			`SELECT id, proposal_id, session_name, description, origin, status, agent_did,
-			        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
+			        lease_expires_at, run_id, COALESCE(requested_runner,''), COALESCE(assigned_runner,''),
+			        idempotency_key, result_summary, progress_note,
 			        error, created_at, updated_at
 			 FROM delegated_tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?`,
 			status, limit)
 	} else {
 		rows, err = s.db().QueryContext(ctx,
 			`SELECT id, proposal_id, session_name, description, origin, status, agent_did,
-			        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
+			        lease_expires_at, run_id, COALESCE(requested_runner,''), COALESCE(assigned_runner,''),
+			        idempotency_key, result_summary, progress_note,
 			        error, created_at, updated_at
 			 FROM delegated_tasks ORDER BY created_at DESC LIMIT ?`,
 			limit)
@@ -109,7 +113,7 @@ func (s *DelegatedTaskStore) List(ctx context.Context, status string, limit int)
 
 // Claim atomically grabs the oldest queued task.
 // Uses a transaction (SQLite 3.33.0 doesn't support RETURNING).
-func (s *DelegatedTaskStore) Claim(ctx context.Context, agentDID string, leaseSec int) (*domain.DelegatedTask, error) {
+func (s *DelegatedTaskStore) Claim(ctx context.Context, agentDID string, leaseSec int, runnerFilter string) (*domain.DelegatedTask, error) {
 	leaseExpires := now() + int64(leaseSec)
 	ts := now()
 	db := s.db()
@@ -120,11 +124,21 @@ func (s *DelegatedTaskStore) Claim(ctx context.Context, agentDID string, leaseSe
 	}
 	defer tx.Rollback()
 
-	// Find the oldest queued task.
+	// Find the oldest queued task, optionally filtered by runner.
+	// Empty requested_runner matches any daemon (backward compat).
 	var taskID string
-	err = tx.QueryRowContext(ctx,
-		`SELECT id FROM delegated_tasks WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`,
-	).Scan(&taskID)
+	if runnerFilter != "" {
+		err = tx.QueryRowContext(ctx,
+			`SELECT id FROM delegated_tasks
+			 WHERE status = 'queued' AND (requested_runner = ? OR requested_runner = '' OR requested_runner = 'auto')
+			 ORDER BY created_at ASC LIMIT 1`,
+			runnerFilter,
+		).Scan(&taskID)
+	} else {
+		err = tx.QueryRowContext(ctx,
+			`SELECT id FROM delegated_tasks WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`,
+		).Scan(&taskID)
+	}
 	if err == sql.ErrNoRows {
 		return nil, nil // no work available
 	}
@@ -148,7 +162,8 @@ func (s *DelegatedTaskStore) Claim(ctx context.Context, agentDID string, leaseSe
 	// Read back the full task.
 	row := tx.QueryRowContext(ctx,
 		`SELECT id, proposal_id, session_name, description, origin, status, agent_did,
-		        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
+		        lease_expires_at, run_id, COALESCE(requested_runner,''), COALESCE(assigned_runner,''),
+		        idempotency_key, result_summary, progress_note,
 		        error, created_at, updated_at
 		 FROM delegated_tasks WHERE id = ?`, taskID,
 	)
@@ -160,7 +175,7 @@ func (s *DelegatedTaskStore) Claim(ctx context.Context, agentDID string, leaseSe
 	return task, tx.Commit()
 }
 
-// MarkRunning transitions claimed → running after OpenClaw accepts execution.
+// MarkRunning transitions claimed → running after a runner accepts execution.
 // Clears lease. Idempotent if already running with same runID.
 func (s *DelegatedTaskStore) MarkRunning(ctx context.Context, id, agentDID, runID string) error {
 	// Try the normal transition first.
@@ -190,6 +205,15 @@ func (s *DelegatedTaskStore) MarkRunning(ctx context.Context, id, agentDID, runI
 		return nil // idempotent
 	}
 	return fmt.Errorf("task %s cannot transition to running (current status: %s)", id, currentStatus)
+}
+
+// SetAssignedRunner records which runner was used for a task.
+func (s *DelegatedTaskStore) SetAssignedRunner(ctx context.Context, id, runner string) error {
+	_, err := s.db().ExecContext(ctx,
+		`UPDATE delegated_tasks SET assigned_runner = ?, updated_at = ? WHERE id = ?`,
+		runner, now(), id,
+	)
+	return err
 }
 
 // Heartbeat extends the lease for a claimed task.
@@ -300,7 +324,8 @@ func (s *DelegatedTaskStore) ExpireLeases(ctx context.Context) ([]domain.Delegat
 	// Read candidates.
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, proposal_id, session_name, description, origin, status, agent_did,
-		        lease_expires_at, run_id, idempotency_key, result_summary, progress_note,
+		        lease_expires_at, run_id, COALESCE(requested_runner,''), COALESCE(assigned_runner,''),
+		        idempotency_key, result_summary, progress_note,
 		        error, created_at, updated_at
 		 FROM delegated_tasks
 		 WHERE status = 'claimed' AND lease_expires_at > 0 AND lease_expires_at < ?`,
@@ -351,7 +376,9 @@ func (s *DelegatedTaskStore) scanOne(row *sql.Row) (*domain.DelegatedTask, error
 	var status string
 	err := row.Scan(
 		&t.ID, &t.ProposalID, &t.SessionName, &t.Description, &t.Origin,
-		&status, &t.AgentDID, &t.LeaseExpiresAt, &t.RunID, &t.IdempotencyKey,
+		&status, &t.AgentDID, &t.LeaseExpiresAt, &t.RunID,
+		&t.RequestedRunner, &t.AssignedRunner,
+		&t.IdempotencyKey,
 		&t.ResultSummary, &t.ProgressNote, &t.Error, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
@@ -366,7 +393,9 @@ func (s *DelegatedTaskStore) scanRow(rows *sql.Rows) (*domain.DelegatedTask, err
 	var status string
 	err := rows.Scan(
 		&t.ID, &t.ProposalID, &t.SessionName, &t.Description, &t.Origin,
-		&status, &t.AgentDID, &t.LeaseExpiresAt, &t.RunID, &t.IdempotencyKey,
+		&status, &t.AgentDID, &t.LeaseExpiresAt, &t.RunID,
+		&t.RequestedRunner, &t.AssignedRunner,
+		&t.IdempotencyKey,
 		&t.ResultSummary, &t.ProgressNote, &t.Error, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {

@@ -619,20 +619,20 @@ class CoreHTTPClient:
         proposal_id: str = "",
         idempotency_key: str = "",
         requires_approval: bool = False,
+        requested_runner: str = "",
     ) -> dict:
         """POST /v1/agent/tasks — create a delegated task."""
-        resp = await self._request(
-            "POST",
-            "/v1/agent/tasks",
-            json={
-                "id": task_id,
-                "description": description,
-                "origin": origin,
-                "proposal_id": proposal_id,
-                "idempotency_key": idempotency_key,
-                "requires_approval": requires_approval,
-            },
-        )
+        body: dict = {
+            "id": task_id,
+            "description": description,
+            "origin": origin,
+            "proposal_id": proposal_id,
+            "idempotency_key": idempotency_key,
+            "requires_approval": requires_approval,
+        }
+        if requested_runner:
+            body["requested_runner"] = requested_runner
+        resp = await self._request("POST", "/v1/agent/tasks", json=body)
         return resp.json()
 
     async def get_delegated_task(self, task_id: str) -> dict | None:

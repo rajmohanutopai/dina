@@ -76,6 +76,7 @@ func (h *DelegatedTaskHandler) HandleCreate(w http.ResponseWriter, r *http.Reque
 		ProposalID       string `json:"proposal_id"`
 		IdempotencyKey   string `json:"idempotency_key"`
 		RequiresApproval bool   `json:"requires_approval"`
+		RequestedRunner  string `json:"requested_runner"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -95,12 +96,13 @@ func (h *DelegatedTaskHandler) HandleCreate(w http.ResponseWriter, r *http.Reque
 	}
 
 	task := domain.DelegatedTask{
-		ID:             req.ID,
-		ProposalID:     req.ProposalID,
-		Description:    req.Description,
-		Origin:         req.Origin,
-		Status:         status,
-		IdempotencyKey: req.IdempotencyKey,
+		ID:              req.ID,
+		ProposalID:      req.ProposalID,
+		Description:     req.Description,
+		Origin:          req.Origin,
+		Status:          status,
+		RequestedRunner: req.RequestedRunner,
+		IdempotencyKey:  req.IdempotencyKey,
 	}
 	if err := h.Tasks.Create(r.Context(), task); err != nil {
 		if errors.Is(err, port.ErrDelegatedTaskExists) {
@@ -222,14 +224,15 @@ func (h *DelegatedTaskHandler) HandleClaim(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req struct {
-		LeaseSeconds int `json:"lease_seconds"`
+		LeaseSeconds int    `json:"lease_seconds"`
+		RunnerFilter string `json:"runner_filter"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if req.LeaseSeconds <= 0 {
 		req.LeaseSeconds = 300
 	}
 
-	task, err := h.Tasks.Claim(r.Context(), agentDID, req.LeaseSeconds)
+	task, err := h.Tasks.Claim(r.Context(), agentDID, req.LeaseSeconds, req.RunnerFilter)
 	if err != nil {
 		jsonError(w, "claim failed", http.StatusInternalServerError)
 		return
@@ -298,9 +301,15 @@ func (h *DelegatedTaskHandler) HandleComplete(w http.ResponseWriter, r *http.Req
 	}
 
 	var req struct {
-		Result string `json:"result"`
+		Result         string `json:"result"`
+		AssignedRunner string `json:"assigned_runner"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
+
+	// Set assigned_runner before completing (inline runners skip "running" state).
+	if req.AssignedRunner != "" {
+		h.Tasks.SetAssignedRunner(r.Context(), taskID, req.AssignedRunner)
+	}
 
 	if err := h.Tasks.Complete(r.Context(), taskID, agentDID, req.Result); err != nil {
 		jsonError(w, err.Error(), http.StatusNotFound)
@@ -333,9 +342,14 @@ func (h *DelegatedTaskHandler) HandleFail(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Error string `json:"error"`
+		Error          string `json:"error"`
+		AssignedRunner string `json:"assigned_runner"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
+
+	if req.AssignedRunner != "" {
+		h.Tasks.SetAssignedRunner(r.Context(), taskID, req.AssignedRunner)
+	}
 
 	if err := h.Tasks.Fail(r.Context(), taskID, agentDID, req.Error); err != nil {
 		jsonError(w, err.Error(), http.StatusNotFound)
@@ -349,7 +363,7 @@ func (h *DelegatedTaskHandler) HandleFail(w http.ResponseWriter, r *http.Request
 }
 
 // HandleMarkRunning handles POST /v1/agent/tasks/{id}/running.
-// Transitions claimed → running after OpenClaw accepts execution.
+// Transitions claimed → running after a runner accepts execution.
 func (h *DelegatedTaskHandler) HandleMarkRunning(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -368,13 +382,19 @@ func (h *DelegatedTaskHandler) HandleMarkRunning(w http.ResponseWriter, r *http.
 	}
 
 	var req struct {
-		RunID string `json:"run_id"`
+		RunID          string `json:"run_id"`
+		AssignedRunner string `json:"assigned_runner"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
 	if err := h.Tasks.MarkRunning(r.Context(), taskID, agentDID, req.RunID); err != nil {
 		jsonError(w, err.Error(), http.StatusConflict)
 		return
+	}
+
+	// Set assigned_runner if provided (separate update, same handler).
+	if req.AssignedRunner != "" {
+		h.Tasks.SetAssignedRunner(r.Context(), taskID, req.AssignedRunner)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

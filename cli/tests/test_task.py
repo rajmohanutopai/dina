@@ -57,7 +57,7 @@ class TestDinaTask:
         with patch("dina_cli.main.load_config", return_value=empty_config):
             result = runner.invoke(cli, ["task", "Research chairs"])
         assert result.exit_code != 0
-        assert "OpenClaw not configured" in result.output or "openclaw" in result.output.lower()
+        assert "agent role" in result.output.lower() or "not configured" in result.output.lower()
 
     # TRACE: {"suite": "CLI", "case": "0031", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "02", "title": "task_validates_research_intent"}
     def test_task_validates_research_intent(self):
@@ -147,20 +147,24 @@ class TestDinaTask:
 
     # TRACE: {"suite": "CLI", "case": "0035", "section": "06", "sectionName": "Task", "subsection": "01", "scenario": "06", "title": "task_stores_via_staging"}
     def test_task_stores_via_staging(self):
-        """Result stored via staging_ingest with type=note, source=openclaw."""
+        """Result stored via staging_ingest with type=note, source=runner_name."""
+        from dina_cli.agent_runner import RunnerResult
+
         mc = MagicMock()
         mc.session_start.return_value = {"id": "ses-1"}
         mc.process_event.return_value = {"action": "auto_approve", "approved": True}
         mc.staging_ingest.return_value = {"id": "stg-1"}
 
-        oc = MagicMock()
-        oc.run_task.return_value = {"status": "completed", "data": {"chairs": ["ErgoMax"]}, "summary": "Found chairs"}
-        oc.close = MagicMock()
+        mock_runner = MagicMock()
+        mock_runner.runner_name = "openclaw"
+        mock_runner.execute.return_value = RunnerResult(
+            state="completed", summary="Found chairs", metadata={"chairs": ["ErgoMax"]},
+        )
 
         runner = CliRunner()
         with patch("dina_cli.main.load_config", return_value=_test_config()), \
              patch("dina_cli.main.DinaClient", return_value=mc), \
-             patch("dina_cli.openclaw.OpenClawClient", return_value=oc):
+             patch("dina_cli.runner_registry.get_runner", return_value=mock_runner):
             result = runner.invoke(cli, ["task", "Research chairs"])
 
         # Verify staging_ingest was called

@@ -1152,24 +1152,37 @@ class TelegramService:
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
-        text = " ".join(context.args) if context.args else ""
+        args = context.args or []
+        text = " ".join(args) if args else ""
         if not text:
             await ch.send(BotResponse(
                 text="Usage: /task Describe what you want done\n"
+                "  /task --runner hermes Describe what you want done\n"
                 "Example: /task Research the best standing desks under $300"
             ))
             return
+
+        # Parse optional --runner flag.
+        requested_runner = ""
+        if text.startswith("--runner "):
+            parts = text.split(" ", 2)
+            if len(parts) >= 3:
+                requested_runner = parts[1].lower()
+                text = parts[2]
+            else:
+                await ch.send(BotResponse(text="Usage: /task --runner hermes Describe what you want done"))
+                return
 
         from uuid import uuid4
 
         task_id = f"task-{uuid4().hex[:8]}"
 
-        # Validate the intent
+        # Validate the intent (runner-neutral).
         result = await self._guardian.process_event({
             "type": "agent_intent",
             "action": "research",
             "target": text[:200],
-            "agent_did": "openclaw",
+            "agent_did": "delegated-task",
             "trust_level": "verified",
             "payload": {
                 "action": "research",
@@ -1196,6 +1209,7 @@ class TelegramService:
                 proposal_id=proposal_id,
                 idempotency_key=f"task-{task_id}",
                 requires_approval=requires_approval,
+                requested_runner=requested_runner,
             )
         except Exception as exc:
             log.warning("telegram.task_create_failed", extra={"error": str(exc)})
