@@ -503,6 +503,7 @@ func main() {
 
 		// Update PLC directory with MsgBox service and Ed25519 key so other
 		// nodes can discover this node's D2D endpoint and encrypt messages.
+		// Signs with Core's K256 rotation key (included in PLC genesis via recoveryKey).
 		if ownDID != "" && msgboxURL != "" {
 			rotKey, rotErr := k256Mgr.GenerateOrLoad()
 			if rotErr != nil {

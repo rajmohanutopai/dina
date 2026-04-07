@@ -11,8 +11,8 @@ Usage:
 
 Screen recording instructions:
   1. Open Telegram Desktop — have both bot chats in your recent list:
-     - @regression_test_dina_alonso_bot (Alonso's Dina)
-     - @regression_test_dina_sancho_bot (Sancho's Dina)
+     - @dina_alonso_bot (Alonso's Dina)
+     - @dina_sancho_bot (Sancho's Dina)
   2. Start your screen recorder (record the Telegram window)
   3. Run the desired video script
   4. Watch the terminal — it will say "👉 SWITCH TO [Alonso/Sancho]"
@@ -50,8 +50,8 @@ from tests.sanity.telegram_client import SanityTelegramClient
 # Config
 # ---------------------------------------------------------------------------
 
-ALONSO_BOT = "regression_test_dina_alonso_bot"
-SANCHO_BOT = "regression_test_dina_sancho_bot"
+ALONSO_BOT = "dina_alonso_bot"
+SANCHO_BOT = "dina_sancho_bot"
 ALONSO_PORT = 18100
 
 # Pace multiplier: 1.0 = normal, 1.5 = slower (more time to read), 0.7 = faster
@@ -259,12 +259,12 @@ def video_1_sancho_moment(tg: SanityTelegramClient):
     switch_to("Sancho")
     narrate("Scene 1: Sancho tells his Dina about his friend Alonso")
     send(tg, SANCHO_BOT,
-         "/remember When Alonso visits, he likes cold brew coffee extra strong and usually brings homemade banana bread",
+         "/remember Alonso likes cold brew coffee extra strong and usually brings homemade banana bread",
          wait=30)
     pause(LONG, "Let viewer read the vault confirmation")
 
     send(tg, SANCHO_BOT,
-         "/remember Alonso and I usually discuss movies and football when we meet",
+         "/remember Alonso and I usually discuss movies and football ",
          wait=30)
     pause(LONG, "Second memory stored")
 

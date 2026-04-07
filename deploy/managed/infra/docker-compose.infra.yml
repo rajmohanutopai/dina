@@ -49,6 +49,7 @@ services:
       PDS_JWT_SECRET: ${PDS_JWT_SECRET}
       PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${PDS_ROTATION_KEY}
       PDS_INVITE_REQUIRED: "false"
+      PDS_DEV_MODE: "true"
       PDS_PORT: 3000
       NODE_ENV: production
       LOG_ENABLED: "true"

@@ -62,9 +62,10 @@ admin-cli/          Admin CLI tool (dina-admin)
 docker-compose.yml:
   dina-core       Go + net/http          Vault keeper. Only process that opens SQLite files.
   dina-brain      Python + FastAPI        Analyst. Thinks, never holds keys.
-  dina-pds        AT Protocol PDS         Trust Network records (com.dina.trust.* lexicons).
   llama           llama.cpp (optional)    Local LLM (Gemma 3n). --profile local-llm.
 ```
+
+Core uses a community PDS (e.g., `bsky.social`) for `did:plc` creation — no sidecar PDS container needed. Core's K256 key (secp256k1, `m/9999'/2'/0'`) is passed as `recoveryKey` during `createAccount`, giving Dina sovereign key rotation capability. `install.sh` prepares PDS credentials; Core creates the account on first boot.
 
 ### The Sidecar Pattern
 
@@ -94,7 +95,7 @@ docker-compose.yml:
 | Search | FTS5 (keyword) + HNSW in-memory (semantic) | Hybrid search: `0.4 × FTS5 + 0.6 × cosine` |
 | Identity | `did:plc` (AT Protocol) + Ed25519 (SLIP-0010) | Self-sovereign identity, key derivation |
 | Key Mgmt | BIP-39 mnemonic → SLIP-0010 (signing) + HKDF (vault DEKs) | Hierarchical deterministic keys under purpose `m/9999'` |
-| Trust | AT Protocol PDS + AppView | Decentralized trust network (19 record types) |
+| Trust | AT Protocol community PDS + AppView | Decentralized trust network (19 record types) |
 | Messaging | NaCl `crypto_box_seal` over HTTPS | Dina-to-Dina encrypted P2P |
 | PII | 2-tier (V1): regex (Go) + Presidio patterns (Python). NER disabled in V1, allow-list filters false positives. V2: GLiNER local model. | Raw data never leaves Home Node |
 | Agents | MCP (Model Context Protocol) | External agent communication (OpenClaw, etc.) |
@@ -196,7 +197,7 @@ api/
 | **Unit** | `core/test/`, `brain/` | — | None | Pure logic, no I/O |
 | **Integration** | `tests/integration/` (714 tests) | `DINA_INTEGRATION=docker` | 1× Core + 1× Brain | Core↔Brain contract, vault ops, persona isolation |
 | **E2E** | `tests/e2e/` (110 tests) | `DINA_E2E=docker` | 4× Core+Brain (multi-node) | Cross-node scenarios: Don Alonso, Sancho, ChairMaker, Albert |
-| **System** | `tests/system/` | via `run_user_story_tests.sh` | 2× Core+Brain + PDS + AppView + Postgres + PLC + Jetstream | 10 user stories, full stack end-to-end |
+| **System** | `tests/system/` | via `run_user_story_tests.sh` | 2× Core+Brain + AppView + Postgres + PLC + Jetstream | 10 user stories, full stack end-to-end |
 | **Release** | `tests/release/` (23 scenarios) | `DINA_RELEASE=docker` | Core + Brain + dummy-agent | Release validation (REL-001..REL-023), CLI testing via dummy-agent |
 
 #### Running Tests
@@ -281,7 +282,7 @@ Docker isolation via `COMPOSE_PROJECT_NAME="dina-system-${SESSION_ID}"`. Port au
 
 #### System Tests (`tests/system/conftest.py`)
 
-Full stack: 2× Core+Brain + PLC + PDS + Jetstream + AppView + Postgres via `docker-compose-system.yml`. `SystemServices` class manages lifecycle. `BrainSigner` extracts Core's Ed25519 private key from running container to sign requests. `seed_appview()` inserts test trust data directly into Postgres.
+Full stack: 2× Core+Brain + PLC + Jetstream + AppView + Postgres via `docker-compose-system.yml`. `SystemServices` class manages lifecycle. `BrainSigner` extracts Core's Ed25519 private key from running container to sign requests. `seed_appview()` inserts test trust data directly into Postgres.
 
 #### Release Tests (`tests/release/conftest.py`)
 

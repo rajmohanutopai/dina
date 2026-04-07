@@ -74,7 +74,7 @@ Core orchestrates every actor in the system.
 <summary><strong>Design Decision — Why Go for the Core?</strong></summary>
 <br>
 
-Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Written in Go (due to its support of Crypto). The other two components are the brain and appview. The brain sidecar handles LLM reasoning (Python is the defacto language in AI). AppView (Trust Network, built on AT Proto) is written in TypeScript.
+Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Written in Go (due to its support of Crypto). The other component in the Home Node is the brain sidecar, which handles LLM reasoning (Python is the defacto language in AI). AppView (Trust Network, built on AT Proto) is a separate TypeScript service that runs independently.
 
 </details>
 
@@ -134,7 +134,6 @@ The client token is **not derived from the seed**. It is an independent random v
 Core                  YES         N/A (verifies)          N/A (verifies)
 Brain                 NO          YES                     NO
 CLI                   NO          NO                      YES (one per device)
-PDS                   NO          NO                      NO
 ```
 
 ### Key Derivation: One Seed, Many Keys
@@ -268,7 +267,7 @@ Hybrid search merges both: `score = 0.4 × FTS5_rank + 0.6 × cosine_similarity`
 
 **Trust** (lines 359-362) — the trust cache, resolver, and service. An in-memory trust cache provides microsecond DID lookups for ingress gatekeeper decisions. The resolver fetches trust profiles from the AppView XRPC endpoints. Together with the contact directory, they form a 3-tier authority hierarchy for incoming messages: contacts (manual, highest authority) → cache (AppView synced) → unknown (quarantine). More in Act X.
 
-**PLC/PDS** (lines 364-384) — optional AT Protocol integration. When `DINA_PDS_URL` is set, Core connects to the AT Protocol PDS for `did:plc` identity and trust record publishing. K256 key management (secp256k1) provides the PLC recovery key at `m/9999'/2'/0'`.
+**PLC/PDS** (lines 364-384) — AT Protocol integration. Core connects to a community PDS (e.g., `bsky.social`) for `did:plc` identity creation and trust record publishing. `install.sh` prepares PDS credentials; Core creates the account on first boot via `createAccount`. K256 key management (secp256k1) provides the PLC recovery key at `m/9999'/2'/0'`, passed as `recoveryKey` during account creation to give Dina sovereign key rotation capability.
 
 **Service Keys** (lines 387-432) — Ed25519 service-to-service auth. PEM files are provisioned at install time via `provision_derived_service_keys.py` (SLIP-0010 derived at `m/9999'/3'/<index>'`). Runtime is load-only, fail-closed — `EnsureExistingKey("core")` loads but never generates. Brain's public key is required (30-second retry loop). Admin and connector peer keys are optional — loaded if provisioned, silently skipped otherwise.
 
@@ -487,8 +486,8 @@ Both use the same `http.ServeMux` router but different middleware chains — the
 |--------|--------|------|---------|
 | **BrainClient** | `brain:8200` | Ed25519 service key | Process events, reason, health check. Circuit breaker (5 failures → open, 30s cooldown) |
 | **TrustResolver** | AppView `:3000` | None (internal network) | XRPC endpoints: `com.dina.trust.getProfile`, `com.dina.trust.getGraph` |
-| **PLCClient** | PLC directory + PDS | Admin token | DID creation/rotation on `plc.directory` |
-| **PDSPublisher** | AT Protocol PDS | Admin token | Publish trust records (`com.dina.trust.*` lexicons) |
+| **PLCClient** | PLC directory + community PDS | Session auth | DID creation/rotation on `plc.directory` via community PDS |
+| **PDSPublisher** | Community PDS | Session auth | Publish trust records (`com.dina.trust.*` lexicons) |
 | **Transporter** | Other Dina nodes | NaCl sealed box (payload-level) | D2D message delivery to `POST /msg` on recipient |
 
 **Proxy paths (Core relays to Brain):**
@@ -810,7 +809,7 @@ DID methods differ in where the DID document lives:
 
 `did:plc` was chosen because Dina uses the AT Protocol ecosystem (PDS, AppView, Jetstream) for the Trust Network. Alignment on DID method means: (1) Dina's identity is a first-class AT Protocol identity — it can publish and receive AT Protocol records natively, (2) key rotation is supported — if a signing key is compromised, the recovery key (secp256k1, derived at `m/9999'/2'/0'`) can rotate to a new signing key without changing the DID, and (3) the PLC operation log provides an auditable history of key changes.
 
-Core supports two modes: when `DINA_PDS_URL` is set, DIDs are registered on the real PLC directory via PDS (`CreateAccountAndDID`). In local-only mode (no PDS configured), Core derives a `did:plc:`-formatted identifier locally from a SHA-256 hash of the public key (`core/internal/adapter/identity/identity.go:260-264`) — same format, same validation rules, but no PLC directory registration. This means a Home Node works offline and can later register with PLC when PDS is configured.
+Core uses a community PDS (e.g., `bsky.social`) for DID creation. `install.sh` prepares PDS credentials, and Core creates the account on first boot via `CreateAccountAndDID`, passing the K256 key as `recoveryKey`. This registers the DID on the real PLC directory and gives Dina sovereign key rotation capability — the recovery key is derived deterministically from the master seed, so even if the PDS operator is uncooperative, Dina can rotate keys directly on `plc.directory`. In local-only mode (no PDS configured), Core derives a `did:plc:`-formatted identifier locally from a SHA-256 hash of the public key (`core/internal/adapter/identity/identity.go:260-264`) — same format, same validation rules, but no PLC directory registration.
 
 </details>
 
@@ -1192,7 +1191,7 @@ Two endpoints are always public (no auth required), returning JSON responses:
 
 Returns `{"status":"ready"}` (200) on success, or `{"status":"not ready"}` (503) with a `slog.Warn` if any check fails. The load balancer stops routing traffic to a 503 instance.
 
-The AT Protocol discovery endpoint `GET /.well-known/atproto-did` (line 891) returns the node's root DID as plain text — enabling PDS identity resolution per the AT Protocol spec. The handler calls `DID.Create()` which returns the existing DID if already created (SEC-MED-14: `ErrDIDAlreadyExists` is expected after first run and handled gracefully).
+The AT Protocol discovery endpoint `GET /.well-known/atproto-did` (line 891) returns the node's root DID as plain text — enabling AT Protocol identity resolution per the spec. The handler calls `DID.Create()` which returns the existing DID if already created (SEC-MED-14: `ErrDIDAlreadyExists` is expected after first run and handled gracefully).
 
 <details>
 <summary><strong>Design Decision — Why separate liveness and readiness probes?</strong></summary>
@@ -1211,13 +1210,13 @@ The distinction prevents premature restarts. If readiness fails but liveness pas
 
 ## Act XIV: The Fourteen Stories — Proving the Architecture
 
-The user story tests (`tests/system/user_stories/`) run against a real multi-node stack: 2 Go Core instances, 2 Python Brain sidecars, PLC directory, PDS, Jetstream, AppView, Postgres — zero mocks. Each story proves a capability that depends on core's architecture.
+The user story tests (`tests/system/user_stories/`) run against a real multi-node stack: 2 Go Core instances, 2 Python Brain sidecars, PLC directory, Jetstream, AppView, Postgres — zero mocks. Each story proves a capability that depends on core's architecture.
 
 ### Story 01: The Purchase Journey (13 tests)
 
 **What it proves:** Trust-weighted purchase advice where verified reviewers outrank unverified ones — no ad spend involved.
 
-Five Dinas are created with cryptographic DIDs. Three (Alice, Bob, Diana) are Ring 2 — verified via mutual DID attestations published as AT Protocol records through PDS (`com.atproto.repo.createRecord`): Alice ↔ Bob mutual vouch, Alice → Diana vouch. Two (Charlie, Eve) remain Ring 1 — unverified, no trust edges. All five publish product reviews through PDS, which flow through Jetstream into AppView's Postgres.
+Five Dinas are created with cryptographic DIDs. Three (Alice, Bob, Diana) are Ring 2 — verified via mutual DID attestations published as AT Protocol records (`com.atproto.repo.createRecord`): Alice ↔ Bob mutual vouch, Alice → Diana vouch. Two (Charlie, Eve) remain Ring 1 — unverified, no trust edges. All five publish product reviews as AT Protocol records, which flow through Jetstream into AppView's Postgres.
 
 **Core's role:**
 - **Vault** stores Alonso's personal context across 4 personas (health, work, finance, family) — each an encrypted SQLCipher compartment.

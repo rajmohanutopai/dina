@@ -1,7 +1,7 @@
 {
   "version": 1,
   "defaults": {
-    "primary": "gemini/gemini-3.1-pro-preview",
+    "primary": "gemini/gemini-3-flash-preview",
     "lite": "gemini/gemini-3.1-flash-lite-preview",
     "heavy": "gemini/gemini-3.1-pro-preview",
     "fallbacks": [

@@ -35,7 +35,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 | Subsystem | Components | Phase 1 release scope | Purpose |
 |---|---|---|---|
 | **Private core** | `dina-core` + `dina-brain` + encrypted vault | Yes | Identity, multi-persona vaults, safety, ingestion/classification, messaging, nudges, action gating, delegation |
-| **Public trust layer** | `dina-pds` + Trust AppView ecosystem | Yes | Publish and query public trust records, attestations, outcomes, bot reputation |
+| **Public trust layer** | Community PDS (`pds.dinakernel.com`) + Trust AppView ecosystem | Yes | Publish and query public trust records, attestations, outcomes, bot reputation |
 | **Local inference** | `llama` | Optional | Higher-privacy local LLM routing, local embeddings. V2: local NER via GLiNER. |
 
 **Canonical Phase 1 rule:** Dina v1 ships both the private core and a working public trust layer. The private core comes first, and user value must still hold even when the Trust Network is small. The trust layer is part of the release, but its usefulness compounds with network adoption.
@@ -65,7 +65,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 
 - The **Home Node** holds the root identity and master seed.
 - Paired **client devices** authenticate with device-specific **Ed25519 keypairs**.
-- Browser-admin traffic terminates at a dedicated `dina-admin` backend using an HTTP session cookie.
+- Browser-admin traffic terminates at the `dina_admin` sub-app inside `dina-brain` using an HTTP session cookie.
 - All non-browser hops into core use **Ed25519**: paired devices use device keys, internal services use service keys.
 
 ### Cross-Cutting Invariants
@@ -512,15 +512,15 @@ my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
 
 Serverless (Lambda + S3) doesn't work for Dina. SQLite on network storage corrupts under concurrent access. Cold starts take 30-60 seconds to load a 2GB LLM. Lambda can't maintain persistent WebSocket or DIDComm connections. Scheduled MCP sync cycles and always-on DIDComm reception cost more on Lambda than an always-on container.
 
-The right architecture is lightweight, always-on containers via `docker compose up -d` — 4 containers by default (core, brain, admin, pds). Add a local LLM with `docker compose --profile local-llm up -d` (5 containers: + llama).
+The right architecture is lightweight, always-on containers via `docker compose up -d` — 2 containers by default (core, brain). Add a local LLM with `docker compose --profile local-llm up -d` (3 containers: + llama).
 
 ### Connectivity & Ingress (Multi-Lane Networking)
 
 dina-core exposes two ports:
-- **Port 443** — external HTTPS: client WebSockets, NaCl messaging (Dina-to-Dina), and `/admin` routing to `dina-admin`. Behind a tunnel (Tailscale/Cloudflare/Yggdrasil) for NAT traversal and DDoS protection.
+- **Port 443** — external HTTPS: client WebSockets, NaCl messaging (Dina-to-Dina), and `/admin` routing to the admin sub-app in `dina-brain`. Behind a tunnel (Tailscale/Cloudflare/Yggdrasil) for NAT traversal and DDoS protection.
 - **Port 8100** — internal API (brain ↔ core, Docker network only)
 
-The public ingress is a tunnel or reverse proxy in front of port 443. This solves NAT traversal, port conflicts, TLS termination, and DDoS protection in one architectural decision. The PDS exposes port 2583 separately for AT Protocol relay crawling.
+The public ingress is a tunnel or reverse proxy in front of port 443. This solves NAT traversal, port conflicts, TLS termination, and DDoS protection in one architectural decision. Trust records are published to the community PDS (`pds.dinakernel.com`) via outbound HTTPS — no local PDS port is needed.
 
 **Three ingress tiers, running simultaneously if needed:**
 
@@ -557,7 +557,6 @@ On disk (what the developer sees):
       │   └── consumer.sqlite
       ├── keyfile                      ← Convenience mode only (master seed, chmod 600)
       ├── inbox/                       ← Dead Drop spool (locked state, encrypted blobs)
-      ├── pds/                         ← AT Protocol repo data
       ├── models/                      ← GGUF files (optional, --profile local-llm)
       └── config.json                  ← Gatekeeper tiers, settings
 
@@ -570,7 +569,6 @@ Inside container (what the code sees):
   │   └── ...
   ├── keyfile
   ├── inbox/
-  ├── pds/
   ├── models/
   └── config.json
 ```
@@ -588,44 +586,47 @@ Inside container (what the code sees):
 - **Selective unlock.** `identity.sqlite` always unlocked first (gatekeeper needs contacts/sharing policy). `/personal` unlocked by default. Other personas remain locked until explicitly requested. Locked = DEK not in RAM = invisible, not just access-controlled.
 - **Phase 1 simplicity.** Multi-persona files exist from the start, but the user experience should still feel like one Dina. Personas are a security boundary, not an onboarding burden.
 
-### The Sidecar Pattern: Go Core + Python Brain + Python Admin
+### The Sidecar Pattern: Go Core + Python Brain
 
-The Home Node is split into three private services that communicate over a local HTTP API:
+The Home Node is split into two private services that communicate over a local HTTP API:
 
-- **dina-core (Go + net/http):** The sovereign cryptographic kernel. Holds the encrypted vault, manages keys, runs the DIDComm endpoint, serves client WebSockets, and enforces gatekeeper RBAC + PII scrubbing. **Core never calls external APIs** for connector logic or browser session handling. This is the part that must never fail, must never leak data, and must run for years without maintenance.
-- **dina-brain (Python + Google ADK):** The intelligence and orchestration layer. Runs the guardian angel reasoning loop — silence classification, disconnect detection, nudge assembly, ingestion scheduling, and agent orchestration. Brain is a guest of core, not a privileged peer.
-- **dina-admin (Python + FastAPI):** The browser-facing admin backend. Owns HTML/API responses for `/admin`, owns browser session cookies and CSRF, and talks to core using its own Ed25519 service identity. This is the browser bridge. The browser never talks to core with a bearer secret.
+- **dina-core (Go + net/http):** The sovereign cryptographic kernel. Holds the encrypted vault, manages keys, runs the DIDComm endpoint, serves client WebSockets, and enforces gatekeeper RBAC + PII scrubbing. Core also creates the PDS account on first boot (passing its K256 rotation key as `recoveryKey` so it appears in the PLC genesis rotation keys) and signs PLC updates directly with its K256 key. **Core never calls external APIs** for connector logic or browser session handling. This is the part that must never fail, must never leak data, and must run for years without maintenance.
+- **dina-brain (Python + Google ADK):** The intelligence and orchestration layer. Runs the guardian angel reasoning loop — silence classification, disconnect detection, nudge assembly, ingestion scheduling, and agent orchestration. Brain also hosts the admin sub-app (`dina_admin`) — the browser-facing admin backend that owns `/admin/*`, session cookies, and CSRF. Brain is a guest of core, not a privileged peer.
 
 An optional local inference container sits beside them:
 
 - **llama (llama.cpp):** Serves Gemma 3n via an OpenAI-compatible API on localhost. Brain calls it for classification and embeddings. Without llama, brain calls cloud LLM APIs directly. PII scrubbing uses deterministic patterns in both profiles (V1).
 
+Trust records are published to the community PDS (`pds.dinakernel.com` or `test-pds.dinakernel.com`) via outbound HTTPS. The community PDS handles both trust publishing and DID hosting — no sidecar PDS container is needed.
+
 ```
-docker-compose target shape (5 containers — llama optional via --profile local-llm):
+docker-compose target shape (3 containers — llama optional via --profile local-llm):
 
   external HTTPS
        |
        v
-  dina-core:443  ───────────────┬───────────────┬───────────────┐
-      |                         |               |               |
-      |                     core API      browser/admin      PDS push
-      v                         v               v               v
-  WebSocket + msg           dina-brain:8200  dina-admin:8300  dina-pds:2583
+  dina-core:443  ───────────────┬───────────────┐
+      |                         |               |
+      |                     core API      browser/admin
+      v                         v               v
+  WebSocket + msg           dina-brain:8200  (admin sub-app at :8200/admin/*)
       |
       +-- paired devices use Ed25519 device signatures
 
+  outbound:
+    - core → community PDS (pds.dinakernel.com) for trust publishing + DID hosting
+
   internal callers to core:
     - dina-brain  → Ed25519 service signatures
-    - dina-admin  → Ed25519 service signatures
     - connectors  → Ed25519 service signatures
 ```
 
 **Why this split instead of one binary or one Python process:**
 
 - **Best tools for each job.** Go is the right kernel language for vaults, crypto, and transport. Python is the right language for agent logic and browser admin velocity.
-- **Crash isolation.** If brain crashes, core does not lose identity, vault access, or ingress. If admin crashes, the browser UI goes down, but core and brain keep working.
-- **Security clarity.** `dina-brain` is a reasoning guest. `dina-admin` is a browser/session bridge. Neither needs a special shared-secret exception to talk to core.
-- **Replaceability.** A future Rust or Go brain only needs to implement the same internal API. A future admin rewrite still authenticates to core the same way: Ed25519 service signatures.
+- **Crash isolation.** If brain crashes, core does not lose identity, vault access, or ingress.
+- **Security clarity.** `dina-brain` is a reasoning guest and browser/session bridge. It does not get implicit trust because it runs on the same node.
+- **Replaceability.** A future Rust or Go brain only needs to implement the same internal API and authenticates to core the same way: Ed25519 service signatures.
 
 **Why Google ADK for the brain:**
 
@@ -635,9 +636,9 @@ docker-compose target shape (5 containers — llama optional via --profile local
 - MCP support for external child agents
 - mature ecosystem
 
-### Security Model: Brain Is a Guest, Admin Is a Bridge
+### Security Model: Brain Is a Guest
 
-`dina-brain` and `dina-admin` are both clients of core. They do not get implicit trust because they run on the same node.
+`dina-brain` (including its admin sub-app) is a client of core. It does not get implicit trust because it runs on the same node.
 
 ```
 Two external-facing auth families:
@@ -646,19 +647,17 @@ Two external-facing auth families:
    phone / laptop / CLI  -> Ed25519 device signatures -> core
 
 2. Browser admin
-   browser -> session cookie -> dina-admin -> Ed25519 service signature -> core
+   browser -> session cookie -> dina-brain (admin sub-app) -> Ed25519 service signature -> core
 
 Internal services:
-   dina-brain / dina-admin / connectors -> Ed25519 service signatures -> core
+   dina-brain / connectors -> Ed25519 service signatures -> core
 ```
 
 This keeps one rule everywhere that is not a browser:
 
 - if a component talks to core directly, it authenticates with Ed25519
 
-**What a compromised brain can do:** only what its service identity is allowed to do. It can access open personas through core's policy layer. It cannot bypass persona locks, cannot bypass PII scrubbing, and cannot call admin-only core endpoints just because it is local.
-
-**What a compromised admin backend can do:** only what the explicit `admin` service identity is allowed to do. That is still sensitive, but the permissions are explicit and auditable in core. The browser itself still never holds a core credential.
+**What a compromised brain can do:** only what its service identity is allowed to do. It can access open personas through core's policy layer. It cannot bypass persona locks and cannot bypass PII scrubbing. The admin sub-app inside brain uses the same brain service identity — its permissions are explicit and auditable in core. The browser itself still never holds a core credential.
 
 **Canonical auth model for core:**
 
@@ -666,45 +665,43 @@ This keeps one rule everywhere that is not a browser:
 |---|---|---|---|
 | Paired device | Ed25519 device keypair | device secure storage | device DID + request signature |
 | Internal service | Ed25519 service keypair | service-local secret mount | service DID + request signature |
-| Browser | session cookie | browser + `dina-admin` session store | never a core credential directly |
+| Browser | session cookie | browser + brain admin sub-app session store | never a core credential directly |
 
 **Why no JWTs or `CLIENT_TOKEN`:**
 
 - no second auth model is needed for internal services
 - no bearer secret needs to be copied into browsers or reverse proxies
-- per-service authorization becomes cleaner (`brain`, `admin`, `telegram`, etc.)
+- per-service authorization becomes cleaner (`brain`, `telegram`, etc.)
 - device and service revocation both stay cryptographic, not shared-secret based
 
-### Admin Backend: Python, Not Go Templates
+### Admin Backend: Python Sub-App Inside Brain
 
 Status: `Current Phase 1 Target`
 
-The admin surface should be a dedicated browser backend, not a sub-app inside brain.
+The admin surface is a sub-app (`dina_admin`) mounted inside `dina-brain`, not a separate container.
 
 ```
-dina-admin (FastAPI, dedicated backend)
+dina-brain (FastAPI, single container with two sub-apps)
 
-  browser -> /admin/* -> session cookie / CSRF / HTML / JSON
-                      -> privileged Ed25519 calls to core
+  /admin/* -> dina_admin sub-app -> session cookie / CSRF / HTML / JSON
+                                 -> privileged Ed25519 calls to core
 
-dina-brain (FastAPI, separate service)
-
-  internal only -> /api/* -> reasoning / ingestion / orchestration
+  /api/*   -> dina_brain sub-app -> reasoning / ingestion / orchestration
 ```
 
-Core may still reverse-proxy `/admin` so the user only exposes one public HTTPS endpoint, but core is only transport on that path. Session validation, CSRF, and admin-page rendering live in `dina-admin`, not in core and not in brain.
+Core may still reverse-proxy `/admin` so the user only exposes one public HTTPS endpoint, but core is only transport on that path. Session validation, CSRF, and admin-page rendering live in brain's admin sub-app, not in core.
 
 **Why Python for admin:** Go templates are still the wrong tool for a fast-moving admin surface. FastAPI + Jinja2 or FastAPI + a small frontend gives the right development speed. The important architectural rule is not the templating stack. It is the trust boundary:
 
-- browser session at `dina-admin`
-- Ed25519 service auth from `dina-admin` to core
+- browser session at brain's admin sub-app
+- Ed25519 service auth from brain to core
 - no special-case browser bearer credential inside core
 
-### Browser Authentication at `dina-admin`
+### Browser Authentication at Brain's Admin Sub-App
 
 Status: `Current Phase 1 Target`
 
-The browser cannot do Ed25519 service auth to core natively. That is why `dina-admin` exists.
+The browser cannot do Ed25519 service auth to core natively. That is why brain's admin sub-app exists.
 
 **Canonical browser flow:**
 
@@ -712,16 +709,16 @@ The browser cannot do Ed25519 service auth to core natively. That is why `dina-a
 Browser
   -> GET /admin
   -> reverse proxy
-  -> dina-admin
+  -> dina-brain (admin sub-app)
        -> no valid session? show login page
        -> user submits passphrase
-       -> dina-admin calls core over Ed25519:
+       -> brain admin sub-app calls core over Ed25519:
             POST /v1/admin/auth/verify-passphrase
        -> core validates passphrase / policy
-       -> dina-admin creates session + CSRF token
+       -> admin sub-app creates session + CSRF token
        -> browser gets HttpOnly/Secure/SameSite=Strict cookie
-       -> subsequent admin requests stay between browser and dina-admin
-       -> dina-admin performs privileged core calls with its service key
+       -> subsequent admin requests stay between browser and brain admin sub-app
+       -> admin sub-app performs privileged core calls with brain's service key
 ```
 
 **Key properties:**
@@ -729,29 +726,27 @@ Browser
 | Property | Value |
 |---|---|
 | Login credential | `DINA_PASSPHRASE` unless a later pairing/approval ceremony replaces it |
-| Session owner | `dina-admin`, not core |
+| Session owner | brain admin sub-app, not core |
 | Cookie flags | `HttpOnly`, `Secure`, `SameSite=Strict` |
-| CSRF protection | token stored server-side in `dina-admin` session state |
-| Rate limiting | login attempts throttled at `dina-admin` |
+| CSRF protection | token stored server-side in brain admin sub-app session state |
+| Rate limiting | login attempts throttled at brain admin sub-app |
 | Core's role on `/admin` | optional reverse proxy only |
 
-**Why passphrase can still stay:** removing `CLIENT_TOKEN` does not require inventing a second human secret. The browser can still present the same user passphrase, but it presents it to `dina-admin`, which then asks core to verify it over an Ed25519-authenticated internal call.
+**Why passphrase can still stay:** removing `CLIENT_TOKEN` does not require inventing a second human secret. The browser can still present the same user passphrase, but it presents it to brain's admin sub-app, which then asks core to verify it over an Ed25519-authenticated internal call.
 
 **Target code shape:**
 
 ```
 brain/
   src/
-    dina_brain/
+    main.py               # Master FastAPI app (sub-mounts brain + admin)
+    dina_brain/            # Brain API sub-app (/api/*)
       app.py
       ...
-
-admin/
-  src/
-    dina_admin/
+    dina_admin/            # Admin UI sub-app (/admin/*)
       app.py
       session.py
-      core_client.py    # Ed25519 -> core
+      core_client.py       # Ed25519 -> core
       templates/
       routes/
 ```
@@ -4207,7 +4202,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 │  │                  │  │ from Dinas   │  │           │       │
 │  └─────────────────┘  └──────────────┘  └───────────┘       │
 │                                                               │
-│  Storage: AT Protocol PDS (external or bundled — Split         │
+│  Storage: AT Protocol PDS (community PDS — Split               │
 │           Sovereignty model, see section below)               │
 │           Records stored in signed Merkle repos               │
 │           Federated via AT Protocol Relay + AppView           │
@@ -4345,26 +4340,31 @@ We evaluated five options:
 
 This is the same model as email: you own your messages (cryptographic authority via PGP/S-MIME), but Gmail hosts the mailbox (infrastructure availability). You can move to Fastmail without losing your identity.
 
-#### Two PDS Topologies
+#### PDS Topology: Community PDS
 
-| | Type A: External PDS | Type B: Bundled PDS |
-|---|---|---|
-| **Who** | Home users (Raspberry Pi, Mac Mini, NAS behind CGNAT/NAT) | VPS users, advanced self-hosters with static IP |
-| **PDS location** | Community-hosted (e.g., `pds.dina.host`) or any AT Protocol PDS provider | Co-located with Home Node in docker-compose |
-| **Signing** | Home Node signs records locally → pushes signed commits to external PDS | Home Node signs records locally → writes directly to co-located PDS |
-| **Availability** | PDS is always online (cloud/community infrastructure) | PDS is as available as your VPS (99.9%+ uptime typical) |
-| **Incoming traffic** | Zero — PDS absorbs all read traffic from relays and AppViews | PDS handles relay crawl requests alongside Home Node traffic |
-| **docker-compose** | `docker compose up -d` (3 containers: core, brain, admin; pushes to external PDS) | `docker compose up -d` (4 containers: core, brain, admin, bundled PDS) |
-| **Best for** | Home hardware behind CGNAT, unreliable connectivity | Default (Phase 1), VPS, managed hosting, full control |
+All Home Nodes use a community PDS (`pds.dinakernel.com` for production, `test-pds.dinakernel.com` for development). There is no sidecar PDS container — Core creates the PDS account on first boot and publishes trust records via outbound HTTPS.
 
-**Type A flow (External PDS):**
+| | Community PDS |
+|---|---|
+| **Who** | All Home Node deployments |
+| **PDS location** | Community-hosted (`pds.dinakernel.com`) or any AT Protocol PDS provider |
+| **Account creation** | Core creates the PDS account on first boot, passing its K256 rotation key as `recoveryKey` so it appears in the PLC genesis rotation keys |
+| **PLC updates** | Core signs PLC updates directly with its K256 key (no PDS `signPlcOperation` API needed) |
+| **Signing** | Home Node signs records locally → pushes signed commits to community PDS via outbound HTTPS |
+| **Availability** | PDS is always online (community infrastructure) |
+| **Incoming traffic** | Zero — PDS absorbs all read traffic from relays and AppViews |
+| **docker-compose** | `docker compose up -d` (2 containers: core, brain) |
+| **Best for** | All deployments — simplifies Home Node, no local PDS maintenance |
+
+**Trust publishing flow:**
 ```
-Home Node (Raspberry Pi, behind NAT)
+Home Node (any hardware — VPS, Raspberry Pi, Mac Mini)
     │
-    │  Signs attestation/outcome record with user's Ed25519 key
-    │  Pushes signed commit to external PDS (outbound HTTPS)
+    │  Core creates PDS account on first boot (K256 recovery key in PLC genesis)
+    │  Core signs attestation/outcome records with user's key
+    │  Core pushes signed commits to community PDS (outbound HTTPS)
     ▼
-External PDS (pds.dina.host or any AT Protocol PDS)
+Community PDS (pds.dinakernel.com or any AT Protocol PDS)
     │
     │  Stores signed Merkle repo
     │  Serves to relay on crawl request
@@ -4375,23 +4375,7 @@ AT Protocol Relay (firehose aggregation)
 Trust AppView (indexes com.dina.trust.* records)
 ```
 
-The Home Node never receives inbound trust traffic. The external PDS absorbs all read load. The Home Node only makes outbound pushes when it has new records to publish — a few requests per day for a typical user. Your Raspberry Pi is safe.
-
-**Type B flow (Bundled PDS):**
-```
-Home Node (VPS with static IP)
-    │
-    ├── dina-core (Go)     ← Private layer
-    ├── dina-brain (Python) ← Private layer
-    ├── llama        ← Private layer (local-llm profile)
-    └── dina-pds            ← Public layer: AT Protocol PDS
-            │
-            │  Serves signed repo to relay on crawl
-            ▼
-       AT Protocol Relay → Trust AppView
-```
-
-The PDS container runs alongside the private stack but serves only trust data (`com.dina.trust.*` Lexicons). It handles relay crawl requests — infrequent, lightweight, and cacheable.
+The Home Node never receives inbound trust traffic. The community PDS absorbs all read load. The Home Node only makes outbound pushes when it has new records to publish — a few requests per day for a typical user.
 
 #### Why Your Machine Isn't Overwhelmed (AT Protocol's Three Layers)
 
@@ -4422,33 +4406,19 @@ review                  │                │
 
 **Merkle Search Trees make crawling cheap.** The relay doesn't download your entire repo on every crawl. AT Protocol repos use Merkle Search Trees (MSTs) — a self-balancing tree where the structure is determined by record key hashes. The relay stores the last root hash it saw. On the next crawl, it walks only the diff — new records since the last sync. For a typical user publishing a few attestations per week, delta sync transfers a few kilobytes.
 
-#### The Dina Foundation PDS (`pds.dina.host`)
+#### The Community PDS (`pds.dinakernel.com`)
 
-> Planned for Phase 1. Free tier for all Dina users.
+> Active in Phase 1. Handles both trust publishing and DID hosting for all Home Nodes.
 
-The Dina Foundation will operate an AT Protocol PDS at `pds.dina.host` as the default Type A host. Users get a handle like `alice.dina.host` and a PDS that's always online.
+The Dina project operates community PDS instances at `pds.dinakernel.com` (production) and `test-pds.dinakernel.com` (development). Users get a handle and a PDS that's always online.
 
-- **What it stores:** Only `com.dina.trust.*` records (attestations, outcomes, bot scores). No private data ever touches it.
+- **What it stores:** Only `com.dina.trust.*` records (attestations, outcomes, bot scores) and the DID identity. No private data ever touches it.
 - **What it can do:** Serve your signed repo to relays. That's it.
 - **What it cannot do:** Forge records (no signing keys), read private vault data (different protocol entirely), prevent you from leaving (AT Protocol account portability).
 - **If it goes down:** Your records are already replicated to relays. You migrate to another PDS. Zero data loss.
-- **If it turns evil:** You rotate your PDS in your `did:plc` document. All existing records remain valid (signed by your key, not the PDS's key).
+- **If it turns evil:** You rotate your PDS in your `did:plc` document. All existing records remain valid (signed by your key, not the PDS's key). Core holds its own K256 rotation key, so PLC updates can be signed directly without the PDS's `signPlcOperation` API.
 
-#### Choosing Your PDS Topology
-
-```
-Start here
-    │
-    ├── Home hardware behind CGNAT (Pi, NAS, no static IP)?
-    │       └── Type A: External PDS (pds.dina.host)
-    │           Core pushes signed records to external PDS via outbound HTTPS
-    │
-    └── VPS, Mac Mini with tunnel, or dedicated server?
-            └── Type B: Bundled PDS (default)
-                docker compose up -d  (PDS container always included)
-```
-
-Both topologies produce identical results on the network. A relay crawling `pds.dina.host/alice` and a relay crawling `your-vps:2583` see the same signed Merkle repo format. The choice is purely about infrastructure preference and availability guarantees. **Phase 1 default is Type B** — PDS is always in docker-compose.
+All Home Nodes use the community PDS — there is no sidecar PDS container. Core creates the account on first boot and pushes trust records via outbound HTTPS. This simplifies the Home Node deployment (2 containers instead of 4) and eliminates the need for users to maintain PDS infrastructure.
 
 ### Trust AppView (Aggregation & Query Layer)
 
@@ -5424,30 +5394,22 @@ For messaging and vault, Dina uses its own stack: libsodium encryption for Dina-
 ### The Home Node architecture
 
 ```
-Home Node (default — 4 containers, PDS always bundled):
+Home Node (default — 2 containers):
 ├── dina-core (Go)      ← Private layer: encrypted vault, keys, NaCl messaging
 │                          Port 443 (external), Port 8100 (internal)
-├── dina-brain (Python)  ← Private layer: reasoning, agent orchestration
-│                          Port 8200 (internal brain API)
-├── dina-admin (Python)  ← Private layer: browser/admin backend
-│                          Port 8300 (internal admin API/UI)
-└── dina-pds             ← Public layer: AT Protocol PDS for Trust Network only
-                            Port 2583 (external, relay crawling)
+│                          Creates PDS account on first boot (community PDS)
+│                          Signs PLC updates directly with K256 key
+└── dina-brain (Python)  ← Private layer: reasoning, agent orchestration, admin UI
+                           Port 8200 (internal brain API + admin sub-app)
 
-Home Node (with local LLM — 5 containers):
+Home Node (with local LLM — 3 containers):
 ├── dina-core (Go)      ← same
 ├── dina-brain (Python)  ← same, but routes to llama:8080 instead of cloud APIs
-├── dina-admin (Python)  ← same
-├── llama (llama.cpp)    ← Private layer: local LLM inference
-│                          Port 8080 (internal), profiles: ["local-llm"]
-└── dina-pds             ← same
-
-Type A variation (home hardware behind CGNAT):
-├── dina-core, dina-brain ← same private layer
-└── (no PDS container — trust records pushed to external PDS via outbound HTTPS)
+└── llama (llama.cpp)    ← Private layer: local LLM inference
+                           Port 8080 (internal), profiles: ["local-llm"]
 ```
 
-The PDS container runs alongside the private stack, hosting only trust data (`com.dina.trust.*` Lexicons). For Type A users behind CGNAT, the Home Node signs records locally and pushes them to an external PDS (e.g., `pds.dina.host`). In all cases, private data (messages, personal vault, persona compartments) never touches the AT Protocol stack. See Layer 3 "PDS Hosting: Split Sovereignty" for the full design.
+Trust records are published to the community PDS (`pds.dinakernel.com`) via outbound HTTPS. Core creates the PDS account on first boot, passing its K256 rotation key as `recoveryKey` so it appears in the PLC genesis rotation keys. Private data (messages, personal vault, persona compartments) never touches the AT Protocol stack. See Layer 3 "PDS Hosting: Split Sovereignty" for the full design.
 
 ### Precedent
 
@@ -5464,7 +5426,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, per-persona encrypted `.sqlite` files (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own HKDF-derived DEK. No separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. FTS5 tokenizer: `unicode61 remove_diacritics 1` (multilingual — Hindi, Tamil, Kannada, etc.). Porter stemmer forbidden (English-only). Phase 3: ICU tokenizer for CJK. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
 | Vector search | **Encrypted Cold Storage with Volatile RAM Hydration.** 768-dim embeddings stored as BLOBs in SQLCipher (encrypted at rest). On persona unlock, hydrated into pure-Go HNSW index in RAM ([`github.com/coder/hnsw`](https://github.com/coder/hnsw), CC0 license). Query: <1ms. On lock: index destroyed + GC. Hybrid search: `0.4 × FTS5 + 0.6 × cosine`. | **Security:** mmap-based vector DBs (sqlite-vec, FAISS) store vectors as plaintext files, bypassing SQLCipher encryption. HNSW-in-RAM means vectors exist unencrypted only while persona is unlocked — same threat model as decrypted text in RAM. **DevOps:** pure Go, no C++ cross-compilation. **ACID:** embedding BLOB in same row as text — no orphaned vectors. |
 | PII scrubbing | Two tiers (V1): (1) Regex in Go core (always), (2) Presidio deterministic pattern recognizers in Python brain (always) + allow-list. NER disabled in V1 (false positives). V2: GLiNER local model. | Tier 1+2 catch structured PII with near-zero false positives. V1 gap: names/addresses in free text. V2 adds contextual NER. |
-| Client ↔ Node protocol | Authenticated WebSocket (TLS + Ed25519 signatures for paired devices) plus browser session traffic to `dina-admin` | Encrypted channel. All paired client devices use Ed25519 request signing. Browser-admin traffic terminates at `dina-admin`, which authenticates to core with Ed25519. |
+| Client ↔ Node protocol | Authenticated WebSocket (TLS + Ed25519 signatures for paired devices) plus browser session traffic to brain's admin sub-app | Encrypted channel. All paired client devices use Ed25519 request signing. Browser-admin traffic terminates at brain's admin sub-app, which authenticates to core with Ed25519. |
 | Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
 | **Home Node (dina-brain)** | | |
 | Brain runtime | Python + Google ADK (v1.25+, Apache 2.0) | Model-agnostic agent framework, multi-agent orchestration |
@@ -5479,8 +5441,8 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Embeddings (Online) | `gemini-embedding-001` ($0.01/1M tokens) | 768/3072 dims, 100+ languages |
 | Embeddings (Local) | EmbeddingGemma 308M (GGUF) via llama:8080 | ~300MB RAM, 100+ languages, Matryoshka dims. Available with `--profile local-llm`. |
 | **Container orchestration** | | |
-| Default (cloud LLM) | docker-compose target shape: core, brain, admin, pds. | 2GB+ RAM minimum. Cloud LLM for reasoning, regex + Presidio patterns PII scrubbing (V1). |
-| With local LLM | docker-compose target shape: core, brain, admin, pds, llama. `--profile local-llm`. | 8GB RAM minimum. Mac Mini M4 (16GB) recommended. Same PII scrubbing as default (V1), full offline LLM. |
+| Default (cloud LLM) | docker-compose target shape: core, brain. Trust published to community PDS via outbound HTTPS. | 1.5GB+ RAM minimum. Cloud LLM for reasoning, regex + Presidio patterns PII scrubbing (V1). |
+| With local LLM | docker-compose target shape: core, brain, llama. `--profile local-llm`. | 8GB RAM minimum. Mac Mini M4 (16GB) recommended. Same PII scrubbing as default (V1), full offline LLM. |
 | Managed hosting | docker-compose or Fly.io | Same containers, orchestrated by hosting operator |
 | **Identity & Crypto** | | |
 | Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
@@ -5503,7 +5465,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
-| Trust Network (PDS) | AT Protocol PDS (bundled by default — Split Sovereignty). Custom Lexicons (`com.dina.trust.*`). Signed tombstones for deletion. | PDS always in docker-compose (port 2583). Type A variation: home users behind CGNAT push to external PDS (`pds.dina.host`). See Layer 3 "PDS Hosting: Split Sovereignty". |
+| Trust Network (PDS) | Community PDS (`pds.dinakernel.com`) — Split Sovereignty. Custom Lexicons (`com.dina.trust.*`). Signed tombstones for deletion. | Core creates PDS account on first boot (K256 recovery key in PLC genesis). Trust records pushed via outbound HTTPS. No sidecar PDS container. See Layer 3 "PDS Hosting: Split Sovereignty". |
 | Trust Network (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Trust AppView". |
 | Trust Network (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
@@ -5535,20 +5497,18 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 
 Status: `Current Phase 1 Target`
 
-The canonical Home Node target runs four containers by default, orchestrated by docker-compose: `dina-core` (Go/net/http — vault, keys, NaCl messaging, ingress), `dina-brain` (Python/Google ADK — reasoning/orchestration), `dina-admin` (Python/FastAPI — browser/admin backend), and `dina-pds` (AT Protocol PDS — public Trust Network). An optional fifth container (`llama` — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
+The canonical Home Node target runs two containers by default, orchestrated by docker-compose: `dina-core` (Go/net/http — vault, keys, NaCl messaging, ingress) and `dina-brain` (Python/Google ADK — reasoning/orchestration + admin UI). An optional third container (`llama` — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes. Trust records are published to the community PDS (`pds.dinakernel.com`) via outbound HTTPS.
 
 **The docker-compose stack:**
-- **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). May reverse-proxy `/admin` to `dina-admin`, but does not own browser session state.
-- **dina-brain**: Python + Google ADK agent loop — **private layer**. Port: 8200 (internal reasoning/orchestration API).
-- **dina-admin**: Python + FastAPI browser backend — **private layer**. Port: 8300 (internal). Owns `/admin/*`, session cookies, CSRF, and admin pages/API.
-- **dina-pds**: AT Protocol PDS for Trust Network — **public layer** (trust data only). Port: 2583 (external).
+- **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). Creates PDS account on first boot (community PDS). May reverse-proxy `/admin` to brain's admin sub-app, but does not own browser session state.
+- **dina-brain**: Python + Google ADK agent loop + admin sub-app (`dina_admin`) — **private layer**. Port: 8200 (internal reasoning/orchestration API + admin UI at `/admin/*`).
 - **llama** (optional): llama.cpp + Gemma 3n E4B GGUF — **private layer**. Port: 8080 (internal). Enabled via `--profile local-llm`.
-- Output: NaCl messaging endpoint + WebSocket API for clients + Admin UI + AT Protocol firehose
-- Deployment: `docker compose up -d` (4 containers) or `docker compose --profile local-llm up -d` (5 containers)
+- Output: NaCl messaging endpoint + WebSocket API for clients + Admin UI + trust records to community PDS
+- Deployment: `docker compose up -d` (2 containers) or `docker compose --profile local-llm up -d` (3 containers)
 
 **The docker-compose.yml (Phase 1 — strict):**
 
-The exact file in the repository may lag while the admin extraction is in progress. The canonical target is: dedicated `dina-admin`, no browser `CLIENT_TOKEN`, and Ed25519 for every direct caller into core.
+The admin UI is a sub-app (`dina_admin`) inside `dina-brain`. The canonical target is: no browser `CLIENT_TOKEN`, and Ed25519 for every direct caller into core.
 
 ```yaml
 # docker-compose.yml
@@ -5569,16 +5529,15 @@ services:
     ports:
       - "8100:8100"
 
-    # NETWORK: The Hub (connects to everything)
+    # NETWORK: The Hub
     networks:
       - dina-public
       - dina-brain-net
-      - dina-pds-net
 
     # CONFIG: Non-sensitive only
     environment:
       - DOMAIN=${DOMAIN:-localhost}
-      - PDS_ENDPOINT=http://pds:2583
+      - PDS_URL=${PDS_URL:-https://pds.dinakernel.com}
       - DINA_VAULT_MODE=${DINA_VAULT_MODE:-security}  # "security" or "convenience"
       - TZ=UTC
 
@@ -5598,10 +5557,6 @@ services:
     volumes:
       - ./data:/var/lib/dina    # identity.sqlite, vault/, inbox/, keyfile, config.json
 
-    depends_on:
-      pds:
-        condition: service_started
-
   # -------------------------------------------------------------------
   # 2. THE WORKER (Python)
   # Role: LLM logic. Needs outbound internet (Gemini, OpenClaw).
@@ -5611,7 +5566,7 @@ services:
     container_name: dina-brain
     restart: unless-stopped
 
-    # NETWORK: Isolated from PDS, but has outbound internet (standard bridge)
+    # NETWORK: Has outbound internet (standard bridge)
     networks:
       - dina-brain-net
 
@@ -5640,39 +5595,11 @@ services:
       core:
         condition: service_healthy
 
-  # -------------------------------------------------------------------
-  # 3. THE TRUST NETWORK (AT Protocol PDS)
-  # Role: Public federation — relay crawling, trust data
-  # -------------------------------------------------------------------
-  pds:
-    image: ghcr.io/bluesky-social/pds@sha256:...  # PINNED DIGEST — never :latest
-    container_name: dina-pds
-    restart: unless-stopped
-
-    # NETWORK: Public (relay crawling) + internal (core pushes records)
-    networks:
-      - dina-public
-      - dina-pds-net
-
-    ports:
-      - "2583:2583"
-
-    volumes:
-      - ./data/pds:/pds
-
-    environment:
-      - PDS_HOSTNAME=${DOMAIN:-localhost}
-
-    # HEALTH: Detects PDS crash or federation failure
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2583/xrpc/_health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+  # Trust records are published to the community PDS (pds.dinakernel.com)
+  # via outbound HTTPS from core. No local PDS container needed.
 
   # -------------------------------------------------------------------
-  # 4. LOCAL LLM (Optional — enabled via --profile local-llm)
+  # 3. LOCAL LLM (Optional — enabled via --profile local-llm)
   # -------------------------------------------------------------------
   llama:
     image: ghcr.io/dinakernel/llama@sha256:...  # PINNED DIGEST
@@ -5703,29 +5630,27 @@ secrets:
 
 # canonical target:
 #   service keys are provisioned separately and mounted per service
-#   (core, brain, admin, connectors)
+#   (core, brain, connectors)
 
 # -------------------------------------------------------------------
-# NETWORKS: Bowtie topology — Core is the hub
+# NETWORKS: Core is the hub
 # -------------------------------------------------------------------
 networks:
-  dina-public:       # Internet-facing (core ingress, PDS federation)
+  dina-public:       # Internet-facing (core ingress)
   dina-brain-net:    # Core ↔ Brain (standard bridge — brain needs outbound internet
                      #   for Gemini/Claude API and host.docker.internal for OpenClaw)
-  dina-pds-net:      # Core ↔ PDS (standard bridge — PDS needs outbound to reach plc.directory)
 ```
 
-**Network topology — "The Bowtie":**
+**Network topology:**
 
-Core is the knot. Brain and PDS are the loops. They never touch each other.
+Core is the hub. Brain connects to core and outbound internet.
 
 ```
                     ┌─────────────────┐
  Internet ◄────────┤  dina-public     │
                     │  (standard)      │
                     │                  │
-         ┌─────────┤  core ◄──────────┤  pds
-         │         │                  │
+         ┌─────────┤  core            │
          │         └──────────────────┘
          │
          │         ┌─────────────────┐
@@ -5738,9 +5663,7 @@ Core is the knot. Brain and PDS are the loops. They never touch each other.
                    │  llama ◄──┘      │
                    └──────────────────┘
 
-  Isolation guarantee: brain ✗ → pds (no shared network)
-                       pds   ✗ → brain (no shared network)
-                       core  ✓ → both (the hub)
+  Outbound from core: → community PDS (pds.dinakernel.com) for trust publishing
 ```
 
 **Port mapping:**
@@ -5748,16 +5671,13 @@ Core is the knot. Brain and PDS are the loops. They never touch each other.
 ```
 Phase 1 (local dev — no TLS):
   Host:8100  → core:8100   (developer access: API, proxy ingress, messaging)
-  Host:2583  → pds:2583    (AT Protocol relay crawling)
 
 Production (behind ingress tunnel):
   Tunnel:443 → core:443    (clients, Dina-to-Dina NaCl messaging, /admin reverse proxy)
-  Host:2583  → pds:2583    (AT Protocol relay crawling)
 
 Internal (Docker network only):
-  8100 → core    (brain/admin/connectors call this)
-  8200 → brain   (internal reasoning/orchestration API)
-  8300 → admin   (internal browser/admin backend)
+  8100 → core    (brain/connectors call this)
+  8200 → brain   (internal reasoning/orchestration API + admin sub-app)
   8080 → llama   (brain + core call this, when present)
 ```
 
@@ -5765,13 +5685,12 @@ Internal (Docker network only):
 
 ```
   https://my-dina.example.com/                       → signup/unlock (core)
-  https://my-dina.example.com/admin                  → admin UI (`dina-admin`, optionally reverse-proxied by core)
+  https://my-dina.example.com/admin                  → admin UI (brain admin sub-app, reverse-proxied by core)
   https://my-dina.example.com/msg                    → NaCl messaging endpoint (core)
-  https://my-dina.example.com/.well-known/atproto-did → DID document for PDS federation (core)
-  https://my-dina.example.com:2583                   → PDS (AT Protocol relay crawling)
+  https://my-dina.example.com/.well-known/atproto-did → DID document for AT Protocol discovery (core)
 ```
 
-**AT Protocol discovery (critical):** Core must serve `GET /.well-known/atproto-did` on port 443 (or 8100 in dev mode). This returns the user's `did:plc:...` string, which AT Protocol relays use to find the PDS on port 2583. Without this one-line handler in core's router, PDS federation silently fails:
+**AT Protocol discovery (critical):** Core must serve `GET /.well-known/atproto-did` on port 443 (or 8100 in dev mode). This returns the user's `did:plc:...` string, which AT Protocol relays use to find the account on the community PDS. Without this one-line handler in core's router, PDS federation silently fails:
 
 ```go
 // In core's HTTP router — required for AT Protocol discovery
@@ -5793,9 +5712,10 @@ Run once before `docker compose up`. Generates secrets, sets permissions, preven
 set -e
 
 # 1. Create directory structure
-mkdir -p secrets data/vault data/inbox data/pds data/models
+mkdir -p secrets data/vault data/inbox data/models
 
-# 2. Provision service Ed25519 keys for core / brain / admin
+# 2. Provision service Ed25519 keys for core / brain
+#    Also prepares PDS credentials (account creation happens on first boot in core)
 echo "Provisioning service keys..."
 # install.sh derives and writes per-service keys; exact helper omitted here
 
@@ -5846,9 +5766,6 @@ brain:
 
 llama:
   ./data/models/                — GGUF model files (auto-downloaded on first start)
-
-pds:
-  ./data/pds/                   — AT Protocol repo data
 ```
 
 **Host bridge for OpenClaw (MCP):**
@@ -5874,7 +5791,7 @@ brain:
 - Credentials are **never** set as `environment:` variables in docker-compose — they would appear in `docker inspect`, `/proc/*/environ`, process listings, and crash dumps.
 - All secrets use Docker Secrets (file-based), mounted as in-memory tmpfs files at `/run/secrets/` — they never touch disk inside the container.
 - The `secrets/` directory is in `.gitignore` and `.dockerignore`.
-- Service keys are provisioned by `install.sh` (per-service Ed25519 keypairs). Core, brain, admin, and any internal connectors share only public keys; private keys remain isolated per container. All paired client devices use Ed25519 keypairs (no shared secret).
+- Service keys are provisioned by `install.sh` (per-service Ed25519 keypairs). Core, brain, and any internal connectors share only public keys; private keys remain isolated per container. All paired client devices use Ed25519 keypairs (no shared secret).
 - `GOOGLE_API_KEY` is the one exception — it lives in `.env` (not secrets) because it's a cloud API key, not a local credential. If compromised, you revoke it in the Google Console. It doesn't unlock your vault or compromise your identity.
 - For managed hosting (Fly.io), use `fly secrets set VAULT_PASSPHRASE=...` — Fly injects as an env var visible only to the process, not in logs or inspect output.
 
@@ -5900,15 +5817,15 @@ Four things total: domain, API key, OpenClaw URL, vault mode, plus install-time 
 
 | | **Cloud LLM** (default, Phase 1) | **Local LLM** (`--profile local-llm`) | **Hybrid** (recommended long-term) |
 |--|---|---|---|
-| **Containers** | 4 (core, brain, admin, pds) | 5 (core, brain, admin, pds, llama) | 5 (core, brain, admin, pds, llama) |
+| **Containers** | 2 (core, brain) | 3 (core, brain, llama) | 3 (core, brain, llama) |
 | **Text LLM** | Gemini Flash Lite / Claude (cloud API) | Gemma 3n E4B via llama:8080 (local) | llama for simple tasks, cloud for complex reasoning |
 | **Voice STT** | Deepgram Nova-3 (WebSocket streaming, ~150-300ms). Fallback: Gemini Flash Lite Live API. | Deepgram (or future: whisper.cpp when added) | Deepgram for streaming, local for batch |
 | **PII scrubbing** | Tier 1 (regex in Go) + Tier 2 (Presidio patterns in Python, V1) | Same as Cloud (V1). Sensitive data stays local regardless. | Same as Cloud (V1). Local processing for sensitive data. |
 | **Embeddings** | `gemini-embedding-001` (cloud, $0.01/1M tokens) | EmbeddingGemma 308M via llama:8080 (local) | Local via llama (never leaves machine) |
-| **Minimum RAM** | **2GB** (Go core ~200MB + Python brain ~500MB + PDS ~100MB + OS ~300MB + headroom) | **8GB** (+ Gemma 3n E4B ~3GB). Mac Mini M4 (16GB+) recommended. | **8GB** (same as local) |
+| **Minimum RAM** | **1.5GB** (Go core ~200MB + Python brain ~500MB + OS ~300MB + headroom) | **8GB** (+ Gemma 3n E4B ~3GB). Mac Mini M4 (16GB+) recommended. | **8GB** (same as local) |
 | **CPU** | 2 cores | 4+ cores. Apple Silicon or x86 with AVX2. | 4+ cores |
 | **Storage** | 10GB (grows with vault) | 15GB (+ model files ~3GB: Gemma E4B) | 15GB |
-| **Internet** | Required (LLM + STT + messaging) | Required for messaging + PDS. LLM works offline. | Required for cloud LLM escalation + messaging |
+| **Internet** | Required (LLM + STT + messaging + trust publishing to community PDS) | Required for messaging + trust publishing. LLM works offline. | Required for cloud LLM escalation + messaging + trust publishing |
 | **Monthly cost** | ~$5-15 (Flash Lite: ~$1-5. Deepgram: ~$10 at 45 min/day.) | Hardware + electricity only (LLM). Still need Deepgram for voice. | ~$5 (cloud for complex reasoning only) |
 | **Best for** | Phase 1 development, cheap VPS, getting started fast | Privacy maximalists, unreliable internet | Daily drivers — local for PII/embeddings, cloud for hard reasoning |
 
@@ -5977,8 +5894,8 @@ All paired client devices authenticate to the Home Node using **Ed25519 signatur
 Browser-admin traffic is separate from paired-device traffic:
 
 - paired devices authenticate directly to core with Ed25519 device keys
-- browsers authenticate to `dina-admin` with a session cookie
-- `dina-admin` authenticates to core with its own Ed25519 service key
+- browsers authenticate to brain's admin sub-app with a session cookie
+- brain authenticates to core with its Ed25519 service key
 
 **Why this split exists:** Device identity and browser admin are different trust problems. Devices are long-lived principals and should have revocable asymmetric keys. Browsers need a session-oriented backend. That backend should still use the same Ed25519 service-auth pattern as every other non-browser caller into core.
 
@@ -5988,7 +5905,7 @@ THE PAIRING FLOW:
   ┌─────────────────────────────────────────────────────────┐
   │  6-digit code = short-lived physical proximity proof    │
   │  Ed25519 device key = persistent paired-device auth     │
-  │  browser session = human-facing auth at dina-admin      │
+  │  browser session = human-facing auth at brain admin      │
   │  Ed25519 service key = admin backend auth to core       │
   │  These are NOT the same thing.                          │
   └─────────────────────────────────────────────────────────┘
@@ -6103,9 +6020,9 @@ For Ed25519 (all paired devices):
   Re-pair:    device runs pairing flow again with new keypair
 
 For browser-admin sessions:
-  Generate:   user logs into dina-admin with passphrase (or future paired-device approval)
-  Store:      session cookie in browser, session state in dina-admin
-  Validate:   dina-admin checks session, then signs core requests with its admin service key
+  Generate:   user logs into brain admin sub-app with passphrase (or future paired-device approval)
+  Store:      session cookie in browser, session state in brain admin sub-app
+  Validate:   brain admin sub-app checks session, then signs core requests with brain's service key
   Revoke:     logout / session expiry / admin backend restart
 ```
 
@@ -6334,7 +6251,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Kafka / RabbitMQ / NATS** | Message brokers for millions of events/sec across clusters. Dina is one person, ~1000 events/day. SQLite IS the event processor. |
 | **Redis** | In-memory cache for server workloads. Dina's data is already in SQLite on the Home Node. No separate cache needed. |
 | **PostgreSQL / MySQL** | Server databases designed for multi-tenant workloads. SQLite is the right database for a single-user personal agent. |
-| **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 4-5 containers on one machine. `docker compose up` is the entire deployment. |
+| **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 2-3 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
 | **Elasticsearch** | Distributed search cluster. SQLite FTS5 + in-memory HNSW handles search for a single user's data. |
 | **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Trust Network. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
@@ -6360,7 +6277,7 @@ Guiding principle: **one user, a handful of containers, one machine, per-persona
 
 **7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. **Phase 2 answer: Shamir's Secret Sharing (3-of-5)** — split the seed into 5 shares distributed to trusted Dina contacts and physical backups, any 3 reconstruct it. Leverages existing Trust Rings and Dina-to-Dina NaCl. See Layer 0: Identity for full design.
 
-**8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (4-5 containers, two external ports: 443 + 2583), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read, but they can still DoS your Dina.
+**8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (2-3 containers, one external port: 443), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read, but they can still DoS your Dina.
 
 **9. Data corruption in sovereign model.** No SRE team to restore the database. A bug that corrupts a persona vault file means loss of that persona's memory. The 5-level corruption immunity stack (WAL → pre-flight snapshots → ZFS → off-site backup → Tier 5) addresses this, but must be implemented from Day 1.
 
@@ -6374,9 +6291,8 @@ The architecture described above is now the active implementation in this reposi
 
 | Component | Path | Role |
 |-----------|------|------|
-| dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport |
+| dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport. Creates PDS account on community PDS at first boot. |
 | dina-brain | `brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
-| dina-pds | `docker-compose*.yml`, `data/pds/` | AT Protocol PDS for trust network records |
 | appview | `appview/` | Trust AppView implementation |
 | cli | `cli/` | Client interface for interacting with running services |
 

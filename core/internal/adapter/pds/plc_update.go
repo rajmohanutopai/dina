@@ -1,11 +1,14 @@
 // plc_update.go — Update a did:plc document on the PLC directory.
 //
-// After PDS creates the DID (with only #atproto_pds), Core calls
-// UpdatePLCServices to add the #dina_messaging service so other nodes
-// can discover the MsgBox endpoint for D2D delivery.
+// Core adds dina_signing (Ed25519 key) and dina_messaging (MsgBox endpoint)
+// to the PLC document so other nodes can discover this node for D2D messaging.
 //
-// PLC operations are signed DAG-CBOR blobs submitted to the PLC directory.
-// The rotation key (secp256k1/k256) authorizes updates.
+// Two paths:
+//   1. PDS API: com.atproto.identity.signPlcOperation (requires email confirmation)
+//   2. Direct PLC: sign with Core's K256 rotation key and submit to PLC directory
+//
+// Path 2 works because install.sh/Core passes the K256 key as recoveryKey
+// during createAccount, so the PLC genesis includes Core's key.
 package pds
 
 import (
@@ -61,8 +64,11 @@ func init() {
 }
 
 // UpdatePLCDocument fetches the current PLC document, adds the given
-// services and verification methods, signs with the rotation key, and
-// submits the update. Pass nil for addVerificationMethods to skip.
+// services and verification methods, signs with Core's K256 rotation key,
+// and submits the update directly to the PLC directory.
+//
+// This works because Core's K256 key is included as a rotation key in the
+// PLC genesis operation (passed as recoveryKey during createAccount).
 func UpdatePLCDocument(ctx context.Context, plcURL, did string, rotationKey *atcrypto.PrivateKeyK256, addServices map[string]PLCService, addVerificationMethods map[string]string) error {
 	if plcURL == "" {
 		plcURL = defaultPLCURL

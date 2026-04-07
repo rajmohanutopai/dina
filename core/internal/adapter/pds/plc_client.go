@@ -55,9 +55,10 @@ func (c *PLCClient) PDSURL() string {
 
 // CreateAccountAndDID creates a PDS account which registers the did:plc
 // on the PLC directory. Returns the DID and auth tokens.
-// If the account already exists, falls back to login (createSession).
-// This allows the community PDS to be used directly — install.sh creates
-// the account, and Core logs in on first boot to discover the DID.
+// On first boot, Core creates the account with its K256 recovery key so
+// the PLC document includes Core's rotation key (needed for D2D updates).
+// If the account already exists (e.g., handle collision), falls back to
+// login to discover the existing DID.
 func (c *PLCClient) CreateAccountAndDID(ctx context.Context, opts CreateDIDOptions) (*CreateDIDResult, error) {
 	if opts.Handle == "" {
 		return nil, fmt.Errorf("plc client: handle is required")

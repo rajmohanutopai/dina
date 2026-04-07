@@ -843,10 +843,12 @@ fi
 verbose_ok "Infrastructure: MsgBox + AppView + PLC (${INFRA_PDS_HOST})"
 
 # ---------------------------------------------------------------------------
-# Step 8b: Community PDS account (for Trust Network publishing)
+# Step 8b: Community PDS credentials (for Trust Network + DID identity)
 # ---------------------------------------------------------------------------
-# Creates an account on the community PDS so /review, /vouch, /flag work.
-# The PDS URL defaults to pds.dinakernel.com (set in docker-compose.yml).
+# Prepares PDS credentials. Core creates the account on first boot so that
+# Core's K256 rotation key is included in the PLC genesis operation.
+# This is critical: without Core's rotation key, Core cannot update the
+# PLC document (add dina_signing key, MsgBox endpoint) for D2D messaging.
 
 _COMMUNITY_PDS="${DINA_COMMUNITY_PDS_URL:-${INFRA_PDS_URL}}"
 _PDS_HANDLE_FILE="${SECRETS_DIR}/pds_community_handle"
@@ -866,59 +868,52 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
     # Add a short random suffix for uniqueness
     _PDS_SUFFIX=$(openssl rand -hex 2)
     _PDS_HANDLE_INPUT="${_PDS_BASE}${_PDS_SUFFIX}"
+    _PDS_FULL_HANDLE="${_PDS_HANDLE_INPUT}.${INFRA_PDS_HOST}"
+    _PDS_EMAIL="${_PDS_HANDLE_INPUT}@dina.local"
+    _PDS_PW=$(openssl rand -hex 12)
 
-    _PDS_REGISTERED=false
-    for _PDS_ATTEMPT in 1 2 3; do
-        _PDS_FULL_HANDLE="${_PDS_HANDLE_INPUT}.${INFRA_PDS_HOST}"
-        _PDS_EMAIL="${_PDS_HANDLE_INPUT}@dina.local"
-        _PDS_PW=$(openssl rand -hex 12)
+    # Save credentials — Core will use them to create the account on first boot.
+    echo "${_PDS_FULL_HANDLE}" > "${_PDS_HANDLE_FILE}"
+    echo "${_PDS_PW}" > "${SECRETS_DIR}/pds_community_password"
+    chmod 600 "${SECRETS_DIR}/pds_community_password"
 
-        _PDS_RESULT=$(curl -sf -X POST "${_COMMUNITY_PDS}/xrpc/com.atproto.server.createAccount" \
-            -H "Content-Type: application/json" \
-            -d "{\"handle\":\"${_PDS_FULL_HANDLE}\",\"email\":\"${_PDS_EMAIL}\",\"password\":\"${_PDS_PW}\"}" 2>&1 || true)
+    echo "" >> "${ENV_FILE}"
+    echo "# Community PDS (Trust Network)" >> "${ENV_FILE}"
+    echo "DINA_COMMUNITY_PDS_URL=${_COMMUNITY_PDS}" >> "${ENV_FILE}"
+    echo "DINA_COMMUNITY_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
+    echo "DINA_COMMUNITY_PDS_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
+    echo "DINA_PDS_EMAIL=${_PDS_EMAIL}" >> "${ENV_FILE}"
 
-        _PDS_DID=$(echo "${_PDS_RESULT}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('did',''))" 2>/dev/null || true)
+    echo -e "  ${GREEN}✓${RESET} Trust Network credentials prepared: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
+    echo -e "      Account will be created when Core starts (includes DID rotation key)."
 
-        if [ -n "${_PDS_DID}" ] && [ "${_PDS_DID}" != "" ]; then
-            echo "${_PDS_FULL_HANDLE}" > "${_PDS_HANDLE_FILE}"
-            echo "${_PDS_PW}" > "${SECRETS_DIR}/pds_community_password"
-            chmod 600 "${SECRETS_DIR}/pds_community_password"
+    # Restart Core so it picks up the new PDS credentials and creates the account.
+    $COMPOSE up -d --force-recreate core >/dev/null 2>&1 || true
 
-            echo "" >> "${ENV_FILE}"
-            echo "# Community PDS (Trust Network)" >> "${ENV_FILE}"
-            echo "DINA_COMMUNITY_PDS_URL=${_COMMUNITY_PDS}" >> "${ENV_FILE}"
-            echo "DINA_COMMUNITY_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
-            echo "DINA_COMMUNITY_PDS_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
-
-            # Verify the credentials work before declaring success.
-            _PDS_VERIFY=$(curl -sf -X POST "${_COMMUNITY_PDS}/xrpc/com.atproto.server.createSession" \
-                -H "Content-Type: application/json" \
-                -d "{\"identifier\":\"${_PDS_FULL_HANDLE}\",\"password\":\"${_PDS_PW}\"}" 2>&1 || true)
-            _PDS_VERIFY_DID=$(echo "${_PDS_VERIFY}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('did',''))" 2>/dev/null || true)
-            if [ -n "${_PDS_VERIFY_DID}" ]; then
-                echo -e "  ${GREEN}✓${RESET} Trust Network identity created: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
-                _PDS_REGISTERED=true
+    # Wait for Core to create the DID (polls healthz + checks for DID).
+    _DID_CREATED=false
+    for _WAIT in $(seq 1 20); do
+        sleep 3
+        _HEALTH=$(curl -sf "http://localhost:${CORE_PORT}/healthz" 2>/dev/null || true)
+        if [ -n "${_HEALTH}" ]; then
+            # Check if Core logs show DID created
+            _DID_LOG=$($COMPOSE logs core 2>/dev/null | grep "DID created on first boot\|DID restored from metadata" | tail -1)
+            if [ -n "${_DID_LOG}" ]; then
+                _DID_CREATED=true
                 break
-            else
-                echo -e "  ${YELLOW}⚠${RESET} Account created but auth verification failed. Retrying..."
-                _PDS_SUFFIX=$(openssl rand -hex 2)
-                _PDS_HANDLE_INPUT="${_PDS_BASE}${_PDS_SUFFIX}"
-                continue
             fi
-        else
-            # Name collision — regenerate suffix and retry
-            _PDS_SUFFIX=$(openssl rand -hex 2)
-            _PDS_HANDLE_INPUT="${_PDS_BASE}${_PDS_SUFFIX}"
         fi
     done
 
-    if [ "${_PDS_REGISTERED}" != "true" ]; then
-        echo -e "  ${YELLOW}⚠${RESET} Could not reach community PDS. Trust Network will be configured on next restart."
+    if [ "${_DID_CREATED}" = true ]; then
+        echo -e "  ${GREEN}✓${RESET} DID registered on PLC directory"
     else
-        # Restart Brain so it picks up the new PDS credentials from .env.
-        # Containers were started in Step 6 before PDS account was created.
-        $COMPOSE up -d --force-recreate brain >/dev/null 2>&1 || true
+        echo -e "  ${YELLOW}⚠${RESET} DID creation pending — will complete on next Core restart."
     fi
+
+    # Restart Brain so it picks up the new PDS credentials from .env.
+    $COMPOSE up -d --force-recreate brain >/dev/null 2>&1 || true
+
     echo ""
 else
     verbose_ok "Community PDS account: $(cat "${_PDS_HANDLE_FILE}")"
