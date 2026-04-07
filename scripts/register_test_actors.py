@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""One-time registration of test actors on the community PDS + real PLC.
+"""One-time registration of test actors on the TEST community PDS + real PLC.
 
-Creates accounts on pds.dinakernel.com, which registers DIDs on
+Creates accounts on test-pds.dinakernel.com, which registers DIDs on
 plc.directory. Stores results in tests/fixtures/test_actors.json.
 
 Run ONCE. The fixture is committed to the repo and never changes.
@@ -10,7 +10,7 @@ Usage:
     python scripts/register_test_actors.py
 
 Environment:
-    PDS_URL     Override PDS (default: https://pds.dinakernel.com)
+    PDS_URL     Override PDS (default: https://test-pds.dinakernel.com)
     PLC_URL     Override PLC (default: https://plc.directory)
 """
 
@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-PDS_URL = os.environ.get("PDS_URL", "https://pds.dinakernel.com")
+PDS_URL = os.environ.get("PDS_URL", "https://test-pds.dinakernel.com")
 PLC_URL = os.environ.get("PLC_URL", "https://plc.directory")
 FIXTURE_PATH = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "test_actors.json"
 
@@ -31,7 +31,7 @@ ACTORS = [
     {
         "name": "alonso",
         "seed": "01" * 32,
-        "handle": "alonso-test.pds.dinakernel.com",
+        "handle": "alonso-test.test-pds.dinakernel.com",
         "email": "alonso-test@dina.local",
         "password": "dina-test-alonso-2026",
         "display_name": "Don Alonso",
@@ -41,7 +41,7 @@ ACTORS = [
     {
         "name": "sancho",
         "seed": "02" * 32,
-        "handle": "sancho-test.pds.dinakernel.com",
+        "handle": "sancho-test.test-pds.dinakernel.com",
         "email": "sancho-test@dina.local",
         "password": "dina-test-sancho-2026",
         "display_name": "Sancho",
@@ -51,7 +51,7 @@ ACTORS = [
     {
         "name": "chairmaker",
         "seed": "03" * 32,
-        "handle": "chairmaker-test.pds.dinakernel.com",
+        "handle": "chairmaker-test.test-pds.dinakernel.com",
         "email": "chairmaker-test@dina.local",
         "password": "dina-test-chairmaker-2026",
         "display_name": "ChairMaker",
@@ -61,7 +61,7 @@ ACTORS = [
     {
         "name": "albert",
         "seed": "04" * 32,
-        "handle": "albert-test.pds.dinakernel.com",
+        "handle": "albert-test.test-pds.dinakernel.com",
         "email": "albert-test@dina.local",
         "password": "dina-test-albert-2026",
         "display_name": "Albert",

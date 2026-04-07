@@ -27,4 +27,10 @@ markers = [
     "mock_heavy: E2E suites that exercise mock logic (>90%), not real Go Core APIs — deselect with -m 'not mock_heavy'",
     "legacy: legacy v0.1-v0.3 tests — run explicitly with -m legacy, excluded from default pipeline",
     "compat: backward compatibility tests — verifies migration paths and legacy format support",
+    "d2d: scenarios that test Dina-to-Dina encrypted messaging",
+    "agent: scenarios that test agent safety / delegated tasks",
+    "trust: scenarios that test Trust Network (publish/query)",
+    "pii: scenarios that test PII scrubbing / privacy",
+    "export: scenarios that test export / recovery / device management",
+    "multinode: scenarios that require two running Dina Home Nodes",
 ]

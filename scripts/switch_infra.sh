@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# switch_infra.sh — Switch all 3 test nodes between local and production infrastructure.
+# switch_infra.sh — Switch all 3 test nodes between test and production infrastructure.
 #
 # Usage:
-#   ./scripts/switch_infra.sh local       # local MsgBox (localhost:7700) + local AppView (localhost:3000)
-#   ./scripts/switch_infra.sh production   # Hetzner MsgBox + AppView (dinakernel.com)
-#   ./scripts/switch_infra.sh status       # show current setting
+#   ./scripts/switch_infra.sh test-remote   # Hetzner test (test-*.dinakernel.com)
+#   ./scripts/switch_infra.sh production    # Hetzner production (*.dinakernel.com)
+#   ./scripts/switch_infra.sh status        # show current setting
 
 set -euo pipefail
 
@@ -14,25 +14,26 @@ DIRS=(
   "/Users/rajmohan/TestEnv/Alonso/dina"
 )
 
-LOCAL_MSGBOX="ws://host.docker.internal:7700"
+TEST_MSGBOX="wss://test-mailbox.dinakernel.com"
+TEST_APPVIEW="https://test-appview.dinakernel.com"
 PROD_MSGBOX="wss://mailbox.dinakernel.com"
 PROD_APPVIEW="https://appview.dinakernel.com"
-LOCAL_APPVIEW="http://host.docker.internal:3000"
 
-case "${1:-status}" in
-  local)
+switch_to() {
+    local msgbox="$1" appview="$2" label="$3"
     for dir in "${DIRS[@]}"; do
-      sed -i '' "s|DINA_MSGBOX_URL=.*|DINA_MSGBOX_URL=$LOCAL_MSGBOX|" "$dir/docker-compose.override.yml"
-      # Update KNOWN_PEERS endpoints to local MsgBox
-      sed -i '' "s|wss://mailbox.dinakernel.com|$LOCAL_MSGBOX|g" "$dir/docker-compose.override.yml"
+      sed -i '' "s|DINA_MSGBOX_URL=.*|DINA_MSGBOX_URL=$msgbox|" "$dir/docker-compose.override.yml"
+      # Update any KNOWN_PEERS MsgBox references
+      sed -i '' "s|wss://test-mailbox.dinakernel.com|$msgbox|g" "$dir/docker-compose.override.yml"
+      sed -i '' "s|wss://mailbox.dinakernel.com|$msgbox|g" "$dir/docker-compose.override.yml"
     done
     for node in core-dna core-6jp core-xpr; do
-      docker exec $node dina-admin msgbox set "$LOCAL_MSGBOX" 2>/dev/null || true
-      docker exec $node dina-admin appview set "$LOCAL_APPVIEW" 2>/dev/null || true
+      docker exec $node dina-admin msgbox set "$msgbox" 2>/dev/null || true
+      docker exec $node dina-admin appview set "$appview" 2>/dev/null || true
     done
-    echo "Switched to LOCAL infrastructure"
-    echo "  MsgBox:  $LOCAL_MSGBOX"
-    echo "  AppView: $LOCAL_APPVIEW"
+    echo "Switched to $label"
+    echo "  MsgBox:  $msgbox"
+    echo "  AppView: $appview"
     echo ""
     echo "Restarting cores..."
     for dir in "${DIRS[@]}"; do
@@ -40,28 +41,15 @@ case "${1:-status}" in
     done
     wait
     echo "Done. All cores restarted."
+}
+
+case "${1:-status}" in
+  test-remote)
+    switch_to "$TEST_MSGBOX" "$TEST_APPVIEW" "TEST-REMOTE infrastructure (test-*.dinakernel.com)"
     ;;
 
   production|prod)
-    for dir in "${DIRS[@]}"; do
-      sed -i '' "s|DINA_MSGBOX_URL=.*|DINA_MSGBOX_URL=$PROD_MSGBOX|" "$dir/docker-compose.override.yml"
-      # Update KNOWN_PEERS endpoints to production MsgBox
-      sed -i '' "s|ws://host.docker.internal:7700|$PROD_MSGBOX|g" "$dir/docker-compose.override.yml"
-    done
-    for node in core-dna core-6jp core-xpr; do
-      docker exec $node dina-admin msgbox set "$PROD_MSGBOX" 2>/dev/null || true
-      docker exec $node dina-admin appview set "$PROD_APPVIEW" 2>/dev/null || true
-    done
-    echo "Switched to PRODUCTION infrastructure (dinakernel.com)"
-    echo "  MsgBox:  $PROD_MSGBOX"
-    echo "  AppView: $PROD_APPVIEW"
-    echo ""
-    echo "Restarting cores..."
-    for dir in "${DIRS[@]}"; do
-      (cd "$dir" && docker compose up -d --force-recreate core 2>/dev/null) &
-    done
-    wait
-    echo "Done. All cores restarted."
+    switch_to "$PROD_MSGBOX" "$PROD_APPVIEW" "PRODUCTION infrastructure (*.dinakernel.com)"
     ;;
 
   status)
@@ -74,6 +62,6 @@ case "${1:-status}" in
     ;;
 
   *)
-    echo "Usage: $0 [local|production|status]"
+    echo "Usage: $0 [test-remote|production|status]"
     ;;
 esac

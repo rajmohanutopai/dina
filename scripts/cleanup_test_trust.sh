@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-PDS_URL="${DINA_PDS_URL:-https://pds.dinakernel.com}"
+PDS_URL="${DINA_PDS_URL:-https://test-pds.dinakernel.com}"
 
 ACTION="${1:-}"
 EMAIL="${2:-}"
@@ -24,7 +24,7 @@ if [ -z "$ACTION" ] || [ -z "$EMAIL" ] || [ -z "$PASSWORD" ]; then
     echo "  $0 list   sancho@dina.test dina-test-pw"
     echo "  $0 delete sancho@dina.test dina-test-pw"
     echo ""
-    echo "Set DINA_PDS_URL to override PDS (default: https://pds.dinakernel.com)"
+    echo "Set DINA_PDS_URL to override PDS (default: https://test-pds.dinakernel.com)"
     exit 1
 fi
 

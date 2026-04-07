@@ -2,8 +2,9 @@
 # install.sh — One-command Dina Home Node setup
 #
 # Usage:
-#   ./install.sh                       # first-time setup (interactive)
-#   ./install.sh --port 9100           # use specific Core port (PDS = port+1)
+#   ./install.sh                       # first-time setup (interactive, production infra)
+#   ./install.sh --test                # use test infrastructure (test-*.dinakernel.com)
+#   ./install.sh --port 9100           # use specific Core port
 #   ./install.sh --instance alice      # named instance (isolated data + containers)
 #   ./install.sh --skip-build          # skip Docker build (use existing images)
 #   ./install.sh --config FILE         # non-interactive (read config from JSON file)
@@ -47,6 +48,7 @@ VERBOSE=false
 QUICK=false
 INSTANCE_NAME=""
 EXPLICIT_PORT=""
+TEST_MODE=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -54,11 +56,26 @@ for arg in "$@"; do
         --config-only) CONFIG_ONLY=true; SKIP_BUILD=true ;;
         --verbose|-v) VERBOSE=true ;;
         --quick) QUICK=true ;;
+        --test) TEST_MODE=true ;;
         --config|--port|--instance)
             # Two-arg flags — handled below
             ;;
     esac
 done
+
+# Test mode: use test infrastructure (test-*.dinakernel.com) instead of production.
+# This is for developer/CI test instances, not for end users.
+if [ "$TEST_MODE" = true ]; then
+    INFRA_PDS_HOST="test-pds.dinakernel.com"
+    INFRA_PDS_URL="https://test-pds.dinakernel.com"
+    INFRA_MSGBOX_URL="wss://test-mailbox.dinakernel.com"
+    INFRA_APPVIEW_URL="https://test-appview.dinakernel.com"
+else
+    INFRA_PDS_HOST="pds.dinakernel.com"
+    INFRA_PDS_URL="https://pds.dinakernel.com"
+    INFRA_MSGBOX_URL="wss://mailbox.dinakernel.com"
+    INFRA_APPVIEW_URL="https://appview.dinakernel.com"
+fi
 
 # Parse two-arg flags
 _prev=""
@@ -816,14 +833,14 @@ echo ""
 if ! grep -q '^DINA_MSGBOX_URL=' "${ENV_FILE}" 2>/dev/null; then
     echo "" >> "${ENV_FILE}"
     echo "# Shared infrastructure" >> "${ENV_FILE}"
-    echo "DINA_MSGBOX_URL=wss://mailbox.dinakernel.com" >> "${ENV_FILE}"
-    echo "DINA_APPVIEW_URL=https://appview.dinakernel.com" >> "${ENV_FILE}"
+    echo "DINA_MSGBOX_URL=${INFRA_MSGBOX_URL}" >> "${ENV_FILE}"
+    echo "DINA_APPVIEW_URL=${INFRA_APPVIEW_URL}" >> "${ENV_FILE}"
 fi
 if ! grep -q '^DINA_TIMEZONE=' "${ENV_FILE}" 2>/dev/null; then
     # Default to UTC; users set their timezone in .env or override.
     echo "DINA_TIMEZONE=${TZ:-UTC}" >> "${ENV_FILE}"
 fi
-verbose_ok "Infrastructure: MsgBox + AppView + PLC (dinakernel.com)"
+verbose_ok "Infrastructure: MsgBox + AppView + PLC (${INFRA_PDS_HOST})"
 
 # ---------------------------------------------------------------------------
 # Step 8b: Community PDS account (for Trust Network publishing)
@@ -831,7 +848,7 @@ verbose_ok "Infrastructure: MsgBox + AppView + PLC (dinakernel.com)"
 # Creates an account on the community PDS so /review, /vouch, /flag work.
 # The PDS URL defaults to pds.dinakernel.com (set in docker-compose.yml).
 
-_COMMUNITY_PDS="${DINA_COMMUNITY_PDS_URL:-https://pds.dinakernel.com}"
+_COMMUNITY_PDS="${DINA_COMMUNITY_PDS_URL:-${INFRA_PDS_URL}}"
 _PDS_HANDLE_FILE="${SECRETS_DIR}/pds_community_handle"
 
 if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
@@ -852,7 +869,7 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
 
     _PDS_REGISTERED=false
     for _PDS_ATTEMPT in 1 2 3; do
-        _PDS_FULL_HANDLE="${_PDS_HANDLE_INPUT}.pds.dinakernel.com"
+        _PDS_FULL_HANDLE="${_PDS_HANDLE_INPUT}.${INFRA_PDS_HOST}"
         _PDS_EMAIL="${_PDS_HANDLE_INPUT}@dina.local"
         _PDS_PW=$(openssl rand -hex 12)
 

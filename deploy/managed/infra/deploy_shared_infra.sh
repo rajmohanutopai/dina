@@ -11,48 +11,90 @@
 # This does NOT deploy a Home Node (Core + Brain + vault).
 # Home Nodes run locally and connect to these services outbound.
 #
-# Configuration is read from infra.env (gitignored).
+# Configuration is read from infra-{env}.env (gitignored).
 # See infra.env.example for the template.
 #
 # Usage:
-#   ./deploy_shared_infra.sh              # full deploy (first time)
-#   ./deploy_shared_infra.sh update       # pull latest code and restart
-#   ./deploy_shared_infra.sh status       # check services
-#   ./deploy_shared_infra.sh logs [svc]   # tail logs
+#   ./deploy_shared_infra.sh deploy prod     # deploy to production
+#   ./deploy_shared_infra.sh deploy test     # deploy to test environment
+#   ./deploy_shared_infra.sh update prod     # pull latest code and restart
+#   ./deploy_shared_infra.sh status test     # check services
+#   ./deploy_shared_infra.sh logs test       # tail logs
+#   ./deploy_shared_infra.sh logs prod pds   # tail logs for a specific service
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-# ── Load config ──
-if [ ! -f "$SCRIPT_DIR/infra.env" ]; then
-    echo "Error: infra.env not found. Copy infra.env.example to infra.env and fill in."
+# ── Parse arguments ──
+ACTION="${1:-}"
+ENV_NAME="${2:-}"
+
+# For 'logs' command, the service name shifts to $3
+LOG_SERVICE="${3:-}"
+
+if [ -z "$ACTION" ] || [ -z "$ENV_NAME" ]; then
+    echo "Error: environment is required."
+    echo ""
+    echo "Usage: $0 <action> <env> [service]"
+    echo ""
+    echo "  Actions:  deploy | update | status | logs"
+    echo "  Envs:     prod | test"
+    echo ""
+    echo "  Examples:"
+    echo "    $0 deploy prod          # first-time deploy to production"
+    echo "    $0 deploy test          # first-time deploy to test"
+    echo "    $0 update prod          # update production"
+    echo "    $0 status test          # check test services"
+    echo "    $0 logs test msgbox     # tail msgbox logs in test"
     exit 1
 fi
-source "$SCRIPT_DIR/infra.env"
 
-: "${REMOTE:?REMOTE not set in infra.env}"
-: "${REMOTE_DIR:?REMOTE_DIR not set in infra.env}"
-: "${DOMAIN:?DOMAIN not set in infra.env}"
-: "${PDS_HOST:?PDS_HOST not set in infra.env}"
-: "${MSGBOX_HOST:?MSGBOX_HOST not set in infra.env}"
-: "${APPVIEW_HOST:?APPVIEW_HOST not set in infra.env}"
+if [ "$ENV_NAME" != "prod" ] && [ "$ENV_NAME" != "test" ]; then
+    echo "Error: environment must be 'prod' or 'test', got '$ENV_NAME'"
+    exit 1
+fi
+
+# ── Load config ──
+ENV_FILE="$SCRIPT_DIR/infra-${ENV_NAME}.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "Error: $ENV_FILE not found."
+    echo ""
+    echo "Create it from infra.env.example:"
+    echo "  cp infra.env.example infra-${ENV_NAME}.env"
+    echo "  # edit infra-${ENV_NAME}.env with your ${ENV_NAME} settings"
+    exit 1
+fi
+source "$ENV_FILE"
+
+: "${REMOTE:?REMOTE not set in infra-${ENV_NAME}.env}"
+: "${REMOTE_DIR:?REMOTE_DIR not set in infra-${ENV_NAME}.env}"
+: "${DOMAIN:?DOMAIN not set in infra-${ENV_NAME}.env}"
+: "${PDS_HOST:?PDS_HOST not set in infra-${ENV_NAME}.env}"
+: "${MSGBOX_HOST:?MSGBOX_HOST not set in infra-${ENV_NAME}.env}"
+: "${APPVIEW_HOST:?APPVIEW_HOST not set in infra-${ENV_NAME}.env}"
+
+# Compose project name — isolates prod/test containers and volumes
+COMPOSE_PROJECT="${COMPOSE_PROJECT:-dina-infra-${ENV_NAME}}"
 
 # ── Colors ──
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 info()  { echo -e "${GREEN}▸${NC} $*"; }
 warn()  { echo -e "${YELLOW}▸${NC} $*"; }
 
+ENV_LABEL="$(echo "$ENV_NAME" | tr '[:lower:]' '[:upper:]')"
+
 # ── Confirmation ──
 confirm_deploy() {
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  Dina Shared Infrastructure Deployment${NC}"
+    echo -e "${GREEN}  Dina Shared Infrastructure — ${CYAN}${ENV_LABEL}${GREEN} Deployment${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
     echo ""
     echo "  This will deploy the following to ${YELLOW}${REMOTE}${NC}:"
@@ -61,20 +103,22 @@ confirm_deploy() {
     echo "    MsgBox:  wss://${MSGBOX_HOST}"
     echo "    AppView: https://${APPVIEW_HOST}"
     echo ""
+    echo "  Remote dir: ${REMOTE_DIR}"
+    echo "  Project:    ${COMPOSE_PROJECT}"
+    echo ""
     echo "  Services: Caddy (TLS), PDS, MsgBox, Jetstream,"
     echo "            PostgreSQL, Ingester, Scorer, AppView Web"
     echo ""
-    echo -e "  ${RED}This is NOT a Home Node deployment.${NC}"
-    echo "  Most users do not need this — Home Nodes connect to"
-    echo "  the default Dina infrastructure at dinakernel.com."
-    echo ""
-    echo "  This is for operators who want to run their own"
-    echo "  sovereign infrastructure (self-hosted PDS, MsgBox, AppView)."
+    if [ "$ENV_NAME" = "prod" ]; then
+        echo -e "  ${RED}⚠  PRODUCTION deployment. This affects live users.${NC}"
+    else
+        echo -e "  ${CYAN}ℹ  TEST deployment. Isolated from production.${NC}"
+    fi
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
     echo ""
-    read -rp "  Type 'yes, deploy' to proceed: " answer
-    if [ "$answer" != "yes, deploy" ]; then
+    read -rp "  Type 'yes, deploy ${ENV_NAME}' to proceed: " answer
+    if [ "$answer" != "yes, deploy ${ENV_NAME}" ]; then
         echo "  Aborted."
         exit 0
     fi
@@ -99,7 +143,7 @@ setup_remote() {
 generate_caddyfile() {
     info "Generating Caddyfile..."
     cat > "$SCRIPT_DIR/Caddyfile" << EOF
-# Auto-generated from infra.env. Do not edit manually.
+# Auto-generated for ${ENV_LABEL} from infra-${ENV_NAME}.env. Do not edit manually.
 
 ${PDS_HOST} {
 	reverse_proxy pds:3000
@@ -135,6 +179,7 @@ sync_files() {
 
     # Deployment files (compose, Caddyfile, deploy script)
     rsync -az --delete \
+        --exclude='infra-*.env' \
         --exclude='infra.env' \
         --exclude='.env' \
         "$SCRIPT_DIR/" \
@@ -175,11 +220,11 @@ generate_secrets() {
 
 # ── Step 6: Build and start ──
 start_services() {
-    info "Building and starting services..."
+    info "Building and starting services (project: ${COMPOSE_PROJECT})..."
     ssh "$REMOTE" "
         cd $REMOTE_DIR/deploy
-        docker compose -f docker-compose.infra.yml build
-        docker compose -f docker-compose.infra.yml up -d
+        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build
+        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
     "
     info "Services started"
 }
@@ -188,16 +233,20 @@ start_services() {
 push_schema() {
     info "Pushing AppView schema..."
     ssh "$REMOTE" "
-        cd $REMOTE_DIR/deploy
+        cd $REMOTE_DIR
         # Wait for postgres
         for i in \$(seq 1 30); do
-            docker compose -f docker-compose.infra.yml exec -T postgres pg_isready -U dina -d dina_trust >/dev/null 2>&1 && break
+            COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f deploy/docker-compose.infra.yml exec -T postgres pg_isready -U dina -d dina_trust >/dev/null 2>&1 && break
             sleep 2
         done
-        # Push schema from web container
-        docker compose -f docker-compose.infra.yml exec -T appview-web sh -c '
-            DATABASE_URL=\$DATABASE_URL npx drizzle-kit push --force 2>/dev/null
-        '
+        # Build the migrator stage (has drizzle-kit + drizzle.config.ts + schema)
+        docker build --target migrator -t ${COMPOSE_PROJECT}-migrator appview/
+        # Run migrator on the compose network
+        PG_PASS=\$(grep POSTGRES_PASSWORD deploy/.env | cut -d= -f2)
+        docker run --rm \
+            --network ${COMPOSE_PROJECT}_default \
+            -e DATABASE_URL=postgresql://dina:\${PG_PASS}@postgres:5432/dina_trust \
+            ${COMPOSE_PROJECT}-migrator
     "
     info "Schema pushed"
 }
@@ -216,7 +265,7 @@ health_check() {
     done
 
     echo ""
-    info "Deployment complete!"
+    info "${ENV_LABEL} deployment complete!"
     echo ""
     echo "  MsgBox:  wss://$MSGBOX_HOST"
     echo "  PDS:     https://$PDS_HOST"
@@ -224,11 +273,12 @@ health_check() {
     echo ""
     echo "  Home Nodes connect with:"
     echo "    DINA_MSGBOX_URL=wss://$MSGBOX_HOST"
-    echo "    dina-admin appview set https://$APPVIEW_HOST"
+    echo "    DINA_APPVIEW_URL=https://$APPVIEW_HOST"
+    echo "    DINA_COMMUNITY_PDS_URL=https://$PDS_HOST"
 }
 
 # ── Main ──
-case "${1:-deploy}" in
+case "$ACTION" in
     deploy)
         confirm_deploy
         setup_remote
@@ -245,16 +295,22 @@ case "${1:-deploy}" in
         generate_caddyfile
         sync_files
         prepare_compose
-        ssh "$REMOTE" "cd $REMOTE_DIR/deploy && docker compose -f docker-compose.infra.yml build && docker compose -f docker-compose.infra.yml up -d"
+        ssh "$REMOTE" "
+            cd $REMOTE_DIR/deploy
+            COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build
+            COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
+        "
         health_check
         ;;
     status)
-        ssh "$REMOTE" "cd $REMOTE_DIR/deploy && docker compose -f docker-compose.infra.yml ps"
+        ssh "$REMOTE" "cd $REMOTE_DIR/deploy && COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml ps"
         ;;
     logs)
-        ssh "$REMOTE" "cd $REMOTE_DIR/deploy && docker compose -f docker-compose.infra.yml logs --tail 50 ${2:-}"
+        ssh "$REMOTE" "cd $REMOTE_DIR/deploy && COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml logs --tail 50 ${LOG_SERVICE}"
         ;;
     *)
-        echo "Usage: $0 [deploy|update|status|logs [service]]"
+        echo "Unknown action: $ACTION"
+        echo "Usage: $0 <deploy|update|status|logs> <prod|test> [service]"
+        exit 1
         ;;
 esac

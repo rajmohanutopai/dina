@@ -55,8 +55,9 @@ func (c *PLCClient) PDSURL() string {
 
 // CreateAccountAndDID creates a PDS account which registers the did:plc
 // on the PLC directory. Returns the DID and auth tokens.
-// When the PDS requires invite codes and an admin token is configured,
-// an invite code is created automatically before account creation.
+// If the account already exists, falls back to login (createSession).
+// This allows the community PDS to be used directly — install.sh creates
+// the account, and Core logs in on first boot to discover the DID.
 func (c *PLCClient) CreateAccountAndDID(ctx context.Context, opts CreateDIDOptions) (*CreateDIDResult, error) {
 	if opts.Handle == "" {
 		return nil, fmt.Errorf("plc client: handle is required")
@@ -91,10 +92,42 @@ func (c *PLCClient) CreateAccountAndDID(ctx context.Context, opts CreateDIDOptio
 
 	out, err := atproto.ServerCreateAccount(ctx, c.client, input)
 	if err != nil {
-		return nil, fmt.Errorf("plc client: create account failed: %w", err)
+		// Account may already exist (install.sh pre-creates it on the community PDS).
+		// Fall back to login to discover the existing DID.
+		loginResult, loginErr := c.LoginAndGetDID(ctx, opts.Handle, opts.Password)
+		if loginErr != nil {
+			return nil, fmt.Errorf("plc client: create failed (%w) and login failed (%w)", err, loginErr)
+		}
+		return loginResult, nil
 	}
 
 	// Store auth tokens on the internal client for subsequent calls.
+	c.client.Auth = &xrpc.AuthInfo{
+		AccessJwt:  out.AccessJwt,
+		RefreshJwt: out.RefreshJwt,
+		Handle:     out.Handle,
+		Did:        out.Did,
+	}
+
+	return &CreateDIDResult{
+		DID:        out.Did,
+		Handle:     out.Handle,
+		AccessJwt:  out.AccessJwt,
+		RefreshJwt: out.RefreshJwt,
+	}, nil
+}
+
+// LoginAndGetDID logs into an existing PDS account and returns the DID.
+// Used when the account was pre-created (e.g., by install.sh on the community PDS).
+func (c *PLCClient) LoginAndGetDID(ctx context.Context, identifier, password string) (*CreateDIDResult, error) {
+	out, err := atproto.ServerCreateSession(ctx, c.client, &atproto.ServerCreateSession_Input{
+		Identifier: identifier,
+		Password:   password,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("plc client: login failed: %w", err)
+	}
+
 	c.client.Auth = &xrpc.AuthInfo{
 		AccessJwt:  out.AccessJwt,
 		RefreshJwt: out.RefreshJwt,

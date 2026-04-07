@@ -470,10 +470,11 @@ func main() {
 	trustSvc := service.NewTrustService(trustCache, trustResolver, contactDir)
 
 	// 5b. K256 rotation key + PLC/PDS (optional — enabled when DINA_PDS_URL is set)
+	// Core uses the community PDS (same as Brain) for DID operations.
+	// install.sh pre-creates the account; Core logs in to discover the DID.
 	k256Mgr := crypto.NewK256KeyManager(cfg.VaultPath)
 	k256Mgr.SetMasterSeed(masterSeed)
 	var plcClient *pds.PLCClient
-	var pdsPublisher port.PDSPublisher
 	if cfg.PDSURL != "" {
 		plcURL := cfg.PLCURL
 		if plcURL == "" {
@@ -485,7 +486,7 @@ func main() {
 		}
 		didMgr.SetPLCClient(plcClient, k256Mgr)
 		didMgr.SetPDSCredentials(cfg.PDSHandle, cfg.PDSAdminPassword, cfg.PDSEmail)
-		slog.Info("AT Protocol PDS configured", "pds_url", cfg.PDSURL, "plc_url", plcURL)
+		slog.Info("Community PDS configured", "pds_url", cfg.PDSURL, "plc_url", plcURL)
 
 		// Eager DID creation: on first install, no persisted DID exists yet.
 		// Must happen after SetPLCClient so the DID registers on global PLC.
@@ -531,10 +532,9 @@ func main() {
 			}
 		}
 	} else {
-		pdsPublisher = pds.NewPDSPublisher("")
-		slog.Info("AT Protocol PDS not configured — using local-only identity")
+		slog.Info("Community PDS not configured — using local-only identity")
 	}
-	_, _ = plcClient, pdsPublisher
+	_ = plcClient
 
 	// 6. Service Keys (Ed25519 service-to-service auth)
 	// PEM files are provisioned at install time via provision_derived_service_keys.py

@@ -43,10 +43,10 @@ services:
       - DINA_SEED_PASSWORD=${DINA_SEED_PASSWORD:-}
       - DINA_RATE_LIMIT=${DINA_RATE_LIMIT:-100}
       - DINA_SPOOL_MAX=${DINA_SPOOL_MAX:-10485760}
-      - DINA_PDS_URL=http://pds:3000
+      - DINA_PDS_URL=${DINA_COMMUNITY_PDS_URL:-https://pds.dinakernel.com}
       - DINA_PLC_URL=${DINA_PLC_URL:-https://plc.directory}
-      - DINA_PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
-      - DINA_PDS_HANDLE=${DINA_PDS_HANDLE:-dina.test}
+      - DINA_PDS_ADMIN_PASSWORD=${DINA_COMMUNITY_PDS_PASSWORD:-}
+      - DINA_PDS_HANDLE=${DINA_COMMUNITY_PDS_HANDLE:-}
       - DINA_PDS_EMAIL=${DINA_PDS_EMAIL:-dina@example.com}
       - DINA_MSGBOX_URL=${DINA_MSGBOX_URL:-wss://mailbox.dinakernel.com}
       - DINA_APPVIEW_URL=${DINA_APPVIEW_URL:-https://appview.dinakernel.com}
@@ -60,8 +60,6 @@ services:
     depends_on:
       brain:
         condition: service_healthy
-      pds:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
       interval: 10s
@@ -69,7 +67,6 @@ services:
       retries: 3
       start_period: 5s
     networks:
-      - dina-pds-net
       - dina-brain-net
     restart: unless-stopped
 
@@ -122,54 +119,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  plc:
-    container_name: plc-${DINA_SESSION:-dna}
-    build:
-      context: ./plc
-      dockerfile: Dockerfile
-    ports:
-      - "${DINA_PLC_PORT:-2582}:2582"
-    profiles:
-      - test-plc
-    networks:
-      - dina-pds-net    # PDS must be able to reach PLC for DID resolution
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2582/healthz')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-    restart: unless-stopped
-
-  pds:
-    container_name: pds-${DINA_SESSION:-dna}
-    image: ghcr.io/bluesky-social/pds:0.4
-    ports:
-      - "${DINA_PDS_PORT:-2583}:3000"
-    networks:
-      - dina-pds-net
-    volumes:
-      - pds-data:/pds
-    environment:
-      - PDS_HOSTNAME=${DINA_PDS_HOSTNAME:-localhost}
-      - PDS_PORT=3000
-      - PDS_DATA_DIRECTORY=/pds
-      - PDS_BLOBSTORE_DISK_LOCATION=/pds/blocks
-      - PDS_DID_PLC_URL=${DINA_PLC_URL:-https://plc.directory}
-      - PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX=${DINA_PDS_ROTATION_KEY_HEX:-}
-      - PDS_JWT_SECRET=${DINA_PDS_JWT_SECRET:-}
-      - PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
-      - PDS_DEV_MODE=${DINA_PDS_DEV_MODE:-true}
-      - PDS_INVITE_REQUIRED=${DINA_PDS_INVITE_REQUIRED:-true}
-    healthcheck:
-      # PDS image has wget (not curl). On failure, fetch body for diagnostics.
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/xrpc/_health || (echo 'PDS healthcheck failed' && exit 1)"]
-      interval: 10s
-      timeout: 5s
-      retries: 8
-      start_period: 30s
-    restart: unless-stopped
-
   llm:
     container_name: llm-${DINA_SESSION:-dna}
     image: ghcr.io/ggerganov/llama.cpp:server
@@ -188,16 +137,11 @@ services:
     restart: unless-stopped
 
 networks:
-  dina-pds-net:
-    # NOT internal — PDS needs outbound to reach public plc.directory by default.
-    # When using --profile test-plc, PLC is on this same network (no internet needed).
   dina-brain-net:
-    internal: false   # brain needs outbound for LLM APIs
+    internal: false   # brain needs outbound for LLM APIs, Core needs outbound for community PDS
 
 volumes:
   dina-data:
-    driver: local
-  pds-data:
     driver: local
   dina-models:
     driver: local

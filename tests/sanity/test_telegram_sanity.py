@@ -277,14 +277,13 @@ class TestSanchoMoment:
 # 6. Purchase Journey — Alonso reviews, Sancho discovers via /ask
 # ---------------------------------------------------------------------------
 
-ALONSO_PDS_PORT = 18101
-SANCHO_PDS_PORT = 18301
+COMMUNITY_PDS_URL = "https://test-pds.dinakernel.com"
 
 
-def _pds_list_records(pds_port: int, did: str, collection: str) -> list[dict]:
-    """List AT Protocol records from a PDS."""
+def _pds_list_records(pds_url: str, did: str, collection: str) -> list[dict]:
+    """List AT Protocol records from the community PDS."""
     r = httpx.get(
-        f"http://localhost:{pds_port}/xrpc/com.atproto.repo.listRecords",
+        f"{pds_url}/xrpc/com.atproto.repo.listRecords",
         params={"repo": did, "collection": collection, "limit": "100"},
         timeout=10,
     )
@@ -293,29 +292,37 @@ def _pds_list_records(pds_port: int, did: str, collection: str) -> list[dict]:
     return []
 
 
-def _pds_delete_record(pds_port: int, did: str, collection: str, rkey: str, pds_admin_pw: str) -> bool:
-    """Delete a single AT Protocol record from a PDS."""
+def _pds_delete_record(pds_url: str, did: str, collection: str, rkey: str, handle: str, password: str) -> bool:
+    """Delete a single AT Protocol record via authenticated session."""
+    # Authenticate
+    session = httpx.post(
+        f"{pds_url}/xrpc/com.atproto.server.createSession",
+        json={"identifier": handle, "password": password},
+        timeout=10,
+    )
+    if session.status_code != 200:
+        return False
+    token = session.json().get("accessJwt", "")
     r = httpx.post(
-        f"http://localhost:{pds_port}/xrpc/com.atproto.repo.deleteRecord",
+        f"{pds_url}/xrpc/com.atproto.repo.deleteRecord",
         json={"repo": did, "collection": collection, "rkey": rkey},
-        headers={"Authorization": f"Basic {_basic_auth('admin', pds_admin_pw)}"},
+        headers={"Authorization": f"Bearer {token}"},
         timeout=10,
     )
     return r.status_code in (200, 404)
 
 
-def _basic_auth(user: str, password: str) -> str:
-    import base64
-    return base64.b64encode(f"{user}:{password}".encode()).decode()
-
-
-def _get_pds_admin_pw(instance: str) -> str:
-    """Read PDS admin password from instance .env."""
+def _get_pds_creds(instance: str) -> tuple[str, str]:
+    """Read community PDS handle and password from instance .env."""
     env_path = Path(__file__).parent.parent.parent / "instances" / instance / ".env"
+    handle = ""
+    password = ""
     for line in env_path.read_text().splitlines():
-        if line.startswith("DINA_PDS_ADMIN_PASSWORD="):
-            return line.split("=", 1)[1].strip()
-    return ""
+        if line.startswith("DINA_COMMUNITY_PDS_HANDLE="):
+            handle = line.split("=", 1)[1].strip()
+        elif line.startswith("DINA_COMMUNITY_PDS_PASSWORD="):
+            password = line.split("=", 1)[1].strip()
+    return handle, password
 
 
 class TestPurchaseJourney:
@@ -332,24 +339,24 @@ class TestPurchaseJourney:
     @pytest.fixture(autouse=True, scope="class")
     def _cleanup_trust_records(self, alonso_did: str, sancho_did: str) -> None:
         """Delete all trust attestation records before and after tests."""
-        self._delete_all_trust(alonso_did, ALONSO_PDS_PORT, "regression-alonso")
-        self._delete_all_trust(sancho_did, SANCHO_PDS_PORT, "regression-sancho")
+        self._delete_all_trust(alonso_did, "regression-alonso")
+        self._delete_all_trust(sancho_did, "regression-sancho")
         yield
-        self._delete_all_trust(alonso_did, ALONSO_PDS_PORT, "regression-alonso")
-        self._delete_all_trust(sancho_did, SANCHO_PDS_PORT, "regression-sancho")
+        self._delete_all_trust(alonso_did, "regression-alonso")
+        self._delete_all_trust(sancho_did, "regression-sancho")
 
     @staticmethod
-    def _delete_all_trust(did: str, pds_port: int, instance: str) -> None:
-        pw = _get_pds_admin_pw(instance)
-        if not pw:
+    def _delete_all_trust(did: str, instance: str) -> None:
+        handle, pw = _get_pds_creds(instance)
+        if not handle or not pw:
             return
         for collection in ("com.dina.trust.attestation", "com.dina.trust.outcome"):
-            records = _pds_list_records(pds_port, did, collection)
+            records = _pds_list_records(COMMUNITY_PDS_URL, did, collection)
             for rec in records:
                 uri = rec.get("uri", "")
                 rkey = uri.rsplit("/", 1)[-1] if "/" in uri else ""
                 if rkey:
-                    _pds_delete_record(pds_port, did, collection, rkey, pw)
+                    _pds_delete_record(COMMUNITY_PDS_URL, did, collection, rkey, handle, pw)
                     print(f"  Deleted: {uri}")
 
     def test_sancho_health_context(self, tg: SanityTelegramClient) -> None:

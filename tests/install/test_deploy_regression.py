@@ -48,12 +48,12 @@ class TestEnvVarSeparation:
         assert "DINA_COMMUNITY_PDS_PASSWORD" in brain_text or "COMMUNITY_PDS_PASSWORD" in brain_text, \
             "Brain should use DINA_COMMUNITY_PDS_PASSWORD, not DINA_PDS_ADMIN_PASSWORD"
 
-    # TRACE: {"suite": "INST", "case": "0081", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "02", "title": "core_uses_local_pds_vars"}
-    def test_core_uses_local_pds_vars(self) -> None:
-        """Core service uses DINA_PDS_* (local PDS), not community PDS vars."""
+    # TRACE: {"suite": "INST", "case": "0081", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "02", "title": "core_uses_community_pds_vars"}
+    def test_core_uses_community_pds_vars(self) -> None:
+        """Core service uses DINA_COMMUNITY_PDS_* (same as Brain — no sidecar PDS)."""
         compose = (PROJECT_ROOT / "docker-compose.yml").read_text()
-        # Core section should have DINA_PDS_ADMIN_PASSWORD for local PDS
-        assert "DINA_PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD" in compose
+        assert "DINA_COMMUNITY_PDS_PASSWORD" in compose
+        assert "DINA_COMMUNITY_PDS_URL" in compose
 
     # TRACE: {"suite": "INST", "case": "0082", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "03", "title": "install_writes_community_pds_vars"}
     def test_install_writes_community_pds_vars(self) -> None:
@@ -86,6 +86,15 @@ class TestSharedInfrastructureDefaults:
         """install.sh writes DINA_TIMEZONE to .env."""
         install = (PROJECT_ROOT / "install.sh").read_text()
         assert "DINA_TIMEZONE=" in install
+
+    # TRACE: {"suite": "INST", "case": "0096", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "04", "title": "install_has_test_mode"}
+    def test_install_has_test_mode(self) -> None:
+        """install.sh --test switches to test infrastructure URLs."""
+        install = (PROJECT_ROOT / "install.sh").read_text()
+        assert "--test) TEST_MODE=true" in install
+        assert "test-pds.dinakernel.com" in install
+        assert "test-mailbox.dinakernel.com" in install
+        assert "test-appview.dinakernel.com" in install
 
 
 class TestPDSAccountCreation:
