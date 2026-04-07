@@ -18,7 +18,10 @@ from typing import Any
 
 import structlog
 
-from ..prompts import PROMPT_PERSONA_CLASSIFY_SYSTEM as _SYSTEM_PROMPT
+from ..prompts import (
+    PROMPT_PERSONA_CLASSIFY_SYSTEM as _SYSTEM_PROMPT,
+    PERSONA_CLASSIFY_RESPONSE_SCHEMA as _RESPONSE_SCHEMA,
+)
 from .persona_registry import PersonaInfo, PersonaRegistry
 
 log = structlog.get_logger(__name__)
@@ -150,6 +153,8 @@ class PersonaSelector:
             task_type="classification",
             prompt=prompt,
             messages=messages,
+            response_mime_type="application/json",
+            response_schema=_RESPONSE_SCHEMA,
         )
 
         content = resp.get("content", "")

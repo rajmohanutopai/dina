@@ -114,6 +114,8 @@ class LLMRouter:
         messages: list[dict] | None = None,
         tools: list | None = None,
         tool_config: object | None = None,
+        response_mime_type: str | None = None,
+        response_schema: dict | None = None,
     ) -> dict:
         """Route a task to the optimal LLM path.
 
@@ -213,12 +215,16 @@ class LLMRouter:
             model=provider_obj.model_name,
         )
 
-        # Build kwargs for tool-calling support
+        # Build kwargs for tool-calling and structured output support
         complete_kwargs: dict = {}
         if tools is not None:
             complete_kwargs["tools"] = tools
         if tool_config is not None:
             complete_kwargs["tool_config"] = tool_config
+        if response_mime_type is not None:
+            complete_kwargs["response_mime_type"] = response_mime_type
+        if response_schema is not None:
+            complete_kwargs["response_schema"] = response_schema
 
         # Use explicit messages if provided, otherwise wrap prompt
         call_messages = messages if messages is not None else [{"role": "user", "content": prompt}]

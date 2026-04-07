@@ -39,12 +39,17 @@ You have TWO jobs:
    - "Meeting with Dr. Smith for lunch" is general (social), not health
    - "Meeting with Dr. Smith about my blood test results" is health
 
-   **Relationship-aware routing** — if "mentioned_contacts" is provided:
-   - household (spouse/child): their medical → health, their financial → finance
-   - care (parent under medical care): their medical → health, financial → general
-   - financial (dependent under guardianship): their medical → general, financial → finance
-   - external (friend/colleague/acquaintance/unknown): ALWAYS → general for sensitive data
+   **Relationship-aware routing** — if "mentioned_contacts" is provided, \
+   the data_responsibility field OVERRIDES content-based classification:
+   - data_responsibility=household: their medical → health, their financial → finance
+   - data_responsibility=care: their medical → health, their financial → general
+   - data_responsibility=financial: their medical → general, their financial → finance
+   - data_responsibility=external: ALL their sensitive data → general. \
+     This is mandatory. Even if the content mentions blood pressure, diagnosis, \
+     salary, or bank accounts — if the person is external, classify as general. \
+     Their data is social context about someone else, not the user's own data.
    - Non-sensitive facts about anyone always go to general regardless
+   - If no mentioned_contacts is provided, classify based on content as usual
 
 2. **Detect temporal events** — if the content mentions a date, deadline, \
    appointment, birthday, payment, or any time-bound event, set \
@@ -68,6 +73,36 @@ Respond with a JSON object:
   "attribution_corrections": []
 }
 """
+
+# responseSchema for Gemini structured output — guarantees valid JSON.
+# Must include ALL fields the prompt requests to avoid schema/prompt conflict.
+# Used by persona_selector when calling Gemini, and by prompt tests.
+PERSONA_CLASSIFY_RESPONSE_SCHEMA: dict = {
+    "type": "OBJECT",
+    "properties": {
+        "primary": {"type": "STRING"},
+        "secondary": {
+            "type": "ARRAY",
+            "items": {"type": "STRING"},
+        },
+        "confidence": {"type": "NUMBER"},
+        "reason": {"type": "STRING"},
+        "has_event": {"type": "BOOLEAN"},
+        "event_hint": {"type": "STRING"},
+        "attribution_corrections": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "id": {"type": "INTEGER"},
+                    "corrected_bucket": {"type": "STRING"},
+                    "reason": {"type": "STRING"},
+                },
+            },
+        },
+    },
+    "required": ["primary", "confidence", "reason", "has_event"],
+}
 
 # ─────────────────────────────────────────────────────────────────────
 # Content Enrichment (L0/L1 summaries)

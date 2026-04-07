@@ -153,7 +153,10 @@ class GeminiProvider:
 
         # Build generation config
         config_kwargs: dict[str, Any] = {}
-        for key in ("temperature", "max_output_tokens", "top_p", "top_k"):
+        for key in (
+            "temperature", "max_output_tokens", "top_p", "top_k",
+            "response_mime_type", "response_schema",
+        ):
             if key in kwargs:
                 config_kwargs[key] = kwargs[key]
         if system_parts:
