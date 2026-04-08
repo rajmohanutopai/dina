@@ -1,6 +1,17 @@
 # OpenAPI Issue
 OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
 
+# Trust network
+  Current publish path is Brain -> PDS directly. It does not go through Core’s trust endpoints.
+  This is wrong
+
+# Information Storage
+  Information related to Alonso is currently not stored against Alonso. It will be better if it is stored thus
+
+# memory management
+docs/designs/KNOWLEDGE_GRAPH.md
+Most important to get this right
+
 # Intra-Vault Sensitivity Levels
 
 Currently, vault = domain AND sensitivity. Health vault is locked, general vault is open. But real life is more nuanced:
