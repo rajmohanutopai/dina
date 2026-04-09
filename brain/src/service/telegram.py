@@ -1177,15 +1177,26 @@ class TelegramService:
 
         task_id = f"task-{uuid4().hex[:8]}"
 
+        # Classify the task action from content. Default is "research" (SAFE).
+        # Tasks involving email, messaging, or payments need higher risk.
+        task_action = "research"
+        text_lower = text.lower()
+        if any(w in text_lower for w in ("email", "send email", "mail to", "send to")):
+            task_action = "send_email"
+        elif any(w in text_lower for w in ("send message", "message to", "text to")):
+            task_action = "send_message"
+        elif any(w in text_lower for w in ("pay ", "transfer", "checkout", "purchase")):
+            task_action = "web_checkout"
+
         # Validate the intent (runner-neutral).
         result = await self._guardian.process_event({
             "type": "agent_intent",
-            "action": "research",
+            "action": task_action,
             "target": text[:200],
             "agent_did": "delegated-task",
             "trust_level": "verified",
             "payload": {
-                "action": "research",
+                "action": task_action,
                 "target": text[:200],
                 "context": {"task_id": task_id, "source": "telegram"},
             },

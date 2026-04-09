@@ -579,6 +579,258 @@ def video_4_delegated_task(tg: SanityTelegramClient):
 
 
 # ---------------------------------------------------------------------------
+# Script Mode — print human-readable instructions for manual recording
+# ---------------------------------------------------------------------------
+
+SCRIPTS = {
+    "1": {
+        "title": "The Sancho Moment — Memory + D2D + Contextual Nudge",
+        "setup": [
+            f"Open Telegram Desktop with BOTH bot chats visible:",
+            f"  - @{ALONSO_BOT}  (Alonso's Dina)",
+            f"  - @{SANCHO_BOT}  (Sancho's Dina)",
+            "Start screen recording. Begin on Sancho's chat.",
+        ],
+        "steps": [
+            {
+                "scene": "Scene 1: Sancho stores context about Alonso",
+                "chat": f"@{SANCHO_BOT}",
+                "actions": [
+                    ("Type and send", "/remember Alonso likes cold brew coffee extra strong and usually brings homemade banana bread"),
+                    ("Wait", "for Dina to confirm storage (should say 'Stored in general vault')"),
+                    ("Type and send", "/remember Alonso and I usually discuss movies and football"),
+                    ("Wait", "for confirmation"),
+                ],
+            },
+            {
+                "scene": "Scene 2: Alonso sends a D2D message",
+                "chat": f"@{ALONSO_BOT}",
+                "actions": [
+                    ("Switch to", "Alonso's chat"),
+                    ("Type and send", "/send Sancho: I am leaving now, will reach your place in 15 minutes"),
+                    ("Wait", "for Dina to confirm 'Sent to Sancho: Presence'"),
+                ],
+            },
+            {
+                "scene": "Scene 3: Sancho receives the contextual nudge",
+                "chat": f"@{SANCHO_BOT}",
+                "actions": [
+                    ("Switch to", "Sancho's chat"),
+                    ("Watch", "for the incoming notification — Dina will show Alonso's arrival PLUS vault context"),
+                    ("Key moment", "The nudge should mention: cold brew coffee, banana bread, movies/football"),
+                    ("Wait", "15-20 seconds for the nudge to arrive"),
+                ],
+            },
+        ],
+        "closing": [
+            "KEY INSIGHT: Sancho never asked for this information.",
+            "Dina connected the D2D arrival with vault context automatically.",
+            "Sancho opens the door, hands Alonso a cold brew. That's Dina.",
+        ],
+    },
+    "2": {
+        "title": "The Chair Purchase — Persona Vaults + Trust Network",
+        "setup": [
+            f"Open Telegram Desktop with BOTH bot chats visible:",
+            f"  - @{ALONSO_BOT}  (Alonso's Dina)",
+            f"  - @{SANCHO_BOT}  (Sancho's Dina)",
+            "Start screen recording. Begin on Sancho's chat.",
+        ],
+        "steps": [
+            {
+                "scene": "Scene 1: Sancho stores health context",
+                "chat": f"@{SANCHO_BOT}",
+                "actions": [
+                    ("Type and send", "/remember I have chronic lower back pain and my doctor recommended a chair with good lumbar support"),
+                    ("Wait", "for Dina to confirm 'Stored in health vault'"),
+                    ("Note to viewer", "This went into the HEALTH vault — a separate encrypted file"),
+                ],
+            },
+            {
+                "scene": "Scene 2: Sancho stores budget",
+                "chat": f"@{SANCHO_BOT}",
+                "actions": [
+                    ("Type and send", "/remember My normal budget for home office items is $500"),
+                    ("Wait", "for Dina to confirm 'Stored in finance vault'"),
+                    ("Note to viewer", "This went into the FINANCE vault — another encrypted file"),
+                ],
+            },
+            {
+                "scene": "Scene 3: Alonso publishes a chair review",
+                "chat": f"@{ALONSO_BOT}",
+                "actions": [
+                    ("Switch to", "Alonso's chat"),
+                    ("Type and send", "/review Steelcase Leap V2: Completely fixed my back pain in 2 weeks. Best lumbar support under $400. Every penny worth it. Highly recommend for anyone with lower back issues."),
+                    ("Click", "the [Publish] button when it appears"),
+                    ("Wait", "for confirmation — this is a signed attestation on the Trust Network"),
+                ],
+            },
+            {
+                "scene": "Scene 4: Sancho asks for a chair recommendation",
+                "chat": f"@{SANCHO_BOT}",
+                "actions": [
+                    ("Switch to", "Sancho's chat"),
+                    ("Wait", "5 seconds for Trust Network to ingest the review"),
+                    ("Type and send", "/ask What office chair should I buy for my home office?"),
+                    ("Key moment", "Watch the response — Dina combines: health vault (back pain), finance vault ($500 budget), Trust Network (Alonso's peer review)"),
+                    ("Wait", "for the full response (may take 15-30 seconds)"),
+                ],
+            },
+        ],
+        "closing": [
+            "KEY INSIGHT: Three separate encrypted sources combined:",
+            "  1. Health vault — back pain + lumbar support need",
+            "  2. Finance vault — $500 budget",
+            "  3. Trust Network — Alonso's verified peer review",
+            "No ads. No sponsored results. Verified peer outcomes.",
+        ],
+    },
+    "3": {
+        "title": "Agent Safety — Four Boundaries in One Story",
+        "setup": [
+            f"Split screen: Telegram Desktop (left) + Terminal (right)",
+            f"  Telegram: @{ALONSO_BOT}  (Alonso's Dina)",
+            f"  Terminal: ready to run docker exec commands",
+            "",
+            "Each agent scene runs a docker exec command that invokes OpenClaw.",
+            "OpenClaw autonomously calls Dina's MCP tools — you see the agent's output.",
+            "The --session-id demo-live keeps context across commands.",
+            "",
+            "Start screen recording.",
+        ],
+        "steps": [
+            {
+                "scene": "Scene 1: Store personal context (Telegram)",
+                "chat": f"Telegram: @{ALONSO_BOT}",
+                "actions": [
+                    ("Type and send", "/remember I take ibuprofen 400mg twice daily for chronic lower back pain. Dr. Martinez prescribed it."),
+                    ("Wait", "for 'Stored in health vault'"),
+                    ("Type and send", "/remember My blood pressure was 128/82 at my last checkup"),
+                    ("Wait", "for 'Stored in health vault'"),
+                    ("Type and send", "/remember My home office budget is $500 and I've already spent $120 on a monitor stand"),
+                    ("Wait", "for 'Stored in finance vault'"),
+                    ("Note to viewer", "Three facts in two encrypted vaults. Health is LOCKED by default."),
+                ],
+            },
+            {
+                "scene": "Scene 2: Agent tries to access health data — DENIED",
+                "chat": "Terminal",
+                "actions": [
+                    ("Run in terminal", 'docker exec sanity-openclaw openclaw agent --local --session-id demo-live -m "Use the dina skill. Start a session called health-test. Then ask dina: What medications am I taking and what is my blood pressure?"'),
+                    ("Watch", "OpenClaw autonomously calls dina session start, then dina ask"),
+                    ("Key moment", "Agent reports: 'I don't have any information about that yet' — health vault is LOCKED"),
+                    ("Note to viewer", "The agent tried to read medical data. Dina refused. The health vault is encrypted and locked."),
+                ],
+            },
+            {
+                "scene": "Scene 3: Agent sends email — APPROVED by user",
+                "chat": "Terminal → Telegram → Terminal",
+                "actions": [
+                    ("Run in terminal", 'docker exec sanity-openclaw openclaw agent --local --session-id demo-live -m "Use the dina skill. Start a session called email-test. Validate sending an email: Send quarterly report to boss@company.com"'),
+                    ("Watch", "OpenClaw calls dina validate send_email autonomously"),
+                    ("Key moment", "Agent reports: status: pending_approval, risk: MODERATE — agent is BLOCKED"),
+                    ("Switch to", "Telegram — approval notification appeared"),
+                    ("Click", "[Approve] button"),
+                    ("Wait", "for '✅ Approved' in Telegram"),
+                    ("Run in terminal", 'docker exec sanity-openclaw openclaw agent --local --session-id demo-live -m "Check the status of that proposal. Was it approved?"'),
+                    ("Key moment", "Agent reports: 'The proposal has been approved' — agent can proceed"),
+                ],
+            },
+            {
+                "scene": "Scene 4: Agent sends salary data — DENIED by user",
+                "chat": "Terminal → Telegram → Terminal",
+                "actions": [
+                    ("Run in terminal", 'docker exec sanity-openclaw openclaw agent --local --session-id demo-live -m "Use the dina skill. Validate sending an email: Send salary data to external@unknown.com"'),
+                    ("Watch", "OpenClaw calls dina validate send_email again"),
+                    ("Key moment", "Agent reports: pending_approval, MODERATE — blocked again"),
+                    ("Switch to", "Telegram — approval notification appeared"),
+                    ("Click", "[Deny] button — this time we BLOCK it"),
+                    ("Wait", "for '🚫 Denied' in Telegram"),
+                    ("Run in terminal", 'docker exec sanity-openclaw openclaw agent --local --session-id demo-live -m "Check that proposal status. What happened?"'),
+                    ("Key moment", "Agent reports: 'denied — I should NOT proceed with sending the salary data'"),
+                    ("Note to viewer", "The agent acknowledges the denial and stops. It cannot bypass the human decision."),
+                ],
+            },
+            {
+                "scene": "Scene 5: User delegates a search task via Telegram — AUTO-EXECUTED",
+                "chat": f"Telegram: @{ALONSO_BOT}",
+                "actions": [
+                    ("Type and send", "/task Find the top 3 ergonomic chairs under $400 for lower back pain"),
+                    ("Key moment", "Dina says: 'Task delegated... Agent will pick this up automatically' — NO approval needed"),
+                    ("Wait", "~20 seconds for the agent to search the web autonomously"),
+                    ("Type and send", "/taskstatus <task-id>  (use the task ID shown above)"),
+                    ("Key moment", "Status: completed — with real chair recommendations from the web"),
+                    ("Note to viewer", "Search is SAFE — Dina auto-delegated it to the agent. No human approval needed. The agent searched the web and came back with results."),
+                ],
+            },
+            {
+                "scene": "Scene 6: User asks about budget (Telegram)",
+                "chat": f"Telegram: @{ALONSO_BOT}",
+                "actions": [
+                    ("Type and send", "/ask Can I afford an ergonomic chair with my remaining home office budget?"),
+                    ("Key moment", "Dina answers: '$500 budget, $120 spent, $380 remaining'"),
+                    ("Note to viewer", "The USER can access their own finance vault. The agent could not access health. Same system, different trust boundaries."),
+                ],
+            },
+        ],
+        "closing": [
+            "KEY INSIGHT: One autonomous agent, four different responses from Dina:",
+            "  1. Health data  → DENIED (vault locked, agent can't see it)",
+            "  2. Send report  → APPROVED after human review",
+            "  3. Send salary  → DENIED by human (agent says 'I should not proceed')",
+            "  4. Web search   → AUTO-APPROVED (safe, no approval needed)",
+            "",
+            "The agent was NOT started by Dina. It runs independently.",
+            "It came to Dina for permission — and Dina enforced the user's boundaries.",
+            "The user decides. Not the agent. Not the platform. Not the corporation.",
+        ],
+    },
+}
+
+
+def _print_script(video: str):
+    """Print a human-readable script for manual recording."""
+    videos = [video] if video != "all" else ["1", "2", "3", "4"]
+
+    for vid in videos:
+        script = SCRIPTS[vid]
+        print(f"\n{'═' * 70}")
+        print(f"  VIDEO {vid}: {script['title']}")
+        print(f"{'═' * 70}\n")
+
+        print("  SETUP:")
+        for line in script["setup"]:
+            print(f"    {line}")
+        print()
+
+        for i, step in enumerate(script["steps"], 1):
+            print(f"  ┌─ {step['scene']}")
+            print(f"  │  Chat: {step['chat']}")
+            print(f"  │")
+            for action_type, action_text in step["actions"]:
+                if action_type in ("Type and send",):
+                    print(f"  │  ✏️  {action_type}:")
+                    print(f"  │     {action_text}")
+                elif action_type == "Click":
+                    print(f"  │  🖱️  {action_type}: {action_text}")
+                elif action_type == "Switch to":
+                    print(f"  │  🔄 {action_type}: {action_text}")
+                elif action_type in ("Key moment",):
+                    print(f"  │  ⭐ {action_type}: {action_text}")
+                elif action_type == "Wait":
+                    print(f"  │  ⏳ {action_text}")
+                else:
+                    print(f"  │  📝 {action_type}: {action_text}")
+            print(f"  └─")
+            print()
+
+        print("  CLOSING NARRATION:")
+        for line in script["closing"]:
+            print(f"    {line}")
+        print()
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -592,6 +844,8 @@ def main():
                         help="Run one-time setup (contacts, etc.)")
     parser.add_argument("--pace", type=float, default=1.0,
                         help="Pace multiplier (1.0=normal, 1.5=slower, 0.7=faster)")
+    parser.add_argument("--script", action="store_true",
+                        help="Print the script for manual recording (no Telegram needed)")
     args = parser.parse_args()
 
     if not args.video and not args.setup:
@@ -600,6 +854,12 @@ def main():
 
     global PACE
     PACE = args.pace
+
+    # Script mode: print instructions, no Telegram connection needed
+    if args.script:
+        if args.video:
+            _print_script(args.video)
+        sys.exit(0)
 
     # Load env
     env = _load_env()
@@ -623,12 +883,12 @@ def main():
             print("\n  ✅ Telegram connected. Start your screen recorder.")
             if args.video in ("1", "2"):
                 print("  Open Telegram Desktop with BOTH chats visible in the sidebar:")
-                print("    - @regression_test_dina_alonso_bot  (Alonso's Dina)")
-                print("    - @regression_test_dina_sancho_bot  (Sancho's Dina)")
+                print(f"    - @{ALONSO_BOT}  (Alonso's Dina)")
+                print(f"    - @{SANCHO_BOT}  (Sancho's Dina)")
                 print("  Start on Sancho's chat.")
             elif args.video in ("3", "4"):
                 print("  Open Telegram Desktop on Alonso's chat:")
-                print("    - @regression_test_dina_alonso_bot  (Alonso's Dina)")
+                print(f"    - @{ALONSO_BOT}  (Alonso's Dina)")
             print("\n  Press ENTER when ready...\n")
             input()
 

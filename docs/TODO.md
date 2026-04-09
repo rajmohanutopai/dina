@@ -1,3 +1,9 @@
+# Everything through MSGBOX
+
+❯ ok the next big feature - all ed25519 requests responses go through MSGBOX. It becomes more than just D2D - this becomes the way all connections to homenode happens. This will allow the home node to run        
+  without it being a server, because it is pulling the data - not pushing through. What                                                                                                                              
+
+
 # OpenAPI Issue
 OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
 
@@ -8,9 +14,35 @@ OpenAPI is not fully integrated. Still integration works with hand coded (AI cod
 # Information Storage
   Information related to Alonso is currently not stored against Alonso. It will be better if it is stored thus
 
+# Salt issue
+⏺ The salt is SHA256("dina:salt:general") — deterministic from the persona name. It's the same every time, for every user, for the same persona.                                                                     
+                                               
+  That makes it not useful as a salt. The purpose of a salt in HKDF is to add randomness so that two users with the same seed don't get the same DEK. But here, two users with the same master seed AND the same     
+  persona name WOULD get the same DEK, because the salt is derived deterministically from the persona name alone.                                                                                                    
+                                                                                                                                                                                                                     
+  In practice this doesn't matter because master seeds are unique (BIP-39 mnemonic entropy). No two users have the same seed. So the DEKs are unique anyway — the info string (dina:persona:general:dek:v1) already  
+  differentiates personas, and the seed differentiates users.
+                                                                                                                                                                                                                     
+  The dead-code path (hkdf.go) actually did it better — it used a userSalt read from a file (master_seed.salt), which is random per installation. That's a real salt.                                                
+   
+  The canonical path's deterministic salt adds no security value. It's equivalent to folding the persona name into the info string twice. The info string alone (dina:persona:general:dek:v1) already contains the   
+  persona name, so the salt is redundant.                         
+                                                                                                                                                                                                                     
+                                                                                                                 
+# Bug
+The combined search+email flow has a gap (nested approval within a task) — that's a real product issue to fix
+
+
 # memory management
 docs/designs/KNOWLEDGE_GRAPH.md
 Most important to get this right
+
+# No way to access facts and edit/delete
+
+There should be a mechanism to access each fact and odify / delete it
+
+# Scenarios
+All the scenarios are in dina-scenarios. We have to get all those working
 
 # Intra-Vault Sensitivity Levels
 

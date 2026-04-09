@@ -313,7 +313,8 @@ _MODERATE_ACTIONS = frozenset({
     "install_extension",
     "form_fill",
     "calendar_create",
-    "research",  # Autonomous research delegation to external agent (OpenClaw)
+    # "research" is SAFE — web search has no side effects.
+    # Moved out of MODERATE so /task search auto-executes without approval.
 })
 
 # ---------------------------------------------------------------------------
