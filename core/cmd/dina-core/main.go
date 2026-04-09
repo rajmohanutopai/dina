@@ -116,7 +116,15 @@ func main() {
 	dinaEnv := os.Getenv("DINA_ENV")
 	isDevOrTest := dinaEnv == "test" || dinaEnv == "development" || dinaEnv == "migration"
 	if seedPassword == "" && os.Getenv("DINA_MASTER_SEED") == "" {
-		log.Fatal("SECURITY: DINA_SEED_PASSWORD or DINA_MASTER_SEED is required")
+		// Maximum Security mode: wait for passphrase instead of crash-looping.
+		// Expose a minimal /healthz (returning 503) and /unlock endpoint while waiting.
+		slog.Info("Waiting for passphrase — provide via ./run.sh --start or POST /unlock")
+		slog.Info("Health endpoint available at /healthz (returns 503 until unlocked)")
+		seedPassword = waitForPassphrase(cfg.ListenAddr, wrappedSeedPath)
+		if seedPassword == "" {
+			log.Fatal("SECURITY: passphrase not provided and signal received — exiting")
+		}
+		slog.Info("Passphrase received — continuing startup")
 	}
 
 	// Derive KEK from seed password if configured.
@@ -1904,6 +1912,87 @@ func main() {
 // routeByMethod dispatches GET to getHandler, POST/PUT/DELETE to mutateHandler.
 // parseCIDRs parses a comma-separated list of CIDR strings into net.IPNet slices.
 // Invalid CIDRs are logged and skipped.
+// waitForPassphrase blocks until the passphrase is provided via:
+//   1. POST /unlock with {"passphrase": "..."} body
+//   2. The seed_password file appearing on disk (written by run.sh --start)
+//
+// While waiting, /healthz returns 503 so monitoring knows Core is alive but locked.
+// Returns the passphrase string, or "" if interrupted by signal.
+func waitForPassphrase(listenAddr string, wrappedSeedPath string) string {
+	passphraseCh := make(chan string, 1)
+
+	// Minimal HTTP server for /healthz (503) and /unlock.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"status":"locked","error":"core_locked","message":"Core is waiting for passphrase. Run: ./run.sh --start"}`))
+	})
+	// Catch-all: any other request gets a clear "locked" message.
+	// This ensures Brain, dina-admin, CLI all get a useful response.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"error":"core_locked","message":"Core is waiting for passphrase. Run: ./run.sh --start"}`))
+	})
+	mux.HandleFunc("/unlock", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Passphrase string `json:"passphrase"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Passphrase == "" {
+			http.Error(w, `{"error":"passphrase required"}`, http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"unlocking"}`))
+		select {
+		case passphraseCh <- body.Passphrase:
+		default:
+		}
+	})
+
+	srv := &http.Server{Addr: listenAddr, Handler: mux}
+	go srv.ListenAndServe()
+
+	// Also poll for the password file appearing on disk (run.sh writes it).
+	passwordFilePath := filepath.Dir(wrappedSeedPath) + "/../secrets/seed_password"
+	// Also check the Docker secrets path.
+	dockerSecretsPath := "/tmp/secrets/seed_password"
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	for {
+		select {
+		case pw := <-passphraseCh:
+			srv.Close()
+			return pw
+		case <-sigCh:
+			srv.Close()
+			return ""
+		case <-ticker.C:
+			// Check if password file appeared
+			for _, path := range []string{dockerSecretsPath, passwordFilePath} {
+				if data, err := os.ReadFile(path); err == nil {
+					pw := strings.TrimSpace(string(data))
+					if pw != "" {
+						slog.Info("Passphrase found in file", "path", path)
+						srv.Close()
+						return pw
+					}
+				}
+			}
+		}
+	}
+}
+
 func parseCIDRs(csv string) []*net.IPNet {
 	if csv == "" {
 		return nil

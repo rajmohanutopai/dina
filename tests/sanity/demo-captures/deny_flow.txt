@@ -1,0 +1,25 @@
+══════════════════════════════════════════════════════
+  DENY FLOW — Agent tries to send salary data
+══════════════════════════════════════════════════════
+
+AGENT TERMINAL:
+$ dina validate --session ses_h6zu send_email "Send salary data to external@unknown.com"
+
+  status: pending_approval
+  id: 13b648ec-b3e3-486b-b4b6-cab583b1159d
+  risk: MODERATE
+
+              ↓ notification appears in Telegram ↓
+
+TELEGRAM:
+  🚫 Denied: 13b648ec-b3e3-486b-b4b6-cab583b1159d
+
+              ↓ agent checks back ↓
+
+AGENT TERMINAL:
+$ dina validate-status 13b648ec-b3e3-486b-b4b6-cab583b1159d --session ses_h6zu
+
+  status: denied             ← agent MUST stop
+  action: send_email
+  target: Send salary data to external@unknown.com
+  decision_reason: Denied via Telegram

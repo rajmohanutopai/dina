@@ -35,9 +35,25 @@ import datetime as _dt
 import os
 import zoneinfo
 
+from ..domain.errors import CoreUnreachableError
 from ..domain.response import BotResponse, ConfirmOption, ConfirmResponse, ErrorResponse, RichResponse
 from ..port.core_client import CoreClient
 from .user_commands import UserCommandService, validate_name, validate_did
+
+
+def _core_error_message(exc: Exception) -> str:
+    """Return a user-friendly message when Core is unreachable or locked."""
+    msg = str(exc)
+    if "locked" in msg.lower() or "passphrase" in msg.lower():
+        return "🔒 Core is locked — waiting for passphrase.\nRun `./run.sh --start` on the server to unlock."
+    return "Core is currently unavailable. Please try again in a moment."
+
+
+def _is_core_locked(exc: Exception) -> bool:
+    """Check if the error is specifically the Core locked state."""
+    return isinstance(exc, CoreUnreachableError) and (
+        "locked" in str(exc).lower() or "passphrase" in str(exc).lower()
+    )
 
 log = logging.getLogger(__name__)
 
@@ -283,9 +299,12 @@ class TelegramService:
                 "telegram.remember_failed",
                 extra={"error": f"{type(exc).__name__}: {exc}"},
             )
-            await ch.send(ErrorResponse(
-                text="Sorry, I couldn't save that. Please try again."
-            ))
+            if _is_core_locked(exc):
+                await ch.send(ErrorResponse(text=_core_error_message(exc)))
+            else:
+                await ch.send(ErrorResponse(
+                    text="Sorry, I couldn't save that. Please try again."
+                ))
 
     # ------------------------------------------------------------------
     # /edit command (reminder editing)
@@ -927,7 +946,14 @@ class TelegramService:
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
-        result = await self._cmds.get_status()
+        try:
+            result = await self._cmds.get_status()
+        except Exception as exc:
+            if _is_core_locked(exc):
+                await ch.send(ErrorResponse(text=_core_error_message(exc)))
+            else:
+                await ch.send(ErrorResponse(text=_core_error_message(exc)))
+            return
         if not result.ok:
             await ch.send(ErrorResponse(text=result.message))
             return

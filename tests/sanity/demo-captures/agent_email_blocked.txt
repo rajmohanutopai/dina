@@ -1,0 +1,5 @@
+$ dina validate --session ses_iaaiyccriaai send_email "Send chair recommendations to user@example.com"
+
+status: pending_approval
+id: d9c2f537-1621-4e3c-9071-a6fcbedcc706
+risk: MODERATE

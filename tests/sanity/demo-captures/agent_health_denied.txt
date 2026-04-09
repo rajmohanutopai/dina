@@ -1,0 +1,6 @@
+$ dina session start --name demo-health
+Session: ses_y4wilcogy4wi
+
+$ dina ask --session ses_y4wilcogy4wi "What medications am I taking and what is my blood pressure?"
+
+I don't have any information about that yet.

@@ -264,6 +264,17 @@ class CoreHTTPClient:
                         f"Core denied access (path={_normalize_path(path)}, error={error_code or 'forbidden'})"
                     )
 
+                # --- Core locked (waiting for passphrase) ---
+                if resp.status_code == 503:
+                    try:
+                        body = resp.json()
+                    except Exception:
+                        body = {}
+                    if body.get("error") == "core_locked":
+                        raise CoreUnreachableError(
+                            body.get("message", "Core is locked — waiting for passphrase. Run: ./run.sh --start")
+                        )
+
                 # --- Retryable server errors ---
                 if resp.status_code >= 500:
                     msg = (

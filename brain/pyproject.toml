@@ -15,7 +15,8 @@ dependencies = [
 
 [project.optional-dependencies]
 llm = ["google-genai==1.68.0", "anthropic==0.86.0", "openai==2.30.0"]
-pii = ["spacy==3.8.13", "presidio-analyzer[gliner]==2.2.362", "presidio-anonymizer==2.2.362", "faker==40.11.1", "gliner==0.2.26"]
+pii = ["spacy==3.8.13", "presidio-analyzer==2.2.362", "presidio-anonymizer==2.2.362", "faker==40.11.1"]
+pii-gliner = ["spacy==3.8.13", "presidio-analyzer[gliner]==2.2.362", "presidio-anonymizer==2.2.362", "faker==40.11.1", "gliner==0.2.26"]
 telegram = ["python-telegram-bot==22.7"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24.0", "pytest-cov"]
 

@@ -1,0 +1,24 @@
+══════════════════════════════════════════════════════
+  APPROVE FLOW — Agent sends report to boss
+══════════════════════════════════════════════════════
+
+AGENT TERMINAL:
+$ dina validate --session ses_rvqy send_email "Send report to boss@company.com"
+
+  status: pending_approval
+  id: 1ef10ee4-dd2b-4ff0-8821-5fe9bf262cef
+  risk: MODERATE
+
+              ↓ notification appears in Telegram ↓
+
+TELEGRAM:
+  ✅ Approved: 1ef10ee4-dd2b-4ff0-8821-5fe9bf262cef
+
+              ↓ agent checks back ↓
+
+AGENT TERMINAL:
+$ dina validate-status 1ef10ee4-dd2b-4ff0-8821-5fe9bf262cef --session ses_rvqy
+
+  status: approved          ← agent can proceed
+  action: send_email
+  target: Send report to boss@company.com

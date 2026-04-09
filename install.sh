@@ -783,12 +783,9 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
     exit 1
 fi
 
-# Maximum Security: clear passphrase from disk now that Core has started
-if [ "${SEED_MODE}" = "maximum" ]; then
-    : > "${SECRETS_DIR}/seed_password"
-    chmod 600 "${SECRETS_DIR}/seed_password"
-    verbose_ok "Passphrase cleared from disk (Maximum Security)"
-fi
+# Maximum Security: passphrase clearing is deferred to AFTER step 8b (DID creation).
+# Core needs the passphrase to restart for DID creation with PDS credentials.
+# The passphrase will be cleared after the DID is created (or attempted).
 
 # ---------------------------------------------------------------------------
 # Step 8: Smoke test
@@ -888,35 +885,61 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
     echo -e "      Account will be created when Core starts (includes DID rotation key)."
 
     # Restart Core so it picks up the new PDS credentials and creates the account.
-    $COMPOSE up -d --force-recreate core >/dev/null 2>&1 || true
+    # NOTE: This must happen BEFORE the passphrase is cleared in Maximum Security mode.
+    # The passphrase clearing step (above) is moved to AFTER this block.
+    # Restart Core and Brain so they pick up the new PDS credentials from .env.
+    # Use down+up (not force-recreate) to ensure .env is re-read.
+    echo -e "      Restarting for DID creation..."
+    $COMPOSE down >/dev/null 2>&1 || true
+    sleep 2
+    $COMPOSE up -d >/dev/null 2>&1 || true
 
     # Wait for Core to create the DID (polls healthz + checks for DID).
     _DID_CREATED=false
+    _DID_ERROR=""
     for _WAIT in $(seq 1 20); do
         sleep 3
         _HEALTH=$(curl -sf "http://localhost:${CORE_PORT}/healthz" 2>/dev/null || true)
         if [ -n "${_HEALTH}" ]; then
-            # Check if Core logs show DID created
+            # Check if Core logs show DID created or restored
             _DID_LOG=$($COMPOSE logs core 2>/dev/null | grep "DID created on first boot\|DID restored from metadata" | tail -1)
             if [ -n "${_DID_LOG}" ]; then
                 _DID_CREATED=true
                 break
             fi
+            # Check for DID creation errors
+            _DID_ERROR=$($COMPOSE logs core 2>/dev/null | grep -i "DID.*failed\|PLC.*failed\|PDS.*failed\|create.*account.*failed\|UnsupportedDomain\|Invalid identifier" | tail -1)
+            if [ -n "${_DID_ERROR}" ]; then
+                verbose_info "DID creation error detected: ${_DID_ERROR}"
+                break
+            fi
+        else
+            verbose_info "Core not healthy yet (attempt ${_WAIT}/20)..."
         fi
     done
 
     if [ "${_DID_CREATED}" = true ]; then
         echo -e "  ${GREEN}✓${RESET} DID registered on PLC directory"
+    elif [ -n "${_DID_ERROR}" ]; then
+        echo -e "  ${YELLOW}⚠${RESET} DID creation failed. Check logs:"
+        echo -e "      ${RED}${_DID_ERROR}${RESET}"
+        echo -e "      Run: $COMPOSE logs core | grep -i 'DID\\|PLC\\|PDS\\|failed'"
     else
         echo -e "  ${YELLOW}⚠${RESET} DID creation pending — will complete on next Core restart."
+        echo -e "      Core may still be starting. Check: $COMPOSE logs core | grep DID"
     fi
-
-    # Restart Brain so it picks up the new PDS credentials from .env.
-    $COMPOSE up -d --force-recreate brain >/dev/null 2>&1 || true
 
     echo ""
 else
     verbose_ok "Community PDS account: $(cat "${_PDS_HANDLE_FILE}")"
+fi
+
+# Maximum Security: NOW clear the passphrase from disk.
+# This is deferred from earlier so that step 8b's Core restart has the passphrase.
+if [ "${SEED_MODE}" = "maximum" ]; then
+    : > "${SECRETS_DIR}/seed_password"
+    chmod 600 "${SECRETS_DIR}/seed_password"
+    verbose_ok "Passphrase cleared from disk (Maximum Security)"
 fi
 
 # ---------------------------------------------------------------------------
