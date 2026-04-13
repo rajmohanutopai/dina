@@ -2,9 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
@@ -23,7 +25,11 @@ func (h *DeviceHandler) HandleInitiatePairing(w http.ResponseWriter, r *http.Req
 
 	code, _, err := h.Device.InitiatePairing(r.Context())
 	if err != nil {
-		clientError(w, "failed to initiate pairing", http.StatusInternalServerError, err)
+		if errors.Is(err, domain.ErrPairingTooManyCodes) {
+			clientError(w, "too many pending pairing codes", http.StatusTooManyRequests, err)
+		} else {
+			clientError(w, "failed to initiate pairing", http.StatusInternalServerError, err)
+		}
 		return
 	}
 
@@ -66,7 +72,21 @@ func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Req
 		r.Context(), req.Code, req.DeviceName, req.PublicKeyMultibase, req.Role,
 	)
 	if err != nil {
-		clientError(w, "pairing failed", http.StatusInternalServerError, err)
+		// Map sentinel errors to appropriate HTTP status codes.
+		// No burn counter — Crockford Base32 8-char codes (32^8 = 1.1 trillion)
+		// make brute-force mathematically infeasible.
+		switch {
+		case errors.Is(err, domain.ErrPairingInvalidCode):
+			clientError(w, "invalid or expired pairing code", http.StatusUnauthorized, err)
+		case errors.Is(err, domain.ErrPairingCodeUsed):
+			clientError(w, "pairing code already used", http.StatusConflict, err)
+		case errors.Is(err, domain.ErrPairingTooManyCodes):
+			clientError(w, "too many pending pairing codes", http.StatusTooManyRequests, err)
+		case errors.Is(err, domain.ErrInvalidInput):
+			clientError(w, "invalid pairing request", http.StatusBadRequest, err)
+		default:
+			clientError(w, "pairing failed", http.StatusInternalServerError, err)
+		}
 		return
 	}
 
@@ -117,3 +137,5 @@ func (h *DeviceHandler) HandleRevokeDevice(w http.ResponseWriter, r *http.Reques
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+

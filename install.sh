@@ -240,21 +240,29 @@ build_crypto_image
 # JSON messages from stdout, renders prompts, collects input, and sends
 # answers back via stdin. The seed stays inside the container.
 
-# Allocate ports on the HOST (not inside the container, which has its own
-# network namespace). Reuse saved ports from .env if present.
+# MBX-058: Port allocation is optional. By default, Core uses MsgBox relay
+# (zero public ports). DINA_CORE_PORT is only needed for DINA_TRANSPORT=direct
+# (local dev / LAN access). When --port is specified, enable direct transport.
 if [ -f "${ENV_FILE}" ]; then
     _saved_core=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
     _saved_pds=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
-# --port overrides saved/auto-detected ports. PDS = core_port + 1 when explicit.
 if [ -n "${EXPLICIT_PORT}" ]; then
+    # --port explicitly requested → allocate host ports for direct transport.
     CORE_PORT="${EXPLICIT_PORT}"
     PDS_PORT=$(( EXPLICIT_PORT + 1 ))
-else
-    CORE_PORT="${_saved_core:-$(find_free_port 8100)}"
+    verbose_ok "Direct transport: core=${CORE_PORT}, pds=${PDS_PORT}"
+elif [ -n "${_saved_core}" ]; then
+    # Saved port from previous install → preserve it.
+    CORE_PORT="${_saved_core}"
     PDS_PORT="${_saved_pds:-$(find_free_port 2583)}"
+    verbose_ok "Ports (saved): core=${CORE_PORT}, pds=${PDS_PORT}"
+else
+    # Default: MsgBox relay, no host port needed.
+    CORE_PORT=""
+    PDS_PORT=""
+    verbose_ok "Transport: MsgBox relay (zero public ports)"
 fi
-verbose_ok "Ports: core=${CORE_PORT}, pds=${PDS_PORT}"
 
 # Variables populated by the wizard result
 SEED_MODE=""
@@ -733,8 +741,14 @@ step_begin "Waiting for Dina to be ready..."
 ELAPSED=0
 
 while [ $ELAPSED -lt $HEALTH_TIMEOUT ]; do
-    STATUS=$(curl -s --connect-timeout 3 \
-        "http://localhost:${CORE_PORT}/healthz" 2>/dev/null || true)
+    # MBX-058: Use docker exec when no host port (MsgBox transport).
+    if [ -n "${CORE_PORT}" ]; then
+        STATUS=$(curl -s --connect-timeout 3 \
+            "http://localhost:${CORE_PORT}/healthz" 2>/dev/null || true)
+    else
+        STATUS=$(docker exec "core-${DINA_SESSION:-dna}" \
+            wget -qO- "http://localhost:8100/healthz" 2>/dev/null || true)
+    fi
 
     if echo "${STATUS}" | grep -q '"status"'; then
         step_end
@@ -796,11 +810,19 @@ if [ -f "${TOKEN_FILE}" ]; then
     _smoke_token=$(cat "${TOKEN_FILE}" 2>/dev/null || true)
     if [ -n "${_smoke_token}" ]; then
         printf "  Verifying LLM... "
-        _smoke_resp=$(curl -sf -X POST \
-            -H "Authorization: Bearer ${_smoke_token}" \
-            -H "Content-Type: application/json" \
-            -d '{"prompt":"Reply with just the word OK."}' \
-            "http://localhost:${CORE_PORT}/api/v1/reason" 2>/dev/null || true)
+        if [ -n "${CORE_PORT}" ]; then
+            _smoke_resp=$(curl -sf -X POST \
+                -H "Authorization: Bearer ${_smoke_token}" \
+                -H "Content-Type: application/json" \
+                -d '{"prompt":"Reply with just the word OK."}' \
+                "http://localhost:${CORE_PORT}/api/v1/reason" 2>/dev/null || true)
+        else
+            _smoke_resp=$(docker exec "core-${DINA_SESSION:-dna}" \
+                wget -qO- --header="Authorization: Bearer ${_smoke_token}" \
+                --header="Content-Type: application/json" \
+                --post-data='{"prompt":"Reply with just the word OK."}' \
+                "http://localhost:8100/api/v1/reason" 2>/dev/null || true)
+        fi
 
         _smoke_error=$(echo "${_smoke_resp}" | jq -r '.error_code // empty' 2>/dev/null || true)
         _smoke_content=$(echo "${_smoke_resp}" | jq -r '.content // empty' 2>/dev/null || true)
@@ -899,7 +921,12 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
     _DID_ERROR=""
     for _WAIT in $(seq 1 20); do
         sleep 3
-        _HEALTH=$(curl -sf "http://localhost:${CORE_PORT}/healthz" 2>/dev/null || true)
+        if [ -n "${CORE_PORT}" ]; then
+            _HEALTH=$(curl -sf "http://localhost:${CORE_PORT}/healthz" 2>/dev/null || true)
+        else
+            _HEALTH=$(docker exec "core-${DINA_SESSION:-dna}" \
+                wget -qO- "http://localhost:8100/healthz" 2>/dev/null || true)
+        fi
         if [ -n "${_HEALTH}" ]; then
             # Check if Core logs show DID created or restored
             _DID_LOG=$($COMPOSE logs core 2>/dev/null | grep "DID created on first boot\|DID restored from metadata" | tail -1)
@@ -950,7 +977,12 @@ echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━
 echo -e "  ${GREEN}${BOLD}  Dina is ready!${RESET}"
 echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
-echo -e "  ${CYAN}http://localhost:${CORE_PORT}${RESET}"
+if [ -n "${CORE_PORT}" ]; then
+    echo -e "  ${CYAN}http://localhost:${CORE_PORT}${RESET}  (direct transport)"
+else
+    echo -e "  ${CYAN}Transport: MsgBox relay${RESET}  (zero public ports)"
+    echo -e "  ${DIM}MsgBox: ${INFRA_MSGBOX_URL}${RESET}"
+fi
 echo ""
 if [ -n "${SEED_MODE}" ]; then
     if [ "${SEED_MODE}" = "maximum" ]; then
@@ -987,8 +1019,14 @@ echo -e "    ${CYAN}./run.sh --logs${RESET}     Logs"
 if [ "${VERBOSE}" = true ]; then
     echo ""
     echo -e "  ${DIM}Session: ${DINA_SESSION}${RESET}"
-    echo -e "  ${DIM}PDS: http://localhost:${PDS_PORT}${RESET}"
-    echo -e "  ${DIM}Health: http://localhost:${CORE_PORT}/healthz${RESET}"
+    if [ -n "${PDS_PORT}" ]; then
+        echo -e "  ${DIM}PDS: http://localhost:${PDS_PORT}${RESET}"
+    fi
+    if [ -n "${CORE_PORT}" ]; then
+        echo -e "  ${DIM}Health: http://localhost:${CORE_PORT}/healthz${RESET}"
+    else
+        echo -e "  ${DIM}Health: docker exec core-${DINA_SESSION:-dna} wget -qO- http://localhost:8100/healthz${RESET}"
+    fi
 fi
 
 echo ""

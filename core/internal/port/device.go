@@ -12,6 +12,7 @@ type DevicePairer interface {
 	CompletePairing(ctx context.Context, code, deviceName string) (clientToken string, tokenID string, err error)
 	CompletePairingFull(ctx context.Context, code, deviceName string) (*domain.PairResponse, error)
 	CompletePairingWithKey(ctx context.Context, code, deviceName, publicKeyMultibase string, role ...string) (deviceID string, nodeDID string, err error)
+	RecordFailedAttempt(code string) bool
 	ListDevices(ctx context.Context) ([]domain.PairedDevice, error)
 	RevokeDevice(ctx context.Context, tokenID string) error
 	GetDeviceByDID(ctx context.Context, did string) (*domain.PairedDevice, error)

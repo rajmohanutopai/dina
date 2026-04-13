@@ -1,4 +1,4 @@
-// Package pairing implements device pairing via QR code / numeric PIN (section 10).
+// Package pairing implements device pairing via 8-character alphanumeric code (section 10).
 //
 // Provides the PairingManager, which handles:
 //   - Generating pairing codes with cryptographic secrets
@@ -13,7 +13,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -31,11 +30,12 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	ErrInvalidCode         = errors.New("pairing: invalid or expired pairing code")
-	ErrCodeUsed            = errors.New("pairing: pairing code already used")
+	// Sentinel errors — aliased from domain for cross-layer error matching.
+	ErrInvalidCode         = domain.ErrPairingInvalidCode
+	ErrCodeUsed            = domain.ErrPairingCodeUsed
+	ErrTooManyPendingCodes = domain.ErrPairingTooManyCodes
 	ErrDeviceNotFound      = errors.New("pairing: device not found")
 	ErrDeviceRevoked       = errors.New("pairing: device already revoked")
-	ErrTooManyPendingCodes = errors.New("pairing: too many pending codes")
 	ErrCodeCollision       = errors.New("pairing: failed to generate unique code after retries")
 )
 
@@ -145,8 +145,8 @@ func (pm *PairingManager) GenerateCode(_ context.Context) (string, []byte, error
 		return "", nil, ErrTooManyPendingCodes
 	}
 
-	// Retry loop: generate a unique 6-digit code, checking for collisions
-	// with existing live (non-expired, non-used) codes in pm.codes.
+	// Retry loop: generate a unique 8-character alphanumeric code, checking
+	// for collisions with existing live (non-expired, non-used) codes.
 	for attempt := 0; attempt < maxCodeRetries; attempt++ {
 		// Generate a cryptographically random secret (32 bytes = 256-bit entropy).
 		secret := make([]byte, SecretLength)
@@ -154,13 +154,12 @@ func (pm *PairingManager) GenerateCode(_ context.Context) (string, []byte, error
 			return "", nil, fmt.Errorf("pairing: failed to generate secret: %w", err)
 		}
 
-		// Derive a 6-digit numeric pairing code from the secret.
-		// Architecture §10: "Core generates 6-digit pairing code (expires in 5 minutes)".
-		// The code is a short-lived physical proximity proof (100000–999999).
+		// Derive an 8-character alphanumeric pairing code from the secret.
+		// 62^8 = 218 trillion codes — brute-force is mathematically infeasible
+		// even without rate limiting (300 attempts/min × 5 min = 1,500 attempts
+		// out of 218 trillion = 0.0000000007% chance).
 		// The 32-byte secret remains the cryptographic material for key derivation.
-		hash := sha256.Sum256(secret)
-		num := binary.BigEndian.Uint32(hash[:4])
-		code := fmt.Sprintf("%06d", 100000+(num%900000))
+		code := deriveAlphanumericCode(secret, 8)
 
 		// Check for collision with an existing live code.
 		if existing, ok := pm.codes[code]; ok {
@@ -183,6 +182,31 @@ func (pm *PairingManager) GenerateCode(_ context.Context) (string, []byte, error
 	}
 
 	return "", nil, ErrCodeCollision
+}
+
+// pairingAlphabet is the Crockford Base32 character set for pairing codes.
+// 32 characters: 0-9, A-H, J-K, M-N, P-T, V-W, X-Y, Z.
+// Case-insensitive, no ambiguous characters (no I/L/O/U).
+// Easy to read aloud, type manually, and display in any font.
+// 8 chars = 32^8 = 1.1 trillion codes — brute-force infeasible.
+const pairingAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// deriveAlphanumericCode derives an n-character Crockford Base32 code from a secret.
+// Uses SHA-256 hash bytes, each mapped to the 32-char alphabet via modulo.
+func deriveAlphanumericCode(secret []byte, n int) string {
+	hash := sha256.Sum256(secret)
+	code := make([]byte, n)
+	for i := 0; i < n; i++ {
+		code[i] = pairingAlphabet[hash[i]%byte(len(pairingAlphabet))]
+	}
+	return string(code)
+}
+
+// RecordFailedAttempt is a no-op. With Crockford Base32 8-character codes
+// (32^8 = 1.1 trillion code space), brute-force is mathematically infeasible.
+// The burn counter was removed to avoid punishing typos.
+func (pm *PairingManager) RecordFailedAttempt(code string) bool {
+	return false
 }
 
 // CompletePairing verifies the code and registers the device.

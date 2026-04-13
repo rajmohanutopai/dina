@@ -1,0 +1,375 @@
+openapi: "3.1.0"
+info:
+  title: Dina MsgBox API
+  description: |
+    HTTP + WebSocket API for the Dina D2D encrypted mailbox and RPC relay.
+
+    The MsgBox is a lightweight message relay that forwards NaCl-encrypted
+    blobs between DID-identified Home Nodes. It never decrypts payload content.
+
+    **Transport modes:**
+    - D2D messages: opaque NaCl sealed boxes between Home Nodes
+    - RPC envelopes: CLI-to-Core requests relayed through MsgBox (binary-JSON)
+
+    **WebSocket protocol** (`/ws`):
+    - Auth: Ed25519 challenge-response on connect
+    - Inbound: binary frames (D2D or RPC envelopes)
+    - Outbound: buffered message drain on connect
+
+    See `docs/designs/MSGBOX_TRANSPORT.md` for the full protocol design.
+  version: "0.1.0"
+  contact:
+    name: Dina Project
+    url: https://github.com/rajmohanutopai/dina
+
+servers:
+  - url: https://mailbox.dinakernel.com
+    description: Production MsgBox relay
+  - url: https://test-mailbox.dinakernel.com
+    description: Test MsgBox relay
+
+paths:
+  /forward:
+    post:
+      operationId: forwardMessage
+      summary: Forward an encrypted message to a recipient
+      description: |
+        Authenticated message submission. The sender signs the request with
+        Ed25519 over a canonical payload. MsgBox verifies the signature and
+        forwards the opaque body to the recipient (online delivery or buffer).
+
+        **Canonical signing payload:**
+        ```
+        POST\n/forward\n\n{X-Timestamp}\n{X-Nonce}\n{SHA256_HEX(body)}
+        ```
+
+        **DID-key binding:** For `did:key` senders, the provided public key
+        must match the key encoded in the DID. For `did:plc` senders,
+        binding requires PLC document lookup (see security notes).
+      parameters:
+        - $ref: '#/components/parameters/X-Recipient-DID'
+        - $ref: '#/components/parameters/X-Sender-DID'
+        - $ref: '#/components/parameters/X-Timestamp'
+        - $ref: '#/components/parameters/X-Nonce'
+        - $ref: '#/components/parameters/X-Signature'
+        - $ref: '#/components/parameters/X-Sender-Pub'
+        # X-Msg-ID removed: message ID is always server-generated to prevent
+        # ID collision attacks (pre-occupying an ID to silently drop later messages).
+      requestBody:
+        required: true
+        description: Opaque encrypted payload (NaCl sealed box). Max 1 MiB.
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              maxLength: 1048576
+      responses:
+        "202":
+          description: Message accepted for delivery or buffering.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForwardResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "413":
+          description: Payload too large (>1 MiB).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "429":
+          description: Rate limit exceeded (60/min per sender DID).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "503":
+          description: Buffer full for recipient.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /healthz:
+    get:
+      operationId: healthCheck
+      summary: Liveness probe
+      description: Returns MsgBox health status with connection and buffer counts.
+      responses:
+        "200":
+          description: MsgBox is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /ws:
+    get:
+      operationId: websocketConnect
+      summary: WebSocket connection for Home Nodes
+      description: |
+        Home Nodes connect via WebSocket to receive messages and relay RPC
+        envelopes. The connection is authenticated via Ed25519 challenge-response.
+
+        **Auth handshake (text frames):**
+        1. Server sends `AuthChallenge` (type, nonce, ts)
+        2. Client sends `AuthResponse` (type, did, sig, pub)
+        3. Server verifies signature and registers the DID
+
+        **Binary frames (after auth):**
+        - D2D: 2-byte big-endian DID length + DID bytes + opaque payload
+        - RPC: JSON envelope `{type:"rpc", id, from_did, to_did, direction, ...}`
+        - Cancel: JSON envelope `{type:"cancel", cancel_of, from_did, to_did}`
+
+        **Drain:** On connect, all buffered messages for the DID are delivered
+        via binary frames (delete-on-ack with expires_at enforcement).
+
+        This endpoint upgrades to WebSocket — not a standard HTTP response.
+      responses:
+        "101":
+          description: Switching Protocols (WebSocket upgrade).
+
+components:
+  parameters:
+    X-Recipient-DID:
+      name: X-Recipient-DID
+      in: header
+      required: true
+      description: "Recipient's DID (did:plc:... or did:key:...)"
+      schema:
+        type: string
+        pattern: '^did:(plc|key):.+'
+    X-Sender-DID:
+      name: X-Sender-DID
+      in: header
+      required: true
+      description: "Sender's DID (for auth + rate limiting)"
+      schema:
+        type: string
+        pattern: '^did:(plc|key):.+'
+    X-Timestamp:
+      name: X-Timestamp
+      in: header
+      required: true
+      description: "RFC 3339 UTC timestamp (5-minute validity window)"
+      schema:
+        type: string
+        format: date-time
+        example: "2026-04-12T14:30:00Z"
+    X-Nonce:
+      name: X-Nonce
+      in: header
+      required: true
+      description: "Random hex nonce (32 chars / 16 bytes)"
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 32
+    X-Signature:
+      name: X-Signature
+      in: header
+      required: true
+      description: |
+        Hex-encoded Ed25519 signature over canonical payload:
+        `POST\n/forward\n\n{timestamp}\n{nonce}\n{sha256_hex(body)}`
+      schema:
+        type: string
+    X-Sender-Pub:
+      name: X-Sender-Pub
+      in: header
+      required: true
+      description: "Hex-encoded 32-byte Ed25519 public key"
+      schema:
+        type: string
+        minLength: 64
+        maxLength: 64
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    ForwardResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [delivered, buffered]
+          description: "'delivered' if recipient connected, 'buffered' if offline"
+        msg_id:
+          type: string
+          description: Message ID (generated or from X-Msg-ID header)
+      required: [status, msg_id]
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        connected:
+          type: integer
+          description: Number of active WebSocket connections
+        buffered:
+          type: integer
+          description: Total buffered messages across all DIDs
+      required: [status, connected, buffered]
+
+    # --- WebSocket message types (not HTTP, documented for reference) ---
+
+    AuthChallenge:
+      type: object
+      description: "Sent by MsgBox on WebSocket connect (text frame)"
+      properties:
+        type:
+          type: string
+          const: auth_challenge
+        nonce:
+          type: string
+          description: "Hex-encoded 16-byte random challenge"
+        ts:
+          type: integer
+          format: int64
+          description: "Unix timestamp of challenge generation"
+      required: [type, nonce, ts]
+
+    AuthResponse:
+      type: object
+      description: "Sent by client to prove DID ownership (text frame)"
+      properties:
+        type:
+          type: string
+          const: auth_response
+        did:
+          type: string
+          description: "Claimed DID (did:plc:... or did:key:...)"
+        sig:
+          type: string
+          description: |
+            Hex-encoded Ed25519 signature over:
+            `AUTH_RELAY\n{nonce}\n{ts}`
+        pub:
+          type: string
+          description: "Hex-encoded 32-byte Ed25519 public key"
+      required: [type, did, sig, pub]
+
+    RPCEnvelope:
+      type: object
+      description: |
+        Outer RPC envelope sent as binary-JSON WebSocket frame.
+        The ciphertext field contains NaCl sealed-box encrypted inner
+        request/response JSON. MsgBox routes by to_did without inspecting
+        ciphertext content.
+      properties:
+        type:
+          type: string
+          const: rpc
+        id:
+          type: string
+          description: "Client-generated request UUID"
+        from_did:
+          type: string
+          description: "Sender DID (must match authenticated WebSocket DID)"
+        to_did:
+          type: string
+          description: "Recipient DID"
+        direction:
+          type: string
+          enum: [request, response]
+        expires_at:
+          type: integer
+          format: int64
+          nullable: true
+          description: "Unix timestamp. MsgBox drops expired buffered messages on drain."
+        subtype:
+          type: string
+          nullable: true
+          description: "'pair' for pairing requests (IP-throttled). Omit for normal RPC."
+        ciphertext:
+          type: string
+          description: "Base64-encoded NaCl sealed-box ciphertext (opaque to MsgBox)"
+      required: [type, id, from_did, to_did, direction]
+
+    CancelEnvelope:
+      type: object
+      description: "Cancel a previously sent RPC request (binary-JSON WebSocket frame)"
+      properties:
+        type:
+          type: string
+          const: cancel
+        cancel_of:
+          type: string
+          description: "ID of the request to cancel"
+        from_did:
+          type: string
+          description: "Sender DID (must match authenticated WebSocket DID)"
+        to_did:
+          type: string
+          description: "Recipient DID"
+      required: [type, cancel_of, from_did, to_did]
+
+    RPCInnerRequest:
+      type: object
+      description: |
+        Decrypted inner request JSON (inside ciphertext after NaCl open).
+        This is what the CLI encrypts before sending.
+      properties:
+        method:
+          type: string
+          enum: [GET, POST, PUT, DELETE]
+        path:
+          type: string
+          description: "Core API path (e.g., /api/v1/remember)"
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            HTTP headers including auth: X-DID, X-Timestamp, X-Nonce, X-Signature.
+        body:
+          type: string
+          description: "Request body as JSON string"
+      required: [method, path]
+
+    RPCInnerResponse:
+      type: object
+      description: "Inner response JSON (encrypted back to CLI)"
+      properties:
+        status:
+          type: integer
+          description: "HTTP status code"
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+          description: "Response body as JSON string"
+      required: [status]
+
+  responses:
+    BadRequest:
+      description: Missing or invalid request parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: |
+        Authentication failed. Possible causes:
+        - Missing auth headers
+        - Invalid timestamp (>5 min skew)
+        - Invalid public key encoding
+        - DID-key binding mismatch (did:key only)
+        - Signature verification failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

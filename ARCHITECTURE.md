@@ -516,11 +516,12 @@ The right architecture is lightweight, always-on containers via `docker compose 
 
 ### Connectivity & Ingress (Multi-Lane Networking)
 
-dina-core exposes two ports:
-- **Port 443** — external HTTPS: client WebSockets, NaCl messaging (Dina-to-Dina), and `/admin` routing to the admin sub-app in `dina-brain`. Behind a tunnel (Tailscale/Cloudflare/Yggdrasil) for NAT traversal and DDoS protection.
-- **Port 8100** — internal API (brain ↔ core, Docker network only)
+dina-core needs **zero inbound ports** for CLI and D2D communication:
+- **Port 8100** — internal API (brain ↔ core, Docker network only). Not exposed externally.
+- **MsgBox relay** — CLI devices and D2D messages reach Core via the MsgBox WebSocket relay (`wss://mailbox.dinakernel.com`). Core maintains a persistent **outbound** WebSocket to MsgBox. CLI sends encrypted RPC envelopes to MsgBox addressed to Core's DID; MsgBox relays them on Core's WebSocket. Responses flow back the same way. No port forwarding, no DNS, no TLS certificate needed on the Home Node. See `docs/designs/MSGBOX_TRANSPORT.md` for the full protocol.
+- **Port 443 (optional)** — for direct HTTPS access on LAN/Docker. Use `DINA_TRANSPORT=direct` in the CLI. Not required for remote access.
 
-The public ingress is a tunnel or reverse proxy in front of port 443. This solves NAT traversal, port conflicts, TLS termination, and DDoS protection in one architectural decision. Trust records are published to the community PDS (`pds.dinakernel.com`) via outbound HTTPS — no local PDS port is needed.
+Trust records are published to the community PDS (`pds.dinakernel.com`) via outbound HTTPS — no local PDS port is needed.
 
 **Three ingress tiers, running simultaneously if needed:**
 

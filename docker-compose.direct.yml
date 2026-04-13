@@ -1,0 +1,16 @@
+# MBX-059: Docker Compose override for DINA_TRANSPORT=direct (local dev / LAN).
+#
+# Exposes Core's port 8100 to the host so CLI devices can connect directly
+# without MsgBox relay. Use this for development, LAN testing, or when
+# the Home Node has a public IP / tunnel.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.direct.yml up
+#
+# Or copy this into docker-compose.override.yml for automatic inclusion:
+#   cp docker-compose.direct.yml docker-compose.override.yml
+
+services:
+  core:
+    ports:
+      - "${DINA_CORE_PORT:-8100}:8100"

@@ -62,7 +62,14 @@ func main() {
 	defer buf.Close()
 
 	hub := msgbox.NewHub(buf)
-	handler := msgbox.NewHandler(hub)
+
+	// PLC resolver for did:plc WebSocket auth verification.
+	plcURL := envOr("MSGBOX_PLC_URL", "https://plc.directory")
+	plcResolver := msgbox.NewCachingPLCResolver(
+		msgbox.NewHTTPPLCResolver(plcURL),
+		time.Hour, // cache TTL: 1 hour
+	)
+	handler := msgbox.NewHandler(hub, plcResolver)
 
 	// HTTP mux.
 	mux := http.NewServeMux()

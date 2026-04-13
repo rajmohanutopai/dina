@@ -810,6 +810,7 @@ func main() {
 		msgboxClient := transport.NewMsgBoxClient(mboxURL+"/ws", ownDID, signingPrivKey)
 		transporter.SetMsgBoxClient(msgboxClient)
 		transportSvc.SetMsgBoxForwarder(msgboxClient) // DinaMsgBox routing in service layer
+
 		slog.Info("MsgBox client created", "url", mboxURL, "did", ownDID)
 	}
 
@@ -984,14 +985,14 @@ func main() {
 	})
 
 	// Wire MsgBox client inbound: messages from msgbox → ingress pipeline.
+	// Wire MsgBox D2D inbound handler. Start is deferred to after RPC bridge wiring.
 	if rc := transporter.GetMsgBoxClient(); rc != nil {
 		rc.SetOnMessage(func(payload []byte) {
 			if err := ingressRouter.Ingest(context.Background(), "msgbox", payload); err != nil {
 				slog.Warn("msgbox_client.ingest_failed", "error", err)
 			}
 		})
-		go rc.Start(context.Background())
-		slog.Info("MsgBox client started", "url", transporter.GetMsgBoxURL())
+		// rc.Start is called later, after RPC bridge is wired (no startup race).
 	}
 
 	// Background sweep: periodically drain dead-drop and spool after vault unlock.
@@ -1881,6 +1882,47 @@ func main() {
 	// Graceful shutdown on SIGINT/SIGTERM.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	// Wire RPC-over-MsgBox bridge now that the HTTP mux is fully configured.
+	// The MsgBox client was started earlier (go rc.Start) but doesn't receive
+	// RPC envelopes until a CLI device connects, by which time this wiring is done.
+	if rc := transporter.GetMsgBoxClient(); rc != nil {
+		rpcBridge := transport.NewRPCBridge(mux)
+		rpcPool := transport.NewRPCWorkerPool(8, 32)
+		rpcCache := transport.NewIdempotencyCache(5 * time.Minute)
+		rpcNonceCache := transport.NewNonceCache(5 * time.Minute)
+		rpcDecryptor, decErr := transport.NewRPCDecryptor(
+			nacl, converter,
+			signingPrivKey.Public().(ed25519.PublicKey),
+			[]byte(signingPrivKey),
+		)
+		if decErr != nil {
+			slog.Error("RPC decryptor init failed — CLI devices CANNOT connect via MsgBox relay. "+
+				"D2D messaging still works. Fix: check Core's Ed25519 signing key.", "error", decErr)
+		} else {
+			rc.SetRPCBridge(rpcBridge, rpcPool, rpcCache, rpcNonceCache, rpcDecryptor)
+			rc.StartRPCWorkers(context.Background())
+			slog.Info("RPC-over-MsgBox bridge wired", "workers", 8, "backlog", 32)
+
+			// Background sweeper for idempotency + nonce caches.
+			go func() {
+				ticker := time.NewTicker(60 * time.Second)
+				defer ticker.Stop()
+				for range ticker.C {
+					if n := rpcCache.Cleanup(); n > 0 {
+						slog.Debug("rpc_cache.cleanup", "removed", n)
+					}
+					if n := rpcNonceCache.Cleanup(); n > 0 {
+						slog.Debug("nonce_cache.cleanup", "removed", n)
+					}
+				}
+			}()
+		}
+
+		// Start MsgBox client AFTER RPC bridge is wired (no startup race).
+		go rc.Start(context.Background())
+		slog.Info("MsgBox client started", "url", transporter.GetMsgBoxURL())
+	}
 
 	go func() {
 		slog.Info("dina-core starting", "addr", addr)

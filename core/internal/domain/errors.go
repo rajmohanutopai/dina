@@ -28,4 +28,9 @@ var (
 	ErrUnknownMessageType   = errors.New("unknown D2D message type")
 	ErrInvalidD2DBody       = errors.New("invalid D2D message body")
 	ErrNotAContact          = errors.New("recipient is not a contact")
+
+	// Pairing errors (used by handler for HTTP status mapping).
+	ErrPairingInvalidCode     = errors.New("pairing: invalid or expired pairing code")
+	ErrPairingCodeUsed        = errors.New("pairing: pairing code already used")
+	ErrPairingTooManyCodes    = errors.New("pairing: too many pending codes")
 )
