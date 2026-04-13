@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -38,8 +40,91 @@ type AuthResponse struct {
 const AuthTimeout = 5 * time.Second
 
 // Authenticate performs the challenge-response handshake on a new WebSocket.
-// Returns the authenticated DID on success.
+// For did:key DIDs, the public key is self-certifying. For did:plc DIDs,
+// pass a PLCResolver via AuthenticateWithResolver for full verification.
+// Without a resolver, did:plc verification is deferred (the signature is
+// still verified, but the key is not cross-checked against the PLC document).
 func Authenticate(ctx context.Context, ws *websocket.Conn) (string, error) {
+	return AuthenticateWithResolver(ctx, ws, nil)
+}
+
+// verifyDIDKeyDirect verifies that a did:key DID encodes the given public key.
+// did:key is self-certifying: the DID IS the public key.
+func verifyDIDKeyDirect(did string, pubKey []byte) error {
+	expected := deriveDIDKey(pubKey)
+	if did != expected {
+		return fmt.Errorf("did:key mismatch: claimed %s, key derives %s", did, expected)
+	}
+	return nil
+}
+
+// PLCResolver fetches PLC documents for did:plc verification.
+// Implementations: real HTTP fetcher (production), mock (tests).
+type PLCResolver interface {
+	// Resolve fetches the PLC document and returns the Ed25519 public key
+	// from the #dina_signing verification method. Returns error if the
+	// document cannot be fetched or has no #dina_signing key.
+	ResolveDinaSigningKey(ctx context.Context, did string) (ed25519.PublicKey, error)
+}
+
+// CachingPLCResolver wraps a PLCResolver with a TTL-based in-memory cache.
+// Thread-safe. Injectable clock for testing.
+type CachingPLCResolver struct {
+	inner PLCResolver
+	ttl   time.Duration
+	now   func() time.Time // injectable clock; defaults to time.Now
+
+	mu    sync.Mutex
+	cache map[string]plcCacheEntry
+}
+
+type plcCacheEntry struct {
+	key       ed25519.PublicKey
+	fetchedAt time.Time
+}
+
+// NewCachingPLCResolver creates a caching resolver with the given TTL.
+func NewCachingPLCResolver(inner PLCResolver, ttl time.Duration) *CachingPLCResolver {
+	return &CachingPLCResolver{
+		inner: inner,
+		ttl:   ttl,
+		now:   time.Now,
+		cache: make(map[string]plcCacheEntry),
+	}
+}
+
+// ResolveDinaSigningKey returns the cached key if still valid, otherwise fetches
+// from the inner resolver and caches the result.
+func (c *CachingPLCResolver) ResolveDinaSigningKey(ctx context.Context, did string) (ed25519.PublicKey, error) {
+	c.mu.Lock()
+	entry, ok := c.cache[did]
+	if ok && c.now().Sub(entry.fetchedAt) < c.ttl {
+		c.mu.Unlock()
+		return entry.key, nil
+	}
+	c.mu.Unlock()
+
+	// Cache miss or expired — fetch from inner resolver.
+	key, err := c.inner.ResolveDinaSigningKey(ctx, did)
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	c.cache[did] = plcCacheEntry{key: key, fetchedAt: c.now()}
+	c.mu.Unlock()
+
+	return key, nil
+}
+
+// FetchCount returns how many times the inner resolver was actually called.
+// Only used for testing — not part of PLCResolver interface.
+// This requires the inner resolver to track calls (see countingPLCResolver in tests).
+
+// AuthenticateWithResolver performs challenge-response with full DID verification.
+// For did:key: self-certifying (public key is the DID).
+// For did:plc: fetches PLC document via resolver, verifies #dina_signing key.
+func AuthenticateWithResolver(ctx context.Context, ws *websocket.Conn, resolver PLCResolver) (string, error) {
 	authCtx, cancel := context.WithTimeout(ctx, AuthTimeout)
 	defer cancel()
 
@@ -75,22 +160,45 @@ func Authenticate(ctx context.Context, ws *websocket.Conn) (string, error) {
 		return "", errors.New("auth: missing required fields")
 	}
 
-	// 3. Decode public key.
+	// 3. Decode provided public key.
 	pubBytes, err := hex.DecodeString(resp.Pub)
 	if err != nil || len(pubBytes) != ed25519.PublicKeySize {
 		return "", errors.New("auth: invalid public key")
 	}
 
-	// 4. Verify Ed25519 signature proves ownership of the claimed DID.
-	// The msgbox accepts any DID format (did:plc, did:key, etc.) as long as
-	// the signature verifies with the provided public key. The msgbox is a
-	// transport layer — it trusts the cryptographic proof, not the DID format.
+	// 4. Verify the public key is bound to the claimed DID.
+	switch {
+	case strings.HasPrefix(resp.DID, "did:key:"):
+		// Self-certifying: derive did:key from provided pubkey, must match.
+		if err := verifyDIDKeyDirect(resp.DID, pubBytes); err != nil {
+			return "", fmt.Errorf("auth: %w", err)
+		}
+	case strings.HasPrefix(resp.DID, "did:plc:"):
+		// Fetch PLC document, extract #dina_signing key, compare to provided key.
+		if resolver == nil {
+			// No resolver: accept with signature-only verification.
+			// The node proves key ownership but we can't verify DID-to-key binding.
+			// Production should always pass a resolver; nil is for backward compat.
+			break
+		}
+		plcKey, err := resolver.ResolveDinaSigningKey(authCtx, resp.DID)
+		if err != nil {
+			return "", fmt.Errorf("auth: resolve PLC document: %w", err)
+		}
+		if !ed25519.PublicKey(pubBytes).Equal(plcKey) {
+			return "", errors.New("auth: public key does not match #dina_signing in PLC document")
+		}
+	default:
+		return "", fmt.Errorf("auth: unsupported DID method: %s", resp.DID)
+	}
+
+	// 5. Verify Ed25519 signature over challenge payload.
 	sigBytes, err := hex.DecodeString(resp.Sig)
 	if err != nil || len(sigBytes) != ed25519.SignatureSize {
 		return "", errors.New("auth: invalid signature encoding")
 	}
-	payload := fmt.Sprintf("AUTH_RELAY\n%s\n%d", challenge.Nonce, challenge.TS)
-	if !ed25519.Verify(pubBytes, []byte(payload), sigBytes) {
+	challengePayload := fmt.Sprintf("AUTH_RELAY\n%s\n%d", challenge.Nonce, challenge.TS)
+	if !ed25519.Verify(pubBytes, []byte(challengePayload), sigBytes) {
 		return "", errors.New("auth: signature verification failed")
 	}
 

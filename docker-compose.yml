@@ -27,8 +27,19 @@ services:
         DINA_VERSION: "${DINA_VERSION:-dev}"
       additional_contexts:
         admin-cli: ./admin-cli
-    ports:
-      - "${DINA_CORE_PORT:-8100}:8100"
+    # MBX-057: Core needs zero public ports for MsgBox transport.
+    # CLI devices reach Core via MsgBox relay (wss://mailbox.dinakernel.com).
+    # Port 8100 is internal (Brain↔Core on Docker network only).
+    #
+    # MBX-059: For local development / LAN access with DINA_TRANSPORT=direct,
+    # expose Core's port to the host by adding to docker-compose.override.yml:
+    #   services:
+    #     core:
+    #       ports:
+    #         - "8100:8100"
+    # Or use: docker compose -f docker-compose.yml -f docker-compose.direct.yml up
+    expose:
+      - "8100"
     volumes:
       - dina-data:/data
       - ${DINA_SECRETS_DIR:-./secrets}/service_keys/core:/run/secrets/service_keys/private

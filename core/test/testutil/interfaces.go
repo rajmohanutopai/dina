@@ -389,6 +389,8 @@ type PairingManager interface {
 	ListDevices(ctx context.Context) ([]PairedDevice, error)
 	// GetDeviceByDID returns a device by its DID, or nil if not found.
 	GetDeviceByDID(ctx context.Context, did string) (*PairedDevice, error)
+	// RecordFailedAttempt increments the per-code attempt counter.
+	RecordFailedAttempt(code string) bool
 	// RevokeDevice disables a device by token ID.
 	RevokeDevice(ctx context.Context, tokenID string) error
 }

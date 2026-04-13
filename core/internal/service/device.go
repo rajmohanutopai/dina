@@ -104,17 +104,19 @@ func (s *DeviceService) CompletePairingWithKey(ctx context.Context, code, device
 		return "", "", fmt.Errorf("device: %w: public key is required", domain.ErrInvalidInput)
 	}
 
+	// Check keyRegistrar BEFORE consuming the pairing code. The pairer
+	// consumes the code and persists the device atomically — if we check
+	// after, a nil registrar leaves a paired-but-unusable device record.
+	if s.keyRegistrar == nil {
+		return "", "", fmt.Errorf("device: %w: key registrar not configured", domain.ErrInvalidInput)
+	}
+
 	deviceID, nodeDID, err := s.pairer.CompletePairingWithKey(ctx, code, deviceName, publicKeyMultibase, role...)
 	if err != nil {
 		return "", "", fmt.Errorf("device: complete pairing with key: %w", err)
 	}
 
 	// SV2: Register the Ed25519 public key with the auth validator.
-	// Fail loudly if registration cannot complete — a device that appears
-	// paired but can't authenticate is worse than a failed pairing.
-	if s.keyRegistrar == nil {
-		return "", "", fmt.Errorf("device: %w: key registrar not configured", domain.ErrInvalidInput)
-	}
 	if len(publicKeyMultibase) < 2 || publicKeyMultibase[0] != 'z' {
 		return "", "", fmt.Errorf("device: %w: invalid multibase prefix", domain.ErrInvalidInput)
 	}
@@ -183,4 +185,10 @@ func (s *DeviceService) RevokeDevice(ctx context.Context, tokenID string) error 
 	}
 
 	return nil
+}
+
+// RecordFailedAttempt delegates to the pairing manager to increment the
+// per-code attempt counter. After maxAttempts, the code is burned.
+func (s *DeviceService) RecordFailedAttempt(code string) bool {
+	return s.pairer.RecordFailedAttempt(code)
 }

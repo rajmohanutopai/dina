@@ -757,24 +757,11 @@ func TestPairing_DeviceRole_TokenPairDefaultsUser(t *testing.T) {
 // TST-CORE-895
 // TRACE: {"suite": "CORE", "case": "1079", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "05", "title": "DeviceTypeRecorded"}
 func TestPairing_10_1_5_DeviceTypeRecorded(t *testing.T) {
-	// Device type (rich/thin) recorded during pairing.
-	impl := realPairingManager
-	testutil.RequireImplementation(t, impl, "PairingManager")
-
-	code, _, err := impl.GenerateCode(context.Background())
-	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(code) > 0, "pairing code must be generated")
+	t.Skip("Stub: device type recording not yet implemented. Current test only verifies code generation, not device type persistence.")
 }
 
 // TST-CORE-896
 // TRACE: {"suite": "CORE", "case": "1080", "section": "10", "sectionName": "Device Pairing", "subsection": "01", "scenario": "06", "title": "mDNS_AutoDiscoveryBroadcast"}
 func TestPairing_10_1_6_mDNS_AutoDiscoveryBroadcast(t *testing.T) {
-	// mDNS auto-discovery broadcast on LAN.
-	impl := realPairingManager
-	testutil.RequireImplementation(t, impl, "PairingManager")
-
-	// mDNS broadcast is tested by verifying the pairing manager is initialized.
-	devices, err := impl.ListDevices(context.Background())
-	testutil.RequireNoError(t, err)
-	_ = devices
+	t.Skip("Stub: mDNS auto-discovery not yet implemented. Current test only verifies ListDevices exists, not broadcast behavior.")
 }
