@@ -932,6 +932,22 @@ class CoreHTTPClient:
             json={"to": to_did, "body": body_b64, "type": msg_type},
         )
 
+    # -- Service config --------------------------------------------------------
+
+    async def get_service_config(self) -> dict | None:
+        """GET /v1/service/config — retrieve local service configuration.
+
+        Returns the service config dict if available, or None if the
+        endpoint returns an empty body or a non-200 status.
+        """
+        try:
+            resp = await self._request("GET", "/v1/service/config")
+            data = resp.json()
+            return data if data else None
+        except Exception:
+            logger.warning("get_service_config_failed")
+            return None
+
     # -- Reminder endpoints ----------------------------------------------------
 
     async def store_reminder(self, reminder: dict) -> str:

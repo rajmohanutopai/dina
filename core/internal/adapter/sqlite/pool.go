@@ -665,6 +665,23 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v10 complete")
 	}
 
+	// --- Identity migration v12: service_config table ---
+	if !hasTable(db, "service_config") {
+		slog.Info("sqlite: applying identity migration v12 (service_config table)")
+		if _, err := db.ExecContext(ctx, `
+			CREATE TABLE IF NOT EXISTS service_config (
+				key         TEXT PRIMARY KEY,
+				value       TEXT NOT NULL,
+				updated_at  INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+			)
+		`); err != nil {
+			return fmt.Errorf("identity v12: %w", err)
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (12, 'Service config table')`)
+		slog.Info("sqlite: identity migration v12 complete")
+	}
+
 	return nil
 }
 

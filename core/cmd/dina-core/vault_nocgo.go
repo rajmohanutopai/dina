@@ -13,6 +13,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // newVaultBackend returns an in-memory vault when CGO is unavailable.
@@ -95,6 +96,11 @@ func newD2DOutboxManager(_ vaultBackend) port.OutboxManager {
 
 // newDelegatedTaskStore returns nil in no-CGO mode.
 func newDelegatedTaskStore(_ vaultBackend) port.DelegatedTaskStore {
+	return nil
+}
+
+// newServiceConfigService returns nil in no-CGO mode.
+func newServiceConfigService(_ vaultBackend) *service.ServiceConfigService {
 	return nil
 }
 

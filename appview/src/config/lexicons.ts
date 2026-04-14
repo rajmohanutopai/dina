@@ -19,6 +19,7 @@ export const TRUST_COLLECTIONS = [
   'com.dina.trust.subjectClaim',
   'com.dina.trust.trustPolicy',
   'com.dina.trust.notificationPrefs',
+  'com.dina.service.profile',
 ] as const
 
 export type TrustCollection = typeof TRUST_COLLECTIONS[number]
@@ -44,4 +45,5 @@ export const COLLECTION_NSID_MAP: Record<string, TrustCollection> = {
   subjectClaim: 'com.dina.trust.subjectClaim',
   trustPolicy: 'com.dina.trust.trustPolicy',
   notificationPrefs: 'com.dina.trust.notificationPrefs',
+  serviceProfile: 'com.dina.service.profile',
 }

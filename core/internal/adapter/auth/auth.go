@@ -1216,6 +1216,7 @@ func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 		"/v1/trust",
 		"/v1/agent/tasks",  // delegated task create + queue-by-proposal
 		"/v1/people",       // person memory layer (recall expansion)
+		"/v1/service",      // service config (public service discovery)
 		"/v1/notify",
 		"/v1/reminder",
 		"/v1/reminders",
@@ -1246,6 +1247,7 @@ func (c *adminEndpointChecker) allowedForAdmin(path string) bool {
 		"/v1/audit",
 		"/v1/session",
 		"/v1/sessions",
+		"/v1/service",      // service config management
 		"/v1/admin",        // CXH6: sync-status moved here from unauthenticated /admin/
 		"/admin",
 		"/healthz",

@@ -130,8 +130,14 @@ class CoreClient(Protocol):
 
     # -- Dina-to-Dina messaging --
 
-    async def send_d2d(self, to_did: str, payload: dict) -> None:
+    async def send_d2d(self, to_did: str, payload: dict, msg_type: str = "") -> bool:
         """POST /v1/msg/send — outbound DIDComm message through core."""
+        ...
+
+    # -- Service config --
+
+    async def get_service_config(self) -> dict | None:
+        """GET /v1/service/config — retrieve local service configuration."""
         ...
 
     # -- Reminders --

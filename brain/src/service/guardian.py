@@ -392,6 +392,7 @@ _DIDCOMM_HANDLERS: dict[str, str] = {
     "social.":       "nudge_assembly",     # Life event → nudge + vault storage
     "trust.":        "trust_handler",      # Vouch request/response
     "safety.":       "safety_handler",     # Urgent alerts → always notify
+    "service.":      "service_handler",    # Service query/response (bus ETA, etc.)
 }
 
 # D2D v1 memory-producing message types → vault item type.
@@ -4664,6 +4665,29 @@ class GuardianLoop:
                         "nudge": nudge,
                         "staged": staged,
                     }
+                # Service query/response — delegate to service layer.
+                if handler == "service_handler":
+                    raw_body = payload.get("body", "") or event.get("body", "")
+                    if isinstance(raw_body, str):
+                        try:
+                            body_dict = json.loads(raw_body)
+                        except (json.JSONDecodeError, TypeError):
+                            body_dict = {}
+                    elif isinstance(raw_body, dict):
+                        body_dict = raw_body
+                    else:
+                        body_dict = {}
+                    if msg_type == "service.query":
+                        if hasattr(self, "_service_handler") and self._service_handler:
+                            await self._service_handler.handle_query(from_did, body_dict)
+                        else:
+                            log.warning("guardian.service_handler.not_configured")
+                    elif msg_type == "service.response":
+                        if hasattr(self, "_service_query_orchestrator") and self._service_query_orchestrator:
+                            await self._service_query_orchestrator.handle_service_response(from_did, body_dict)
+                        else:
+                            log.warning("guardian.service_query_orchestrator.not_configured")
+                    return {"action": "routed", "handler": handler, "staged": staged}
                 # Push safety alerts and coordination to all channels.
                 _has_channel2 = (
                     (hasattr(self, "_telegram") and self._telegram)

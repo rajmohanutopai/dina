@@ -953,6 +953,38 @@ const SCENARIOS = [
     "LLM composes contextual notification — not just 'license expires April 15' but 'Your nearest RTO is Bangalore East. Last time it took 2 weeks. Your ICICI Lombard policy covers renewal'",
     "Brain generates a strict JSON DelegationRequest for RTO_Bot. PII fields (license_number, holder_name, date_of_birth) placed in denied_fields, NOT permitted_fields. Constraints: no_storage, no_forwarding",
     "Guardian classifies share_data as HIGH risk → flag_for_review. The agent never holds your keys. Human approves before data leaves the node"
+  ]},
+  {title: "MsgBox Zero-Port Transport", icon: "&#x1F4E8;", desc: "A CLI device communicates with a Home Node behind NAT through the MsgBox encrypted relay — zero public ports needed.", tested: true, tests: "msgbox_transport", steps: [
+    "You install Dina on a Raspberry Pi behind your home router. No port forwarding configured. Core connects outbound to MsgBox (wss://mailbox.dinakernel.com/ws) via WebSocket.",
+    "Core authenticates with Ed25519 challenge-response. MsgBox sends a random nonce + timestamp. Core signs 'AUTH_RELAY\\n{nonce}\\n{ts}' with its #dina_signing private key.",
+    "You pair your laptop CLI: generate Ed25519 keypair, enter 8-char Crockford Base32 pairing code (e.g., 'K9XM4PQZ') received via Telegram. 32^8 = 1.1 trillion code space — brute-force infeasible.",
+    "CLI sends pairing request through MsgBox as an RPC envelope: {type: 'rpc', from_did: 'did:key:z...', ciphertext: NaCl sealed-box encrypted inner request}. MsgBox routes by to_did — never sees plaintext.",
+    "Core decrypts with X25519 key (derived from Ed25519). Verifies identity binding: envelope.from_did must match inner X-DID header. Routes through handler chain — same auth, rate limits, persona gating as direct HTTPS.",
+    "Pairing succeeds. CLI stores device keypair + Home Node DID + MsgBox URL. Future requests use the same relay path.",
+    "You type 'dina remember Sancho likes cold brew coffee'. CLI encrypts with Core's X25519 public key, wraps in RPC envelope, sends through MsgBox.",
+    "Core receives, decrypts, verifies signature, checks idempotency cache (sender-scoped). Nonce replay cache rejects exact replays within 5-minute window.",
+    "Request enters bounded worker pool (8 workers, 32 backlog). If pool is full → 503. If duplicate in-flight → 409. If expired → 408.",
+    "RPC bridge routes through Core's HTTP handler chain via httptest.NewRecorder. Response encrypted with CLI's X25519 public key, sent back through MsgBox.",
+    "CLI receives encrypted response, decrypts, shows result. If no response within 30s, sends best-effort cancel envelope and shows timeout error.",
+    "All D2D messages between Home Nodes use the same unified envelope format: {type: 'd2d', from_did, to_did, ciphertext}. MsgBox treats all envelope types identically — route by to_did, never inspect ciphertext."
+  ]},
+  {title: "Public Service Discovery", icon: "&#x1F68C;", desc: "You are waiting for a bus. Your Dina discovers the bus driver's Dina, queries the ETA, and gets an auto-response — all through encrypted D2D with no prior contact.", tested: true, tests: "service_discovery", steps: [
+    "You ask Dina: 'When does the next A/C bus for Hosur reach my stop?'",
+    "Guardian classifies this as a service query intent (capability: eta_query). Not a vault question — a public service lookup",
+    "ServiceQueryOrchestrator calls AppView: com.dina.service.search(capability=eta_query, lat=12.93, lng=77.68)",
+    "AppView returns ranked results: [{operatorDid: 'did:plc:bus42', name: 'Route 42 Hosur AC', trustScore: 92, distanceKm: 0.3}]. Ranking: 40% proximity + 30% text match + 30% trust score",
+    "Brain picks the best candidate. Core sends D2D service.query to did:plc:bus42 via MsgBox relay — no prior contact needed",
+    "Core egress: IsPublicService check passes (AppView confirms did:plc:bus42 is public with eta_query capability). Contact gate bypassed. PII gate still runs — location is a bus stop, not your home",
+    "Core opens requesterWindow(did:plc:bus42, query_id, eta_query, 60s) — a time-limited authorization to accept the response",
+    "You see: 'Asking Route 42 Hosur AC...'",
+    "Bus Driver's Core receives the query from an unknown DID. Trust blocklist: not blocked. CheckServiceIngress: local config says isPublic=true, capability eta_query supported. Accepted — skip quarantine",
+    "Bus Driver's Core opens providerWindow(your_did, query_id, eta_query, 60s) and forwards to Brain. Message is ephemeral — not stored in inbox or vault",
+    "Bus Driver's Brain: ServiceHandler looks up eta_query in CAPABILITY_REGISTRY (allowlist). Validates params with Pydantic EtaQueryParams model. Calls OpenClaw via MCP: call_tool('openclaw', 'maps_eta', {lat, lng})",
+    "OpenClaw checks route database + Google Maps Traffic API. Returns: {eta_minutes: 45, vehicle_type: 'AC Bus', route_name: 'Route 42 Hosur'}. Brain validates result with EtaQueryResult model",
+    "Bus Driver's Core sends service.response back. providerWindow.Reserve() succeeds (atomic, prevents duplicate responses). Contact gate bypassed. After enqueue: providerWindow.Commit() — window consumed (one-shot)",
+    "Your Core receives the response. requesterWindow.CheckAndConsume(did:plc:bus42, query_id, eta_query) matches — accepted. Window consumed — no duplicate responses possible",
+    "Your Brain: ServiceQueryOrchestrator matches query_id to pending query. Removes from tracking. Formats notification",
+    "You see: 'Route 42 Hosur AC Bus — 45 minutes away'. If no response within 60s, you'd see: 'No response yet from Route 42 Hosur AC.'"
   ]}
 ];
 

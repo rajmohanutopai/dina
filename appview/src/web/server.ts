@@ -8,6 +8,8 @@ import { search, SearchParams } from '@/api/xrpc/search.js'
 import { getGraph, GetGraphParams } from '@/api/xrpc/get-graph.js'
 import { getProfile, GetProfileParams } from '@/api/xrpc/get-profile.js'
 import { getAttestations, GetAttestationsParams } from '@/api/xrpc/get-attestations.js'
+import { serviceSearch, ServiceSearchParams } from '@/api/xrpc/service-search.js'
+import { serviceIsPublic, ServiceIsPublicParams } from '@/api/xrpc/service-is-public.js'
 import { logger } from '@/shared/utils/logger.js'
 
 const db = createDb()
@@ -53,6 +55,8 @@ const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => P
   'com.dina.trust.getGraph': { params: GetGraphParams, handler: getGraph },
   'com.dina.trust.getProfile': { params: GetProfileParams, handler: getProfile },
   'com.dina.trust.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
+  'com.dina.service.search': { params: ServiceSearchParams, handler: serviceSearch },
+  'com.dina.service.isPublic': { params: ServiceIsPublicParams, handler: serviceIsPublic },
 }
 
 const server = http.createServer(async (req, res) => {

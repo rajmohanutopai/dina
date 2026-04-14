@@ -399,6 +399,30 @@ MCP servers are child processes managed by the brain — they're not network ser
 
 </details>
 
+### Service Query Handling
+
+Guardian dispatches `service.*` messages via `_DIDCOMM_HANDLERS`:
+
+**Provider side** (`ServiceHandler`):
+1. Receives `service.query` from D2D
+2. Looks up capability in local `CAPABILITY_REGISTRY` (allowlist)
+3. Validates params with per-capability Pydantic model
+4. Calls MCP: `call_tool(config.mcp_server, config.mcp_tool, validated_params)`
+5. Validates result with per-capability Pydantic model
+6. Sends `service.response` back via Core D2D
+
+**Requester side** (`ServiceQueryOrchestrator`):
+1. User asks "when does bus 42 arrive?"
+2. Searches AppView: `search_services(capability, lat, lng)`
+3. Sends `service.query` to best-ranked candidate
+4. Tracks pending query with timeout (60s)
+5. On response: notifies user ("Route 42 AC Bus — 45 minutes away")
+6. On timeout: notifies user ("No response yet from Route 42.")
+
+**Capability models** (`brain/src/service/capabilities/eta_query.py`):
+- `EtaQueryParams`: `{location: {lat, lng}}`
+- `EtaQueryResult`: `{eta_minutes, vehicle_type, route_name, current_location?}`
+
 ---
 
 ## Act VII: The Adapter Layer — Where Protocols Meet Reality
@@ -602,6 +626,12 @@ Tool declarations are provider-agnostic dicts (`vault_context.VAULT_TOOLS`). The
 ### POST /v1/pii/scrub (routes/pii.py)
 
 Exposes Tier 2 pattern-based PII scrubbing directly. In V1, this uses Presidio's deterministic pattern recognizers (no NER). If no scrubber is available (Presidio not installed), returns the text unchanged with an empty entity list. This endpoint is used by core for ad-hoc scrubbing needs outside the standard LLM pipeline.
+
+### CLI Communication via MsgBox
+
+The CLI communicates with Core through the MsgBox relay using encrypted RPC envelopes. Brain is not directly involved in CLI transport — it's a Core-level concern. Brain interacts with CLI indirectly: CLI sends RPC requests (e.g., `/api/v1/remember`, `/api/v1/ask`) which Core routes through the handler chain to Brain's `/v1/process` endpoint.
+
+The MsgBox transport is transparent to Brain — from Brain's perspective, a request from a CLI device via MsgBox is identical to a direct HTTPS request.
 
 ---
 

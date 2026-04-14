@@ -422,6 +422,29 @@ You can edit or delete any reminder using the buttons that came with it.
 
 ---
 
+### MsgBox Universal Transport
+
+- **Zero public ports** — Home Node connects outbound to MsgBox relay. No port forwarding, no dynamic DNS, no firewall exposure needed.
+- **Unified JSON envelope** — Single format for D2D (Home Node ↔ Home Node), RPC (CLI ↔ Home Node), and cancel messages.
+- **End-to-end encryption** — NaCl sealed-box (crypto_box_seal). MsgBox never sees plaintext.
+- **Ed25519 challenge-response** WebSocket authentication with PLC document verification.
+- **CLI MsgBox transport** — Auto/direct/msgbox transport selection. Drain-before-send, cancel on timeout.
+- **8-char Crockford Base32 pairing codes** — 1.1 trillion code space (32^8). Case-insensitive, no ambiguous characters.
+- **RPC bridge** — CLI requests routed through Core's full handler chain (same auth, same rate limits, same persona gating).
+- **Idempotency + nonce replay protection** — Sender-scoped request dedup, 5-minute nonce cache.
+- **Bounded worker pool** — 8 workers, 32 backlog, panic recovery, expiry enforcement at receipt + worker start.
+
+### Public Service Discovery (Phase 1)
+
+- **Discover public services** by capability + location via AppView search
+- **Query services** via D2D `service.query` (e.g., "when does bus 42 arrive?")
+- **Auto-respond** via MCP tool delegation (OpenClaw handles the actual work)
+- **Contact-gate bypass** using time-limited query windows (60s TTL)
+- **Capability allowlist** — per-capability Pydantic validation + MCP tool routing
+- Pairing codes upgraded to 8-char Crockford Base32 (1.1 trillion code space)
+
+---
+
 ## She Scrubs Your Privacy
 
 All internal LLM calls go with scrubbed information. Agents can also use Dina to get scrubbed information. 

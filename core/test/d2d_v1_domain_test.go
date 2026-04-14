@@ -34,6 +34,8 @@ func TestV1MessageFamilies_ContainsExpectedTypes(t *testing.T) {
 		domain.MsgTypeTrustVouchResponse,
 		domain.MsgTypeCoordinationRequest,
 		domain.MsgTypeCoordinationResponse,
+		domain.MsgTypeServiceQuery,
+		domain.MsgTypeServiceResponse,
 	}
 
 	if len(domain.V1MessageFamilies) != len(expected) {

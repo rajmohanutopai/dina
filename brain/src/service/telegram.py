@@ -1458,3 +1458,52 @@ class TelegramService:
             "  /contact responsibility Name care\n"
             "  /contact cleanup"
         ))
+
+    async def handle_service_query(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/service_query <capability> <lat> <lng> [text] — query a public service.
+
+        Phase 1: explicit command for service discovery queries.
+        Example: /service_query eta_query 12.97 77.59 bus 42
+        """
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        args = context.args or []
+        if len(args) < 3:
+            await ch.send(BotResponse(
+                text="Usage: /service_query <capability> <lat> <lng> [text]\n"
+                "Example: /service_query eta_query 12.97 77.59 bus 42"
+            ))
+            return
+
+        capability = args[0]
+        try:
+            lat = float(args[1])
+            lng = float(args[2])
+        except ValueError:
+            await ch.send(ErrorResponse(text="Invalid coordinates. Provide numeric lat/lng."))
+            return
+
+        user_text = " ".join(args[3:]) if len(args) > 3 else ""
+
+        orchestrator = getattr(self._guardian, "_service_query_orchestrator", None)
+        if orchestrator is None:
+            await ch.send(ErrorResponse(
+                text="Service discovery is not configured. Set DINA_APPVIEW_URL."
+            ))
+            return
+
+        try:
+            await orchestrator.handle_user_query(
+                capability=capability,
+                params={"location": {"lat": lat, "lng": lng}},
+                user_text=user_text,
+            )
+        except Exception as exc:
+            log.warning(
+                "telegram.service_query_failed",
+                extra={"capability": capability, "error": str(exc)},
+            )
+            await ch.send(ErrorResponse(text="Service query failed."))

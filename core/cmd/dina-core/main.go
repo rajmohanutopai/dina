@@ -40,6 +40,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	trustadapter "github.com/rajmohanutopai/dina/core/internal/adapter/trust"
+	appviewAdapter "github.com/rajmohanutopai/dina/core/internal/adapter/appview"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
 	"github.com/rajmohanutopai/dina/core/internal/config"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -802,6 +803,31 @@ func main() {
 		slog.Info("D2D sender DID configured", "did", ownDID)
 	}
 
+	// Public service discovery: query windows + local service config.
+	providerWindow := service.NewQueryWindow()
+	requesterWindow := service.NewQueryWindow()
+	transportSvc.SetQueryWindows(providerWindow, requesterWindow)
+	go providerWindow.CleanupLoop(context.Background(), 10*time.Second)
+	go requesterWindow.CleanupLoop(context.Background(), 10*time.Second)
+
+	// Local service config (determines if this node is a public service).
+	serviceConfigSvc := newServiceConfigService(vaultMgr)
+	if serviceConfigSvc != nil {
+		transportSvc.SetLocalServiceConfig(serviceConfigSvc)
+	}
+	serviceConfigHandler := &handler.ServiceConfigHandler{Config: serviceConfigSvc}
+
+	// PublicServiceResolver: check AppView for public services on egress.
+	if appViewURL := os.Getenv("DINA_APPVIEW_URL"); appViewURL != "" {
+		resolver := appviewAdapter.NewServiceResolver(appViewURL)
+		transportSvc.SetPublicServiceResolver(resolver)
+		slog.Info("Public service resolver wired", "appview", appViewURL)
+	} else if cfg.AppViewURL != "" {
+		resolver := appviewAdapter.NewServiceResolver(cfg.AppViewURL)
+		transportSvc.SetPublicServiceResolver(resolver)
+		slog.Info("Public service resolver wired", "appview", cfg.AppViewURL)
+	}
+
 	// Start MsgBox client if configured. The client:
 	//   - Connects outbound WebSocket to the msgbox (this node's mailbox)
 	//   - Receives inbound D2D messages pushed by the msgbox
@@ -844,12 +870,43 @@ func main() {
 				slog.Info("sweeper: dropped message from blocked DID", "did", msg.From)
 				auditD2DIngress(auditLogger, "d2d_ingress_drop", msg.From, string(msg.Type), "blocked_contact")
 				return
-			case domain.IngressQuarantine:
+			}
+		}
+		// Public service bypass (after trust blocklist, before quarantine audit).
+		if serviceResult := transportSvc.CheckServiceIngress(msg); serviceResult != "" {
+			if serviceResult == "drop" {
+				slog.Debug("sweeper: service message dropped", "type", msg.Type, "from", msg.From)
+				return
+			}
+			// serviceResult == "accept": skip quarantine, scenario policy, StoreInbound (ephemeral).
+			auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "service_bypass")
+			go func() {
+				bodyStr := string(msg.Body)
+				_ = brain.Process(context.Background(), domain.TaskEvent{
+					Type: string(msg.Type),
+					Payload: map[string]interface{}{
+						"from": msg.From, "body": bodyStr,
+						"id": msg.ID, "type": string(msg.Type),
+					},
+				})
+			}()
+			return
+		}
+		// service.* messages that didn't pass the bypass must NOT enter normal inbox.
+		if strings.HasPrefix(string(msg.Type), "service.") {
+			slog.Debug("sweeper: service message rejected (not a public service or unsupported capability)", "type", msg.Type, "from", msg.From)
+			return
+		}
+		// Quarantine unknown senders (after service bypass — public services skip quarantine).
+		if msg.From != "" {
+			decision := trustSvc.EvaluateIngress(msg.From)
+			if decision == domain.IngressQuarantine {
 				msg.Quarantined = true
 				slog.Info("sweeper: quarantined message from unknown DID", "did", msg.From)
 				auditD2DIngress(auditLogger, "d2d_ingress_quarantine", msg.From, string(msg.Type), "unknown_sender")
 			}
 		}
+
 		// D2D v1: Inbound scenario policy — only for accepted contacts (not quarantined).
 		if !msg.Quarantined && scenarioPolicyMgr != nil {
 			scenario := domain.MsgTypeToScenario(msg.Type)
@@ -910,12 +967,42 @@ func main() {
 				slog.Info("ingress: dropped message from blocked DID", "did", msg.From)
 				auditD2DIngress(auditLogger, "d2d_ingress_drop", msg.From, string(msg.Type), "blocked_contact")
 				return nil // Not an error — intentionally discarded
-			case domain.IngressQuarantine:
+			}
+		}
+		// Public service bypass (after trust blocklist, before quarantine audit).
+		if serviceResult := transportSvc.CheckServiceIngress(msg); serviceResult != "" {
+			if serviceResult == "drop" {
+				slog.Debug("ingress: service message dropped", "type", msg.Type, "from", msg.From)
+				return nil
+			}
+			// serviceResult == "accept": skip quarantine, scenario policy, StoreInbound (ephemeral).
+			auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "service_bypass")
+			bodyStr := string(msg.Body)
+			go func() {
+				_ = brain.Process(context.Background(), domain.TaskEvent{
+					Type: string(msg.Type),
+					Payload: map[string]interface{}{
+						"from": msg.From, "body": bodyStr,
+						"id": msg.ID, "type": string(msg.Type),
+					},
+				})
+			}()
+			return nil
+		}
+		if strings.HasPrefix(string(msg.Type), "service.") {
+			slog.Debug("ingress: service message rejected", "type", msg.Type, "from", msg.From)
+			return nil
+		}
+		// Quarantine unknown senders (after service bypass — public services skip quarantine).
+		if msg.From != "" {
+			decision := trustSvc.EvaluateIngress(msg.From)
+			if decision == domain.IngressQuarantine {
 				msg.Quarantined = true
 				slog.Info("ingress: quarantined message from unknown DID", "did", msg.From)
 				auditD2DIngress(auditLogger, "d2d_ingress_quarantine", msg.From, string(msg.Type), "unknown_sender")
 			}
 		}
+
 		// D2D v1: Inbound scenario policy — only for accepted contacts (not quarantined).
 		if !msg.Quarantined && scenarioPolicyMgr != nil {
 			scenario := domain.MsgTypeToScenario(msg.Type)
@@ -1552,6 +1639,9 @@ func main() {
 	mux.HandleFunc("/v1/pair/complete", deviceH.HandleCompletePairing)
 	mux.HandleFunc("/v1/devices", deviceH.HandleListDevices)
 	mux.HandleFunc("/v1/devices/", deviceH.HandleRevokeDevice)
+
+	// Service config — public service discovery
+	mux.HandleFunc("/v1/service/config", serviceConfigHandler.Handle)
 
 	// Agent Safety Layer — proxies to brain's guardian
 	mux.HandleFunc("/v1/agent/validate", agentH.HandleValidate)

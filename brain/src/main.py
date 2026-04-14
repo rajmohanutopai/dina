@@ -496,6 +496,56 @@ def create_app() -> FastAPI:
         staging_processor=staging_processor,
     )
 
+    # -- Wire service discovery components into Guardian (Phase 1) --
+    # Provider side: handle inbound service.query messages.
+    # Always created — providers don't need AppView to receive queries.
+    # Requester side: discover + query + track — requires AppView for discovery.
+    appview_url = os.environ.get("DINA_APPVIEW_URL", "")
+    _service_orchestrator = None
+    _service_handler = None
+
+    # Provider side: ServiceHandler is always created (if Core + MCP exist).
+    # Service config is loaded in the lifespan (async); constructed here with
+    # empty config, lifespan populates it.
+    from .service.service_handler import ServiceHandler
+
+    _service_handler = ServiceHandler(
+        core_client=brain_core_client,
+        mcp_client=mcp_client,
+        service_config={},
+    )
+    guardian._service_handler = _service_handler
+    log.info("brain.service_handler.configured")
+
+    # Requester side: only created if DINA_APPVIEW_URL is set (needs AppView
+    # for service discovery).
+    if appview_url:
+        from .adapter.appview_client import AppViewClient
+        from .service.service_query import ServiceQueryOrchestrator
+
+        appview_client = AppViewClient(appview_url)
+
+        async def _service_notifier(text: str) -> None:
+            """Forward service notifications through Guardian's push."""
+            await guardian._push_notification(text, "service_query")
+
+        _service_orchestrator = ServiceQueryOrchestrator(
+            appview_client=appview_client,
+            core_client=brain_core_client,
+            notifier=_service_notifier,
+        )
+        guardian._service_query_orchestrator = _service_orchestrator
+
+        log.info(
+            "brain.service_discovery.configured",
+            extra={"appview_url": appview_url},
+        )
+    else:
+        log.info(
+            "brain.service_discovery.requester_disabled",
+            extra={"hint": "Set DINA_APPVIEW_URL to enable service discovery (requester side)"},
+        )
+
     # -- Telegram connector (optional — graceful degradation) --
     telegram_bot = None  # type: ignore[assignment]
     telegram_service = None  # type: ignore[assignment]
@@ -531,6 +581,7 @@ def create_app() -> FastAPI:
                     "task": telegram_service.handle_task,
                     "taskstatus": telegram_service.handle_task_status,
                     "status": telegram_service.handle_status,
+                    "service_query": telegram_service.handle_service_query,
                 },
                 callback_query_handler=telegram_service.handle_callback_query,
                 base_url=cfg.telegram_api_base_url,
@@ -675,7 +726,47 @@ def create_app() -> FastAPI:
             )
             # Guardian keeps the default policy set at construction time.
 
+        # Load service config into handler (Phase 1: load once at startup).
+        if _service_handler is not None:
+            try:
+                _loaded_cfg = await brain_core_client.get_service_config()
+                if _loaded_cfg:
+                    _service_handler._config = _loaded_cfg
+                    log.info("brain.service_handler.config_loaded")
+            except Exception as exc:
+                log.warning(
+                    "brain.service_handler.config_load_failed",
+                    extra={"error": str(exc)},
+                )
+
         sync_task = asyncio.create_task(_sync_loop(sync_engine))
+
+        # Service query timeout scanner — expires unanswered queries.
+        service_timeout_task: asyncio.Task | None = None
+        if _service_orchestrator is not None:
+            async def _service_timeout_loop() -> None:
+                while True:
+                    await asyncio.sleep(10)
+                    try:
+                        await _service_orchestrator.check_timeouts()
+                    except Exception:
+                        pass  # best-effort
+
+            service_timeout_task = asyncio.create_task(_service_timeout_loop())
+
+        # Publish service profile to PDS on startup (if configured).
+        # Publishing does NOT require AppView — providers publish to PDS
+        # independently; AppView indexes the records for discovery.
+        if pds_publisher_instance:
+            try:
+                from .service.service_publisher import ServicePublisher
+                svc_publisher = ServicePublisher(brain_core_client, pds_publisher_instance)
+                await svc_publisher.publish()
+            except Exception as exc:
+                log.warning(
+                    "brain.service_publisher.startup_failed",
+                    extra={"error": str(exc)},
+                )
 
         # Start Telegram polling if configured.
         # Runs as a background task with retries so that a slow Core
@@ -751,6 +842,14 @@ def create_app() -> FastAPI:
                     "brain.telegram.stop_error",
                     extra={"error": str(exc)},
                 )
+
+        # Stop service timeout scanner.
+        if service_timeout_task and not service_timeout_task.done():
+            service_timeout_task.cancel()
+            try:
+                await service_timeout_task
+            except asyncio.CancelledError:
+                pass
 
         sync_task.cancel()
         try:

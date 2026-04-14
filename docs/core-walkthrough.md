@@ -815,6 +815,62 @@ Core uses a community PDS (e.g., `bsky.social`) for DID creation. `install.sh` p
 
 The receiving side is the ingress pipeline from Act II — the same `POST /msg` endpoint, the same three valves, the same trust-based filtering.
 
+### MsgBox Relay Transport
+
+The MsgBox relay eliminates the need for public ports on the Home Node. Both Core and CLI devices connect outbound to MsgBox via WebSocket. All traffic uses a **unified JSON envelope**:
+
+```json
+{
+  "type": "d2d" | "rpc" | "cancel",
+  "id": "msg-uuid",
+  "from_did": "sender DID",
+  "to_did": "recipient DID",
+  "ciphertext": "..."
+}
+```
+
+**Core as MsgBox client** (`msgbox_client.go`):
+- Outbound WebSocket to MsgBox, Ed25519 challenge-response auth
+- `tryHandleEnvelope()`: dispatches by type — D2D extracts ciphertext for `onMessage`, RPC decrypts and routes through handler chain, cancel propagates context cancellation
+- Reconnect with exponential backoff (1s → 60s cap)
+
+**RPC bridge** (`rpc_bridge.go`):
+- Builds `http.Request` from decrypted inner JSON, routes through `handler.ServeHTTP()`
+- Bounded worker pool (8 workers, 32 backlog) with panic recovery
+- Idempotency cache (sender-scoped, 5-min TTL) + nonce replay cache
+- Identity binding: `envelope.from_did == inner X-DID`
+
+**Security hardening:**
+- Mandatory encryption for success responses (plaintext refused in production)
+- Empty ciphertext rejected in production mode
+- WebSocket read limit: 1 MiB (matches MsgBox MaxPayloadSize)
+- Inner body size guard: 1 MiB after NaCl decryption
+- Response direction excluded from RPC rate limiting
+- Role enforcement: did:key senders cannot send RPC responses
+- /forward nonce replay protection (6-min window)
+- /forward canonical includes recipient DID in signature
+- Buffer.Add atomic per-DID limits (INSERT...SELECT WHERE)
+
+### Public Service D2D (service.query / service.response)
+
+Service traffic uses the D2D transport but bypasses the contact gate via **query windows** — time-limited authorization tuples `(peerDID, queryID, capability)` that expire after 60 seconds.
+
+**Egress (transport.go SendMessage):**
+- `service.query`: checks `PublicServiceResolver.IsPublicService(did, capability)` via AppView → skips contact + scenario gates → opens `requesterWindow` on enqueue
+- `service.response`: `providerWindow.Reserve()` → skips contact gate → `Commit()` on enqueue, `Release()` on failure
+
+**Ingress (main.go both paths):**
+- `CheckServiceIngress()` runs after trust blocklist, before quarantine/scenario
+- `service.query`: checks local config (IsPublic + HasCapability) → opens `providerWindow`
+- `service.response`: `requesterWindow.CheckAndConsume()` → one-shot accept
+
+**Exclusions (service traffic stays on its own path):**
+- `MsgTypeToScenario()` returns `""` — bypasses scenario policy
+- Not in `D2DMemoryTypes` — no vault persistence
+- Skips `StoreInbound()` — ephemeral, not retained in inbox
+
+**Service config:** `service_config` table in identity.sqlite, exposed via `GET/PUT /v1/service/config`. Brain reads it to route MCP calls and publish AT records.
+
 ---
 
 ## Act VI: The Egress Guardian — Nothing Leaves Without Permission
