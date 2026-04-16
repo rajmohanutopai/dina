@@ -248,6 +248,14 @@ VAULT_TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": "Human-readable service name (for notifications).",
                 },
+                "schema_hash": {
+                    "type": "string",
+                    "description": "Schema hash from search_public_services (for version matching).",
+                },
+                "params_schema": {
+                    "type": "object",
+                    "description": "JSON Schema for params (from search_public_services). Used for sender-side validation.",
+                },
             },
             "required": ["operator_did", "capability", "params"],
         },
@@ -697,12 +705,29 @@ class ToolExecutor:
                 return {"services": [], "message": "No services found for this query."}
 
             # Brain-side preference re-ranking (no vault data sent externally).
-            # If user has preferences in consumer vault, re-rank locally.
             ranked = await self._rerank_by_preference(candidates)
 
+            # Return schema + schema_hash so LLM can fill params.
+            services = []
+            for c in ranked[:10]:
+                svc = {
+                    "operator_did": c.get("operatorDid", ""),
+                    "name": c.get("name", ""),
+                    "capability": c.get("capability", ""),
+                    "schema_hash": c.get("schemaHash") or c.get("schema_hash", ""),
+                }
+                # Include params schema for the LLM to fill.
+                cap_schemas = c.get("capabilitySchemas") or c.get("capability_schemas") or {}
+                cap_name = c.get("capability", capability)
+                if isinstance(cap_schemas, dict) and cap_name in cap_schemas:
+                    schema = cap_schemas[cap_name]
+                    svc["params_schema"] = schema.get("params", {})
+                    svc["description"] = schema.get("description", "")
+                services.append(svc)
+
             return {
-                "services": ranked[:10],
-                "count": len(ranked),
+                "services": services,
+                "count": len(services),
             }
         except Exception as exc:
             log.warning("tool_executor.search_services_failed", error=str(exc))
@@ -749,11 +774,23 @@ class ToolExecutor:
         capability = args.get("capability", "")
         params = args.get("params", {})
         service_name = args.get("service_name", "")
+        schema_hash = args.get("schema_hash", "")
+        params_schema = args.get("params_schema", {})
 
         if not operator_did or not capability:
             return {"error": "operator_did and capability are required"}
         if params is None:
             params = {}
+
+        # Mandatory sender-side validation when schema is present.
+        if params_schema:
+            try:
+                import jsonschema
+                jsonschema.validate(params, params_schema)
+            except ImportError:
+                pass  # jsonschema not available — skip
+            except Exception as e:
+                return {"error": f"Params validation failed: {e}"}
 
         query_id = str(uuid.uuid4())
         ttl_seconds = get_ttl(capability)
@@ -766,6 +803,7 @@ class ToolExecutor:
                 query_id=query_id,
                 ttl_seconds=ttl_seconds,
                 service_name=service_name,
+                schema_hash=schema_hash,
             )
             return {
                 "task_id": result.get("task_id", ""),

@@ -191,6 +191,9 @@ type ServiceQueryBody struct {
 	Params json.RawMessage `json:"params"`
 	// TTLSeconds is the freshness window. Queries older than this are dropped.
 	TTLSeconds int `json:"ttl_seconds"`
+	// SchemaHash is the SHA-256 of the capability schema the sender validated against.
+	// Provider checks this against its published schema; mismatch → reject.
+	SchemaHash string `json:"schema_hash,omitempty"`
 }
 
 // ServiceResponseBody is the body of a service.response message.

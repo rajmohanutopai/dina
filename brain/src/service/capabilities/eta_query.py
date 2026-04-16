@@ -1,8 +1,8 @@
 """Pydantic models for the eta_query capability.
 
-Used by both the requester side (ServiceQueryOrchestrator) and the
-provider side (ServiceHandler) to validate params and results for
-real-time ETA queries (e.g. "when does bus 42 arrive?").
+Used for reference/documentation. In the revised WS2 architecture,
+param validation uses provider-published JSON Schema (not Pydantic).
+These models stay for backward compatibility and type hints.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ class Location(BaseModel):
 
 class EtaQueryParams(BaseModel):
     location: Location
+    route_id: str = ""  # optional: specific route number
 
 
 class EtaQueryResult(BaseModel):
@@ -26,3 +27,9 @@ class EtaQueryResult(BaseModel):
     vehicle_type: str
     route_name: str
     current_location: Optional[Location] = None
+    # WS2 additions (all optional — backward compatible):
+    stop_name: str = ""
+    stop_distance_m: float = 0
+    map_url: str = ""
+    status: str = "on_route"  # on_route | not_on_route | out_of_service | not_found
+    message: str = ""

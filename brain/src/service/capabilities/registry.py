@@ -11,6 +11,9 @@ package and registering it here.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from .eta_query import EtaQueryParams, EtaQueryResult
 
 CAPABILITY_REGISTRY: dict[str, dict] = {
@@ -31,3 +34,14 @@ def get_ttl(capability: str) -> int:
     if entry:
         return entry.get("default_ttl_seconds", 60)
     return 60
+
+
+def compute_schema_hash(schema_obj: dict) -> str:
+    """Compute SHA-256 hash of a capability schema object.
+
+    Hashes the full capability schema (params + result + description),
+    canonically serialized (sorted keys, no whitespace).
+    Used for schema version matching between requester and provider.
+    """
+    canonical = json.dumps(schema_obj, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()

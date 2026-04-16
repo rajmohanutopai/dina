@@ -56,6 +56,8 @@ export const serviceProfileHandler: RecordHandler = {
       radiusKm: record.serviceArea?.radiusKm?.toString() ?? null,
       hoursJson: record.hours ?? null,
       responsePolicyJson: record.responsePolicy,
+      capabilitySchemasJson: record.capabilitySchemas ?? null,
+      schemaHash: record.schemaHash ?? null,
       isPublic: record.isPublic,
       searchContent,
     }).onConflictDoUpdate({
@@ -70,6 +72,8 @@ export const serviceProfileHandler: RecordHandler = {
         radiusKm: record.serviceArea?.radiusKm?.toString() ?? null,
         hoursJson: record.hours ?? null,
         responsePolicyJson: record.responsePolicy,
+        capabilitySchemasJson: record.capabilitySchemas ?? null,
+        schemaHash: record.schemaHash ?? null,
         isPublic: record.isPublic,
         searchContent,
         indexedAt: new Date(),

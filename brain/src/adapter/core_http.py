@@ -714,7 +714,7 @@ class CoreHTTPClient:
     async def send_service_query(
         self, to_did: str, capability: str, params: dict,
         query_id: str, ttl_seconds: int, service_name: str,
-        origin_channel: str = "",
+        origin_channel: str = "", schema_hash: str = "",
     ) -> dict:
         """POST /v1/service/query — send a service query via durable workflow task."""
         body = {
@@ -727,6 +727,8 @@ class CoreHTTPClient:
         }
         if origin_channel:
             body["origin_channel"] = origin_channel
+        if schema_hash:
+            body["schema_hash"] = schema_hash
         resp = await self._request(
             "POST",
             "/v1/service/query",

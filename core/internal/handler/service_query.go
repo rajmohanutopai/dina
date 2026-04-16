@@ -31,7 +31,8 @@ type serviceQueryRequest struct {
 	TTLSeconds     int             `json:"ttl_seconds"`
 	ServiceName    string          `json:"service_name"`
 	QueryID        string          `json:"query_id"`
-	OriginChannel  string          `json:"origin_channel,omitempty"` // WS2: routing context for notifications
+	OriginChannel  string          `json:"origin_channel,omitempty"`
+	SchemaHash     string          `json:"schema_hash,omitempty"` // WS2: provider schema version matching
 }
 
 type serviceQueryResponse struct {
@@ -121,6 +122,7 @@ func (h *ServiceQueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		"query_id":       req.QueryID,
 		"ttl_seconds":    req.TTLSeconds,
 		"origin_channel": req.OriginChannel,
+		"schema_hash":    req.SchemaHash,
 	}
 	payloadJSON, _ := json.Marshal(payloadMap)
 
@@ -169,8 +171,9 @@ func (h *ServiceQueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	queryBody := domain.ServiceQueryBody{
 		QueryID:    req.QueryID,
 		Capability: req.Capability,
-		Params:     canonicalParams, // canonical form, not raw req.Params
+		Params:     canonicalParams,
 		TTLSeconds: req.TTLSeconds,
+		SchemaHash: req.SchemaHash,
 	}
 	queryBodyJSON, _ := json.Marshal(queryBody)
 	d2dMsg := domain.DinaMessage{

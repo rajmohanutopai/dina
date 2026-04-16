@@ -58,21 +58,47 @@ def format_service_query_result(details: dict) -> str:
 
 
 def _format_eta(details: dict, name: str) -> str:
-    """Format an eta_query response."""
+    """Format an eta_query response with map URL.
+
+    Produces plain-text output with a plain URL (not Markdown link).
+    Telegram auto-linkifies URLs — no parse_mode needed.
+    """
     result = details.get("result", {})
     if isinstance(result, str):
         try:
             result = json.loads(result)
         except (json.JSONDecodeError, TypeError):
             result = {}
+
+    status = result.get("status", "on_route")
+
+    if status == "not_on_route":
+        msg = result.get("message", "")
+        return msg or f"{name} doesn't serve your area."
+    if status == "out_of_service":
+        msg = result.get("message", "")
+        return msg or f"{name} is not running at this time."
+    if status == "not_found":
+        msg = result.get("message", "")
+        return msg or f"{name} — route not found."
+
     eta = result.get("eta_minutes")
-    vehicle = result.get("vehicle_type", "")
+    stop_name = result.get("stop_name", "")
+    vehicle = result.get("vehicle_type", "Bus")
     route = result.get("route_name", "")
-    parts = [p for p in [route, vehicle] if p]
-    label = " ".join(parts) or name
-    if eta is not None:
-        return f"{label} — {eta} minutes away"
-    return f"{label} — response received"
+    map_url = result.get("map_url", "")
+
+    lines = []
+    route_label = f"{vehicle} {route}" if route else name
+    lines.append(f"{route_label}")
+    if eta is not None and stop_name:
+        lines.append(f"{eta} min to {stop_name}")
+    elif eta is not None:
+        lines.append(f"{eta} minutes away")
+    if map_url:
+        lines.append(map_url)
+
+    return "\n".join(lines)
 
 
 def _format_generic(details: dict, name: str) -> str:

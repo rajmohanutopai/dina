@@ -12,6 +12,8 @@ export const services = pgTable('services', {
   radiusKm: numeric('radius_km'),
   hoursJson: jsonb('hours_json'),
   responsePolicyJson: jsonb('response_policy_json'),
+  capabilitySchemasJson: jsonb('capability_schemas_json'),  // WS2: per-capability JSON schemas
+  schemaHash: text('schema_hash'),  // WS2: SHA-256 of canonical schema for version matching
   isPublic: boolean('is_public').notNull().default(true),
   searchContent: text('search_content'),
   indexedAt: timestamp('indexed_at').notNull().defaultNow(),

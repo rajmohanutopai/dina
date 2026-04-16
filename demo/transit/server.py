@@ -141,8 +141,7 @@ def _google_maps_url(bus_lat: float, bus_lng: float, stop_lat: float, stop_lng: 
 # MCP Tool
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
-def get_eta(route_id: str, lat: float, lng: float) -> dict[str, Any]:
+def _get_eta_impl(route_id: str, lat: float, lng: float) -> dict[str, Any]:
     """Get schedule-based ETA for a bus route at the user's location.
 
     Args:
@@ -211,3 +210,18 @@ def get_eta(route_id: str, lat: float, lng: float) -> dict[str, Any]:
         "map_url": map_url,
         "message": f"Bus {route_id} ({route['name']}) — {eta} min to {stop['name']}",
     }
+
+
+@mcp.tool()
+def get_eta(route_id: str, lat: float, lng: float) -> dict[str, Any]:
+    """Get schedule-based ETA for a bus route at the user's location.
+
+    Args:
+        route_id: Bus route number (e.g., "42")
+        lat: User's latitude
+        lng: User's longitude
+
+    Returns:
+        Dict with eta_minutes, stop_name, map_url, status, etc.
+    """
+    return _get_eta_impl(route_id, lat, lng)

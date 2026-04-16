@@ -14,18 +14,29 @@ import (
 
 // ServiceConfig is the parsed service configuration.
 type ServiceConfig struct {
-	IsPublic     bool                          `json:"is_public"`
-	Capabilities map[string]CapabilityConfig   `json:"capabilities"`
-	ServiceArea  *ServiceArea                  `json:"service_area,omitempty"`
-	Name         string                        `json:"name"`
-	Description  string                        `json:"description"`
+	IsPublic           bool                               `json:"is_public"`
+	Capabilities       map[string]CapabilityConfig         `json:"capabilities"`
+	CapabilitySchemas  map[string]CapabilitySchema         `json:"capability_schemas,omitempty"`
+	ServiceArea        *ServiceArea                        `json:"service_area,omitempty"`
+	Name               string                              `json:"name"`
+	Description        string                              `json:"description"`
+	SchemaHash         string                              `json:"schema_hash,omitempty"`
 }
 
-// CapabilityConfig defines a single service capability.
+// CapabilityConfig defines a single service capability's MCP routing.
 type CapabilityConfig struct {
-	ResponsePolicy string `json:"response_policy"` // "auto" (Phase 1 only)
+	ResponsePolicy string `json:"response_policy"` // "auto" or "review"
 	MCPServer      string `json:"mcp_server"`
 	MCPTool        string `json:"mcp_tool"`
+}
+
+// CapabilitySchema is the provider-published JSON Schema for a capability.
+// Used for param validation (Brain) and result validation (Core bridge).
+type CapabilitySchema struct {
+	Description string                 `json:"description,omitempty"`
+	Params      map[string]interface{} `json:"params,omitempty"`
+	Result      map[string]interface{} `json:"result,omitempty"`
+	SchemaHash  string                 `json:"schema_hash,omitempty"`
 }
 
 // ServiceArea defines the geographic area served.

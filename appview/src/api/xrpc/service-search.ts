@@ -36,6 +36,8 @@ export interface ServiceSearchResult {
   name: string
   description: string | null
   capabilities: unknown
+  capabilitySchemas: unknown  // WS2: per-capability JSON schemas (provider-published)
+  schemaHash: string | null    // WS2: SHA-256 of canonical schema for version matching
   serviceArea: { lat: number; lng: number; radiusKm: number } | null
   hours: unknown
   responsePolicy: unknown
@@ -121,6 +123,8 @@ export async function serviceSearch(
       radiusKm: services.radiusKm,
       hours: services.hoursJson,
       responsePolicy: services.responsePolicyJson,
+      capabilitySchemas: services.capabilitySchemasJson,
+      schemaHash: services.schemaHash,
       trustScore: didProfiles.overallTrustScore,
       score: compositeScoreExpr,
       scoreBucket: scoreBucketExpr,
@@ -150,6 +154,8 @@ export async function serviceSearch(
         : null,
       hours: r.hours,
       responsePolicy: r.responsePolicy,
+      capabilitySchemas: r.capabilitySchemas ?? null,
+      schemaHash: r.schemaHash ?? null,
       trustScore: r.trustScore,
       score: r.score,
     })),

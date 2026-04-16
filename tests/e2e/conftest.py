@@ -116,7 +116,7 @@ def e2e_persona_setup(docker_services):
     admin_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
     data_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
 
-    for actor in ["alonso", "sancho", "chairmaker", "albert"]:
+    for actor in ["alonso", "sancho", "chairmaker", "albert", "busdriver"]:
         base = docker_services.core_url(actor)
 
         for name, tier in _PERSONA_TIERS.items():
@@ -158,7 +158,7 @@ def plc_directory() -> MockPLCDirectory:
 def d2d_network(docker_services) -> MockD2DNetwork:
     """D2D delivery between Home Nodes via real Go Core HTTP calls."""
     did_to_core_url = {}
-    for actor in ["alonso", "sancho", "chairmaker", "albert"]:
+    for actor in ["alonso", "sancho", "chairmaker", "albert", "busdriver"]:
         did = docker_services.actor_did(actor)
         did_to_core_url[did] = docker_services.core_url(actor)
     return RealD2DNetwork(did_to_core_url, docker_services.client_token)
@@ -204,7 +204,7 @@ def _core_private_keys(docker_services) -> dict[str, bytes | None]:
     (same protocol as BrainSigner in tests/system/conftest.py).
     """
     keys: dict[str, bytes | None] = {}
-    for actor in ["alonso", "sancho", "chairmaker", "albert"]:
+    for actor in ["alonso", "sancho", "chairmaker", "albert", "busdriver"]:
         try:
             keys[actor] = docker_services.core_private_key(actor)
         except (RuntimeError, FileNotFoundError, Exception):

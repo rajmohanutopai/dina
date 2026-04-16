@@ -1676,6 +1676,34 @@ func main() {
 				slog.Warn("workflow.unavailable_send_failed", "peer", peerDID, "query_id", queryID, "error", err)
 			}
 		})
+		// WS2: wire the response bridge sender for task completion → D2D response.
+		workflowSvc.SetResponseBridgeSender(func(ctx context.Context, peerDID string, responseJSON []byte) {
+			// Parse the response to extract query_id and capability for the provider window.
+			var resp map[string]interface{}
+			json.Unmarshal(responseJSON, &resp)
+			queryID, _ := resp["query_id"].(string)
+			capability, _ := resp["capability"].(string)
+			if queryID == "" || peerDID == "" {
+				return
+			}
+			// Open fresh provider window for the response send.
+			transportSvc.SetProviderWindow(peerDID, queryID, capability, 30)
+			msg := domain.DinaMessage{
+				ID:          "bridge-" + queryID,
+				Type:        domain.MsgTypeServiceResponse,
+				Body:        responseJSON,
+				CreatedTime: clk.Now().Unix(),
+			}
+			if err := transportSvc.SendMessage(ctx, domain.DID(peerDID), msg); err != nil {
+				slog.Warn("workflow.bridge_send_failed", "peer", peerDID, "query_id", queryID, "error", err)
+			}
+		})
+
+		// WS2: wire service config for result schema validation in bridge.
+		if serviceConfigSvc != nil {
+			workflowSvc.SetServiceConfig(serviceConfigSvc)
+		}
+
 		workflowH := &handler.WorkflowHandler{
 			Workflow: workflowSvc,
 			Devices:  deviceSvc,
