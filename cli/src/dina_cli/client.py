@@ -378,14 +378,14 @@ class DinaClient:
     # -- Delegated tasks -------------------------------------------------------
 
     def claim_task(self, lease_seconds: int = 300, runner_filter: str = "") -> dict | None:
-        """Claim the next queued delegated task (POST /v1/agent/tasks/claim).
+        """Claim the next queued delegated task (POST /v1/workflow/tasks/claim).
         If runner_filter is set, only claims tasks matching that runner.
         Returns task dict or None if no work available."""
         body: dict = {"lease_seconds": lease_seconds}
         if runner_filter:
             body["runner_filter"] = runner_filter
         resp = self._request(
-            self._core, "POST", "/v1/agent/tasks/claim",
+            self._core, "POST", "/v1/workflow/tasks/claim",
             json=body,
         )
         if resp.status_code == 204:
@@ -393,55 +393,55 @@ class DinaClient:
         return resp.json()
 
     def task_heartbeat(self, task_id: str, lease_seconds: int = 300) -> None:
-        """Extend lease on a claimed task (POST /v1/agent/tasks/{id}/heartbeat)."""
+        """Extend lease on a claimed task (POST /v1/workflow/tasks/{id}/heartbeat)."""
         self._request(
-            self._core, "POST", f"/v1/agent/tasks/{task_id}/heartbeat",
+            self._core, "POST", f"/v1/workflow/tasks/{task_id}/heartbeat",
             json={"lease_seconds": lease_seconds},
         )
 
     def task_complete(self, task_id: str, result: str, assigned_runner: str = "") -> None:
-        """Mark task as completed (POST /v1/agent/tasks/{id}/complete)."""
+        """Mark task as completed (POST /v1/workflow/tasks/{id}/complete)."""
         body: dict = {"result": result}
         if assigned_runner:
             body["assigned_runner"] = assigned_runner
         self._request(
-            self._core, "POST", f"/v1/agent/tasks/{task_id}/complete",
+            self._core, "POST", f"/v1/workflow/tasks/{task_id}/complete",
             json=body,
         )
 
     def task_fail(self, task_id: str, error: str, assigned_runner: str = "") -> None:
-        """Mark task as failed (POST /v1/agent/tasks/{id}/fail)."""
+        """Mark task as failed (POST /v1/workflow/tasks/{id}/fail)."""
         body: dict = {"error": error}
         if assigned_runner:
             body["assigned_runner"] = assigned_runner
         self._request(
-            self._core, "POST", f"/v1/agent/tasks/{task_id}/fail",
+            self._core, "POST", f"/v1/workflow/tasks/{task_id}/fail",
             json=body,
         )
 
     def mark_running(self, task_id: str, run_id: str = "", assigned_runner: str = "") -> None:
-        """Mark task as running (POST /v1/agent/tasks/{id}/running)."""
+        """Mark task as running (POST /v1/workflow/tasks/{id}/running)."""
         body: dict = {"run_id": run_id}
         if assigned_runner:
             body["assigned_runner"] = assigned_runner
         self._request(
-            self._core, "POST", f"/v1/agent/tasks/{task_id}/running",
+            self._core, "POST", f"/v1/workflow/tasks/{task_id}/running",
             json=body,
         )
 
     def task_progress(self, task_id: str, message: str) -> None:
-        """Update progress on a claimed task (POST /v1/agent/tasks/{id}/progress)."""
+        """Update progress on a claimed task (POST /v1/workflow/tasks/{id}/progress)."""
         self._request(
-            self._core, "POST", f"/v1/agent/tasks/{task_id}/progress",
+            self._core, "POST", f"/v1/workflow/tasks/{task_id}/progress",
             json={"message": message},
         )
 
     def get_task(self, task_id: str) -> dict | None:
-        """Get a delegated task by ID (GET /v1/agent/tasks/{id}).
+        """Get a delegated task by ID (GET /v1/workflow/tasks/{id}).
         Returns None only for 404. Other errors are raised."""
         try:
             resp = self._request(
-                self._core, "GET", f"/v1/agent/tasks/{task_id}",
+                self._core, "GET", f"/v1/workflow/tasks/{task_id}",
             )
             return resp.json()
         except DinaClientError as e:
@@ -450,11 +450,11 @@ class DinaClient:
             raise
 
     def list_tasks(self, status: str = "") -> list[dict]:
-        """List delegated tasks (GET /v1/agent/tasks)."""
+        """List delegated tasks (GET /v1/workflow/tasks)."""
         params = {}
         if status:
             params["status"] = status
         resp = self._request(
-            self._core, "GET", "/v1/agent/tasks", params=params,
+            self._core, "GET", "/v1/workflow/tasks", params=params,
         )
         return resp.json().get("tasks", [])

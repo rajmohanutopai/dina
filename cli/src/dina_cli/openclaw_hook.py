@@ -8,7 +8,7 @@ Setup: Copy to OpenClaw's hooks directory and configure in openclaw.json:
 
 Environment:
   DINA_CORE_CALLBACK_URL  — e.g. http://host.docker.internal:18100
-  DINA_HOOK_CALLBACK_TOKEN — Bearer token for /v1/internal/delegated-tasks/
+  DINA_HOOK_CALLBACK_TOKEN — Bearer token for /v1/internal/workflow-tasks/
 
 The hook fires on agent_end for sessions with key starting "hook:dina-task:".
 """
@@ -73,7 +73,7 @@ def _extract_result(result: object) -> str:
 
 def _post_callback(task_id: str, action: str, payload: dict) -> None:
     """POST terminal status to Dina Core with retry."""
-    url = f"{CALLBACK_URL}/v1/internal/delegated-tasks/{task_id}/{action}"
+    url = f"{CALLBACK_URL}/v1/internal/workflow-tasks/{task_id}/{action}"
     data = json.dumps(payload).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {CALLBACK_TOKEN}",

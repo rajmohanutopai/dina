@@ -428,6 +428,9 @@ def create_app() -> FastAPI:
     entity_vault = EntityVaultService(scrubber=scrubber, core_client=brain_core_client)
     nudge = NudgeAssembler(core=brain_core_client, llm=llm_router, entity_vault=entity_vault)
     scratchpad = ScratchpadService(core=brain_core_client)
+    # WS2: appview_client and mcp_client are wired later (after _service_orchestrator setup)
+    # if AppView URL is configured. Initial construction without them — tools return
+    # "not configured" errors until wired.
     vault_context = VaultContextAssembler(core=brain_core_client, llm_router=llm_router, owner_name=cfg.owner_name)
     from .service.trust_scorer import TrustScorer
     from .service.enrichment import EnrichmentService
@@ -515,6 +518,10 @@ def create_app() -> FastAPI:
         service_config={},
     )
     guardian._service_handler = _service_handler
+    # WS2: wire operator notifier for review approval prompts.
+    async def _service_handler_notifier(text: str) -> None:
+        await guardian._push_notification(text, "service_review")
+    _service_handler._notifier = _service_handler_notifier
     log.info("brain.service_handler.configured")
 
     # Requester side: only created if DINA_APPVIEW_URL is set (needs AppView
@@ -536,6 +543,9 @@ def create_app() -> FastAPI:
         )
         guardian._service_query_orchestrator = _service_orchestrator
 
+        # WS2: wire AppView into VaultContextAssembler for LLM tools.
+        vault_context._agent._appview = appview_client
+
         log.info(
             "brain.service_discovery.configured",
             extra={"appview_url": appview_url},
@@ -545,6 +555,10 @@ def create_app() -> FastAPI:
             "brain.service_discovery.requester_disabled",
             extra={"hint": "Set DINA_APPVIEW_URL to enable service discovery (requester side)"},
         )
+
+    # WS2: wire MCP client into VaultContextAssembler for geocode tool.
+    # Independent of AppView — geocoding works even without service discovery.
+    vault_context._agent._mcp = mcp_client
 
     # -- Telegram connector (optional — graceful degradation) --
     telegram_bot = None  # type: ignore[assignment]
@@ -582,6 +596,7 @@ def create_app() -> FastAPI:
                     "taskstatus": telegram_service.handle_task_status,
                     "status": telegram_service.handle_status,
                     "service_query": telegram_service.handle_service_query,
+                    "service_approve": telegram_service.handle_service_approve,
                 },
                 callback_query_handler=telegram_service.handle_callback_query,
                 base_url=cfg.telegram_api_base_url,
@@ -741,18 +756,94 @@ def create_app() -> FastAPI:
 
         sync_task = asyncio.create_task(_sync_loop(sync_engine))
 
-        # Service query timeout scanner — expires unanswered queries.
-        service_timeout_task: asyncio.Task | None = None
-        if _service_orchestrator is not None:
-            async def _service_timeout_loop() -> None:
-                while True:
-                    await asyncio.sleep(10)
-                    try:
-                        await _service_orchestrator.check_timeouts()
-                    except Exception:
-                        pass  # best-effort
+        # WS2: Approval reconciliation loop — recovers stuck approval tasks.
+        # Replaces Phase 1 timeout scanner. Runs every 60s.
+        async def _approval_reconciliation_loop() -> None:
+            # Run first pass immediately on startup, then every 5 minutes.
+            # This is a safety net for stuck tasks, not the primary execution path.
+            # Normal flow: Core delivers workflow_events → Brain executes.
+            first_run = True
+            while True:
+                if not first_run:
+                    await asyncio.sleep(300)
+                first_run = False
+                try:
+                    import json as json_mod
 
-            service_timeout_task = asyncio.create_task(_service_timeout_loop())
+                    # Tier 0: pending_approval tasks with dropped prompts.
+                    # Re-send operator notification for any still-pending tasks.
+                    pending = await brain_core_client.list_workflow_tasks(
+                        status="pending_approval", kind="approval", limit=200, order="oldest",
+                    )
+                    for t in pending:
+                        task_id = t.get("id", "")
+                        payload = t.get("payload", {})
+                        if isinstance(payload, str):
+                            payload = json_mod.loads(payload)
+                        capability = payload.get("capability", "")
+                        from_did = payload.get("from_did", "")
+                        if _service_handler and _service_handler._notifier:
+                            try:
+                                await _service_handler._notifier(
+                                    f"Pending review (reminder):\n"
+                                    f"  Capability: {capability}\n"
+                                    f"  From: {from_did}\n"
+                                    f"  Approve: /service_approve {task_id}"
+                                )
+                            except Exception:
+                                pass  # best-effort reminder
+
+                    # Tier 1: queued approval tasks (event delivery may have failed).
+                    queued = await brain_core_client.list_workflow_tasks(
+                        status="queued", kind="approval", limit=200, order="oldest",
+                    )
+                    for t in queued:
+                        task_id = t.get("id", "")
+                        log.info(
+                            "brain.reconciliation.queued_approval",
+                            extra={"task_id": task_id},
+                        )
+                        if _service_handler:
+                            try:
+                                payload = t.get("payload", {})
+                                if isinstance(payload, str):
+                                    payload = json_mod.loads(payload)
+                                await _service_handler.execute_and_respond(task_id, payload)
+                            except Exception as exc:
+                                log.warning(
+                                    "brain.reconciliation.execute_failed",
+                                    extra={"task_id": task_id, "error": str(exc)},
+                                )
+
+                    # Tier 2: running approval tasks with run_id (crash recovery).
+                    running = await brain_core_client.list_workflow_tasks(
+                        status="running", kind="approval", limit=200, order="oldest",
+                    )
+                    for t in running:
+                        if not t.get("run_id"):
+                            continue
+                        task_id = t.get("id", "")
+                        log.info(
+                            "brain.reconciliation.running_with_marker",
+                            extra={"task_id": task_id},
+                        )
+                        try:
+                            await brain_core_client.send_service_respond(task_id, {})
+                        except Exception as exc:
+                            log.warning(
+                                "brain.reconciliation.tier2_recovery_failed",
+                                extra={"task_id": task_id, "error": str(exc)},
+                            )
+
+                    # Config reload removed — Core pushes config_changed events
+                    # to Brain via brain.Process() on PUT /v1/service/config.
+                except Exception as exc:
+                    log.warning(
+                        "brain.reconciliation.failed",
+                        extra={"error": str(exc)},
+                    )
+
+        reconciliation_task = asyncio.create_task(_approval_reconciliation_loop())
 
         # Publish service profile to PDS on startup (if configured).
         # Publishing does NOT require AppView — providers publish to PDS

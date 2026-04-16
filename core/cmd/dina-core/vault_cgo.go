@@ -85,10 +85,10 @@ func newD2DOutboxManager(backend vaultBackend) port.OutboxManager {
 	return sqlite.NewD2DOutboxManager(pool)
 }
 
-// newDelegatedTaskStore returns a SQLite-backed delegated task store using identity.sqlite.
-func newDelegatedTaskStore(backend vaultBackend) port.DelegatedTaskStore {
+// newWorkflowStore returns a SQLite-backed workflow store using identity.sqlite.
+func newWorkflowStore(backend vaultBackend) port.WorkflowStore {
 	pool := backend.(*sqlite.VaultAdapter).Pool()
-	return sqlite.NewDelegatedTaskStore(pool)
+	return sqlite.NewWorkflowStore(pool)
 }
 
 // newServiceConfigService returns a ServiceConfigService backed by identity.sqlite.

@@ -1,15 +1,25 @@
 # Dina Agent Architecture — Overview and Reading Guide
 
-**Status:** Specification (overview) · **Audience:** Dina Mobile team, Basic Dina team, OpenClaw team, future contributors and integrators · **Purpose:** the map. Explains how the four architecture documents compose, what each owns, how they interact, and the reading order for different roles.
+**Status:** Mixed architecture suite. The kernel document is substantially grounded in the `claw-code` Rust runtime. The control-plane and delegation documents are mostly Dina-specific design targets, not current `claw-code` runtime behavior and not yet implemented in Dina. · **Audience:** Dina Mobile team, Basic Dina team, OpenClaw team, future contributors and integrators · **Purpose:** the map. Explains how the four architecture documents compose, what each owns, how they interact, and the reading order for different roles.
+
+## Provenance and Reading Contract
+
+Read this suite with a strict distinction between three kinds of material:
+
+- **Reference-backed runtime patterns** — primarily from `claw-code/rust/crates/runtime`, especially the conversation loop, session model, permission policy, prompt builder, and MCP bridge.
+- **Dina-specific design** — architecture Dina likely needs because of sovereignty, privacy, inter-agent messaging, and long-running async behavior.
+- **Implementation status** — what exists today in Dina's `brain/`, `core/`, and `appview/` codebases.
+
+This matters because the copied mobile docs can otherwise read as if all four documents are equally "learned from Claude Code." They are not.
 
 ## The Four Documents
 
-| Document | Scope | Length | Read when |
-|----------|-------|--------|-----------|
-| **DINA_ARCHITECTURE_OVERVIEW.md** (this) | Map and reading guide | short | first |
-| **[DINA_AGENT_KERNEL.md](./DINA_AGENT_KERNEL.md)** | Synchronous turn loop: streaming, tools, permissions, compaction, cancellation, budgets, sanitization | long | implementing agent runtime |
-| **[DINA_WORKFLOW_CONTROL_PLANE.md](./DINA_WORKFLOW_CONTROL_PLANE.md)** | Durable state: tasks, timers, approvals, watches, delegations, obligations, ingestion | medium-long | implementing state-outlives-turn behavior |
-| **[DINA_DELEGATION_CONTRACT.md](./DINA_DELEGATION_CONTRACT.md)** | Wire protocol for external execution planes (OpenClaw, MCP) | medium | implementing Dina-compatible delegation endpoints |
+| Document | Scope | Grounding | Current status |
+|----------|-------|-----------|----------------|
+| **DINA_ARCHITECTURE_OVERVIEW.md** (this) | Map and reading guide | Mixed | Guide only |
+| **[DINA_AGENT_KERNEL.md](./DINA_AGENT_KERNEL.md)** | Synchronous turn loop: streaming, tools, permissions, compaction, cancellation, budgets, sanitization | Mostly reference-backed, with explicit Dina divergences | Partially reflected in current Brain reasoning loop; not implemented as a full typed runtime kernel |
+| **[DINA_WORKFLOW_CONTROL_PLANE.md](./DINA_WORKFLOW_CONTROL_PLANE.md)** | Durable state: tasks, timers, approvals, watches, delegations, obligations, ingestion | Mostly Dina-specific design, lightly inspired by runtime registries and repo orchestration patterns | Not implemented as written |
+| **[DINA_DELEGATION_CONTRACT.md](./DINA_DELEGATION_CONTRACT.md)** | Wire protocol for external execution planes (OpenClaw, MCP) | Mostly Dina-specific design, lightly inspired by task packets and MCP runtime ideas | Not implemented as written |
 
 Together they specify the full Dina agent architecture across the synchronous and asynchronous layers.
 
@@ -17,9 +27,9 @@ Together they specify the full Dina agent architecture across the synchronous an
 
 A single "Dina Agent Architecture" document tried to be everything and was both too detailed in places and too vague in others. Three documents with clear scopes let each go deep in its domain:
 
-- **Kernel** is a *how-do-turns-work* spec. Mostly behavioral. Implementers write code that makes turns feel like Claude Code.
-- **Control plane** is a *state-and-lifecycle* spec. Mostly data model + protocols. Implementers write the durable machinery that makes long-running agent behavior possible.
-- **Delegation contract** is a *wire-protocol* spec. Mostly message shapes + verification. Implementers on either side (Dina or external plane) write compatible endpoints.
+- **Kernel** is a *how-do-turns-work* spec. Mostly behavioral. This is the part most directly supported by the `claw-code` Rust runtime.
+- **Control plane** is a *state-and-lifecycle* spec. Mostly data model + protocols. This is primarily Dina design work, not a direct extraction from `claw-code`.
+- **Delegation contract** is a *wire-protocol* spec. Mostly message shapes + verification. This is also primarily Dina design work.
 
 The split also aligns with team boundaries. The mobile app and server may share the kernel and control plane, but each may integrate with different external planes via the delegation contract.
 
@@ -224,6 +234,76 @@ After this milestone: Dina can delegate complex work to OpenClaw and subscribe t
 
 After this milestone: Dina feels ambient — it tracks your commitments, resurfaces them at the right moment, and surfaces its own state for debugging.
 
+## Adoption Roadmap Against Current Dina Codebase
+
+This is the practical path from today's code to the target architecture.
+
+### Current baseline
+
+- **Brain ask path exists today** in `brain/src/service/guardian.py` via `_handle_reason()`.
+- **Brain already has an agentic tool loop** in `brain/src/service/vault_context.py` via `ReasoningAgent.reason()`.
+- **Core already has one internal async queue** in `core/internal/service/task.go`.
+- **Core already has one distinct delegated-work model** in `core/internal/port/delegated_task.go`.
+- **Public service discovery/query exists as a vertical feature** across `brain/src/service/service_query.py`, `brain/src/service/service_handler.py`, `core/internal/service/transport.go`, and AppView service search.
+
+The result is that Dina already has the beginnings of a kernel and already has fragmented async state. The right next step is to harden the kernel first and only then reshape durable async behavior.
+
+### Phase 0 — Clarify ownership boundaries
+
+- Treat **Brain** as the owner of the synchronous turn loop.
+- Treat **Core** as the owner of durable async state and correlation.
+- Do **not** add a third generic task system until the roles of the existing Core task queue and delegated-task store are made explicit.
+
+### Phase 1 — Harden the Brain kernel
+
+- Make the current reasoning loop in `brain/src/service/vault_context.py` behave more like the reference runtime:
+  - explicit budgets
+  - cancellation
+  - structured tool-call / tool-result invariants
+  - typed error results
+  - pre/post tool policy stages
+- Add a stronger prompt boundary model around `guardian.py` + `vault_context.py`.
+- Keep Dina-specific privacy plumbing above the kernel permission layer.
+
+### Phase 2 — Introduce service discovery as kernel tools
+
+- Add `geocode`, `search_public_services`, and `query_service` as first-class reasoning tools.
+- Keep the Brain side thin: selection, validation, and one Core call for side effects.
+- Validate requester-side service params against the same capability schema used on the provider side.
+
+### Phase 3 — Add narrow durable service-query state in Core
+
+- Do not force requester-side service queries into today's `delegated_tasks` model unless that model is intentionally redesigned.
+- Prefer a narrow durable correlation store for service queries if needed:
+  - `query_id`
+  - `service_did`
+  - `service_name`
+  - `capability`
+  - `status`
+  - `result`
+  - `expires_at`
+  - `idempotency_key`
+- Keep provider-review approval persistence aligned with the existing approval/proposal model where possible.
+
+### Phase 4 — Implement provider review path
+
+- Remove the Phase 1 auto-only restriction in Core/AppView publishing and validation.
+- Bind review expiry to the actual D2D query TTL/window.
+- Reuse existing approval semantics where possible instead of inventing a parallel review queue.
+
+### Phase 5 — Only then consider a broader control plane
+
+- If Dina still needs a richer cross-feature async state model after service discovery and approvals are stable, design that deliberately.
+- At that point, either:
+  - extend one existing Core model into the control-plane primitive, or
+  - add a new durable model with clear boundaries.
+- Do not keep layering generic workflow abstractions on top of mismatched existing stores.
+
+### Phase 6 — Implement delegation contract only when real external execution needs it
+
+- The delegation contract is worth building when Dina actually needs signed, auditable, capability-scoped execution against OpenClaw or another external plane.
+- Until then, treat `DINA_DELEGATION_CONTRACT.md` as a target spec, not as an assumed implementation dependency for every async feature.
+
 ## What This Suite Does NOT Cover
 
 Explicitly out of scope across all four documents. Handle separately or accept as limitations:
@@ -239,9 +319,9 @@ Explicitly out of scope across all four documents. Handle separately or accept a
 
 ## Labeling Convention
 
-All three deep documents use consistent labels on patterns:
+The kernel document uses these labels directly on patterns. The control-plane and delegation documents use the same vocabulary in provenance summaries and should adopt it whenever sections are tightened or rewritten:
 
-- **[Reference-derived]** — adapted from Claude Code's claw-code reference
+- **[Reference-derived]** — adapted from the `claw-code` Rust runtime or an equivalent Claude Code runtime pattern, not from the Python porting scaffold
 - **[Dina addition]** — not in the reference; Dina needs it for its own invariants
 - **[Dina divergence]** — reference does it one way; Dina chose differently (usually for privacy, security, or mobile constraints)
 

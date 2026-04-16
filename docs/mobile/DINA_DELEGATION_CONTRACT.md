@@ -1,6 +1,6 @@
 # Dina Delegation Contract — Wire Protocol for External Execution Planes (v1)
 
-**Status:** Specification (3 of 4 in the Dina Agent Architecture suite) · **Audience:** Dina Mobile team, Basic Dina team, OpenClaw team, future MCP integrators · **Scope:** the contract between Dina and any external execution plane that performs delegated work on Dina's behalf — task packet shape, authentication, trust, result schema, callback correlation, audit, and failure handling.
+**Status:** Dina-specific contract proposal. This document is only lightly inspired by `claw-code` task packets and MCP runtime patterns; the signed, capability-scoped, callback-driven contract described here does not exist as such in `claw-code` and is not implemented in current Dina. · **Audience:** Dina Mobile team, Basic Dina team, OpenClaw team, future MCP integrators · **Scope:** the contract between Dina and any external execution plane that performs delegated work on Dina's behalf — task packet shape, authentication, trust, result schema, callback correlation, audit, and failure handling.
 
 ## Document Suite
 
@@ -8,6 +8,39 @@
 - **[DINA_AGENT_KERNEL.md](./DINA_AGENT_KERNEL.md)** — the synchronous turn loop.
 - **[DINA_WORKFLOW_CONTROL_PLANE.md](./DINA_WORKFLOW_CONTROL_PLANE.md)** — durable state, lifecycles, ingestion.
 - **DINA_DELEGATION_CONTRACT.md** — this document.
+
+## Provenance and Reading Contract
+
+This document should be read as a **forward-looking Dina contract**, not as a summary of an existing external execution protocol in `claw-code`.
+
+Reference inputs are limited:
+
+- `claw-code/rust/crates/runtime/src/task_packet.rs` — useful for explicit task envelope fields and validation discipline
+- `claw-code/rust/crates/runtime/src/mcp_stdio.rs` and `mcp_tool_bridge.rs` — useful for capability, schema, and tool/resource lifecycle ideas
+
+Everything beyond that — DID identities, signed envelopes, callback auth, audit destinations, capability scoping, and cryptographic correlation — is Dina-specific design.
+
+## Provenance Summary
+
+| Area | Classification | Notes |
+|------|----------------|-------|
+| Packet validation discipline | **[Reference-derived]** in spirit | Inspired by `task_packet.rs`, but redesigned here for delegation |
+| Capability scoping and schema-bearing payloads | Mixed | Influenced by MCP tool contracts, but generalized here into Dina's external execution contract |
+| DID identities, signatures, callback auth, audit requirements | **[Dina addition]** | Not present as such in the reference runtime |
+| Correlation proofs, quarantine on mismatch, result verification | **[Dina addition]** | Dina-specific trust and sovereignty requirements |
+| Cancellation, retry, idempotency across planes | Mixed, mostly Dina-specific | General distributed-systems design rather than a direct runtime borrowing |
+
+Unless a section explicitly says otherwise, patterns in this document should be read as **[Dina addition]**.
+
+## Current Dina Alignment
+
+Current Dina has:
+
+- direct MCP/OpenClaw integrations for provider-side tool execution
+- service discovery and public-service D2D flows
+- no general signed external delegation contract matching this document
+
+Treat this document as the contract to build **when** Dina introduces real external execution planes that need durable, auditable, capability-scoped delegation.
 
 ## Preface
 

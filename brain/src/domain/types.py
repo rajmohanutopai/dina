@@ -91,6 +91,12 @@ class TaskEvent:
     Attributes:
         task_id:    Unique identifier (correlates with ``dina_tasks.id``).
         type:       Task type — ``"process"`` or ``"reason"``.
+                    type="workflow_event" events carry workflow data in payload:
+                      payload.event_id — int, the workflow_event row ID (for ACK)
+                      payload.workflow_task_id — str, the workflow_task ID
+                      payload.event_kind — str, "notification"
+                      payload.task_kind — str, "delegation"|"service_query"|etc
+                      payload.details — dict, event-specific data
         payload:    Arbitrary JSON payload from the originating event.
         attempt:    1-based retry counter.  ``attempt > 1`` means the task
                     was requeued after a previous failure or timeout.

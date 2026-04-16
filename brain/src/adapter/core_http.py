@@ -620,9 +620,9 @@ class CoreHTTPClient:
             json={"message": json.dumps(payload), "priority": priority},
         )
 
-    # -- Delegated tasks ------------------------------------------------------
+    # -- Workflow tasks (replaces delegated tasks) -----------------------------
 
-    async def create_delegated_task(
+    async def create_workflow_task(
         self,
         task_id: str,
         description: str,
@@ -631,8 +631,15 @@ class CoreHTTPClient:
         idempotency_key: str = "",
         requires_approval: bool = False,
         requested_runner: str = "",
+        *,
+        kind: str = "",
+        status: str = "",
+        payload: str = "",
+        expires_at: int = 0,
+        correlation_id: str = "",
+        priority: str = "",
     ) -> dict:
-        """POST /v1/agent/tasks — create a delegated task."""
+        """POST /v1/workflow/tasks — create a workflow task."""
         body: dict = {
             "id": task_id,
             "description": description,
@@ -643,35 +650,109 @@ class CoreHTTPClient:
         }
         if requested_runner:
             body["requested_runner"] = requested_runner
-        resp = await self._request("POST", "/v1/agent/tasks", json=body)
+        if kind:
+            body["kind"] = kind
+        if payload:
+            body["payload"] = payload
+        if expires_at:
+            body["expires_at"] = expires_at
+        if correlation_id:
+            body["correlation_id"] = correlation_id
+        if priority:
+            body["priority"] = priority
+        resp = await self._request("POST", "/v1/workflow/tasks", json=body)
         return resp.json()
 
-    async def get_delegated_task(self, task_id: str) -> dict | None:
-        """GET /v1/agent/tasks/{id} — fetch a delegated task.
+    async def get_workflow_task(self, task_id: str) -> dict | None:
+        """GET /v1/workflow/tasks/{id} — fetch a workflow task.
         Returns None only for 404. Other errors are raised."""
         try:
-            resp = await self._request("GET", f"/v1/agent/tasks/{task_id}")
+            resp = await self._request("GET", f"/v1/workflow/tasks/{task_id}")
             return resp.json()
         except Exception as exc:
             if "404" in str(exc) or "not found" in str(exc).lower():
                 return None
             raise
 
-    async def list_delegated_tasks(self, status: str = "") -> list[dict]:
-        """GET /v1/agent/tasks — list delegated tasks."""
-        params = {}
+    async def list_workflow_tasks(
+        self, status: str = "", kind: str = "", limit: int = 0,
+        order: str = "",
+    ) -> list[dict]:
+        """GET /v1/workflow/tasks — list workflow tasks."""
+        parts = []
         if status:
-            params["status"] = status
-        resp = await self._request("GET", "/v1/agent/tasks", params=params)
+            parts.append(f"status={status}")
+        if kind:
+            parts.append(f"kind={kind}")
+        if limit > 0:
+            parts.append(f"limit={limit}")
+        if order:
+            parts.append(f"order={order}")
+        path = "/v1/workflow/tasks"
+        if parts:
+            path += "?" + "&".join(parts)
+        resp = await self._request("GET", path)
         return resp.json().get("tasks", [])
 
     async def queue_task_by_proposal(self, proposal_id: str) -> None:
-        """POST /v1/agent/tasks/queue-by-proposal — transition task to queued."""
+        """POST /v1/workflow/tasks/queue-by-proposal — transition task to queued."""
         await self._request(
             "POST",
-            "/v1/agent/tasks/queue-by-proposal",
+            "/v1/workflow/tasks/queue-by-proposal",
             json={"proposal_id": proposal_id},
         )
+
+    async def ack_workflow_event(self, event_id: int) -> None:
+        """POST /v1/workflow/events/{event_id}/ack — acknowledge a workflow event."""
+        await self._request(
+            "POST",
+            f"/v1/workflow/events/{event_id}/ack",
+        )
+
+    # -- Service Discovery (WS2) --
+
+    async def send_service_query(
+        self, to_did: str, capability: str, params: dict,
+        query_id: str, ttl_seconds: int, service_name: str,
+        origin_channel: str = "",
+    ) -> dict:
+        """POST /v1/service/query — send a service query via durable workflow task."""
+        body = {
+            "to_did": to_did,
+            "capability": capability,
+            "params": params,
+            "query_id": query_id,
+            "ttl_seconds": ttl_seconds,
+            "service_name": service_name,
+        }
+        if origin_channel:
+            body["origin_channel"] = origin_channel
+        resp = await self._request(
+            "POST",
+            "/v1/service/query",
+            json=body,
+        )
+        return resp.json()
+
+    async def send_service_respond(self, task_id: str, response_body: dict) -> dict:
+        """POST /v1/service/respond — send approved service response."""
+        resp = await self._request(
+            "POST",
+            "/v1/service/respond",
+            json={
+                "task_id": task_id,
+                "response_body": response_body,
+            },
+        )
+        return resp.json()
+
+    async def approve_workflow_task(self, task_id: str) -> dict:
+        """POST /v1/workflow/tasks/{task_id}/approve — approve a pending task."""
+        resp = await self._request(
+            "POST",
+            f"/v1/workflow/tasks/{task_id}/approve",
+        )
+        return resp.json()
 
     # -- Task queue ACK ------------------------------------------------------
 

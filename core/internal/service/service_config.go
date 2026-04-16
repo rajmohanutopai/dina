@@ -74,14 +74,15 @@ func (s *ServiceConfigService) Put(cfg *ServiceConfig) error {
 			return fmt.Errorf("service_config: public service must have a service_area (lat/lng/radius)")
 		}
 	}
-	// Phase 1: only "auto" response policy is accepted.
+	// WS2: both "auto" and "review" response policies are supported.
 	for name, cap := range cfg.Capabilities {
-		if cap.ResponsePolicy != "auto" {
-			return fmt.Errorf("service_config: capability %q has response_policy %q, only \"auto\" is supported in Phase 1",
+		if cap.ResponsePolicy != "auto" && cap.ResponsePolicy != "review" {
+			return fmt.Errorf("service_config: capability %q has response_policy %q, must be \"auto\" or \"review\"",
 				name, cap.ResponsePolicy)
 		}
-		if cap.MCPServer == "" || cap.MCPTool == "" {
-			return fmt.Errorf("service_config: capability %q must have mcp_server and mcp_tool", name)
+		// MCP routing required for auto-respond. Review may not need it (human approval).
+		if cap.ResponsePolicy == "auto" && (cap.MCPServer == "" || cap.MCPTool == "") {
+			return fmt.Errorf("service_config: capability %q (auto) must have mcp_server and mcp_tool", name)
 		}
 	}
 

@@ -1172,7 +1172,7 @@ class TelegramService:
     ) -> None:
         """/task <description> — delegate an autonomous task to OpenClaw.
 
-        Creates a durable delegated task in Core. The agent-daemon claims
+        Creates a durable workflow task in Core. The agent-daemon claims
         and executes it after approval.
         """
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
@@ -1237,9 +1237,9 @@ class TelegramService:
             await ch.send(ErrorResponse(text=f"Task denied: {result.get('reason', 'blocked')}"))
             return
 
-        # Create durable task in Core (replaces KV storage)
+        # Create durable workflow task in Core
         try:
-            await self._core.create_delegated_task(
+            await self._core.create_workflow_task(
                 task_id=task_id,
                 description=text,
                 origin="telegram",
@@ -1269,7 +1269,7 @@ class TelegramService:
     async def handle_task_status(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/taskstatus <task_id> — check the status of a delegated task."""
+        """/taskstatus <task_id> — check the status of a workflow task."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
@@ -1279,7 +1279,7 @@ class TelegramService:
             return
 
         try:
-            task = await self._core.get_delegated_task(task_id)
+            task = await self._core.get_workflow_task(task_id)
             if task is None:
                 await ch.send(ErrorResponse(text=f"Task `{task_id}` not found."))
                 return
@@ -1507,3 +1507,31 @@ class TelegramService:
                 extra={"capability": capability, "error": str(exc)},
             )
             await ch.send(ErrorResponse(text="Service query failed."))
+
+    async def handle_service_approve(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/service_approve <task_id> — approve a pending service review.
+
+        WS2: approves a pending_approval workflow_task, triggering MCP execution
+        and service.response send via Core.
+        """
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        args = context.args or []
+        if not args:
+            await ch.send(BotResponse(text="Usage: /service_approve <task_id>"))
+            return
+
+        task_id = args[0].strip()
+        if not task_id:
+            await ch.send(BotResponse(text="Usage: /service_approve <task_id>"))
+            return
+
+        try:
+            await self._core.approve_workflow_task(task_id)
+            await ch.send(BotResponse(text=f"Approved: {task_id}"))
+        except Exception as exc:
+            log.warning("telegram.service_approve_failed", extra={"task_id": task_id, "error": str(exc)})
+            await ch.send(ErrorResponse(text=f"Approval failed: {exc}"))

@@ -1,3 +1,4 @@
+
 # Everything through MSGBOX
 
 ❯ ok the next big feature - all ed25519 requests responses go through MSGBOX. It becomes more than just D2D - this becomes the way all connections to homenode happens. This will allow the home node to run        
@@ -13,6 +14,9 @@ OpenAPI is not fully integrated. Still integration works with hand coded (AI cod
 
 # Information Storage
   Information related to Alonso is currently not stored against Alonso. It will be better if it is stored thus
+
+# Decision on vault
+An external persons (dependent of their relatioship) health information should go to general vault
 
 # Salt issue
 ⏺ The salt is SHA256("dina:salt:general") — deterministic from the persona name. It's the same every time, for every user, for the same persona.                                                                     
@@ -117,6 +121,7 @@ Obviously security of others also has to be maintained, so, Idenity.sqlite conta
 - `docs/interaction/formatting.md` — canonical response formatting contract across channels and systems
 
 
+
 # Better Reply Architecture
 
   1. Handlers still format text — handle_status builds "*Your Dina*\nDID: ..." and passes it as BotResponse(text=...). That's just reply_text with extra steps. A truly clean architecture would have handlers return
@@ -141,6 +146,144 @@ Obviously security of others also has to be maintained, so, Idenity.sqlite conta
 # Dina Task
 
 To ask OpenClaw to do somethings - it is not just validate and ask and reminder. this is Dina telling OpenClaw to do things
+
+# support NIST ID
+
+be maximally compatible
+
+  ┌─────────────────────────┬──────────────────────┬─────────────────────┬───────────────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────┐     
+  │        Protocol         │     Who owns it      │    What it does     │                             Status April 2026                             │                   Dina's relationship                   │ 
+  ├─────────────────────────┼──────────────────────┼─────────────────────┼───────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤     
+  │ MCP (Model Context      │ Anthropic (open)     │ Agent ↔ tools       │ Already the default. Adopted by OpenAI, Google, Microsoft, Block.         │ Dina already uses MCP (per your own architecture docs)  │ 
+  │ Protocol)               │                      │                     │ Enterprise rollout 2026.                                                  │ ✓                                                       │ 
+  ├─────────────────────────┼──────────────────────┼─────────────────────┼───────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤     
+  │ A2A (Agent2Agent)       │ Google → Linux       │ Agent ↔ agent       │ v0.3 shipped. Open governance under LF. Agents publish                    │ Not yet adapted. Critical gap.                          │ 
+  │                         │ Foundation           │                     │ /.well-known/agent-card.json.                                             │                                                         │     
+  ├─────────────────────────┼──────────────────────┼─────────────────────┼───────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤ 
+  │ OAuth 2.1 / OIDC        │ IETF / OpenID        │ Identity + auth     │ Universal enterprise default. MCP adds OAuth 2.1 support Q2 2026.         │ Dina uses Ed25519 device keys. Needs a bearer-token     │     
+  │                         │ Foundation           │                     │                                                                           │ shim at the gateway.                                    │
+  ├─────────────────────────┼──────────────────────┼─────────────────────┼───────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤     
+  │ DID / Verifiable        │ W3C                  │ Decentralized       │ Minority but advocated by SpruceID, Trust Over IP, etc. NIST comments     │ Dina is native here (did:plc) ✓                         │
+  │ Credentials             │                      │ identity            │ include DID voices.                                                       │                                                         │     
+  └─────────────────────────┴──────────────────────┴─────────────────────┴───────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┘
+                                                                                                                                                                                                                     
+  Notice what's not in this table: NIST. That's because NIST doesn't create standards. It compiles and blesses them. The NIST concept paper is not choosing a winner — it's listing the technologies that already    
+  exist: MCP, OAuth 2.0/2.1, OIDC, SPIFFE/SPIRE, SCIM, NGAC. Your fear is that NIST will pick a protocol that locks you out. That's not how NIST works. NIST follows the market, not the other way around.
+                                                                                                                                                                                                                     
+  The Bus Driver scenario — actually threatened, but not the way you think                                                                                                                                           
+  
+  You're right that if the bus driver's agent speaks a different protocol, the scene dies. But let me be specific about what breaks and what doesn't:                                                                
+                                                                  
+  What has to be true for the Bus Driver scene to work:                                                                                                                                                              
+                                                                  
+  1. Discovery — Your Dina has to find the bus driver's agent. How? In A2A, via Agent Cards at /.well-known/agent-card.json. In AT Protocol, via did:plc resolution. These are not competing — they're complementary.
+   A Dina can publish both an Agent Card (for A2A discovery) and a DID document (for AT Protocol discovery). That's ~50 lines of code.
+  2. Authentication — Your Dina has to prove to the bus driver's agent that it represents you, and vice versa. In A2A + OAuth, this is a bearer token. In Dina, this is an Ed25519 signature. Dina's gateway can     
+  accept both. It already does adapter work (CLIENT_TOKEN, Ed25519 device keys, Ed25519 service keys all translate to internal persona access). Adding "verify OAuth bearer token and map to session grant" is a     
+  natural extension of what the gatekeeper already does.
+  3. Message exchange — Your Dina sends a structured message, the bus driver's agent responds. In A2A this is JSON-RPC with specific task objects. In Dina's D2D, this is NaCl crypto_box_seal over HTTPS. Dina can  
+  expose a D2D endpoint that is simultaneously A2A-compatible. The envelope changes; the core payload doesn't.                                                                                                       
+  4. Trust — Your Dina has to decide whether to trust the bus driver's claim. This is where Dina uniquely wins. A2A + OAuth tells you who an agent is, but not whether you should trust it. Dina's Trust Network
+  (signed attestations on AT Protocol) is the layer nobody else is building. That's your moat.                                                                                                                       
+                                                                  
+  So the Bus Driver scene isn't dead. It's one pragmatic adapter away from working with any A2A-compatible agent, and the trust layer is yours uniquely.                                                             
+                                                                  
+  The strategic principle: Gateway pattern, sovereign core                                                                                                                                                           
+                                                                  
+  This is the single most important thing to internalize:                                                                                                                                                            
+                                                                  
+  Your wire protocol can be anything. Your core must be sovereign.                                                                                                                                                   
+  
+  Dina's architecture is already built this way. The Go Core handles crypto, the Brain handles intelligence, and the gatekeeper translates external auth into internal persona access. That gatekeeper is the exact  
+  place where you absorb other protocols without losing your sovereignty.
+                                                                                                                                                                                                                     
+  EXTERNAL SHELL (compatible)           INTERNAL CORE (sovereign) 
+  ─────────────────────────             ──────────────────────────                                                                                                                                                   
+  MCP tools exposed              →      Dina internal reason API
+  A2A Agent Card published       →      did:plc resolution                                                                                                                                                           
+  OAuth 2.1 bearer accepted      →      session grant with ring check                                                                                                                                                
+  OpenID Connect federation      →      persona-tier authorization                                                                                                                                                   
+  HTTP/REST endpoints            →      SQLCipher vault                                                                                                                                                              
+                       ↕                        ↕                                                                                                                                                                    
+                       GATEKEEPER (you own this)                                                                                                                                                                     
+                                                                                                                                                                                                                     
+  The rule: be maximally compatible at the shell, absolutely sovereign at the core. You accept any reasonable auth method at the edge, but everything that touches the vault must pass through your gatekeeper, which
+   enforces your rules regardless of how the auth came in.                                                                                                                                                           
+                                                                                                                                                                                                                     
+  If you build this way, Dina wins every protocol war because it doesn't pick a side. It translates all of them into its internal model where sovereignty is inviolable.                                             
+  
+  Is participating in NIST dangerous?                                                                                                                                                                                
+                                                                  
+  No. The opposite. Here's why:                                                                                                                                                                                      
+  
+  1. NIST processes are public. Your comment becomes public record. You cannot be locked in by writing a comment — you can only be acknowledged.                                                                     
+  2. The comment window closed April 2, 2026 for the initial period, but NIST projects run 12-24 months. The follow-up NCCoE project (the actual standards work) is ongoing. There will be working groups, workshops,
+   and demo days. You can still participate in those. Check nccoe.nist.gov/projects/software-and-ai-agent-identity-and-authorization.                                                                                
+  3. SpruceID already submitted comments arguing for DID inclusion — meaning the DID community is already in the NIST conversation. You don't have to fight alone. You can ally with SpruceID, Trust Over IP
+  Foundation, and others. They are actively advocating for decentralized identity to be part of the NIST framework.                                                                                                  
+  4. Being cited by NIST is free credibility. If the concept paper's project ends up listing Dina as a reference implementation of "did-based personal agent identity with persona isolation" — even in passing — you
+   are legitimized overnight with every federal agency, enterprise security team, and compliance officer.                                                                                                            
+  5. The worst case is zero impact. NIST ignores your comment. You've lost ~4 hours writing it. That's it.
+                                                                                                                                                                                                                     
+  The only "danger" is if you make a bad technical argument that exposes a weakness in Dina — but that's not a protocol risk, that's a user-error risk.                                                              
+                                                                                                                                                                                                                     
+  What NIST's concept paper actually says (so you're not flying blind)                                                                                                                                               
+                                                                  
+  The paper lists these as "standards under consideration":                                                                                                                                                          
+  - Model Context Protocol (✓ Dina supports)                      
+  - OAuth 2.0/2.1 and extensions (shim needed at Dina gateway)                                                                                                                                                       
+  - OpenID Connect (shim needed)                                  
+  - SPIFFE/SPIRE (workload identity for microservices — not directly applicable to personal AI)                                                                                                                      
+  - System for Cross-domain Identity Management (SCIM) (enterprise user provisioning — not your fight)                                                                                                               
+  - Next Generation Access Control (NGAC) (policy-based access — adjacent to Dina's gatekeeper model)                                                                                                                
+                                                                                                                                                                                                                     
+  None of these are incompatible with Dina. Most of them address a layer Dina already has solved differently.                                                                                                        
+                                                                                                                                                                                                                     
+  The gap NIST is trying to fill is literally the gap Dina fills: linking user identity to agent identity with cryptographic guarantees. If you frame your comment as "here's a working implementation of the problem
+   you're describing, using did:plc and persona-scoped session grants," you are putting Dina in front of the exact audience that will eventually write the standard.                                                 
+                                                                                                                                                                                                                     
+  The real risk you should fear (not NIST)                                                                                                                                                                           
+  
+  Here's the actual threat: Apple Intelligence, Google Gemini, Microsoft Copilot all ship personal AI with hard-coded identity tied to their platform. Users accept that because it's preinstalled. Dina becomes a   
+  niche for sovereigntists. Not dead — but marginal.              
+                                                                                                                                                                                                                     
+  That risk isn't fought by standardizing. It's fought by:                                                                                                                                                           
+  1. Being radically more useful for the things people actually want (Bus Driver scene, Sancho moment, trust network for purchases)
+  2. Being radically more portable (mobile version, app store presence, one-click install)                                                                                                                           
+  3. Being radically more composable (adapters for MCP, A2A, OAuth at the edge)           
+                                                                                                                                                                                                                     
+  First mover in protocols rarely matters. Most composable player eventually wins. HTTP ate Gopher, FTP, and Telnet not by being first but by being the lowest-friction shell that could absorb everyone else's work.
+                                                                                                                                                                                                                     
+  What I'd actually do about this                                                                                                                                                                                    
+                                                                                                                                                                                                                     
+  Immediate (2-4 hours of work, do during mobile port):                                                                                                                                                              
+  1. Add an /.well-known/agent-card.json endpoint to Dina that exposes your D2D capabilities in A2A format. One file. You instantly become A2A-discoverable.
+  2. Add OAuth 2.1 bearer token acceptance at the gatekeeper as one of the authentication methods. Keep Ed25519 as preferred, but accept bearer tokens from known issuers. ~100 lines of Go.                         
+  3. Document both in your README. Now you can truthfully say "Dina speaks MCP, A2A, OAuth, and DID — pick your protocol, the sovereignty is preserved regardless."                         
+                                                                                                                                                                                                                     
+  Week 4-6 (after mobile ships):                                                                                                                                                                                     
+  4. Write a short technical post: "Dina's gateway pattern: how to stay sovereign in a multi-protocol world." This becomes a Hacker News / Lobste.rs post that technical people will share, because it answers a live
+   question in the industry.                                                                                                                                                                                         
+  5. Submit a late comment to NIST's NCCoE working group (even if the formal window closed). Reference SpruceID's comment. Frame Dina as a reference implementation.                                                 
+  6. Reach out to SpruceID directly (spruceid.com) — they are already fighting your fight inside NIST. An email to them saying "we're building this, would love to align" is a warm email to the exact people who    
+  already want what you want.                                                                                                                                                                                        
+                                                                                                                                                                                                                     
+  Ongoing:                                                                                                                                                                                                           
+  7. Watch A2A v0.4 and v0.5 releases at github.com/a2aproject/A2A. Update Dina's agent card format as the spec evolves. Small continuous compatibility work.
+  8. Watch MCP's Q2 2026 OAuth update. Update your MCP integration accordingly.                                                                                                                                      
+                                                                                                                                                                                                                     
+  The one-sentence version                                                                                                                                                                                           
+                                                                                                                                                                                                                     
+  You're not racing NIST to be first. You're building a gateway that absorbs whatever wins, while keeping sovereignty in your core — and NIST is a low-risk, high-information venue for showing that your approach   
+  solves the exact problem they're trying to standardize around.  
+                                                                                                                                                                                                                     
+  Your fear was that being late = being locked out. Reality is the opposite: the protocols are all still in draft, and the thing that wins is the most-composable implementation, not the first-published spec.      
+  Dina's gateway architecture is already the right shape for this. You just need to add two adapters (A2A Agent Card + OAuth bearer acceptance) and you are positioned to win regardless of which protocol crosses
+  the finish line first.                                                                                                                                                                                             
+                                                                  
+  The Bus Driver scene doesn't die if Dina is compatible. It only dies if Dina is ideologically pure. Stay pragmatic at the edges.                                                                                   
+   
+
 
 # Internal Reminder
 
@@ -2460,3 +2603,5 @@ Missing scenario:
 - Trust for organizations vs individuals
 - How do institutional attestations differ from personal ones?
 ```
+
+

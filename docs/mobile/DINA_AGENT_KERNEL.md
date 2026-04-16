@@ -1,6 +1,6 @@
 # Dina Agent Kernel — Turn Loop, Adapters, and Kernel Plumbing (v4)
 
-**Status:** Specification (1 of 4 in the Dina Agent Architecture suite) · **Audience:** Dina Mobile (TypeScript / Expo) and Basic Dina (Python) teams · **Scope:** the *kernel* — how a single turn runs. The durable task layer, delegation wire protocol, and overall composition live in sibling documents.
+**Status:** Mixed but mostly reference-backed. This document is the closest of the four to proven `claw-code` runtime behavior, but it still includes explicit Dina additions and divergences. Current Dina partially reflects this shape in `brain/src/service/vault_context.py` and `brain/src/service/guardian.py`; it does not yet implement the full typed runtime described here. · **Audience:** Dina Mobile (TypeScript / Expo) and Basic Dina (Python) teams · **Scope:** the *kernel* — how a single turn runs. The durable task layer, delegation wire protocol, and overall composition live in sibling documents.
 
 ## Document Suite
 
@@ -12,11 +12,24 @@
 ## Labels Used Throughout
 
 Every pattern is tagged with one of:
-- **[Reference-derived]** — directly adapted from Claude Code (`claw-code` source)
+- **[Reference-derived]** — directly adapted from the `claw-code` Rust runtime or an equivalent Claude Code runtime pattern. This label does **not** refer to the Python porting scaffold in `claw-code/src/`.
 - **[Dina addition]** — not in Claude Code; Dina needs it due to its own invariants
 - **[Dina divergence]** — Claude Code does it one way; Dina does it differently on purpose
 
 This makes review honest and future reassessment easier.
+
+## Reference Basis and Current Dina Alignment
+
+| Area | Reference basis | Current Dina status |
+|------|-----------------|---------------------|
+| Turn loop | `claw-code/rust/crates/runtime/src/conversation.rs` | Partial analogue exists in `brain/src/service/vault_context.py::ReasoningAgent.reason()` |
+| Ask-path integration | `claw-code` runtime + CLI turn entry | Partial analogue exists in `brain/src/service/guardian.py::_handle_reason()` |
+| Structured session model | `claw-code/rust/crates/runtime/src/session.rs` | Missing as a first-class Brain runtime primitive |
+| Prompt boundary | `claw-code/rust/crates/runtime/src/prompt.rs` | Only partially reflected today |
+| Permission policy + hook overrides | `claw-code/rust/crates/runtime/src/permissions.rs` | Partial, but not unified under one runtime policy layer |
+| MCP bridge ideas | `claw-code/rust/crates/runtime/src/mcp_stdio.rs` and `mcp_tool_bridge.rs` | Partial via Dina's existing MCP/OpenClaw integrations |
+
+Read this document as the **target kernel shape** Dina should move toward. It is not a claim that today's Brain already has this runtime.
 
 ## Preface — What This Document Is and Is Not
 

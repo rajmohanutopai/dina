@@ -1005,6 +1005,8 @@ class GuardianLoop:
             "agent_response": self._handle_agent_response,
             "contact_neglect": self._handle_contact_neglect,
             "staging_drain": self._handle_staging_drain,
+            "workflow_event": self._handle_workflow_event,
+            "config_changed": self._handle_config_changed,
         }
 
         try:
@@ -2111,6 +2113,153 @@ class GuardianLoop:
         }
 
     # ------------------------------------------------------------------
+    # Workflow Event (notification from Core's workflow engine)
+    # ------------------------------------------------------------------
+
+    async def _handle_workflow_event(self, event: dict) -> dict:
+        """Handle a workflow notification delivered by Core.
+
+        WS2: ACK-after-effects — side effects BEFORE ACK. If Brain crashes
+        before ACK, Core retries delivery (up to 3 attempts with backoff).
+
+        Kind-aware dispatch:
+        - service_query + notification → format result → push notification
+        - approval + notification (reason=approved) → trigger execute_and_respond
+        """
+        payload = event.get("payload", {})
+        event_id = payload.get("event_id")
+        event_kind = payload.get("event_kind", "")
+        task_kind = payload.get("task_kind", "")
+        details = payload.get("details", {})
+
+        log.info(
+            "guardian.workflow_event",
+            event_id=event_id,
+            event_kind=event_kind,
+            task_kind=task_kind,
+        )
+
+        # Dispatch by task_kind — side effects BEFORE ACK.
+        result = {
+            "action": "workflow_event_processed",
+            "event_id": event_id,
+            "event_kind": event_kind,
+            "task_kind": task_kind,
+        }
+        try:
+            if task_kind == "service_query" and event_kind == "notification":
+                result = await self._handle_service_query_result(details)
+            elif task_kind == "approval" and event_kind == "notification":
+                result = await self._handle_approval_event(payload, details)
+        except Exception as exc:
+            log.error(
+                "guardian.workflow_event.processing_failed",
+                event_id=event_id,
+                task_kind=task_kind,
+                error=str(exc),
+            )
+            # Do NOT ACK — Core will retry delivery.
+            raise
+
+        # ACK only after successful side effects.
+        if event_id and self._core:
+            try:
+                await self._core.ack_workflow_event(event_id)
+            except Exception as exc:
+                log.warning(
+                    "guardian.workflow_event.ack_failed",
+                    event_id=event_id,
+                    error=str(exc),
+                )
+
+        return result
+
+    async def _handle_service_query_result(self, details: dict) -> dict:
+        """Format a service query result and push notification to user.
+
+        Unlike _push_notification (best-effort), this raises on delivery
+        failure so the workflow event is NOT ACKed and Core retries.
+        """
+        from .service_query import format_service_query_result
+
+        message = format_service_query_result(details)
+        log.info("guardian.service_query_result", message=message)
+
+        # Push notification with error propagation (ACK-after-effects).
+        # At least one channel must succeed for the event to be ACKed.
+        delivered = False
+        last_error = None
+
+        if hasattr(self, "_telegram") and self._telegram:
+            try:
+                if not self._telegram._paired_users:
+                    await self._telegram.load_paired_users()
+                for chat_id in self._telegram._paired_users:
+                    await self._telegram._bot.send_message(chat_id, message)
+                delivered = True
+            except Exception as exc:
+                last_error = exc
+                log.warning("guardian.service_query.telegram_failed", error=str(exc))
+
+        if hasattr(self, "_bluesky") and self._bluesky:
+            try:
+                await self._bluesky.send_owner_dm(message)
+                delivered = True
+            except Exception as exc:
+                last_error = exc
+                log.warning("guardian.service_query.bluesky_failed", error=str(exc))
+
+        if not delivered:
+            if last_error:
+                raise last_error  # don't ACK — Core retries
+            # No channels configured — ACK anyway (no point retrying).
+            log.warning("guardian.service_query.no_channels_configured")
+
+        return {"action": "service_query_notified", "message": message}
+
+    async def _handle_approval_event(self, payload: dict, details: dict) -> dict:
+        """Handle an approved service review — trigger execution."""
+        task_payload = details.get("task_payload", {})
+        if not task_payload:
+            log.error("guardian.approval_event.no_payload")
+            raise ValueError("approval event missing task_payload")
+
+        task_id = payload.get("workflow_task_id", "")
+        reason = details.get("reason", "")
+
+        if reason == "approved" and hasattr(self, "_service_handler") and self._service_handler:
+            await self._service_handler.execute_and_respond(task_id, task_payload)
+            return {"action": "approval_executed", "task_id": task_id}
+
+        return {"action": "approval_event_processed", "task_id": task_id, "reason": reason}
+
+    # ------------------------------------------------------------------
+    # Config Changed (Core → Brain push notification)
+    # ------------------------------------------------------------------
+
+    async def _handle_config_changed(self, event: dict) -> dict:
+        """Handle a config_changed push from Core.
+
+        Core fires this when state changes that Brain should know about
+        immediately (e.g., service config PUT). Extensible to other scopes.
+        """
+        payload = event.get("payload", {})
+        scope = payload.get("scope", "")
+        config = payload.get("config")
+
+        log.info("guardian.config_changed", scope=scope)
+
+        if scope == "service_config" and config is not None:
+            if hasattr(self, "_service_handler") and self._service_handler:
+                if isinstance(config, str):
+                    import json as json_mod
+                    config = json_mod.loads(config)
+                self._service_handler._config = config
+                log.info("guardian.service_config_updated")
+
+        return {"action": "config_updated", "scope": scope}
+
+    # ------------------------------------------------------------------
     # Delegation Request (SS4.4 — Agent Safety Layer)
     # ------------------------------------------------------------------
 
@@ -2796,7 +2945,7 @@ class GuardianLoop:
                 error=str(exc),
             )
 
-        # Queue any linked delegated task. Not truly atomic (separate HTTP
+        # Queue any linked workflow task. Not truly atomic (separate HTTP
         # call to Core), but converged in one code path. If this fails,
         # the response includes a warning and Core's HandleApprove provides
         # a redundant idempotent retry.
@@ -4683,10 +4832,10 @@ class GuardianLoop:
                         else:
                             log.warning("guardian.service_handler.not_configured")
                     elif msg_type == "service.response":
-                        if hasattr(self, "_service_query_orchestrator") and self._service_query_orchestrator:
-                            await self._service_query_orchestrator.handle_service_response(from_did, body_dict)
-                        else:
-                            log.warning("guardian.service_query_orchestrator.not_configured")
+                        # WS2: service.response is handled entirely in Core
+                        # (CheckServiceIngress → task completion → event delivery).
+                        # Brain receives the result as a workflow_event, not DIDComm.
+                        log.info("guardian.service_response.handled_by_core", from_did=from_did)
                     return {"action": "routed", "handler": handler, "staged": staged}
                 # Push safety alerts and coordination to all channels.
                 _has_channel2 = (

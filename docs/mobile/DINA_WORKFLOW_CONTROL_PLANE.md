@@ -1,6 +1,6 @@
 # Dina Workflow Control Plane — Durable Tasks, Timers, Approvals, Delegations (v1)
 
-**Status:** Specification (2 of 4 in the Dina Agent Architecture suite) · **Audience:** Dina Mobile and Basic Dina teams · **Scope:** everything that outlives a single agent turn — durable work items, timers, approval flows, watches, external delegation lifecycle, and the machinery that re-enters the kernel when asynchronous work completes.
+**Status:** Dina-specific design target, not a direct extraction from `claw-code` runtime behavior. This document is lightly inspired by runtime registries, worker boot state, task packets, and the broader `claw-code` coordination philosophy, but the durable control plane described here does not exist as such in either `claw-code` or current Dina. · **Audience:** Dina Mobile and Basic Dina teams · **Scope:** everything that outlives a single agent turn — durable work items, timers, approval flows, watches, external delegation lifecycle, and the machinery that re-enters the kernel when asynchronous work completes.
 
 ## Document Suite
 
@@ -8,6 +8,43 @@
 - **[DINA_AGENT_KERNEL.md](./DINA_AGENT_KERNEL.md)** — the synchronous turn loop.
 - **DINA_WORKFLOW_CONTROL_PLANE.md** — this document.
 - **[DINA_DELEGATION_CONTRACT.md](./DINA_DELEGATION_CONTRACT.md)** — wire protocol to external execution planes.
+
+## Provenance and Reading Contract
+
+This document should be read as a **Dina architecture proposal**.
+
+- It is **not** a faithful summary of an existing `claw-code` subsystem.
+- It is **not** a claim that current Dina already has this control plane.
+- It is a design target motivated by real Dina needs: long-running state, wakeups, approvals, retries, durable correlation, and external delegation.
+
+Reference inputs are limited and indirect:
+
+- `claw-code/rust/crates/runtime/src/task_registry.rs` — useful as a warning about what an in-memory task registry can and cannot do.
+- `claw-code/rust/crates/runtime/src/worker_boot.rs` — useful for wake/recovery state-machine thinking.
+- `claw-code/rust/crates/runtime/src/task_packet.rs` — useful for explicit task/delegation contracts.
+- `claw-code/PHILOSOPHY.md` — useful for the larger coordination lesson, not as a runtime implementation reference.
+
+## Provenance Summary
+
+| Area | Classification | Notes |
+|------|----------------|-------|
+| Durable task model, wake reasons, watches, obligations | **[Dina addition]** | Needed by Dina; not present as a comparable durable subsystem in `claw-code` |
+| Approval flow and re-entry semantics | **[Dina addition]** | Dina-specific integration problem across Brain/Core/UI |
+| Retry, idempotency, audit, backup/export | **[Dina addition]** | Product architecture, not a direct runtime borrowing |
+| Result ingestion router and delegation lifecycle | **[Dina addition]** | Motivated by Dina's async and inter-agent needs |
+| Task-state-machine vocabulary | Mixed, loosely reference-inspired | Loosely inspired by runtime registries and repo coordination concepts, but redesigned here for app-grade durability |
+
+Unless a section explicitly says otherwise, patterns in this document should be read as **[Dina addition]**.
+
+## Current Dina Alignment
+
+Current Dina has pieces of async state, but not the unified control plane described here:
+
+- `core/internal/service/task.go` — internal Core to Brain queue
+- `core/internal/port/delegated_task.go` — durable delegated-work model for external claim/lease execution
+- approval persistence and service-specific async flows live in separate paths
+
+That means this doc should guide future consolidation work. It should not be treated as a description of today's implementation.
 
 ## Preface — Why the Kernel Alone Is Insufficient
 
@@ -585,6 +622,16 @@ See delegation contract document. Summary:
 ---
 
 ## Implementation Roadmap
+
+### Phase 0 — Align with current Dina reality
+
+- Inventory current async ownership across:
+  - `core/internal/service/task.go`
+  - `core/internal/port/delegated_task.go`
+  - existing approval persistence
+  - service-specific in-memory async paths in Brain
+- Decide what remains separate, what gets consolidated, and what should **not** become a generic workflow abstraction.
+- Explicitly avoid adding a third generic task queue until those boundaries are resolved.
 
 ### Phase 1 — Minimum Viable Control Plane (load-bearing)
 

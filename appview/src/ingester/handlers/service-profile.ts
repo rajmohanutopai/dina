@@ -25,9 +25,11 @@ export const serviceProfileHandler: RecordHandler = {
       return
     }
 
+    // WS2: index both "auto" and "review" response policies.
+    const validPolicies = new Set(['auto', 'review'])
     const policyValues = Object.values(record.responsePolicy)
-    if (policyValues.length > 0 && !policyValues.every(v => v === 'auto')) {
-      ctx.logger.debug({ uri: op.uri }, '[ServiceProfile] Skipping service with non-auto response policy')
+    if (policyValues.length > 0 && !policyValues.every(v => validPolicies.has(v))) {
+      ctx.logger.debug({ uri: op.uri }, '[ServiceProfile] Skipping service with unsupported response policy')
       return
     }
 

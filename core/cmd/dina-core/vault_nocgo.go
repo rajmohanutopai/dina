@@ -94,8 +94,8 @@ func newD2DOutboxManager(_ vaultBackend) port.OutboxManager {
 	return transport.NewOutboxManager(100)
 }
 
-// newDelegatedTaskStore returns nil in no-CGO mode.
-func newDelegatedTaskStore(_ vaultBackend) port.DelegatedTaskStore {
+// newWorkflowStore returns nil in no-CGO mode.
+func newWorkflowStore(_ vaultBackend) port.WorkflowStore {
 	return nil
 }
 

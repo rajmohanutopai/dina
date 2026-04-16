@@ -803,19 +803,19 @@ func main() {
 		slog.Info("D2D sender DID configured", "did", ownDID)
 	}
 
-	// Public service discovery: query windows + local service config.
+	// Public service discovery: provider window for egress + workflow service for ingress.
+	// WS2: requester window removed — workflow task IS the authorization for service.response.
 	providerWindow := service.NewQueryWindow()
-	requesterWindow := service.NewQueryWindow()
-	transportSvc.SetQueryWindows(providerWindow, requesterWindow)
+	transportSvc.SetQueryWindows(providerWindow, nil)
+	// transportSvc.SetWorkflowService is called later, after workflowSvc is created.
 	go providerWindow.CleanupLoop(context.Background(), 10*time.Second)
-	go requesterWindow.CleanupLoop(context.Background(), 10*time.Second)
 
 	// Local service config (determines if this node is a public service).
 	serviceConfigSvc := newServiceConfigService(vaultMgr)
 	if serviceConfigSvc != nil {
 		transportSvc.SetLocalServiceConfig(serviceConfigSvc)
 	}
-	serviceConfigHandler := &handler.ServiceConfigHandler{Config: serviceConfigSvc}
+	serviceConfigHandler := &handler.ServiceConfigHandler{Config: serviceConfigSvc, Brain: brain}
 
 	// PublicServiceResolver: check AppView for public services on egress.
 	if appViewURL := os.Getenv("DINA_APPVIEW_URL"); appViewURL != "" {
@@ -856,6 +856,25 @@ func main() {
 	// typing) are NOT staged.
 	var stageD2DMemory func(ctx context.Context, msg *domain.DinaMessage)
 
+	// handleServiceBypass: shared helper for both ingress paths.
+	// service.query → forward to Brain (provider-side handling).
+	// service.response → handled inside CheckServiceIngress via workflow completion. No brain.Process.
+	handleServiceBypass := func(msg *domain.DinaMessage) {
+		auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "service_bypass")
+		if msg.Type == domain.MsgTypeServiceQuery {
+			bodyStr := string(msg.Body)
+			go func() {
+				_ = brain.Process(context.Background(), domain.TaskEvent{
+					Type: string(msg.Type),
+					Payload: map[string]interface{}{
+						"from": msg.From, "body": bodyStr,
+						"id": msg.ID, "type": string(msg.Type),
+					},
+				})
+			}()
+		}
+	}
+
 	ingressSweeper.SetOnMessage(func(msg *domain.DinaMessage) {
 		// SEC-MED-12: Enforce per-DID rate limit on sweeper path (same as fast path).
 		if msg.From != "" && !inboxMgr.CheckDIDRate(msg.From) {
@@ -878,18 +897,7 @@ func main() {
 				slog.Debug("sweeper: service message dropped", "type", msg.Type, "from", msg.From)
 				return
 			}
-			// serviceResult == "accept": skip quarantine, scenario policy, StoreInbound (ephemeral).
-			auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "service_bypass")
-			go func() {
-				bodyStr := string(msg.Body)
-				_ = brain.Process(context.Background(), domain.TaskEvent{
-					Type: string(msg.Type),
-					Payload: map[string]interface{}{
-						"from": msg.From, "body": bodyStr,
-						"id": msg.ID, "type": string(msg.Type),
-					},
-				})
-			}()
+			handleServiceBypass(msg)
 			return
 		}
 		// service.* messages that didn't pass the bypass must NOT enter normal inbox.
@@ -975,18 +983,7 @@ func main() {
 				slog.Debug("ingress: service message dropped", "type", msg.Type, "from", msg.From)
 				return nil
 			}
-			// serviceResult == "accept": skip quarantine, scenario policy, StoreInbound (ephemeral).
-			auditD2DIngress(auditLogger, "d2d_ingress_accept", msg.From, string(msg.Type), "service_bypass")
-			bodyStr := string(msg.Body)
-			go func() {
-				_ = brain.Process(context.Background(), domain.TaskEvent{
-					Type: string(msg.Type),
-					Payload: map[string]interface{}{
-						"from": msg.From, "body": bodyStr,
-						"id": msg.ID, "type": string(msg.Type),
-					},
-				})
-			}()
+			handleServiceBypass(msg)
 			return nil
 		}
 		if strings.HasPrefix(string(msg.Type), "service.") {
@@ -1642,71 +1639,106 @@ func main() {
 
 	// Service config — public service discovery
 	mux.HandleFunc("/v1/service/config", serviceConfigHandler.Handle)
+	// NOTE: /v1/service/query is registered later, after workflowSvc is created.
 
 	// Agent Safety Layer — proxies to brain's guardian
 	mux.HandleFunc("/v1/agent/validate", agentH.HandleValidate)
 
-	// Delegated task API — durable agent task queue
-	delegatedTaskStore := newDelegatedTaskStore(vaultMgr)
-	if delegatedTaskStore != nil {
-		delegatedTaskH := &handler.DelegatedTaskHandler{
-			Tasks:    delegatedTaskStore,
+	// Workflow task API — durable agent task queue (replaces delegated tasks)
+	workflowStore := newWorkflowStore(vaultMgr)
+	var workflowSvc *service.WorkflowService
+	if workflowStore == nil {
+		slog.Warn("workflow store unavailable (no-CGO mode) — service query/response disabled")
+	}
+	if workflowStore != nil {
+		workflowSvc = service.NewWorkflowService(workflowStore, brain, personaMgr, clk)
+		// WS2: wire workflow service into transport for durable service.response authorization.
+		transportSvc.SetWorkflowService(workflowSvc)
+
+		// WS2: wire the unavailable sender callback for approval task expiry.
+		workflowSvc.SetUnavailableSender(func(ctx context.Context, peerDID, queryID, capability string, ttlSeconds int) {
+			// Open a fresh provider window and send "unavailable" response.
+			transportSvc.SetProviderWindow(peerDID, queryID, capability, 30)
+			responseBody, _ := json.Marshal(domain.ServiceResponseBody{
+				QueryID:    queryID,
+				Capability: capability,
+				Status:     "unavailable",
+				Result:     json.RawMessage(`{}`),
+				TTLSeconds: ttlSeconds,
+			})
+			msg := domain.DinaMessage{
+				ID:          "unavail-" + queryID,
+				Type:        domain.MsgTypeServiceResponse,
+				Body:        responseBody,
+				CreatedTime: clk.Now().Unix(),
+			}
+			if err := transportSvc.SendMessage(ctx, domain.DID(peerDID), msg); err != nil {
+				slog.Warn("workflow.unavailable_send_failed", "peer", peerDID, "query_id", queryID, "error", err)
+			}
+		})
+		workflowH := &handler.WorkflowHandler{
+			Workflow: workflowSvc,
 			Devices:  deviceSvc,
 			Sessions: personaMgr,
 		}
-		mux.HandleFunc("/v1/agent/tasks", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/v1/workflow/tasks", func(w http.ResponseWriter, r *http.Request) {
 			// Exact match only (no trailing slash)
-			if r.URL.Path != "/v1/agent/tasks" {
+			if r.URL.Path != "/v1/workflow/tasks" {
 				http.NotFound(w, r)
 				return
 			}
 			switch r.Method {
 			case http.MethodGet:
-				delegatedTaskH.HandleList(w, r)
+				workflowH.HandleList(w, r)
 			case http.MethodPost:
-				delegatedTaskH.HandleCreate(w, r)
+				workflowH.HandleCreate(w, r)
 			default:
 				http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 			}
 		})
-		mux.HandleFunc("/v1/agent/tasks/claim", delegatedTaskH.HandleClaim)
-		mux.HandleFunc("/v1/agent/tasks/queue-by-proposal", delegatedTaskH.HandleQueueByProposal)
-		mux.HandleFunc("/v1/agent/tasks/", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/v1/workflow/tasks/claim", workflowH.HandleClaim)
+		mux.HandleFunc("/v1/workflow/tasks/queue-by-proposal", workflowH.HandleQueueByProposal)
+		mux.HandleFunc("/v1/workflow/tasks/", func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 			switch {
 			case strings.HasSuffix(path, "/heartbeat"):
-				delegatedTaskH.HandleHeartbeat(w, r)
+				workflowH.HandleHeartbeat(w, r)
 			case strings.HasSuffix(path, "/complete"):
-				delegatedTaskH.HandleComplete(w, r)
+				workflowH.HandleComplete(w, r)
 			case strings.HasSuffix(path, "/fail"):
-				delegatedTaskH.HandleFail(w, r)
+				workflowH.HandleFail(w, r)
 			case strings.HasSuffix(path, "/progress"):
-				delegatedTaskH.HandleProgress(w, r)
+				workflowH.HandleProgress(w, r)
 			case strings.HasSuffix(path, "/running"):
-				delegatedTaskH.HandleMarkRunning(w, r)
+				workflowH.HandleMarkRunning(w, r)
+			case strings.HasSuffix(path, "/cancel"):
+				workflowH.HandleCancel(w, r)
+			case strings.HasSuffix(path, "/approve"):
+				workflowH.HandleApprove(w, r)
 			default:
-				delegatedTaskH.HandleGet(w, r)
+				workflowH.HandleGet(w, r)
 			}
 		})
+		// Event ACK endpoint
+		mux.HandleFunc("/v1/workflow/events/", workflowH.HandleEventAck)
 
 		// Internal callback endpoints for OpenClaw agent_end hooks.
 		// Authenticated by dedicated Bearer token, not device Ed25519.
 		callbackToken := os.Getenv("DINA_HOOK_CALLBACK_TOKEN")
 		if callbackToken != "" {
-			callbackH := &handler.DelegatedTaskCallbackHandler{
-				Tasks:         delegatedTaskStore,
-				Sessions:      personaMgr,
+			callbackH := &handler.WorkflowCallbackHandler{
+				Workflow:      workflowSvc,
 				CallbackToken: callbackToken,
 			}
 			// List all tasks (unfiltered) for reconciler
-			mux.HandleFunc("/v1/internal/delegated-tasks", func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/v1/internal/delegated-tasks" {
+			mux.HandleFunc("/v1/internal/workflow-tasks", func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/internal/workflow-tasks" {
 					callbackH.HandleList(w, r)
 					return
 				}
 				http.NotFound(w, r)
 			})
-			mux.HandleFunc("/v1/internal/delegated-tasks/", func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc("/v1/internal/workflow-tasks/", func(w http.ResponseWriter, r *http.Request) {
 				path := r.URL.Path
 				switch {
 				case strings.HasSuffix(path, "/complete"):
@@ -1719,34 +1751,27 @@ func main() {
 					http.NotFound(w, r)
 				}
 			})
-			slog.Info("delegated_task.callback_endpoints_registered")
+			slog.Info("workflow.callback_endpoints_registered")
 		}
 
-		// Lease expiry goroutine — requeues claimed tasks (not running) every 60s
-		go func() {
-			ticker := time.NewTicker(60 * time.Second)
-			defer ticker.Stop()
-			for range ticker.C {
-				expired, err := delegatedTaskStore.ExpireLeases(context.Background())
-				if err != nil {
-					slog.Warn("delegated_task.lease_expiry_failed", "error", err)
-					continue
-				}
-				for _, t := range expired {
-					slog.Info("delegated_task.lease_expired", "task_id", t.ID, "agent_did", t.AgentDID, "session", t.SessionName)
-					if t.SessionName != "" && t.AgentDID != "" {
-						err := personaMgr.EndSession(context.Background(), t.AgentDID, t.SessionName)
-						if err != nil {
-							// "not found" is normal (task may expire before session_start).
-							// Other errors are logged at WARN — session TTL is the backstop.
-							slog.Warn("delegated_task.session_cleanup_failed",
-								"task_id", t.ID, "agent_did", t.AgentDID,
-								"session", t.SessionName, "error", err)
-						}
-					}
-				}
-			}
-		}()
+		// WS2: Service query endpoint — Brain sends queries through this.
+		serviceQueryH := &handler.ServiceQueryHandler{
+			Workflow:  workflowSvc,
+			Transport: transportSvc,
+			Clock:     clk,
+		}
+		mux.HandleFunc("/v1/service/query", serviceQueryH.Handle)
+
+		// WS2: Service respond endpoint — Brain sends approved responses through this.
+		serviceRespondH := &handler.ServiceRespondHandler{
+			Workflow:  workflowSvc,
+			Transport: transportSvc,
+			Clock:     clk,
+		}
+		mux.HandleFunc("/v1/service/respond", serviceRespondH.Handle)
+
+		// Workflow sweeper goroutine — expires tasks, leases, and delivers events every 30s
+		go workflowSvc.RunSweeper(context.Background())
 	}
 
 	// Session sweeper — ends agent sessions older than 6 hours.
@@ -1767,7 +1792,7 @@ func main() {
 	}()
 
 	// Intent proposal lifecycle — approve/deny/status/list
-	intentProposalH := &handler.IntentProposalHandler{Brain: agentBrain, BrainHTTP: agentBrain, DelegatedTasks: delegatedTaskStore}
+	intentProposalH := &handler.IntentProposalHandler{Brain: agentBrain, BrainHTTP: agentBrain, WorkflowTasks: workflowStore}
 	mux.HandleFunc("/v1/intent/proposals/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		switch {

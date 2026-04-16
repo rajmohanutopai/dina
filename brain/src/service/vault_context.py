@@ -28,12 +28,14 @@ sibling services.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 import structlog
 
 from ..domain.errors import ApprovalRequiredError, PersonaLockedError
 from ..port.core_client import CoreClient
+from .capabilities.registry import get_ttl
 
 log = structlog.get_logger(__name__)
 
@@ -176,6 +178,80 @@ VAULT_TOOLS: list[dict[str, Any]] = [
             "required": ["query"],
         },
     },
+    # ----- WS2: Service Discovery Tools -----
+    {
+        "name": "geocode",
+        "description": (
+            "Convert an address or place name to geographic coordinates (latitude/longitude). "
+            "Privacy note: this sends the address to an external geocoding service. "
+            "Use when the user mentions a location by name and you need coordinates for "
+            "search_public_services."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "description": "Address or place name to geocode (e.g. 'Silk Board Junction, Bangalore').",
+                },
+            },
+            "required": ["address"],
+        },
+    },
+    {
+        "name": "search_public_services",
+        "description": (
+            "Search for nearby public services (bus routes, taxi, delivery, etc.) by capability "
+            "and location. Returns ranked candidates with operator DIDs that can be queried. "
+            "Use after geocoding to find services near the user's location."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "capability": {
+                    "type": "string",
+                    "description": "Service capability to search for (e.g. 'eta_query').",
+                },
+                "lat": {"type": "number", "description": "Latitude of the search location."},
+                "lng": {"type": "number", "description": "Longitude of the search location."},
+                "q": {
+                    "type": "string",
+                    "description": "Optional text filter (e.g. 'bus 42', 'AC bus').",
+                },
+            },
+            "required": ["capability", "lat", "lng"],
+        },
+    },
+    {
+        "name": "query_service",
+        "description": (
+            "Send a query to a specific public service operator and track the response. "
+            "Use after search_public_services to query the best candidate. "
+            "The response will be delivered asynchronously via a workflow event."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "operator_did": {
+                    "type": "string",
+                    "description": "DID of the service operator (from search_public_services results).",
+                },
+                "capability": {
+                    "type": "string",
+                    "description": "The capability to query (e.g. 'eta_query').",
+                },
+                "params": {
+                    "type": "object",
+                    "description": "Capability-specific parameters (e.g. {\"location\": {\"lat\": 12.9, \"lng\": 77.6}}).",
+                },
+                "service_name": {
+                    "type": "string",
+                    "description": "Human-readable service name (for notifications).",
+                },
+            },
+            "required": ["operator_did", "capability", "params"],
+        },
+    },
 ]
 
 
@@ -209,9 +285,17 @@ class ToolExecutor:
     JSON-serializable result dict.
     """
 
-    def __init__(self, core: CoreClient, llm_router: Any = None) -> None:
+    def __init__(
+        self,
+        core: CoreClient,
+        llm_router: Any = None,
+        appview_client: Any = None,
+        mcp_client: Any = None,
+    ) -> None:
         self._core = core
         self._llm_router = llm_router
+        self._appview = appview_client  # WS2: AppView search for public services
+        self._mcp = mcp_client          # WS2: MCP client for geocoding
         self._tools_called: list[dict] = []
         self._approval_required: dict | None = None  # set when a persona needs approval
         # Agent context — set before tool execution to attribute vault access
@@ -243,6 +327,10 @@ class ToolExecutor:
             "browse_vault": self._browse_vault,
             "search_vault": self._search_vault,
             "search_trust_network": self._search_trust_network,
+            # WS2: Service Discovery
+            "geocode": self._geocode,
+            "search_public_services": self._search_public_services,
+            "query_service": self._query_service,
         }.get(name)
 
         if handler is None:
@@ -561,6 +649,133 @@ class ToolExecutor:
             "message": f"Found {len(items)} trust attestation(s) for '{query}'.",
         }
 
+    # ------------------------------------------------------------------
+    # WS2: Service Discovery Tools
+    # ------------------------------------------------------------------
+
+    async def _geocode(self, args: dict) -> dict:
+        """Geocode an address via MCP call_tool (external service)."""
+        import os
+        address = args.get("address", "")
+        if not address:
+            return {"error": "address is required"}
+
+        if self._mcp is None:
+            return {"error": "geocoding service not configured"}
+
+        # MCP server/tool configured via env vars.
+        server = os.environ.get("DINA_GEOCODE_MCP_SERVER", "")
+        tool = os.environ.get("DINA_GEOCODE_MCP_TOOL", "geocode")
+        if not server:
+            return {"error": "DINA_GEOCODE_MCP_SERVER not set"}
+
+        try:
+            result = await self._mcp.call_tool(server, tool, {"address": address})
+            return result
+        except Exception as exc:
+            log.warning("tool_executor.geocode_failed", address=address, error=str(exc))
+            return {"error": f"geocoding failed: {exc}"}
+
+    async def _search_public_services(self, args: dict) -> dict:
+        """Search AppView for public services by capability and location."""
+        capability = args.get("capability", "")
+        lat = args.get("lat")
+        lng = args.get("lng")
+        q = args.get("q", "")
+
+        if not capability or lat is None or lng is None:
+            return {"error": "capability, lat, and lng are required"}
+
+        if self._appview is None:
+            return {"error": "service discovery not configured"}
+
+        try:
+            candidates = await self._appview.search_services(
+                capability=capability, lat=lat, lng=lng, q=q or None,
+            )
+            if not candidates:
+                return {"services": [], "message": "No services found for this query."}
+
+            # Brain-side preference re-ranking (no vault data sent externally).
+            # If user has preferences in consumer vault, re-rank locally.
+            ranked = await self._rerank_by_preference(candidates)
+
+            return {
+                "services": ranked[:10],
+                "count": len(ranked),
+            }
+        except Exception as exc:
+            log.warning("tool_executor.search_services_failed", error=str(exc))
+            return {"error": f"service search failed: {exc}"}
+
+    async def _rerank_by_preference(self, candidates: list[dict]) -> list[dict]:
+        """Re-rank service candidates using vault preferences (Brain-side only).
+
+        Privacy: vault data never leaves Brain. AppView only sees {capability, lat, lng, q}.
+        Searches consumer vault for preference keywords and boosts matching candidates.
+        """
+        try:
+            prefs = await self._core.search_vault(
+                "consumer", query="preference transport bus", mode="fts5",
+                agent_did=self.agent_did, session=self.session,
+                user_origin=self.user_origin,
+            )
+            if not prefs:
+                return candidates
+
+            # Extract preference keywords from vault items.
+            pref_keywords = set()
+            for item in prefs[:5]:
+                if item.summary:
+                    for word in item.summary.lower().split():
+                        if len(word) > 3:
+                            pref_keywords.add(word)
+
+            if not pref_keywords:
+                return candidates
+
+            # Score candidates by keyword overlap.
+            def score(candidate: dict) -> float:
+                text = json.dumps(candidate).lower()
+                return sum(1 for kw in pref_keywords if kw in text)
+
+            return sorted(candidates, key=score, reverse=True)
+        except Exception:
+            return candidates  # fail-open: return original ranking
+
+    async def _query_service(self, args: dict) -> dict:
+        """Send a query to a public service via Core POST /v1/service/query."""
+        operator_did = args.get("operator_did", "")
+        capability = args.get("capability", "")
+        params = args.get("params", {})
+        service_name = args.get("service_name", "")
+
+        if not operator_did or not capability:
+            return {"error": "operator_did and capability are required"}
+        if params is None:
+            params = {}
+
+        query_id = str(uuid.uuid4())
+        ttl_seconds = get_ttl(capability)
+
+        try:
+            result = await self._core.send_service_query(
+                to_did=operator_did,
+                capability=capability,
+                params=params,
+                query_id=query_id,
+                ttl_seconds=ttl_seconds,
+                service_name=service_name,
+            )
+            return {
+                "task_id": result.get("task_id", ""),
+                "query_id": result.get("query_id", query_id),
+                "message": f"Query sent to {service_name or operator_did}. Response will arrive via workflow event.",
+            }
+        except Exception as exc:
+            log.warning("tool_executor.query_service_failed", error=str(exc))
+            return {"error": f"service query failed: {exc}"}
+
 
 # ---------------------------------------------------------------------------
 # ReasoningAgent — agentic tool-calling loop
@@ -674,10 +889,15 @@ class ReasoningAgent:
         Multi-provider LLM routing service.
     """
 
-    def __init__(self, core: CoreClient, llm_router: Any, owner_name: str = "") -> None:
+    def __init__(
+        self, core: CoreClient, llm_router: Any, owner_name: str = "",
+        appview_client: Any = None, mcp_client: Any = None,
+    ) -> None:
         self._core = core
         self._llm = llm_router
         self._owner_name = owner_name
+        self._appview = appview_client
+        self._mcp = mcp_client
 
     def _get_tools(self) -> list[dict]:
         """Return provider-agnostic tool declarations.
@@ -685,8 +905,21 @@ class ReasoningAgent:
         Each provider adapter is responsible for converting these dicts
         into its native format (Gemini FunctionDeclaration, OpenAI
         function schema, Claude tool schema, etc.).
+
+        WS2 tools (geocode, search_public_services, query_service) are only
+        advertised when their dependencies are available.
         """
-        return VAULT_TOOLS
+        # WS2 tool names that require optional deps.
+        _SERVICE_TOOLS = {"geocode", "search_public_services", "query_service"}
+        tools = []
+        for tool in VAULT_TOOLS:
+            name = tool["name"]
+            if name == "geocode" and self._mcp is None:
+                continue
+            if name in ("search_public_services", "query_service") and self._appview is None:
+                continue
+            tools.append(tool)
+        return tools
 
     async def reason(
         self,
@@ -731,7 +964,10 @@ class ReasoningAgent:
             Response with ``content``, ``model``, ``vault_context_used``,
             ``tools_called``, and standard LLM response fields.
         """
-        executor = ToolExecutor(self._core, llm_router=self._llm)
+        executor = ToolExecutor(
+            self._core, llm_router=self._llm,
+            appview_client=self._appview, mcp_client=self._mcp,
+        )
         # Forward agent context so vault calls are attributed to the agent
         executor.agent_did = agent_did
         executor.session = session
@@ -892,8 +1128,18 @@ class VaultContextAssembler:
         Multi-provider LLM routing service.
     """
 
-    def __init__(self, core: CoreClient, llm_router: Any, owner_name: str = "") -> None:
-        self._agent = ReasoningAgent(core=core, llm_router=llm_router, owner_name=owner_name)
+    def __init__(
+        self,
+        core: CoreClient,
+        llm_router: Any,
+        owner_name: str = "",
+        appview_client: Any = None,
+        mcp_client: Any = None,
+    ) -> None:
+        self._agent = ReasoningAgent(
+            core=core, llm_router=llm_router, owner_name=owner_name,
+            appview_client=appview_client, mcp_client=mcp_client,
+        )
 
     async def enrich(
         self,

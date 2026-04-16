@@ -1,38 +1,108 @@
-"""Requester-side service query orchestrator.
+"""Requester-side service query — WS2 simplified.
 
-Turns a user ask (e.g. "when does bus 42 arrive?") into a lifecycle:
+WS2 replaces Phase 1's in-memory tracking with durable workflow tasks.
+This module now provides:
+1. format_service_query_result() — formats workflow events into user notifications
+2. ServiceQueryOrchestrator — routes queries through POST /v1/service/query
 
-    1. Search AppView for matching public services.
-    2. Send a ``service.query`` D2D message to the best candidate.
-    3. Track the pending query with a TTL.
-    4. Handle the inbound ``service.response`` and notify the user.
-    5. Expire unanswered queries after TTL.
+Removed from Phase 1:
+- PendingQuery dataclass (workflow_task tracks state)
+- _pending dict (Core owns lifecycle)
+- handle_service_response() (workflow event delivery replaces DIDComm routing)
+- check_timeouts() (Core sweeper handles expiry)
 
-No imports from adapter/ — uses CoreClient and AppViewClient via
-constructor injection.
+No imports from adapter/ — uses CoreClient via constructor injection.
 """
 
 from __future__ import annotations
 
-import time
+import json
 import uuid
-from dataclasses import dataclass
 from typing import Any
 
+from .capabilities.registry import get_ttl
 
-@dataclass
-class PendingQuery:
-    """In-flight service query awaiting a response."""
-    query_id: str
-    service_did: str
-    service_name: str
-    sent_at: float
-    ttl_seconds: int
-    notified: bool = False
+
+# ---------------------------------------------------------------------------
+# Rich formatters for workflow event → user notification
+# ---------------------------------------------------------------------------
+
+def format_service_query_result(details: dict) -> str:
+    """Format a workflow event's details into a user notification.
+
+    Called by Guardian._handle_service_query_result() when a service_query
+    workflow_event is delivered. The details come from Core's
+    CompleteWithDetails (success) or ExpireTasks (timeout).
+
+    Response_status vocabulary:
+    - success: provider responded with data
+    - unavailable: provider explicitly declined
+    - error: provider returned an error (details["error"] has text)
+    - expired: Core-generated timeout (no response within TTL)
+    """
+    status = details.get("response_status", "")
+    capability = details.get("capability", "")
+    service_name = details.get("service_name", "Service")
+
+    if status == "expired":
+        return f"No response from {service_name}."
+    if status == "success":
+        formatter = _FORMATTERS.get(capability, _format_generic)
+        return formatter(details, service_name)
+    if status == "unavailable":
+        return f"{service_name} — service unavailable."
+    if status == "error":
+        error_text = details.get("error", "unknown")
+        return f"{service_name} — error: {error_text}"
+    return f"{service_name} — unexpected status: {status}"
+
+
+def _format_eta(details: dict, name: str) -> str:
+    """Format an eta_query response."""
+    result = details.get("result", {})
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            result = {}
+    eta = result.get("eta_minutes")
+    vehicle = result.get("vehicle_type", "")
+    route = result.get("route_name", "")
+    parts = [p for p in [route, vehicle] if p]
+    label = " ".join(parts) or name
+    if eta is not None:
+        return f"{label} — {eta} minutes away"
+    return f"{label} — response received"
+
+
+def _format_generic(details: dict, name: str) -> str:
+    """Generic formatter for capabilities without a specific formatter."""
+    result = details.get("result", {})
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return f"{name} — response received: {json.dumps(result)[:200]}"
+
+
+_FORMATTERS: dict[str, Any] = {
+    "eta_query": _format_eta,
+}
+
+
+# ---------------------------------------------------------------------------
+# ServiceQueryOrchestrator — WS2: routes through Core POST /v1/service/query
+# ---------------------------------------------------------------------------
 
 
 class ServiceQueryOrchestrator:
-    """Turns a user ask into a public service query lifecycle."""
+    """Turns a user ask into a public service query via Core endpoint.
+
+    WS2: no in-memory tracking. Core creates a durable workflow_task,
+    sends D2D, and tracks the response. Brain receives the result as a
+    workflow_event (formatted by format_service_query_result above).
+    """
 
     def __init__(
         self,
@@ -43,16 +113,11 @@ class ServiceQueryOrchestrator:
         self._appview = appview_client
         self._core = core_client
         self._notify = notifier
-        self._pending: dict[str, PendingQuery] = {}
-
-    # ------------------------------------------------------------------
-    # Requester side: user ask -> service.query
-    # ------------------------------------------------------------------
 
     async def handle_user_query(
         self, capability: str, params: dict, user_text: str = "",
     ) -> None:
-        """Send a service query to the best matching public service."""
+        """Send a service query through Core's POST /v1/service/query."""
         lat = params.get("location", {}).get("lat")
         lng = params.get("location", {}).get("lng")
         if lat is None or lng is None:
@@ -67,21 +132,19 @@ class ServiceQueryOrchestrator:
             await self._notify("No services found for this query.")
             return
 
-        service = candidates[0]  # Phase 1: best ranked result
+        service = candidates[0]
         query_id = str(uuid.uuid4())
-
-        body = {
-            "query_id": query_id,
-            "capability": capability,
-            "params": params,
-            "ttl_seconds": 60,
-        }
+        ttl_seconds = get_ttl(capability)
 
         try:
-            await self._core.send_d2d(
+            # WS2: route through Core endpoint (creates workflow_task + sends D2D).
+            await self._core.send_service_query(
                 to_did=service["operatorDid"],
-                payload=body,
-                msg_type="service.query",
+                capability=capability,
+                params=params,
+                query_id=query_id,
+                ttl_seconds=ttl_seconds,
+                service_name=service.get("name", "Unknown Service"),
             )
         except Exception:
             await self._notify(
@@ -89,63 +152,4 @@ class ServiceQueryOrchestrator:
             )
             return
 
-        self._pending[query_id] = PendingQuery(
-            query_id=query_id,
-            service_did=service["operatorDid"],
-            service_name=service.get("name", "Unknown Service"),
-            sent_at=time.time(),
-            ttl_seconds=60,
-        )
         await self._notify(f"Asking {service.get('name', 'service')}...")
-
-    # ------------------------------------------------------------------
-    # Requester side: inbound service.response -> notify user
-    # ------------------------------------------------------------------
-
-    async def handle_service_response(
-        self, from_did: str, body: dict,
-    ) -> None:
-        """Handle an inbound service.response -- notify the user."""
-        query_id = body.get("query_id", "")
-        pending = self._pending.pop(query_id, None)
-
-        status = body.get("status", "")
-        if status == "success":
-            result = body.get("result", {})
-            eta = result.get("eta_minutes")
-            vehicle = result.get("vehicle_type", "")
-            route = result.get("route_name", "")
-            name = pending.service_name if pending else "Service"
-            parts = []
-            if route:
-                parts.append(route)
-            if vehicle:
-                parts.append(vehicle)
-            msg = " ".join(parts) or name
-            if eta is not None:
-                await self._notify(f"{msg} -- {eta} minutes away")
-            else:
-                await self._notify(f"{msg} -- response received")
-        elif status == "unavailable":
-            name = pending.service_name if pending else "Service"
-            await self._notify(f"{name} -- service unavailable")
-        else:
-            name = pending.service_name if pending else "Service"
-            error = body.get("result", {}).get("error", "unknown")
-            await self._notify(f"{name} -- error: {error}")
-
-    # ------------------------------------------------------------------
-    # Timeout sweep (called periodically by guardian health loop)
-    # ------------------------------------------------------------------
-
-    async def check_timeouts(self) -> None:
-        """Notify user for expired pending queries and remove them."""
-        now = time.time()
-        expired: list[PendingQuery] = []
-        for qid, pq in list(self._pending.items()):
-            if now - pq.sent_at > pq.ttl_seconds and not pq.notified:
-                pq.notified = True
-                expired.append(pq)
-        for pq in expired:
-            await self._notify(f"No response yet from {pq.service_name}.")
-            self._pending.pop(pq.query_id, None)

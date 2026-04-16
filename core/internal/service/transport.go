@@ -115,7 +115,8 @@ type TransportService struct {
 	publicResolver port.PublicServiceResolver  // public service query: egress contact-gate bypass
 	localService   *ServiceConfigService       // local service config: ingress query acceptance
 	providerWindow *QueryWindow                // provider-side reply window for service.response egress
-	requesterWindow *QueryWindow               // requester-side query window for service.response ingress
+	requesterWindow *QueryWindow               // requester-side query window for service.response ingress (legacy, nil in WS2)
+	workflowSvc    *WorkflowService            // WS2: durable task authorization for service.response
 
 	recipientPub  []byte
 	recipientPriv []byte
@@ -214,6 +215,27 @@ func (s *TransportService) SetQueryWindows(provider, requester *QueryWindow) {
 	s.requesterWindow = requester
 }
 
+// SetWorkflowService sets the workflow service for durable task authorization
+// on service.response ingress (WS2: task replaces requester window).
+func (s *TransportService) SetWorkflowService(ws *WorkflowService) {
+	s.workflowSvc = ws
+}
+
+// SetProviderWindow opens a fresh provider-side window for service.response egress.
+// Used by /v1/service/respond to create an on-demand window at send time (durable review path).
+func (s *TransportService) SetProviderWindow(peerDID, queryID, capability string, ttlSec int) {
+	if s.providerWindow != nil {
+		s.providerWindow.Open(peerDID, queryID, capability, time.Duration(ttlSec)*time.Second)
+	}
+}
+
+// ReleaseProviderWindow releases a provider window reservation (on send failure).
+func (s *TransportService) ReleaseProviderWindow(peerDID, queryID, capability string) {
+	if s.providerWindow != nil {
+		s.providerWindow.Release(peerDID, queryID, capability)
+	}
+}
+
 // CheckServiceIngress checks whether an inbound message should be accepted
 // via the public service bypass. Returns:
 //   - "accept"    → service.query accepted, provider window opened
@@ -272,10 +294,8 @@ func (s *TransportService) CheckServiceIngress(msg *domain.DinaMessage) string {
 		return "accept"
 
 	case domain.MsgTypeServiceResponse:
-		// Requester side: do I have a matching query window?
-		if s.requesterWindow == nil {
-			return "drop"
-		}
+		// Requester side: durable authorization via workflow task.
+		// Task IS the sole authority — no requester window fallback.
 		var body domain.ServiceResponseBody
 		if json.Unmarshal(msg.Body, &body) != nil || body.QueryID == "" {
 			return "drop"
@@ -296,9 +316,83 @@ func (s *TransportService) CheckServiceIngress(msg *domain.DinaMessage) string {
 			slog.Debug("transport: service.response future-skewed", "from", msg.From)
 			return "drop"
 		}
-		if s.requesterWindow.CheckAndConsume(msg.From, body.QueryID, body.Capability) {
+
+		// WS2: find matching workflow task (strict tuple: query_id + peer DID + capability).
+		if s.workflowSvc == nil {
+			return "drop"
+		}
+		task, findErr := s.workflowSvc.Store().FindServiceQueryTask(
+			context.Background(), body.QueryID, msg.From, body.Capability, s.clock.Now().Unix(),
+		)
+		if findErr != nil {
+			slog.Warn("transport: service.response task lookup error",
+				"from", msg.From, "query_id", body.QueryID, "error", findErr)
+			return "drop" // >1 match is a data integrity issue
+		}
+		if task == nil {
+			return "drop" // no matching task = unsolicited response
+		}
+
+		// Build rich event details from task payload + response.
+		var taskPayload map[string]interface{}
+		json.Unmarshal([]byte(task.Payload), &taskPayload)
+		details := map[string]interface{}{
+			"response_status": body.Status,
+			"result":          json.RawMessage(body.Result),
+			"service_name":    taskPayload["service_name"],
+			"capability":      body.Capability,
+			"query_id":        body.QueryID,
+			"origin_channel":  taskPayload["origin_channel"],
+		}
+		// Promote error text to top-level for Brain formatter.
+		if body.Status == "error" {
+			var resultMap map[string]interface{}
+			if json.Unmarshal(body.Result, &resultMap) == nil {
+				if errText, ok := resultMap["error"]; ok {
+					details["error"] = errText
+				}
+			}
+		}
+		eventDetails, _ := json.Marshal(details)
+		resultJSON := string(eventDetails)
+		summary := fmt.Sprintf("%s: %s from %s", body.Status, body.Capability, taskPayload["service_name"])
+
+		// Atomically complete + persist result + emit rich workflow_event.
+		// Retry once on transient DB failure before falling back to stash.
+		var completeErr error
+		for attempt := 0; attempt < 2; attempt++ {
+			_, completeErr = s.workflowSvc.CompleteWithDetails(
+				context.Background(), task.ID, "", summary, resultJSON, string(eventDetails),
+			)
+			if completeErr == nil {
+				break
+			}
+			if attempt == 0 {
+				slog.Warn("transport: service.response completion failed, retrying",
+					"task_id", task.ID, "error", completeErr)
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
+		if completeErr != nil {
+			// Both attempts failed — stash result in internal_stash for sweeper recovery.
+			// internal_stash is not exposed via API (json:"-").
+			slog.Error("transport: service.response completion failed after retry",
+				"task_id", task.ID, "error", completeErr)
+			if s.workflowSvc.Store() != nil {
+				stashErr := s.workflowSvc.Store().SetInternalStash(context.Background(), task.ID, resultJSON)
+				if stashErr != nil {
+					slog.Error("transport: stash also failed — response data lost",
+						"task_id", task.ID, "stash_error", stashErr)
+				}
+			}
 			return "accept"
 		}
+
+		// Immediate delivery kick (don't wait for 30s sweeper).
+		// Inline, not goroutine — avoids unbounded fan-out under bursty traffic.
+		s.workflowSvc.DeliverEventsForTask(context.Background(), task.ID)
+
+		return "accept"
 		return "drop"
 	}
 
@@ -502,13 +596,9 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 		return fmt.Errorf("transport: enqueue message: %w", err)
 	}
 
-	// Post-enqueue: commit/open query windows for public service traffic.
+	// Post-enqueue: commit query windows for public service traffic.
 	if serviceBypass {
-		if serviceQueryBody != nil && s.requesterWindow != nil {
-			// Requester side: open window to accept the response.
-			ttl := time.Duration(serviceQueryBody.TTLSeconds) * time.Second
-			s.requesterWindow.Open(string(to), serviceQueryBody.QueryID, serviceQueryBody.Capability, ttl)
-		}
+		// WS2: no requesterWindow.Open for service.query — task IS the authorization.
 		if serviceResponseBody != nil && s.providerWindow != nil {
 			// Provider side: commit the reservation (consume the window).
 			s.providerWindow.Commit(string(to), serviceResponseBody.QueryID, serviceResponseBody.Capability)

@@ -153,3 +153,59 @@ class CoreClient(Protocol):
     async def fire_reminder(self, reminder_id: str) -> dict:
         """POST /v1/reminder/fire — simulate reminder firing (test-only)."""
         ...
+
+    # -- Workflow tasks (replaces delegated tasks) --
+
+    async def create_workflow_task(
+        self,
+        task_id: str,
+        description: str,
+        origin: str = "telegram",
+        proposal_id: str = "",
+        idempotency_key: str = "",
+        requires_approval: bool = False,
+        requested_runner: str = "",
+        *,
+        kind: str = "",
+        status: str = "",
+        payload: str = "",
+        expires_at: int = 0,
+        correlation_id: str = "",
+        priority: str = "",
+    ) -> dict:
+        """POST /v1/workflow/tasks — create a workflow task."""
+        ...
+
+    async def get_workflow_task(self, task_id: str) -> dict | None:
+        """GET /v1/workflow/tasks/{id} — fetch a workflow task."""
+        ...
+
+    async def list_workflow_tasks(self, status: str = "", kind: str = "", limit: int = 0) -> list[dict]:
+        """GET /v1/workflow/tasks — list workflow tasks."""
+        ...
+
+    async def queue_task_by_proposal(self, proposal_id: str) -> None:
+        """POST /v1/workflow/tasks/queue-by-proposal — transition task to queued."""
+        ...
+
+    async def ack_workflow_event(self, event_id: int) -> None:
+        """POST /v1/workflow/events/{event_id}/ack — acknowledge a workflow event."""
+        ...
+
+    # -- Service Discovery (WS2) --
+
+    async def send_service_query(
+        self, to_did: str, capability: str, params: dict,
+        query_id: str, ttl_seconds: int, service_name: str,
+        origin_channel: str = "",
+    ) -> dict:
+        """POST /v1/service/query — send a service query via durable workflow task."""
+        ...
+
+    async def send_service_respond(self, task_id: str, response_body: dict) -> dict:
+        """POST /v1/service/respond — send approved service response."""
+        ...
+
+    async def approve_workflow_task(self, task_id: str) -> dict:
+        """POST /v1/workflow/tasks/{task_id}/approve — approve a pending task."""
+        ...
