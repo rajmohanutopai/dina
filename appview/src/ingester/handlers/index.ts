@@ -60,6 +60,7 @@ import { comparisonHandler } from './comparison.js'
 import { subjectClaimHandler } from './subject-claim.js'
 import { trustPolicyHandler } from './trust-policy.js'
 import { notificationPrefsHandler } from './notification-prefs.js'
+import { serviceProfileHandler } from './service-profile.js'
 
 const handlers: Record<string, RecordHandler> = {
   'com.dina.trust.attestation': attestationHandler,
@@ -81,6 +82,7 @@ const handlers: Record<string, RecordHandler> = {
   'com.dina.trust.subjectClaim': subjectClaimHandler,
   'com.dina.trust.trustPolicy': trustPolicyHandler,
   'com.dina.trust.notificationPrefs': notificationPrefsHandler,
+  'com.dina.service.profile': serviceProfileHandler,
 }
 
 /**

@@ -16,7 +16,7 @@ The AppView is a TypeScript/Node.js backend consisting of three daemons:
 
 - **Ingester** — Consumes the Jetstream firehose, validates records, and persists them to PostgreSQL.
 - **Scorer** — Runs 9 background jobs that compute trust scores, detect anomalies, and decay stale data.
-- **Web** — Serves 5 xRPC endpoints for trust queries.
+- **Web** — Serves 7 xRPC endpoints for trust and service queries.
 
 <details>
 <summary><strong>Design Decision — Why TypeScript instead of Go or Python?</strong></summary>
@@ -56,7 +56,7 @@ Every environment variable is validated through a Zod schema at startup (line 5-
 
 ### Lexicons (config/lexicons.ts)
 
-19 trust record collection NSIDs — the vocabulary of the trust network. Each maps to a `com.dina.trust.*` collection in the AT Protocol namespace. These are the 19 record types that the ingester subscribes to on the Jetstream firehose.
+19 trust record collection NSIDs plus `com.dina.service.profile` — the vocabulary of the trust and service networks. The trust records map to `com.dina.trust.*` collections in the AT Protocol namespace. These are the 20 record types that the ingester subscribes to on the Jetstream firehose.
 
 ---
 
@@ -66,7 +66,7 @@ The `JetstreamConsumer` in `ingester/jetstream-consumer.ts` is the ingester's he
 
 ### Connection (lines 45-106)
 
-When `start()` is called, the consumer loads the last cursor from the database (line 39), builds a WebSocket URL with `wantedCollections` for all 19 trust record types (lines 46-52), and connects. The cursor is a microsecond timestamp — Jetstream replays all events since that timestamp on reconnection.
+When `start()` is called, the consumer loads the last cursor from the database (line 39), builds a WebSocket URL with `wantedCollections` for all 20 record types (19 trust + 1 service) (lines 46-52), and connects. The cursor is a microsecond timestamp — Jetstream replays all events since that timestamp on reconnection.
 
 The consumer creates a `BoundedIngestionQueue` (lines 59-63) and wires it to the WebSocket. Every incoming message is parsed and pushed onto the queue (lines 71-92). If parsing fails, the error is logged and counted — never propagated.
 
@@ -140,7 +140,7 @@ The `SCHEMA_MAP` at lines 234-254 maps each collection NSID to its Zod schema. `
 
 ## Act IV: The Handler Registry — 19 Record Types, One Pattern
 
-The handler registry in `handlers/index.ts` maps each collection NSID to a `RecordHandler` with two methods: `handleCreate` and `handleDelete`. There are 19 handlers — one per record type. They all follow the same pattern, but the two most important are attestations and vouches.
+The handler registry in `handlers/index.ts` maps each collection NSID to a `RecordHandler` with two methods: `handleCreate` and `handleDelete`. There are 20 handlers — one per record type (19 trust + 1 service). They all follow the same pattern, but the two most important are attestations and vouches.
 
 ### Attestation Handler (handlers/attestation.ts)
 
@@ -363,11 +363,11 @@ The web server in `web/server.ts` is a plain Node.js `http.createServer` with xR
 <summary><strong>Design Decision — Why a bare http.createServer instead of Express or Fastify?</strong></summary>
 <br>
 
-The AppView serves 5 read-only endpoints. Express adds 30+ middleware layers, template engines, and URL parsers that aren't needed. Fastify is faster but adds dependency weight. The xRPC protocol already defines the dispatch pattern: `GET /xrpc/{methodId}?params`. Implementing this with `http.createServer` is 47 lines of code (lines 22-64). The parameter validation is handled by Zod (one `parse` call), the response serialization is `JSON.stringify`, and error handling is a try/catch. There's nothing a framework would add except dependency surface and complexity.
+The AppView serves 7 read-only endpoints (5 trust + 2 service discovery). Express adds 30+ middleware layers, template engines, and URL parsers that aren't needed. Fastify is faster but adds dependency weight. The xRPC protocol already defines the dispatch pattern: `GET /xrpc/{methodId}?params`. Implementing this with `http.createServer` is 47 lines of code (lines 22-64). The parameter validation is handled by Zod (one `parse` call), the response serialization is `JSON.stringify`, and error handling is a try/catch. There's nothing a framework would add except dependency surface and complexity.
 
 </details>
 
-### The Five Endpoints
+### The Seven Endpoints
 
 1. **com.dina.trust.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
 
@@ -378,6 +378,10 @@ The AppView serves 5 read-only endpoints. Express adds 30+ middleware layers, te
 4. **com.dina.trust.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
 
 5. **com.dina.trust.getAttestations** — Paginated attestation list for a subject or author.
+
+6. **com.dina.service.search** — Ranked service discovery by capability, location, and text query. Ranking: distance (40%) + text (30%) + trust (30%). Composite cursor pagination.
+
+7. **com.dina.service.isPublic** — Deterministic boolean check: is this DID a public service provider? Returns `{isPublic, capabilities[]}`. Cached 5 min by Core.
 
 ### SWR Caching (api/middleware/swr-cache.ts)
 
@@ -402,7 +406,7 @@ Simple TTL caching has a "thundering herd" problem: when a popular cache entry e
 
 ### Record Tables
 
-Each of the 19 AT Protocol record types has a corresponding PostgreSQL table:
+Each of the 20 AT Protocol record types has a corresponding PostgreSQL table:
 
 - **Attestations** — The core primitive. Structured reviews with subject, category, sentiment, dimensions, evidence, co-signatures, mentions.
 - **Vouches** — Trust signals between DIDs. Confidence: high/moderate/low.
@@ -423,6 +427,22 @@ Each of the 19 AT Protocol record types has a corresponding PostgreSQL table:
 - **Subject Claims** — Assertions that two subjects are the same entity (triggers Tier 3 merge).
 - **Trust Policies** — User-defined trust parameters (max graph depth, blocked DIDs, etc.).
 - **Notification Preferences** — Per-user notification settings.
+- **Service Profiles** — Public service capability advertisements (see below).
+
+### Service Discovery Records
+
+**`com.dina.service.profile`** — Public service capability advertisement.
+- Published by service providers (bus operators, shops, etc.)
+- DID binding: author DID = service operator DID (no delegation in Phase 1)
+- Fields: name, description, capabilities[], serviceArea, hours, responsePolicy, isPublic
+- Phase 1: only `isPublic: true` and `responsePolicy: "auto"` accepted
+
+**New xRPC endpoints:**
+- `com.dina.service.search` — ranked retrieval by capability + location + text
+  - Ranking: distance (40%) + text (30%) + trust (30%)
+  - Cursor: composite (score_bucket, uri) for pagination
+- `com.dina.service.isPublic` — deterministic boolean check by DID
+  - Returns `{isPublic, capabilities[]}`, cached 5 min by Core
 
 ### System Tables
 
@@ -451,9 +471,9 @@ The AppView runs as shared infrastructure that multiple Home Nodes connect to. I
 | **MsgBox** | Built from `msgbox/` | D2D encrypted mailbox (WebSocket + HTTP) | internal |
 | **Jetstream** | `ghcr.io/bluesky-social/jetstream` | Converts PDS CBOR firehose → JSON WebSocket | internal |
 | **PostgreSQL** | `postgres:17` | AppView database (27 tables, 97 indexes) | internal |
-| **Ingester** | Built from `appview/` | Jetstream → PostgreSQL (19 record type handlers) | — |
+| **Ingester** | Built from `appview/` | Jetstream → PostgreSQL (20 record type handlers) | — |
 | **Scorer** | Built from `appview/` | 9 background cron jobs (trust scores, anomaly detection) | — |
-| **AppView Web** | Built from `appview/` | 5 xRPC endpoints for trust queries | internal |
+| **AppView Web** | Built from `appview/` | 7 xRPC endpoints for trust + service queries | internal |
 
 Only Caddy exposes ports to the internet. All other services communicate over the Docker network. The Ingester ensures the FTS `search_vector` tsvector column exists on startup (idempotent `ALTER TABLE IF NOT EXISTS`), so no separate migration step is needed.
 

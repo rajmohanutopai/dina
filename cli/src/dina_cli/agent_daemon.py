@@ -218,7 +218,7 @@ def _reconciler_loop(
             # Fetch running tasks from Core.
             try:
                 resp = httpx.get(
-                    f"{core_url}/v1/internal/delegated-tasks",
+                    f"{core_url}/v1/internal/workflow-tasks",
                     params={"status": "running"},
                     headers={"Authorization": f"Bearer {callback_token}"},
                     timeout=15,

@@ -3,7 +3,7 @@ package domain
 // TaskEvent represents an event sent to the brain for processing.
 type TaskEvent struct {
 	TaskID  string                 `json:"task_id"`
-	Type    string                 `json:"type"` // "process", "reason"
+	Type    string                 `json:"type"` // "process", "reason", "workflow_event"
 	Payload map[string]interface{} `json:"payload"`
 }
 

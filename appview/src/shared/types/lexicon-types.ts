@@ -218,6 +218,20 @@ export interface TrustPolicy {
   createdAt: string
 }
 
+/** com.dina.service.profile */
+export interface ServiceProfile {
+  name: string
+  description: string
+  capabilities: string[]
+  capabilitySchemas?: Record<string, unknown>
+  schemaHash?: string
+  serviceArea?: { lat: number; lng: number; radiusKm: number }
+  hours?: { open: string; close: string; timezone: string }
+  responsePolicy: Record<string, string>
+  isPublic: boolean
+  updatedAt: string
+}
+
 /** com.dina.trust.notificationPrefs */
 export interface NotificationPrefs {
   enableMentions: boolean

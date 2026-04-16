@@ -8,7 +8,7 @@ Setup: Copy to OpenClaw's hooks directory and configure in openclaw.json:
 
 Environment:
   DINA_CORE_CALLBACK_URL  — e.g. http://host.docker.internal:18100
-  DINA_HOOK_CALLBACK_TOKEN — Bearer token for /v1/internal/delegated-tasks/
+  DINA_HOOK_CALLBACK_TOKEN — Bearer token for /v1/internal/workflow-tasks/
 
 The hook fires on agent_end for sessions with key starting "hook:dina-task:".
 """
@@ -60,20 +60,29 @@ def on_agent_end(event: dict) -> None:
 
 
 def _extract_result(result: object) -> str:
-    """Extract a human-readable result string."""
-    if isinstance(result, str):
-        return result[:2000]
+    """Extract result as JSON string when possible, text otherwise.
+
+    Preserves structured data for the task completion → D2D response bridge.
+    The bridge reads result_summary and tries to parse it as JSON.
+    """
     if isinstance(result, dict):
-        for key in ("summary", "content", "text", "message"):
-            if key in result and result[key]:
-                return str(result[key])[:2000]
-        return json.dumps(result)[:2000]
-    return str(result)[:2000]
+        # Preserve structured data as JSON string.
+        return json.dumps(result)[:4000]
+    if isinstance(result, str):
+        # Try to parse as JSON — might be a serialized dict.
+        try:
+            parsed = json.loads(result)
+            if isinstance(parsed, dict):
+                return json.dumps(parsed)[:4000]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return result[:4000]
+    return str(result)[:4000]
 
 
 def _post_callback(task_id: str, action: str, payload: dict) -> None:
     """POST terminal status to Dina Core with retry."""
-    url = f"{CALLBACK_URL}/v1/internal/delegated-tasks/{task_id}/{action}"
+    url = f"{CALLBACK_URL}/v1/internal/workflow-tasks/{task_id}/{action}"
     data = json.dumps(payload).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {CALLBACK_TOKEN}",

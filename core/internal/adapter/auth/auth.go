@@ -1120,7 +1120,7 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			// NOTE: /v1/notify removed from device allowlist (CXH3).
 			// Only Brain should push notifications to connected devices.
 			"/v1/agent/validate",    // action gating
-			"/v1/agent/tasks",       // delegated task lifecycle (role-checked in handler)
+			"/v1/workflow/tasks",    // workflow task lifecycle (role-checked in handler)
 			"/v1/intent/proposals",  // intent proposal status polling (ownership-checked in handler)
 			"/v1/audit/query",       // FH1: read-only audit query — /v1/audit/append is admin-only
 			// NOTE: /v1/approvals is NOT in the prefix list — devices get
@@ -1214,8 +1214,10 @@ func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 		"/v1/did",
 		"/v1/contacts",
 		"/v1/trust",
-		"/v1/agent/tasks",  // delegated task create + queue-by-proposal
+		"/v1/workflow/tasks",  // workflow task create + queue-by-proposal
+		"/v1/workflow/events", // workflow event ACK
 		"/v1/people",       // person memory layer (recall expansion)
+		"/v1/service",      // service config (public service discovery)
 		"/v1/notify",
 		"/v1/reminder",
 		"/v1/reminders",
@@ -1246,7 +1248,9 @@ func (c *adminEndpointChecker) allowedForAdmin(path string) bool {
 		"/v1/audit",
 		"/v1/session",
 		"/v1/sessions",
-		"/v1/admin",        // CXH6: sync-status moved here from unauthenticated /admin/
+		"/v1/service",          // service config management
+		"/v1/admin",            // CXH6: sync-status moved here from unauthenticated /admin/
+		"/v1/workflow/tasks",   // workflow task management (admin dashboard)
 		"/admin",
 		"/healthz",
 		"/readyz",

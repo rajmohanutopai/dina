@@ -238,6 +238,25 @@ const notificationPrefsSchema = z.object({
   createdAt: boundedIsoDate,
 })
 
+const serviceProfileSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000),
+  capabilities: z.array(z.string().max(100)).min(1).max(50),
+  serviceArea: z.object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    radiusKm: z.number().min(0).max(500),
+  }).optional(),
+  hours: z.object({
+    open: z.string().max(10),
+    close: z.string().max(10),
+    timezone: z.string().max(50),
+  }).optional(),
+  responsePolicy: z.record(z.string().max(50)),
+  isPublic: z.boolean(),
+  updatedAt: boundedIsoDate,
+})
+
 // ── Schema map ──────────────────────────────────────────────────────
 
 const SCHEMA_MAP: Record<string, z.ZodSchema> = {
@@ -260,6 +279,7 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   'com.dina.trust.subjectClaim': subjectClaimSchema,
   'com.dina.trust.trustPolicy': trustPolicySchema,
   'com.dina.trust.notificationPrefs': notificationPrefsSchema,
+  'com.dina.service.profile': serviceProfileSchema,
 }
 
 // ── Public API ──────────────────────────────────────────────────────

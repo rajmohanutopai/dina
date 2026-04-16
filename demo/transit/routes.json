@@ -1,0 +1,55 @@
+{
+  "routes": [
+    {
+      "route_id": "42",
+      "name": "Market St Express",
+      "vehicle_type": "Bus",
+      "frequency_minutes": 12,
+      "service_start": "06:00",
+      "service_end": "23:00",
+      "stops": [
+        {"name": "Embarcadero", "lat": 37.7936, "lng": -122.3930},
+        {"name": "Montgomery St", "lat": 37.7894, "lng": -122.4013},
+        {"name": "Powell St", "lat": 37.7844, "lng": -122.4080},
+        {"name": "Civic Center", "lat": 37.7793, "lng": -122.4137},
+        {"name": "Van Ness", "lat": 37.7753, "lng": -122.4193},
+        {"name": "Church St", "lat": 37.7672, "lng": -122.4293},
+        {"name": "Castro Station", "lat": 37.7625, "lng": -122.4351},
+        {"name": "West Portal", "lat": 37.7407, "lng": -122.4654}
+      ]
+    },
+    {
+      "route_id": "43",
+      "name": "Geary Blvd",
+      "vehicle_type": "Bus",
+      "frequency_minutes": 15,
+      "service_start": "05:30",
+      "service_end": "00:00",
+      "stops": [
+        {"name": "Transbay Terminal", "lat": 37.7898, "lng": -122.3943},
+        {"name": "Union Square", "lat": 37.7876, "lng": -122.4074},
+        {"name": "Japantown", "lat": 37.7854, "lng": -122.4298},
+        {"name": "Divisadero", "lat": 37.7836, "lng": -122.4400},
+        {"name": "Masonic", "lat": 37.7827, "lng": -122.4466},
+        {"name": "Arguello", "lat": 37.7803, "lng": -122.4582},
+        {"name": "25th Ave", "lat": 37.7803, "lng": -122.4832},
+        {"name": "Ocean Beach", "lat": 37.7751, "lng": -122.5092}
+      ]
+    },
+    {
+      "route_id": "44",
+      "name": "Mission Express",
+      "vehicle_type": "Bus",
+      "frequency_minutes": 10,
+      "service_start": "06:00",
+      "service_end": "22:00",
+      "stops": [
+        {"name": "Mission Bay", "lat": 37.7710, "lng": -122.3898},
+        {"name": "16th St Mission", "lat": 37.7650, "lng": -122.4197},
+        {"name": "24th St Mission", "lat": 37.7520, "lng": -122.4186},
+        {"name": "Glen Park", "lat": 37.7330, "lng": -122.4332},
+        {"name": "Balboa Park", "lat": 37.7212, "lng": -122.4474}
+      ]
+    }
+  ]
+}

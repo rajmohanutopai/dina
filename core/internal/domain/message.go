@@ -32,6 +32,14 @@ const (
 	// trust.vouch.response — answer to a vouch request; stored as attestation.
 	MsgTypeTrustVouchResponse MessageType = "trust.vouch.response"
 
+	// service.query — public service query (e.g., "when does bus 42 arrive?").
+	// Ephemeral — never stored. Bypasses contact gate for public services.
+	MsgTypeServiceQuery MessageType = "service.query"
+
+	// service.response — answer to a service query (e.g., "45 minutes").
+	// Ephemeral — never stored. Bypasses contact gate via reply window.
+	MsgTypeServiceResponse MessageType = "service.response"
+
 	// Legacy estate constants — kept for domain model; excluded from v1 D2D surface.
 	MessageTypeEstate     MessageType = "dina/estate/notify"
 	MessageTypeKeyDeliver MessageType = "dina/estate/key_deliver"
@@ -57,6 +65,8 @@ var V1MessageFamilies = map[MessageType]bool{
 	MsgTypeSafetyAlert:          true,
 	MsgTypeTrustVouchRequest:    true,
 	MsgTypeTrustVouchResponse:   true,
+	MsgTypeServiceQuery:         true,
+	MsgTypeServiceResponse:      true,
 }
 
 // MsgTypeToScenario maps a v1 message type to its D2D scenario name.
@@ -170,6 +180,40 @@ type CoordinationResponseBody struct {
 	RequestID string `json:"request_id,omitempty"`
 }
 
+// ServiceQueryBody is the body of a service.query message.
+// Ephemeral — never stored. Sent to public services via query window bypass.
+type ServiceQueryBody struct {
+	// QueryID is a sender-generated UUID for request/response correlation.
+	QueryID string `json:"query_id"`
+	// Capability identifies the service capability being queried (e.g., "eta_query").
+	Capability string `json:"capability"`
+	// Params is a capability-specific JSON object (validated by Brain, opaque to Core).
+	Params json.RawMessage `json:"params"`
+	// TTLSeconds is the freshness window. Queries older than this are dropped.
+	TTLSeconds int `json:"ttl_seconds"`
+	// SchemaHash is the SHA-256 of the capability schema the sender validated against.
+	// Provider checks this against its published schema; mismatch → reject.
+	SchemaHash string `json:"schema_hash,omitempty"`
+}
+
+// ServiceResponseBody is the body of a service.response message.
+// Ephemeral — never stored. Sent back via reply window.
+type ServiceResponseBody struct {
+	// QueryID matches the originating service.query.
+	QueryID string `json:"query_id"`
+	// Capability echoes the queried capability.
+	Capability string `json:"capability"`
+	// Status is "success", "unavailable", or "error".
+	Status string `json:"status"`
+	// Result is a capability-specific JSON object (validated by Brain, opaque to Core).
+	Result json.RawMessage `json:"result,omitempty"`
+	// TTLSeconds is the freshness window for the response.
+	TTLSeconds int `json:"ttl_seconds"`
+}
+
+// MaxServiceTTL is the maximum allowed TTL for service queries/responses (5 minutes).
+const MaxServiceTTL = 300
+
 // ---------------------------------------------------------------------------
 // ValidateV1Body
 // ---------------------------------------------------------------------------
@@ -275,6 +319,44 @@ func ValidateV1Body(t MessageType, body []byte) error {
 			return fmt.Errorf("%w: trust.vouch.response: vouch is required", ErrInvalidD2DBody)
 		default:
 			return fmt.Errorf("%w: trust.vouch.response: vouch must be yes|no|partial, got %q", ErrInvalidD2DBody, b.Vouch)
+		}
+
+	case MsgTypeServiceQuery:
+		var b ServiceQueryBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: service.query: %v", ErrInvalidD2DBody, err)
+		}
+		if b.QueryID == "" {
+			return fmt.Errorf("%w: service.query: query_id is required", ErrInvalidD2DBody)
+		}
+		if b.Capability == "" {
+			return fmt.Errorf("%w: service.query: capability is required", ErrInvalidD2DBody)
+		}
+		if b.TTLSeconds <= 0 || b.TTLSeconds > MaxServiceTTL {
+			return fmt.Errorf("%w: service.query: ttl_seconds must be 1-%d, got %d", ErrInvalidD2DBody, MaxServiceTTL, b.TTLSeconds)
+		}
+
+	case MsgTypeServiceResponse:
+		var b ServiceResponseBody
+		if err := json.Unmarshal(body, &b); err != nil {
+			return fmt.Errorf("%w: service.response: %v", ErrInvalidD2DBody, err)
+		}
+		if b.QueryID == "" {
+			return fmt.Errorf("%w: service.response: query_id is required", ErrInvalidD2DBody)
+		}
+		if b.Capability == "" {
+			return fmt.Errorf("%w: service.response: capability is required", ErrInvalidD2DBody)
+		}
+		switch b.Status {
+		case "success", "unavailable", "error":
+			// valid
+		case "":
+			return fmt.Errorf("%w: service.response: status is required", ErrInvalidD2DBody)
+		default:
+			return fmt.Errorf("%w: service.response: status must be success|unavailable|error, got %q", ErrInvalidD2DBody, b.Status)
+		}
+		if b.TTLSeconds <= 0 || b.TTLSeconds > MaxServiceTTL {
+			return fmt.Errorf("%w: service.response: ttl_seconds must be 1-%d, got %d", ErrInvalidD2DBody, MaxServiceTTL, b.TTLSeconds)
 		}
 
 	}

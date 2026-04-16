@@ -1172,7 +1172,7 @@ class TelegramService:
     ) -> None:
         """/task <description> — delegate an autonomous task to OpenClaw.
 
-        Creates a durable delegated task in Core. The agent-daemon claims
+        Creates a durable workflow task in Core. The agent-daemon claims
         and executes it after approval.
         """
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
@@ -1237,9 +1237,9 @@ class TelegramService:
             await ch.send(ErrorResponse(text=f"Task denied: {result.get('reason', 'blocked')}"))
             return
 
-        # Create durable task in Core (replaces KV storage)
+        # Create durable workflow task in Core
         try:
-            await self._core.create_delegated_task(
+            await self._core.create_workflow_task(
                 task_id=task_id,
                 description=text,
                 origin="telegram",
@@ -1269,7 +1269,7 @@ class TelegramService:
     async def handle_task_status(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/taskstatus <task_id> — check the status of a delegated task."""
+        """/taskstatus <task_id> — check the status of a workflow task."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
@@ -1279,7 +1279,7 @@ class TelegramService:
             return
 
         try:
-            task = await self._core.get_delegated_task(task_id)
+            task = await self._core.get_workflow_task(task_id)
             if task is None:
                 await ch.send(ErrorResponse(text=f"Task `{task_id}` not found."))
                 return
@@ -1458,3 +1458,80 @@ class TelegramService:
             "  /contact responsibility Name care\n"
             "  /contact cleanup"
         ))
+
+    async def handle_service_query(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/service_query <capability> <lat> <lng> [text] — query a public service.
+
+        Phase 1: explicit command for service discovery queries.
+        Example: /service_query eta_query 12.97 77.59 bus 42
+        """
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        args = context.args or []
+        if len(args) < 3:
+            await ch.send(BotResponse(
+                text="Usage: /service_query <capability> <lat> <lng> [text]\n"
+                "Example: /service_query eta_query 12.97 77.59 bus 42"
+            ))
+            return
+
+        capability = args[0]
+        try:
+            lat = float(args[1])
+            lng = float(args[2])
+        except ValueError:
+            await ch.send(ErrorResponse(text="Invalid coordinates. Provide numeric lat/lng."))
+            return
+
+        user_text = " ".join(args[3:]) if len(args) > 3 else ""
+
+        orchestrator = getattr(self._guardian, "_service_query_orchestrator", None)
+        if orchestrator is None:
+            await ch.send(ErrorResponse(
+                text="Service discovery is not configured. Set DINA_APPVIEW_URL."
+            ))
+            return
+
+        try:
+            await orchestrator.handle_user_query(
+                capability=capability,
+                params={"location": {"lat": lat, "lng": lng}},
+                user_text=user_text,
+            )
+        except Exception as exc:
+            log.warning(
+                "telegram.service_query_failed",
+                extra={"capability": capability, "error": str(exc)},
+            )
+            await ch.send(ErrorResponse(text="Service query failed."))
+
+    async def handle_service_approve(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """/service_approve <task_id> — approve a pending service review.
+
+        WS2: approves a pending_approval workflow_task, triggering MCP execution
+        and service.response send via Core.
+        """
+        if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
+            return
+        ch = self._ch(context)
+        args = context.args or []
+        if not args:
+            await ch.send(BotResponse(text="Usage: /service_approve <task_id>"))
+            return
+
+        task_id = args[0].strip()
+        if not task_id:
+            await ch.send(BotResponse(text="Usage: /service_approve <task_id>"))
+            return
+
+        try:
+            await self._core.approve_workflow_task(task_id)
+            await ch.send(BotResponse(text=f"Approved: {task_id}"))
+        except Exception as exc:
+            log.warning("telegram.service_approve_failed", extra={"task_id": task_id, "error": str(exc)})
+            await ch.send(ErrorResponse(text=f"Approval failed: {exc}"))

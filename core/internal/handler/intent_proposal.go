@@ -31,9 +31,9 @@ type IntentProposalHandler struct {
 		ListProposals() ([]byte, error)
 	}
 
-	// DelegatedTasks queues linked delegated tasks on approval.
+	// WorkflowTasks queues linked workflow tasks on approval.
 	// May be nil if CGO is unavailable.
-	DelegatedTasks port.DelegatedTaskStore
+	WorkflowTasks port.WorkflowStore
 }
 
 // HandleApprove handles POST /v1/intent/proposals/{id}/approve.
@@ -73,10 +73,10 @@ func (h *IntentProposalHandler) HandleApprove(w http.ResponseWriter, r *http.Req
 	// Redundant idempotent queue — Guardian already queues in _handle_intent_approved,
 	// but this catches the case where Core's endpoint is called directly (dina-admin).
 	var queueWarning string
-	if h.DelegatedTasks != nil {
-		if qErr := h.DelegatedTasks.QueueByProposalID(r.Context(), proposalID); qErr != nil {
+	if h.WorkflowTasks != nil {
+		if qErr := h.WorkflowTasks.QueueByProposalID(r.Context(), proposalID); qErr != nil {
 			queueWarning = qErr.Error()
-			slog.Warn("delegated_task.queue_on_approve_failed",
+			slog.Warn("workflow.queue_on_approve_failed",
 				"proposal_id", proposalID, "error", qErr)
 		}
 	}

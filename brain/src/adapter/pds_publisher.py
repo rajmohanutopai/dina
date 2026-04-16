@@ -120,6 +120,47 @@ class PDSPublisher:
         )
         return result
 
+    async def put_record(
+        self, collection: str, rkey: str, record: dict,
+    ) -> dict:
+        """Upsert an AT Protocol record on the PDS (stable rkey)."""
+        await self._ensure_session()
+        resp = await self._client.post(
+            f"{self._pds_url}/xrpc/com.atproto.repo.putRecord",
+            headers={"Authorization": f"Bearer {self._access_jwt}"},
+            json={
+                "repo": self._did,
+                "collection": collection,
+                "rkey": rkey,
+                "record": record,
+            },
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        log.info(
+            "pds_publisher.record_upserted",
+            extra={"collection": collection, "rkey": rkey, "uri": result.get("uri", "")},
+        )
+        return result
+
+    async def delete_record(self, collection: str, rkey: str) -> None:
+        """Delete an AT Protocol record from the PDS."""
+        await self._ensure_session()
+        resp = await self._client.post(
+            f"{self._pds_url}/xrpc/com.atproto.repo.deleteRecord",
+            headers={"Authorization": f"Bearer {self._access_jwt}"},
+            json={
+                "repo": self._did,
+                "collection": collection,
+                "rkey": rkey,
+            },
+        )
+        resp.raise_for_status()
+        log.info(
+            "pds_publisher.record_deleted",
+            extra={"collection": collection, "rkey": rkey},
+        )
+
     @property
     def did(self) -> str | None:
         return self._did

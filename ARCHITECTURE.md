@@ -523,6 +523,40 @@ dina-core needs **zero inbound ports** for CLI and D2D communication:
 
 Trust records are published to the community PDS (`pds.dinakernel.com`) via outbound HTTPS — no local PDS port is needed.
 
+#### MsgBox Protocol Details
+
+All WebSocket frames use a **unified JSON envelope** — one format for D2D, RPC, and cancel:
+
+```json
+{
+  "type": "d2d" | "rpc" | "cancel",
+  "id": "msg-uuid",
+  "from_did": "sender DID",
+  "to_did": "recipient DID",
+  "direction": "request|response",  // RPC only
+  "expires_at": 1712973300,          // unix seconds, optional
+  "ciphertext": "..."               // D2D: d2dPayload JSON; RPC: base64 NaCl sealed-box
+}
+```
+
+**WebSocket auth**: Ed25519 challenge-response. Server sends `{type: "auth_challenge", nonce, ts}`. Client signs `AUTH_RELAY\n{nonce}\n{ts}` and returns `{type: "auth_response", did, sig, pub}`.
+
+**RPC bridge** (`rpc_bridge.go`): Decrypts inner request, builds `http.Request`, routes through Core's handler chain via `httptest.NewRecorder`. From the handler's perspective, a relayed request is indistinguishable from direct HTTPS.
+
+**Bounded worker pool**: 8 workers, 32 backlog. Overflow → 503. Duplicate in-flight → 409. Expired on receipt/worker-start → 408. Panic recovery prevents worker goroutine death.
+
+**Idempotency + replay protection**: Sender-scoped idempotency cache (5-min TTL). Nonce replay cache rejects exact replays. Both cleaned up by background sweeper (60s interval).
+
+**Pairing**: 8-character Crockford Base32 codes (32^8 = 1.1 trillion code space). Case-insensitive, no ambiguous characters (no I/L/O/U). No burn counter — code space makes brute-force mathematically infeasible.
+
+**Security properties**:
+- Mandatory encryption for success responses (plaintext refused in production)
+- Sender binding: `envelope.from_did == conn.DID` (MsgBox verifies)
+- Identity binding: `envelope.from_did == inner X-DID` (Core verifies)
+- Role enforcement: `did:key` senders cannot send RPC responses
+- /forward nonce replay protection + recipient DID in canonical signature
+- WebSocket + inner body size limits (1 MiB)
+
 **Three ingress tiers, running simultaneously if needed:**
 
 | Tier | Name | Mechanism | Who It's For | Public Endpoint |
@@ -3849,6 +3883,39 @@ In Phase 2, the envelope becomes standard JWE (`application/didcomm-encrypted+js
 - `dina/identity/*` — trust ring verification, peer attestation requests
 - `dina/trust/*` — outcome data exchange, bot recommendations
 
+### Public Service Discovery (Phase 1)
+
+Dina supports public service discovery — service providers (bus operators, shops, utilities) publish capabilities via AT Protocol records, discoverable through AppView search. Queries and responses use the D2D transport with a contact-gate bypass mechanism called the **query window**.
+
+**New D2D message types:**
+- `service.query` — query a public service capability (e.g., ETA)
+- `service.response` — response from the service (e.g., "45 minutes")
+
+These types bypass the contact gate and scenario policy system. Instead, they use time-limited **query windows** that authorize specific (peerDID, queryID, capability) tuples for 60 seconds.
+
+**Query window lifecycle:**
+1. Requester sends `service.query` → opens requesterWindow on enqueue
+2. Provider receives → checks local config → opens providerWindow → forwards to Brain
+3. Provider's Brain calls MCP tool → builds response → providerWindow.Reserve → Commit on enqueue
+4. Requester receives `service.response` → requesterWindow.CheckAndConsume → forwards to Brain
+
+**Service config (single local authority):**
+- Stored in `service_config` table in identity.sqlite
+- Exposed via `GET/PUT /v1/service/config`
+- Brain reads config, publishes to PDS as `com.dina.service.profile` AT record
+- AppView indexes the record for discovery
+
+**AppView endpoints:**
+- `com.dina.service.search` — ranked retrieval (distance 40% + text 30% + trust 30%)
+- `com.dina.service.isPublic` — deterministic boolean check (cached 5 min by Core)
+
+**Security properties:**
+- IngressDrop always wins (trust blocklist checked before service bypass)
+- PII/gatekeeper egress check preserved for both queries and responses
+- Capability allowlist in Brain (Pydantic-validated, per-capability MCP tool mapping)
+- TTL enforcement with future-skew guard on both inbound paths
+- 8-char Crockford Base32 pairing codes (32^8 = 1.1 trillion code space)
+
 ### What Gets Shared (And What Doesn't)
 
 This is controlled by the sending Dina's **Sharing Policy** — the Egress Gatekeeper. Default deny: if a rule doesn't exist for a contact + category combination, the data is blocked.
@@ -4268,7 +4335,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 }
 ```
 
-Additional Lexicons: `com.dina.trust.outcome` (anonymized purchase outcomes), `com.dina.trust.bot` (bot registration and scores), `com.dina.trust.membership` (trust ring public info).
+Additional Lexicons: `com.dina.trust.outcome` (anonymized purchase outcomes), `com.dina.trust.bot` (bot registration and scores), `com.dina.trust.membership` (trust ring public info), `com.dina.service.profile` (public service capabilities and location for service discovery).
 
 ### Expert Attestations
 
@@ -4459,6 +4526,7 @@ AT Protocol Relay (bsky.network)
 │     └─ Discards all events except       │
 │        com.dina.trust.*                 │
 │        com.dina.identity.attestation    │
+│        com.dina.service.profile         │
 │                                         │
 │  3. Verifier                            │
 │     └─ Cryptographically verifies       │

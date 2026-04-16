@@ -665,6 +665,129 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v10 complete")
 	}
 
+	// --- Identity migration v12: service_config table ---
+	if !hasTable(db, "service_config") {
+		slog.Info("sqlite: applying identity migration v12 (service_config table)")
+		if _, err := db.ExecContext(ctx, `
+			CREATE TABLE IF NOT EXISTS service_config (
+				key         TEXT PRIMARY KEY,
+				value       TEXT NOT NULL,
+				updated_at  INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+			)
+		`); err != nil {
+			return fmt.Errorf("identity v12: %w", err)
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (12, 'Service config table')`)
+		slog.Info("sqlite: identity migration v12 complete")
+	}
+
+	// --- Identity migration v13: workflow_tasks replaces delegated_tasks ---
+	if !hasTable(db, "workflow_tasks") {
+		slog.Info("sqlite: applying identity migration v13 (workflow_tasks + workflow_events)")
+
+		// Migrate delegated_tasks → workflow_tasks if the old table exists.
+		if hasTable(db, "delegated_tasks") {
+			slog.Info("sqlite: migrating delegated_tasks to workflow_tasks")
+			// Create workflow_tasks first (below), then migrate rows, then drop.
+			defer func() {
+				// Migrate existing delegated tasks as kind=delegation.
+				_, migErr := db.ExecContext(ctx, `
+					INSERT OR IGNORE INTO workflow_tasks
+						(id, kind, state, priority, description, payload, result_summary,
+						 error, requested_runner, assigned_runner, agent_did, run_id,
+						 progress_note, lease_expires_at, origin, session_name,
+						 created_at, updated_at)
+					SELECT
+						id, 'delegation', status, 'normal', description, payload, result_summary,
+						error, requested_runner, assigned_runner, agent_did, run_id,
+						progress_note, lease_expires_at, origin, session_name,
+						created_at, updated_at
+					FROM delegated_tasks
+				`)
+				if migErr != nil {
+					slog.Warn("sqlite: delegated_tasks migration failed (non-fatal)", "error", migErr)
+				} else {
+					db.ExecContext(ctx, `DROP TABLE IF EXISTS delegated_tasks`)
+					slog.Info("sqlite: delegated_tasks migrated and dropped")
+				}
+			}()
+		}
+
+		for _, stmt := range []string{
+			`CREATE TABLE IF NOT EXISTS workflow_tasks (
+				id               TEXT PRIMARY KEY,
+				kind             TEXT NOT NULL,
+				state            TEXT NOT NULL DEFAULT 'created'
+					CHECK (state IN ('created','pending','queued','claimed','running','awaiting',
+									 'pending_approval','scheduled','completed','failed','cancelled','recorded')),
+				correlation_id   TEXT,
+				parent_id        TEXT,
+				proposal_id      TEXT,
+				priority         TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('user_blocking','normal','background')),
+				description      TEXT NOT NULL DEFAULT '',
+				payload          TEXT NOT NULL DEFAULT '{}',
+				result           TEXT,
+				result_summary   TEXT NOT NULL DEFAULT '',
+				policy           TEXT NOT NULL DEFAULT '{}',
+				error            TEXT NOT NULL DEFAULT '',
+				requested_runner TEXT NOT NULL DEFAULT '',
+				assigned_runner  TEXT NOT NULL DEFAULT '',
+				agent_did        TEXT NOT NULL DEFAULT '',
+				run_id           TEXT NOT NULL DEFAULT '',
+				progress_note    TEXT NOT NULL DEFAULT '',
+				lease_expires_at INTEGER,
+				origin           TEXT NOT NULL DEFAULT '' CHECK (origin IN ('','telegram','api','d2d','admin','system','cli')),
+				session_name     TEXT NOT NULL DEFAULT '',
+				idempotency_key  TEXT,
+				expires_at       INTEGER,
+				next_run_at      INTEGER,
+				recurrence       TEXT,
+				internal_stash   TEXT,
+				created_at       INTEGER NOT NULL,
+				updated_at       INTEGER NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_state ON workflow_tasks(state, next_run_at)`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_kind ON workflow_tasks(kind)`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_correlation ON workflow_tasks(correlation_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_proposal ON workflow_tasks(proposal_id) WHERE proposal_id IS NOT NULL`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_expires ON workflow_tasks(expires_at) WHERE expires_at IS NOT NULL`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_lease ON workflow_tasks(lease_expires_at) WHERE lease_expires_at IS NOT NULL`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_agent ON workflow_tasks(agent_did) WHERE agent_did != ''`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_wf_idem_active ON workflow_tasks(idempotency_key)
+				WHERE idempotency_key IS NOT NULL AND idempotency_key != ''
+				AND state NOT IN ('completed','failed','cancelled','recorded')`,
+			`CREATE TABLE IF NOT EXISTS workflow_events (
+				event_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+				task_id           TEXT NOT NULL REFERENCES workflow_tasks(id),
+				at                INTEGER NOT NULL,
+				event_kind        TEXT NOT NULL,
+				needs_delivery    INTEGER NOT NULL DEFAULT 0,
+				delivery_attempts INTEGER NOT NULL DEFAULT 0,
+				next_delivery_at  INTEGER,
+				delivering_until  INTEGER,
+				delivered_at      INTEGER,
+				acknowledged_at   INTEGER,
+				delivery_failed   INTEGER NOT NULL DEFAULT 0,
+				details           TEXT NOT NULL DEFAULT '{}'
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_events_task ON workflow_events(task_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_events_deliverable ON workflow_events(next_delivery_at)
+				WHERE needs_delivery = 1 AND acknowledged_at IS NULL AND delivery_failed = 0 AND delivery_attempts < 3`,
+		} {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("identity v13: %w", err)
+			}
+		}
+
+		// Enable foreign keys for this connection (required for workflow_events FK).
+		db.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (13, 'Workflow tasks replace delegated tasks')`)
+		slog.Info("sqlite: identity migration v13 complete")
+	}
+
 	return nil
 }
 

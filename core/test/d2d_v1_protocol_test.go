@@ -357,7 +357,18 @@ func TestD2D_V1_SendMessage_NonV1TypeRejected(t *testing.T) {
 
 // TRACE: {"suite": "CORE", "case": "0464", "section": "07", "sectionName": "Transport Layer", "subsection": "13", "scenario": "01", "title": "D2D_V1_MsgTypeToScenario_AllV1Covered"}
 func TestD2D_V1_MsgTypeToScenario_AllV1Covered(t *testing.T) {
+	// service.* types intentionally return empty scenario — they bypass the
+	// contact/scenario policy system entirely and use the query window instead.
+	exemptFromScenario := map[domain.MessageType]bool{
+		domain.MsgTypeServiceQuery:    true,
+		domain.MsgTypeServiceResponse: true,
+	}
 	for mt := range domain.V1MessageFamilies {
+		if exemptFromScenario[mt] {
+			testutil.RequireTrue(t, domain.MsgTypeToScenario(mt) == "",
+				string(mt)+" should return empty scenario (bypasses scenario policy)")
+			continue
+		}
 		scenario := domain.MsgTypeToScenario(mt)
 		testutil.RequireTrue(t, scenario != "",
 			string(mt)+" should have a non-empty scenario mapping")

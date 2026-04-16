@@ -43,9 +43,9 @@ func TestPairing_10_1_1_GenerateCode(t *testing.T) {
 	testutil.RequireTrue(t, code != "", "pairing code must not be empty")
 	testutil.RequireTrue(t, len(secret) == 32, "pairing secret must be exactly 32 bytes (256-bit entropy)")
 
-	// Code must be a 6-digit numeric string (Architecture §10: "6-digit pairing code").
-	digitPattern := regexp.MustCompile(`^[0-9]{6}$`)
-	testutil.RequireTrue(t, digitPattern.MatchString(code), "pairing code must be a 6-digit numeric string")
+	// Code must be a 8-char Crockford Base32 (Architecture §10: "6-digit pairing code").
+	digitPattern := regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{8}$`)
+	testutil.RequireTrue(t, digitPattern.MatchString(code), "pairing code must be a 8-char Crockford Base32")
 
 	// Round-trip: generated code must be usable for CompletePairing.
 	clientToken, tokenID, err := impl.CompletePairing(context.Background(), code, "test-device")
@@ -279,16 +279,16 @@ func TestPairing_10_4_1_NumericCodeFormat(t *testing.T) {
 
 	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(code) == 6, "pairing code must be exactly 6 digits")
+	testutil.RequireTrue(t, len(code) == 8, "pairing code must be exactly 8 characters")
 
 	// Verify the code is all digits (0-9).
-	digitPattern := regexp.MustCompile(`^[0-9]{6}$`)
+	digitPattern := regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{8}$`)
 	testutil.RequireTrue(t, digitPattern.MatchString(code),
-		"pairing code must be a 6-digit numeric string")
+		"pairing code must be a 8-char Crockford Base32")
 
-	// Verify the code is in the valid range (100000-999999, no leading zeros).
-	testutil.RequireTrue(t, code[0] != '0',
-		"pairing code must not have a leading zero (range 100000-999999)")
+	// Crockford Base32 8-char code — all characters are valid, no range restriction.
+	testutil.RequireTrue(t, len(code) == 8,
+		"pairing code must be 8 characters")
 }
 
 // TST-CORE-524
@@ -305,11 +305,11 @@ func TestPairing_10_4_2_NumericCodeBruteForceResistance(t *testing.T) {
 	code2, secret2, err := impl.GenerateCode(ctx)
 	testutil.RequireNoError(t, err)
 
-	// The 6-digit code itself has ~20 bits of entropy (900,000 combinations).
+	// The 6-digit code itself has ~40 bits of entropy (32^8 = 1.1 trillion combinations).
 	// Brute-force resistance comes from rate limiting + 5-minute TTL, not
 	// code entropy alone. The underlying 32-byte secret has 256 bits.
-	testutil.RequireTrue(t, len(code1) == 6, "pairing code must be exactly 6 digits")
-	testutil.RequireTrue(t, len(code2) == 6, "pairing code must be exactly 6 digits")
+	testutil.RequireTrue(t, len(code1) == 8, "pairing code must be exactly 8 characters")
+	testutil.RequireTrue(t, len(code2) == 8, "pairing code must be exactly 8 characters")
 
 	// The cryptographic secret (used for key derivation) must have full entropy.
 	testutil.RequireTrue(t, len(secret1) == 32, "secret must be 32 bytes (256-bit entropy)")

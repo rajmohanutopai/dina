@@ -8,6 +8,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/sqlite"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // newVaultBackend returns a SQLCipher-backed vault adapter when CGO is available.
@@ -84,10 +85,17 @@ func newD2DOutboxManager(backend vaultBackend) port.OutboxManager {
 	return sqlite.NewD2DOutboxManager(pool)
 }
 
-// newDelegatedTaskStore returns a SQLite-backed delegated task store using identity.sqlite.
-func newDelegatedTaskStore(backend vaultBackend) port.DelegatedTaskStore {
+// newWorkflowStore returns a SQLite-backed workflow store using identity.sqlite.
+func newWorkflowStore(backend vaultBackend) port.WorkflowStore {
 	pool := backend.(*sqlite.VaultAdapter).Pool()
-	return sqlite.NewDelegatedTaskStore(pool)
+	return sqlite.NewWorkflowStore(pool)
+}
+
+// newServiceConfigService returns a ServiceConfigService backed by identity.sqlite.
+func newServiceConfigService(backend vaultBackend) *service.ServiceConfigService {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	store := sqlite.NewServiceConfigStore(pool)
+	return service.NewServiceConfigService(store)
 }
 
 // readAdminKV reads an admin config value from the general persona's KV store.
