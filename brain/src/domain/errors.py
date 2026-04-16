@@ -96,6 +96,16 @@ class ConfigError(DinaError):
     """
 
 
+class WorkflowConflictError(DinaError):
+    """Core returned HTTP 409 on a workflow task endpoint.
+
+    Typically means the task already exists (duplicate create) or the
+    requested transition is not legal (e.g. cancelling an already-terminal
+    task). Callers that treat these as idempotent no-ops should catch this
+    exception explicitly rather than pattern-matching HTTP error text.
+    """
+
+
 class CloudConsentError(DinaError):
     """Cloud LLM consent has not been given by the user.
 

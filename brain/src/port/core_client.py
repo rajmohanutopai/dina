@@ -209,3 +209,7 @@ class CoreClient(Protocol):
     async def approve_workflow_task(self, task_id: str) -> dict:
         """POST /v1/workflow/tasks/{task_id}/approve — approve a pending task."""
         ...
+
+    async def cancel_workflow_task(self, task_id: str) -> dict:
+        """POST /v1/workflow/tasks/{task_id}/cancel — cancel a task (terminal)."""
+        ...

@@ -64,6 +64,7 @@ from ..domain.errors import (
     ConfigError,
     CoreUnreachableError,
     PersonaLockedError,
+    WorkflowConflictError,
 )
 
 if TYPE_CHECKING:
@@ -660,7 +661,14 @@ class CoreHTTPClient:
             body["correlation_id"] = correlation_id
         if priority:
             body["priority"] = priority
-        resp = await self._request("POST", "/v1/workflow/tasks", json=body)
+        try:
+            resp = await self._request("POST", "/v1/workflow/tasks", json=body)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 409:
+                raise WorkflowConflictError(
+                    f"workflow task create conflict: task_id={task_id}"
+                ) from exc
+            raise
         return resp.json()
 
     async def get_workflow_task(self, task_id: str) -> dict | None:
@@ -754,6 +762,25 @@ class CoreHTTPClient:
             "POST",
             f"/v1/workflow/tasks/{task_id}/approve",
         )
+        return resp.json()
+
+    async def cancel_workflow_task(self, task_id: str) -> dict:
+        """POST /v1/workflow/tasks/{task_id}/cancel — cancel a task (terminal).
+
+        Raises ``WorkflowConflictError`` on HTTP 409 (task already in a
+        terminal state, or transition not allowed).
+        """
+        try:
+            resp = await self._request(
+                "POST",
+                f"/v1/workflow/tasks/{task_id}/cancel",
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 409:
+                raise WorkflowConflictError(
+                    f"workflow task cancel conflict: task_id={task_id}"
+                ) from exc
+            raise
         return resp.json()
 
     # -- Task queue ACK ------------------------------------------------------

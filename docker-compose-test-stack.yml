@@ -1,16 +1,22 @@
-# Dina Unified Test Stack — All tiers in one flat compose, no profiles.
+# Dina Unified Test Stack — Actor Home Nodes only.
 #
-# Combines: 4 actor Home Nodes (Core+Brain), AT Protocol pipeline (PLC, PDS,
-# Jetstream, AppView), and a dummy-agent for CLI testing. Every service starts
-# together on a single bridge network with fixed host ports.
+# Infrastructure (PDS, MsgBox, AppView, PLC) runs on Hetzner test servers:
+#   PDS:     https://test-pds.dinakernel.com
+#   MsgBox:  wss://test-mailbox.dinakernel.com
+#   AppView: https://test-appview.dinakernel.com
+#   PLC:     https://plc.directory
+#
+# This compose runs 5 actor Home Nodes (Core+Brain) + a dummy-agent.
+# Every actor registers with the real test PDS, gets a did:plc from the
+# public PLC, and communicates via the real test MsgBox relay.
 #
 # WARNING: TESTING ONLY. Contains hardcoded seeds, test credentials, and
 # DINA_TEST_MODE=true / DINA_RATE_LIMIT=100000. Do NOT deploy in production.
 #
 # Usage:
-#   COMPOSE_PROJECT_NAME=dina-test docker compose -f docker-compose-test-stack.yml up --build -d
+#   docker compose -f docker-compose-test-stack.yml up --build -d
 #   <run tests>
-#   COMPOSE_PROJECT_NAME=dina-test docker compose -f docker-compose-test-stack.yml down -v
+#   docker compose -f docker-compose-test-stack.yml down -v
 
 # ============================================================================
 # YAML Anchors — shared config blocks reused across services
@@ -32,7 +38,7 @@ x-core-base: &core-base
   networks:
     - test-net
 
-# -- Core environment shared vars --
+# -- Core environment shared vars (all infra URLs point to Hetzner) --
 x-core-env: &core-env
   DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
   DINA_LISTEN_ADDR: ":8100"
@@ -43,9 +49,9 @@ x-core-env: &core-env
   DINA_TEST_MODE: "true"
   DINA_ENV: test
   DINA_CLIENT_TOKEN_FILE: /run/secrets/client_token
-  DINA_APPVIEW_URL: http://appview-web:3000
-  DINA_PLC_URL: http://plc:2582
-  DINA_PDS_URL: http://pds:3000
+  DINA_APPVIEW_URL: https://test-appview.dinakernel.com
+  DINA_PLC_URL: https://plc.directory
+  DINA_PDS_URL: https://test-pds.dinakernel.com
   DINA_MSGBOX_URL: "wss://test-mailbox.dinakernel.com"
 
 # -- Brain service base (Python sidecar) --
@@ -89,183 +95,10 @@ x-keygen-base: &keygen-base
     - test-net
 
 # ============================================================================
-# Services
+# Services — Actors only (infrastructure is on Hetzner)
 # ============================================================================
 
 services:
-
-  # ==========================================================================
-  # Infrastructure — AT Protocol pipeline
-  # ==========================================================================
-
-  # -- Fake PLC directory (DID resolution) --
-  plc:
-    build:
-      context: ./plc
-      dockerfile: Dockerfile
-    ports:
-      - "2582:2582"
-    volumes:
-      - plc-data:/data
-    healthcheck:
-      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:2582/healthz', timeout=2)"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-    networks:
-      - test-net
-
-  # -- AT Protocol PDS (Personal Data Server) --
-  pds:
-    image: ghcr.io/bluesky-social/pds:0.4
-    ports:
-      - "2583:3000"
-    volumes:
-      - pds-data:/pds
-    environment:
-      PDS_HOSTNAME: localhost
-      PDS_PORT: "3000"
-      PDS_DATA_DIRECTORY: /pds
-      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
-      PDS_DID_PLC_URL: http://plc:2582
-      PDS_JWT_SECRET: test-jwt-secret-union-stack
-      PDS_ADMIN_PASSWORD: test-admin-pw
-      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: "24cfb0e961883c268cda68dc69bbca0c6df510bff656decec5d9b4c0c0bd928a"
-      PDS_DEV_MODE: "true"
-      PDS_INVITE_REQUIRED: "false"
-    depends_on:
-      plc:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/xrpc/_health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-    networks:
-      - test-net
-
-  # -- Jetstream firehose consumer (relays repo events over WebSocket) --
-  jetstream:
-    image: ghcr.io/bluesky-social/jetstream:sha-e027425
-    platform: linux/amd64
-    environment:
-      JETSTREAM_WS_URL: ws://pds:3000/xrpc/com.atproto.sync.subscribeRepos
-      JETSTREAM_LISTEN_ADDR: ":6008"
-      JETSTREAM_LIVENESS_TTL: "120s"
-    depends_on:
-      pds:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6008'"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-    networks:
-      - test-net
-
-  # -- PostgreSQL for AppView trust data --
-  postgres:
-    image: postgres:17
-    ports:
-      - "5433:5432"
-    environment:
-      POSTGRES_DB: dina_trust
-      POSTGRES_USER: dina
-      POSTGRES_PASSWORD: dina
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    networks:
-      - test-net
-
-  # ==========================================================================
-  # AppView — Trust Network (migrate, web API, ingester, scorer)
-  # ==========================================================================
-
-  # -- One-shot DB migration (exits after pushing schema) --
-  appview-migrate:
-    build:
-      context: ./appview
-      target: migrator
-    command: ["npx", "drizzle-kit", "push", "--force"]
-    environment:
-      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-    networks:
-      - test-net
-
-  # -- AppView xRPC API (5 endpoints, trust queries) --
-  appview-web:
-    build:
-      context: ./appview
-    command: ["node", "dist/src/web/server.js"]
-    ports:
-      - "3001:3000"
-    environment:
-      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
-      PORT: "3000"
-      NODE_ENV: production
-      RATE_LIMIT_RPM: "100000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      appview-migrate:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - test-net
-
-  # -- AppView ingester (Jetstream firehose → Postgres) --
-  appview-ingester:
-    build:
-      context: ./appview
-    command: ["node", "dist/src/ingester/main.js"]
-    environment:
-      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
-      DATABASE_POOL_MAX: "20"
-      JETSTREAM_URL: ws://jetstream:6008
-      NODE_ENV: test
-      LOG_LEVEL: info
-    depends_on:
-      postgres:
-        condition: service_healthy
-      jetstream:
-        condition: service_healthy
-      appview-migrate:
-        condition: service_completed_successfully
-    networks:
-      - test-net
-
-  # -- AppView scorer (9 background trust-scoring jobs) --
-  appview-scorer:
-    build:
-      context: ./appview
-    command: ["node", "dist/src/scorer/main.js"]
-    environment:
-      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
-      NODE_ENV: test
-      LOG_LEVEL: info
-    depends_on:
-      postgres:
-        condition: service_healthy
-      appview-migrate:
-        condition: service_completed_successfully
-    networks:
-      - test-net
 
   # ==========================================================================
   # Keygen Init Containers — provision SLIP-0010 service keys per actor
@@ -311,6 +144,16 @@ services:
       - albert-keys-brain-priv:/keys-brain-priv
       - albert-keys-pub:/keys-pub
 
+  keygen-busdriver:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0505050505050505050505050505050505050505050505050505050505050505"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - busdriver-keys-core-priv:/keys-core-priv
+      - busdriver-keys-brain-priv:/keys-brain-priv
+      - busdriver-keys-pub:/keys-pub
+
   # ==========================================================================
   # Actor 1: Don Alonso (primary user) — Core port 19100, Brain port 19200
   # ==========================================================================
@@ -323,10 +166,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://alonso-brain:8200
       DINA_MASTER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
-      DINA_PDS_HANDLE: "alonso.test"
-      DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
+      DINA_PDS_HANDLE: "alonso.test-pds.dinakernel.com"
+      DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "alonso@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100,http://busdriver-core:8100"
     volumes:
       - alonso-data:/data
       - alonso-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -345,6 +188,7 @@ services:
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://alonso-core:8100
+      DINA_APPVIEW_URL: https://test-appview.dinakernel.com
     volumes:
       - alonso-data:/data
       - alonso-keys-brain-priv:/run/secrets/service_keys/private:ro
@@ -366,10 +210,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://sancho-brain:8200
       DINA_MASTER_SEED: "0202020202020202020202020202020202020202020202020202020202020202"
-      DINA_PDS_HANDLE: "sancho.test"
-      DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
+      DINA_PDS_HANDLE: "sancho.test-pds.dinakernel.com"
+      DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "sancho@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://albert-core:8100,http://busdriver-core:8100"
     volumes:
       - sancho-data:/data
       - sancho-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -409,10 +253,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://chairmaker-brain:8200
       DINA_MASTER_SEED: "0303030303030303030303030303030303030303030303030303030303030303"
-      DINA_PDS_HANDLE: "chairmaker.test"
-      DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
+      DINA_PDS_HANDLE: "chairmaker.test-pds.dinakernel.com"
+      DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "chairmaker@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://albert-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://albert-core:8100,http://busdriver-core:8100"
     volumes:
       - chairmaker-data:/data
       - chairmaker-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -452,10 +296,10 @@ services:
       <<: *core-env
       DINA_BRAIN_URL: http://albert-brain:8200
       DINA_MASTER_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
-      DINA_PDS_HANDLE: "albert.test"
-      DINA_PDS_ADMIN_PASSWORD: "test-admin-pw"
+      DINA_PDS_HANDLE: "albert.test-pds.dinakernel.com"
+      DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "albert@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100,http://busdriver-core:8100"
     volumes:
       - albert-data:/data
       - albert-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -484,6 +328,80 @@ services:
         condition: service_completed_successfully
 
   # ==========================================================================
+  # Actor 5: BusDriver (transit provider) — Core port 19900, Brain port 20000
+  # ==========================================================================
+
+  busdriver-core:
+    <<: *core-base
+    ports:
+      - "19900:8100"
+    environment:
+      <<: *core-env
+      DINA_BRAIN_URL: http://busdriver-brain:8200
+      DINA_MASTER_SEED: "0505050505050505050505050505050505050505050505050505050505050505"
+      DINA_HOOK_CALLBACK_TOKEN: "${DINA_HOOK_CALLBACK_TOKEN:-dina-callback-busdriver}"
+      DINA_PDS_HANDLE: "busdriver.test-pds.dinakernel.com"
+      DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
+      DINA_PDS_EMAIL: "busdriver@test.dina.local"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
+    volumes:
+      - busdriver-data:/data
+      - busdriver-keys-core-priv:/run/secrets/service_keys/private:ro
+      - busdriver-keys-pub:/run/secrets/service_keys/public:ro
+      - ./secrets/client_token:/run/secrets/client_token:ro
+    depends_on:
+      busdriver-brain:
+        condition: service_healthy
+      keygen-busdriver:
+        condition: service_completed_successfully
+
+  busdriver-brain:
+    <<: *brain-base
+    ports:
+      - "20000:8200"
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://busdriver-core:8100
+      DINA_APPVIEW_URL: https://test-appview.dinakernel.com
+      DINA_MCP_SERVERS: '{"transit": ["python3", "-m", "demo.transit"]}'
+    volumes:
+      - busdriver-data:/data
+      - busdriver-keys-brain-priv:/run/secrets/service_keys/private:ro
+      - busdriver-keys-pub:/run/secrets/service_keys/public:ro
+      - ./models.json:/app/models.json:ro
+      - ./demo/transit:/app/demo/transit:ro
+    depends_on:
+      keygen-busdriver:
+        condition: service_completed_successfully
+
+  # ==========================================================================
+  # BusDriver OpenClaw — transit MCP tool executor
+  # ==========================================================================
+  # NOTE: Requires manual pairing step after Core is running:
+  #   1. Get pairing code: curl -s -X POST http://localhost:19900/v1/pair/initiate -H "Authorization: Bearer <client_token>" -d '{"device_name":"busdriver-openclaw","role":"agent"}'
+  #   2. Set DINA_PAIRING_CODE env and restart: docker compose -f docker-compose-test-stack.yml up -d busdriver-openclaw
+
+  busdriver-openclaw:
+    build:
+      context: .
+      dockerfile: tests/sanity/Dockerfile.openclaw
+    environment:
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      DINA_CORE_URL: http://busdriver-core:8100
+      DINA_PAIRING_CODE: "${BUSDRIVER_PAIRING_CODE:-}"
+      DINA_HOOK_CALLBACK_TOKEN: "${DINA_HOOK_CALLBACK_TOKEN:-dina-callback-busdriver}"
+      OPENCLAW_TOKEN: "busdriver-oc-token"
+      PYTHONPATH: /app
+    volumes:
+      - ./demo/transit:/app/demo/transit:ro
+      - ./demo/transit/openclaw-setup.sh:/usr/local/bin/openclaw-setup.sh:ro
+    networks:
+      - test-net
+    depends_on:
+      busdriver-core:
+        condition: service_healthy
+
+  # ==========================================================================
   # Dummy Agent — CLI container for pairing and agent testing
   # ==========================================================================
 
@@ -501,20 +419,16 @@ services:
       - test-net
 
 # ============================================================================
-# Volumes — all named, one per actor per key type + infrastructure
+# Volumes — actor data + keys only (no infrastructure volumes)
 # ============================================================================
 
 volumes:
-  # Infrastructure
-  plc-data:
-  pds-data:
-  pgdata:
-
   # Actor data (encrypted vault files)
   alonso-data:
   sancho-data:
   chairmaker-data:
   albert-data:
+  busdriver-data:
 
   # Actor keys — isolated per service (Core private, Brain private, shared public)
   alonso-keys-core-priv:
@@ -533,8 +447,12 @@ volumes:
   albert-keys-brain-priv:
   albert-keys-pub:
 
+  busdriver-keys-core-priv:
+  busdriver-keys-brain-priv:
+  busdriver-keys-pub:
+
 # ============================================================================
-# Networks — single flat bridge for all services
+# Networks — single flat bridge for all actor services
 # ============================================================================
 
 networks:

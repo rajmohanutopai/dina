@@ -23,6 +23,7 @@ import time
 import uuid
 from typing import Any
 
+from ..domain.errors import WorkflowConflictError
 from .capabilities.registry import get_ttl
 
 logger = logging.getLogger(__name__)
@@ -80,34 +81,50 @@ class ServiceHandler:
         # 2. Validate params against provider-published JSON Schema.
         #    Prevents malformed queries from reaching OpenClaw.
         if cap_schema and cap_schema.get("params"):
+            import jsonschema
             try:
-                import jsonschema
                 jsonschema.validate(params, cap_schema["params"])
-            except ImportError:
-                pass  # jsonschema not installed — skip validation
-            except Exception as e:
-                logger.warning("service_handler: param validation failed for %s: %s", capability, e)
+            except jsonschema.ValidationError as e:
+                logger.warning("service_handler: param validation failed for %s: %s", capability, e.message)
                 await self._send_response(
                     from_did, query_id, capability, "error",
-                    {"error": f"Invalid params: {e}"},
+                    {"error": f"Invalid params: {e.message}"},
                     ttl_seconds=inbound_ttl,
                 )
                 return
 
         # 3. Review policy → create approval task, notify operator.
         if response_policy == "review":
-            await self._create_approval_task(from_did, query_id, capability, params, body)
+            await self._create_approval_task(
+                from_did, query_id, capability, params, body, request_schema_hash,
+            )
             return
 
         # 4. Auto policy → create delegation task for OpenClaw.
         #    Dina never executes directly.
-        await self._create_execution_task(from_did, query_id, capability, params, inbound_ttl)
+        await self._create_execution_task(
+            from_did, query_id, capability, params, inbound_ttl,
+            schema_hash=request_schema_hash,
+        )
 
     async def _create_execution_task(
-        self, from_did: str, query_id: str, capability: str, params: dict, ttl_seconds: int,
-    ) -> None:
-        """Create a delegation task for OpenClaw to execute."""
-        task_id = f"svc-exec-{uuid.uuid4()}"
+        self,
+        from_did: str,
+        query_id: str,
+        capability: str,
+        params: dict,
+        ttl_seconds: int,
+        *,
+        schema_hash: str = "",
+        task_id: str | None = None,
+    ) -> str:
+        """Create a delegation task for OpenClaw to execute. Returns task_id.
+
+        Persists schema_hash in the payload so the completion bridge can
+        validate the result against the schema that was agreed on at query
+        time (not whatever is current when OpenClaw finishes).
+        """
+        tid = task_id or f"svc-exec-{uuid.uuid4()}"
         task_payload = {
             "type": "service_query_execution",
             "from_did": from_did,
@@ -116,9 +133,10 @@ class ServiceHandler:
             "params": params,
             "ttl_seconds": ttl_seconds,
             "service_name": self._config.get("name", ""),
+            "schema_hash": schema_hash,
         }
         await self._core.create_workflow_task(
-            task_id=task_id,
+            task_id=tid,
             description=(
                 f"Execute service query: {capability}\n"
                 f"Params: {json_mod.dumps(params)}\n"
@@ -132,11 +150,18 @@ class ServiceHandler:
         )
         logger.info(
             "service_handler: execution task created, task_id=%s capability=%s",
-            task_id, capability,
+            tid, capability,
         )
+        return tid
 
     async def _create_approval_task(
-        self, from_did: str, query_id: str, capability: str, params: dict, body: dict,
+        self,
+        from_did: str,
+        query_id: str,
+        capability: str,
+        params: dict,
+        body: dict,
+        schema_hash: str = "",
     ) -> None:
         """Create an approval workflow_task for manual review + notify operator."""
         ttl = body.get("ttl_seconds", get_ttl(capability))
@@ -148,6 +173,7 @@ class ServiceHandler:
             "params": params,
             "service_name": self._config.get("name", ""),
             "ttl_seconds": ttl,
+            "schema_hash": schema_hash,
         }
         task_id = f"approval-{uuid.uuid4()}"
         await self._core.create_workflow_task(
@@ -177,15 +203,23 @@ class ServiceHandler:
                 pass  # best-effort
 
     async def execute_and_respond(self, task_id: str, task_payload: dict) -> None:
-        """Execute an approved service query and send the response via Core.
+        """Trigger OpenClaw execution for an approved service query.
 
-        Called by Guardian when an approval workflow_event arrives.
-        Uses POST /v1/service/respond which atomically claims the task,
-        opens a fresh provider window, and sends the D2D response.
+        Called by Guardian when a `workflow.approved` event fires on an
+        approval task. Under the "Dina never executes" rule, approval does
+        NOT produce a response directly — it creates a delegation task so
+        OpenClaw claims it, executes, and the completion bridge emits the
+        D2D service.response. Same downstream path as the auto-policy flow.
+
+        Idempotent: the execution task's ID is derived from the approval
+        task ID, so reconciliation retries don't spawn duplicates.
         """
         from_did = task_payload.get("from_did", "")
         query_id = task_payload.get("query_id", "")
         capability = task_payload.get("capability", "")
+        params = task_payload.get("params", {}) or {}
+        ttl_seconds = task_payload.get("ttl_seconds", 0) or get_ttl(capability)
+        schema_hash = task_payload.get("schema_hash", "")
 
         if not from_did or not query_id or not capability:
             logger.error(
@@ -194,30 +228,37 @@ class ServiceHandler:
             )
             raise ValueError(f"approval task {task_id} has incomplete payload")
 
-        # For approval tasks, the result comes from OpenClaw via /task completion.
-        # This method is called when the approval event fires — at that point,
-        # the task transitions queued → claimed → executed by OpenClaw.
-        # We just need to trigger the /v1/service/respond bridge.
+        # Deterministic execution task ID → create is idempotent across retries.
+        # WorkflowConflictError (HTTP 409) means the execution task already
+        # exists from a previous attempt — keep going so the approval task
+        # still gets cancelled.
+        exec_task_id = f"svc-exec-from-{task_id}"
         try:
-            result = await self._core.send_service_respond(task_id, {
-                "query_id": query_id,
-                "capability": capability,
-                "status": "success",
-                "result": {},
-            })
-            if isinstance(result, dict) and result.get("already_processed"):
-                logger.info(
-                    "service_handler: task already processed, task_id=%s", task_id,
-                )
-                return
-        except Exception as exc:
-            err_str = str(exc)
-            if "409" in err_str or "already claimed" in err_str.lower():
-                task = await self._core.get_workflow_task(task_id)
-                if task and task.get("run_id"):
-                    return  # Response already sent
-                raise  # Let Core retry
-            raise
+            await self._create_execution_task(
+                from_did=from_did,
+                query_id=query_id,
+                capability=capability,
+                params=params,
+                ttl_seconds=ttl_seconds,
+                schema_hash=schema_hash,
+                task_id=exec_task_id,
+            )
+        except WorkflowConflictError:
+            logger.info(
+                "service_handler: execution task already exists, task_id=%s",
+                exec_task_id,
+            )
+
+        # Close out the approval task so reconciliation doesn't re-process it.
+        # WFQueued → WFCancelled is a valid terminal transition; 409 means
+        # the approval task was already cancelled/terminated — safe to ignore.
+        try:
+            await self._core.cancel_workflow_task(task_id)
+        except WorkflowConflictError:
+            logger.info(
+                "service_handler: approval task already terminal, task_id=%s",
+                task_id,
+            )
 
     async def _send_response(
         self,

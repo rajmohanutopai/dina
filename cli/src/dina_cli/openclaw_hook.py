@@ -60,15 +60,24 @@ def on_agent_end(event: dict) -> None:
 
 
 def _extract_result(result: object) -> str:
-    """Extract a human-readable result string."""
-    if isinstance(result, str):
-        return result[:2000]
+    """Extract result as JSON string when possible, text otherwise.
+
+    Preserves structured data for the task completion → D2D response bridge.
+    The bridge reads result_summary and tries to parse it as JSON.
+    """
     if isinstance(result, dict):
-        for key in ("summary", "content", "text", "message"):
-            if key in result and result[key]:
-                return str(result[key])[:2000]
-        return json.dumps(result)[:2000]
-    return str(result)[:2000]
+        # Preserve structured data as JSON string.
+        return json.dumps(result)[:4000]
+    if isinstance(result, str):
+        # Try to parse as JSON — might be a serialized dict.
+        try:
+            parsed = json.loads(result)
+            if isinstance(parsed, dict):
+                return json.dumps(parsed)[:4000]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return result[:4000]
+    return str(result)[:4000]
 
 
 def _post_callback(task_id: str, action: str, payload: dict) -> None:

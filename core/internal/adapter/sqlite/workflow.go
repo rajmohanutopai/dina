@@ -1088,6 +1088,22 @@ func (s *WorkflowStore) ListStashedServiceQueryTasks(ctx context.Context) ([]dom
 	return s.collectTasks(rows)
 }
 
+// ListBridgePendingTasks returns delegation tasks whose internal_stash holds
+// a service.response awaiting retry after a failed bridge send.
+func (s *WorkflowStore) ListBridgePendingTasks(ctx context.Context) ([]domain.WorkflowTask, error) {
+	rows, err := s.db().QueryContext(ctx,
+		`SELECT `+taskColumns+` FROM workflow_tasks
+		 WHERE kind = 'delegation'
+		   AND state IN ('completed', 'failed')
+		   AND internal_stash LIKE 'bridge_pending:%'
+		 ORDER BY updated_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return s.collectTasks(rows)
+}
+
 // ListDeliverableEventsForTask returns deliverable events for a specific task.
 // Same eligibility predicate as ListDeliverableEvents but scoped to one task_id.
 func (s *WorkflowStore) ListDeliverableEventsForTask(ctx context.Context, taskID string, limit int) ([]domain.WorkflowEvent, error) {

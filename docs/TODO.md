@@ -18,6 +18,15 @@ OpenAPI is not fully integrated. Still integration works with hand coded (AI cod
 # Decision on vault
 An external persons (dependent of their relatioship) health information should go to general vault
 
+# OpenClaw now connect back to Core directly which is wrong
+Correct path
+  Core ↔ dina CLI ↔ OpenClaw                                                                                                                                                                                         
+   
+  Dina CLI is the only bridge. OpenClaw should never talk to Core directly.                                                                                                                                          
+                                                                  
+  But the current openclaw_hook.py is installed inside OpenClaw's process and makes a direct HTTP POST to Core's /v1/internal/workflow-tasks/{id}/complete. That's OpenClaw → Core, bypassing dina CLI.              
+
+
 # Salt issue
 ⏺ The salt is SHA256("dina:salt:general") — deterministic from the persona name. It's the same every time, for every user, for the same persona.                                                                     
                                                

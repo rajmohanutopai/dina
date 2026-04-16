@@ -1677,17 +1677,26 @@ func main() {
 			}
 		})
 		// WS2: wire the response bridge sender for task completion → D2D response.
-		workflowSvc.SetResponseBridgeSender(func(ctx context.Context, peerDID string, responseJSON []byte) {
-			// Parse the response to extract query_id and capability for the provider window.
+		// Returns an error on send failure so the workflow layer can stash and
+		// retry instead of silently dropping the response.
+		workflowSvc.SetResponseBridgeSender(func(ctx context.Context, peerDID string, responseJSON []byte) error {
+			// Parse the response to extract query_id, capability, ttl for the window.
 			var resp map[string]interface{}
-			json.Unmarshal(responseJSON, &resp)
+			if err := json.Unmarshal(responseJSON, &resp); err != nil {
+				return err
+			}
 			queryID, _ := resp["query_id"].(string)
 			capability, _ := resp["capability"].(string)
 			if queryID == "" || peerDID == "" {
-				return
+				return fmt.Errorf("bridge sender: missing query_id or peer_did")
 			}
-			// Open fresh provider window for the response send.
-			transportSvc.SetProviderWindow(peerDID, queryID, capability, 30)
+			// Open a fresh provider window scoped to the inbound TTL so the
+			// response contract matches what the requester is already waiting for.
+			ttl := 60
+			if v, ok := resp["ttl_seconds"].(float64); ok && v > 0 {
+				ttl = int(v)
+			}
+			transportSvc.SetProviderWindow(peerDID, queryID, capability, ttl)
 			msg := domain.DinaMessage{
 				ID:          "bridge-" + queryID,
 				Type:        domain.MsgTypeServiceResponse,
@@ -1696,7 +1705,9 @@ func main() {
 			}
 			if err := transportSvc.SendMessage(ctx, domain.DID(peerDID), msg); err != nil {
 				slog.Warn("workflow.bridge_send_failed", "peer", peerDID, "query_id", queryID, "error", err)
+				return err
 			}
+			return nil
 		})
 
 		// WS2: wire service config for result schema validation in bridge.

@@ -3,12 +3,20 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/santhosh-tekuri/jsonschema/v5"
 )
+
+// bridgePendingStashPrefix marks InternalStash entries that hold a
+// service.response waiting to be sent (or retried after a send failure).
+// Format: "bridge_pending:<peer_did>:<response_json>".
+const bridgePendingStashPrefix = "bridge_pending:"
 
 // SessionManager is the minimal interface for session teardown on terminal
 // workflow transitions. Implemented by PersonaManager.
@@ -234,6 +242,9 @@ func (s *WorkflowService) sweep(ctx context.Context) {
 	// 0a. Recover stashed service.response results (DB-failure recovery, best-effort).
 	s.recoverStashedResponses(ctx)
 
+	// 0a-2. Retry pending bridge responses that failed to send on first attempt.
+	s.retryBridgePendingResponses(ctx)
+
 	// 0b. Pre-expiry: claim and fail expiring approval tasks (sends "unavailable" best-effort).
 	// Must run BEFORE ExpireTasks so we can claim queued→running before they're failed.
 	s.expireApprovalTasks(ctx)
@@ -395,8 +406,14 @@ func (s *WorkflowService) recoverStashedResponses(ctx context.Context) {
 	}
 }
 
-// bridgeServiceQueryCompletion checks if a completed task is a service_query_execution
-// and bridges the result to a D2D service.response. Deterministic — no LLM.
+// bridgeServiceQueryCompletion checks if a completed task is a
+// service_query_execution and bridges the result to a D2D service.response.
+// Deterministic — no LLM.
+//
+// Durability: the outbound response is stashed in InternalStash before the
+// send attempt and cleared only on success. The sweeper retries any stashed
+// responses on subsequent ticks, so a transient send failure never leaves
+// the requester waiting indefinitely while the provider task is terminal.
 func (s *WorkflowService) bridgeServiceQueryCompletion(ctx context.Context, taskID, resultSummary string) {
 	task, err := s.store.GetByID(ctx, taskID)
 	if err != nil || task == nil {
@@ -417,78 +434,170 @@ func (s *WorkflowService) bridgeServiceQueryCompletion(ctx context.Context, task
 	if fromDID == "" || queryID == "" {
 		return
 	}
+	// Preserve the original request's TTL contract rather than hardcoding.
+	ttlSeconds := 60
+	if v, ok := payload["ttl_seconds"].(float64); ok && v > 0 {
+		ttlSeconds = int(v)
+	}
 
-	// Parse the result from the task (structured JSON from OpenClaw).
+	// Parse the result from the task. Try structured Result field first,
+	// then fall back to ResultSummary (which openclaw_hook.py may have
+	// stored as a JSON string for legacy callers).
 	var resultData interface{}
 	if task.Result != "" {
-		json.Unmarshal([]byte(task.Result), &resultData)
+		_ = json.Unmarshal([]byte(task.Result), &resultData)
 	}
 	if resultData == nil && resultSummary != "" {
-		json.Unmarshal([]byte(resultSummary), &resultData)
+		_ = json.Unmarshal([]byte(resultSummary), &resultData)
 	}
+	if resultData == nil && task.ResultSummary != "" {
+		_ = json.Unmarshal([]byte(task.ResultSummary), &resultData)
+	}
+	// If still nil, wrap the text summary as a message field.
 	if resultData == nil {
-		resultData = map[string]interface{}{}
-	}
-
-	// Validate result against provider-published result schema.
-	// Go lacks a built-in JSON Schema validator, so we do structural checks:
-	// ensure the result is a JSON object (not string/null/array).
-	// Full JSON Schema validation would require a third-party library.
-	if s.serviceConfig != nil {
-		cfg, cfgErr := s.serviceConfig.Get()
-		if cfgErr == nil && cfg != nil {
-			if capSchema, ok := cfg.CapabilitySchemas[capability]; ok && capSchema.Result != nil {
-				// Basic structural check: result must be an object.
-				resultMap, isMap := resultData.(map[string]interface{})
-				if !isMap {
-					slog.Warn("workflow.bridge: result is not a JSON object, sending error response",
-						"task_id", taskID, "capability", capability)
-					errorResp := map[string]interface{}{
-						"query_id":   queryID,
-						"capability": capability,
-						"status":     "error",
-						"result":     map[string]interface{}{"error": "invalid result from execution"},
-						"ttl_seconds": 60,
-					}
-					errorJSON, _ := json.Marshal(errorResp)
-					if s.responseBridgeSender != nil {
-						s.responseBridgeSender(ctx, fromDID, errorJSON)
-					}
-					return
-				}
-				_ = resultMap // validated — proceed with the response
-			}
+		msg := resultSummary
+		if msg == "" {
+			msg = task.ResultSummary
+		}
+		if msg != "" {
+			resultData = map[string]interface{}{"message": msg}
+		} else {
+			resultData = map[string]interface{}{}
 		}
 	}
 
-	// Build service.response and send via D2D.
+	// Validate result against provider-published result schema. A result
+	// that OpenClaw produces but that fails validation is turned into an
+	// error response — better than putting malformed data on the wire.
+	status := "success"
+	resultForWire := resultData
+	if validationErr := s.validateResultSchema(capability, resultData); validationErr != nil {
+		slog.Warn("workflow.bridge.result_schema_invalid",
+			"task_id", taskID, "capability", capability, "error", validationErr)
+		status = "error"
+		resultForWire = map[string]interface{}{
+			"error":  "result_schema_violation",
+			"detail": validationErr.Error(),
+		}
+	}
+
 	responseBody := map[string]interface{}{
-		"query_id":   queryID,
-		"capability": capability,
-		"status":     "success",
-		"result":     resultData,
-		"ttl_seconds": 60,
+		"query_id":    queryID,
+		"capability":  capability,
+		"status":      status,
+		"result":      resultForWire,
+		"ttl_seconds": ttlSeconds,
 	}
 	responseJSON, _ := json.Marshal(responseBody)
 
 	slog.Info("workflow.bridge_service_response",
-		"task_id", taskID, "from_did", fromDID, "capability", capability)
+		"task_id", taskID, "from_did", fromDID, "capability", capability, "status", status)
 
-	// Use the unavailable sender callback pattern to send the response.
-	// It opens a fresh provider window and sends the D2D message.
-	if s.unavailableSender != nil {
-		// Reuse the sender callback — it opens a fresh window and sends.
-		// But we need to send a real response, not "unavailable".
-		// For now, use a dedicated bridge sender.
+	s.sendBridgeResponse(ctx, taskID, fromDID, responseJSON)
+}
+
+// validateResultSchema runs JSON Schema validation against the provider's
+// current result schema for the given capability. Returns nil if no schema
+// is configured (absence of validation is not a failure) or validation
+// succeeds; returns a non-nil error on a real schema violation.
+func (s *WorkflowService) validateResultSchema(capability string, result interface{}) error {
+	if s.serviceConfig == nil {
+		return nil
 	}
-	if s.responseBridgeSender != nil {
-		s.responseBridgeSender(ctx, fromDID, responseJSON)
+	cfg, err := s.serviceConfig.Get()
+	if err != nil || cfg == nil {
+		return nil
+	}
+	capSchema, ok := cfg.CapabilitySchemas[capability]
+	if !ok || len(capSchema.Result) == 0 {
+		return nil
+	}
+
+	schemaBytes, err := json.Marshal(capSchema.Result)
+	if err != nil {
+		slog.Warn("workflow.bridge.schema_marshal_failed", "capability", capability, "error", err)
+		return nil
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("result.json", strings.NewReader(string(schemaBytes))); err != nil {
+		slog.Warn("workflow.bridge.schema_add_resource_failed", "capability", capability, "error", err)
+		return nil
+	}
+	schema, err := compiler.Compile("result.json")
+	if err != nil {
+		slog.Warn("workflow.bridge.schema_compile_failed", "capability", capability, "error", err)
+		return nil
+	}
+	if err := schema.Validate(result); err != nil {
+		return fmt.Errorf("result violates schema for %s: %w", capability, err)
+	}
+	return nil
+}
+
+// sendBridgeResponse stashes the response, invokes the sender, and clears
+// the stash on success. On failure the stash remains so the sweeper can
+// retry delivery without losing the response.
+func (s *WorkflowService) sendBridgeResponse(ctx context.Context, taskID, peerDID string, responseJSON []byte) {
+	if s.responseBridgeSender == nil {
+		return
+	}
+	stash := bridgePendingStashPrefix + peerDID + ":" + string(responseJSON)
+	if err := s.store.SetInternalStash(ctx, taskID, stash); err != nil {
+		slog.Warn("workflow.bridge.stash_failed", "task_id", taskID, "error", err)
+	}
+	if err := s.responseBridgeSender(ctx, peerDID, responseJSON); err != nil {
+		slog.Warn("workflow.bridge.send_failed_retry_pending",
+			"task_id", taskID, "peer", peerDID, "error", err)
+		return
+	}
+	if err := s.store.SetInternalStash(ctx, taskID, ""); err != nil {
+		slog.Warn("workflow.bridge.stash_clear_failed", "task_id", taskID, "error", err)
 	}
 }
 
-// ResponseBridgeSender sends a D2D service.response for task completion bridging.
+// retryBridgePendingResponses scans for tasks with a pending bridge response
+// in InternalStash and retries the D2D send. Called from the sweeper loop.
+func (s *WorkflowService) retryBridgePendingResponses(ctx context.Context) {
+	if s.responseBridgeSender == nil {
+		return
+	}
+	tasks, err := s.store.ListBridgePendingTasks(ctx)
+	if err != nil {
+		slog.Warn("workflow.bridge.list_pending_failed", "error", err)
+		return
+	}
+	for _, t := range tasks {
+		stash := t.InternalStash
+		if !strings.HasPrefix(stash, bridgePendingStashPrefix) {
+			continue
+		}
+		rest := stash[len(bridgePendingStashPrefix):]
+		// Format: "<peer_did>:<response_json>". peer_did may itself contain
+		// ':' (DIDs do), so split on the first ':' that precedes the JSON.
+		sep := strings.Index(rest, ":{")
+		if sep < 0 {
+			slog.Warn("workflow.bridge.stash_malformed", "task_id", t.ID)
+			continue
+		}
+		peerDID := rest[:sep]
+		responseJSON := []byte(rest[sep+1:])
+		if err := s.responseBridgeSender(ctx, peerDID, responseJSON); err != nil {
+			slog.Warn("workflow.bridge.retry_send_failed",
+				"task_id", t.ID, "peer", peerDID, "error", err)
+			continue
+		}
+		if err := s.store.SetInternalStash(ctx, t.ID, ""); err != nil {
+			slog.Warn("workflow.bridge.stash_clear_failed_after_retry",
+				"task_id", t.ID, "error", err)
+		}
+	}
+}
+
+// ResponseBridgeSender sends a D2D service.response for task completion
+// bridging. It must return a non-nil error if the outbound message could
+// not be enqueued for delivery so the caller can stash and retry.
 // Set via SetResponseBridgeSender after transport is wired.
-type ResponseBridgeSender func(ctx context.Context, peerDID string, responseJSON []byte)
+type ResponseBridgeSender func(ctx context.Context, peerDID string, responseJSON []byte) error
 
 // SetResponseBridgeSender sets the callback for bridging task completion to D2D response.
 func (s *WorkflowService) SetResponseBridgeSender(fn ResponseBridgeSender) {
@@ -498,6 +607,18 @@ func (s *WorkflowService) SetResponseBridgeSender(fn ResponseBridgeSender) {
 // SetServiceConfig sets the service config for result schema validation in the bridge.
 func (s *WorkflowService) SetServiceConfig(sc *ServiceConfigService) {
 	s.serviceConfig = sc
+}
+
+// BridgeServiceQueryCompletionForTest exposes the unexported bridge helper
+// to test packages. Do not use in production code paths.
+func (s *WorkflowService) BridgeServiceQueryCompletionForTest(ctx context.Context, taskID, resultSummary string) {
+	s.bridgeServiceQueryCompletion(ctx, taskID, resultSummary)
+}
+
+// RetryBridgePendingResponsesForTest exposes the unexported retry helper
+// to test packages. Do not use in production code paths.
+func (s *WorkflowService) RetryBridgePendingResponsesForTest(ctx context.Context) {
+	s.retryBridgePendingResponses(ctx)
 }
 
 // expireApprovalTasks handles approval task expiry with "unavailable" response send.

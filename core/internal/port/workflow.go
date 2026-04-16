@@ -92,6 +92,9 @@ type WorkflowStore interface {
 	SetInternalStash(ctx context.Context, id, stash string) error
 	// ListStashedServiceQueryTasks returns service_query tasks with data in internal_stash.
 	ListStashedServiceQueryTasks(ctx context.Context) ([]domain.WorkflowTask, error)
+	// ListBridgePendingTasks returns delegation tasks whose internal_stash holds
+	// a service.response awaiting send retry (prefix "bridge_pending:").
+	ListBridgePendingTasks(ctx context.Context) ([]domain.WorkflowTask, error)
 
 	// ListDeliverableEvents: needs_delivery=1 AND acknowledged_at IS NULL AND delivery_failed=0
 	// AND delivery_attempts < 3 AND reservation expired AND backoff elapsed.

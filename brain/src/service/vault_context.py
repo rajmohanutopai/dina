@@ -707,22 +707,28 @@ class ToolExecutor:
             # Brain-side preference re-ranking (no vault data sent externally).
             ranked = await self._rerank_by_preference(candidates)
 
-            # Return schema + schema_hash so LLM can fill params.
+            # Return per-capability schema + schema_hash so LLM can fill params.
+            # Schema hash is sourced from capabilitySchemas[capability].schema_hash
+            # (per-capability), not the top-level record hash — the requested
+            # capability is what the provider will validate against.
             services = []
             for c in ranked[:10]:
+                cap_schemas = c.get("capabilitySchemas") or c.get("capability_schemas") or {}
                 svc = {
                     "operator_did": c.get("operatorDid", ""),
                     "name": c.get("name", ""),
-                    "capability": c.get("capability", ""),
-                    "schema_hash": c.get("schemaHash") or c.get("schema_hash", ""),
+                    "capability": capability,
+                    "schema_hash": "",
                 }
-                # Include params schema for the LLM to fill.
-                cap_schemas = c.get("capabilitySchemas") or c.get("capability_schemas") or {}
-                cap_name = c.get("capability", capability)
-                if isinstance(cap_schemas, dict) and cap_name in cap_schemas:
-                    schema = cap_schemas[cap_name]
+                if isinstance(cap_schemas, dict) and capability in cap_schemas:
+                    schema = cap_schemas[capability]
                     svc["params_schema"] = schema.get("params", {})
                     svc["description"] = schema.get("description", "")
+                    svc["schema_hash"] = (
+                        schema.get("schema_hash")
+                        or schema.get("schemaHash")
+                        or ""
+                    )
                 services.append(svc)
 
             return {
@@ -784,13 +790,11 @@ class ToolExecutor:
 
         # Mandatory sender-side validation when schema is present.
         if params_schema:
+            import jsonschema
             try:
-                import jsonschema
                 jsonschema.validate(params, params_schema)
-            except ImportError:
-                pass  # jsonschema not available — skip
-            except Exception as e:
-                return {"error": f"Params validation failed: {e}"}
+            except jsonschema.ValidationError as e:
+                return {"error": f"Params validation failed: {e.message}"}
 
         query_id = str(uuid.uuid4())
         ttl_seconds = get_ttl(capability)

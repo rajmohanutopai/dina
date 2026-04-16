@@ -17,6 +17,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from .capabilities.registry import compute_schema_hash
+
 log = logging.getLogger(__name__)
 
 
@@ -39,7 +41,28 @@ class ServicePublisher:
             return
 
         capabilities = config.get("capabilities", {})
-        record = {
+        capability_schemas_raw = config.get("capability_schemas") or {}
+
+        # Build per-capability published schemas. Each entry is the canonical
+        # schema object plus a schema_hash. If the config didn't supply a hash,
+        # compute it here from the canonical (description, params, result).
+        capability_schemas: dict[str, dict] = {}
+        for cap_name in capabilities.keys():
+            raw = capability_schemas_raw.get(cap_name)
+            if not raw:
+                continue
+            canonical = {
+                "description": raw.get("description", ""),
+                "params": raw.get("params", {}),
+                "result": raw.get("result", {}),
+            }
+            schema_hash = raw.get("schema_hash") or compute_schema_hash(canonical)
+            capability_schemas[cap_name] = {
+                **canonical,
+                "schema_hash": schema_hash,
+            }
+
+        record: dict[str, Any] = {
             "$type": "com.dina.service.profile",
             "name": config.get("name", ""),
             "description": config.get("description", ""),
@@ -52,6 +75,8 @@ class ServicePublisher:
             "isPublic": True,
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if capability_schemas:
+            record["capabilitySchemas"] = capability_schemas
 
         # Verify PDS session DID matches the Home Node identity.
         # The PDS publisher's session DID is set after authentication.
