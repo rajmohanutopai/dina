@@ -636,11 +636,19 @@ class CoreHTTPClient:
         kind: str = "",
         status: str = "",
         payload: str = "",
+        payload_type: str = "",
         expires_at: int = 0,
         correlation_id: str = "",
         priority: str = "",
     ) -> dict:
-        """POST /v1/workflow/tasks — create a workflow task."""
+        """POST /v1/workflow/tasks — create a workflow task.
+
+        ``payload_type`` is a strongly-typed discriminator for the JSON
+        blob in ``payload`` (e.g. ``"service_query_execution"``). Core
+        persists it on an indexed column so lookups don't depend on
+        substring-matching the payload JSON — which would be brittle
+        across Python/Go serialiser spacing.
+        """
         body: dict = {
             "id": task_id,
             "description": description,
@@ -655,6 +663,8 @@ class CoreHTTPClient:
             body["kind"] = kind
         if payload:
             body["payload"] = payload
+        if payload_type:
+            body["payload_type"] = payload_type
         if expires_at:
             body["expires_at"] = expires_at
         if correlation_id:

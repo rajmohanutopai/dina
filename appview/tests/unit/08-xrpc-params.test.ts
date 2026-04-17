@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest'
 import { ResolveParams } from '@/api/xrpc/resolve.js'
 import { SearchParams } from '@/api/xrpc/search.js'
+import { ServiceSearchParams } from '@/api/xrpc/service-search.js'
 
 // ---------------------------------------------------------------------------
 // SS8.1 Resolve Params
@@ -257,5 +258,107 @@ describe('SS8.2 Search Params', () => {
     if (result.success) {
       expect(result.data.minConfidence).toBe('high')
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SS8.3 Service Search Params (com.dina.service.search)
+// WS2 schema-driven discovery — lat/lng optional for non-geospatial queries.
+// ---------------------------------------------------------------------------
+describe('SS8.3 Service Search Params', () => {
+  it('UT-SSP-001: capability alone is valid (non-geospatial default)', () => {
+    const result = ServiceSearchParams.safeParse({ capability: 'keyword_lookup' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.capability).toBe('keyword_lookup')
+      expect(result.data.lat).toBeUndefined()
+      expect(result.data.lng).toBeUndefined()
+      // radiusKm has a default of 5.
+      expect(result.data.radiusKm).toBe(5)
+      // limit defaults to 10.
+      expect(result.data.limit).toBe(10)
+    }
+  })
+
+  it('UT-SSP-002: full geospatial params accepted', () => {
+    const result = ServiceSearchParams.safeParse({
+      capability: 'eta_query',
+      lat: 37.7625,
+      lng: -122.4351,
+      radiusKm: 10,
+      q: 'bus 42',
+      limit: 25,
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.lat).toBe(37.7625)
+      expect(result.data.lng).toBe(-122.4351)
+      expect(result.data.radiusKm).toBe(10)
+      expect(result.data.q).toBe('bus 42')
+    }
+  })
+
+  it('UT-SSP-003: capability missing is rejected', () => {
+    const result = ServiceSearchParams.safeParse({ lat: 37.77, lng: -122.43 })
+    expect(result.success).toBe(false)
+  })
+
+  it('UT-SSP-004: lat out of range is rejected', () => {
+    const result = ServiceSearchParams.safeParse({
+      capability: 'eta_query', lat: 91, lng: 0,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('UT-SSP-005: lng out of range is rejected', () => {
+    const result = ServiceSearchParams.safeParse({
+      capability: 'eta_query', lat: 0, lng: 181,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('UT-SSP-006: radiusKm bounds enforced', () => {
+    // Too small (< 0.1)
+    expect(ServiceSearchParams.safeParse({
+      capability: 'eta_query', radiusKm: 0.05,
+    }).success).toBe(false)
+    // Too large (> 500)
+    expect(ServiceSearchParams.safeParse({
+      capability: 'eta_query', radiusKm: 600,
+    }).success).toBe(false)
+  })
+
+  it('UT-SSP-007: limit bounds enforced', () => {
+    expect(ServiceSearchParams.safeParse({
+      capability: 'eta_query', limit: 0,
+    }).success).toBe(false)
+    expect(ServiceSearchParams.safeParse({
+      capability: 'eta_query', limit: 51,
+    }).success).toBe(false)
+  })
+
+  it('UT-SSP-008: string-coerced lat/lng parses (xRPC sends query-string)', () => {
+    const result = ServiceSearchParams.safeParse({
+      capability: 'eta_query', lat: '37.77', lng: '-122.43',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.lat).toBe(37.77)
+      expect(result.data.lng).toBe(-122.43)
+    }
+  })
+
+  it('UT-SSP-009: cursor passthrough', () => {
+    const result = ServiceSearchParams.safeParse({
+      capability: 'eta_query', cursor: '820::at://did:plc:x/com.dina.service.profile/self',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('UT-SSP-010: oversize q rejected', () => {
+    const result = ServiceSearchParams.safeParse({
+      capability: 'eta_query', q: 'x'.repeat(300),
+    })
+    expect(result.success).toBe(false)
   })
 })

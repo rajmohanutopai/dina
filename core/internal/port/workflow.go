@@ -92,9 +92,13 @@ type WorkflowStore interface {
 	SetInternalStash(ctx context.Context, id, stash string) error
 	// ListStashedServiceQueryTasks returns service_query tasks with data in internal_stash.
 	ListStashedServiceQueryTasks(ctx context.Context) ([]domain.WorkflowTask, error)
-	// ListBridgePendingTasks returns delegation tasks whose internal_stash holds
-	// a service.response awaiting send retry (prefix "bridge_pending:").
-	ListBridgePendingTasks(ctx context.Context) ([]domain.WorkflowTask, error)
+	// ListServiceResponsePendingTasks returns completed/failed delegation tasks
+	// whose payload is a service_query_execution but which have no
+	// `service_response_sent` event yet. The bridge reconciler uses this to
+	// re-send responses that were dropped between task terminalisation and
+	// transport acknowledgment (covering both send failure and post-complete
+	// process crashes — no dependency on a pre-send stash write succeeding).
+	ListServiceResponsePendingTasks(ctx context.Context) ([]domain.WorkflowTask, error)
 
 	// ListDeliverableEvents: needs_delivery=1 AND acknowledged_at IS NULL AND delivery_failed=0
 	// AND delivery_attempts < 3 AND reservation expired AND backoff elapsed.

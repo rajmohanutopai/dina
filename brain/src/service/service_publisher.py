@@ -46,6 +46,9 @@ class ServicePublisher:
         # Build per-capability published schemas. Each entry is the canonical
         # schema object plus a schema_hash. If the config didn't supply a hash,
         # compute it here from the canonical (description, params, result).
+        # default_ttl_seconds is a provider hint to requesters — it travels
+        # alongside the schema but is NOT part of the canonical form (so it
+        # can change without invalidating the schema_hash).
         capability_schemas: dict[str, dict] = {}
         for cap_name in capabilities.keys():
             raw = capability_schemas_raw.get(cap_name)
@@ -57,10 +60,11 @@ class ServicePublisher:
                 "result": raw.get("result", {}),
             }
             schema_hash = raw.get("schema_hash") or compute_schema_hash(canonical)
-            capability_schemas[cap_name] = {
-                **canonical,
-                "schema_hash": schema_hash,
-            }
+            entry: dict = {**canonical, "schema_hash": schema_hash}
+            ttl = raw.get("default_ttl_seconds")
+            if isinstance(ttl, int) and ttl > 0:
+                entry["default_ttl_seconds"] = ttl
+            capability_schemas[cap_name] = entry
 
         record: dict[str, Any] = {
             "$type": "com.dina.service.profile",

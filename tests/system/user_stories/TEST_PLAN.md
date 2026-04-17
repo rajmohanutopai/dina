@@ -171,3 +171,46 @@
 | 3 | **[TST-USR-077]** Persona recreate idempotent | POST /v1/personas for existing persona | 200, 201, or 409 (not 500) |
 | 4 | **[TST-USR-078]** Healthz stable under repeated probing | GET /healthz 5 times | All return 200 |
 | 5 | **[TST-USR-079]** Locked persona clear error | Query locked persona vault | 403/423 with "locked" message, or 200 (auto-unlock), never 500 |
+
+---
+
+## 15. Public Service Query (Story 15)
+
+> Don Alonso asks his Home Node when the next #42 bus arrives at Castro
+> Station. His Brain doesn't know — it reaches out to **BusDriver**, a
+> public transit provider already configured on the Trust Network. The
+> full WS2 schema-driven arc runs end-to-end: requester validates params
+> and forwards schema_hash, provider validates and delegates to its
+> local agent, completion bridges back as service.response, and Alonso
+> receives a workflow_event with the ETA.
+>
+> Story scope: provider-side contract across two real Core+Brain
+> actor pairs (Alonso + BusDriver). The "local agent" step is
+> simulated via the internal workflow-task callback (same endpoint
+> a real dina-agent would hit). Full AppView publish→discovery→query
+> integration is deferred to a later story (requires Jetstream
+> ingestion timing; not CI-friendly).
+
+### 15.1 Provider Configuration
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-USR-150]** Publish BusDriver service config | PUT /v1/service/config with eta_query schema + canonical schema_hash | 200; config gate verifies hash matches canonical form (cross-language regression guard) |
+| 2 | **[TST-USR-151]** Service config round-trips | GET /v1/service/config | Response carries back the stored schema with the same hash (no persistence drift) |
+
+### 15.2 Happy Path — Query → Delegation → Bridge
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 3 | **[TST-USR-152]** Alonso sends valid service.query | POST /v1/service/query {to_did, capability, params, schema_hash} | 2xx with task_id; durable workflow_task created on requester side |
+| 4 | **[TST-USR-153]** BusDriver creates delegation task | Poll BusDriver's /v1/workflow/tasks | payload_type=service_query_execution; payload.schema_hash + schema_snapshot persisted |
+| 5 | **[TST-USR-154]** Simulated agent completes task | POST /v1/internal/workflow-tasks/{id}/complete with schema-valid result | 2xx; internal callback accepts structured result_json |
+| 6 | **[TST-USR-155]** Alonso's query task terminalises with success | Poll Alonso's service_query task | status=completed; workflow_event details reflect the result |
+
+### 15.3 Protocol Gate Regressions
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 7 | **[TST-USR-156]** Stale schema_hash rejected without delegation | Send query with wrong schema_hash | schema_version_mismatch in Alonso's events; NO delegation task ever appears on BusDriver |
+| 8 | **[TST-USR-157]** Missing required param rejected | Send query with empty params ({}), valid hash | Provider's jsonschema.validate rejects; requester sees "Invalid params" in events |
+| 9 | **[TST-USR-158]** Failed task surfaces agent error verbatim | Provider task fails via /fail callback | Alonso's events contain agent's error text directly; NOT wrapped as `{message:…}` then schema-violated (regression for the wrap-as-message-then-validate bug) |

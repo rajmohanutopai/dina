@@ -172,6 +172,22 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
       enableFlags: true,
       createdAt: now,
     },
+    'com.dina.service.profile': {
+      name: 'Test Transit',
+      description: 'Demo transit provider',
+      capabilities: ['eta_query'],
+      capabilitySchemas: {
+        eta_query: {
+          description: 'Query ETA',
+          params: { type: 'object' },
+          result: { type: 'object' },
+          schema_hash: 'canonical-hash-eta',
+        },
+      },
+      responsePolicy: { eta_query: 'auto' },
+      isPublic: true,
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+    },
   }
   return map[collection] ?? {}
 }
@@ -593,9 +609,9 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 19 collection types \u2014 valid minimal records"}
-  it('UT-RV-034: all 19 collection types — valid minimal records', () => {
-    // Input: Minimal valid record for each of the 19 collections
+  // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 20 collection types \u2014 valid minimal records"}
+  it('UT-RV-034: all 20 collection types — valid minimal records', () => {
+    // Input: Minimal valid record for each of the 20 collections
     // Expected: All return success = true
     for (const collection of TRUST_COLLECTIONS) {
       const record = minimalRecordForCollection(collection)
@@ -627,6 +643,59 @@ describe('§2.1 Record Validator', () => {
       'com.dina.trust.reportRecord',
       validReport({ relatedRecords: records }),
     )
+    expect(result.success).toBe(false)
+    expect(result.errors).toBeDefined()
+  })
+
+  // WS2 schema-driven discovery: capabilitySchemas + per-cap schema_hash
+  // must survive Zod validation. Historically they were silently stripped
+  // because the schema dropped unknown keys — breaking the publish → search
+  // path end-to-end.
+  it('UT-RV-037: service.profile retains capabilitySchemas with per-cap schema_hash', () => {
+    const record = {
+      name: 'Test Transit',
+      description: 'Demo transit provider',
+      capabilities: ['eta_query'],
+      capabilitySchemas: {
+        eta_query: {
+          description: 'Query estimated time of arrival.',
+          params: { type: 'object', required: ['route_id'] },
+          result: { type: 'object', required: ['eta_minutes'] },
+          schema_hash: 'deadbeef-eta',
+        },
+      },
+      serviceArea: { lat: 37.77, lng: -122.43, radiusKm: 10 },
+      responsePolicy: { eta_query: 'auto' },
+      isPublic: true,
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+    }
+    const result = validateRecord('com.dina.service.profile', record)
+    expect(result.success).toBe(true)
+    const data = result.data as Record<string, unknown>
+    expect(data.capabilitySchemas).toBeDefined()
+    const cap = (data.capabilitySchemas as Record<string, Record<string, unknown>>).eta_query
+    expect(cap.schema_hash).toBe('deadbeef-eta')
+    expect(cap.params).toEqual({ type: 'object', required: ['route_id'] })
+  })
+
+  it('UT-RV-038: service.profile rejects capability schema missing schema_hash', () => {
+    const record = {
+      name: 'Test Transit',
+      description: 'Demo transit provider',
+      capabilities: ['eta_query'],
+      capabilitySchemas: {
+        // schema_hash intentionally absent — must fail validation.
+        eta_query: {
+          params: { type: 'object' },
+          result: { type: 'object' },
+        },
+      },
+      serviceArea: { lat: 37.77, lng: -122.43, radiusKm: 10 },
+      responsePolicy: { eta_query: 'auto' },
+      isPublic: true,
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+    }
+    const result = validateRecord('com.dina.service.profile', record)
     expect(result.success).toBe(false)
     expect(result.errors).toBeDefined()
   })
@@ -1494,12 +1563,12 @@ describe('§2.4 Handler Router', () => {
     expect(handler).not.toBeNull()
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0140", "section": "01", "sectionName": "General", "title": "UT-HR-003: routeHandler \u2014 all 19 collections registered"}
-  it('UT-HR-003: routeHandler — all 19 collections registered', () => {
-    // Input: Iterate TRUST_COLLECTIONS
+  // TRACE: {"suite": "APPVIEW", "case": "0140", "section": "01", "sectionName": "General", "title": "UT-HR-003: routeHandler \u2014 all 20 collections registered"}
+  it('UT-HR-003: routeHandler — all 20 collections registered', () => {
+    // Input: Iterate TRUST_COLLECTIONS (19 trust records + com.dina.service.profile)
     // Expected: All return non-null handler
     const registered = getRegisteredCollections()
-    expect(registered).toHaveLength(19)
+    expect(registered).toHaveLength(20)
 
     for (const collection of TRUST_COLLECTIONS) {
       const handler = routeHandler(collection)

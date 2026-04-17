@@ -727,6 +727,7 @@ func migrateIdentity(db *sql.DB) error {
 				priority         TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('user_blocking','normal','background')),
 				description      TEXT NOT NULL DEFAULT '',
 				payload          TEXT NOT NULL DEFAULT '{}',
+				payload_type     TEXT NOT NULL DEFAULT '',
 				result           TEXT,
 				result_summary   TEXT NOT NULL DEFAULT '',
 				policy           TEXT NOT NULL DEFAULT '{}',
@@ -749,6 +750,7 @@ func migrateIdentity(db *sql.DB) error {
 			)`,
 			`CREATE INDEX IF NOT EXISTS idx_wf_state ON workflow_tasks(state, next_run_at)`,
 			`CREATE INDEX IF NOT EXISTS idx_wf_kind ON workflow_tasks(kind)`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_payload_type ON workflow_tasks(payload_type) WHERE payload_type != ''`,
 			`CREATE INDEX IF NOT EXISTS idx_wf_correlation ON workflow_tasks(correlation_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_wf_proposal ON workflow_tasks(proposal_id) WHERE proposal_id IS NOT NULL`,
 			`CREATE INDEX IF NOT EXISTS idx_wf_expires ON workflow_tasks(expires_at) WHERE expires_at IS NOT NULL`,
@@ -788,6 +790,23 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v13 complete")
 	}
 
+	// --- Identity migration v14: workflow_tasks.payload_type column ---
+	// Lets the response-bridge reconciler find service_query_execution tasks
+	// via an indexed column lookup instead of a fragile LIKE over payload
+	// JSON that breaks on Python/Go serialiser spacing differences.
+	if hasTable(db, "workflow_tasks") && !hasColumn(db, "workflow_tasks", "payload_type") {
+		slog.Info("sqlite: applying identity migration v14 (workflow_tasks.payload_type)")
+		for _, stmt := range []string{
+			`ALTER TABLE workflow_tasks ADD COLUMN payload_type TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS idx_wf_payload_type ON workflow_tasks(payload_type) WHERE payload_type != ''`,
+		} {
+			if _, err := db.ExecContext(ctx, stmt); err != nil && !isAlterColumnExists(err) {
+				return fmt.Errorf("identity v14: %w", err)
+			}
+		}
+		slog.Info("sqlite: identity migration v14 complete")
+	}
+
 	return nil
 }
 
@@ -815,6 +834,7 @@ var validMigrationTables = map[string]bool{
 	"staging_inbox":     true,
 	"reminders":         true,
 	"audit_log":         true,
+	"workflow_tasks":    true,
 	"pending_reason":    true,
 	"scenario_policies": true,
 	"d2d_outbox":        true,

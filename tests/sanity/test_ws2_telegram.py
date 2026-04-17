@@ -31,19 +31,43 @@ class TestWS2ServiceQuery:
             f"Expected usage help, got: {response[:200]}"
 
     def test_service_query_with_args(self, tg):
-        """Valid /service_query with args attempts to find a service."""
+        """Valid /service_query with schema-driven args attempts to find a service.
+
+        Command grammar for eta_query (schema-required ``route_id``):
+            /service_query eta_query <lat> <lng> <route_id> [text]
+        Here the 4th positional arg (``42``) becomes ``params.route_id``;
+        everything after is free-form ``user_text`` for ranking context.
+        """
         response = tg.send_and_wait(
             ALONSO_BOT,
-            "/service_query eta_query 12.97 77.59 bus 42",
+            "/service_query eta_query 12.97 77.59 42 bus 42 via Oxford",
             timeout=60,
         )
         assert response is not None, "Bot should respond"
         # Without AppView running, this should report "No services found"
-        # or a similar message. Either way, it proves the command is wired.
+        # or a similar message. Either way, it proves the command is wired
+        # and sender-side validation passed (route_id present).
         lower = response.lower()
         assert any(kw in lower for kw in [
             "no services", "not found", "failed", "asking", "service",
         ]), f"Expected service-related response, got: {response[:200]}"
+
+    def test_service_query_eta_missing_route_id_rejected(self, tg):
+        """eta_query without route_id is rejected locally with a usage hint.
+
+        Regression guard for the schema-driven path: the Telegram
+        command parser must fail fast rather than sending malformed
+        params to the orchestrator (and ultimately the provider).
+        """
+        response = tg.send_and_wait(
+            ALONSO_BOT,
+            "/service_query eta_query 12.97 77.59",
+            timeout=30,
+        )
+        assert response is not None, "Bot should respond"
+        lower = response.lower()
+        # Local error — 'route' should appear somewhere in the guidance.
+        assert "route" in lower, f"Expected route_id error, got: {response[:200]}"
 
     def test_service_approve_validation(self, tg):
         """Incomplete /service_approve returns usage help."""

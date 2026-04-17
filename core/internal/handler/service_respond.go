@@ -139,8 +139,10 @@ func (h *ServiceRespondHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Open fresh provider window (30s TTL — just for the send pipeline).
-	h.Transport.SetProviderWindow(fromDID, queryID, capability, 30)
+	// Open a fresh provider window scoped to the original request's TTL so
+	// the response contract matches what the requester is already waiting
+	// for. Matches the bridge path's behaviour.
+	h.Transport.SetProviderWindow(fromDID, queryID, capability, ttlSeconds)
 
 	// Build service.response D2D message.
 	responseBody := domain.ServiceResponseBody{

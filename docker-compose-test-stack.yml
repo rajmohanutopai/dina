@@ -363,13 +363,15 @@ services:
       <<: *brain-env
       DINA_CORE_URL: http://busdriver-core:8100
       DINA_APPVIEW_URL: https://test-appview.dinakernel.com
-      DINA_MCP_SERVERS: '{"transit": ["python3", "-m", "demo.transit"]}'
+      # Transit MCP is intentionally NOT wired here: under the
+      # "Dina never executes" rule, only the OpenClaw execution plane
+      # holds the transit tool. The Brain dispatches to OpenClaw via a
+      # delegation task and observes the result through the bridge.
     volumes:
       - busdriver-data:/data
       - busdriver-keys-brain-priv:/run/secrets/service_keys/private:ro
       - busdriver-keys-pub:/run/secrets/service_keys/public:ro
       - ./models.json:/app/models.json:ro
-      - ./demo/transit:/app/demo/transit:ro
     depends_on:
       keygen-busdriver:
         condition: service_completed_successfully

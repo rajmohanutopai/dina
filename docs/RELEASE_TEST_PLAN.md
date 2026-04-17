@@ -1593,6 +1593,60 @@ Verify the full black-box install lifecycle in a fresh directory: install.sh →
 
 ---
 
+## REL-029 Public Service Query via CLI (WS2 Schema-Driven Discovery)
+
+### Execution Class
+
+Pre-release Harness.
+
+### Objective
+
+Verify that an external agent can send a schema-driven `service.query` from Dina's CLI and correlate the asynchronous response via the CLI. Proves the full wire protocol works when invoked by a real paired agent, not just by test-internal helpers: the `schema_hash` + params contract is enforced provider-side, the response bridges cleanly, and `dina service status` surfaces the terminal state. Release gate for the WS2 public service protocol from the user-facing CLI perspective.
+
+### Preconditions
+
+- release Docker stack running (Alonso + BusDriver Core+Brain + dummy-agent)
+- BusDriver's `/v1/service/config` is publishable (admin token reachable)
+- dummy-agent container is built with the updated `dina service query` / `dina service status` CLI commands (already part of the `dina-cli` package)
+- `DINA_HOOK_CALLBACK_TOKEN` is set (or the CLIENT_TOKEN is acceptable as the internal callback token in test mode)
+
+### Steps
+
+1. Publish BusDriver's `eta_query` service config via `PUT /v1/service/config` with a canonical `schema_hash`. Verify the Put gate accepts it.
+2. Run `dina service query <busdriver_did> eta_query '{"route_id":"42"}' --schema-hash <canonical> --ttl 120` inside the dummy-agent container. Capture the returned `{task_id, query_id}`.
+3. Observe BusDriver's workflow_tasks list — confirm a delegation task with `payload_type=service_query_execution` and the matching correlation_id exists.
+4. Simulate the local executor's completion by POSTing to `/v1/internal/workflow-tasks/{id}/complete` with a schema-valid result. (Main-dina's `dina agent-daemon` would do this after claiming the task and running OpenClaw; for release-harness purposes we simulate so the test doesn't depend on a paired OpenClaw with transit tooling.)
+5. Poll `dina service status <task_id>` from the dummy-agent — wait until status=`completed`.
+6. Repeat step 2 with a stale `--schema-hash` value — verify the terminal task's events contain `schema_version_mismatch` and no delegation task was created on BusDriver.
+7. Repeat step 2 with empty params (`{}`, missing required `route_id`) — verify the terminal task's events contain a params-validation error.
+8. Run `dina service status` against a nonexistent `task_id` — verify the CLI exits non-zero (404 surfaced cleanly, not hanging).
+9. Run `dina service query ... 'not-valid-json'` — verify the CLI exits non-zero locally, with no Core round-trip.
+
+### Assertions
+
+1. Valid CLI query returns a `{task_id, query_id}` JSON object on stdout with exit 0.
+2. The delegation task on the provider carries `payload_type=service_query_execution`, the agreed `schema_hash`, and a persisted `schema_snapshot`.
+3. After the simulated completion callback, `dina service status <task_id>` from the agent reports `completed` with the matching `correlation_id`.
+4. Stale `--schema-hash` surfaces `schema_version_mismatch` in the requester's task events, and the provider never creates a delegation task.
+5. Missing required param surfaces `Invalid params` (or the param name) in the requester's task events.
+6. `dina service status` against an unknown task_id exits non-zero with a clear error; the CLI does not return success.
+7. Malformed `params_json` is caught locally (CLI exits non-zero); no HTTP call reaches Core.
+
+### Evidence
+
+- CLI stdout for each scenario (JSON mode)
+- `workflow_tasks` list on the provider showing task lifecycle
+- `workflow_events` JSON for the requester's terminal task
+- exit codes for the negative CLI scenarios
+
+### Suggested Automation
+
+- Fully automated via `tests/release/test_rel_029_service_query.py`
+- Depends on the same `release_services` / `agent_paired` fixtures as REL-023
+- Uses the same stack as the E2E Suite 25 (`tests/e2e/test_suite_25_public_service_query.py`) — a passing E2E suite is a good precondition before running REL-029
+
+---
+
 ## 8. Mapping to Existing Test Assets
 
 This plan should reuse and extend existing test assets where possible:

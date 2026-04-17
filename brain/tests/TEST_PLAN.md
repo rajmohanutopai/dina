@@ -1457,6 +1457,59 @@
 
 ---
 
+## 28. WS2 — Schema-Driven Service Discovery (Requester + Provider)
+
+> The Brain's end of the service protocol. Covers provider ingress
+> (handle_query + delegation), the structured requester orchestrator,
+> schema-mismatch retry, and PDS publisher output.
+
+### 28.1 Provider Ingress (`ServiceHandler.handle_query`)
+
+Traces to: `brain/src/service/service_handler.py`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-612]** Auto policy creates delegation task with persisted schema_hash | Valid query, schema_hash matches, response_policy=auto | `create_workflow_task` called with kind=delegation, payload carries schema_hash; no direct D2D response |
+| 2 | **[TST-BRAIN-613]** schema_hash mismatch rejected before task creation | Valid query but schema_hash != local canonical hash | `service.response` with status=error, error=schema_version_mismatch; no task created |
+| 3 | **[TST-BRAIN-614]** Invalid params rejected before task creation | Required field missing from params | `service.response` with status=error, "Invalid params: …"; no task created |
+| 4 | **[TST-BRAIN-615]** Request missing schema_hash rejected when schema configured | Provider has a schema for the capability; request omits schema_hash | Rejected with schema_version_mismatch — the bypass window is closed |
+| 5 | **[TST-BRAIN-616]** Review policy creates approval task only | Valid query, response_policy=review | `create_workflow_task` kind=approval; no D2D response yet; notifier invoked |
+| 6 | **[TST-BRAIN-617]** Execution task payload carries full schema snapshot | Auto query accepted | payload.schema_snapshot contains params+result — completion bridge validates against this, not whatever config holds later |
+| 7 | **[TST-BRAIN-618]** Execution task description does not leak params | Auto query with sensitive-looking params (coordinates, route_id) | Task description is abstract; raw param values appear only in the structured payload |
+
+### 28.2 Review Path (`ServiceHandler.execute_and_respond`)
+
+Traces to: `brain/src/service/service_handler.py` + `Guardian._handle_approval_event`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-619]** Approval spawns execution task and cancels approval task | Approved review; approval task + payload | `create_workflow_task` (kind=delegation, deterministic id) + `cancel_workflow_task(approval_id)`; NO call to `send_service_respond({})` — previous "empty success" path is gone |
+| 2 | **[TST-BRAIN-620]** Duplicate execution task tolerated on reconciliation retry | Re-delivery of the approved event when an execution task already exists | `WorkflowConflictError` from create is treated as success; approval task still cancelled |
+
+### 28.3 Requester Orchestrator (`ServiceQueryOrchestrator`)
+
+Traces to: `brain/src/service/service_query.py`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-621]** schema_hash + origin_channel forwarded | Candidate with capabilitySchemas; origin_channel supplied | `send_service_query` called with the candidate's schema_hash and origin_channel; targets candidate's operatorDid |
+| 2 | **[TST-BRAIN-622]** Invalid params rejected locally with user-visible error | Candidate schema present; params missing required field | No `send_service_query` call; notifier receives "Invalid query params …" |
+| 3 | **[TST-BRAIN-623]** TTL honours provider's default_ttl_seconds | Candidate schema includes default_ttl_seconds | `send_service_query(ttl_seconds=<schema_hint>)`; registry default is NOT silently applied |
+| 4 | **[TST-BRAIN-624]** Non-geospatial query supported | Capability schema without location requirement; params without lat/lng | Query sent; AppView search called with lat=lng=None |
+| 5 | **[TST-BRAIN-625]** No candidates → notifier-only | AppView returns empty list | No `send_service_query`; user notified "No services found" |
+| 6 | **[TST-BRAIN-626]** Retry preserves original to_did | `retry_with_fresh_schema(to_did=did_A)` with fresh candidates including did_A and did_B | Query re-sent only to did_A, with fresh schema_hash |
+| 7 | **[TST-BRAIN-627]** Retry fails closed when original provider missing from fresh candidates | Target DID not in fresh AppView result | Returns False; no `send_service_query` call — retry must not silently reroute |
+
+### 28.4 Publisher (`ServicePublisher.publish`)
+
+Traces to: `brain/src/service/service_publisher.py`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-628]** Emits capabilitySchemas with per-capability hashes | Config with capability_schemas; session DID matches Core DID | Record has `capabilitySchemas` map; each entry has `schema_hash` deterministic per canonical form; no top-level `schemaHash` |
+
+---
+
 ## Appendix A: Test Fixtures
 
 - **Sample emails**: 100 emails across categories (promotions, social, primary, updates) for ingestion testing

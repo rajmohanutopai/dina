@@ -41,7 +41,7 @@ func (s *WorkflowStore) db() *sql.DB {
 // ---------------------------------------------------------------------------
 
 const taskColumns = `id, kind, state, correlation_id, parent_id, proposal_id,
-	priority, description, payload, result, result_summary, policy,
+	priority, description, payload, payload_type, result, result_summary, policy,
 	error, requested_runner, assigned_runner, agent_did, run_id,
 	progress_note, lease_expires_at, origin, session_name,
 	idempotency_key, expires_at, next_run_at, recurrence,
@@ -69,14 +69,14 @@ func (s *WorkflowStore) Create(ctx context.Context, task domain.WorkflowTask) er
 	_, err := s.db().ExecContext(ctx,
 		`INSERT INTO workflow_tasks (
 			id, kind, state, correlation_id, parent_id, proposal_id,
-			priority, description, payload, result, result_summary, policy,
+			priority, description, payload, payload_type, result, result_summary, policy,
 			error, requested_runner, assigned_runner, agent_did, run_id,
 			progress_note, lease_expires_at, origin, session_name,
 			idempotency_key, expires_at, next_run_at, recurrence,
 			internal_stash, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		task.ID, task.Kind, task.Status, task.CorrelationID, task.ParentID,
-		task.ProposalID, task.Priority, task.Description, task.Payload,
+		task.ProposalID, task.Priority, task.Description, task.Payload, task.PayloadType,
 		task.Result, task.ResultSummary, task.Policy, task.Error,
 		task.RequestedRunner, task.AssignedRunner, task.AgentDID, task.RunID,
 		task.ProgressNote, task.LeaseExpiresAt, task.Origin, task.SessionName,
@@ -1088,15 +1088,29 @@ func (s *WorkflowStore) ListStashedServiceQueryTasks(ctx context.Context) ([]dom
 	return s.collectTasks(rows)
 }
 
-// ListBridgePendingTasks returns delegation tasks whose internal_stash holds
-// a service.response awaiting retry after a failed bridge send.
-func (s *WorkflowStore) ListBridgePendingTasks(ctx context.Context) ([]domain.WorkflowTask, error) {
+// ListServiceResponsePendingTasks returns completed/failed delegation tasks
+// whose payload_type is service_query_execution but which have no
+// `service_response_sent` workflow event. These are tasks whose D2D
+// service.response still needs to be re-sent — covers both a failed
+// initial send and a process crash between task completion and ack.
+//
+// Filters on the indexed payload_type column rather than a substring
+// LIKE over the payload JSON; the JSON's exact spacing depends on which
+// side (Go vs Python) serialised the payload, so relying on a text match
+// silently miss tasks created by the other runtime.
+func (s *WorkflowStore) ListServiceResponsePendingTasks(ctx context.Context) ([]domain.WorkflowTask, error) {
 	rows, err := s.db().QueryContext(ctx,
-		`SELECT `+taskColumns+` FROM workflow_tasks
-		 WHERE kind = 'delegation'
-		   AND state IN ('completed', 'failed')
-		   AND internal_stash LIKE 'bridge_pending:%'
-		 ORDER BY updated_at ASC`)
+		`SELECT `+taskColumns+` FROM workflow_tasks t
+		 WHERE t.kind = 'delegation'
+		   AND t.state IN ('completed', 'failed')
+		   AND t.payload_type = 'service_query_execution'
+		   AND NOT EXISTS (
+		       SELECT 1 FROM workflow_events e
+		       WHERE e.task_id = t.id
+		         AND e.event_kind = 'service_response_sent'
+		   )
+		 ORDER BY t.updated_at ASC
+		 LIMIT 50`)
 	if err != nil {
 		return nil, err
 	}
@@ -1170,7 +1184,7 @@ func scanInto(scanFn func(dest ...interface{}) error) (*domain.WorkflowTask, err
 	)
 	err := scanFn(
 		&t.ID, &t.Kind, &t.Status, &correlationID, &parentID,
-		&proposalID, &t.Priority, &t.Description, &t.Payload,
+		&proposalID, &t.Priority, &t.Description, &t.Payload, &t.PayloadType,
 		&result, &t.ResultSummary, &t.Policy, &t.Error,
 		&t.RequestedRunner, &t.AssignedRunner, &t.AgentDID, &t.RunID,
 		&t.ProgressNote, &leaseExpiresAt, &t.Origin, &t.SessionName,

@@ -47,6 +47,36 @@ End-to-end regression tests that exercise Dina through real Telegram bots.
 | 5 | TestSanchoMoment | D2D arrival + vault recall + contextual nudge |
 | 6 | TestTrust | Trust Network query |
 | 7 | TestAgentGateway | Safe/risky action validation via Core API |
+| 8 | TestWS2ServiceQuery | `/service_query` command grammar + routing (`test_ws2_telegram.py`) |
+| 9 | TestTransitEndToEnd | Full BusDriver transit scenario — real OpenClaw + transit MCP, Telegram user sees real ETA + map URL (`test_transit_e2e.py`) |
+
+## Transit E2E (Test #9) — opt-in
+
+Gated on `SANITY_TRANSIT_ENABLED=1`. Requires a third Home Node
+(`regression-busdriver`) that's not part of the default two-instance
+setup. Extra preconditions:
+
+- `regression-busdriver` Core+Brain running (default port 18500/18600).
+- BusDriver paired with an OpenClaw container that has the
+  `demo/transit` MCP tool registered (see `demo/transit/openclaw-setup.sh`).
+- `dina agent-daemon` running inside that OpenClaw container.
+- BusDriver's `/v1/service/config` published with the canonical
+  `eta_query` schema (hash must match `test_transit_e2e.py::ETA_QUERY_SCHEMA_HASH`).
+- Alonso's `regression-alonso` has AppView access and — for the
+  natural-language path — an LLM key configured.
+
+Extra env vars in `.env.sanity`:
+
+```
+SANITY_TRANSIT_ENABLED=1
+SANITY_BUSDRIVER_CORE_URL=http://localhost:18500
+SANITY_BUSDRIVER_DID=did:plc:...
+SANITY_LLM_ENABLED=1      # optional — enables the /ask natural-language test
+```
+
+The module auto-skips if `SANITY_TRANSIT_ENABLED` isn't `1` or
+BusDriver isn't reachable, so leaving it off doesn't break the
+default sanity run.
 
 ## Architecture
 

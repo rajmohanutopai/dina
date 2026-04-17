@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -134,19 +133,24 @@ func newBridgeTestService(t *testing.T, failN int) (
 // insertCompletedExecutionTask creates a service_query_execution delegation
 // task directly in the completed state with the given structured result.
 // Tests exercise the bridge alone, not the state machine around completion.
+//
+// Deliberately mimics the Python producer by using spaced JSON (Python's
+// json.dumps default) so the reconciler SQL filter can't accidentally
+// depend on Go-style compact encoding.
 func insertCompletedExecutionTask(t *testing.T, store *sqlite.WorkflowStore, queryID string, result map[string]interface{}, ttlSeconds int) string {
 	t.Helper()
-	payloadBytes, err := json.Marshal(map[string]interface{}{
-		"type":         "service_query_execution",
-		"from_did":     "did:plc:requester-test",
-		"query_id":     queryID,
-		"capability":   "eta_query",
-		"params":       map[string]interface{}{"route_id": "42", "lat": 37.77, "lng": -122.43},
-		"ttl_seconds":  ttlSeconds,
-		"service_name": "Test Transit",
-		"schema_hash":  "test-hash-eta",
-	})
-	testutil.RequireNoError(t, err)
+	// Build the payload as Python json.dumps would: sorted-ish keys with
+	// ", " / ": " separators. Hand-crafted to defeat the legacy LIKE
+	// filter — the fix is the indexed payload_type column, not spacing.
+	payloadStr := `{"type": "service_query_execution", ` +
+		`"from_did": "did:plc:requester-test", ` +
+		`"query_id": "` + queryID + `", ` +
+		`"capability": "eta_query", ` +
+		`"params": {"route_id": "42", "lat": 37.77, "lng": -122.43}, ` +
+		`"ttl_seconds": ` + jsonInt(ttlSeconds) + `, ` +
+		`"service_name": "Test Transit", ` +
+		`"schema_hash": "test-hash-eta", ` +
+		`"schema_snapshot": {}}`
 	resultBytes, err := json.Marshal(result)
 	testutil.RequireNoError(t, err)
 
@@ -154,10 +158,11 @@ func insertCompletedExecutionTask(t *testing.T, store *sqlite.WorkflowStore, que
 	task := domain.WorkflowTask{
 		ID:            taskID,
 		Kind:          string(domain.WFKindDelegation),
+		PayloadType:   "service_query_execution",
 		Status:        string(domain.WFCompleted),
 		CorrelationID: queryID,
 		Priority:      string(domain.WFPriorityNormal),
-		Payload:       string(payloadBytes),
+		Payload:       payloadStr,
 		Result:        string(resultBytes),
 		ResultSummary: "ok",
 		Origin:        "d2d",
@@ -167,7 +172,13 @@ func insertCompletedExecutionTask(t *testing.T, store *sqlite.WorkflowStore, que
 	return taskID
 }
 
-// TRACE: {"suite": "CORE", "case": "WS2-B01", "title": "Bridge_HappyPath_SendsSuccessResponse"}
+// jsonInt formats an int for inline inclusion in hand-rolled JSON above.
+func jsonInt(n int) string {
+	b, _ := json.Marshal(n)
+	return string(b)
+}
+
+// TRACE: {"suite": "CORE", "case": "TST-CORE-1145", "title": "Bridge_HappyPath_SendsSuccessResponse"}
 func TestWS2_B01_Bridge_HappyPath_SendsSuccessResponse(t *testing.T) {
 	svc, store, sender := newBridgeTestService(t, 0)
 	taskID := insertCompletedExecutionTask(t, store, "q-happy",
@@ -188,15 +199,25 @@ func TestWS2_B01_Bridge_HappyPath_SendsSuccessResponse(t *testing.T) {
 	if ttl, _ := calls[0].responseBody["ttl_seconds"].(float64); int(ttl) != 90 {
 		t.Fatalf("expected ttl_seconds=90 from request, got %v", calls[0].responseBody["ttl_seconds"])
 	}
-	// Stash cleared after successful send.
-	task, err := store.GetByID(context.Background(), taskID)
+	// Durability marker recorded on successful send.
+	events, err := store.ListEvents(context.Background(), taskID)
 	testutil.RequireNoError(t, err)
-	if task.InternalStash != "" {
-		t.Fatalf("expected stash cleared after success, got %q", task.InternalStash)
+	if !hasEventKind(events, "service_response_sent") {
+		t.Fatalf("expected service_response_sent event after successful send, got %+v", events)
 	}
 }
 
-// TRACE: {"suite": "CORE", "case": "WS2-B02", "title": "Bridge_ResultSchemaViolation_SendsErrorResponse"}
+// hasEventKind returns true if any event in events has the given kind.
+func hasEventKind(events []domain.WorkflowEvent, kind string) bool {
+	for _, e := range events {
+		if e.EventKind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// TRACE: {"suite": "CORE", "case": "TST-CORE-1146", "title": "Bridge_ResultSchemaViolation_SendsErrorResponse"}
 func TestWS2_B02_Bridge_ResultSchemaViolation_SendsErrorResponse(t *testing.T) {
 	svc, store, sender := newBridgeTestService(t, 0)
 	// Missing required eta_minutes.
@@ -217,8 +238,80 @@ func TestWS2_B02_Bridge_ResultSchemaViolation_SendsErrorResponse(t *testing.T) {
 	}
 }
 
-// TRACE: {"suite": "CORE", "case": "WS2-B03", "title": "Bridge_SendFailure_StashesForRetry"}
-func TestWS2_B03_Bridge_SendFailure_StashesForRetry(t *testing.T) {
+// TRACE: {"suite": "CORE", "case": "TST-CORE-1147", "title": "Bridge_FailedTask_SendsErrorResponseFromTaskError"}
+func TestWS2_B04_Bridge_FailedTask_SendsErrorResponseFromTaskError(t *testing.T) {
+	svc, store, sender := newBridgeTestService(t, 0)
+	// Set up a task that the agent explicitly failed (not completed).
+	payloadStr := `{"type": "service_query_execution", ` +
+		`"from_did": "did:plc:requester-test", ` +
+		`"query_id": "q-failed", ` +
+		`"capability": "eta_query", ` +
+		`"params": {}, ` +
+		`"ttl_seconds": 45, ` +
+		`"schema_hash": "test-hash-eta"}`
+	task := domain.WorkflowTask{
+		ID:            "exec-failed-q",
+		Kind:          string(domain.WFKindDelegation),
+		PayloadType:   "service_query_execution",
+		Status:        string(domain.WFFailed),
+		CorrelationID: "q-failed",
+		Priority:      string(domain.WFPriorityNormal),
+		Payload:       payloadStr,
+		Error:         "route unreachable",
+		Origin:        "d2d",
+		AgentDID:      "did:plc:agent-test",
+	}
+	testutil.RequireNoError(t, store.Create(context.Background(), task))
+
+	svc.BridgeServiceQueryCompletionForTest(context.Background(), "exec-failed-q", "")
+
+	calls := sender.snapshot()
+	testutil.RequireEqual(t, len(calls), 1)
+	testutil.RequireEqual(t, calls[0].responseBody["status"], "error")
+	// Crucial: the provider's error text is surfaced as-is, NOT wrapped
+	// and schema-validated into result_schema_violation.
+	resultMap, ok := calls[0].responseBody["result"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected error result to be a map, got %T", calls[0].responseBody["result"])
+	}
+	if errStr, _ := resultMap["error"].(string); errStr != "route unreachable" {
+		t.Fatalf("expected result.error=route unreachable, got %v", resultMap["error"])
+	}
+	if ttl, _ := calls[0].responseBody["ttl_seconds"].(float64); int(ttl) != 45 {
+		t.Fatalf("expected ttl_seconds=45 preserved, got %v", calls[0].responseBody["ttl_seconds"])
+	}
+}
+
+// TRACE: {"suite": "CORE", "case": "TST-CORE-1148", "title": "Bridge_ReconcilerFindsPythonSerializedTasks"}
+func TestWS2_B05_Bridge_ReconcilerFindsPythonSerializedTasks(t *testing.T) {
+	svc, store, sender := newBridgeTestService(t, 0)
+	// Python json.dumps default uses ", " / ": " separators. An earlier
+	// implementation matched payloads via LIKE '%"type":"service_query_execution"%',
+	// which Python-serialised payloads never matched. The payload_type
+	// indexed column fixes that — verify the reconciler actually finds
+	// the task despite the spaced payload JSON.
+	taskID := insertCompletedExecutionTask(t, store, "q-recon",
+		map[string]interface{}{"eta_minutes": 3, "stop_name": "Castro"}, 60)
+
+	// Force-clear any service_response_sent event so the reconciler
+	// considers the task pending. (Our happy-path bridge hasn't run.)
+	events, err := store.ListEvents(context.Background(), taskID)
+	testutil.RequireNoError(t, err)
+	for _, e := range events {
+		if e.EventKind == "service_response_sent" {
+			t.Fatalf("precondition violated: sent event already present")
+		}
+	}
+
+	svc.RetryBridgePendingResponsesForTest(context.Background())
+
+	calls := sender.snapshot()
+	testutil.RequireEqual(t, len(calls), 1)
+	testutil.RequireEqual(t, calls[0].responseBody["status"], "success")
+}
+
+// TRACE: {"suite": "CORE", "case": "TST-CORE-1149", "title": "Bridge_SendFailure_ReconcilerReSends"}
+func TestWS2_B03_Bridge_SendFailure_ReconcilerReSends(t *testing.T) {
 	svc, store, sender := newBridgeTestService(t, 1) // first attempt fails
 	taskID := insertCompletedExecutionTask(t, store, "q-retry",
 		map[string]interface{}{
@@ -226,26 +319,27 @@ func TestWS2_B03_Bridge_SendFailure_StashesForRetry(t *testing.T) {
 			"stop_name":   "Castro Station",
 		}, 60)
 
+	// First attempt: sender fails → no event marker written, task is
+	// detectable by the reconciler without any pre-send stash.
 	svc.BridgeServiceQueryCompletionForTest(context.Background(), taskID, "ok")
-
 	if got := sender.snapshot(); len(got) != 0 {
 		t.Fatalf("expected no successful sends after first-attempt failure, got %d", len(got))
 	}
-	task, err := store.GetByID(context.Background(), taskID)
+	events, err := store.ListEvents(context.Background(), taskID)
 	testutil.RequireNoError(t, err)
-	if !strings.HasPrefix(task.InternalStash, "bridge_pending:") {
-		t.Fatalf("expected bridge_pending stash after failure, got %q", task.InternalStash)
+	if hasEventKind(events, "service_response_sent") {
+		t.Fatalf("expected no service_response_sent event after failed send")
 	}
 
-	// Sweeper retry — now succeeds.
+	// Sweeper reconciler finds the missing-event task and re-sends.
 	svc.RetryBridgePendingResponsesForTest(context.Background())
 
 	calls := sender.snapshot()
 	testutil.RequireEqual(t, len(calls), 1)
 	testutil.RequireEqual(t, calls[0].peerDID, "did:plc:requester-test")
-	task, err = store.GetByID(context.Background(), taskID)
+	events, err = store.ListEvents(context.Background(), taskID)
 	testutil.RequireNoError(t, err)
-	if task.InternalStash != "" {
-		t.Fatalf("expected stash cleared after retry, got %q", task.InternalStash)
+	if !hasEventKind(events, "service_response_sent") {
+		t.Fatalf("expected service_response_sent event after retry succeeded")
 	}
 }

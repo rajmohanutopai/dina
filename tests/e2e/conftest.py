@@ -400,6 +400,97 @@ def albert(plc_directory, d2d_network, docker_services, _core_private_keys) -> H
 
 
 # ---------------------------------------------------------------------------
+# BusDriver — WS2 transit service provider (session-scoped)
+# ---------------------------------------------------------------------------
+
+# Canonical SHA-256 of the eta_query capability schema in its canonical
+# form. Matches what Brain's compute_schema_hash() and Core's
+# canonicalSchemaHash() produce for this exact schema. Keeping it as a
+# baked-in constant means a canonicaliser drift breaks the fixture
+# (and hence every test that uses it) rather than producing a
+# silently-inconsistent test config.
+ETA_QUERY_SCHEMA_HASH = "c48434dfc06a33520eb7543f29ef3a0aba7582d9ace25f5b9a838f84d27172ce"
+
+ETA_QUERY_SCHEMA = {
+    "description": "Query ETA",
+    "params": {
+        "type": "object",
+        "required": ["route_id"],
+        "properties": {
+            "route_id": {"type": "string"},
+        },
+    },
+    "result": {
+        "type": "object",
+        "required": ["eta_minutes"],
+        "properties": {
+            "eta_minutes": {"type": "integer"},
+        },
+    },
+    "schema_hash": ETA_QUERY_SCHEMA_HASH,
+}
+
+
+@pytest.fixture(scope="session")
+def busdriver(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
+    """BusDriver — WS2 public transit provider (Trust Ring 2).
+
+    Provisions a real Core+Brain pair configured as a public service for
+    the ``eta_query`` capability. The schema config is PUT via the real
+    ``/v1/service/config`` admin endpoint so the provider enforces
+    schema_hash and params validation during service.query ingress.
+    """
+    import httpx
+
+    busdriver_did = docker_services.actor_did("busdriver")
+    alonso_did = docker_services.actor_did("alonso")
+
+    node = RealHomeNode(
+        core_url=docker_services.core_url("busdriver"),
+        brain_url=docker_services.brain_url("busdriver"),
+        client_token=docker_services.client_token,
+        core_private_key_pem=_core_private_keys.get("busdriver"),
+        did=busdriver_did,
+        display_name="SF Transit Authority",
+        trust_ring=TrustRing.RING_2_VERIFIED,
+        plc=plc_directory,
+        network=d2d_network,
+    )
+    node.first_run_setup("busdriver@test.dina.local", "passphrase_busdriver")
+
+    # Alonso is in BusDriver's contact list so D2D service.query from a
+    # non-contact is still accepted as a public-service request (egress
+    # contact-gate bypass is governed by the service_config).
+    node.add_contact(alonso_did, "Don Alonso", TrustRing.RING_2_VERIFIED)
+
+    # Publish the service config. Schema-driven provider ingress requires:
+    #   - is_public=true
+    #   - capabilities + capability_schemas parity (every capability
+    #     declared has a schema with params + result + canonical hash)
+    #   - service_area for discovery scoring
+    service_config = {
+        "is_public": True,
+        "name": "SF Transit Authority",
+        "description": "Schedule-based bus ETAs for SF Muni routes.",
+        "capabilities": {
+            "eta_query": {"response_policy": "auto"},
+        },
+        "capability_schemas": {"eta_query": ETA_QUERY_SCHEMA},
+        "service_area": {"lat": 37.77, "lng": -122.43, "radius_km": 25.0},
+    }
+    resp = httpx.put(
+        f"{docker_services.core_url('busdriver')}/v1/service/config",
+        json=service_config,
+        headers={"Authorization": f"Bearer {docker_services.client_token}"},
+        timeout=10,
+    )
+    if resp.status_code >= 400:
+        pytest.fail(f"BusDriver /v1/service/config rejected: {resp.status_code} {resp.text}")
+
+    return node
+
+
+# ---------------------------------------------------------------------------
 # MCP Agent fixtures
 # ---------------------------------------------------------------------------
 

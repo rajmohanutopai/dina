@@ -224,7 +224,6 @@ export interface ServiceProfile {
   description: string
   capabilities: string[]
   capabilitySchemas?: Record<string, unknown>
-  schemaHash?: string
   serviceArea?: { lat: number; lng: number; radiusKm: number }
   hours?: { open: string; close: string; timezone: string }
   responsePolicy: Record<string, string>

@@ -57,7 +57,6 @@ export const serviceProfileHandler: RecordHandler = {
       hoursJson: record.hours ?? null,
       responsePolicyJson: record.responsePolicy,
       capabilitySchemasJson: record.capabilitySchemas ?? null,
-      schemaHash: record.schemaHash ?? null,
       isPublic: record.isPublic,
       searchContent,
     }).onConflictDoUpdate({
@@ -73,7 +72,6 @@ export const serviceProfileHandler: RecordHandler = {
         hoursJson: record.hours ?? null,
         responsePolicyJson: record.responsePolicy,
         capabilitySchemasJson: record.capabilitySchemas ?? null,
-        schemaHash: record.schemaHash ?? null,
         isPublic: record.isPublic,
         searchContent,
         indexedAt: new Date(),
