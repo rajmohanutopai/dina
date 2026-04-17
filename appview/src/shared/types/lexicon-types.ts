@@ -224,7 +224,8 @@ export interface ServiceProfile {
   description: string
   capabilities: string[]
   capabilitySchemas?: Record<string, unknown>
-  serviceArea?: { lat: number; lng: number; radiusKm: number }
+  /** Coords are E7-scaled integers — atproto forbids floats in CBOR records. */
+  serviceArea?: { latE7: number; lngE7: number; radiusKm: number }
   hours?: { open: string; close: string; timezone: string }
   responsePolicy: Record<string, string>
   isPublic: boolean

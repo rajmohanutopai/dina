@@ -344,6 +344,36 @@ async def test_publish_emits_per_capability_schemas_and_hashes():
     assert cap["schema_hash"] == expected_hash
 
 
+# TRACE: {"suite": "BRAIN", "case": "0631", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "04", "title": "publisher_scales_service_area_coords_to_e7"}
+@pytest.mark.asyncio
+async def test_publish_scales_service_area_coords_to_integer_e7():
+    """serviceArea must use integer latE7/lngE7 at the PDS boundary.
+
+    AT Protocol's CBOR encoding rejects floats in records — a putRecord
+    with floating-point lat/lng returns "Bad record". The publisher
+    scales Core's float coords by 1e7 and stores them as integers so the
+    record survives lexicon validation; ingester converts back at read.
+    """
+    config = _service_config("auto", include_schema_hash=False)
+    core = MagicMock()
+    core.get_service_config = AsyncMock(return_value=config)
+    core.get_did = AsyncMock(return_value={"id": "did:plc:publisher"})
+    pds = MagicMock()
+    pds.did = "did:plc:publisher"
+    pds.put_record = AsyncMock()
+
+    publisher = ServicePublisher(core_client=core, pds_publisher=pds)
+    await publisher.publish()
+
+    record = pds.put_record.await_args.kwargs["record"]
+    area = record["serviceArea"]
+    assert area["latE7"] == 377700000, "latE7 must be lat * 1e7 as integer"
+    assert area["lngE7"] == -1224300000, "lngE7 must be lng * 1e7 as integer"
+    assert area["radiusKm"] == 10
+    assert "lat" not in area, "raw float lat must not leak into the record"
+    assert "lng" not in area, "raw float lng must not leak into the record"
+
+
 # ---------------------------------------------------------------------------
 # Provider ingress: schema_hash bypass + schema snapshot on task
 # ---------------------------------------------------------------------------

@@ -66,12 +66,25 @@ class ServicePublisher:
                 entry["default_ttl_seconds"] = ttl
             capability_schemas[cap_name] = entry
 
+        # AT Protocol records are CBOR-encoded and the lexicon forbids floats
+        # (PDS rejects putRecord with "Bad record" when a number has a
+        # fractional part). Scale lat/lng by 1e7 into integers at the wire
+        # boundary; the ingester divides back when writing to Postgres.
+        # radius_km stays integer-coercible (already 0..500).
+        svc_area = config.get("service_area") or {}
+        service_area_record: dict[str, int] | None = None
+        if svc_area and "lat" in svc_area and "lng" in svc_area:
+            service_area_record = {
+                "latE7": round(float(svc_area["lat"]) * 1e7),
+                "lngE7": round(float(svc_area["lng"]) * 1e7),
+                "radiusKm": int(svc_area.get("radius_km", 0)),
+            }
+
         record: dict[str, Any] = {
             "$type": "com.dina.service.profile",
             "name": config.get("name", ""),
             "description": config.get("description", ""),
             "capabilities": list(capabilities.keys()),
-            "serviceArea": config.get("service_area"),
             "responsePolicy": {
                 k: v.get("response_policy", "auto")
                 for k, v in capabilities.items()
@@ -79,6 +92,8 @@ class ServicePublisher:
             "isPublic": True,
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if service_area_record is not None:
+            record["serviceArea"] = service_area_record
         if capability_schemas:
             record["capabilitySchemas"] = capability_schemas
 
@@ -107,7 +122,10 @@ class ServicePublisher:
             )
             log.info(
                 "service_publisher.published",
-                extra={"name": record["name"], "capabilities": record["capabilities"]},
+                extra={
+                    "service_name": record["name"],
+                    "capabilities": record["capabilities"],
+                },
             )
         except Exception as exc:
             log.warning(

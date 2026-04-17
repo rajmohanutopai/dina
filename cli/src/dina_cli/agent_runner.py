@@ -101,9 +101,21 @@ def build_task_prompt(task: dict, session_name: str, runner_name: str) -> str:
             description = (
                 f"Execute the `{capability}` capability with the following "
                 f"parameters. Call the corresponding MCP tool using EXACTLY "
-                f"these argument values, then report the result via "
-                f"`dina_task_complete`.\n\n"
-                f"Parameters JSON:\n{_json.dumps(params, indent=2)}"
+                f"these argument values.\n\n"
+                f"Parameters JSON:\n{_json.dumps(params, indent=2)}\n\n"
+                f"CRITICAL result handling:\n"
+                f"- After the MCP tool returns, call `dina_task_complete` with "
+                f"the tool's JSON output VERBATIM as the `result` argument — "
+                f"serialize the JSON object to a compact string and pass that "
+                f"string. Do NOT summarize, do NOT paraphrase, do NOT wrap it "
+                f"in prose. The requester validates the raw JSON against a "
+                f"schema; a human-readable summary will be rejected as a "
+                f"schema violation.\n"
+                f"- If the tool fails, call `dina_task_fail` with the raw "
+                f"error text.\n"
+                f"- Example: if the MCP tool returns "
+                f'`{{"eta_minutes": 6, "stop_name": "X"}}`, call '
+                f'`dina_task_complete(task_id=..., result=\'{{"eta_minutes": 6, "stop_name": "X"}}\')`.'
             )
     return TASK_PROMPT_TEMPLATE.format(
         task_id=task.get("id", ""),

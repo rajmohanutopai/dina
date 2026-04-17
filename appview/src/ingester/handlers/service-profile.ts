@@ -40,6 +40,14 @@ export const serviceProfileHandler: RecordHandler = {
     if (record.capabilities) searchParts.push(...record.capabilities)
     const searchContent = searchParts.join(' ').slice(0, 10_000) || null
 
+    // Convert E7-scaled integer coords back to floats for Postgres.
+    // Lexicon stores latE7/lngE7 because atproto records can't carry
+    // floats; search/ranking math needs real degrees.
+    const area = record.serviceArea
+    const latFloat = area?.latE7 != null ? (area.latE7 / 1e7).toString() : null
+    const lngFloat = area?.lngE7 != null ? (area.lngE7 / 1e7).toString() : null
+    const radiusKm = area?.radiusKm != null ? area.radiusKm.toString() : null
+
     // One profile per DID: delete any existing records for this operator before inserting.
     await ctx.db.delete(services).where(eq(services.operatorDid, op.did))
 
@@ -51,9 +59,9 @@ export const serviceProfileHandler: RecordHandler = {
       name: record.name,
       description: record.description ?? null,
       capabilitiesJson: record.capabilities,
-      lat: record.serviceArea?.lat?.toString() ?? null,
-      lng: record.serviceArea?.lng?.toString() ?? null,
-      radiusKm: record.serviceArea?.radiusKm?.toString() ?? null,
+      lat: latFloat,
+      lng: lngFloat,
+      radiusKm,
       hoursJson: record.hours ?? null,
       responsePolicyJson: record.responsePolicy,
       capabilitySchemasJson: record.capabilitySchemas ?? null,
@@ -66,9 +74,9 @@ export const serviceProfileHandler: RecordHandler = {
         name: record.name,
         description: record.description ?? null,
         capabilitiesJson: record.capabilities,
-        lat: record.serviceArea?.lat?.toString() ?? null,
-        lng: record.serviceArea?.lng?.toString() ?? null,
-        radiusKm: record.serviceArea?.radiusKm?.toString() ?? null,
+        lat: latFloat,
+        lng: lngFloat,
+        radiusKm,
         hoursJson: record.hours ?? null,
         responsePolicyJson: record.responsePolicy,
         capabilitySchemasJson: record.capabilitySchemas ?? null,
