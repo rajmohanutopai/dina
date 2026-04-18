@@ -45,11 +45,11 @@ do_compose() {
 health_check_all() {
   local FAILED=0
   local CHECKED=0
-  # 4 active actors (alonso/sancho/chairmaker/busdriver) × 2 (core + brain)
-  # = 8 local health checks. Albert (Digital Estate) is deferred.
+  # 5 active actors (alonso/sancho/chairmaker/busdriver/drcarl) × 2 (core + brain)
+  # = 10 local health checks. Albert (Digital Estate) is deferred.
   # Infrastructure (PLC/PDS/AppView/MsgBox) lives on Hetzner and is not
   # probed here — tests that need it surface infra outages directly.
-  local TOTAL=8
+  local TOTAL=10
   local FAIL_LIST=""
 
   _check() {
@@ -91,11 +91,13 @@ health_check_all() {
   _check "chairmaker-core" "http://localhost:19500/healthz" || true
   # _check "albert-core"     "http://localhost:19700/healthz" || true  # Digital Estate deferred
   _check "busdriver-core"  "http://localhost:19900/healthz" || true
+  _check "drcarl-core"     "http://localhost:21100/healthz" || true
   _check "alonso-brain"    "http://localhost:19200/healthz" || true
   _check "sancho-brain"    "http://localhost:19400/healthz" || true
   _check "chairmaker-brain" "http://localhost:19600/healthz" || true
   # _check "albert-brain"    "http://localhost:19800/healthz" || true  # Digital Estate deferred
   _check "busdriver-brain" "http://localhost:20000/healthz" || true
+  _check "drcarl-brain"    "http://localhost:21200/healthz" || true
 
   if [ "$FAILED" -eq 0 ]; then
     printf "\r  Health checks: %s/%s ✓                    \n" "$TOTAL" "$TOTAL"
@@ -109,7 +111,7 @@ extract_keys() {
   printf "  Extracting service keys... "
   rm -rf "$KEY_DIR"
   # "albert" removed — Digital Estate suite deferred.
-  for actor in alonso sancho chairmaker busdriver; do
+  for actor in alonso sancho chairmaker busdriver drcarl; do
     for role in core brain; do
       dir="$KEY_DIR/$actor/$role"
       mkdir -p "$dir"
@@ -131,7 +133,8 @@ write_manifest() {
     "alonso":     {"core": "http://localhost:19100", "brain": "http://localhost:19200"},
     "sancho":     {"core": "http://localhost:19300", "brain": "http://localhost:19400"},
     "chairmaker": {"core": "http://localhost:19500", "brain": "http://localhost:19600"},
-    "busdriver":  {"core": "http://localhost:19900", "brain": "http://localhost:20000"}
+    "busdriver":  {"core": "http://localhost:19900", "brain": "http://localhost:20000"},
+    "drcarl":     {"core": "http://localhost:21100", "brain": "http://localhost:21200"}
   },
   "services": {
     "plc":      "https://plc.directory",
@@ -145,7 +148,8 @@ write_manifest() {
     "alonso_keys":  "$KEY_DIR/alonso",
     "sancho_keys":  "$KEY_DIR/sancho",
     "chairmaker_keys": "$KEY_DIR/chairmaker",
-    "busdriver_keys": "$KEY_DIR/busdriver"
+    "busdriver_keys": "$KEY_DIR/busdriver",
+    "drcarl_keys":  "$KEY_DIR/drcarl"
   }
 }
 MANIFEST

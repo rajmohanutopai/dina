@@ -11,7 +11,7 @@ import { services } from '@/db/schema/index.js'
  * these records, indexes them, and exposes search/lookup endpoints.
  *
  * Phase 1 constraints:
- * - Only public services are indexed (isPublic must be true)
+ * - Only provider services are indexed (isDiscoverable must be true)
  * - All responsePolicy values must be "auto" (no manual approval flows yet)
  * - DID binding: op.did IS the operator (author == operator)
  */
@@ -19,9 +19,9 @@ export const serviceProfileHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record as unknown as ServiceProfile
 
-    // Phase 1: only index public services with fully automatic response policies
-    if (!record.isPublic) {
-      ctx.logger.debug({ uri: op.uri }, '[ServiceProfile] Skipping non-public service')
+    // Phase 1: only index provider services with fully automatic response policies
+    if (!record.isDiscoverable) {
+      ctx.logger.debug({ uri: op.uri }, '[ServiceProfile] Skipping non-provider service')
       return
     }
 
@@ -65,7 +65,7 @@ export const serviceProfileHandler: RecordHandler = {
       hoursJson: record.hours ?? null,
       responsePolicyJson: record.responsePolicy,
       capabilitySchemasJson: record.capabilitySchemas ?? null,
-      isPublic: record.isPublic,
+      isDiscoverable: record.isDiscoverable,
       searchContent,
     }).onConflictDoUpdate({
       target: services.uri,
@@ -80,7 +80,7 @@ export const serviceProfileHandler: RecordHandler = {
         hoursJson: record.hours ?? null,
         responsePolicyJson: record.responsePolicy,
         capabilitySchemasJson: record.capabilitySchemas ?? null,
-        isPublic: record.isPublic,
+        isDiscoverable: record.isDiscoverable,
         searchContent,
         indexedAt: new Date(),
       },

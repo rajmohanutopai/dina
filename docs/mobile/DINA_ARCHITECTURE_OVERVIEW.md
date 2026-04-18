@@ -244,7 +244,7 @@ This is the practical path from today's code to the target architecture.
 - **Brain already has an agentic tool loop** in `brain/src/service/vault_context.py` via `ReasoningAgent.reason()`.
 - **Core already has one internal async queue** in `core/internal/service/task.go`.
 - **Core already has one distinct delegated-work model** in `core/internal/port/delegated_task.go`.
-- **Public service discovery/query exists as a vertical feature** across `brain/src/service/service_query.py`, `brain/src/service/service_handler.py`, `core/internal/service/transport.go`, and AppView service search.
+- **Provider service discovery/query exists as a vertical feature** across `brain/src/service/service_query.py`, `brain/src/service/service_handler.py`, `core/internal/service/transport.go`, and AppView service search.
 
 The result is that Dina already has the beginnings of a kernel and already has fragmented async state. The right next step is to harden the kernel first and only then reshape durable async behavior.
 
@@ -267,7 +267,7 @@ The result is that Dina already has the beginnings of a kernel and already has f
 
 ### Phase 2 — Introduce service discovery as kernel tools
 
-- Add `geocode`, `search_public_services`, and `query_service` as first-class reasoning tools.
+- Add `geocode`, `search_provider_services`, and `query_service` as first-class reasoning tools.
 - Keep the Brain side thin: selection, validation, and one Core call for side effects.
 - Validate requester-side service params against the same capability schema used on the provider side.
 

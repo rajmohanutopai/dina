@@ -96,7 +96,7 @@ func TestCanonicalHash_MatchesPythonReferenceForEtaQuery(t *testing.T) {
 	svc := service.NewServiceConfigService(store)
 	schema.SchemaHash = want
 	cfg := &service.ServiceConfig{
-		IsPublic: true,
+		IsDiscoverable: true,
 		Name:     "Test Transit",
 		Capabilities: map[string]service.CapabilityConfig{
 			"eta_query": {ResponsePolicy: "auto"},

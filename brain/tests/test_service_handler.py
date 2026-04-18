@@ -59,7 +59,7 @@ def _service_config(response_policy: str, *, include_schema_hash: bool = True) -
     if include_schema_hash:
         schema["schema_hash"] = compute_schema_hash(canonical)
     return {
-        "is_public": True,
+        "is_discoverable": True,
         "name": "Test Transit",
         "capabilities": {
             "eta_query": {

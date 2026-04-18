@@ -122,6 +122,22 @@ class ServiceHandler:
                 )
                 return
 
+            # Strip keys not declared in the schema's `properties` before
+            # the task payload leaves Brain. Defense-in-depth: even if a
+            # provider's schema omits `additionalProperties: false`, the
+            # MCP tool downstream won't see junk keys (e.g. an LLM
+            # packing a stray `provider` field) that it can't accept.
+            declared = (cap_schema["params"].get("properties") or {}).keys()
+            if isinstance(params, dict) and declared:
+                stripped = {k: v for k, v in params.items() if k in declared}
+                if len(stripped) != len(params):
+                    dropped = sorted(set(params) - set(stripped))
+                    logger.info(
+                        "service_handler: dropped undeclared params for %s: %s",
+                        capability, dropped,
+                    )
+                    params = stripped
+
         # 3. Review policy → create approval task, notify operator.
         if response_policy == "review":
             await self._create_approval_task(
@@ -149,7 +165,7 @@ class ServiceHandler:
                 short_did = from_did if len(from_did) <= 24 else from_did[:22] + "…"
                 agent_label = await self._describe_agent_pool()
                 lines = [
-                    "📥 Public service request received",
+                    "📥 Provider service request received",
                     f"Capability: {capability}"
                     + (f" ({params_preview})" if params_preview else ""),
                     f"From: {short_did}",
@@ -213,6 +229,12 @@ class ServiceHandler:
         can't violate the contract the requester thought it had.
         """
         tid = task_id or f"svc-exec-{uuid.uuid4()}"
+        # Explicit capability → MCP tool binding from service config so the
+        # executing agent doesn't guess. Empty string when the provider has
+        # not declared one (agent falls back to name-match heuristic).
+        mcp_tool = ""
+        if isinstance(schema_snapshot, dict):
+            mcp_tool = schema_snapshot.get("mcp_tool") or ""
         task_payload = {
             "type": "service_query_execution",
             "from_did": from_did,
@@ -223,6 +245,7 @@ class ServiceHandler:
             "service_name": self._config.get("name", ""),
             "schema_hash": schema_hash,
             "schema_snapshot": schema_snapshot or {},
+            "mcp_tool": mcp_tool,
         }
         # Description is human-readable metadata that surfaces in task lists
         # and logs — keep it abstract. Params live in the structured payload
@@ -257,6 +280,9 @@ class ServiceHandler:
     ) -> None:
         """Create an approval workflow_task for manual review + notify operator."""
         ttl = body.get("ttl_seconds", get_ttl(capability))
+        mcp_tool = ""
+        if isinstance(schema_snapshot, dict):
+            mcp_tool = schema_snapshot.get("mcp_tool") or ""
         task_payload = {
             "type": "service_query_execution",
             "from_did": from_did,
@@ -267,6 +293,7 @@ class ServiceHandler:
             "ttl_seconds": ttl,
             "schema_hash": schema_hash,
             "schema_snapshot": schema_snapshot or {},
+            "mcp_tool": mcp_tool,
         }
         task_id = f"approval-{uuid.uuid4()}"
         await self._core.create_workflow_task(

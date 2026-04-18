@@ -972,6 +972,61 @@ class CoreHTTPClient:
         data = resp.json()
         return list(data.get("agents") or [])
 
+    # -- Working memory ------------------------------------------------------
+
+    async def memory_touch(
+        self,
+        *,
+        persona: str,
+        topic: str,
+        kind: str,
+        live_capability: str = "",
+        live_provider_did: str = "",
+        sample_item_id: str = "",
+    ) -> dict:
+        """POST /v1/memory/topic/touch — record a topic mention.
+
+        Applies EWMA decay + increment on the persona's salience index.
+        Variant → canonical mapping happens inside Core; the caller
+        passes the extracted surface form. See
+        docs/WORKING_MEMORY_DESIGN.md.
+        """
+        body = {
+            "persona": persona,
+            "topic": topic,
+            "kind": kind,
+        }
+        if live_capability:
+            body["live_capability"] = live_capability
+        if live_provider_did:
+            body["live_provider_did"] = live_provider_did
+        if sample_item_id:
+            body["sample_item_id"] = sample_item_id
+        resp = await self._request("POST", "/v1/memory/topic/touch", json=body)
+        return resp.json() if resp.status_code < 300 else {}
+
+    async def memory_toc(
+        self,
+        *,
+        personas: list[str] | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """GET /v1/memory/toc — ranked ToC across unlocked personas.
+
+        Returns the list under the "entries" key. Locked or unknown
+        personas are silently skipped by Core. Salience is computed
+        with decay applied at read time.
+        """
+        from urllib.parse import urlencode
+
+        query: dict[str, str] = {"limit": str(limit)}
+        if personas:
+            query["persona"] = ",".join(personas)
+        path = "/v1/memory/toc?" + urlencode(query)
+        resp = await self._request("GET", path)
+        data = resp.json() if resp.status_code < 300 else {}
+        return list(data.get("entries") or [])
+
     async def initiate_pairing(self) -> InitiatePairingResponse:
         """POST /v1/pair/initiate — generate pairing code."""
         resp = await self._request("POST", "/v1/pair/initiate")

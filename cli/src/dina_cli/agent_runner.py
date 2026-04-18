@@ -79,7 +79,7 @@ INSTRUCTIONS:
 def build_task_prompt(task: dict, session_name: str, runner_name: str) -> str:
     """Build the standard task prompt envelope.
 
-    For service_query_execution tasks (WS2 public service discovery),
+    For service_query_execution tasks (WS2 provider service discovery),
     augment the abstract description with the structured payload so the
     LLM has the capability + params it needs to pick tool arguments.
     The description itself stays abstract to avoid leaking payload values
@@ -97,11 +97,26 @@ def build_task_prompt(task: dict, session_name: str, runner_name: str) -> str:
             payload = {}
         capability = payload.get("capability", "")
         params = payload.get("params", {})
+        mcp_tool = payload.get("mcp_tool", "")
         if capability and isinstance(params, dict):
+            # Explicit tool binding when the provider declared one; else the
+            # agent is left to infer from the capability name. Explicit is
+            # always preferable — stops the LLM from wandering to other MCP
+            # tools (e.g. dina_ask, dina_search) that happen to be in scope.
+            if mcp_tool:
+                tool_instruction = (
+                    f"Execute the `{capability}` capability by calling the MCP "
+                    f"tool `{mcp_tool}` with EXACTLY these argument values. "
+                    f"Do not call any other tool."
+                )
+            else:
+                tool_instruction = (
+                    f"Execute the `{capability}` capability. Call the MCP tool "
+                    f"whose name matches the capability (e.g. `{capability}` or "
+                    f"`<server>__{capability}`) with EXACTLY these argument values."
+                )
             description = (
-                f"Execute the `{capability}` capability with the following "
-                f"parameters. Call the corresponding MCP tool using EXACTLY "
-                f"these argument values.\n\n"
+                f"{tool_instruction}\n\n"
                 f"Parameters JSON:\n{_json.dumps(params, indent=2)}\n\n"
                 f"CRITICAL result handling:\n"
                 f"- After the MCP tool returns, call `dina_task_complete` with "

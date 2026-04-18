@@ -140,7 +140,7 @@ export interface Collection {
   name: string
   description?: string
   items: string[]
-  isPublic: boolean
+  isDiscoverable: boolean
   createdAt: string
 }
 
@@ -228,7 +228,7 @@ export interface ServiceProfile {
   serviceArea?: { latE7: number; lngE7: number; radiusKm: number }
   hours?: { open: string; close: string; timezone: string }
   responsePolicy: Record<string, string>
-  isPublic: boolean
+  isDiscoverable: boolean
   updatedAt: string
 }
 

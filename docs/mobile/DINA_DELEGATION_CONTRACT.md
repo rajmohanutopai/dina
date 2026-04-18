@@ -37,7 +37,7 @@ Unless a section explicitly says otherwise, patterns in this document should be 
 Current Dina has:
 
 - direct MCP/OpenClaw integrations for provider-side tool execution
-- service discovery and public-service D2D flows
+- service discovery and provider-service D2D flows
 - no general signed external delegation contract matching this document
 
 Treat this document as the contract to build **when** Dina introduces real external execution planes that need durable, auditable, capability-scoped delegation.

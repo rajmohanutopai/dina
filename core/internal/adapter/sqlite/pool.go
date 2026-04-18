@@ -25,6 +25,8 @@ import (
 	"sync"
 
 	_ "github.com/mutecomm/go-sqlcipher/v4"
+
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 //go:embed schema/identity_001.sql
@@ -202,6 +204,19 @@ func (p *Pool) OpenPersonas() []string {
 	return names
 }
 
+// TopicStoreFor returns the working-memory topic store for an unlocked
+// persona, or nil if that persona is locked or unknown. Return type is
+// the port interface so the value can be nil-compared safely in the
+// service layer (a typed-nil `*SQLiteTopicStore` inside a non-nil
+// `port.TopicStore` would break `if store == nil` checks).
+func (p *Pool) TopicStoreFor(persona string) port.TopicStore {
+	db := p.DB(persona)
+	if db == nil {
+		return nil
+	}
+	return NewSQLiteTopicStore(db, persona)
+}
+
 // migratePersona applies incremental migrations to an existing persona database.
 // Each migration checks its precondition before running, making them idempotent.
 func migratePersona(db *sql.DB, persona string) error {
@@ -302,6 +317,42 @@ func migratePersona(db *sql.DB, persona string) error {
 			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (4, 'Add tiered content L0/L1 and enrichment tracking')`)
 
 		slog.Info("sqlite: migration v4 complete", "persona", persona)
+	}
+
+	// --- Migration v5: working memory (topic_salience + topic_aliases) ---
+	// Per-persona salience index feeding the ToC + intent classifier.
+	// See docs/WORKING_MEMORY_DESIGN.md.
+	if !hasTable(db, "topic_salience") {
+		slog.Info("sqlite: applying migration v5 (working memory)", "persona", persona)
+
+		stmts := []string{
+			`CREATE TABLE IF NOT EXISTS topic_salience (
+				topic             TEXT PRIMARY KEY,
+				kind              TEXT NOT NULL CHECK (kind IN ('entity','theme')),
+				last_update       INTEGER NOT NULL,
+				s_short           REAL NOT NULL DEFAULT 0,
+				s_long            REAL NOT NULL DEFAULT 0,
+				live_capability   TEXT NOT NULL DEFAULT '',
+				live_provider_did TEXT NOT NULL DEFAULT '',
+				sample_item_id    TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_topic_salience_long ON topic_salience(s_long DESC)`,
+			`CREATE INDEX IF NOT EXISTS idx_topic_salience_kind ON topic_salience(kind)`,
+			`CREATE TABLE IF NOT EXISTS topic_aliases (
+				variant    TEXT PRIMARY KEY,
+				canonical  TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_topic_aliases_canonical ON topic_aliases(canonical)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("v5: working memory: %w", err)
+			}
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (5, 'Working memory topic_salience + topic_aliases')`)
+
+		slog.Info("sqlite: migration v5 complete", "persona", persona)
 	}
 
 	return nil

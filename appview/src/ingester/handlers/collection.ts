@@ -22,7 +22,7 @@ export const collectionHandler: RecordHandler = {
       name: record.name,
       description: record.description ?? null,
       itemsJson: record.items,
-      isPublic: record.isPublic,
+      isDiscoverable: record.isDiscoverable,
       recordCreatedAt: new Date(record.createdAt),
     }).onConflictDoUpdate({
       target: collectionsTable.uri,
@@ -31,7 +31,7 @@ export const collectionHandler: RecordHandler = {
         name: record.name,
         description: record.description ?? null,
         itemsJson: record.items,
-        isPublic: record.isPublic,
+        isDiscoverable: record.isDiscoverable,
         recordCreatedAt: new Date(record.createdAt),
         indexedAt: new Date(),
       },

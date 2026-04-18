@@ -4,42 +4,42 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { services } from '@/db/schema/index.js'
 
 /**
- * xRPC endpoint: com.dina.service.isPublic
+ * xRPC endpoint: com.dina.service.isDiscoverable
  *
- * Simple boolean check: does this DID have any public service profiles?
- * Used by Core's PublicServiceResolver to decide whether to bypass
+ * Simple boolean check: does this DID have any provider service profiles?
+ * Used by Core's ProviderServiceResolver to decide whether to bypass
  * D2D authentication for service discovery queries.
  */
 
-export const ServiceIsPublicParams = z.object({
+export const ServiceIsDiscoverableParams = z.object({
   did: z.string().min(8).max(2048).regex(/^did:[a-z]+:/),
 })
 
-export type ServiceIsPublicParamsType = z.infer<typeof ServiceIsPublicParams>
+export type ServiceIsDiscoverableParamsType = z.infer<typeof ServiceIsDiscoverableParams>
 
-export interface ServiceIsPublicResponse {
-  isPublic: boolean
+export interface ServiceIsDiscoverableResponse {
+  isDiscoverable: boolean
   capabilities?: string[]
 }
 
-export async function serviceIsPublic(
+export async function serviceIsDiscoverable(
   db: DrizzleDB,
-  params: ServiceIsPublicParamsType,
-): Promise<ServiceIsPublicResponse> {
+  params: ServiceIsDiscoverableParamsType,
+): Promise<ServiceIsDiscoverableResponse> {
   const rows = await db.select({
     capabilitiesJson: services.capabilitiesJson,
   })
     .from(services)
     .where(and(
       eq(services.operatorDid, params.did),
-      eq(services.isPublic, true),
+      eq(services.isDiscoverable, true),
     ))
 
   if (rows.length === 0) {
-    return { isPublic: false }
+    return { isDiscoverable: false }
   }
 
-  // Merge capabilities from all public service profiles for this DID
+  // Merge capabilities from all provider service profiles for this DID
   const allCapabilities = new Set<string>()
   for (const row of rows) {
     const caps = row.capabilitiesJson as string[]
@@ -51,7 +51,7 @@ export async function serviceIsPublic(
   }
 
   return {
-    isPublic: true,
+    isDiscoverable: true,
     capabilities: Array.from(allCapabilities),
   }
 }

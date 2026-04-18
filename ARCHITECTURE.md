@@ -3885,10 +3885,10 @@ In Phase 2, the envelope becomes standard JWE (`application/didcomm-encrypted+js
 
 ### Public Service Discovery (Phase 1)
 
-Dina supports public service discovery — service providers (bus operators, shops, utilities) publish capabilities via AT Protocol records, discoverable through AppView search. Queries and responses use the D2D transport with a contact-gate bypass mechanism called the **query window**.
+Dina supports provider service discovery — service providers (bus operators, shops, utilities) publish capabilities via AT Protocol records, discoverable through AppView search. Queries and responses use the D2D transport with a contact-gate bypass mechanism called the **query window**.
 
 **New D2D message types:**
-- `service.query` — query a public service capability (e.g., ETA)
+- `service.query` — query a provider service capability (e.g., ETA)
 - `service.response` — response from the service (e.g., "45 minutes")
 
 These types bypass the contact gate and scenario policy system. Instead, they use time-limited **query windows** that authorize specific (peerDID, queryID, capability) tuples for 60 seconds.
@@ -3907,7 +3907,7 @@ These types bypass the contact gate and scenario policy system. Instead, they us
 
 **AppView endpoints:**
 - `com.dina.service.search` — ranked retrieval (distance 40% + text 30% + trust 30%)
-- `com.dina.service.isPublic` — deterministic boolean check (cached 5 min by Core)
+- `com.dina.service.isDiscoverable` — deterministic boolean check (cached 5 min by Core)
 
 **Security properties:**
 - IngressDrop always wins (trust blocklist checked before service bypass)
@@ -4335,7 +4335,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 }
 ```
 
-Additional Lexicons: `com.dina.trust.outcome` (anonymized purchase outcomes), `com.dina.trust.bot` (bot registration and scores), `com.dina.trust.membership` (trust ring public info), `com.dina.service.profile` (public service capabilities and location for service discovery).
+Additional Lexicons: `com.dina.trust.outcome` (anonymized purchase outcomes), `com.dina.trust.bot` (bot registration and scores), `com.dina.trust.membership` (trust ring public info), `com.dina.service.profile` (provider service capabilities and location for service discovery).
 
 ### Expert Attestations
 

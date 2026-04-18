@@ -1,13 +1,13 @@
-// query_window.go — Time-limited query windows for public service D2D traffic.
+// query_window.go — Time-limited query windows for provider service D2D traffic.
 //
-// Public service traffic bypasses the contacts-only D2D model. A QueryWindow
+// Provider service traffic bypasses the contacts-only D2D model. A QueryWindow
 // tracks (peerDID, queryID, capability) → expiry entries that authorize
 // specific D2D messages to skip the contact gate.
 //
 // Two instances are used:
 //   - providerWindow: opened when a service.query is accepted from a stranger.
 //     The provider's service.response uses Reserve/Commit to consume the window.
-//   - requesterWindow: opened when a service.query is sent to a public service.
+//   - requesterWindow: opened when a service.query is sent to a provider service.
 //     The requester's inbound service.response uses CheckAndConsume to accept it.
 package service
 
@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// QueryWindow tracks time-limited authorization windows for public service
+// QueryWindow tracks time-limited authorization windows for provider service
 // D2D traffic. Thread-safe. Memory-only (acceptable for ephemeral queries).
 type QueryWindow struct {
 	mu      sync.Mutex

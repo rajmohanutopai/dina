@@ -24,7 +24,7 @@ guarding against (wrong source, dropped source, hallucinated answer).
 Why E2E instead of unit-testing the classifier:
   Classifier behavior only matters in context of the reasoning agent's
   downstream tool calls and final synthesis. A unit test that asserts
-  ``sources == ["vault", "public_services"]`` passes even if the LLM
+  ``sources == ["vault", "provider_services"]`` passes even if the LLM
   then ignores the routing and hallucinates. The answer is the only
   ground truth; intermediate structure is diagnostic, not load-bearing.
 
@@ -109,7 +109,7 @@ def seeded_vault(tg):
       travel:    AI 123 Tokyo flight Oct 20 (scenario 8)
       long-tail: a Harari book reference from 14 months ago (scenario 12)
 
-    Does NOT seed Trust Network reviews or public-service providers —
+    Does NOT seed Trust Network reviews or provider-service providers —
     those come from outside (AppView / Hetzner test stack) and are
     assumed to be available when running these tests.
     """
@@ -152,7 +152,7 @@ class TestSelfStatic:
     """Self-referential questions with no live-state component.
 
     Classifier should route to vault only. Failure modes to catch:
-      - Drifting to public_services for no reason
+      - Drifting to provider_services for no reason
       - Missing the right persona (e.g., searching social for a finance
         question)
       - Hallucinating when vault content is present but not found
@@ -207,17 +207,17 @@ class TestSelfStatic:
 
 
 # ---------------------------------------------------------------------------
-# Group B — not-self + live (public services)
+# Group B — not-self + live (provider services)
 # ---------------------------------------------------------------------------
 
 class TestLivePublic:
     """Questions about live external state — no vault context needed."""
 
     def test_05_public_bus_eta(self, tg, seeded_vault):
-        """'When does the next bus 42 reach Van Ness?'  — pure public_service.
+        """'When does the next bus 42 reach Van Ness?'  — pure provider_service.
 
         Expected:
-          sources=[public_services], temporal=live_state
+          sources=[provider_services], temporal=live_state
           answer contains 'min' and a maps URL
         """
         r = _ask(tg, "when does the next bus 42 reach Van Ness?", wait_s=180)
@@ -270,7 +270,7 @@ class TestCompositional:
         (test stack should register this before running — TODO).
 
         Expected:
-          sources=[vault, public_services], temporal=live_state
+          sources=[vault, provider_services], temporal=live_state
           answer references Dr Carl / Apr 19 3pm (vault context) and
           something about confirmation status (service result)
         """
@@ -293,7 +293,7 @@ class TestCompositional:
         No flight-status service is registered on AppView for this test.
 
         Expected:
-          sources=[vault, public_services attempt] → fallback
+          sources=[vault, provider_services attempt] → fallback
           temporal=live_state
           answer cites flight AI 123 from vault + honest "no live
           status available" — NOT a hallucinated ETA.
@@ -401,7 +401,7 @@ class TestMultiHop:
 
         Expected:
           step 1: vault(health) → Dr Carl is on Castro St
-          step 2: public_service(eta_query) with lat/lng → bus 42 / route info
+          step 2: provider_service(eta_query) with lat/lng → bus 42 / route info
           answer includes an ETA and mentions Castro / Dr Carl
 
         Requires BusDriver registered on AppView.
@@ -410,9 +410,9 @@ class TestMultiHop:
         assert _contains_any(r, ["castro", "dr carl", "carl"]), (
             f"expected Dr Carl's address context: {r!r}"
         )
-        # An ETA is the ideal signal that public_service was actually called
+        # An ETA is the ideal signal that provider_service was actually called
         assert _contains_any(r, [" min ", " minutes"]), (
-            f"expected bus ETA from public_service call: {r!r}"
+            f"expected bus ETA from provider_service call: {r!r}"
         )
 
     def test_15_no_provider_honest_fallback(self, tg, seeded_vault):
@@ -422,7 +422,7 @@ class TestMultiHop:
         "no weather service available," not a hallucinated forecast.
 
         Expected:
-          sources=[public_services] → no candidates
+          sources=[provider_services] → no candidates
           answer: explicit "no provider" rather than temperatures/conditions
         """
         r = _ask(tg, "what's the weather in Bangalore right now?", wait_s=60)

@@ -32,11 +32,11 @@ class ServicePublisher:
     async def publish(self) -> None:
         """Read service config from Core and publish to PDS.
 
-        If the config is missing or ``is_public`` is False, unpublishes
+        If the config is missing or ``is_discoverable`` is False, unpublishes
         instead (idempotent delete).
         """
         config = await self._core.get_service_config()
-        if not config or not config.get("is_public"):
+        if not config or not config.get("is_discoverable"):
             await self.unpublish()
             return
 
@@ -89,7 +89,7 @@ class ServicePublisher:
                 k: v.get("response_policy", "auto")
                 for k, v in capabilities.items()
             },
-            "isPublic": True,
+            "isDiscoverable": True,
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
         if service_area_record is not None:

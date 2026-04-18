@@ -31,7 +31,7 @@ Two paths:
    correctly. Provider side is fully real.
 
 2. Natural language `/ask` — optional path that exercises the LLM
-   tool-call loop (`search_public_services` → `query_service`). Skipped
+   tool-call loop (`search_provider_services` → `query_service`). Skipped
    if the LLM isn't configured on the Alonso instance, since sanity
    suite isn't required to ship LLM keys.
 
@@ -253,7 +253,7 @@ class TestTransitEndToEnd:
 
         The LLM should:
           1. geocode("Castro Station")
-          2. search_public_services(capability="eta_query", lat, lng)
+          2. search_provider_services(capability="eta_query", lat, lng)
           3. query_service(operator_did=busdriver, params={route_id:"42", ...}, ...)
 
         Reply arrives asynchronously via workflow_event → Telegram.

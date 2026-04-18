@@ -1217,7 +1217,8 @@ func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 		"/v1/workflow/tasks",  // workflow task create + queue-by-proposal
 		"/v1/workflow/events", // workflow event ACK
 		"/v1/people",       // person memory layer (recall expansion)
-		"/v1/service",      // service config (public service discovery)
+		"/v1/service",      // service config (provider service discovery)
+		"/v1/memory",       // working-memory: topic touch + ToC render
 		"/v1/notify",
 		"/v1/reminder",
 		"/v1/reminders",

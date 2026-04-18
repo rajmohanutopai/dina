@@ -129,7 +129,7 @@ def busdriver_config_published(
     test run), PUT is idempotent — the stored config is overwritten.
     """
     cfg = {
-        "is_public": True,
+        "is_discoverable": True,
         "name": "SF Transit Authority",
         "description": "Schedule-based bus ETAs for SF Muni routes.",
         "capabilities": {

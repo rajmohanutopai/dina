@@ -7,7 +7,7 @@ export const collections = pgTable('collections', {
   name: text('name').notNull(),
   description: text('description'),
   itemsJson: jsonb('items_json').notNull(),
-  isPublic: boolean('is_public').default(true),
+  isDiscoverable: boolean('is_discoverable').default(true),
   recordCreatedAt: timestamp('record_created_at').notNull(),
   indexedAt: timestamp('indexed_at').notNull().defaultNow(),
 }, (table) => [

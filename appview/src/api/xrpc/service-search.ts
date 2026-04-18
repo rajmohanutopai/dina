@@ -97,7 +97,7 @@ export async function serviceSearch(
   const scoreBucketExpr = sql<number>`floor((${compositeScoreExpr}) * 1000)`
 
   const conditions: any[] = [
-    eq(services.isPublic, true),
+    eq(services.isDiscoverable, true),
     sql`${services.capabilitiesJson}::jsonb @> ${JSON.stringify([capability])}::jsonb`,
   ]
   if (hasLocation) {

@@ -1,6 +1,6 @@
 """REL-012 README, QUICKSTART, and Public Claims Checklist.
 
-Verify that public-facing documentation is materially true as written.
+Verify that provider-facing documentation is materially true as written.
 
 Execution class: Hybrid (harness portion).
 """

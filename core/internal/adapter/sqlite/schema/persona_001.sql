@@ -116,6 +116,34 @@ CREATE TABLE IF NOT EXISTS embedding_meta (
     embedded_at   INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
+-- Working memory: salience-ranked topic index (v5)
+-- Each row is a named topic (entity or theme) with EWMA-decayed mention
+-- counters at two timescales. Read at ToC-render time with decay applied
+-- on the fly. See docs/WORKING_MEMORY_DESIGN.md.
+CREATE TABLE IF NOT EXISTS topic_salience (
+    topic             TEXT PRIMARY KEY,
+    kind              TEXT NOT NULL CHECK (kind IN ('entity','theme')),
+    last_update       INTEGER NOT NULL,
+    s_short           REAL NOT NULL DEFAULT 0,
+    s_long            REAL NOT NULL DEFAULT 0,
+    live_capability   TEXT NOT NULL DEFAULT '',
+    live_provider_did TEXT NOT NULL DEFAULT '',
+    sample_item_id    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_topic_salience_long ON topic_salience(s_long DESC);
+CREATE INDEX IF NOT EXISTS idx_topic_salience_kind ON topic_salience(kind);
+
+-- Topic aliases: variant → canonical mapping for canonicalisation.
+-- Populated at extraction time by exact-match + stemmed lookup.
+-- Embedding-similarity lookup (§6.2) is deferred to V2.
+CREATE TABLE IF NOT EXISTS topic_aliases (
+    variant    TEXT PRIMARY KEY,
+    canonical  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_topic_aliases_canonical ON topic_aliases(canonical);
+
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (
     version       INTEGER PRIMARY KEY,
@@ -125,3 +153,5 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 INSERT OR IGNORE INTO schema_version(version, description)
 VALUES (1, 'Initial persona schema with vault_items, FTS5, staging, relationships');
+INSERT OR IGNORE INTO schema_version(version, description)
+VALUES (5, 'Working memory topic_salience + topic_aliases');

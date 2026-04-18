@@ -63,6 +63,8 @@ class StagingProcessor:
         persona_selector: Any = None,
         reminder_planner: Any = None,
         telegram: Any = None,
+        topic_extractor: Any = None,
+        appview_client: Any = None,
     ) -> None:
         self._core = core
         self._enrichment = enrichment
@@ -72,6 +74,15 @@ class StagingProcessor:
         self._selector = persona_selector
         self._reminder_planner = reminder_planner
         self._telegram = telegram
+        # Working-memory topic extractor — populates topic_salience
+        # via POST /v1/memory/topic/touch after each successful resolve.
+        # Optional: if None, memory updates are skipped (no-op).
+        self._topic_extractor = topic_extractor
+        # AppView client — optional; when present, entity topics are
+        # enriched with live_capability markers by resolving entity →
+        # contact DID → that DID's published service profile (see
+        # docs/WORKING_MEMORY_DESIGN.md §6.1). Silent no-op if absent.
+        self._appview_client = appview_client
         self._person_extractor = None  # Set externally after construction.
         self._last_attribution_corrections: list[dict] = []
 
@@ -331,6 +342,66 @@ class StagingProcessor:
 
                 log.info("staging.resolved", id=item_id, personas=personas)
 
+                # Working-memory topic extraction. Best-effort: any
+                # failure here is logged but never blocks the resolve.
+                # See docs/WORKING_MEMORY_DESIGN.md §7 — topic counters
+                # are a derived index; rebuild-from-scratch is always safe.
+                if self._topic_extractor and resolve_status in ("stored", "resolved"):
+                    try:
+                        topics = await self._topic_extractor.extract(base_classified)
+                        entities = topics.get("entities") or []
+                        themes = topics.get("themes") or []
+                        # Enrich entities with live_capability (§6.1):
+                        # entity name → contacts lookup → DID → AppView
+                        # service profile → first capability. This is what
+                        # lets the classifier route "is my dentist
+                        # appointment still confirmed?" to both vault and
+                        # the dentist's service, instead of vault alone.
+                        entity_enrichment = await self._enrich_entities_with_live_capability(
+                            entities,
+                        )
+                        for persona in personas:
+                            for name in entities:
+                                enrich = entity_enrichment.get(name.lower(), {})
+                                try:
+                                    await self._core.memory_touch(
+                                        persona=persona, topic=name, kind="entity",
+                                        sample_item_id=f"stg-{item_id}",
+                                        live_capability=enrich.get("capability", ""),
+                                        live_provider_did=enrich.get("did", ""),
+                                    )
+                                except Exception as texc:
+                                    log.debug(
+                                        "staging.memory_touch_entity_failed",
+                                        id=item_id, topic=name, error=str(texc),
+                                    )
+                            for name in themes:
+                                try:
+                                    await self._core.memory_touch(
+                                        persona=persona, topic=name, kind="theme",
+                                        sample_item_id=f"stg-{item_id}",
+                                    )
+                                except Exception as texc:
+                                    log.debug(
+                                        "staging.memory_touch_theme_failed",
+                                        id=item_id, topic=name, error=str(texc),
+                                    )
+                        if entities or themes:
+                            log.info(
+                                "staging.memory_touched",
+                                id=item_id,
+                                entities=len(entities),
+                                themes=len(themes),
+                                enriched_entities=sum(
+                                    1 for e in entity_enrichment.values() if e.get("capability")
+                                ),
+                            )
+                    except Exception as texc:
+                        log.warning(
+                            "staging.topic_extract_failed",
+                            id=item_id, error=str(texc),
+                        )
+
                 # Surface routing review items for daily brief.
                 if routing_meta:
                     review_kind = routing_meta.get("kind") or routing_meta.get("status", "")
@@ -389,6 +460,79 @@ class StagingProcessor:
                     pass
 
         return resolved
+
+    async def _enrich_entities_with_live_capability(
+        self, entity_names: list[str],
+    ) -> dict[str, dict]:
+        """Resolve entity topic names to DID + capability via contacts + AppView.
+
+        For each extracted entity, try to find a matching contact in
+        Core's contacts table (case-insensitive name/alias match), then
+        look up that DID's service profile on AppView. If the DID
+        advertises any capability, return it so the memory_touch call
+        can stamp ``live_capability`` + ``live_provider_did`` on the
+        topic row.
+
+        Best-effort everywhere: an unreachable AppView, missing
+        contacts endpoint, or unknown entity all produce an empty
+        mapping for that name — the caller treats "no enrichment" as
+        the absence of a live-service path, not an error.
+
+        Returns a dict keyed by lower-cased entity name:
+            {"dr carl": {"did": "did:plc:...", "capability": "appointment_status"}}
+        """
+        if not entity_names:
+            return {}
+        if self._appview_client is None:
+            return {}
+
+        # Load contacts once per batch (small list, one HTTP round-trip).
+        try:
+            contacts_resp = await self._core._request("GET", "/v1/contacts")
+            contacts = contacts_resp.json().get("contacts", []) or []
+        except Exception as exc:
+            log.debug("staging.enrich_contacts_failed", error=str(exc))
+            return {}
+
+        # Build lowercase name → DID map, including aliases.
+        name_to_did: dict[str, str] = {}
+        for c in contacts:
+            did = c.get("did") or ""
+            if not did:
+                continue
+            name = (c.get("name") or c.get("display_name") or "").strip().lower()
+            if name and len(name) >= 2:
+                name_to_did[name] = did
+            for alias in c.get("aliases") or []:
+                alias_l = (alias or "").strip().lower()
+                if alias_l and len(alias_l) >= 2:
+                    name_to_did[alias_l] = did
+
+        out: dict[str, dict] = {}
+        for name in entity_names:
+            key = (name or "").strip().lower()
+            if not key:
+                continue
+            did = name_to_did.get(key)
+            if not did:
+                continue  # entity isn't a known contact → no live path
+            try:
+                discoverable, capabilities = await self._appview_client.is_discoverable(did)
+            except Exception as exc:
+                log.debug(
+                    "staging.enrich_appview_failed",
+                    name=name, did=did, error=str(exc),
+                )
+                continue
+            if not discoverable or not capabilities:
+                continue
+            # First capability wins. For multi-capability providers we
+            # could extend this later to record all of them, but the
+            # ToC row has a single live_capability slot — a reasonable
+            # V1 constraint until we see providers that actually need
+            # multiple.
+            out[key] = {"did": did, "capability": capabilities[0]}
+        return out
 
     async def _classify_personas(self, item: dict) -> tuple[list[str], dict | None]:
         """Classify item into one or more personas. Highest sensitivity first.

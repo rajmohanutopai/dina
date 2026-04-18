@@ -157,7 +157,7 @@ _FORMATTERS: dict[str, Any] = {
 
 
 class ServiceQueryOrchestrator:
-    """Turns a user ask into a public service query via Core endpoint.
+    """Turns a user ask into a provider service query via Core endpoint.
 
     WS2: no in-memory tracking. Core creates a durable workflow_task,
     sends D2D, and tracks the response. Brain receives the result as a

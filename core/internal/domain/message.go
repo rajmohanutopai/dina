@@ -32,8 +32,8 @@ const (
 	// trust.vouch.response — answer to a vouch request; stored as attestation.
 	MsgTypeTrustVouchResponse MessageType = "trust.vouch.response"
 
-	// service.query — public service query (e.g., "when does bus 42 arrive?").
-	// Ephemeral — never stored. Bypasses contact gate for public services.
+	// service.query — provider service query (e.g., "when does bus 42 arrive?").
+	// Ephemeral — never stored. Bypasses contact gate for provider services.
 	MsgTypeServiceQuery MessageType = "service.query"
 
 	// service.response — answer to a service query (e.g., "45 minutes").
@@ -181,7 +181,7 @@ type CoordinationResponseBody struct {
 }
 
 // ServiceQueryBody is the body of a service.query message.
-// Ephemeral — never stored. Sent to public services via query window bypass.
+// Ephemeral — never stored. Sent to provider services via query window bypass.
 type ServiceQueryBody struct {
 	// QueryID is a sender-generated UUID for request/response correlation.
 	QueryID string `json:"query_id"`

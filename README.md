@@ -88,7 +88,7 @@ Now imagine the same thing, everywhere in your life:
 - Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
 - You are waiting for a bus. Your Dina contacts the bus drivers Dina. What time will you reach my location (xyz location)? Bus Drivers Dina checks their internal database and Google Maps Traffic and tells - will reach in 45 minutes
 
-> **Status: Implemented in Phase 1.** Public service discovery, D2D service queries, and auto-respond via MCP are functional. See `docs/designs/SERVICE_DISCOVERY.md` for the protocol design.
+> **Status: Implemented in Phase 1.** Provider service discovery, D2D service queries, and auto-respond via MCP are functional. See `docs/designs/SERVICE_DISCOVERY.md` for the protocol design.
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
 

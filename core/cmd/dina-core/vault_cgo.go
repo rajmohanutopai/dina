@@ -49,6 +49,21 @@ func newContactDirectory(backend vaultBackend) contactDirectoryFull {
 	return sqlite.NewSQLiteContactDirectory(pool)
 }
 
+// newMemoryService wires the working-memory ToC aggregator against the
+// encrypted pool. Returns both the service and the pool-as-Provider:
+// the HTTP handler needs Provider for per-persona Touch, the service
+// uses Provider for cross-persona ToC merge. Kept behind the CGO build
+// tag so main.go doesn't need to know about the concrete pool type.
+//
+// The handler also needs OpenPersonas() to serve queries that don't
+// specify a persona filter — Pool satisfies that interface at runtime
+// via a type assertion inside the handler.
+func newMemoryService(backend vaultBackend, clk port.Clock) (*service.MemoryService, service.TopicStoreProvider) {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	svc := service.NewMemoryService(pool, clk)
+	return svc, pool
+}
+
 // newContactAliasStore returns a SQLite-backed alias store using identity.sqlite.
 func newContactAliasStore(backend vaultBackend) port.ContactAliasStore {
 	pool := backend.(*sqlite.VaultAdapter).Pool()

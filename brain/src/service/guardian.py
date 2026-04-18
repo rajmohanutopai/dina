@@ -683,6 +683,7 @@ class GuardianLoop:
         persona_registry: Any = None,  # PersonaRegistry
         staging_processor: Any = None,  # StagingProcessor
         action_policy: ActionRiskPolicy | None = None,  # Configurable action risk policy
+        intent_classifier: Any = None,  # IntentClassifier (Working Memory)
     ) -> None:
         self._core = core
         self._llm = llm_router
@@ -698,6 +699,11 @@ class GuardianLoop:
         self._routing_ambiguity_surfaced: list[str] = []
         self._event_extractor = event_extractor
         self._action_policy = action_policy or ActionRiskPolicy.defaults()
+        # Working-memory intent classifier. When set, runs before
+        # vault_context.reason() to prime the reasoning agent with
+        # source-of-truth routing decisions; see
+        # docs/WORKING_MEMORY_DESIGN.md §9.
+        self._intent_classifier = intent_classifier
 
         # Tracks which personas are currently unlocked.
         self._unlocked_personas: set[str] = set()
@@ -2220,7 +2226,7 @@ class GuardianLoop:
     async def _notify_delegation_completion(self, payload: dict, details: dict) -> None:
         """Emit a brief operator notification when a delegation task ends.
 
-        Pairs with the "Public service request received" notification
+        Pairs with the "Provider service request received" notification
         fired by ServiceHandler at ingress: closes the loop so the
         operator sees not just "query arrived" but also "response
         delivered (status/summary)". Silent for non-service delegations.
@@ -3519,6 +3525,38 @@ class GuardianLoop:
             # post-response guard scan (Step 3-4) catches anti-her violations
             # in the actual LLM response, which is the right place to check.
 
+            # Step 1c: Intent classification — Working Memory routing.
+            # Runs once per /ask, reads the ToC + query, emits a hint
+            # for the reasoning agent (which sources, which personas,
+            # which ToC entries drove the decision). Best-effort: on
+            # failure the classifier returns a conservative default
+            # and the reasoning agent keeps its full tool set.
+            intent_hint: dict | None = None
+            if self._intent_classifier is not None:
+                try:
+                    # Classify against the RAW (non-scrubbed) prompt
+                    # because the classifier needs to see the user's
+                    # actual words to route well; it runs PII scrubbing
+                    # inline on its own prompt if entity_vault is wired
+                    # in the router. For V1 the classifier's prompt
+                    # doesn't scrub — the ToC it reads already went
+                    # through scrub-at-ingest, and the query may
+                    # contain names (dentist, bank) that are essential
+                    # to the routing decision.
+                    classification = await self._intent_classifier.classify(prompt)
+                    intent_hint = classification.to_dict()
+                    log.info(
+                        "guardian.reason.intent_classified",
+                        sources=intent_hint.get("sources", []),
+                        temporal=intent_hint.get("temporal", ""),
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "guardian.reason.intent_classifier_failed",
+                        error=str(exc),
+                    )
+                    intent_hint = None
+
             # Step 2: Agentic reasoning with vault tools.
             if self._vault_context and not skip_vault:
                 try:
@@ -3530,6 +3568,7 @@ class GuardianLoop:
                         agent_did=agent_did,
                         session=agent_session,
                         user_origin=user_origin,
+                        intent_hint=intent_hint,
                     )
                     vault_enriched = result.get("vault_context_used", False)
                     if vault_enriched:

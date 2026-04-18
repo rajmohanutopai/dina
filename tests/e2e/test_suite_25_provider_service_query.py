@@ -4,7 +4,7 @@ Product-level validation that the WS2 requester→provider→bridge arc
 works across real Core+Brain containers. The happy-path scenario
 mirrors the transit demo:
 
-    Alonso (requester) ─D2D─> BusDriver (provider, public service)
+    Alonso (requester) ─D2D─> BusDriver (provider, provider service)
                                 │
                                 ▼  (delegation task)
                             OpenClaw (simulated here: test posts to
@@ -183,8 +183,8 @@ def _wait_for_workflow_event(
 # Suite 25
 # ---------------------------------------------------------------------------
 
-class TestPublicServiceQuery:
-    """E2E-25.x — Public service query arc (schema-driven).
+class TestProviderServiceQuery:
+    """E2E-25.x — Provider service query arc (schema-driven).
 
     Exercises Alonso↔BusDriver across real Core+Brain Docker containers.
     """
@@ -207,7 +207,7 @@ class TestPublicServiceQuery:
         )
         assert resp.status_code == 200, resp.text
         cfg = resp.json()
-        assert cfg is not None and cfg.get("is_public") is True
+        assert cfg is not None and cfg.get("is_discoverable") is True
         caps = cfg.get("capability_schemas") or {}
         assert "eta_query" in caps, f"eta_query missing from stored config: {caps}"
         eta = caps["eta_query"]

@@ -2214,7 +2214,7 @@ Traces to: `core/internal/service/service_config.go::Put` / `canonicalSchemaHash
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-1150]** Valid public config accepted | Public config with capability + JSON-Schema-valid params + result + canonical schema_hash | Put succeeds; Get returns the stored config |
-| 2 | **[TST-CORE-1151]** Public capability missing capability_schemas entry | is_public=true, capability declared without a matching capability_schemas key | Put rejects — "public capability %q missing capability_schemas entry" |
+| 2 | **[TST-CORE-1151]** Public capability missing capability_schemas entry | is_discoverable=true, capability declared without a matching capability_schemas key | Put rejects — "public capability %q missing capability_schemas entry" |
 | 3 | **[TST-CORE-1152]** Capability schema missing schema_hash | capability_schemas entry with empty SchemaHash | Put rejects — "capability %q missing schema_hash" |
 | 4 | **[TST-CORE-1153]** Malformed JSON Schema rejected | Params schema with `"type": 42` (illegal) | Put rejects with schema compile error — a broken schema never reaches the store |
 | 5 | **[TST-CORE-1154]** Auto policy without mcp_server/mcp_tool accepted | Capability with `response_policy=auto` and empty MCPServer/MCPTool | Put succeeds — under the new architecture OpenClaw executes from the structured payload; MCP routing is no longer required |

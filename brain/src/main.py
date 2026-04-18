@@ -443,8 +443,12 @@ def create_app() -> FastAPI:
     domain_clf = DomainClassifier(llm=llm_router, registry=persona_registry)
     from .service.event_extractor import EventExtractor
     from .service.reminder_planner import ReminderPlanner
+    from .service.topic_extractor import TopicExtractor
     event_extractor = EventExtractor(core=brain_core_client)
     reminder_planner = ReminderPlanner(core=brain_core_client, llm=llm_router)
+    # Working-memory topic extractor (docs/WORKING_MEMORY_DESIGN.md).
+    # Piggybacks on the enrichment LLM; scrubs PII via entity_vault.
+    topic_extractor = TopicExtractor(llm=llm_router, entity_vault=entity_vault)
     staging_processor = StagingProcessor(
         core=brain_core_client,
         enrichment=enrichment_svc,
@@ -456,6 +460,7 @@ def create_app() -> FastAPI:
         event_extractor=event_extractor,
         persona_selector=persona_selector,
         reminder_planner=reminder_planner,
+        topic_extractor=topic_extractor,
         # telegram is wired later (after TelegramService creation)
     )
     sync_engine = SyncEngine(
@@ -485,6 +490,18 @@ def create_app() -> FastAPI:
         sync_engine.register_source(_src_name)
     if _mcp_source_names:
         log.info("sync.sources_registered", extra={"sources": _mcp_source_names})
+    # Working-memory intent classifier (docs/WORKING_MEMORY_DESIGN.md).
+    # Runs once per /ask to pick which source(s) to consult, using the
+    # ToC read from Core. ToC fetcher is a thin closure so the
+    # classifier doesn't need to hold the core client directly.
+    from .service.intent_classifier import IntentClassifier
+    async def _fetch_toc_for_classifier() -> list[dict]:
+        try:
+            return await brain_core_client.memory_toc(limit=50)
+        except Exception:
+            return []
+    intent_classifier = IntentClassifier(llm=llm_router, toc_fetcher=_fetch_toc_for_classifier)
+
     guardian = GuardianLoop(
         core=brain_core_client,
         llm_router=llm_router,
@@ -497,6 +514,7 @@ def create_app() -> FastAPI:
         persona_selector=persona_selector,
         persona_registry=persona_registry,
         staging_processor=staging_processor,
+        intent_classifier=intent_classifier,
     )
 
     # -- Wire service discovery components into Guardian (Phase 1) --
@@ -545,6 +563,11 @@ def create_app() -> FastAPI:
 
         # WS2: wire AppView into VaultContextAssembler for LLM tools.
         vault_context._agent._appview = appview_client
+
+        # Working Memory: give staging_processor the same AppView client
+        # so entity topic extraction can tag live_capability markers
+        # (docs/WORKING_MEMORY_DESIGN.md §6.1).
+        staging_processor._appview_client = appview_client
 
         log.info(
             "brain.service_discovery.configured",

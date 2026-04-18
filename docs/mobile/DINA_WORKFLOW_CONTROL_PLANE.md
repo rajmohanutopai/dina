@@ -54,7 +54,7 @@ But Dina's real value is in work that **outlives a turn**:
 
 - A reminder fires at 9 AM tomorrow and Dina should act on it.
 - A user says "let me think about it" after a send_email proposal; Dina holds the approval for three days.
-- A public-service watch for a court case update has been running for six months; when an update arrives, Dina must react.
+- A provider-service watch for a court case update has been running for six months; when an update arrives, Dina must react.
 - Dina delegates a complex research task to OpenClaw; the result comes back 40 minutes later.
 - A subscription to an external event stream (calendar, inbox, pricing) produces events that Dina must triage.
 

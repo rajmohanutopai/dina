@@ -15,7 +15,7 @@ The reasoning agent (`brain/src/service/vault_context.py`) defaults to
 50 items; it breaks once the vault holds thousands. Two concrete failure
 modes we've already seen:
 
-1. **Natural-language service queries miss the public-services path.**
+1. **Natural-language service queries miss the provider-services path.**
    A user asks "when does bus 42 reach Van Ness?" — the LLM correctly
    geocodes the place, then spends six turns calling `search_vault` for
    bus data that was never stored, hits `max_turns_reached`, and returns
@@ -54,7 +54,7 @@ same thing a human carries around as working memory.
 | Working memory, not inventory | A flat listing of every topic fails at scale; humans don't recall that way either. Salience-ranked, decaying. |
 | EWMA mechanism, ACT-R shape | Power-law decay is the cognitive-science reference; exponential decay is a well-known approximation that costs O(1) per event and O(1) per read. |
 | Recency × frequency, nothing else | No static importance, no editorial boosts. Signal from behavior, not authorial intent. |
-| ToC is a context map, not a router | It tells the LLM "you have relevant context here," not "the answer lives here." Live questions still hit public services; ToC just parameterizes them. |
+| ToC is a context map, not a router | It tells the LLM "you have relevant context here," not "the answer lives here." Live questions still hit provider services; ToC just parameterizes them. |
 | No scenario enumeration | The LLM must generalize, not pattern-match a hand-written list. |
 
 
@@ -72,7 +72,7 @@ CREATE TABLE topic_salience (
     s_long  REAL NOT NULL DEFAULT 0,    -- EWMA, tau=180d
     live_capability TEXT,               -- e.g. 'appointment_status' if the
                                         --   entity's DID publishes one
-    live_provider_did TEXT,             -- the DID to query via public_services
+    live_provider_did TEXT,             -- the DID to query via provider_services
     sample_item_id TEXT,                -- one recent vault item for inspection
     PRIMARY KEY (persona, topic)
 );
@@ -232,7 +232,7 @@ The two axes form a matrix:
 
 |  | **Static fact** | **Live state** |
 |---|---|---|
-| **Vault context needed** | Vault only | Vault (for context) + public_service (for state), compose |
+| **Vault context needed** | Vault only | Vault (for context) + provider_service (for state), compose |
 | **Vault context not needed** | Trust network or general knowledge | Public_service only |
 
 Four worked examples:
@@ -240,9 +240,9 @@ Four worked examples:
 | Query | Source | Temporal | Sources called |
 |---|---|---|---|
 | "what medical conditions do I have?" | self | static | vault(health) |
-| "is my dentist appointment still confirmed?" | self | live | vault(health) + public_service(appointment_status via Dr Carl's DID) |
+| "is my dentist appointment still confirmed?" | self | live | vault(health) + provider_service(appointment_status via Dr Carl's DID) |
 | "is the Aeron chair worth buying?" | — | static | trust_network |
-| "when does bus 42 come?" | not-self | live | public_service |
+| "when does bus 42 come?" | not-self | live | provider_service |
 
 And the ToC's role: tells the classifier whether vault context is
 *available* (the entity has been stored) AND whether a `live_capability`
@@ -317,7 +317,7 @@ three source definitions and decides for itself:
 > - **trust_network** — peer-verified *opinions and reputation* about
 >   products, services, vendors, people. Static (opinions at a point in
 >   time).
-> - **public_services** — live queries to service providers for *current
+> - **provider_services** — live queries to service providers for *current
 >   operational state* (ETA, status, availability, pricing, inventory).
 >   Dynamic (changes minute to minute).
 
@@ -329,7 +329,7 @@ from examples. No scenario list.
 
 ```json
 {
-  "sources": ["vault", "public_services"],
+  "sources": ["vault", "provider_services"],
   "relevant_personas": ["health"],
   "toc_evidence": {
     "entity_matches": ["Dr Carl", "dentist appointment Apr 19"],
@@ -361,7 +361,7 @@ Field-by-field:
   - `persona_context` — for each relevant persona, the topics the ToC shows
     (anchors the reasoning agent can latch onto)
   - `live_capabilities_available` — entities in the ToC whose
-    `live_capability` marker means public-services can answer about them
+    `live_capability` marker means provider-services can answer about them
 - `temporal` — `static` | `live_state` | `comparative`.
 - `reasoning_hint` — freeform summary tying it all together for the
   reasoning agent.
@@ -388,7 +388,7 @@ shortlisting only if we see the reasoning agent ignoring good advice.
   weather / delivery scenarios. The ToC + intent classifier provide the
   same routing without the hard-coded list.
 - **Keep the existing tools** — `search_vault`, `browse_vault`,
-  `search_public_services`, etc. ToC just primes the decision.
+  `search_provider_services`, etc. ToC just primes the decision.
 - **Drop `list_personas`** — the ToC supersedes it. Any call sites
   switch to reading the ToC.
 
@@ -470,17 +470,17 @@ assertion on the final answer.
 | 2 | self + static | "what health things have I been dealing with lately?" | Health: "knee pain off and on for 3 weeks", "blood test Apr 10 cholesterol high" | vault(health) | `knee` or `blood` or `cholesterol` |
 | 3 | self + static | "when's Sancho's birthday?" | Social: "Sancho's birthday is June 12" | vault(social) | `June 12` or `Jun 12` |
 | 4 | self + static | "what books am I reading?" | General: "reading Sapiens by Harari", "started The Three-Body Problem last week" | vault(general) | `Sapiens` or `Three-Body` |
-| 5 | not-self + live | "when does bus 42 reach Van Ness?" | None — BusDriver publishes `eta_query` on AppView | public_services | `min` + map URL |
+| 5 | not-self + live | "when does bus 42 reach Van Ness?" | None — BusDriver publishes `eta_query` on AppView | provider_services | `min` + map URL |
 | 6 | not-self + static | "is the Herman Miller Aeron chair worth buying?" | None — trust network has reviews | trust_network | sourced language ("reviews say…", "peers rate…") |
-| 7 | self + live (service available) | "is my dentist appointment still confirmed?" | Health: "dentist Dr Carl Apr 19 at 3pm"; contact `Dr Carl` → `did:plc:drcarl`; drcarl publishes `appointment_status` | vault(health) + public_service | `confirmed` or explicit status + appointment details |
-| 8 | self + live (no service) | "is my flight AI 123 on time tomorrow?" | Travel: "AI 123 Tokyo Oct 20 2pm"; no flight-status provider registered | vault(travel) → attempt public_service → fallback | flight details + "no live status available" |
+| 7 | self + live (service available) | "is my dentist appointment still confirmed?" | Health: "dentist Dr Carl Apr 19 at 3pm"; contact `Dr Carl` → `did:plc:drcarl`; drcarl publishes `appointment_status` | vault(health) + provider_service | `confirmed` or explicit status + appointment details |
+| 8 | self + live (no service) | "is my flight AI 123 on time tomorrow?" | Travel: "AI 123 Tokyo Oct 20 2pm"; no flight-status provider registered | vault(travel) → attempt provider_service → fallback | flight details + "no live status available" |
 | 9 | self + comparative | "should I switch my FD from HDFC to ICICI?" | Finance: "HDFC FD 7.8%" + "ICICI savings account open" | vault(finance) + trust_network | current rate cited + comparative note |
 | 10 | ambiguous | "what's on for tomorrow?" | Health: dentist Apr 19; General: "daughter school play Apr 19 evening" | vault (multiple personas) | both events |
 | 11 | locked persona | "what appointments do I have?" (health persona locked) | Health locked (dentist item present but inaccessible) | vault (limited) + locked-persona hint | visible items + "unlock health to include more" |
 | 12 | long tail | "what was that Harari book I started last year?" | Item stored 14 months ago, low salience | vault via search | `Sapiens` (or the correct title) |
-| 13 | multi-hop | "how do I get to Dr Carl's office by bus?" | Health: "Dr Carl at 1234 Castro St, San Francisco" + BusDriver published | vault(health) for address → public_service(eta_query) for route | an ETA + reference to Castro / Dr Carl |
+| 13 | multi-hop | "how do I get to Dr Carl's office by bus?" | Health: "Dr Carl at 1234 Castro St, San Francisco" + BusDriver published | vault(health) for address → provider_service(eta_query) for route | an ETA + reference to Castro / Dr Carl |
 | 14 | self + static (recent-activity recall) | "did Sancho send me anything lately?" | Social: "Sancho messaged about dinner last Tuesday" | vault(social) with recency bias | `Sancho` + the recent content |
-| 15 | not-self + live (generic) | "what's the weather in Bangalore right now?" | No weather provider registered | public_service attempt → honest "no provider" | "no weather service available" (not a hallucinated forecast) |
+| 15 | not-self + live (generic) | "what's the weather in Bangalore right now?" | No weather provider registered | provider_service attempt → honest "no provider" | "no weather service available" (not a hallucinated forecast) |
 
 Each scenario has three failure modes we need to catch:
 
