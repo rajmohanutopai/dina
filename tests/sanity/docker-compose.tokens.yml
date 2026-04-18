@@ -1,0 +1,33 @@
+# Sanity-test token overlay for the test stack.
+#
+# Injects Telegram bot tokens + Gemini API keys into actor brains so the
+# sanity scenarios (Telethon-driven) can exercise real Dina flows. Secrets
+# come from `tests/sanity/.env.sanity` (gitignored) — never hardcode them
+# in this file.
+#
+# Usage:
+#
+#   set -a; source tests/sanity/.env.sanity; set +a
+#   docker compose -p dina-test \
+#     -f docker-compose-test-stack.yml \
+#     -f tests/sanity/docker-compose.tokens.yml \
+#     up -d alonso-brain sancho-brain
+#
+# Variables expected in .env.sanity:
+#   SANITY_ALONSO_TELEGRAM_TOKEN   Alonso user-bot (regression_test_dina_alonso_bot)
+#   SANITY_SANCHO_TELEGRAM_TOKEN   Sancho user-bot
+#   SANITY_OWNER_TELEGRAM_ID       The human operator's Telegram user ID
+#   GOOGLE_API_KEY                 Gemini API key (classifier + reasoning)
+
+services:
+  alonso-brain:
+    environment:
+      DINA_TELEGRAM_TOKEN: "${SANITY_ALONSO_TELEGRAM_TOKEN:-}"
+      DINA_TELEGRAM_ALLOWED_USERS: "${SANITY_OWNER_TELEGRAM_ID:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+
+  sancho-brain:
+    environment:
+      DINA_TELEGRAM_TOKEN: "${SANITY_SANCHO_TELEGRAM_TOKEN:-}"
+      DINA_TELEGRAM_ALLOWED_USERS: "${SANITY_OWNER_TELEGRAM_ID:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"

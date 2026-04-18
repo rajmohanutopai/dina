@@ -59,7 +59,20 @@ class ServicePublisher:
                 "params": raw.get("params", {}),
                 "result": raw.get("result", {}),
             }
-            schema_hash = raw.get("schema_hash") or compute_schema_hash(canonical)
+            # Always compute from canonical — never trust a provider-supplied
+            # hash. A stale cached hash paired with edited params/result would
+            # silently publish a mismatched hash, and requesters would never
+            # see a version-mismatch error. The provider's local copy should
+            # treat its own schema_hash as a cache, not a source of truth.
+            schema_hash = compute_schema_hash(canonical)
+            supplied = raw.get("schema_hash")
+            if supplied and supplied != schema_hash:
+                log.warning(
+                    "service_publisher: supplied schema_hash does not match "
+                    "canonical for %s — using computed hash (supplied=%s, "
+                    "computed=%s)",
+                    cap_name, supplied, schema_hash,
+                )
             entry: dict = {**canonical, "schema_hash": schema_hash}
             ttl = raw.get("default_ttl_seconds")
             if isinstance(ttl, int) and ttl > 0:

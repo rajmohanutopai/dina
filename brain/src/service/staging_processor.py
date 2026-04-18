@@ -85,6 +85,14 @@ class StagingProcessor:
         self._appview_client = appview_client
         self._person_extractor = None  # Set externally after construction.
         self._last_attribution_corrections: list[dict] = []
+        # In-process TTL cache for AppView is_discoverable lookups. Each
+        # staging batch may mention the same provider DID repeatedly (and
+        # different batches over the day re-discover the same contacts),
+        # so caching saves an AppView round-trip per entity occurrence.
+        # 30-minute TTL balances freshness (a provider newly (un)listing
+        # itself shows up within half an hour) against call volume.
+        self._discoverability_cache: dict[str, tuple[float, bool, list[str]]] = {}
+        self._discoverability_ttl_seconds = 30 * 60
 
     async def process_pending(self, limit: int = 10) -> int:
         """Claim and classify pending staging items.
@@ -516,14 +524,9 @@ class StagingProcessor:
             did = name_to_did.get(key)
             if not did:
                 continue  # entity isn't a known contact → no live path
-            try:
-                discoverable, capabilities = await self._appview_client.is_discoverable(did)
-            except Exception as exc:
-                log.debug(
-                    "staging.enrich_appview_failed",
-                    name=name, did=did, error=str(exc),
-                )
-                continue
+            discoverable, capabilities = await self._lookup_discoverable_cached(did)
+            if discoverable is None:
+                continue  # lookup failed — treat as unknown, no live path
             if not discoverable or not capabilities:
                 continue
             # First capability wins. For multi-capability providers we
@@ -533,6 +536,30 @@ class StagingProcessor:
             # multiple.
             out[key] = {"did": did, "capability": capabilities[0]}
         return out
+
+    async def _lookup_discoverable_cached(
+        self, did: str,
+    ) -> tuple[bool | None, list[str]]:
+        """TTL-cached wrapper around AppView's is_discoverable.
+
+        Returns ``(None, [])`` on lookup failure so callers can distinguish
+        "unknown" from "known-not-discoverable". Cache hits skip the
+        AppView call entirely; cache misses populate the cache after a
+        successful lookup.
+        """
+        import time as _time
+        now = _time.time()
+        hit = self._discoverability_cache.get(did)
+        if hit and (now - hit[0]) < self._discoverability_ttl_seconds:
+            return hit[1], hit[2]
+        try:
+            discoverable, capabilities = await self._appview_client.is_discoverable(did)
+        except Exception as exc:
+            log.debug("staging.enrich_appview_failed", did=did, error=str(exc))
+            return None, []
+        caps = list(capabilities or [])
+        self._discoverability_cache[did] = (now, bool(discoverable), caps)
+        return bool(discoverable), caps
 
     async def _classify_personas(self, item: dict) -> tuple[list[str], dict | None]:
         """Classify item into one or more personas. Highest sensitivity first.

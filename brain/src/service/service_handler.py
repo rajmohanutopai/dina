@@ -138,11 +138,23 @@ class ServiceHandler:
                     )
                     params = stripped
 
+        # Extract provider-internal MCP tool binding (not part of the
+        # requester-facing snapshot). Kept separate so the snapshot
+        # persisted with the task stays a pure params+result contract.
+        mcp_tool = ""
+        canonical_snapshot = None
+        if isinstance(cap_schema, dict):
+            mcp_tool = cap_schema.get("mcp_tool") or ""
+            canonical_snapshot = {
+                k: v for k, v in cap_schema.items() if k != "mcp_tool"
+            }
+
         # 3. Review policy → create approval task, notify operator.
         if response_policy == "review":
             await self._create_approval_task(
                 from_did, query_id, capability, params, body, request_schema_hash,
-                schema_snapshot=cap_schema,
+                schema_snapshot=canonical_snapshot,
+                mcp_tool=mcp_tool,
             )
             return
 
@@ -151,7 +163,8 @@ class ServiceHandler:
         await self._create_execution_task(
             from_did, query_id, capability, params, inbound_ttl,
             schema_hash=request_schema_hash,
-            schema_snapshot=cap_schema,
+            schema_snapshot=canonical_snapshot,
+            mcp_tool=mcp_tool,
         )
 
         # 5. Auto-path owner visibility. Review-policy queries already
@@ -218,6 +231,7 @@ class ServiceHandler:
         *,
         schema_hash: str = "",
         schema_snapshot: dict | None = None,
+        mcp_tool: str = "",
         task_id: str | None = None,
     ) -> str:
         """Create a delegation task for OpenClaw to execute. Returns task_id.
@@ -227,14 +241,12 @@ class ServiceHandler:
         validates the result against the snapshot, not whatever the provider
         config says at completion time — so an in-flight schema update
         can't violate the contract the requester thought it had.
+
+        `mcp_tool` is provider-internal execution metadata (which MCP tool
+        the executing agent should call) — kept separate from the snapshot
+        so the persisted contract remains pure params+result.
         """
         tid = task_id or f"svc-exec-{uuid.uuid4()}"
-        # Explicit capability → MCP tool binding from service config so the
-        # executing agent doesn't guess. Empty string when the provider has
-        # not declared one (agent falls back to name-match heuristic).
-        mcp_tool = ""
-        if isinstance(schema_snapshot, dict):
-            mcp_tool = schema_snapshot.get("mcp_tool") or ""
         task_payload = {
             "type": "service_query_execution",
             "from_did": from_did,
@@ -277,12 +289,10 @@ class ServiceHandler:
         schema_hash: str = "",
         *,
         schema_snapshot: dict | None = None,
+        mcp_tool: str = "",
     ) -> None:
         """Create an approval workflow_task for manual review + notify operator."""
         ttl = body.get("ttl_seconds", get_ttl(capability))
-        mcp_tool = ""
-        if isinstance(schema_snapshot, dict):
-            mcp_tool = schema_snapshot.get("mcp_tool") or ""
         task_payload = {
             "type": "service_query_execution",
             "from_did": from_did,
@@ -342,6 +352,7 @@ class ServiceHandler:
         ttl_seconds = task_payload.get("ttl_seconds", 0) or get_ttl(capability)
         schema_hash = task_payload.get("schema_hash", "")
         schema_snapshot = task_payload.get("schema_snapshot") or {}
+        mcp_tool = task_payload.get("mcp_tool", "")
 
         if not from_did or not query_id or not capability:
             logger.error(
@@ -364,6 +375,7 @@ class ServiceHandler:
                 ttl_seconds=ttl_seconds,
                 schema_hash=schema_hash,
                 schema_snapshot=schema_snapshot,
+                mcp_tool=mcp_tool,
                 task_id=exec_task_id,
             )
         except WorkflowConflictError:

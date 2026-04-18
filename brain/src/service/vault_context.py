@@ -818,6 +818,16 @@ class ToolExecutor:
             except Exception as exc:
                 log.warning("tool_executor.query_service.schema_autofetch_failed", error=str(exc))
 
+        # Deterministic auto-fill for requester-identity fields the LLM
+        # forgot to supply. When a schema marks a field as required AND
+        # the field looks like a customer/patient/account reference, the
+        # requester IS the user — fill it with "self" rather than bouncing
+        # on sender-side validation. This moves the "use 'self' as
+        # fallback" rule out of the LLM prompt (where it's probabilistic)
+        # into code (where it's deterministic). See issue #5.
+        if params_schema and isinstance(params, dict):
+            params = _autofill_requester_fields(params, params_schema)
+
         # Mandatory sender-side validation when schema is present. A
         # malformed remote schema surfaces as SchemaError rather than
         # letting the exception escape and aborting the LLM flow.
@@ -858,6 +868,63 @@ class ToolExecutor:
         except Exception as exc:
             log.warning("tool_executor.query_service_failed", error=str(exc))
             return {"error": f"service query failed: {exc}"}
+
+
+# ---------------------------------------------------------------------------
+# query_service helpers
+# ---------------------------------------------------------------------------
+
+
+# Field-name patterns that denote "a reference to the requester" — the
+# user asking the question. When a provider marks one of these as
+# required and the LLM didn't supply it, the right value is "self"
+# (or the user's vault-known name, but the provider usually accepts
+# "self" for the requester-is-the-user demo case).
+#
+# Conservative list: we only auto-fill when confident, to avoid
+# stuffing "self" into fields that genuinely want a third-party ID
+# (e.g. a lookup-by-email where the user is asking about someone else).
+_REQUESTER_FIELD_SUFFIXES = ("_ref", "_id")
+_REQUESTER_FIELD_PREFIXES = ("patient_", "customer_", "account_", "member_")
+
+
+def _looks_like_requester_field(name: str) -> bool:
+    n = (name or "").lower()
+    if not n:
+        return False
+    for p in _REQUESTER_FIELD_PREFIXES:
+        if n.startswith(p):
+            return True
+    for s in _REQUESTER_FIELD_SUFFIXES:
+        # Suffix-match only when combined with a requester-ish prefix
+        # (e.g. patient_ref, customer_id) — plain `id` or `ref` is too
+        # generic to auto-fill.
+        if n.endswith(s) and any(n.startswith(p.rstrip("_")) for p in _REQUESTER_FIELD_PREFIXES):
+            return True
+    return False
+
+
+def _autofill_requester_fields(params: dict, params_schema: dict) -> dict:
+    """Fill missing required requester-identity fields with 'self'.
+
+    Pure function over (params, params_schema). Does not mutate input.
+    Returns a new dict. Only fills fields that are:
+      - declared required in the schema
+      - missing or empty in params
+      - named in a way that signals requester-identity
+
+    Values the LLM already supplied are never overwritten.
+    """
+    required = params_schema.get("required") or []
+    if not required:
+        return dict(params)
+    out = dict(params)
+    for field in required:
+        if out.get(field):
+            continue  # LLM filled it — respect their choice
+        if _looks_like_requester_field(field):
+            out[field] = "self"
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1115,20 +1182,16 @@ class ReasoningAgent:
             if live_caps:
                 system += (
                     "\n\nSHORTCUT — live_capabilities_available is populated.\n"
-                    "Each entry names a provider DID + capability already bound to\n"
-                    "an entity in the user's Working Memory. For a live-state\n"
-                    "question about that entity, skip geocode and\n"
-                    "search_provider_services — call query_service directly with\n"
-                    "the provided operator_did and capability. The Brain will\n"
-                    "auto-fetch the schema_hash and params_schema from AppView\n"
-                    "when you don't supply them, so you don't need a prior\n"
-                    "search_provider_services turn.\n\n"
-                    "Fill params from vault context. When a provider asks for a\n"
-                    "customer/patient reference (patient_ref, customer_id, booking_id),\n"
-                    "the requester IS the user — use the user's name from the vault\n"
-                    "(or 'self' if no name is on file). Include date/time when the\n"
-                    "vault has them. Only fall back to search_provider_services if\n"
-                    "the direct call fails or no live_capability matches."
+                    "Each entry names a provider DID + capability already bound\n"
+                    "to an entity in Working Memory. For a live-state question\n"
+                    "about that entity, call query_service directly with the\n"
+                    "provided operator_did and capability — skip geocode and\n"
+                    "search_provider_services. The Brain auto-fetches the\n"
+                    "schema and auto-fills requester-identity fields, so you\n"
+                    "only need to pass params whose values genuinely come\n"
+                    "from the vault (dates, amounts, names of third parties).\n"
+                    "Fall back to search_provider_services only if no\n"
+                    "live_capability matches the query."
                 )
 
         messages: list[dict] = [
