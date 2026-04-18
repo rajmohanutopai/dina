@@ -169,6 +169,7 @@ class CoreClient(Protocol):
         kind: str = "",
         status: str = "",
         payload: str = "",
+        payload_type: str = "",
         expires_at: int = 0,
         correlation_id: str = "",
         priority: str = "",

@@ -81,6 +81,7 @@ func (h *WorkflowHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		ParentID         string `json:"parent_id"`
 		Priority         string `json:"priority"`
 		Payload          string `json:"payload"`
+		PayloadType      string `json:"payload_type"`
 		Policy           string `json:"policy"`
 		IdempotencyKey   string `json:"idempotency_key"`
 		RequiresApproval bool   `json:"requires_approval"`
@@ -140,6 +141,7 @@ func (h *WorkflowHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	task := domain.WorkflowTask{
 		ID:              req.ID,
 		Kind:            req.Kind,
+		PayloadType:     req.PayloadType,
 		Status:          status,
 		CorrelationID:   req.CorrelationID,
 		ParentID:        req.ParentID,
@@ -770,9 +772,14 @@ func (h *WorkflowCallbackHandler) HandleComplete(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// ResultJSON carries the full structured agent output; Result is the
+	// optional human-readable summary for UI/logs. The service-query bridge
+	// consumes ResultJSON, so truncating it (as the old openclaw_hook did
+	// when stuffing JSON into a short text field) produced invalid responses.
 	var req struct {
-		Result         string `json:"result"`
-		AssignedRunner string `json:"assigned_runner"`
+		Result         string          `json:"result"`
+		ResultJSON     json.RawMessage `json:"result_json,omitempty"`
+		AssignedRunner string          `json:"assigned_runner"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -799,7 +806,12 @@ func (h *WorkflowCallbackHandler) HandleComplete(w http.ResponseWriter, r *http.
 		return
 	}
 
-	eventID, err := h.Workflow.Complete(r.Context(), taskID, task.AgentDID, req.Result)
+	var eventID int64
+	if len(req.ResultJSON) > 0 {
+		eventID, err = h.Workflow.CompleteWithDetails(r.Context(), taskID, task.AgentDID, req.Result, string(req.ResultJSON), "")
+	} else {
+		eventID, err = h.Workflow.Complete(r.Context(), taskID, task.AgentDID, req.Result)
+	}
 	if err != nil {
 		slog.Warn("callback.complete_failed", "task_id", taskID, "error", err)
 		jsonError(w, "complete failed", http.StatusInternalServerError)

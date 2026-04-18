@@ -77,10 +77,49 @@ INSTRUCTIONS:
 
 
 def build_task_prompt(task: dict, session_name: str, runner_name: str) -> str:
-    """Build the standard task prompt envelope."""
+    """Build the standard task prompt envelope.
+
+    For service_query_execution tasks (WS2 public service discovery),
+    augment the abstract description with the structured payload so the
+    LLM has the capability + params it needs to pick tool arguments.
+    The description itself stays abstract to avoid leaking payload values
+    into admin UI task lists and logs (see fix #18).
+    """
+    import json as _json
+    description = task.get("description", "")
+    if task.get("payload_type") == "service_query_execution":
+        payload_raw = task.get("payload", "")
+        try:
+            payload = (
+                _json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+            )
+        except Exception:
+            payload = {}
+        capability = payload.get("capability", "")
+        params = payload.get("params", {})
+        if capability and isinstance(params, dict):
+            description = (
+                f"Execute the `{capability}` capability with the following "
+                f"parameters. Call the corresponding MCP tool using EXACTLY "
+                f"these argument values.\n\n"
+                f"Parameters JSON:\n{_json.dumps(params, indent=2)}\n\n"
+                f"CRITICAL result handling:\n"
+                f"- After the MCP tool returns, call `dina_task_complete` with "
+                f"the tool's JSON output VERBATIM as the `result` argument — "
+                f"serialize the JSON object to a compact string and pass that "
+                f"string. Do NOT summarize, do NOT paraphrase, do NOT wrap it "
+                f"in prose. The requester validates the raw JSON against a "
+                f"schema; a human-readable summary will be rejected as a "
+                f"schema violation.\n"
+                f"- If the tool fails, call `dina_task_fail` with the raw "
+                f"error text.\n"
+                f"- Example: if the MCP tool returns "
+                f'`{{"eta_minutes": 6, "stop_name": "X"}}`, call '
+                f'`dina_task_complete(task_id=..., result=\'{{"eta_minutes": 6, "stop_name": "X"}}\')`.'
+            )
     return TASK_PROMPT_TEMPLATE.format(
         task_id=task.get("id", ""),
         session_name=session_name,
         runner_name=runner_name,
-        description=task.get("description", ""),
+        description=description,
     )

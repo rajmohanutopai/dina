@@ -1639,6 +1639,10 @@ func main() {
 
 	// Service config — public service discovery
 	mux.HandleFunc("/v1/service/config", serviceConfigHandler.Handle)
+	// Narrow Brain-accessible device lookup (names of paired agents) —
+	// feeds provider-side "dispatching to X" notifications without
+	// widening Brain's authz to all of /v1/devices.
+	mux.HandleFunc("/v1/service/agents", deviceH.HandleListAgents)
 	// NOTE: /v1/service/query is registered later, after workflowSvc is created.
 
 	// Agent Safety Layer — proxies to brain's guardian

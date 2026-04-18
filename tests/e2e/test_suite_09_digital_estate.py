@@ -27,6 +27,13 @@ from tests.e2e.mocks import (
 )
 
 
+# Digital Estate is deferred — the Albert beneficiary actor has been
+# removed from the test stack (docker-compose-test-stack.yml) and the
+# matching e2e conftest fixtures are commented out. Re-enable by
+# restoring those, then removing this module-level skip.
+pytestmark = pytest.mark.skip(reason="Digital Estate deferred — Albert actor commented out of test stack")
+
+
 # =========================================================================
 # TestDigitalEstate — Suite 9
 # =========================================================================

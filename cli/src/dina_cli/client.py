@@ -458,3 +458,48 @@ class DinaClient:
             self._core, "GET", "/v1/workflow/tasks", params=params,
         )
         return resp.json().get("tasks", [])
+
+    # -- Service query (WS2 schema-driven discovery) ------------------------
+
+    def send_service_query(
+        self,
+        *,
+        to_did: str,
+        capability: str,
+        params: dict,
+        service_name: str = "",
+        ttl_seconds: int = 60,
+        schema_hash: str = "",
+        origin_channel: str = "",
+    ) -> dict:
+        """POST /v1/service/query — send a schema-driven service query.
+
+        Params go structured (not flattened into the payload) so the
+        provider's jsonschema validator can reject malformed requests.
+        schema_hash is the canonical per-capability hash from the
+        provider's published profile on AppView; providing a stale hash
+        surfaces as ``schema_version_mismatch`` rather than silently
+        executing against a newer schema.
+
+        Returns ``{"task_id": "...", "query_id": "..."}``. The response
+        arrives asynchronously via a workflow_event — poll ``get_task``
+        with the returned task_id to observe the terminal status.
+        """
+        import uuid as _uuid
+        body: dict[str, Any] = {
+            "to_did": to_did,
+            "capability": capability,
+            "params": params,
+            "query_id": str(_uuid.uuid4()),
+            "ttl_seconds": ttl_seconds,
+            "service_name": service_name or capability,
+        }
+        if schema_hash:
+            body["schema_hash"] = schema_hash
+        if origin_channel:
+            body["origin_channel"] = origin_channel
+        resp = self._request(
+            self._core, "POST", "/v1/service/query",
+            json=body,
+        )
+        return resp.json()

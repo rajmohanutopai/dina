@@ -29,6 +29,21 @@ from .capabilities.registry import get_ttl
 logger = logging.getLogger(__name__)
 
 
+def _capability_params_preview(capability: str, params: dict | None) -> str:
+    """Render a tiny, human-readable summary of a service query's params.
+
+    Kept capability-aware so the operator notification shows the actual
+    thing being asked (``route 42``), not a raw dict dump. New
+    capabilities can add a branch here; default is empty (no preview).
+    """
+    if not isinstance(params, dict):
+        return ""
+    if capability == "eta_query":
+        route_id = params.get("route_id")
+        return f"route {route_id}" if route_id else ""
+    return ""
+
+
 class ServiceHandler:
     """Handles inbound service.query messages on the provider side.
 
@@ -66,20 +81,26 @@ class ServiceHandler:
 
         response_policy = svc_cap.get("response_policy", "auto")
 
-        # 1. Check schema_hash FIRST — reject stale-schema requests.
+        # 1. Check schema_hash FIRST — reject stale or missing hashes.
+        #    If the provider has a schema configured the requester MUST supply
+        #    the matching hash. Silently letting unhashed requests through was
+        #    a protocol bypass (callers could opt out of version checking).
         cap_schema = self._config.get("capability_schemas", {}).get(capability)
-        if cap_schema and request_schema_hash:
-            local_hash = cap_schema.get("schema_hash", "")
-            if local_hash and local_hash != request_schema_hash:
-                await self._send_response(
-                    from_did, query_id, capability, "error",
-                    {"error": "schema_version_mismatch"},
-                    ttl_seconds=inbound_ttl,
-                )
-                return
+        local_hash = cap_schema.get("schema_hash", "") if cap_schema else ""
+        if local_hash and local_hash != request_schema_hash:
+            await self._send_response(
+                from_did, query_id, capability, "error",
+                {"error": "schema_version_mismatch"},
+                ttl_seconds=inbound_ttl,
+            )
+            return
 
         # 2. Validate params against provider-published JSON Schema.
-        #    Prevents malformed queries from reaching OpenClaw.
+        #    Prevents malformed queries from reaching OpenClaw. Both the
+        #    request (ValidationError) and a broken local schema
+        #    (SchemaError) are treated as a failure of the contract and
+        #    returned as an error — a malformed schema in config is the
+        #    provider's bug, not a reason to let the query through.
         if cap_schema and cap_schema.get("params"):
             import jsonschema
             try:
@@ -92,11 +113,20 @@ class ServiceHandler:
                     ttl_seconds=inbound_ttl,
                 )
                 return
+            except jsonschema.SchemaError as e:
+                logger.error("service_handler: local params schema is invalid for %s: %s", capability, e.message)
+                await self._send_response(
+                    from_did, query_id, capability, "error",
+                    {"error": "provider_schema_invalid"},
+                    ttl_seconds=inbound_ttl,
+                )
+                return
 
         # 3. Review policy → create approval task, notify operator.
         if response_policy == "review":
             await self._create_approval_task(
                 from_did, query_id, capability, params, body, request_schema_hash,
+                schema_snapshot=cap_schema,
             )
             return
 
@@ -105,7 +135,62 @@ class ServiceHandler:
         await self._create_execution_task(
             from_did, query_id, capability, params, inbound_ttl,
             schema_hash=request_schema_hash,
+            schema_snapshot=cap_schema,
         )
+
+        # 5. Auto-path owner visibility. Review-policy queries already
+        #    notify via `_create_approval_task`; auto-policy queries did
+        #    not surface anywhere on the provider's own channels, so the
+        #    operator had no way to see their node was handling traffic.
+        #    Fire an info-only notification — no action required.
+        if self._notifier:
+            try:
+                params_preview = _capability_params_preview(capability, params)
+                short_did = from_did if len(from_did) <= 24 else from_did[:22] + "…"
+                agent_label = await self._describe_agent_pool()
+                lines = [
+                    "📥 Public service request received",
+                    f"Capability: {capability}"
+                    + (f" ({params_preview})" if params_preview else ""),
+                    f"From: {short_did}",
+                    f"→ Dispatching to {agent_label} for auto-response",
+                ]
+                await self._notifier("\n".join(lines))
+            except Exception:
+                pass  # best-effort — visibility, not correctness
+
+    async def _describe_agent_pool(self) -> str:
+        """Return a human label for the paired agent-role devices.
+
+        Uses the device names set at pairing time (e.g. ``busdriver-openclaw``)
+        so operator notifications reflect the real peer identity instead
+        of the generic platform word. Falls back to a neutral phrase when
+        no agents are paired or the lookup fails — the notification is
+        best-effort visibility, never load-bearing.
+        """
+        try:
+            agents = await self._core.list_service_agents()
+        except Exception:
+            return "paired agent"
+        # Dedupe by name — repeated re-pairings show up as multiple rows
+        # with the same device name but different DIDs. For the human
+        # label we care about the identity the operator typed, not the
+        # number of tokens that have been issued against it.
+        seen: set[str] = set()
+        names: list[str] = []
+        for a in agents or []:
+            name = (a.get("name") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+        if not names:
+            return "paired agent"
+        if len(names) == 1:
+            return names[0]
+        if len(names) <= 3:
+            return ", ".join(names)
+        return f"{', '.join(names[:2])} (+{len(names) - 2} more)"
 
     async def _create_execution_task(
         self,
@@ -116,13 +201,16 @@ class ServiceHandler:
         ttl_seconds: int,
         *,
         schema_hash: str = "",
+        schema_snapshot: dict | None = None,
         task_id: str | None = None,
     ) -> str:
         """Create a delegation task for OpenClaw to execute. Returns task_id.
 
-        Persists schema_hash in the payload so the completion bridge can
-        validate the result against the schema that was agreed on at query
-        time (not whatever is current when OpenClaw finishes).
+        Persists both the schema_hash AND the schema snapshot (params +
+        result JSON Schemas agreed on at query time). The completion bridge
+        validates the result against the snapshot, not whatever the provider
+        config says at completion time — so an in-flight schema update
+        can't violate the contract the requester thought it had.
         """
         tid = task_id or f"svc-exec-{uuid.uuid4()}"
         task_payload = {
@@ -134,17 +222,19 @@ class ServiceHandler:
             "ttl_seconds": ttl_seconds,
             "service_name": self._config.get("name", ""),
             "schema_hash": schema_hash,
+            "schema_snapshot": schema_snapshot or {},
         }
+        # Description is human-readable metadata that surfaces in task lists
+        # and logs — keep it abstract. Params live in the structured payload
+        # so sensitive values (coordinates, ids, search text) aren't duplicated
+        # into plain-text surfaces.
         await self._core.create_workflow_task(
             task_id=tid,
-            description=(
-                f"Execute service query: {capability}\n"
-                f"Params: {json_mod.dumps(params)}\n"
-                f"Use the appropriate tool to compute the result and return structured JSON."
-            ),
+            description=f"Execute service query: {capability}",
             origin="d2d",
             kind="delegation",
             payload=json_mod.dumps(task_payload),
+            payload_type="service_query_execution",
             expires_at=int(time.time()) + ttl_seconds,
             correlation_id=query_id,
         )
@@ -162,6 +252,8 @@ class ServiceHandler:
         params: dict,
         body: dict,
         schema_hash: str = "",
+        *,
+        schema_snapshot: dict | None = None,
     ) -> None:
         """Create an approval workflow_task for manual review + notify operator."""
         ttl = body.get("ttl_seconds", get_ttl(capability))
@@ -174,6 +266,7 @@ class ServiceHandler:
             "service_name": self._config.get("name", ""),
             "ttl_seconds": ttl,
             "schema_hash": schema_hash,
+            "schema_snapshot": schema_snapshot or {},
         }
         task_id = f"approval-{uuid.uuid4()}"
         await self._core.create_workflow_task(
@@ -182,6 +275,7 @@ class ServiceHandler:
             origin="d2d",
             kind="approval",
             payload=json_mod.dumps(task_payload),
+            payload_type="service_query_execution",
             expires_at=int(time.time()) + ttl,
             correlation_id=query_id,
         )
@@ -220,6 +314,7 @@ class ServiceHandler:
         params = task_payload.get("params", {}) or {}
         ttl_seconds = task_payload.get("ttl_seconds", 0) or get_ttl(capability)
         schema_hash = task_payload.get("schema_hash", "")
+        schema_snapshot = task_payload.get("schema_snapshot") or {}
 
         if not from_did or not query_id or not capability:
             logger.error(
@@ -241,6 +336,7 @@ class ServiceHandler:
                 params=params,
                 ttl_seconds=ttl_seconds,
                 schema_hash=schema_hash,
+                schema_snapshot=schema_snapshot,
                 task_id=exec_task_id,
             )
         except WorkflowConflictError:

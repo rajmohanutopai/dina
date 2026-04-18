@@ -20,8 +20,11 @@ import { didProfiles } from '@/db/schema/index.js'
 
 export const ServiceSearchParams = z.object({
   capability: z.string().min(1).max(200),
-  lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
+  // lat/lng are optional: non-geospatial capabilities still need discovery.
+  // When omitted, distance scoring is skipped and ranking falls back to
+  // text + trust only.
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
   radiusKm: z.coerce.number().min(0.1).max(500).default(5),
   q: z.string().max(200).optional(),
   limit: z.coerce.number().min(1).max(50).default(10),
@@ -36,8 +39,7 @@ export interface ServiceSearchResult {
   name: string
   description: string | null
   capabilities: unknown
-  capabilitySchemas: unknown  // WS2: per-capability JSON schemas (provider-published)
-  schemaHash: string | null    // WS2: SHA-256 of canonical schema for version matching
+  capabilitySchemas: unknown  // WS2: per-capability JSON schemas (each carries its own schema_hash)
   serviceArea: { lat: number; lng: number; radiusKm: number } | null
   hours: unknown
   responsePolicy: unknown
@@ -55,10 +57,13 @@ export async function serviceSearch(
   params: ServiceSearchParamsType,
 ): Promise<ServiceSearchResponse> {
   const { capability, lat, lng, radiusKm, q, limit, cursor } = params
+  const hasLocation = lat !== undefined && lng !== undefined
 
-  // Haversine distance in km (approximation using Postgres math)
-  // 6371 = Earth's radius in km
-  const distanceExpr = sql`(
+  // Haversine distance — only meaningful when the caller provided a
+  // reference location. Non-geospatial searches drop the distance term
+  // entirely and rank on text + trust.
+  const distanceExpr = hasLocation
+    ? sql`(
     6371 * acos(
       LEAST(1.0, GREATEST(-1.0,
         cos(radians(${lat})) * cos(radians(CAST(${services.lat} AS double precision)))
@@ -67,34 +72,38 @@ export async function serviceSearch(
       ))
     )
   )`
+    : sql<number>`0`
 
-  // distance_score: clamp(1.0 - distance/radius, 0, 1)
-  const distanceScoreExpr = sql<number>`GREATEST(0, LEAST(1.0, 1.0 - ${distanceExpr} / ${radiusKm}))`
+  const distanceScoreExpr = hasLocation
+    ? sql<number>`GREATEST(0, LEAST(1.0, 1.0 - ${distanceExpr} / ${radiusKm}))`
+    : sql<number>`0.0`
 
-  // text_score: Phase 1 — ILIKE match on search_content gives 1.0, else 0.0
   const textScoreExpr = q
     ? sql<number>`CASE WHEN ${services.searchContent} ILIKE ${'%' + q + '%'} THEN 1.0 ELSE 0.0 END`
     : sql<number>`0.0`
 
-  // trust_score: from didProfiles.overallTrustScore / 100 (0-1 range)
   const trustScoreExpr = sql<number>`COALESCE(${didProfiles.overallTrustScore}, 0.0)`
 
-  // Composite score: distance * 0.4 + text * 0.3 + trust * 0.3
-  const compositeScoreExpr = sql<number>`(
+  // Composite score: distance * 0.4 + text * 0.3 + trust * 0.3 when
+  // geolocation is present, otherwise text * 0.5 + trust * 0.5.
+  const compositeScoreExpr = hasLocation
+    ? sql<number>`(
     ${distanceScoreExpr} * 0.4
     + ${textScoreExpr} * 0.3
     + ${trustScoreExpr} * 0.3
   )`
+    : sql<number>`(${textScoreExpr} * 0.5 + ${trustScoreExpr} * 0.5)`
 
   const scoreBucketExpr = sql<number>`floor((${compositeScoreExpr}) * 1000)`
 
-  // Base conditions: public, has the requested capability, within radius
   const conditions: any[] = [
     eq(services.isPublic, true),
     sql`${services.capabilitiesJson}::jsonb @> ${JSON.stringify([capability])}::jsonb`,
-    sql`${services.lat} IS NOT NULL AND ${services.lng} IS NOT NULL`,
-    sql`${distanceExpr} <= ${radiusKm}`,
   ]
+  if (hasLocation) {
+    conditions.push(sql`${services.lat} IS NOT NULL AND ${services.lng} IS NOT NULL`)
+    conditions.push(sql`${distanceExpr} <= ${radiusKm}`)
+  }
 
   // Cursor-based pagination: composite (score_bucket::uri)
   if (cursor) {
@@ -124,7 +133,6 @@ export async function serviceSearch(
       hours: services.hoursJson,
       responsePolicy: services.responsePolicyJson,
       capabilitySchemas: services.capabilitySchemasJson,
-      schemaHash: services.schemaHash,
       trustScore: didProfiles.overallTrustScore,
       score: compositeScoreExpr,
       scoreBucket: scoreBucketExpr,
@@ -155,7 +163,6 @@ export async function serviceSearch(
       hours: r.hours,
       responsePolicy: r.responsePolicy,
       capabilitySchemas: r.capabilitySchemas ?? null,
-      schemaHash: r.schemaHash ?? null,
       trustScore: r.trustScore,
       score: r.score,
     })),

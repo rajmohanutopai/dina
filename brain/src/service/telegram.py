@@ -1462,10 +1462,24 @@ class TelegramService:
     async def handle_service_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/service_query <capability> <lat> <lng> [text] — query a public service.
+        """/service_query <capability> <lat> <lng> [capability-specific args]
 
-        Phase 1: explicit command for service discovery queries.
-        Example: /service_query eta_query 12.97 77.59 bus 42
+        Schema-driven: once the orchestrator has the provider's
+        capabilitySchemas, the params it sends must satisfy the schema.
+        For ``eta_query`` that means ``route_id`` is required, so the
+        command grammar for that capability is:
+
+            /service_query eta_query <lat> <lng> <route_id> [text]
+
+        Example: ``/service_query eta_query 12.97 77.59 42 bus 42 via Oxford``
+
+        For other capabilities, trailing args land in ``user_text`` and the
+        sender-side schema validator reports any mismatch locally before
+        anything reaches the network.
+
+        The origin channel (``telegram:<chat_id>``) is forwarded so the
+        workflow_event reply lands in this chat only rather than being
+        broadcast.
         """
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
@@ -1473,8 +1487,12 @@ class TelegramService:
         args = context.args or []
         if len(args) < 3:
             await ch.send(BotResponse(
-                text="Usage: /service_query <capability> <lat> <lng> [text]\n"
-                "Example: /service_query eta_query 12.97 77.59 bus 42"
+                text=(
+                    "Usage: /service_query <capability> <lat> <lng> [args...]\n"
+                    "Examples:\n"
+                    "  /service_query eta_query 12.97 77.59 42 bus 42\n"
+                    "  /service_query <other_cap> <lat> <lng> free-form text"
+                )
             ))
             return
 
@@ -1486,7 +1504,23 @@ class TelegramService:
             await ch.send(ErrorResponse(text="Invalid coordinates. Provide numeric lat/lng."))
             return
 
-        user_text = " ".join(args[3:]) if len(args) > 3 else ""
+        params: dict[str, object] = {"location": {"lat": lat, "lng": lng}}
+        rest = args[3:]
+        user_text = ""
+
+        # Capability-specific argument mapping. Keeps params structured for
+        # schema validation; anything the schema doesn't define stays in
+        # user_text for discovery ranking / context.
+        if capability == "eta_query":
+            if not rest:
+                await ch.send(ErrorResponse(
+                    text="eta_query needs a route id, e.g. /service_query eta_query 12.97 77.59 42",
+                ))
+                return
+            params["route_id"] = rest[0]
+            user_text = " ".join(rest[1:])
+        else:
+            user_text = " ".join(rest)
 
         orchestrator = getattr(self._guardian, "_service_query_orchestrator", None)
         if orchestrator is None:
@@ -1495,11 +1529,18 @@ class TelegramService:
             ))
             return
 
+        # Targeted reply routing: the response arrives via a workflow_event
+        # that Guardian routes by origin_channel. This chat becomes the
+        # target so results don't fan out to every paired user.
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        origin_channel = f"telegram:{chat_id}" if chat_id is not None else ""
+
         try:
             await orchestrator.handle_user_query(
                 capability=capability,
-                params={"location": {"lat": lat, "lng": lng}},
+                params=params,
                 user_text=user_text,
+                origin_channel=origin_channel,
             )
         except Exception as exc:
             log.warning(

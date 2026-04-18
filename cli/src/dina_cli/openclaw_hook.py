@@ -54,30 +54,41 @@ def on_agent_end(event: dict) -> None:
         return
 
     if status in ("ok", "completed"):
-        _post_callback(task_id, "complete", {"result": _extract_result(result)})
+        summary, structured = _extract_result(result)
+        payload: dict = {"result": summary}
+        if structured is not None:
+            # Send structured result on a dedicated field so the bridge can
+            # validate it against the schema contract without parsing a
+            # truncated text summary. No byte cap here — the Core callback
+            # accepts JSON of any size Go's net/http will read.
+            payload["result_json"] = structured
+        _post_callback(task_id, "complete", payload)
     else:
         _post_callback(task_id, "fail", {"error": error or f"agent ended with status: {status}"})
 
 
-def _extract_result(result: object) -> str:
-    """Extract result as JSON string when possible, text otherwise.
+def _extract_result(result: object) -> tuple[str, object | None]:
+    """Return ``(summary, structured)`` for the callback body.
 
-    Preserves structured data for the task completion → D2D response bridge.
-    The bridge reads result_summary and tries to parse it as JSON.
+    ``summary`` is a short human-readable string suitable for UI/logs.
+    ``structured`` is the full agent output as a JSON-serialisable object
+    (dict/list), or ``None`` when the agent only produced free-form text.
     """
     if isinstance(result, dict):
-        # Preserve structured data as JSON string.
-        return json.dumps(result)[:4000]
+        return json.dumps(result)[:2000], result
+    if isinstance(result, list):
+        return json.dumps(result)[:2000], result
     if isinstance(result, str):
-        # Try to parse as JSON — might be a serialized dict.
+        # A string may itself be a serialised dict/list from upstream —
+        # parse it so the bridge sees structured data where possible.
         try:
             parsed = json.loads(result)
-            if isinstance(parsed, dict):
-                return json.dumps(parsed)[:4000]
         except (json.JSONDecodeError, TypeError):
-            pass
-        return result[:4000]
-    return str(result)[:4000]
+            parsed = None
+        if isinstance(parsed, (dict, list)):
+            return json.dumps(parsed)[:2000], parsed
+        return result[:2000], None
+    return str(result)[:2000], None
 
 
 def _post_callback(task_id: str, action: str, payload: dict) -> None:

@@ -115,6 +115,8 @@ services:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       DATABASE_POOL_MAX: "20"
       JETSTREAM_URL: ws://jetstream:6008
+      # Internal docker network — explicit allowlist opt-in for non-TLS.
+      JETSTREAM_ALLOWED_HOSTS: "jetstream"
       NODE_ENV: production
       LOG_LEVEL: info
     depends_on:

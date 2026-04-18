@@ -330,5996 +330,6599 @@
       "scenario": "Compromised brain: cannot access raw vault files",
       "line": 88
     },
+    "TST-CORE-1097": {
+      "path": "1.6",
+      "row": 1,
+      "scenario": "Service signature auth on /v1/did/sign \u2192 forbidden",
+      "line": 94
+    },
+    "TST-CORE-1098": {
+      "path": "1.6",
+      "row": 2,
+      "scenario": "Client token on /v1/did/sign \u2192 allowed",
+      "line": 95
+    },
+    "TST-CORE-1099": {
+      "path": "1.6",
+      "row": 3,
+      "scenario": "Service signature auth on /v1/vault/query \u2192 allowed",
+      "line": 96
+    },
+    "TST-CORE-1100": {
+      "path": "1.6",
+      "row": 4,
+      "scenario": "Service signature auth on admin endpoints \u2192 forbidden",
+      "line": 97
+    },
+    "TST-CORE-1101": {
+      "path": "1.6",
+      "row": 5,
+      "scenario": "Client token on all endpoints \u2192 allowed",
+      "line": 98
+    },
+    "TST-CORE-1102": {
+      "path": "1.6",
+      "row": 6,
+      "scenario": "Service signature auth on allowed non-admin paths \u2192 OK",
+      "line": 99
+    },
+    "TST-CORE-1103": {
+      "path": "1.6",
+      "row": 7,
+      "scenario": "Unauthenticated requests on public paths pass through",
+      "line": 100
+    },
+    "TST-CORE-1104": {
+      "path": "1.6",
+      "row": 8,
+      "scenario": "Explicit context token_kind enforcement",
+      "line": 101
+    },
+    "TST-CORE-1105": {
+      "path": "1.6",
+      "row": 9,
+      "scenario": "Concurrent token validation thread-safe",
+      "line": 102
+    },
     "TST-CORE-056": {
       "path": "2.1",
       "row": 1,
       "scenario": "Generate 24-word mnemonic",
-      "line": 98
+      "line": 112
     },
     "TST-CORE-057": {
       "path": "2.1",
       "row": 2,
       "scenario": "Mnemonic \u2192 seed derivation",
-      "line": 99
+      "line": 113
     },
     "TST-CORE-058": {
       "path": "2.1",
       "row": 3,
       "scenario": "Invalid mnemonic (bad checksum)",
-      "line": 100
+      "line": 114
     },
     "TST-CORE-059": {
       "path": "2.1",
       "row": 4,
       "scenario": "Invalid mnemonic (wrong word count)",
-      "line": 101
+      "line": 115
     },
     "TST-CORE-060": {
       "path": "2.1",
       "row": 5,
       "scenario": "Mnemonic with extra whitespace",
-      "line": 102
+      "line": 116
     },
     "TST-CORE-061": {
       "path": "2.1",
       "row": 6,
       "scenario": "Master seed IS the DEK",
-      "line": 103
+      "line": 117
     },
     "TST-CORE-062": {
       "path": "2.1",
       "row": 7,
       "scenario": "Mnemonic recovery: re-derive everything",
-      "line": 104
+      "line": 118
     },
     "TST-CORE-063": {
       "path": "2.1",
       "row": 8,
       "scenario": "Mnemonic recovery: BIP-39 \u2192 seed \u2192 SLIP-0010 \u2192 same DID",
-      "line": 105
+      "line": 119
     },
     "TST-CORE-064": {
       "path": "2.1",
       "row": 9,
       "scenario": "Lose device + paper = identity gone",
-      "line": 106
+      "line": 120
     },
     "TST-CORE-065": {
       "path": "2.1",
       "row": 10,
       "scenario": "Root identity never transmitted in plaintext",
-      "line": 107
+      "line": 121
     },
     "TST-CORE-066": {
       "path": "2.2",
       "row": 1,
       "scenario": "Derive root identity key",
-      "line": 113
+      "line": 127
     },
     "TST-CORE-067": {
       "path": "2.2",
       "row": 2,
       "scenario": "Derive persona N key",
-      "line": 114
+      "line": 128
     },
     "TST-CORE-068": {
       "path": "2.2",
       "row": 3,
       "scenario": "Determinism",
-      "line": 115
+      "line": 129
     },
     "TST-CORE-069": {
       "path": "2.2",
       "row": 4,
       "scenario": "Different paths \u2192 different keys",
-      "line": 116
+      "line": 130
     },
     "TST-CORE-070": {
       "path": "2.2",
       "row": 5,
       "scenario": "Hardened-only enforcement",
-      "line": 117
+      "line": 131
     },
     "TST-CORE-071": {
       "path": "2.2",
       "row": 6,
       "scenario": "Known test vectors",
-      "line": 118
+      "line": 132
     },
     "TST-CORE-072": {
       "path": "2.2",
       "row": 7,
       "scenario": "Purpose `9999'` namespace isolation",
-      "line": 119
+      "line": 133
     },
     "TST-CORE-073": {
       "path": "2.2",
       "row": 8,
       "scenario": "Purpose `44'` STRICTLY FORBIDDEN",
-      "line": 120
+      "line": 134
     },
     "TST-CORE-074": {
       "path": "2.2",
       "row": 9,
       "scenario": "Same mnemonic across Dina + crypto wallet",
-      "line": 121
+      "line": 135
     },
     "TST-CORE-075": {
       "path": "2.2",
       "row": 10,
       "scenario": "Sibling key unlinkability",
-      "line": 122
+      "line": 136
     },
     "TST-CORE-076": {
       "path": "2.2",
       "row": 11,
       "scenario": "Go implementation: stellar/go library",
-      "line": 123
+      "line": 137
     },
     "TST-CORE-077": {
       "path": "2.2",
       "row": 12,
       "scenario": "Canonical persona index mapping",
-      "line": 124
+      "line": 138
     },
     "TST-CORE-078": {
       "path": "2.2",
       "row": 13,
-      "scenario": "Custom persona index: sequential from 7",
-      "line": 125
+      "scenario": "Custom persona index: sequential from 6",
+      "line": 139
     },
     "TST-CORE-079": {
       "path": "2.2",
       "row": 14,
       "scenario": "Persona index stored in identity.sqlite",
-      "line": 126
+      "line": 140
     },
     "TST-CORE-080": {
       "path": "2.3",
       "row": 1,
       "scenario": "Derive per-persona DEK",
-      "line": 132
+      "line": 146
     },
     "TST-CORE-081": {
       "path": "2.3",
       "row": 2,
       "scenario": "Different personas \u2192 different DEKs",
-      "line": 133
+      "line": 147
     },
     "TST-CORE-082": {
       "path": "2.3",
       "row": 3,
       "scenario": "Determinism",
-      "line": 134
+      "line": 148
     },
     "TST-CORE-083": {
       "path": "2.3",
       "row": 4,
       "scenario": "Known HKDF test vectors",
-      "line": 135
+      "line": 149
     },
     "TST-CORE-084": {
       "path": "2.3",
       "row": 5,
       "scenario": "Full info string set",
-      "line": 136
+      "line": 150
     },
     "TST-CORE-085": {
       "path": "2.3",
       "row": 6,
       "scenario": "Compromise isolation",
-      "line": 137
+      "line": 151
     },
     "TST-CORE-086": {
       "path": "2.3",
       "row": 7,
       "scenario": "Custom persona info string",
-      "line": 138
+      "line": 152
     },
     "TST-CORE-087": {
       "path": "2.3",
       "row": 8,
       "scenario": "Backup Encryption Key",
-      "line": 139
+      "line": 153
     },
     "TST-CORE-088": {
       "path": "2.3",
       "row": 9,
       "scenario": "Archive Key (Tier 5)",
-      "line": 140
+      "line": 154
     },
     "TST-CORE-089": {
       "path": "2.3",
       "row": 10,
       "scenario": "Archive Key separate from Backup Key",
-      "line": 141
+      "line": 155
     },
     "TST-CORE-090": {
       "path": "2.3",
       "row": 11,
       "scenario": "Client Sync Key",
-      "line": 142
+      "line": 156
     },
     "TST-CORE-091": {
       "path": "2.3",
       "row": 12,
       "scenario": "Trust Signing Key",
-      "line": 143
+      "line": 157
     },
     "TST-CORE-092": {
       "path": "2.3",
       "row": 13,
       "scenario": "`user_salt` is random 32-byte value",
-      "line": 144
+      "line": 158
     },
     "TST-CORE-093": {
       "path": "2.3",
       "row": 14,
       "scenario": "`user_salt` generated once at first setup",
-      "line": 145
+      "line": 159
     },
     "TST-CORE-094": {
       "path": "2.3",
       "row": 15,
       "scenario": "`user_salt` persisted across reboots",
-      "line": 146
+      "line": 160
     },
     "TST-CORE-095": {
       "path": "2.3",
       "row": 16,
       "scenario": "`user_salt` included in export",
-      "line": 147
+      "line": 161
     },
     "TST-CORE-096": {
       "path": "2.3",
       "row": 17,
       "scenario": "Same mnemonic, different `user_salt` \u2192 different DEKs",
-      "line": 148
+      "line": 162
     },
     "TST-CORE-097": {
       "path": "2.3",
       "row": 18,
       "scenario": "`user_salt` absent \u2192 startup error",
-      "line": 149
+      "line": 163
     },
     "TST-CORE-098": {
       "path": "2.4",
       "row": 1,
       "scenario": "Hash passphrase",
-      "line": 155
+      "line": 169
     },
     "TST-CORE-099": {
       "path": "2.4",
       "row": 2,
       "scenario": "Verify correct passphrase",
-      "line": 156
+      "line": 170
     },
     "TST-CORE-100": {
       "path": "2.4",
       "row": 3,
       "scenario": "Verify wrong passphrase",
-      "line": 157
+      "line": 171
     },
     "TST-CORE-101": {
       "path": "2.4",
       "row": 4,
       "scenario": "Default parameters",
-      "line": 158
+      "line": 172
     },
     "TST-CORE-102": {
       "path": "2.4",
       "row": 5,
       "scenario": "Unique salts",
-      "line": 159
+      "line": 173
     },
     "TST-CORE-103": {
       "path": "2.4",
       "row": 6,
       "scenario": "Parameters configurable via config.json",
-      "line": 160
+      "line": 174
     },
     "TST-CORE-104": {
       "path": "2.4",
       "row": 7,
       "scenario": "Runs once at unlock, not per-request",
-      "line": 161
+      "line": 175
     },
     "TST-CORE-105": {
       "path": "2.4",
       "row": 8,
       "scenario": "Passphrase change: re-wrap only",
-      "line": 162
+      "line": 176
     },
     "TST-CORE-106": {
       "path": "2.5",
       "row": 1,
       "scenario": "Sign message",
-      "line": 168
+      "line": 182
     },
     "TST-CORE-107": {
       "path": "2.5",
       "row": 2,
       "scenario": "Verify valid signature",
-      "line": 169
+      "line": 183
     },
     "TST-CORE-108": {
       "path": "2.5",
       "row": 3,
       "scenario": "Verify tampered message",
-      "line": 170
+      "line": 184
     },
     "TST-CORE-109": {
       "path": "2.5",
       "row": 4,
       "scenario": "Verify wrong public key",
-      "line": 171
+      "line": 185
     },
     "TST-CORE-110": {
       "path": "2.5",
       "row": 5,
       "scenario": "Canonical JSON signing",
-      "line": 172
+      "line": 186
     },
     "TST-CORE-111": {
       "path": "2.5",
       "row": 6,
       "scenario": "Empty message signing",
-      "line": 173
+      "line": 187
     },
     "TST-CORE-112": {
       "path": "2.6",
       "row": 1,
       "scenario": "Convert signing key to encryption key",
-      "line": 179
+      "line": 193
     },
     "TST-CORE-113": {
       "path": "2.6",
       "row": 2,
       "scenario": "Convert public key",
-      "line": 180
+      "line": 194
     },
     "TST-CORE-114": {
       "path": "2.6",
       "row": 3,
       "scenario": "Roundtrip: sign then encrypt",
-      "line": 181
+      "line": 195
     },
     "TST-CORE-115": {
       "path": "2.6",
       "row": 4,
       "scenario": "One-way property",
-      "line": 182
+      "line": 196
     },
     "TST-CORE-116": {
       "path": "2.6",
       "row": 5,
       "scenario": "Ephemeral per message",
-      "line": 183
+      "line": 197
     },
     "TST-CORE-117": {
       "path": "2.6",
       "row": 6,
       "scenario": "Conscious reuse (not separate keypairs)",
-      "line": 184
+      "line": 198
     },
     "TST-CORE-118": {
       "path": "2.6",
       "row": 7,
       "scenario": "Ephemeral X25519 key zeroed from memory after `crypto_box_seal`",
-      "line": 185
+      "line": 199
     },
     "TST-CORE-119": {
       "path": "2.7",
       "row": 1,
       "scenario": "Seal message to recipient",
-      "line": 191
+      "line": 205
     },
     "TST-CORE-120": {
       "path": "2.7",
       "row": 2,
       "scenario": "Open sealed message",
-      "line": 192
+      "line": 206
     },
     "TST-CORE-121": {
       "path": "2.7",
       "row": 3,
       "scenario": "Wrong recipient key",
-      "line": 193
+      "line": 207
     },
     "TST-CORE-122": {
       "path": "2.7",
       "row": 4,
       "scenario": "Tampered ciphertext",
-      "line": 194
+      "line": 208
     },
     "TST-CORE-123": {
       "path": "2.7",
       "row": 5,
       "scenario": "Empty plaintext",
-      "line": 195
+      "line": 209
     },
     "TST-CORE-124": {
       "path": "2.7",
       "row": 6,
       "scenario": "Large message",
-      "line": 196
+      "line": 210
     },
     "TST-CORE-125": {
       "path": "2.8",
       "row": 1,
       "scenario": "Wrap key with passphrase-derived KEK",
-      "line": 202
+      "line": 216
     },
     "TST-CORE-126": {
       "path": "2.8",
       "row": 2,
       "scenario": "Unwrap with correct passphrase",
-      "line": 203
+      "line": 217
     },
     "TST-CORE-127": {
       "path": "2.8",
       "row": 3,
       "scenario": "Unwrap with wrong passphrase",
-      "line": 204
+      "line": 218
     },
     "TST-CORE-128": {
       "path": "2.8",
       "row": 4,
       "scenario": "Tampered wrapped blob",
-      "line": 205
+      "line": 219
     },
     "TST-CORE-129": {
       "path": "2.8",
       "row": 5,
       "scenario": "Nonce uniqueness",
-      "line": 206
+      "line": 220
     },
     "TST-CORE-880": {
-      "path": "2.8",
-      "row": 6,
-      "scenario": "Key generation verified to use `crypto/rand` (not weak entropy)",
-      "line": 207
+      "path": "28",
+      "row": 1,
+      "scenario": "Valid Ed25519 signature accepted (POST with body)",
+      "line": 1635
     },
     "TST-CORE-881": {
-      "path": "2.8",
-      "row": 7,
-      "scenario": "Archive key survives backup key rotation (separate HKDF derivations)",
-      "line": 208
+      "path": "28",
+      "row": 2,
+      "scenario": "Valid signature with empty body (GET)",
+      "line": 1636
     },
     "TST-CORE-882": {
-      "path": "2.8",
-      "row": 8,
-      "scenario": "Client sync key used for sync encryption, trust key for signing",
-      "line": 209
+      "path": "28",
+      "row": 3,
+      "scenario": "Invalid signature rejected (garbage bytes)",
+      "line": 1637
     },
     "TST-CORE-130": {
       "path": "3.1",
       "row": 1,
       "scenario": "Generate root DID",
-      "line": 219
+      "line": 233
     },
     "TST-CORE-131": {
       "path": "3.1",
       "row": 2,
       "scenario": "Load existing DID",
-      "line": 220
+      "line": 234
     },
     "TST-CORE-132": {
       "path": "3.1",
       "row": 3,
       "scenario": "DID Document structure",
-      "line": 221
+      "line": 235
     },
     "TST-CORE-133": {
       "path": "3.1",
       "row": 4,
       "scenario": "Multiple persona DIDs",
-      "line": 222
+      "line": 236
     },
     "TST-CORE-134": {
       "path": "3.1",
       "row": 5,
       "scenario": "DID Document service endpoint",
-      "line": 223
+      "line": 237
     },
     "TST-CORE-135": {
       "path": "3.1",
       "row": 6,
       "scenario": "PLC Directory: signed operation log only",
-      "line": 224
+      "line": 238
     },
     "TST-CORE-136": {
       "path": "3.1",
       "row": 7,
       "scenario": "Exactly one root identity: second generation rejected",
-      "line": 225
+      "line": 239
     },
     "TST-CORE-137": {
       "path": "3.1",
       "row": 8,
       "scenario": "Root identity: `created_at` timestamp stored",
-      "line": 226
+      "line": 240
     },
     "TST-CORE-138": {
       "path": "3.1",
       "row": 9,
       "scenario": "Root identity: device origin fingerprint stored",
-      "line": 227
+      "line": 241
     },
     "TST-CORE-139": {
       "path": "3.1",
       "row": 10,
       "scenario": "DID Document `verificationMethod`: Multikey with `z6Mk` prefix",
-      "line": 228
+      "line": 242
     },
     "TST-CORE-140": {
       "path": "3.1.1",
       "row": 1,
       "scenario": "Rotate signing key",
-      "line": 234
+      "line": 248
     },
     "TST-CORE-141": {
       "path": "3.1.1",
       "row": 2,
       "scenario": "Rotation preserves DID",
-      "line": 235
+      "line": 249
     },
     "TST-CORE-142": {
       "path": "3.1.1",
       "row": 3,
       "scenario": "Old key invalid after rotation",
-      "line": 236
+      "line": 250
     },
     "TST-CORE-143": {
       "path": "3.1.1",
       "row": 4,
       "scenario": "Rotation op: signed by old key",
-      "line": 237
+      "line": 251
     },
     "TST-CORE-144": {
       "path": "3.1.1",
       "row": 5,
       "scenario": "Recovery keys can reclaim DID",
-      "line": 238
+      "line": 252
     },
     "TST-CORE-145": {
       "path": "3.1.2",
       "row": 1,
       "scenario": "`did:web` resolution",
-      "line": 244
+      "line": 258
     },
     "TST-CORE-146": {
       "path": "3.1.2",
       "row": 2,
       "scenario": "`did:web` uses same keypair",
-      "line": 245
+      "line": 259
     },
     "TST-CORE-147": {
       "path": "3.1.2",
       "row": 3,
       "scenario": "Rotation from `did:plc` \u2192 `did:web`",
-      "line": 246
+      "line": 260
     },
     "TST-CORE-148": {
       "path": "3.1.2",
       "row": 4,
       "scenario": "`did:web` piggybacks on existing ingress",
-      "line": 247
+      "line": 261
     },
     "TST-CORE-149": {
       "path": "3.1.2",
       "row": 5,
       "scenario": "`did:web` tradeoff acknowledged",
-      "line": 248
+      "line": 262
     },
     "TST-CORE-150": {
       "path": "3.2",
       "row": 1,
       "scenario": "Create persona",
-      "line": 254
+      "line": 268
     },
     "TST-CORE-151": {
       "path": "3.2",
       "row": 2,
       "scenario": "List personas",
-      "line": 255
+      "line": 269
     },
     "TST-CORE-152": {
       "path": "3.2",
       "row": 3,
       "scenario": "Delete persona",
-      "line": 256
+      "line": 270
     },
     "TST-CORE-153": {
       "path": "3.2",
       "row": 4,
       "scenario": "Right to delete: file removal = annihilation",
-      "line": 257
+      "line": 271
     },
     "TST-CORE-154": {
       "path": "3.2",
       "row": 5,
       "scenario": "Persona isolation",
-      "line": 258
+      "line": 272
     },
     "TST-CORE-155": {
       "path": "3.2",
       "row": 6,
       "scenario": "Default persona exists",
-      "line": 259
+      "line": 273
     },
     "TST-CORE-156": {
       "path": "3.2",
       "row": 7,
       "scenario": "Per-persona file layout",
-      "line": 260
+      "line": 274
     },
     "TST-CORE-157": {
       "path": "3.2",
       "row": 8,
       "scenario": "Per-persona independent DEK",
-      "line": 261
+      "line": 275
     },
     "TST-CORE-158": {
       "path": "3.2",
       "row": 9,
       "scenario": "Locked persona: file is opaque bytes",
-      "line": 262
+      "line": 276
     },
     "TST-CORE-159": {
       "path": "3.2",
       "row": 10,
       "scenario": "Selective unlock with TTL",
-      "line": 263
+      "line": 277
     },
     "TST-CORE-160": {
       "path": "3.2",
       "row": 11,
       "scenario": "Persona Ed25519 key signs DIDComm (NOT root key)",
-      "line": 264
+      "line": 278
     },
     "TST-CORE-161": {
       "path": "3.2",
       "row": 12,
       "scenario": "Persona Ed25519 key signs Trust Network entries (NOT root key)",
-      "line": 265
+      "line": 279
     },
     "TST-CORE-162": {
       "path": "3.2",
       "row": 13,
       "scenario": "Even Dina's code cannot cross compartments",
-      "line": 266
+      "line": 280
     },
     "TST-CORE-163": {
       "path": "3.3",
       "row": 1,
-      "scenario": "Access Open-tier persona",
-      "line": 272
+      "scenario": "Access Default-tier persona",
+      "line": 297
     },
     "TST-CORE-164": {
       "path": "3.3",
       "row": 2,
-      "scenario": "Access Restricted-tier persona",
-      "line": 273
+      "scenario": "Access Sensitive-tier persona",
+      "line": 298
     },
     "TST-CORE-165": {
       "path": "3.3",
       "row": 3,
       "scenario": "Access Locked-tier persona",
-      "line": 274
+      "line": 299
     },
     "TST-CORE-166": {
       "path": "3.3",
       "row": 4,
       "scenario": "Unlock Locked persona",
-      "line": 275
+      "line": 300
     },
     "TST-CORE-167": {
       "path": "3.3",
       "row": 5,
       "scenario": "Locked persona TTL expiry",
-      "line": 276
+      "line": 301
     },
     "TST-CORE-168": {
       "path": "3.3",
       "row": 6,
       "scenario": "Locked persona re-lock",
-      "line": 277
+      "line": 302
     },
     "TST-CORE-169": {
       "path": "3.3",
       "row": 7,
-      "scenario": "Audit log for Restricted access",
-      "line": 278
+      "scenario": "Audit log for Sensitive access",
+      "line": 303
     },
     "TST-CORE-170": {
       "path": "3.3",
       "row": 8,
-      "scenario": "Notification on Restricted access",
-      "line": 279
+      "scenario": "Notification on Sensitive access",
+      "line": 304
     },
     "TST-CORE-171": {
       "path": "3.3",
       "row": 9,
       "scenario": "Locked persona unlock flow",
-      "line": 280
+      "line": 305
     },
     "TST-CORE-172": {
       "path": "3.3",
       "row": 10,
       "scenario": "Locked persona unlock: human denies",
-      "line": 281
+      "line": 306
     },
     "TST-CORE-173": {
       "path": "3.3",
       "row": 11,
       "scenario": "Locked persona unlock: TTL expires",
-      "line": 282
+      "line": 307
     },
     "TST-CORE-174": {
       "path": "3.3",
       "row": 12,
       "scenario": "Cross-persona query: parallel reads",
-      "line": 283
+      "line": 308
     },
     "TST-CORE-175": {
       "path": "3.3",
       "row": 13,
       "scenario": "`GetPersonasForContact()`: derived, never cached",
-      "line": 284
+      "line": 309
     },
     "TST-CORE-176": {
       "path": "3.3",
       "row": 14,
       "scenario": "`GetPersonasForContact()`: locked invisible",
-      "line": 285
+      "line": 310
     },
     "TST-CORE-177": {
       "path": "3.3",
       "row": 15,
-      "scenario": "Tier configuration stored in config.json",
-      "line": 286
+      "scenario": "Tier configuration persisted",
+      "line": 311
     },
     "TST-CORE-178": {
       "path": "3.4",
       "row": 1,
       "scenario": "Add contact",
-      "line": 292
+      "line": 328
     },
     "TST-CORE-179": {
       "path": "3.4",
       "row": 2,
       "scenario": "Resolve contact DID",
-      "line": 293
+      "line": 329
     },
     "TST-CORE-180": {
       "path": "3.4",
       "row": 3,
       "scenario": "Update contact trust level",
-      "line": 294
+      "line": 330
     },
     "TST-CORE-181": {
       "path": "3.4",
       "row": 4,
       "scenario": "Delete contact",
-      "line": 295
+      "line": 331
     },
     "TST-CORE-182": {
       "path": "3.4",
       "row": 5,
       "scenario": "Per-persona contact routing",
-      "line": 296
+      "line": 332
     },
     "TST-CORE-183": {
       "path": "3.4",
       "row": 6,
       "scenario": "Contacts table: NO `persona` column",
-      "line": 297
+      "line": 333
     },
     "TST-CORE-184": {
       "path": "3.4",
       "row": 7,
       "scenario": "Contacts table: full schema validation",
-      "line": 298
+      "line": 334
     },
     "TST-CORE-185": {
       "path": "3.4",
       "row": 8,
       "scenario": "Trust level enum validation",
-      "line": 299
+      "line": 335
     },
     "TST-CORE-186": {
       "path": "3.4",
       "row": 9,
       "scenario": "`idx_contacts_trust` index exists",
-      "line": 300
+      "line": 336
     },
     "TST-CORE-187": {
       "path": "3.5",
       "row": 1,
       "scenario": "Register device",
-      "line": 306
+      "line": 342
     },
     "TST-CORE-188": {
       "path": "3.5",
       "row": 2,
       "scenario": "List devices",
-      "line": 307
+      "line": 343
     },
     "TST-CORE-189": {
       "path": "3.5",
       "row": 3,
       "scenario": "Revoke device",
-      "line": 308
+      "line": 344
     },
     "TST-CORE-190": {
       "path": "3.5",
       "row": 4,
       "scenario": "Max device limit",
-      "line": 309
+      "line": 345
     },
     "TST-CORE-191": {
       "path": "3.6",
       "row": 1,
       "scenario": "Split master seed",
-      "line": 315
+      "line": 351
     },
     "TST-CORE-192": {
       "path": "3.6",
       "row": 2,
       "scenario": "Reconstruct with threshold shares",
-      "line": 316
+      "line": 352
     },
     "TST-CORE-193": {
       "path": "3.6",
       "row": 3,
       "scenario": "Reconstruct with fewer than threshold",
-      "line": 317
+      "line": 353
     },
     "TST-CORE-194": {
       "path": "3.6",
       "row": 4,
       "scenario": "Reconstruct with invalid share",
-      "line": 318
+      "line": 354
     },
     "TST-CORE-195": {
       "path": "3.6",
       "row": 5,
       "scenario": "Share format",
-      "line": 319
+      "line": 355
     },
     "TST-CORE-926": {
       "path": "3.6",
       "row": 6,
       "scenario": "DID Document endpoint update on ingress tier change",
-      "line": 320
+      "line": 356
     },
     "TST-CORE-927": {
       "path": "3.6",
       "row": 7,
       "scenario": "Trust ring level enum defined in code",
-      "line": 321
+      "line": 357
     },
     "TST-CORE-928": {
       "path": "3.6",
       "row": 8,
       "scenario": "No MCP/OpenClaw credential can access vault endpoints",
-      "line": 322
+      "line": 358
     },
     "TST-CORE-196": {
       "path": "4.1",
       "row": 1,
       "scenario": "Create new vault",
-      "line": 332
+      "line": 368
     },
     "TST-CORE-197": {
       "path": "4.1",
       "row": 2,
       "scenario": "Open existing vault",
-      "line": 333
+      "line": 369
     },
     "TST-CORE-198": {
       "path": "4.1",
       "row": 3,
       "scenario": "Open with wrong DEK",
-      "line": 334
+      "line": 370
     },
     "TST-CORE-199": {
       "path": "4.1",
       "row": 4,
       "scenario": "Schema migration",
-      "line": 335
+      "line": 371
     },
     "TST-CORE-200": {
       "path": "4.1",
       "row": 5,
       "scenario": "Concurrent access",
-      "line": 336
+      "line": 372
     },
     "TST-CORE-201": {
       "path": "4.1",
       "row": 6,
       "scenario": "SQLCipher PRAGMAs on every connection",
-      "line": 337
+      "line": 373
     },
     "TST-CORE-202": {
       "path": "4.1",
       "row": 7,
       "scenario": "WAL crash recovery",
-      "line": 338
+      "line": 374
     },
     "TST-CORE-203": {
       "path": "4.1",
       "row": 8,
       "scenario": "`synchronous=NORMAL` in WAL mode",
-      "line": 339
+      "line": 375
     },
     "TST-CORE-204": {
       "path": "4.1",
       "row": 9,
       "scenario": "`foreign_keys=ON`",
-      "line": 340
+      "line": 376
     },
     "TST-CORE-205": {
       "path": "4.1",
       "row": 10,
       "scenario": "`busy_timeout=5000`",
-      "line": 341
+      "line": 377
     },
     "TST-CORE-206": {
       "path": "4.1.1",
       "row": 1,
       "scenario": "VaultManager structure",
-      "line": 347
+      "line": 383
     },
     "TST-CORE-207": {
       "path": "4.1.1",
       "row": 2,
       "scenario": "Write connection: single-writer",
-      "line": 348
+      "line": 384
     },
     "TST-CORE-208": {
       "path": "4.1.1",
       "row": 3,
       "scenario": "Read pool: multiple readers",
-      "line": 349
+      "line": 385
     },
     "TST-CORE-209": {
       "path": "4.1.1",
       "row": 4,
       "scenario": "Read connections: query_only",
-      "line": 350
+      "line": 386
     },
     "TST-CORE-210": {
       "path": "4.1.1",
       "row": 5,
       "scenario": "Write autocheckpoint",
-      "line": 351
+      "line": 387
     },
     "TST-CORE-211": {
       "path": "4.1.1",
       "row": 6,
       "scenario": "Cross-persona write independence",
-      "line": 352
+      "line": 388
     },
     "TST-CORE-212": {
       "path": "4.1.1",
       "row": 7,
       "scenario": "Concurrent readers during write",
-      "line": 353
+      "line": 389
     },
     "TST-CORE-213": {
       "path": "4.2",
       "row": 1,
       "scenario": "Store item",
-      "line": 359
+      "line": 395
     },
     "TST-CORE-214": {
       "path": "4.2",
       "row": 2,
       "scenario": "Retrieve item by ID",
-      "line": 360
+      "line": 396
     },
     "TST-CORE-215": {
       "path": "4.2",
       "row": 3,
       "scenario": "Retrieve non-existent item",
-      "line": 361
+      "line": 397
     },
     "TST-CORE-216": {
       "path": "4.2",
       "row": 4,
       "scenario": "Update item",
-      "line": 362
+      "line": 398
     },
     "TST-CORE-217": {
       "path": "4.2",
       "row": 5,
       "scenario": "Delete item",
-      "line": 363
+      "line": 399
     },
     "TST-CORE-218": {
       "path": "4.2",
       "row": 6,
       "scenario": "List items by category",
-      "line": 364
+      "line": 400
     },
     "TST-CORE-219": {
       "path": "4.2",
       "row": 7,
       "scenario": "Pagination",
-      "line": 365
+      "line": 401
     },
     "TST-CORE-220": {
       "path": "4.2",
       "row": 8,
       "scenario": "Item size limit",
-      "line": 366
+      "line": 402
     },
     "TST-CORE-221": {
       "path": "4.2.1",
       "row": 1,
       "scenario": "`contacts` table: global, no persona field",
-      "line": 372
+      "line": 408
     },
     "TST-CORE-222": {
       "path": "4.2.1",
       "row": 2,
       "scenario": "`contacts.trust_level` enum",
-      "line": 373
+      "line": 409
     },
     "TST-CORE-223": {
       "path": "4.2.1",
       "row": 3,
       "scenario": "`contacts.sharing_policy` is JSON",
-      "line": 374
+      "line": 410
     },
     "TST-CORE-224": {
       "path": "4.2.1",
       "row": 4,
       "scenario": "`idx_contacts_trust` index exists",
-      "line": 375
+      "line": 411
     },
     "TST-CORE-225": {
       "path": "4.2.1",
       "row": 5,
       "scenario": "`audit_log` table schema",
-      "line": 376
+      "line": 412
     },
     "TST-CORE-226": {
       "path": "4.2.1",
       "row": 6,
       "scenario": "`kv_store` table for sync cursors",
-      "line": 377
+      "line": 413
     },
     "TST-CORE-227": {
       "path": "4.2.1",
       "row": 7,
       "scenario": "`device_tokens` table: SHA-256 hash",
-      "line": 378
+      "line": 414
     },
     "TST-CORE-228": {
       "path": "4.2.1",
       "row": 8,
       "scenario": "`device_tokens` partial index",
-      "line": 379
+      "line": 415
     },
     "TST-CORE-229": {
       "path": "4.2.1",
       "row": 9,
       "scenario": "`crash_log` table schema",
-      "line": 380
+      "line": 416
     },
     "TST-CORE-230": {
       "path": "4.2.2",
       "row": 1,
       "scenario": "`vault_items` required columns",
-      "line": 386
+      "line": 422
     },
     "TST-CORE-231": {
       "path": "4.2.2",
       "row": 2,
       "scenario": "`vault_items_fts` FTS5 table",
-      "line": 387
+      "line": 423
     },
     "TST-CORE-232": {
       "path": "4.2.2",
       "row": 3,
       "scenario": "FTS5 tokenizer: `unicode61` enforced",
-      "line": 388
+      "line": 424
     },
     "TST-CORE-233": {
       "path": "4.2.2",
       "row": 4,
       "scenario": "Porter stemmer FORBIDDEN",
-      "line": 389
+      "line": 425
     },
     "TST-CORE-234": {
       "path": "4.2.2",
       "row": 5,
       "scenario": "FTS5 index encrypted by SQLCipher",
-      "line": 390
+      "line": 426
     },
     "TST-CORE-235": {
       "path": "4.2.2",
       "row": 6,
       "scenario": "`relationships` table",
-      "line": 391
+      "line": 427
     },
     "TST-CORE-236": {
       "path": "4.2.2",
       "row": 7,
       "scenario": "`vault_items.type` allowed values enforced",
-      "line": 392
+      "line": 428
     },
     "TST-CORE-237": {
       "path": "4.2.2",
       "row": 8,
       "scenario": "`relationships.entity_type` allowed values enforced",
-      "line": 393
+      "line": 429
     },
     "TST-CORE-238": {
       "path": "4.2.2",
       "row": 9,
       "scenario": "FTS5 content-sync: INSERT propagates",
-      "line": 394
+      "line": 430
     },
     "TST-CORE-239": {
       "path": "4.2.2",
       "row": 10,
       "scenario": "FTS5 content-sync: UPDATE propagates",
-      "line": 395
+      "line": 431
     },
     "TST-CORE-240": {
       "path": "4.2.2",
       "row": 11,
       "scenario": "FTS5 content-sync: DELETE propagates",
-      "line": 396
+      "line": 432
     },
     "TST-CORE-241": {
       "path": "4.2.2",
       "row": 12,
       "scenario": "Schema version: identity.sqlite",
-      "line": 397
+      "line": 433
     },
     "TST-CORE-242": {
       "path": "4.2.2",
       "row": 13,
       "scenario": "Schema version: persona vault",
-      "line": 398
+      "line": 434
     },
     "TST-CORE-243": {
       "path": "4.2.3",
       "row": 1,
       "scenario": "Batch store: 100 items",
-      "line": 404
+      "line": 440
     },
     "TST-CORE-244": {
       "path": "4.2.3",
       "row": 2,
       "scenario": "Batch performance",
-      "line": 405
+      "line": 441
     },
     "TST-CORE-245": {
       "path": "4.2.3",
       "row": 3,
       "scenario": "Batch failure: rollback",
-      "line": 406
+      "line": 442
     },
     "TST-CORE-246": {
       "path": "4.2.3",
       "row": 4,
       "scenario": "Batch during concurrent reads",
-      "line": 407
+      "line": 443
     },
     "TST-CORE-247": {
       "path": "4.2.3",
       "row": 5,
       "scenario": "Batch ingestion + embedding generation",
-      "line": 408
+      "line": 444
     },
     "TST-CORE-248": {
       "path": "4.3",
       "row": 1,
       "scenario": "FTS5 keyword search",
-      "line": 414
+      "line": 450
     },
     "TST-CORE-249": {
       "path": "4.3",
       "row": 2,
       "scenario": "Semantic vector search",
-      "line": 415
+      "line": 451
     },
     "TST-CORE-250": {
       "path": "4.3",
       "row": 3,
       "scenario": "Hybrid search (default)",
-      "line": 416
+      "line": 452
     },
     "TST-CORE-251": {
       "path": "4.3",
       "row": 4,
       "scenario": "Hybrid search formula verified",
-      "line": 417
+      "line": 453
     },
     "TST-CORE-252": {
       "path": "4.3",
       "row": 5,
       "scenario": "Empty results",
-      "line": 418
+      "line": 454
     },
     "TST-CORE-253": {
       "path": "4.3",
       "row": 6,
       "scenario": "Search across persona boundary",
-      "line": 419
+      "line": 455
     },
     "TST-CORE-254": {
       "path": "4.3",
       "row": 7,
       "scenario": "FTS5 injection",
-      "line": 420
+      "line": 456
     },
     "TST-CORE-255": {
       "path": "4.3",
       "row": 8,
       "scenario": "`include_content: false` (default)",
-      "line": 421
+      "line": 457
     },
     "TST-CORE-256": {
       "path": "4.3",
       "row": 9,
       "scenario": "`include_content: true`",
-      "line": 422
+      "line": 458
     },
     "TST-CORE-257": {
       "path": "4.3",
       "row": 10,
       "scenario": "Filter by types",
-      "line": 423
+      "line": 459
     },
     "TST-CORE-258": {
       "path": "4.3",
       "row": 11,
       "scenario": "Filter by time range",
-      "line": 424
+      "line": 460
     },
     "TST-CORE-259": {
       "path": "4.3",
       "row": 12,
       "scenario": "Limit default 20",
-      "line": 425
+      "line": 461
     },
     "TST-CORE-260": {
       "path": "4.3",
       "row": 13,
       "scenario": "Limit max 100",
-      "line": 426
+      "line": 462
     },
     "TST-CORE-261": {
       "path": "4.3",
       "row": 14,
       "scenario": "Pagination",
-      "line": 427
+      "line": 463
     },
     "TST-CORE-262": {
       "path": "4.3",
       "row": 15,
       "scenario": "Locked persona \u2192 structured 403",
-      "line": 428
+      "line": 464
     },
     "TST-CORE-263": {
       "path": "4.3",
       "row": 16,
       "scenario": "Simple search fast path (core alone)",
-      "line": 429
+      "line": 465
     },
     "TST-CORE-264": {
       "path": "4.3",
       "row": 17,
       "scenario": "Semantic search (brain orchestrates)",
-      "line": 430
+      "line": 466
     },
     "TST-CORE-265": {
       "path": "4.3.1",
       "row": 1,
       "scenario": "Embedding model tracked in metadata",
-      "line": 436
+      "line": 472
     },
     "TST-CORE-266": {
       "path": "4.3.1",
       "row": 2,
       "scenario": "Model change detected",
-      "line": 437
+      "line": 473
     },
     "TST-CORE-267": {
       "path": "4.3.1",
       "row": 3,
       "scenario": "Re-index triggered",
-      "line": 438
+      "line": 474
     },
     "TST-CORE-268": {
       "path": "4.3.1",
       "row": 4,
       "scenario": "FTS5 available during re-indexing",
-      "line": 439
+      "line": 475
     },
     "TST-CORE-269": {
       "path": "4.3.1",
       "row": 5,
       "scenario": "Re-embed completes",
-      "line": 440
+      "line": 476
     },
     "TST-CORE-270": {
       "path": "4.3.1",
       "row": 6,
       "scenario": "No dual-index",
-      "line": 441
+      "line": 477
     },
     "TST-CORE-271": {
       "path": "4.4",
       "row": 1,
       "scenario": "Write scratchpad entry (step checkpoint)",
-      "line": 451
+      "line": 487
     },
     "TST-CORE-272": {
       "path": "4.4",
       "row": 2,
       "scenario": "Read scratchpad by task_id",
-      "line": 452
+      "line": 488
     },
     "TST-CORE-273": {
       "path": "4.4",
       "row": 3,
       "scenario": "Per-step context accumulation",
-      "line": 453
+      "line": 489
     },
     "TST-CORE-274": {
       "path": "4.4",
       "row": 4,
       "scenario": "Resume from exact step",
-      "line": 454
+      "line": 490
     },
     "TST-CORE-275": {
       "path": "4.4",
       "row": 5,
       "scenario": "No scratchpad \u2192 start fresh",
-      "line": 455
+      "line": 491
     },
     "TST-CORE-276": {
       "path": "4.4",
       "row": 6,
       "scenario": "Scratchpad TTL: 24h auto-expire",
-      "line": 456
+      "line": 492
     },
     "TST-CORE-277": {
       "path": "4.4",
       "row": 7,
       "scenario": "Scratchpad deleted on completion",
-      "line": 457
+      "line": 493
     },
     "TST-CORE-278": {
       "path": "4.4",
       "row": 8,
       "scenario": "Scratchpad size limit",
-      "line": 458
+      "line": 494
     },
     "TST-CORE-279": {
       "path": "4.4",
       "row": 9,
       "scenario": "Scratchpad stored in identity.sqlite",
-      "line": 459
+      "line": 495
     },
     "TST-CORE-280": {
       "path": "4.4",
       "row": 10,
       "scenario": "Multiple concurrent scratchpads",
-      "line": 460
+      "line": 496
     },
     "TST-CORE-281": {
       "path": "4.4",
       "row": 11,
       "scenario": "Scratchpad overwrite (same task, later step)",
-      "line": 461
+      "line": 497
     },
     "TST-CORE-282": {
       "path": "4.5",
       "row": 1,
       "scenario": "Stage item for review",
-      "line": 470
+      "line": 506
     },
     "TST-CORE-283": {
       "path": "4.5",
       "row": 2,
       "scenario": "Approve staged item",
-      "line": 471
+      "line": 507
     },
     "TST-CORE-284": {
       "path": "4.5",
       "row": 3,
       "scenario": "Reject staged item",
-      "line": 472
+      "line": 508
     },
     "TST-CORE-285": {
       "path": "4.5",
       "row": 4,
       "scenario": "Auto-approve low-risk items",
-      "line": 473
+      "line": 509
     },
     "TST-CORE-286": {
       "path": "4.5",
       "row": 5,
       "scenario": "Per-item expiry via `expires_at` field",
-      "line": 474
+      "line": 510
     },
     "TST-CORE-287": {
       "path": "4.5",
       "row": 6,
       "scenario": "Staging encrypted at rest",
-      "line": 475
+      "line": 511
     },
     "TST-CORE-288": {
       "path": "4.5",
       "row": 7,
       "scenario": "Staging not backed up",
-      "line": 476
+      "line": 512
     },
     "TST-CORE-289": {
       "path": "4.5",
       "row": 8,
       "scenario": "Draft-don't-send in staging",
-      "line": 477
+      "line": 513
     },
     "TST-CORE-290": {
       "path": "4.5",
       "row": 9,
       "scenario": "Cart handover intent in staging",
-      "line": 478
+      "line": 514
     },
     "TST-CORE-291": {
       "path": "4.5",
       "row": 10,
       "scenario": "Staging items per-persona",
-      "line": 479
+      "line": 515
     },
     "TST-CORE-292": {
       "path": "4.5",
       "row": 11,
       "scenario": "Sweeper runs on schedule",
-      "line": 480
+      "line": 516
     },
     "TST-CORE-293": {
       "path": "4.5",
       "row": 12,
       "scenario": "Per-type TTL: draft 72h, cart 12h",
-      "line": 481
+      "line": 517
     },
     "TST-CORE-294": {
       "path": "4.6",
       "row": 1,
       "scenario": "Online backup via `sqlcipher_export()`",
-      "line": 487
+      "line": 523
     },
     "TST-CORE-295": {
       "path": "4.6",
       "row": 2,
       "scenario": "Backup is encrypted",
-      "line": 488
+      "line": 524
     },
     "TST-CORE-296": {
       "path": "4.6",
       "row": 3,
       "scenario": "VACUUM INTO FORBIDDEN",
-      "line": 489
+      "line": 525
     },
     "TST-CORE-297": {
       "path": "4.6",
       "row": 4,
       "scenario": "Backup to different location",
-      "line": 490
+      "line": 526
     },
     "TST-CORE-298": {
       "path": "4.6",
       "row": 5,
       "scenario": "Restore from backup",
-      "line": 491
+      "line": 527
     },
     "TST-CORE-299": {
       "path": "4.6",
       "row": 6,
       "scenario": "CI/CD plaintext verification",
-      "line": 492
+      "line": 528
     },
     "TST-CORE-300": {
       "path": "4.6",
       "row": 7,
       "scenario": "Backup scope: Tier 0 + Tier 1 only",
-      "line": 493
+      "line": 529
     },
     "TST-CORE-301": {
       "path": "4.6",
       "row": 8,
       "scenario": "Automated backup scheduling (daily default)",
-      "line": 494
+      "line": 530
     },
     "TST-CORE-302": {
       "path": "4.6.1",
       "row": 1,
       "scenario": "Encrypted backup before migration",
-      "line": 500
+      "line": 536
     },
     "TST-CORE-303": {
       "path": "4.6.1",
       "row": 2,
       "scenario": "`PRAGMA integrity_check` after migration",
-      "line": 501
+      "line": 537
     },
     "TST-CORE-304": {
       "path": "4.6.1",
       "row": 3,
       "scenario": "Integrity ok \u2192 commit",
-      "line": 502
+      "line": 538
     },
     "TST-CORE-305": {
       "path": "4.6.1",
       "row": 4,
       "scenario": "Integrity fail \u2192 ROLLBACK + restore",
-      "line": 503
+      "line": 539
     },
     "TST-CORE-306": {
       "path": "4.6.1",
       "row": 5,
       "scenario": "Pre-flight backup path",
-      "line": 504
+      "line": 540
     },
     "TST-CORE-307": {
       "path": "4.6.1",
       "row": 6,
       "scenario": "Automatic on every dina-core update",
-      "line": 505
+      "line": 541
     },
     "TST-CORE-308": {
       "path": "4.7",
       "row": 1,
       "scenario": "Append audit entry",
-      "line": 511
+      "line": 547
     },
     "TST-CORE-309": {
       "path": "4.7",
       "row": 2,
       "scenario": "Append-only enforcement",
-      "line": 512
+      "line": 548
     },
     "TST-CORE-310": {
       "path": "4.7",
       "row": 3,
       "scenario": "Audit log rotation",
-      "line": 513
+      "line": 549
     },
     "TST-CORE-311": {
       "path": "4.7",
       "row": 4,
       "scenario": "Query audit log",
-      "line": 514
+      "line": 550
     },
     "TST-CORE-312": {
       "path": "4.7",
       "row": 5,
       "scenario": "Audit log integrity",
-      "line": 515
+      "line": 551
     },
     "TST-CORE-313": {
       "path": "4.7",
       "row": 6,
       "scenario": "Audit log JSON format",
-      "line": 516
+      "line": 552
     },
     "TST-CORE-314": {
       "path": "4.7",
       "row": 7,
       "scenario": "Retention configurable",
-      "line": 517
+      "line": 553
     },
     "TST-CORE-315": {
       "path": "4.7",
       "row": 8,
       "scenario": "Watchdog daily cleanup",
-      "line": 518
+      "line": 554
     },
     "TST-CORE-316": {
       "path": "4.7",
       "row": 9,
       "scenario": "Raw entries for forensics",
-      "line": 519
+      "line": 555
     },
     "TST-CORE-317": {
       "path": "4.7",
       "row": 10,
       "scenario": "Audit log stored in identity.sqlite",
-      "line": 520
+      "line": 556
     },
     "TST-CORE-318": {
       "path": "4.7",
       "row": 11,
       "scenario": "Storage growth bounded",
-      "line": 521
+      "line": 557
     },
     "TST-CORE-319": {
       "path": "4.7",
       "row": 12,
       "scenario": "`crash_log` 90-day retention",
-      "line": 522
+      "line": 558
     },
     "TST-CORE-320": {
       "path": "4.8",
       "row": 1,
       "scenario": "Security mode boot: full sequence",
-      "line": 528
+      "line": 564
     },
     "TST-CORE-321": {
       "path": "4.8",
       "row": 2,
       "scenario": "Convenience mode boot: full sequence",
-      "line": 529
+      "line": 565
     },
     "TST-CORE-322": {
       "path": "4.8",
       "row": 3,
       "scenario": "Boot opens identity.sqlite FIRST",
-      "line": 530
+      "line": 566
     },
     "TST-CORE-323": {
       "path": "4.8",
       "row": 4,
       "scenario": "Boot opens personal.sqlite second",
-      "line": 531
+      "line": 567
     },
     "TST-CORE-324": {
       "path": "4.8",
       "row": 5,
       "scenario": "Other persona databases remain CLOSED at boot",
-      "line": 532
+      "line": 568
     },
     "TST-CORE-325": {
       "path": "4.8",
       "row": 6,
       "scenario": "DEKs not derived for closed personas",
-      "line": 533
+      "line": 569
     },
     "TST-CORE-326": {
       "path": "4.8",
       "row": 7,
       "scenario": "Brain notified on vault unlock",
-      "line": 534
+      "line": 570
     },
     "TST-CORE-327": {
       "path": "4.8",
       "row": 8,
       "scenario": "HKDF info strings are correct",
-      "line": 535
+      "line": 571
     },
     "TST-CORE-328": {
       "path": "4.8",
       "row": 9,
       "scenario": "HKDF info strings per persona",
-      "line": 536
+      "line": 572
     },
     "TST-CORE-329": {
       "path": "4.8",
       "row": 10,
       "scenario": "SQLCipher PRAGMAs enforced",
-      "line": 537
+      "line": 573
     },
     "TST-CORE-330": {
       "path": "4.8",
       "row": 11,
       "scenario": "Mode stored in config.json",
-      "line": 538
+      "line": 574
     },
     "TST-CORE-331": {
       "path": "4.8",
       "row": 12,
       "scenario": "Mode changeable at runtime",
-      "line": 539
+      "line": 575
     },
     "TST-CORE-332": {
       "path": "4.8",
       "row": 13,
       "scenario": "Default mode: managed = convenience",
-      "line": 540
+      "line": 576
     },
     "TST-CORE-333": {
       "path": "4.8",
       "row": 14,
       "scenario": "Default mode: self-hosted = security",
-      "line": 541
+      "line": 577
     },
     "TST-CORE-334": {
       "path": "4.8",
       "row": 15,
       "scenario": "Security mode: wrong passphrase \u2192 vault stays locked",
-      "line": 542
+      "line": 578
     },
     "TST-CORE-335": {
       "path": "4.8",
       "row": 16,
       "scenario": "Convenience mode: keyfile missing \u2192 startup error",
-      "line": 543
+      "line": 579
     },
     "TST-CORE-336": {
       "path": "4.8",
       "row": 17,
       "scenario": "Convenience mode: keyfile wrong permissions",
-      "line": 544
+      "line": 580
     },
     "TST-CORE-337": {
       "path": "4.8",
       "row": 18,
       "scenario": "config.json missing \u2192 graceful default",
-      "line": 545
+      "line": 581
     },
     "TST-CORE-338": {
       "path": "4.8",
       "row": 19,
       "scenario": "config.json invalid mode value",
-      "line": 546
+      "line": 582
     },
     "TST-CORE-339": {
       "path": "4.8",
       "row": 20,
       "scenario": "Security mode: wrapped_seed.bin path",
-      "line": 547
+      "line": 583
     },
     "TST-CORE-340": {
       "path": "4.8",
       "row": 21,
       "scenario": "Master Seed NEVER plaintext in security mode",
-      "line": 548
+      "line": 584
     },
     "TST-CORE-341": {
       "path": "4.8",
       "row": 22,
       "scenario": "Convenience mode: keyfile path",
-      "line": 549
+      "line": 585
     },
     "TST-CORE-342": {
       "path": "4.8",
       "row": 23,
       "scenario": "Mode switch: security \u2192 convenience (security downgrade)",
-      "line": 550
+      "line": 586
     },
     "TST-CORE-883": {
-      "path": "4.9",
-      "row": 1,
-      "scenario": "FTS5 with Indic scripts (Hindi, Tamil, Kannada)",
-      "line": 556
+      "path": "28",
+      "row": 4,
+      "scenario": "Wrong signing key rejected",
+      "line": 1638
     },
     "TST-CORE-884": {
-      "path": "4.9",
-      "row": 2,
-      "scenario": "Verify sqlite-vec used (not deprecated sqlite-vss)",
-      "line": 557
+      "path": "28",
+      "row": 5,
+      "scenario": "Tampered body rejected",
+      "line": 1639
     },
     "TST-CORE-885": {
-      "path": "4.9",
-      "row": 3,
-      "scenario": "FTS5 remains available during sqlite-vec re-indexing",
-      "line": 558
+      "path": "28",
+      "row": 6,
+      "scenario": "Tampered path rejected",
+      "line": 1640
     },
     "TST-CORE-343": {
       "path": "5",
       "row": 1,
       "scenario": "Scrub email address",
-      "line": 570
+      "line": 606
     },
     "TST-CORE-344": {
       "path": "5",
       "row": 2,
       "scenario": "Scrub phone number",
-      "line": 571
+      "line": 607
     },
     "TST-CORE-345": {
       "path": "5",
       "row": 3,
       "scenario": "Scrub SSN",
-      "line": 572
+      "line": 608
     },
     "TST-CORE-346": {
       "path": "5",
       "row": 4,
       "scenario": "Scrub credit card",
-      "line": 573
+      "line": 609
     },
     "TST-CORE-347": {
       "path": "5",
       "row": 5,
       "scenario": "Scrub IP address",
-      "line": 574
+      "line": 610
     },
     "TST-CORE-348": {
       "path": "5",
       "row": 6,
       "scenario": "No PII present",
-      "line": 575
+      "line": 611
     },
     "TST-CORE-349": {
       "path": "5",
       "row": 7,
       "scenario": "Multiple PII types in one string",
-      "line": 576
+      "line": 612
     },
     "TST-CORE-350": {
       "path": "5",
       "row": 8,
       "scenario": "PII at string boundaries",
-      "line": 577
+      "line": 613
     },
     "TST-CORE-351": {
       "path": "5",
       "row": 9,
       "scenario": "Unicode/international formats",
-      "line": 578
+      "line": 614
     },
     "TST-CORE-352": {
       "path": "5",
       "row": 10,
       "scenario": "Performance: large payload",
-      "line": 579
+      "line": 615
     },
     "TST-CORE-353": {
       "path": "5",
       "row": 11,
       "scenario": "Aadhaar number (India)",
-      "line": 580
+      "line": 616
     },
     "TST-CORE-354": {
       "path": "5",
       "row": 12,
       "scenario": "Bank account number",
-      "line": 581
+      "line": 617
     },
     "TST-CORE-355": {
       "path": "5",
       "row": 13,
       "scenario": "Multiple same-type PII",
-      "line": 582
+      "line": 618
     },
     "TST-CORE-356": {
       "path": "5",
       "row": 14,
       "scenario": "Replacement map returned in response",
-      "line": 583
+      "line": 619
     },
     "TST-CORE-357": {
       "path": "5",
       "row": 15,
       "scenario": "Replacement map round-trip",
-      "line": 584
+      "line": 620
     },
     "TST-CORE-358": {
       "path": "5",
       "row": 16,
       "scenario": "No false positives on numbers",
-      "line": 585
+      "line": 621
     },
     "TST-CORE-359": {
       "path": "5",
       "row": 17,
       "scenario": "Indian phone format",
-      "line": 586
+      "line": 622
     },
     "TST-CORE-776": {
       "path": "5",
       "row": 18,
       "scenario": "Address detection (optional)",
-      "line": 587
+      "line": 623
     },
     "TST-CORE-777": {
       "path": "5",
       "row": 19,
       "scenario": "Table-driven PII test suite",
-      "line": 588
+      "line": 624
     },
     "TST-CORE-778": {
       "path": "5",
       "row": 20,
       "scenario": "Empty input handling",
-      "line": 589
+      "line": 625
     },
     "TST-CORE-779": {
       "path": "5",
       "row": 21,
       "scenario": "Email in URL (mailto:)",
-      "line": 590
+      "line": 626
     },
     "TST-CORE-780": {
       "path": "5",
       "row": 22,
       "scenario": "Consecutive same-type PII",
-      "line": 591
+      "line": 627
     },
     "TST-CORE-781": {
       "path": "5",
       "row": 23,
       "scenario": "SQL injection in scrubber input",
-      "line": 592
+      "line": 628
     },
     "TST-CORE-782": {
       "path": "5",
       "row": 24,
       "scenario": "Unicode text with PII",
-      "line": 593
+      "line": 629
     },
     "TST-CORE-886": {
-      "path": "5",
-      "row": 26,
-      "scenario": "PII de-sanitization endpoint \u2014 restores tokens from replacement map",
-      "line": 594
+      "path": "28",
+      "row": 7,
+      "scenario": "Tampered method rejected",
+      "line": 1641
     },
     "TST-CORE-887": {
-      "path": "5",
-      "row": 27,
-      "scenario": "PII scrubber makes zero outbound network calls (hard invariant)",
-      "line": 595
+      "path": "28",
+      "row": 8,
+      "scenario": "Expired timestamp (>5 min) rejected",
+      "line": 1642
     },
     "TST-CORE-888": {
-      "path": "5",
-      "row": 28,
-      "scenario": "Sensitive persona mandatory PII scrub before cloud LLM",
-      "line": 596
+      "path": "28",
+      "row": 9,
+      "scenario": "Future timestamp (>5 min) rejected",
+      "line": 1643
     },
     "TST-CORE-360": {
       "path": "6.1",
       "row": 1,
       "scenario": "Default-deny: no policy exists",
-      "line": 610
+      "line": 646
     },
     "TST-CORE-361": {
       "path": "6.1",
       "row": 2,
       "scenario": "Default-deny: missing category key",
-      "line": 611
+      "line": 647
     },
     "TST-CORE-362": {
       "path": "6.1",
       "row": 3,
       "scenario": "Policy: `\"none\"` explicit",
-      "line": 612
+      "line": 648
     },
     "TST-CORE-363": {
       "path": "6.1",
       "row": 4,
       "scenario": "Policy: `\"summary\"`",
-      "line": 613
+      "line": 649
     },
     "TST-CORE-364": {
       "path": "6.1",
       "row": 5,
       "scenario": "Policy: `\"full\"`",
-      "line": 614
+      "line": 650
     },
     "TST-CORE-365": {
       "path": "6.1",
       "row": 6,
       "scenario": "Per-contact per-category granularity",
-      "line": 615
+      "line": 651
     },
     "TST-CORE-366": {
       "path": "6.1",
       "row": 7,
       "scenario": "Domain-specific tier: `eta_only` \u2192 summary",
-      "line": 616
+      "line": 652
     },
     "TST-CORE-367": {
       "path": "6.1",
       "row": 8,
       "scenario": "Domain-specific tier: `free_busy` \u2192 summary",
-      "line": 617
+      "line": 653
     },
     "TST-CORE-368": {
       "path": "6.1",
       "row": 9,
       "scenario": "Domain-specific tier: `exact_location` \u2192 full",
-      "line": 618
+      "line": 654
     },
     "TST-CORE-369": {
       "path": "6.1",
       "row": 10,
       "scenario": "Policy update via PATCH",
-      "line": 619
+      "line": 655
     },
     "TST-CORE-370": {
       "path": "6.1",
       "row": 11,
       "scenario": "Bulk policy update",
-      "line": 620
+      "line": 656
     },
     "TST-CORE-371": {
       "path": "6.1",
       "row": 12,
       "scenario": "Trust level \u2260 sharing",
-      "line": 621
+      "line": 657
     },
     "TST-CORE-372": {
       "path": "6.1",
       "row": 13,
       "scenario": "Recognized categories",
-      "line": 622
+      "line": 658
     },
     "TST-CORE-373": {
       "path": "6.1",
       "row": 14,
       "scenario": "Sharing defaults for new contacts",
-      "line": 623
+      "line": 659
     },
     "TST-CORE-374": {
       "path": "6.1",
       "row": 15,
       "scenario": "Outbound PII scrub",
-      "line": 624
+      "line": 660
     },
     "TST-CORE-375": {
       "path": "6.1",
       "row": 16,
       "scenario": "Extensible categories: custom category accepted",
-      "line": 625
+      "line": 661
     },
     "TST-CORE-376": {
       "path": "6.1",
       "row": 17,
       "scenario": "Extensible categories: custom category enforced at egress",
-      "line": 626
+      "line": 662
     },
     "TST-CORE-377": {
       "path": "6.2",
       "row": 1,
       "scenario": "GET policy",
-      "line": 632
+      "line": 668
     },
     "TST-CORE-378": {
       "path": "6.2",
       "row": 2,
       "scenario": "PATCH single category",
-      "line": 633
+      "line": 669
     },
     "TST-CORE-379": {
       "path": "6.2",
       "row": 3,
       "scenario": "PATCH multiple categories",
-      "line": 634
+      "line": 670
     },
     "TST-CORE-380": {
       "path": "6.2",
       "row": 4,
       "scenario": "PATCH bulk by trust level",
-      "line": 635
+      "line": 671
     },
     "TST-CORE-381": {
       "path": "6.2",
       "row": 5,
       "scenario": "PATCH bulk all contacts",
-      "line": 636
+      "line": 672
     },
     "TST-CORE-382": {
       "path": "6.2",
       "row": 6,
       "scenario": "GET policy for unknown DID",
-      "line": 637
+      "line": 673
     },
     "TST-CORE-383": {
       "path": "6.2",
       "row": 7,
       "scenario": "PATCH with invalid tier value",
-      "line": 638
+      "line": 674
     },
     "TST-CORE-384": {
       "path": "6.2",
       "row": 8,
       "scenario": "Policy stored in contacts table",
-      "line": 639
+      "line": 675
     },
     "TST-CORE-385": {
       "path": "6.3",
       "row": 1,
       "scenario": "Brain sends tiered payload",
-      "line": 648
+      "line": 684
     },
     "TST-CORE-386": {
       "path": "6.3",
       "row": 2,
       "scenario": "Core strips denied categories",
-      "line": 649
+      "line": 685
     },
     "TST-CORE-387": {
       "path": "6.3",
       "row": 3,
       "scenario": "Malformed payload \u2192 category dropped",
-      "line": 650
+      "line": 686
     },
     "TST-CORE-388": {
       "path": "6.3",
       "row": 4,
       "scenario": "Egress enforcement in compiled Go",
-      "line": 651
+      "line": 687
     },
     "TST-CORE-389": {
       "path": "6.3",
       "row": 5,
       "scenario": "Egress not ingress",
-      "line": 652
+      "line": 688
     },
     "TST-CORE-390": {
       "path": "6.3",
       "row": 6,
       "scenario": "Recipient DID resolution",
-      "line": 653
+      "line": 689
     },
     "TST-CORE-391": {
       "path": "6.3",
       "row": 7,
       "scenario": "Egress audit logging",
-      "line": 654
+      "line": 690
     },
     "TST-CORE-392": {
       "path": "6.3",
       "row": 8,
       "scenario": "Audit includes denied categories",
-      "line": 655
+      "line": 691
     },
     "TST-CORE-393": {
       "path": "6.3",
       "row": 9,
       "scenario": "NaCl encryption after policy check",
-      "line": 656
+      "line": 692
     },
     "TST-CORE-783": {
       "path": "6.4",
       "row": 1,
       "scenario": "Safe intent allowed",
-      "line": 665
+      "line": 701
     },
     "TST-CORE-784": {
       "path": "6.4",
       "row": 2,
       "scenario": "Risky intent flagged",
-      "line": 666
+      "line": 702
     },
     "TST-CORE-785": {
       "path": "6.4",
       "row": 3,
       "scenario": "Blocked intent denied",
-      "line": 667
+      "line": 703
     },
     "TST-CORE-786": {
       "path": "6.4",
       "row": 4,
       "scenario": "Vault read by untrusted denied",
-      "line": 668
+      "line": 704
     },
     "TST-CORE-787": {
       "path": "6.4",
       "row": 5,
       "scenario": "Empty action rejected",
-      "line": 669
+      "line": 705
     },
     "TST-CORE-788": {
       "path": "6.4",
       "row": 6,
       "scenario": "Empty agent DID rejected",
-      "line": 670
+      "line": 706
     },
     "TST-CORE-789": {
       "path": "6.4",
       "row": 7,
       "scenario": "Decision contains reason",
-      "line": 671
+      "line": 707
     },
     "TST-CORE-790": {
       "path": "6.4",
       "row": 8,
       "scenario": "Safe intent no audit",
-      "line": 672
+      "line": 708
     },
     "TST-CORE-791": {
       "path": "6.4",
       "row": 9,
       "scenario": "Mock allow all",
-      "line": 673
+      "line": 709
     },
     "TST-CORE-792": {
       "path": "6.4",
       "row": 10,
       "scenario": "Mock deny all",
-      "line": 674
+      "line": 710
     },
     "TST-CORE-793": {
       "path": "6.5",
       "row": 1,
       "scenario": "Egress to trusted destination",
-      "line": 682
+      "line": 718
     },
     "TST-CORE-794": {
       "path": "6.5",
       "row": 2,
       "scenario": "Egress to blocked destination",
-      "line": 683
+      "line": 719
     },
     "TST-CORE-795": {
       "path": "6.5",
       "row": 3,
       "scenario": "Egress with PII blocked",
-      "line": 684
+      "line": 720
     },
     "TST-CORE-796": {
       "path": "6.5",
       "row": 4,
       "scenario": "Egress empty destination rejected",
-      "line": 685
+      "line": 721
     },
     "TST-CORE-797": {
       "path": "6.5",
       "row": 5,
       "scenario": "Egress nil data allowed",
-      "line": 686
+      "line": 722
     },
     "TST-CORE-798": {
       "path": "6.5",
       "row": 6,
       "scenario": "Mock egress deny",
-      "line": 687
+      "line": 723
     },
     "TST-CORE-799": {
       "path": "6.6",
       "row": 1,
       "scenario": "Trusted agent accesses open persona",
-      "line": 695
+      "line": 731
     },
     "TST-CORE-800": {
       "path": "6.6",
       "row": 2,
       "scenario": "Untrusted agent denied locked persona",
-      "line": 696
+      "line": 732
     },
     "TST-CORE-801": {
       "path": "6.6",
       "row": 3,
       "scenario": "Verified agent restricted persona",
-      "line": 697
+      "line": 733
     },
     "TST-CORE-802": {
       "path": "6.6",
       "row": 4,
       "scenario": "Cross-persona access denied",
-      "line": 698
+      "line": 734
     },
     "TST-CORE-803": {
       "path": "6.6",
       "row": 5,
       "scenario": "Money action requires trusted ring",
-      "line": 699
+      "line": 735
     },
     "TST-CORE-804": {
       "path": "6.6",
       "row": 6,
       "scenario": "Data sharing action flagged",
-      "line": 700
+      "line": 736
     },
     "TST-CORE-889": {
-      "path": "6.6",
-      "row": 23,
-      "scenario": "Egress audit 90-day rolling retention policy",
-      "line": 701
+      "path": "28",
+      "row": 10,
+      "scenario": "Timestamp within 5-min window accepted",
+      "line": 1644
     },
     "TST-CORE-890": {
-      "path": "6.6",
-      "row": 24,
-      "scenario": "Contact `updated_at` refreshed on sharing policy mutation",
-      "line": 702
+      "path": "28",
+      "row": 11,
+      "scenario": "Invalid timestamp format rejected",
+      "line": 1645
     },
     "TST-CORE-891": {
-      "path": "6.6",
-      "row": 25,
-      "scenario": "Draft confidence score: low \u2192 flagged for review",
-      "line": 703
+      "path": "28",
+      "row": 12,
+      "scenario": "Unknown DID rejected",
+      "line": 1646
     },
     "TST-CORE-892": {
-      "path": "6.6",
-      "row": 26,
-      "scenario": "Agent `draft_only: true` constraint enforced",
-      "line": 704
+      "path": "28",
+      "row": 13,
+      "scenario": "Revoked device DID rejected",
+      "line": 1647
     },
     "TST-CORE-893": {
-      "path": "6.6",
-      "row": 27,
-      "scenario": "Agent outcomes recorded in Tier 3 for trust scoring",
-      "line": 705
+      "path": "28",
+      "row": 14,
+      "scenario": "Malformed signature hex rejected",
+      "line": 1648
     },
     "TST-CORE-394": {
       "path": "7.1",
       "row": 1,
       "scenario": "Enqueue message",
-      "line": 718
+      "line": 754
     },
     "TST-CORE-395": {
       "path": "7.1",
       "row": 2,
       "scenario": "Outbox schema",
-      "line": 719
+      "line": 755
     },
     "TST-CORE-396": {
       "path": "7.1",
       "row": 3,
       "scenario": "Successful delivery",
-      "line": 720
+      "line": 756
     },
     "TST-CORE-397": {
       "path": "7.1",
       "row": 4,
       "scenario": "Delivery failure \u2192 retry",
-      "line": 721
+      "line": 757
     },
     "TST-CORE-398": {
       "path": "7.1",
       "row": 5,
       "scenario": "Max retries exhausted (5)",
-      "line": 722
+      "line": 758
     },
     "TST-CORE-399": {
       "path": "7.1",
       "row": 6,
       "scenario": "User requeue after failure",
-      "line": 723
+      "line": 759
     },
     "TST-CORE-400": {
       "path": "7.1",
       "row": 7,
       "scenario": "24-hour TTL",
-      "line": 724
+      "line": 760
     },
     "TST-CORE-401": {
       "path": "7.1",
       "row": 8,
       "scenario": "Queue size limit: 100",
-      "line": 725
+      "line": 761
     },
     "TST-CORE-402": {
       "path": "7.1",
       "row": 9,
       "scenario": "Outbox survives restart",
-      "line": 726
+      "line": 762
     },
     "TST-CORE-403": {
       "path": "7.1",
       "row": 10,
       "scenario": "Scheduler interval: 30 seconds",
-      "line": 727
+      "line": 763
     },
     "TST-CORE-404": {
       "path": "7.1",
       "row": 11,
       "scenario": "Idempotent delivery",
-      "line": 728
+      "line": 764
     },
     "TST-CORE-405": {
       "path": "7.1",
       "row": 12,
       "scenario": "Delivered messages cleanup",
-      "line": 729
+      "line": 765
     },
     "TST-CORE-406": {
       "path": "7.1",
       "row": 13,
       "scenario": "Failed messages cleanup",
-      "line": 730
+      "line": 766
     },
     "TST-CORE-407": {
       "path": "7.1",
       "row": 14,
       "scenario": "Priority ordering",
-      "line": 731
+      "line": 767
     },
     "TST-CORE-408": {
       "path": "7.1",
       "row": 15,
       "scenario": "Payload is pre-encrypted",
-      "line": 732
+      "line": 768
     },
     "TST-CORE-409": {
       "path": "7.1",
       "row": 16,
       "scenario": "`sending` status during delivery attempt",
-      "line": 733
+      "line": 769
     },
     "TST-CORE-410": {
       "path": "7.1",
       "row": 17,
       "scenario": "User ignores nudge \u2192 message expires at 24h TTL",
-      "line": 734
+      "line": 770
     },
     "TST-CORE-805": {
       "path": "7.1",
       "row": 18,
       "scenario": "Send to unresolvable DID fails",
-      "line": 735
+      "line": 771
     },
     "TST-CORE-806": {
       "path": "7.1",
       "row": 19,
       "scenario": "Send empty envelope rejected",
-      "line": 736
+      "line": 772
     },
     "TST-CORE-807": {
       "path": "7.1",
       "row": 20,
       "scenario": "Send nil envelope rejected",
-      "line": 737
+      "line": 773
     },
     "TST-CORE-808": {
       "path": "7.1",
       "row": 21,
       "scenario": "Mock send records messages",
-      "line": 738
+      "line": 774
     },
     "TST-CORE-809": {
       "path": "7.1",
       "row": 22,
       "scenario": "Outbox enqueue persists message",
-      "line": 739
+      "line": 775
     },
     "TST-CORE-411": {
       "path": "7.2",
       "row": 1,
       "scenario": "Valve 1: IP rate limit",
-      "line": 746
+      "line": 782
     },
     "TST-CORE-412": {
       "path": "7.2",
       "row": 2,
       "scenario": "Valve 1: normal traffic",
-      "line": 747
+      "line": 783
     },
     "TST-CORE-413": {
       "path": "7.2",
       "row": 3,
       "scenario": "Valve 1: global rate limit",
-      "line": 748
+      "line": 784
     },
     "TST-CORE-414": {
       "path": "7.2",
       "row": 4,
       "scenario": "Valve 1: payload cap",
-      "line": 749
+      "line": 785
     },
     "TST-CORE-415": {
       "path": "7.2",
       "row": 5,
       "scenario": "Valve 1: payload within cap",
-      "line": 750
+      "line": 786
     },
     "TST-CORE-416": {
       "path": "7.2",
       "row": 6,
       "scenario": "Valve 2: spool cap (persona locked)",
-      "line": 751
+      "line": 787
     },
     "TST-CORE-417": {
       "path": "7.2",
       "row": 7,
       "scenario": "Valve 2: spool cap exceeded",
-      "line": 752
+      "line": 788
     },
     "TST-CORE-418": {
       "path": "7.2",
       "row": 8,
       "scenario": "Valve 2: reject-new preserves existing",
-      "line": 753
+      "line": 789
     },
     "TST-CORE-419": {
       "path": "7.2",
       "row": 9,
       "scenario": "Valve 3: sweeper on unlock",
-      "line": 754
+      "line": 790
     },
     "TST-CORE-420": {
       "path": "7.2",
       "row": 10,
       "scenario": "Valve 3: sweeper decrypts + checks DID",
-      "line": 755
+      "line": 791
     },
     "TST-CORE-421": {
       "path": "7.2",
       "row": 11,
       "scenario": "Valve 3: sweeper blocklist feedback",
-      "line": 756
+      "line": 792
     },
     "TST-CORE-422": {
       "path": "7.2",
       "row": 12,
       "scenario": "Valve 3: TTL enforcement",
-      "line": 757
+      "line": 793
     },
     "TST-CORE-423": {
       "path": "7.2",
       "row": 13,
       "scenario": "Valve 3: message within TTL",
-      "line": 758
+      "line": 794
     },
     "TST-CORE-424": {
       "path": "7.2",
       "row": 14,
       "scenario": "Valve 3: blob cleanup",
-      "line": 759
+      "line": 795
     },
     "TST-CORE-425": {
       "path": "7.2",
       "row": 15,
       "scenario": "Fast path: vault unlocked",
-      "line": 760
+      "line": 796
     },
     "TST-CORE-426": {
       "path": "7.2",
       "row": 16,
       "scenario": "Fast path: per-DID rate limit",
-      "line": 761
+      "line": 797
     },
     "TST-CORE-427": {
       "path": "7.2",
       "row": 17,
       "scenario": "Dead drop: per-DID impossible when locked",
-      "line": 762
+      "line": 798
     },
     "TST-CORE-428": {
       "path": "7.2",
       "row": 18,
       "scenario": "DID verification on inbound",
-      "line": 763
+      "line": 799
     },
     "TST-CORE-429": {
       "path": "7.2",
       "row": 19,
       "scenario": "DID verification failure",
-      "line": 764
+      "line": 800
     },
     "TST-CORE-430": {
       "path": "7.2",
       "row": 20,
       "scenario": "Unknown sender DID",
-      "line": 765
+      "line": 801
     },
     "TST-CORE-431": {
       "path": "7.2",
       "row": 21,
       "scenario": "Spool directory is safe",
-      "line": 766
+      "line": 802
     },
     "TST-CORE-432": {
       "path": "7.2",
       "row": 22,
       "scenario": "DoS while locked",
-      "line": 767
+      "line": 803
     },
     "TST-CORE-433": {
       "path": "7.2",
       "row": 23,
       "scenario": "DoS while unlocked",
-      "line": 768
+      "line": 804
     },
     "TST-CORE-810": {
       "path": "7.2",
       "row": 24,
       "scenario": "Basic inbox receive",
-      "line": 769
+      "line": 805
     },
     "TST-CORE-811": {
       "path": "7.2",
       "row": 25,
       "scenario": "Empty inbox returns nil",
-      "line": 770
+      "line": 806
     },
     "TST-CORE-812": {
       "path": "7.2",
       "row": 26,
       "scenario": "Inbox FIFO order",
-      "line": 771
+      "line": 807
     },
     "TST-CORE-813": {
       "path": "7.2",
       "row": 27,
       "scenario": "Inbox spool when locked",
-      "line": 772
+      "line": 808
     },
     "TST-CORE-814": {
       "path": "7.2",
       "row": 28,
       "scenario": "Inbox reject when spool full",
-      "line": 773
+      "line": 809
     },
     "TST-CORE-434": {
       "path": "7.3",
       "row": 1,
       "scenario": "Resolve known DID",
-      "line": 779
+      "line": 815
     },
     "TST-CORE-435": {
       "path": "7.3",
       "row": 2,
       "scenario": "Cache hit",
-      "line": 780
+      "line": 816
     },
     "TST-CORE-436": {
       "path": "7.3",
       "row": 3,
       "scenario": "Cache expiry",
-      "line": 781
+      "line": 817
     },
     "TST-CORE-437": {
       "path": "7.3",
       "row": 4,
       "scenario": "Unresolvable DID",
-      "line": 782
+      "line": 818
     },
     "TST-CORE-438": {
       "path": "7.3",
       "row": 5,
       "scenario": "Malformed DID",
-      "line": 783
+      "line": 819
     },
     "TST-CORE-815": {
       "path": "7.3",
       "row": 6,
       "scenario": "Mock resolve endpoint",
-      "line": 784
+      "line": 820
     },
     "TST-CORE-816": {
       "path": "7.3",
       "row": 7,
       "scenario": "Mock resolve unknown fails",
-      "line": 785
+      "line": 821
     },
     "TST-CORE-817": {
       "path": "7.3",
       "row": 8,
       "scenario": "Unresolvable DID not cached",
-      "line": 786
+      "line": 822
     },
     "TST-CORE-439": {
       "path": "7.4",
       "row": 1,
       "scenario": "Plaintext structure",
-      "line": 796
+      "line": 832
     },
     "TST-CORE-440": {
       "path": "7.4",
       "row": 2,
       "scenario": "Message ID format",
-      "line": 797
+      "line": 833
     },
     "TST-CORE-441": {
       "path": "7.4",
       "row": 3,
       "scenario": "Message envelope format",
-      "line": 798
+      "line": 834
     },
     "TST-CORE-442": {
       "path": "7.4",
       "row": 4,
       "scenario": "Ed25519 signature on plaintext",
-      "line": 799
+      "line": 835
     },
     "TST-CORE-443": {
       "path": "7.4",
       "row": 5,
       "scenario": "Message categories",
-      "line": 800
+      "line": 836
     },
     "TST-CORE-444": {
       "path": "7.4",
       "row": 6,
       "scenario": "Unknown message type",
-      "line": 801
+      "line": 837
     },
     "TST-CORE-445": {
       "path": "7.4",
       "row": 7,
       "scenario": "Ephemeral key per message",
-      "line": 802
+      "line": 838
     },
     "TST-CORE-446": {
       "path": "7.4",
       "row": 8,
       "scenario": "`from_kid`/`to_kid` DID fragment format",
-      "line": 803
+      "line": 839
     },
     "TST-CORE-447": {
       "path": "7.4",
       "row": 9,
       "scenario": "Phase migration invariant: plaintext unchanged",
-      "line": 804
+      "line": 840
     },
     "TST-CORE-818": {
       "path": "7.4",
       "row": 10,
       "scenario": "Envelope contains required fields",
-      "line": 805
+      "line": 841
     },
     "TST-CORE-819": {
       "path": "7.4",
       "row": 11,
       "scenario": "Envelope from field is DID",
-      "line": 806
+      "line": 842
     },
     "TST-CORE-820": {
       "path": "7.4",
       "row": 12,
       "scenario": "Envelope max size rejection",
-      "line": 807
+      "line": 843
     },
     "TST-CORE-821": {
       "path": "7.4",
       "row": 13,
       "scenario": "Envelope invalid JSON rejected",
-      "line": 808
+      "line": 844
     },
     "TST-CORE-448": {
       "path": "7.5",
       "row": 1,
       "scenario": "Full connection flow",
-      "line": 814
+      "line": 850
     },
     "TST-CORE-449": {
       "path": "7.5",
       "row": 2,
       "scenario": "Mutual authentication",
-      "line": 815
+      "line": 851
     },
     "TST-CORE-450": {
       "path": "7.5",
       "row": 3,
       "scenario": "Contact allowlist check",
-      "line": 816
+      "line": 852
     },
     "TST-CORE-451": {
       "path": "7.5",
       "row": 4,
       "scenario": "Endpoint from DID Document",
-      "line": 817
+      "line": 853
     },
     "TST-CORE-822": {
       "path": "7.5",
       "row": 5,
       "scenario": "Envelope encrypted in transit",
-      "line": 818
+      "line": 854
     },
     "TST-CORE-823": {
       "path": "7.5",
       "row": 6,
       "scenario": "Encrypt/decrypt roundtrip",
-      "line": 819
+      "line": 855
     },
     "TST-CORE-824": {
       "path": "7.5",
       "row": 7,
       "scenario": "Wrong recipient cannot decrypt",
-      "line": 820
+      "line": 856
     },
     "TST-CORE-452": {
       "path": "7.6",
       "row": 1,
       "scenario": "Relay forward envelope",
-      "line": 829
+      "line": 865
     },
     "TST-CORE-453": {
       "path": "7.6",
       "row": 2,
       "scenario": "Relay cannot read content",
-      "line": 830
+      "line": 866
     },
     "TST-CORE-454": {
       "path": "7.6",
       "row": 3,
       "scenario": "DID Document points to relay",
-      "line": 831
+      "line": 867
     },
     "TST-CORE-455": {
       "path": "7.6",
       "row": 4,
       "scenario": "User can switch relays",
-      "line": 832
+      "line": 868
     },
     "TST-CORE-825": {
       "path": "7.6",
       "row": 5,
       "scenario": "Direct delivery preferred",
-      "line": 833
+      "line": 869
     },
     "TST-CORE-826": {
       "path": "7.6",
       "row": 6,
       "scenario": "Relay used when direct fails",
-      "line": 834
+      "line": 870
     },
     "TST-CORE-827": {
       "path": "7.6",
       "row": 7,
       "scenario": "Mock send error",
-      "line": 835
+      "line": 871
     },
     "TST-CORE-894": {
-      "path": "7.6",
-      "row": 8,
-      "scenario": "Outbox retry backoff includes jitter",
-      "line": 836
+      "path": "28",
+      "row": 15,
+      "scenario": "Pairing with Ed25519 key succeeds",
+      "line": 1649
     },
     "TST-CORE-930": {
       "path": "7.6",
       "row": 9,
       "scenario": "Message category namespace validation",
-      "line": 837
+      "line": 873
     },
     "TST-CORE-456": {
       "path": "8.1",
       "row": 1,
       "scenario": "Enqueue task",
-      "line": 850
+      "line": 886
     },
     "TST-CORE-457": {
       "path": "8.1",
       "row": 2,
       "scenario": "Task ID is ULID",
-      "line": 851
+      "line": 887
     },
     "TST-CORE-458": {
       "path": "8.1",
       "row": 3,
       "scenario": "Send to brain",
-      "line": 852
+      "line": 888
     },
     "TST-CORE-459": {
       "path": "8.1",
       "row": 4,
       "scenario": "Brain ACK (success)",
-      "line": 853
+      "line": 889
     },
     "TST-CORE-460": {
       "path": "8.1",
       "row": 5,
       "scenario": "Brain no-ACK (crash)",
-      "line": 854
+      "line": 890
     },
     "TST-CORE-461": {
       "path": "8.1",
       "row": 6,
       "scenario": "Task types",
-      "line": 855
+      "line": 891
     },
     "TST-CORE-462": {
       "path": "8.1",
       "row": 7,
       "scenario": "Task persistence across restart",
-      "line": 856
+      "line": 892
     },
     "TST-CORE-463": {
       "path": "8.1",
       "row": 8,
       "scenario": "Concurrent workers",
-      "line": 857
+      "line": 893
     },
     "TST-CORE-828": {
       "path": "8.1",
       "row": 9,
       "scenario": "Dequeue returns pending task",
-      "line": 858
+      "line": 894
     },
     "TST-CORE-829": {
       "path": "8.1",
       "row": 10,
       "scenario": "Dequeue empty returns nil",
-      "line": 859
+      "line": 895
     },
     "TST-CORE-830": {
       "path": "8.1",
       "row": 11,
       "scenario": "Complete task",
-      "line": 860
+      "line": 896
     },
     "TST-CORE-831": {
       "path": "8.1",
       "row": 12,
       "scenario": "Mock enqueue/dequeue",
-      "line": 861
+      "line": 897
     },
     "TST-CORE-464": {
       "path": "8.2",
       "row": 1,
       "scenario": "Watchdog detects timed-out task",
-      "line": 867
+      "line": 903
     },
     "TST-CORE-465": {
       "path": "8.2",
       "row": 2,
       "scenario": "Watchdog runs periodically",
-      "line": 868
+      "line": 904
     },
     "TST-CORE-466": {
       "path": "8.2",
       "row": 3,
       "scenario": "Watchdog does not touch healthy tasks",
-      "line": 869
+      "line": 905
     },
     "TST-CORE-467": {
       "path": "8.2",
       "row": 4,
       "scenario": "Reset task re-dispatched",
-      "line": 870
+      "line": 906
     },
     "TST-CORE-832": {
       "path": "8.2",
       "row": 5,
       "scenario": "High priority first",
-      "line": 871
+      "line": 907
     },
     "TST-CORE-833": {
       "path": "8.2",
       "row": 6,
       "scenario": "Same priority FIFO",
-      "line": 872
+      "line": 908
     },
     "TST-CORE-834": {
       "path": "8.2",
       "row": 7,
       "scenario": "Mock priority not enforced",
-      "line": 873
+      "line": 909
     },
     "TST-CORE-468": {
       "path": "8.3",
       "row": 1,
       "scenario": "Dead letter after 3 failures",
-      "line": 879
+      "line": 915
     },
     "TST-CORE-469": {
       "path": "8.3",
       "row": 2,
       "scenario": "Dead letter not 5",
-      "line": 880
+      "line": 916
     },
     "TST-CORE-470": {
       "path": "8.3",
       "row": 3,
       "scenario": "Retry backoff",
-      "line": 881
+      "line": 917
     },
     "TST-CORE-471": {
       "path": "8.3",
       "row": 4,
       "scenario": "Task cancellation",
-      "line": 882
+      "line": 918
     },
     "TST-CORE-472": {
       "path": "8.3",
       "row": 5,
       "scenario": "Index on status + timeout",
-      "line": 883
+      "line": 919
     },
     "TST-CORE-473": {
       "path": "8.3",
       "row": 6,
       "scenario": "No silent data loss",
-      "line": 884
+      "line": 920
     },
     "TST-CORE-835": {
       "path": "8.3",
       "row": 7,
       "scenario": "Fail task",
-      "line": 885
+      "line": 921
     },
     "TST-CORE-836": {
       "path": "8.3",
       "row": 8,
       "scenario": "Retry increments counter",
-      "line": 886
+      "line": 922
     },
     "TST-CORE-837": {
       "path": "8.3",
       "row": 9,
       "scenario": "Retry non-failed task fails",
-      "line": 887
+      "line": 923
     },
     "TST-CORE-838": {
       "path": "8.3",
       "row": 10,
       "scenario": "Fail non-existent task fails",
-      "line": 888
+      "line": 924
     },
     "TST-CORE-474": {
       "path": "8.4",
       "row": 1,
       "scenario": "Store reminder",
-      "line": 897
+      "line": 933
     },
     "TST-CORE-475": {
       "path": "8.4",
       "row": 2,
       "scenario": "Next pending reminder",
-      "line": 898
+      "line": 934
     },
     "TST-CORE-476": {
       "path": "8.4",
       "row": 3,
       "scenario": "Sleep until trigger time",
-      "line": 899
+      "line": 935
     },
     "TST-CORE-477": {
       "path": "8.4",
       "row": 4,
       "scenario": "Missed reminder on startup",
-      "line": 900
+      "line": 936
     },
     "TST-CORE-478": {
       "path": "8.4",
       "row": 5,
       "scenario": "Fire + mark done",
-      "line": 901
+      "line": 937
     },
     "TST-CORE-479": {
       "path": "8.4",
       "row": 6,
       "scenario": "No pending \u2192 sleep 1 minute",
-      "line": 902
+      "line": 938
     },
     "TST-CORE-480": {
       "path": "8.4",
       "row": 7,
       "scenario": "No cron library",
-      "line": 903
+      "line": 939
     },
     "TST-CORE-481": {
       "path": "8.4",
       "row": 8,
       "scenario": "Complex scheduling \u2192 delegate",
-      "line": 904
+      "line": 940
     },
     "TST-CORE-839": {
       "path": "8.4",
       "row": 9,
       "scenario": "Crash recovery re-enqueues running tasks",
-      "line": 905
+      "line": 941
     },
     "TST-CORE-840": {
       "path": "8.4",
       "row": 10,
       "scenario": "Retry schedule exponential backoff",
-      "line": 906
+      "line": 942
     },
     "TST-CORE-841": {
       "path": "8.4",
       "row": 11,
       "scenario": "Max retries exceeded marks dead letter",
-      "line": 907
+      "line": 943
     },
     "TST-CORE-842": {
       "path": "8.4",
       "row": 12,
       "scenario": "Persistence across restart",
-      "line": 908
+      "line": 944
     },
     "TST-CORE-933": {
       "path": "8.4",
       "row": 13,
       "scenario": "Silence rules stored and retrievable from vault",
-      "line": 909
+      "line": 945
     },
     "TST-CORE-482": {
       "path": "9.1",
       "row": 1,
       "scenario": "WS upgrade on `/ws`",
-      "line": 922
+      "line": 958
     },
     "TST-CORE-483": {
       "path": "9.1",
       "row": 2,
       "scenario": "Auth frame within 5s",
-      "line": 923
+      "line": 959
     },
     "TST-CORE-484": {
       "path": "9.1",
       "row": 3,
       "scenario": "Auth frame timeout",
-      "line": 924
+      "line": 960
     },
     "TST-CORE-485": {
       "path": "9.1",
       "row": 4,
       "scenario": "Invalid auth frame",
-      "line": 925
+      "line": 961
     },
     "TST-CORE-486": {
       "path": "9.1",
       "row": 5,
       "scenario": "Revoked token in auth frame",
-      "line": 926
+      "line": 962
     },
     "TST-CORE-487": {
       "path": "9.1",
       "row": 6,
       "scenario": "Auth OK includes device name",
-      "line": 927
+      "line": 963
     },
     "TST-CORE-488": {
       "path": "9.1",
       "row": 7,
       "scenario": "Graceful disconnect",
-      "line": 928
+      "line": 964
     },
     "TST-CORE-489": {
       "path": "9.1",
       "row": 8,
       "scenario": "Abnormal disconnect",
-      "line": 929
+      "line": 965
     },
     "TST-CORE-490": {
       "path": "9.2",
       "row": 1,
       "scenario": "Query message",
-      "line": 937
+      "line": 973
     },
     "TST-CORE-491": {
       "path": "9.2",
       "row": 2,
       "scenario": "Query with persona field",
-      "line": 938
+      "line": 974
     },
     "TST-CORE-492": {
       "path": "9.2",
       "row": 3,
       "scenario": "Command message",
-      "line": 939
+      "line": 975
     },
     "TST-CORE-493": {
       "path": "9.2",
       "row": 4,
       "scenario": "ACK message",
-      "line": 940
+      "line": 976
     },
     "TST-CORE-494": {
       "path": "9.2",
       "row": 5,
       "scenario": "Pong message",
-      "line": 941
+      "line": 977
     },
     "TST-CORE-495": {
       "path": "9.2",
       "row": 6,
       "scenario": "Missing `id` field",
-      "line": 942
+      "line": 978
     },
     "TST-CORE-496": {
       "path": "9.2",
       "row": 7,
       "scenario": "Unknown message type",
-      "line": 943
+      "line": 979
     },
     "TST-CORE-497": {
       "path": "9.3",
       "row": 1,
       "scenario": "Whisper stream (chunked)",
-      "line": 951
+      "line": 987
     },
     "TST-CORE-498": {
       "path": "9.3",
       "row": 2,
       "scenario": "Whisper (final response)",
-      "line": 952
+      "line": 988
     },
     "TST-CORE-499": {
       "path": "9.3",
       "row": 3,
       "scenario": "Proactive whisper (brain-initiated)",
-      "line": 953
+      "line": 989
     },
     "TST-CORE-500": {
       "path": "9.3",
       "row": 4,
       "scenario": "System notification",
-      "line": 954
+      "line": 990
     },
     "TST-CORE-501": {
       "path": "9.3",
       "row": 5,
       "scenario": "Error response",
-      "line": 955
+      "line": 991
     },
     "TST-CORE-502": {
       "path": "9.3",
       "row": 6,
       "scenario": "Routing logic: `reply_to` = response",
-      "line": 956
+      "line": 992
     },
     "TST-CORE-503": {
       "path": "9.3",
       "row": 7,
       "scenario": "Routing logic: no `reply_to` = proactive",
-      "line": 957
+      "line": 993
     },
     "TST-CORE-504": {
       "path": "9.3",
       "row": 8,
       "scenario": "Whisper stream terminated by final whisper",
-      "line": 958
+      "line": 994
     },
     "TST-CORE-505": {
       "path": "9.4",
       "row": 1,
       "scenario": "Core sends ping every 30s",
-      "line": 964
+      "line": 1000
     },
     "TST-CORE-506": {
       "path": "9.4",
       "row": 2,
       "scenario": "Client responds with pong",
-      "line": 965
+      "line": 1001
     },
     "TST-CORE-507": {
       "path": "9.4",
       "row": 3,
       "scenario": "Pong timeout: 10 seconds",
-      "line": 966
+      "line": 1002
     },
     "TST-CORE-508": {
       "path": "9.4",
       "row": 4,
       "scenario": "3 missed pongs \u2192 disconnect",
-      "line": 967
+      "line": 1003
     },
     "TST-CORE-509": {
       "path": "9.4",
       "row": 5,
       "scenario": "Pong resets counter",
-      "line": 968
+      "line": 1004
     },
     "TST-CORE-510": {
       "path": "9.4",
       "row": 6,
       "scenario": "Ping includes timestamp",
-      "line": 969
+      "line": 1005
     },
     "TST-CORE-511": {
       "path": "9.5",
       "row": 1,
       "scenario": "Client temporarily disconnected",
-      "line": 978
+      "line": 1014
     },
     "TST-CORE-512": {
       "path": "9.5",
       "row": 2,
       "scenario": "Buffer cap: max 50 messages",
-      "line": 979
+      "line": 1015
     },
     "TST-CORE-513": {
       "path": "9.5",
       "row": 3,
       "scenario": "Buffer ordering preserved",
-      "line": 980
+      "line": 1016
     },
     "TST-CORE-514": {
       "path": "9.5",
       "row": 4,
       "scenario": "Buffer TTL: 5 minutes",
-      "line": 981
+      "line": 1017
     },
     "TST-CORE-515": {
       "path": "9.5",
       "row": 5,
       "scenario": "Client ACKs buffered messages",
-      "line": 982
+      "line": 1018
     },
     "TST-CORE-516": {
       "path": "9.5",
       "row": 6,
       "scenario": "Buffer per-device",
-      "line": 983
+      "line": 1019
     },
     "TST-CORE-517": {
       "path": "9.5",
       "row": 7,
       "scenario": "Buffer within TTL: all delivered",
-      "line": 984
+      "line": 1020
     },
     "TST-CORE-518": {
       "path": "9.5",
       "row": 8,
       "scenario": "Why 5 min, not longer",
-      "line": 985
+      "line": 1021
     },
     "TST-CORE-519": {
       "path": "9.5",
       "row": 9,
       "scenario": "Reconnection: exponential backoff (client-side)",
-      "line": 986
+      "line": 1022
     },
     "TST-CORE-911": {
       "path": "9.5",
       "row": 10,
       "scenario": "Push notifications: FCM/APNs wake-up payload is data-free",
-      "line": 987
+      "line": 1023
     },
     "TST-CORE-912": {
       "path": "9.5",
       "row": 11,
       "scenario": "WebSocket `last_seen` timestamp updated on auth",
-      "line": 988
+      "line": 1024
     },
     "TST-CORE-913": {
       "path": "9.5",
       "row": 12,
       "scenario": "Device push via authenticated WebSocket",
-      "line": 989
+      "line": 1025
     },
     "TST-CORE-520": {
       "path": "10",
       "row": 1,
       "scenario": "Generate pairing code",
-      "line": 997
+      "line": 1033
     },
     "TST-CORE-521": {
       "path": "10",
       "row": 2,
       "scenario": "Pair with valid code",
-      "line": 998
+      "line": 1034
     },
     "TST-CORE-522": {
       "path": "10",
       "row": 3,
       "scenario": "Pair with expired code",
-      "line": 999
+      "line": 1035
     },
     "TST-CORE-523": {
       "path": "10",
       "row": 4,
       "scenario": "Pair with wrong code",
-      "line": 1000
+      "line": 1036
     },
     "TST-CORE-524": {
       "path": "10",
       "row": 5,
       "scenario": "Brute-force protection",
-      "line": 1001
+      "line": 1037
     },
     "TST-CORE-525": {
       "path": "10",
       "row": 6,
       "scenario": "Code single-use",
-      "line": 1002
+      "line": 1038
     },
     "TST-CORE-526": {
       "path": "10",
       "row": 7,
       "scenario": "Concurrent pairing codes",
-      "line": 1003
+      "line": 1039
     },
     "TST-CORE-527": {
       "path": "10.1",
       "row": 1,
       "scenario": "List paired devices (GET /v1/devices)",
-      "line": 1013
+      "line": 1049
     },
     "TST-CORE-528": {
       "path": "10.1",
       "row": 2,
       "scenario": "Revoke device (PATCH /v1/devices/{token_id}/revoke)",
-      "line": 1014
+      "line": 1050
     },
     "TST-CORE-529": {
       "path": "10.1",
       "row": 3,
       "scenario": "Pair completion response includes node_did + ws_url",
-      "line": 1015
+      "line": 1051
     },
     "TST-CORE-530": {
       "path": "10.1",
       "row": 4,
       "scenario": "CLIENT_TOKEN format: 32 bytes, hex-encoded",
-      "line": 1016
+      "line": 1052
     },
     "TST-CORE-895": {
-      "path": "10.1",
-      "row": 5,
-      "scenario": "Device type (rich/thin) recorded during pairing",
-      "line": 1017
+      "path": "28",
+      "row": 16,
+      "scenario": "Pairing with invalid code rejected",
+      "line": 1650
     },
     "TST-CORE-896": {
-      "path": "10.1",
-      "row": 6,
-      "scenario": "mDNS auto-discovery broadcast on LAN",
-      "line": 1018
+      "path": "28",
+      "row": 17,
+      "scenario": "Pairing with invalid multibase rejected",
+      "line": 1651
     },
     "TST-CORE-531": {
       "path": "11",
       "row": 1,
       "scenario": "Healthy brain",
-      "line": 1026
+      "line": 1062
     },
     "TST-CORE-532": {
       "path": "11",
       "row": 2,
       "scenario": "Brain timeout",
-      "line": 1027
+      "line": 1063
     },
     "TST-CORE-533": {
       "path": "11",
       "row": 3,
       "scenario": "Circuit breaker opens",
-      "line": 1028
+      "line": 1064
     },
     "TST-CORE-534": {
       "path": "11",
       "row": 4,
       "scenario": "Circuit breaker half-open",
-      "line": 1029
+      "line": 1065
     },
     "TST-CORE-535": {
       "path": "11",
       "row": 5,
       "scenario": "Circuit breaker closes",
-      "line": 1030
+      "line": 1066
     },
     "TST-CORE-536": {
       "path": "11",
       "row": 6,
       "scenario": "Brain crash recovery",
-      "line": 1031
+      "line": 1067
     },
     "TST-CORE-537": {
       "path": "11.1",
       "row": 1,
       "scenario": "Brain healthy",
-      "line": 1037
+      "line": 1073
     },
     "TST-CORE-538": {
       "path": "11.1",
       "row": 2,
       "scenario": "Brain unhealthy",
-      "line": 1038
+      "line": 1074
     },
     "TST-CORE-539": {
       "path": "11.1",
       "row": 3,
       "scenario": "Brain recovery",
-      "line": 1039
+      "line": 1075
     },
     "TST-CORE-540": {
       "path": "11.1",
       "row": 4,
       "scenario": "Watchdog interval",
-      "line": 1040
+      "line": 1076
     },
     "TST-CORE-843": {
       "path": "11.1",
       "row": 5,
       "scenario": "Send event to brain (mock)",
-      "line": 1041
+      "line": 1077
     },
     "TST-CORE-844": {
       "path": "11.1",
       "row": 6,
       "scenario": "Brain returns error (mock)",
-      "line": 1042
+      "line": 1078
     },
     "TST-CORE-845": {
       "path": "11.1",
       "row": 7,
       "scenario": "Brain returns malformed JSON",
-      "line": 1043
+      "line": 1079
     },
     "TST-CORE-846": {
       "path": "11.1",
       "row": 8,
       "scenario": "Concurrent requests",
-      "line": 1044
+      "line": 1080
     },
     "TST-CORE-847": {
       "path": "11.1",
       "row": 9,
       "scenario": "Empty URL returns error",
-      "line": 1045
+      "line": 1081
     },
     "TST-CORE-848": {
       "path": "11.1",
       "row": 10,
       "scenario": "Connection pooling",
-      "line": 1046
+      "line": 1082
     },
     "TST-CORE-849": {
       "path": "11.1",
       "row": 11,
       "scenario": "Mock health success",
-      "line": 1047
+      "line": 1083
     },
     "TST-CORE-850": {
       "path": "11.1",
       "row": 12,
       "scenario": "Mock health failure",
-      "line": 1048
+      "line": 1084
     },
     "TST-CORE-541": {
       "path": "12",
       "row": 1,
       "scenario": "Proxy to brain admin UI",
-      "line": 1056
+      "line": 1092
     },
     "TST-CORE-542": {
       "path": "12",
       "row": 2,
       "scenario": "Auth required",
-      "line": 1057
+      "line": 1093
     },
     "TST-CORE-543": {
       "path": "12",
       "row": 3,
       "scenario": "Static asset proxying",
-      "line": 1058
+      "line": 1094
     },
     "TST-CORE-544": {
       "path": "12",
       "row": 4,
       "scenario": "WebSocket upgrade through proxy",
-      "line": 1059
+      "line": 1095
     },
     "TST-CORE-897": {
-      "path": "12",
-      "row": 5,
-      "scenario": "CSRF token injected as `X-CSRF-Token` in proxied response",
-      "line": 1060
+      "path": "28",
+      "row": 18,
+      "scenario": "Pairing code single-use enforced",
+      "line": 1652
     },
     "TST-CORE-545": {
       "path": "13",
       "row": 1,
       "scenario": "Below rate limit",
-      "line": 1068
+      "line": 1104
     },
     "TST-CORE-546": {
       "path": "13",
       "row": 2,
       "scenario": "At rate limit",
-      "line": 1069
+      "line": 1105
     },
     "TST-CORE-547": {
       "path": "13",
       "row": 3,
       "scenario": "Above rate limit",
-      "line": 1070
+      "line": 1106
     },
     "TST-CORE-548": {
       "path": "13",
       "row": 4,
       "scenario": "Rate limit reset",
-      "line": 1071
+      "line": 1107
     },
     "TST-CORE-549": {
       "path": "13",
       "row": 5,
       "scenario": "Per-IP isolation",
-      "line": 1072
+      "line": 1108
     },
     "TST-CORE-550": {
       "path": "13",
       "row": 6,
       "scenario": "Rate limit headers",
-      "line": 1073
+      "line": 1109
     },
     "TST-CORE-551": {
       "path": "14",
       "row": 1,
       "scenario": "Load from environment variables",
-      "line": 1081
+      "line": 1117
     },
     "TST-CORE-552": {
       "path": "14",
       "row": 2,
       "scenario": "Load from Docker secrets",
-      "line": 1082
+      "line": 1118
     },
     "TST-CORE-553": {
       "path": "14",
       "row": 3,
       "scenario": "Missing required config",
-      "line": 1083
+      "line": 1119
     },
     "TST-CORE-554": {
       "path": "14",
       "row": 4,
       "scenario": "Default values",
-      "line": 1084
+      "line": 1120
     },
     "TST-CORE-555": {
       "path": "14",
       "row": 5,
       "scenario": "Config validation",
-      "line": 1085
+      "line": 1121
     },
     "TST-CORE-556": {
       "path": "14",
       "row": 6,
       "scenario": "DINA_SPOOL_MAX enforcement",
-      "line": 1086
+      "line": 1122
     },
     "TST-CORE-851": {
       "path": "14",
       "row": 7,
       "scenario": "Partial env vars",
-      "line": 1087
+      "line": 1123
     },
     "TST-CORE-852": {
       "path": "14",
       "row": 8,
       "scenario": "Env var type parsing",
-      "line": 1088
+      "line": 1124
     },
     "TST-CORE-853": {
       "path": "14",
       "row": 9,
       "scenario": "Default security mode",
-      "line": 1089
+      "line": 1125
     },
     "TST-CORE-854": {
       "path": "14",
       "row": 10,
       "scenario": "Negative session TTL rejected",
-      "line": 1090
+      "line": 1126
     },
     "TST-CORE-855": {
       "path": "14",
       "row": 11,
       "scenario": "Load from config.json",
-      "line": 1091
+      "line": 1127
     },
     "TST-CORE-856": {
       "path": "14",
       "row": 12,
       "scenario": "Env overrides config.json",
-      "line": 1092
+      "line": 1128
     },
     "TST-CORE-857": {
       "path": "14",
       "row": 13,
       "scenario": "Docker secret overrides env token",
-      "line": 1093
+      "line": 1129
     },
     "TST-CORE-898": {
-      "path": "14",
-      "row": 14,
-      "scenario": "Audit log retention configurable via config.json (`retention_days`)",
-      "line": 1094
+      "path": "28",
+      "row": 19,
+      "scenario": "Paired device appears in device list",
+      "line": 1653
     },
     "TST-CORE-899": {
-      "path": "14",
-      "row": 15,
-      "scenario": "Cloud LLM consent flag stored and enforced",
-      "line": 1095
+      "path": "28",
+      "row": 20,
+      "scenario": "Bearer fallback when no X-DID headers",
+      "line": 1654
     },
     "TST-CORE-900": {
       "path": "14",
       "row": 16,
       "scenario": "`DINA_HISTORY_DAYS` config default 365",
-      "line": 1096
+      "line": 1132
     },
     "TST-CORE-557": {
       "path": "15.1",
       "row": 1,
       "scenario": "Liveness probe",
-      "line": 1106
+      "line": 1142
     },
     "TST-CORE-558": {
       "path": "15.1",
       "row": 2,
       "scenario": "Readiness probe: vault healthy",
-      "line": 1107
+      "line": 1143
     },
     "TST-CORE-559": {
       "path": "15.1",
       "row": 3,
       "scenario": "Readiness probe: vault locked",
-      "line": 1108
+      "line": 1144
     },
     "TST-CORE-560": {
       "path": "15.1",
       "row": 4,
       "scenario": "Readiness probe: SQLite locked",
-      "line": 1109
+      "line": 1145
     },
     "TST-CORE-561": {
       "path": "15.1",
       "row": 5,
       "scenario": "Liveness \u2260 Readiness",
-      "line": 1110
+      "line": 1146
     },
     "TST-CORE-562": {
       "path": "15.1",
       "row": 6,
       "scenario": "Docker healthcheck uses `/healthz`",
-      "line": 1111
+      "line": 1147
     },
     "TST-CORE-563": {
       "path": "15.1",
       "row": 7,
       "scenario": "Docker healthcheck params",
-      "line": 1112
+      "line": 1148
     },
     "TST-CORE-564": {
       "path": "15.1",
       "row": 8,
       "scenario": "Brain starts after core healthy",
-      "line": 1113
+      "line": 1149
     },
     "TST-CORE-565": {
       "path": "15.2",
       "row": 1,
       "scenario": "Search vault",
-      "line": 1119
+      "line": 1155
     },
     "TST-CORE-566": {
       "path": "15.2",
       "row": 2,
       "scenario": "Store item",
-      "line": 1120
+      "line": 1156
     },
     "TST-CORE-567": {
       "path": "15.2",
       "row": 3,
       "scenario": "Get item by ID",
-      "line": 1121
+      "line": 1157
     },
     "TST-CORE-568": {
       "path": "15.2",
       "row": 4,
       "scenario": "Delete item (right to forget)",
-      "line": 1122
+      "line": 1158
     },
     "TST-CORE-569": {
       "path": "15.2",
       "row": 5,
       "scenario": "Store crash traceback",
-      "line": 1123
+      "line": 1159
     },
     "TST-CORE-570": {
       "path": "15.2",
       "row": 6,
       "scenario": "ACK task",
-      "line": 1124
+      "line": 1160
     },
     "TST-CORE-571": {
       "path": "15.2",
       "row": 7,
       "scenario": "Vault KV store",
-      "line": 1125
+      "line": 1161
     },
     "TST-CORE-572": {
       "path": "15.2",
       "row": 8,
       "scenario": "Vault KV read",
-      "line": 1126
+      "line": 1162
     },
     "TST-CORE-573": {
       "path": "15.2",
       "row": 9,
       "scenario": "Vault KV upsert",
-      "line": 1127
+      "line": 1163
     },
     "TST-CORE-574": {
       "path": "15.2",
       "row": 10,
       "scenario": "Vault KV not found",
-      "line": 1128
+      "line": 1164
     },
     "TST-CORE-575": {
       "path": "15.2",
       "row": 11,
       "scenario": "Vault batch store",
-      "line": 1129
+      "line": 1165
     },
     "TST-CORE-576": {
       "path": "15.2",
       "row": 12,
       "scenario": "Vault batch store exceeds cap",
-      "line": 1130
+      "line": 1166
     },
     "TST-CORE-577": {
       "path": "15.3",
       "row": 1,
       "scenario": "Get own DID",
-      "line": 1136
+      "line": 1172
     },
     "TST-CORE-578": {
       "path": "15.3",
       "row": 2,
       "scenario": "Create persona",
-      "line": 1137
+      "line": 1173
     },
     "TST-CORE-579": {
       "path": "15.3",
       "row": 3,
       "scenario": "List personas",
-      "line": 1138
+      "line": 1174
     },
     "TST-CORE-580": {
       "path": "15.3",
       "row": 4,
       "scenario": "Get contacts",
-      "line": 1139
+      "line": 1175
     },
     "TST-CORE-581": {
       "path": "15.3",
       "row": 5,
       "scenario": "Add contact",
-      "line": 1140
+      "line": 1176
     },
     "TST-CORE-582": {
       "path": "15.3",
       "row": 6,
       "scenario": "Register device",
-      "line": 1141
+      "line": 1177
     },
     "TST-CORE-583": {
       "path": "15.3",
       "row": 7,
       "scenario": "List devices",
-      "line": 1142
+      "line": 1178
     },
     "TST-CORE-584": {
       "path": "15.4",
       "row": 1,
       "scenario": "Send message",
-      "line": 1148
+      "line": 1184
     },
     "TST-CORE-585": {
       "path": "15.4",
       "row": 2,
       "scenario": "Receive messages",
-      "line": 1149
+      "line": 1185
     },
     "TST-CORE-586": {
       "path": "15.4",
       "row": 3,
       "scenario": "Acknowledge message",
-      "line": 1150
+      "line": 1186
     },
     "TST-CORE-587": {
       "path": "15.5",
       "row": 1,
       "scenario": "Initiate pairing",
-      "line": 1159
+      "line": 1195
     },
     "TST-CORE-588": {
       "path": "15.5",
       "row": 2,
       "scenario": "Initiate stores pending pairing",
-      "line": 1160
+      "line": 1196
     },
     "TST-CORE-589": {
       "path": "15.5",
       "row": 3,
       "scenario": "Complete pairing",
-      "line": 1161
+      "line": 1197
     },
     "TST-CORE-590": {
       "path": "15.5",
       "row": 4,
       "scenario": "CLIENT_TOKEN is 32 bytes hex",
-      "line": 1162
+      "line": 1198
     },
     "TST-CORE-591": {
       "path": "15.5",
       "row": 5,
       "scenario": "SHA-256 hash stored, not token",
-      "line": 1163
+      "line": 1199
     },
     "TST-CORE-592": {
       "path": "15.5",
       "row": 6,
       "scenario": "Pending pairing deleted after complete",
-      "line": 1164
+      "line": 1200
     },
     "TST-CORE-593": {
       "path": "15.5",
       "row": 7,
       "scenario": "Device name stored",
-      "line": 1165
+      "line": 1201
     },
     "TST-CORE-594": {
       "path": "15.5",
       "row": 8,
       "scenario": "Managed hosting: no terminal",
-      "line": 1166
+      "line": 1202
     },
     "TST-CORE-595": {
       "path": "15.6",
       "row": 1,
       "scenario": "AT Protocol discovery",
-      "line": 1175
+      "line": 1211
     },
     "TST-CORE-596": {
       "path": "15.6",
       "row": 2,
       "scenario": "Discovery returns root DID",
-      "line": 1176
+      "line": 1212
     },
     "TST-CORE-597": {
       "path": "15.6",
       "row": 3,
       "scenario": "Discovery unauthenticated",
-      "line": 1177
+      "line": 1213
     },
     "TST-CORE-598": {
       "path": "15.6",
       "row": 4,
       "scenario": "Discovery available in dev mode",
-      "line": 1178
+      "line": 1214
     },
     "TST-CORE-599": {
       "path": "15.6",
       "row": 5,
       "scenario": "Missing DID (no identity yet)",
-      "line": 1179
+      "line": 1215
     },
     "TST-CORE-600": {
       "path": "15.7",
       "row": 1,
       "scenario": "Scrub text",
-      "line": 1185
+      "line": 1221
     },
     "TST-CORE-901": {
       "path": "15.7",
       "row": 2,
       "scenario": "`/metrics` Prometheus endpoint requires CLIENT_TOKEN",
-      "line": 1186
+      "line": 1222
     },
     "TST-CORE-902": {
       "path": "15.7",
       "row": 3,
       "scenario": "Sync status API endpoint for admin UI",
-      "line": 1187
+      "line": 1223
     },
     "TST-CORE-601": {
       "path": "16",
       "row": 1,
       "scenario": "Malformed JSON body",
-      "line": 1195
+      "line": 1231
     },
     "TST-CORE-602": {
       "path": "16",
       "row": 2,
       "scenario": "Request body too large",
-      "line": 1196
+      "line": 1232
     },
     "TST-CORE-603": {
       "path": "16",
       "row": 3,
       "scenario": "Unknown endpoint",
-      "line": 1197
+      "line": 1233
     },
     "TST-CORE-604": {
       "path": "16",
       "row": 4,
       "scenario": "Method not allowed",
-      "line": 1198
+      "line": 1234
     },
     "TST-CORE-605": {
       "path": "16",
       "row": 5,
       "scenario": "Content-Type enforcement",
-      "line": 1199
+      "line": 1235
     },
     "TST-CORE-606": {
       "path": "16",
       "row": 6,
       "scenario": "Concurrent vault writes",
-      "line": 1200
+      "line": 1236
     },
     "TST-CORE-607": {
       "path": "16",
       "row": 7,
       "scenario": "Disk full",
-      "line": 1201
+      "line": 1237
     },
     "TST-CORE-608": {
       "path": "16",
       "row": 8,
       "scenario": "Vault file corruption",
-      "line": 1202
+      "line": 1238
     },
     "TST-CORE-609": {
       "path": "16",
       "row": 9,
       "scenario": "Graceful shutdown",
-      "line": 1203
+      "line": 1239
     },
     "TST-CORE-610": {
       "path": "16",
       "row": 10,
       "scenario": "Panic recovery",
-      "line": 1204
+      "line": 1240
     },
     "TST-CORE-611": {
       "path": "17",
       "row": 1,
       "scenario": "No VACUUM INTO",
-      "line": 1212
+      "line": 1248
     },
     "TST-CORE-612": {
       "path": "17",
       "row": 2,
       "scenario": "SQL injection resistance",
-      "line": 1213
+      "line": 1249
     },
     "TST-CORE-613": {
       "path": "17",
       "row": 3,
       "scenario": "Path traversal",
-      "line": 1214
+      "line": 1250
     },
     "TST-CORE-614": {
       "path": "17",
       "row": 4,
       "scenario": "Header injection",
-      "line": 1215
+      "line": 1251
     },
     "TST-CORE-615": {
       "path": "17",
       "row": 5,
       "scenario": "Memory zeroization",
-      "line": 1216
+      "line": 1252
     },
     "TST-CORE-616": {
       "path": "17",
       "row": 6,
       "scenario": "TLS enforcement (production)",
-      "line": 1217
+      "line": 1253
     },
     "TST-CORE-617": {
       "path": "17",
       "row": 7,
       "scenario": "Docker network isolation",
-      "line": 1218
+      "line": 1254
     },
     "TST-CORE-618": {
       "path": "17",
       "row": 8,
       "scenario": "Secrets not in environment",
-      "line": 1219
+      "line": 1255
     },
     "TST-CORE-619": {
       "path": "17",
       "row": 9,
       "scenario": "No plaintext keys on disk",
-      "line": 1220
+      "line": 1256
     },
     "TST-CORE-620": {
       "path": "17",
       "row": 10,
       "scenario": "Constant-time comparisons",
-      "line": 1221
+      "line": 1257
     },
     "TST-CORE-621": {
       "path": "17",
       "row": 11,
       "scenario": "No plugin loading mechanism",
-      "line": 1222
+      "line": 1258
     },
     "TST-CORE-622": {
       "path": "17",
       "row": 12,
       "scenario": "No plugin API endpoint",
-      "line": 1223
+      "line": 1259
     },
     "TST-CORE-623": {
       "path": "17",
       "row": 13,
       "scenario": "Only two extension points (architecture audit)",
-      "line": 1224
+      "line": 1260
     },
     "TST-CORE-624": {
       "path": "17",
       "row": 14,
       "scenario": "No plaintext vault data on disk",
-      "line": 1225
+      "line": 1261
     },
     "TST-CORE-625": {
       "path": "17",
       "row": 15,
       "scenario": "Plaintext discarded after processing",
-      "line": 1226
+      "line": 1262
     },
     "TST-CORE-626": {
       "path": "17",
       "row": 16,
       "scenario": "Keys in RAM only while needed",
-      "line": 1227
+      "line": 1263
     },
     "TST-CORE-627": {
       "path": "17",
       "row": 17,
       "scenario": "SQLCipher library: `mutecomm/go-sqlcipher` (NOT `mattn/go-sqlite3`)",
-      "line": 1228
+      "line": 1264
     },
     "TST-CORE-628": {
       "path": "17",
       "row": 18,
       "scenario": "CI: raw .sqlite bytes are NOT valid SQLite headers",
-      "line": 1229
+      "line": 1265
     },
     "TST-CORE-629": {
       "path": "17",
       "row": 19,
       "scenario": "Serialization: JSON for core\u2194brain traffic",
-      "line": 1230
+      "line": 1266
     },
     "TST-CORE-630": {
       "path": "17",
       "row": 20,
       "scenario": "Container image: digest pinning, never `:latest`",
-      "line": 1231
+      "line": 1267
     },
     "TST-CORE-631": {
       "path": "17",
       "row": 21,
       "scenario": "Container image: Cosign signature",
-      "line": 1232
+      "line": 1268
     },
     "TST-CORE-632": {
       "path": "17",
       "row": 22,
       "scenario": "SBOM generated",
-      "line": 1233
+      "line": 1269
     },
     "TST-CORE-633": {
       "path": "17",
       "row": 23,
       "scenario": "Secrets NEVER in environment variables",
-      "line": 1234
+      "line": 1270
     },
     "TST-CORE-634": {
       "path": "17",
       "row": 24,
       "scenario": "Secrets tmpfs mount (never on disk)",
-      "line": 1235
+      "line": 1271
     },
     "TST-CORE-635": {
       "path": "17",
       "row": 25,
       "scenario": "`GOOGLE_API_KEY` exception documented",
-      "line": 1236
+      "line": 1272
     },
     "TST-CORE-636": {
       "path": "17",
       "row": 26,
-      "scenario": "Docker network: `dina-pds-net` allows outbound (plc.directory)",
-      "line": 1237
+      "scenario": "Docker network: `dina-pds-net` allows outbound",
+      "line": 1273
     },
     "TST-CORE-637": {
       "path": "17",
       "row": 27,
       "scenario": "Docker network: `dina-brain-net` is standard",
-      "line": 1238
+      "line": 1274
     },
     "TST-CORE-638": {
       "path": "17",
       "row": 28,
       "scenario": "External ports: only 8100 + 2583",
-      "line": 1239
+      "line": 1275
     },
     "TST-CORE-903": {
       "path": "17",
       "row": 29,
       "scenario": "No Go `plugin.Open()` or dynamic library loading",
-      "line": 1240
+      "line": 1276
     },
     "TST-CORE-904": {
       "path": "17",
       "row": 30,
       "scenario": "Core has no external OAuth token storage",
-      "line": 1241
+      "line": 1277
     },
     "TST-CORE-905": {
       "path": "17",
       "row": 31,
       "scenario": "No vector clocks, no CRDTs (simplicity code audit)",
-      "line": 1242
+      "line": 1278
     },
     "TST-CORE-639": {
       "path": "18",
       "row": 1,
       "scenario": "Core exposes `/v1/vault/query` to brain",
-      "line": 1250
+      "line": 1286
     },
     "TST-CORE-640": {
       "path": "18",
       "row": 2,
       "scenario": "Core exposes `/v1/vault/store` to brain",
-      "line": 1251
+      "line": 1287
     },
     "TST-CORE-641": {
       "path": "18",
       "row": 3,
       "scenario": "Core exposes `/v1/did/sign` \u2014 admin only",
-      "line": 1252
+      "line": 1288
     },
     "TST-CORE-642": {
       "path": "18",
       "row": 4,
       "scenario": "Core exposes `/v1/did/verify` to brain",
-      "line": 1253
+      "line": 1289
     },
     "TST-CORE-643": {
       "path": "18",
       "row": 5,
       "scenario": "Core exposes `/v1/pii/scrub` to brain",
-      "line": 1254
+      "line": 1290
     },
     "TST-CORE-644": {
       "path": "18",
       "row": 6,
       "scenario": "Core exposes `/v1/notify` to brain",
-      "line": 1255
+      "line": 1291
     },
     "TST-CORE-645": {
       "path": "18",
       "row": 7,
       "scenario": "All brain-callable endpoints accept Service Signature Auth",
-      "line": 1256
+      "line": 1292
     },
     "TST-CORE-646": {
       "path": "18",
       "row": 8,
       "scenario": "No other endpoints exist beyond documented set",
-      "line": 1257
+      "line": 1293
     },
     "TST-CORE-647": {
       "path": "18",
       "row": 9,
       "scenario": "Core exposes `/v1/msg/send` to brain",
-      "line": 1258
+      "line": 1294
     },
     "TST-CORE-648": {
       "path": "18",
       "row": 10,
       "scenario": "Core exposes `/v1/trust/query` to brain",
-      "line": 1259
+      "line": 1295
     },
     "TST-CORE-906": {
       "path": "18",
       "row": 11,
       "scenario": "`/v1/vault/crash` rejects requests missing required fields",
-      "line": 1260
+      "line": 1296
     },
     "TST-CORE-907": {
       "path": "18",
       "row": 12,
       "scenario": "Vault query full response schema validated",
-      "line": 1261
+      "line": 1297
     },
     "TST-CORE-908": {
       "path": "18",
       "row": 13,
       "scenario": "Vault store response ID format (`vault_` prefix)",
-      "line": 1262
+      "line": 1298
     },
     "TST-CORE-909": {
       "path": "18",
       "row": 14,
       "scenario": "Vault query: missing `persona` field \u2192 400",
-      "line": 1263
+      "line": 1299
     },
     "TST-CORE-910": {
       "path": "18",
       "row": 15,
       "scenario": "Core calls only documented brain endpoints",
-      "line": 1264
+      "line": 1300
     },
     "TST-CORE-649": {
       "path": "19",
       "row": 1,
       "scenario": "Managed onboarding: \"email + password \u2192 done\"",
-      "line": 1272
+      "line": 1308
     },
     "TST-CORE-650": {
       "path": "19",
       "row": 2,
       "scenario": "Silent step 1: BIP-39 mnemonic generated",
-      "line": 1273
+      "line": 1309
     },
     "TST-CORE-651": {
       "path": "19",
       "row": 3,
       "scenario": "Silent step 2: root Ed25519 keypair derived",
-      "line": 1274
+      "line": 1310
     },
     "TST-CORE-652": {
       "path": "19",
       "row": 4,
       "scenario": "Silent step 3: did:plc registered",
-      "line": 1275
+      "line": 1311
     },
     "TST-CORE-653": {
       "path": "19",
       "row": 5,
       "scenario": "Silent step 4: per-database DEKs derived",
-      "line": 1276
+      "line": 1312
     },
     "TST-CORE-654": {
       "path": "19",
       "row": 6,
       "scenario": "Silent step 5: password wraps master seed",
-      "line": 1277
+      "line": 1313
     },
     "TST-CORE-655": {
       "path": "19",
       "row": 7,
       "scenario": "Silent step 6: databases created",
-      "line": 1278
+      "line": 1314
     },
     "TST-CORE-656": {
       "path": "19",
       "row": 8,
       "scenario": "Silent step 7: convenience mode set (managed)",
-      "line": 1279
+      "line": 1315
     },
     "TST-CORE-657": {
       "path": "19",
       "row": 9,
       "scenario": "Silent step 8: brain starts guardian loop",
-      "line": 1280
+      "line": 1316
     },
     "TST-CORE-658": {
       "path": "19",
       "row": 10,
       "scenario": "Silent step 9: initial sync triggered",
-      "line": 1281
+      "line": 1317
     },
     "TST-CORE-659": {
       "path": "19",
       "row": 11,
       "scenario": "One default persona: `/personal`",
-      "line": 1282
+      "line": 1318
     },
     "TST-CORE-660": {
       "path": "19",
       "row": 12,
       "scenario": "Mnemonic backup deferred to Day 7",
-      "line": 1283
+      "line": 1319
     },
     "TST-CORE-661": {
       "path": "19",
       "row": 13,
       "scenario": "Sharing rules default to empty",
-      "line": 1284
+      "line": 1320
     },
     "TST-CORE-932": {
       "path": "19",
       "row": 14,
       "scenario": "install.sh bootstrap: token gen, dirs, permissions",
-      "line": 1285
+      "line": 1321
     },
     "TST-CORE-662": {
       "path": "20.1",
       "row": 1,
       "scenario": "`/healthz` liveness: server alive",
-      "line": 1299
+      "line": 1335
     },
     "TST-CORE-663": {
       "path": "20.1",
       "row": 2,
       "scenario": "`/readyz` readiness: vault queryable",
-      "line": 1300
+      "line": 1336
     },
     "TST-CORE-664": {
       "path": "20.1",
       "row": 3,
       "scenario": "`/readyz` failure: vault locked",
-      "line": 1301
+      "line": 1337
     },
     "TST-CORE-665": {
       "path": "20.1",
       "row": 4,
       "scenario": "`/readyz` failure: db deadlocked",
-      "line": 1302
+      "line": 1338
     },
     "TST-CORE-666": {
       "path": "20.1",
       "row": 5,
       "scenario": "Zombie detection",
-      "line": 1303
+      "line": 1339
     },
     "TST-CORE-667": {
       "path": "20.1",
       "row": 6,
       "scenario": "`/healthz` unauthenticated",
-      "line": 1304
+      "line": 1340
     },
     "TST-CORE-668": {
       "path": "20.1",
       "row": 7,
       "scenario": "`/readyz` unauthenticated",
-      "line": 1305
+      "line": 1341
     },
     "TST-CORE-669": {
       "path": "20.2",
       "row": 1,
       "scenario": "Core healthcheck endpoint: `/healthz`",
-      "line": 1313
+      "line": 1349
     },
     "TST-CORE-670": {
       "path": "20.2",
       "row": 2,
       "scenario": "Core healthcheck: interval 60s",
-      "line": 1314
+      "line": 1350
     },
     "TST-CORE-671": {
       "path": "20.2",
       "row": 3,
       "scenario": "Core healthcheck: timeout 3s",
-      "line": 1315
+      "line": 1351
     },
     "TST-CORE-672": {
       "path": "20.2",
       "row": 4,
       "scenario": "Core healthcheck: retries 3",
-      "line": 1316
+      "line": 1352
     },
     "TST-CORE-673": {
       "path": "20.2",
       "row": 5,
       "scenario": "Core healthcheck: start_period 20s",
-      "line": 1317
+      "line": 1353
     },
     "TST-CORE-674": {
       "path": "20.2",
       "row": 6,
       "scenario": "Brain healthcheck: `/healthz`",
-      "line": 1318
+      "line": 1354
     },
     "TST-CORE-675": {
       "path": "20.2",
       "row": 7,
       "scenario": "PDS healthcheck: `/xrpc/_health`",
-      "line": 1319
+      "line": 1355
     },
     "TST-CORE-676": {
       "path": "20.2",
       "row": 8,
       "scenario": "llama healthcheck: `/health`",
-      "line": 1320
+      "line": 1356
     },
     "TST-CORE-677": {
       "path": "20.2",
       "row": 9,
       "scenario": "Why `wget` not `curl`",
-      "line": 1321
+      "line": 1357
     },
     "TST-CORE-678": {
       "path": "20.2",
       "row": 10,
       "scenario": "`restart: always` on all containers",
-      "line": 1322
+      "line": 1358
     },
     "TST-CORE-679": {
       "path": "20.2",
       "row": 11,
       "scenario": "Brain `depends_on: core: service_healthy`",
-      "line": 1323
+      "line": 1359
     },
     "TST-CORE-680": {
       "path": "20.2",
       "row": 12,
       "scenario": "Core `depends_on: pds: service_started`",
-      "line": 1324
+      "line": 1360
     },
     "TST-CORE-681": {
       "path": "20.2",
       "row": 13,
       "scenario": "llama `profiles: [\"local-llm\"]`",
-      "line": 1325
+      "line": 1361
     },
     "TST-CORE-682": {
       "path": "20.3",
       "row": 1,
       "scenario": "Crash traceback stored in identity.sqlite",
-      "line": 1331
+      "line": 1367
     },
     "TST-CORE-683": {
       "path": "20.3",
       "row": 2,
       "scenario": "Crash log table schema",
-      "line": 1332
+      "line": 1368
     },
     "TST-CORE-684": {
       "path": "20.3",
       "row": 3,
       "scenario": "Crash log encrypted at rest",
-      "line": 1333
+      "line": 1369
     },
     "TST-CORE-685": {
       "path": "20.3",
       "row": 4,
       "scenario": "Crash log retention: 90 days",
-      "line": 1334
+      "line": 1370
     },
     "TST-CORE-686": {
       "path": "20.3",
       "row": 5,
       "scenario": "Crash log queryable",
-      "line": 1335
+      "line": 1371
     },
     "TST-CORE-687": {
       "path": "20.3",
       "row": 6,
       "scenario": "Crash log included in backup",
-      "line": 1336
+      "line": 1372
     },
     "TST-CORE-688": {
       "path": "20.3",
       "row": 7,
       "scenario": "Admin UI displays crash history",
-      "line": 1337
+      "line": 1373
     },
     "TST-CORE-914": {
       "path": "20.3",
       "row": 8,
       "scenario": "Docker compose logging rotation config validated",
-      "line": 1338
+      "line": 1374
     },
     "TST-CORE-915": {
       "path": "20.3",
       "row": 9,
       "scenario": "Single watchdog sweep cleans both audit AND crash logs",
-      "line": 1339
+      "line": 1375
     },
     "TST-CORE-916": {
       "path": "20.3",
       "row": 10,
       "scenario": "System watchdog 1-hour interval: connector liveness, disk, brain health",
-      "line": 1340
+      "line": 1376
     },
     "TST-CORE-917": {
       "path": "20.3",
       "row": 11,
       "scenario": "Data volume layout matches architecture spec",
-      "line": 1341
+      "line": 1377
     },
     "TST-CORE-689": {
       "path": "21.1",
       "row": 1,
       "scenario": "Go core: `slog` structured JSON",
-      "line": 1354
+      "line": 1390
     },
     "TST-CORE-690": {
       "path": "21.1",
       "row": 2,
       "scenario": "Python brain: `structlog` JSON",
-      "line": 1355
+      "line": 1391
     },
     "TST-CORE-691": {
       "path": "21.1",
       "row": 3,
       "scenario": "No file logs",
-      "line": 1356
+      "line": 1392
     },
     "TST-CORE-692": {
       "path": "21.1",
       "row": 4,
       "scenario": "Docker log rotation configured",
-      "line": 1357
+      "line": 1393
     },
     "TST-CORE-693": {
       "path": "21.2",
       "row": 1,
       "scenario": "Vault content never logged",
-      "line": 1363
+      "line": 1399
     },
     "TST-CORE-694": {
       "path": "21.2",
       "row": 2,
       "scenario": "User queries never logged",
-      "line": 1364
+      "line": 1400
     },
     "TST-CORE-695": {
       "path": "21.2",
       "row": 3,
       "scenario": "Brain reasoning never logged",
-      "line": 1365
+      "line": 1401
     },
     "TST-CORE-696": {
       "path": "21.2",
       "row": 4,
       "scenario": "NaCl plaintext never logged",
-      "line": 1366
+      "line": 1402
     },
     "TST-CORE-697": {
       "path": "21.2",
       "row": 5,
       "scenario": "Passphrase never logged",
-      "line": 1367
+      "line": 1403
     },
     "TST-CORE-698": {
       "path": "21.2",
       "row": 6,
       "scenario": "API tokens never logged",
-      "line": 1368
+      "line": 1404
     },
     "TST-CORE-699": {
       "path": "21.3",
       "row": 1,
       "scenario": "CI catches `log.*query=`",
-      "line": 1374
+      "line": 1410
     },
     "TST-CORE-700": {
       "path": "21.3",
       "row": 2,
       "scenario": "CI catches `log.*content=`",
-      "line": 1375
+      "line": 1411
     },
     "TST-CORE-701": {
       "path": "21.3",
       "row": 3,
       "scenario": "CI catches `log.*body=`",
-      "line": 1376
+      "line": 1412
     },
     "TST-CORE-702": {
       "path": "21.3",
       "row": 4,
       "scenario": "CI catches `log.*plaintext=`",
-      "line": 1377
+      "line": 1413
     },
     "TST-CORE-703": {
       "path": "21.3",
       "row": 5,
       "scenario": "CI catches f-string with user data",
-      "line": 1378
+      "line": 1414
     },
     "TST-CORE-704": {
       "path": "21.3",
       "row": 6,
       "scenario": "No spaCy NER on log lines",
-      "line": 1379
+      "line": 1415
     },
     "TST-CORE-705": {
       "path": "21.4",
       "row": 1,
       "scenario": "Brain crash: stdout gets sanitized one-liner",
-      "line": 1385
+      "line": 1421
     },
     "TST-CORE-706": {
       "path": "21.4",
       "row": 2,
       "scenario": "Brain crash: full traceback to vault",
-      "line": 1386
+      "line": 1422
     },
     "TST-CORE-707": {
       "path": "21.4",
       "row": 3,
       "scenario": "Brain catch-all wraps main loop",
-      "line": 1387
+      "line": 1423
     },
     "TST-CORE-708": {
       "path": "21.4",
       "row": 4,
       "scenario": "Crash handler sends task_id",
-      "line": 1388
+      "line": 1424
     },
     "TST-CORE-709": {
       "path": "21.4",
       "row": 5,
       "scenario": "Crash handler re-raises",
-      "line": 1389
+      "line": 1425
     },
     "TST-CORE-929": {
       "path": "21.4",
       "row": 6,
       "scenario": "Spool file naming uses ULID format",
-      "line": 1390
+      "line": 1426
     },
     "TST-CORE-710": {
       "path": "22.1",
       "row": 1,
       "scenario": "Sign attestation record",
-      "line": 1403
+      "line": 1439
     },
     "TST-CORE-711": {
       "path": "22.1",
       "row": 2,
       "scenario": "Sign outcome report",
-      "line": 1404
+      "line": 1440
     },
     "TST-CORE-712": {
       "path": "22.1",
       "row": 3,
       "scenario": "Lexicon validation",
-      "line": 1405
+      "line": 1441
     },
     "TST-CORE-713": {
       "path": "22.1",
       "row": 4,
       "scenario": "Record in Merkle repo",
-      "line": 1406
+      "line": 1442
     },
     "TST-CORE-714": {
       "path": "22.1",
       "row": 5,
       "scenario": "PDS connection failure",
-      "line": 1407
+      "line": 1443
     },
     "TST-CORE-715": {
       "path": "22.1",
       "row": 6,
       "scenario": "Type B: bundled PDS (default)",
-      "line": 1408
+      "line": 1444
     },
     "TST-CORE-716": {
       "path": "22.1",
       "row": 7,
       "scenario": "Type A: external PDS",
-      "line": 1409
+      "line": 1445
     },
     "TST-CORE-717": {
       "path": "22.1",
       "row": 8,
       "scenario": "Rating range enforcement (0-100)",
-      "line": 1410
+      "line": 1446
     },
     "TST-CORE-718": {
       "path": "22.1",
       "row": 9,
       "scenario": "Verdict is structured object with sub-scores",
-      "line": 1411
+      "line": 1447
     },
     "TST-CORE-719": {
       "path": "22.1",
       "row": 10,
       "scenario": "All 5 required Lexicon fields validated",
-      "line": 1412
+      "line": 1448
     },
     "TST-CORE-720": {
       "path": "22.2",
       "row": 1,
       "scenario": "Author deletes own record",
-      "line": 1418
+      "line": 1454
     },
     "TST-CORE-721": {
       "path": "22.2",
       "row": 2,
       "scenario": "Non-author deletion rejected",
-      "line": 1419
+      "line": 1455
     },
     "TST-CORE-722": {
       "path": "22.2",
       "row": 3,
       "scenario": "Tombstone propagation",
-      "line": 1420
+      "line": 1456
     },
     "TST-CORE-723": {
       "path": "22.2",
       "row": 4,
       "scenario": "Deleted record absent from queries",
-      "line": 1421
+      "line": 1457
     },
     "TST-CORE-918": {
       "path": "22.2",
       "row": 5,
       "scenario": "`com.dina.trust.bot` and `com.dina.trust.membership` Lexicons validated",
-      "line": 1422
+      "line": 1458
     },
     "TST-CORE-919": {
       "path": "22.2",
       "row": 6,
       "scenario": "Outcome data schema validation (reporter_trust_ring, outcome, satisfaction)",
-      "line": 1423
+      "line": 1459
     },
     "TST-CORE-920": {
       "path": "22.2",
       "row": 7,
       "scenario": "Attestation optional fields URI format (sourceUrl, deepLink)",
-      "line": 1424
+      "line": 1460
     },
     "TST-CORE-921": {
       "path": "22.2",
       "row": 8,
       "scenario": "Trust query response includes signed payloads",
-      "line": 1425
+      "line": 1461
     },
     "TST-CORE-922": {
       "path": "22.2",
       "row": 9,
       "scenario": "DID Document contains DIDComm service endpoint",
-      "line": 1426
+      "line": 1462
     },
     "TST-CORE-923": {
       "path": "22.2",
       "row": 10,
       "scenario": "Outcome and Bot Lexicon signing and validation",
-      "line": 1427
+      "line": 1463
     },
     "TST-CORE-924": {
       "path": "22.2",
       "row": 11,
       "scenario": "PDS Type A: fallback to external HTTPS push",
-      "line": 1428
+      "line": 1464
     },
     "TST-CORE-724": {
       "path": "23.1",
       "row": 1,
       "scenario": "`dina export` produces encrypted archive",
-      "line": 1438
+      "line": 1474
     },
     "TST-CORE-725": {
       "path": "23.1",
       "row": 2,
       "scenario": "WAL checkpoint before export",
-      "line": 1439
+      "line": 1475
     },
     "TST-CORE-726": {
       "path": "23.1",
       "row": 3,
       "scenario": "Archive contains correct files",
-      "line": 1440
+      "line": 1476
     },
     "TST-CORE-727": {
       "path": "23.1",
       "row": 4,
       "scenario": "manifest.json contents",
-      "line": 1441
+      "line": 1477
     },
     "TST-CORE-728": {
       "path": "23.1",
       "row": 5,
       "scenario": "Export excludes Service Signature Auth",
-      "line": 1442
+      "line": 1478
     },
     "TST-CORE-729": {
       "path": "23.1",
       "row": 6,
       "scenario": "Export excludes CLIENT_TOKEN hashes",
-      "line": 1443
+      "line": 1479
     },
     "TST-CORE-730": {
       "path": "23.1",
       "row": 7,
       "scenario": "Export excludes passphrase",
-      "line": 1444
+      "line": 1480
     },
     "TST-CORE-731": {
       "path": "23.1",
       "row": 8,
       "scenario": "Export excludes PDS data",
-      "line": 1445
+      "line": 1481
     },
     "TST-CORE-732": {
       "path": "23.1",
       "row": 9,
       "scenario": "Export excludes Docker secrets",
-      "line": 1446
+      "line": 1482
     },
     "TST-CORE-733": {
       "path": "23.1",
       "row": 10,
       "scenario": "Export while vault locked",
-      "line": 1447
+      "line": 1483
     },
     "TST-CORE-734": {
       "path": "23.1",
       "row": 11,
       "scenario": "Database writes resumed after export",
-      "line": 1448
+      "line": 1484
     },
     "TST-CORE-735": {
       "path": "23.2",
       "row": 1,
       "scenario": "Import prompts for passphrase",
-      "line": 1454
+      "line": 1490
     },
     "TST-CORE-736": {
       "path": "23.2",
       "row": 2,
       "scenario": "Import with wrong passphrase",
-      "line": 1455
+      "line": 1491
     },
     "TST-CORE-737": {
       "path": "23.2",
       "row": 3,
       "scenario": "Import verifies checksums",
-      "line": 1456
+      "line": 1492
     },
     "TST-CORE-738": {
       "path": "23.2",
       "row": 4,
       "scenario": "Import detects corruption",
-      "line": 1457
+      "line": 1493
     },
     "TST-CORE-739": {
       "path": "23.2",
       "row": 5,
       "scenario": "Import checks version compatibility",
-      "line": 1458
+      "line": 1494
     },
     "TST-CORE-740": {
       "path": "23.2",
       "row": 6,
       "scenario": "Import runs integrity_check",
-      "line": 1459
+      "line": 1495
     },
     "TST-CORE-741": {
       "path": "23.2",
       "row": 7,
       "scenario": "Import integrity_check failure",
-      "line": 1460
+      "line": 1496
     },
     "TST-CORE-742": {
       "path": "23.2",
       "row": 8,
       "scenario": "Import prompts for re-pairing",
-      "line": 1461
+      "line": 1497
     },
     "TST-CORE-743": {
       "path": "23.2",
       "row": 9,
       "scenario": "Imported DID matches original",
-      "line": 1462
+      "line": 1498
     },
     "TST-CORE-744": {
       "path": "23.2",
       "row": 10,
       "scenario": "Import on fresh instance",
-      "line": 1463
+      "line": 1499
     },
     "TST-CORE-745": {
       "path": "23.2",
       "row": 11,
       "scenario": "Import on instance with existing data",
-      "line": 1464
+      "line": 1500
     },
     "TST-CORE-746": {
       "path": "23.2",
       "row": 12,
       "scenario": "Import rejects tampered archive",
-      "line": 1465
+      "line": 1501
     },
     "TST-CORE-747": {
       "path": "23.3",
       "row": 1,
       "scenario": "Managed \u2192 self-hosted VPS",
-      "line": 1471
+      "line": 1507
     },
     "TST-CORE-748": {
       "path": "23.3",
       "row": 2,
       "scenario": "Raspberry Pi \u2192 Mac Mini",
-      "line": 1472
+      "line": 1508
     },
     "TST-CORE-749": {
       "path": "23.3",
       "row": 3,
       "scenario": "Same Docker image across hosting levels",
-      "line": 1473
+      "line": 1509
     },
     "TST-CORE-750": {
       "path": "23.3",
       "row": 4,
       "scenario": "Migration preserves vault search",
-      "line": 1474
+      "line": 1510
     },
     "TST-CORE-925": {
       "path": "23.3",
       "row": 5,
       "scenario": "Import/restore invalidates all device tokens, forces re-pair",
-      "line": 1475
+      "line": 1511
     },
     "TST-CORE-751": {
       "path": "24.1",
       "row": 1,
       "scenario": "Ring 1 \u2014 Unverified Dina",
-      "line": 1488
+      "line": 1524
     },
     "TST-CORE-752": {
       "path": "24.1",
       "row": 2,
       "scenario": "Ring 2 \u2014 Verified Human (ZKP)",
-      "line": 1489
+      "line": 1525
     },
     "TST-CORE-753": {
       "path": "24.1",
       "row": 3,
       "scenario": "Ring 2 \u2014 Phase 1 compromise",
-      "line": 1490
+      "line": 1526
     },
     "TST-CORE-754": {
       "path": "24.1",
       "row": 4,
       "scenario": "Ring 2 \u2014 one ID = one verified Dina",
-      "line": 1491
+      "line": 1527
     },
     "TST-CORE-755": {
       "path": "24.1",
       "row": 5,
       "scenario": "Ring 3 \u2014 Skin in the Game",
-      "line": 1492
+      "line": 1528
     },
     "TST-CORE-756": {
       "path": "24.1",
       "row": 6,
       "scenario": "Trust Score formula",
-      "line": 1493
+      "line": 1529
     },
     "TST-CORE-757": {
       "path": "24.1",
       "row": 7,
       "scenario": "Trust level affects sharing/routing",
-      "line": 1494
+      "line": 1530
     },
     "TST-CORE-758": {
       "path": "24.2",
       "row": 1,
       "scenario": "Key generation uses Secure Enclave (iOS)",
-      "line": 1500
+      "line": 1536
     },
     "TST-CORE-759": {
       "path": "24.2",
       "row": 2,
       "scenario": "Key generation uses StrongBox (Android)",
-      "line": 1501
+      "line": 1537
     },
     "TST-CORE-760": {
       "path": "24.2",
       "row": 3,
       "scenario": "Key generation uses TPM (desktop)",
-      "line": 1502
+      "line": 1538
     },
     "TST-CORE-761": {
       "path": "24.2",
       "row": 4,
       "scenario": "Fallback: software entropy",
-      "line": 1503
+      "line": 1539
     },
     "TST-CORE-762": {
       "path": "24.3",
       "row": 1,
       "scenario": "Archive encrypted with Archive Key",
-      "line": 1509
+      "line": 1545
     },
     "TST-CORE-763": {
       "path": "24.3",
       "row": 2,
       "scenario": "Archive contains Tier 0 + 1 + 3 (NOT Tier 2 or 4)",
-      "line": 1510
+      "line": 1546
     },
     "TST-CORE-764": {
       "path": "24.3",
       "row": 3,
       "scenario": "Weekly frequency (configurable)",
-      "line": 1511
+      "line": 1547
     },
     "TST-CORE-765": {
       "path": "24.3",
       "row": 4,
       "scenario": "S3 Glacier + Compliance Mode Object Lock",
-      "line": 1512
+      "line": 1548
     },
     "TST-CORE-766": {
       "path": "24.3",
       "row": 5,
       "scenario": "Sovereign: USB/LTO tape",
-      "line": 1513
+      "line": 1549
     },
     "TST-CORE-767": {
       "path": "24.3",
       "row": 6,
       "scenario": "Archive useless without keys",
-      "line": 1514
+      "line": 1550
     },
     "TST-CORE-768": {
       "path": "24.4",
       "row": 1,
       "scenario": "Auto-snapshot every 15 minutes",
-      "line": 1520
+      "line": 1556
     },
     "TST-CORE-769": {
       "path": "24.4",
       "row": 2,
       "scenario": "Snapshot retention policy",
-      "line": 1521
+      "line": 1557
     },
     "TST-CORE-770": {
       "path": "24.4",
       "row": 3,
       "scenario": "`zfs rollback` recovery",
-      "line": 1522
+      "line": 1558
     },
     "TST-CORE-771": {
       "path": "24.4",
       "row": 4,
       "scenario": "Managed hosting: per-user volumes",
-      "line": 1523
+      "line": 1559
     },
     "TST-CORE-772": {
       "path": "24.5",
       "row": 1,
       "scenario": "Phone: recent 6 months cached",
-      "line": 1529
+      "line": 1565
     },
     "TST-CORE-773": {
       "path": "24.5",
       "row": 2,
       "scenario": "Laptop: configurable cache size",
-      "line": 1530
+      "line": 1566
     },
     "TST-CORE-774": {
       "path": "24.5",
       "row": 3,
       "scenario": "Thin client: no local cache",
-      "line": 1531
+      "line": 1567
     },
     "TST-CORE-775": {
       "path": "24.5",
       "row": 4,
       "scenario": "Cache encrypted with Sync Key",
-      "line": 1532
+      "line": 1568
     },
     "TST-CORE-931": {
       "path": "24.5",
       "row": 5,
       "scenario": "Tier 5 Deep Archive: encrypted snapshot to cold storage with compliance lock",
-      "line": 1533
+      "line": 1569
     },
     "TST-CORE-858": {
       "path": "25",
       "row": 1,
       "scenario": "Bot query sanitization: no DID, no medical, no financial in outbound queries",
-      "line": 1544
+      "line": 1580
     },
     "TST-CORE-859": {
       "path": "25",
       "row": 2,
       "scenario": "Bot communication protocol: POST /query schema with bot_signature and attribution",
-      "line": 1545
+      "line": 1581
     },
     "TST-CORE-860": {
       "path": "25",
       "row": 3,
       "scenario": "Bot trust scoring: local score tracking, threshold-based routing",
-      "line": 1546
+      "line": 1582
     },
     "TST-CORE-861": {
       "path": "25",
       "row": 4,
       "scenario": "Deep Link attribution validation + penalty for stripping attribution",
-      "line": 1547
+      "line": 1583
     },
     "TST-CORE-862": {
       "path": "26",
       "row": 1,
       "scenario": "Client sends checkpoint, core returns changed items since checkpoint",
-      "line": 1558
+      "line": 1594
     },
     "TST-CORE-863": {
       "path": "26",
       "row": 2,
       "scenario": "Real-time vault item push to connected clients via WebSocket",
-      "line": 1559
+      "line": 1595
     },
     "TST-CORE-864": {
       "path": "26",
       "row": 3,
       "scenario": "Conflict resolution: last-write-wins, earlier version logged as recoverable",
-      "line": 1560
+      "line": 1596
     },
     "TST-CORE-865": {
       "path": "26",
       "row": 4,
       "scenario": "Thin client: query via WebSocket, no local cache model",
-      "line": 1561
+      "line": 1597
     },
     "TST-CORE-866": {
       "path": "26",
       "row": 5,
       "scenario": "Backup scheduling to blob store, configurable frequency",
-      "line": 1562
+      "line": 1598
     },
     "TST-CORE-867": {
       "path": "26",
       "row": 6,
       "scenario": "New device full sync from zero checkpoint",
-      "line": 1563
+      "line": 1599
     },
     "TST-CORE-868": {
       "path": "26",
       "row": 7,
       "scenario": "Connection drop: client queues changes, syncs on reconnect",
-      "line": 1564
+      "line": 1600
     },
     "TST-CORE-869": {
       "path": "27",
       "row": 1,
       "scenario": "Estate plan stored in Tier 0 (identity.sqlite)",
-      "line": 1575
+      "line": 1611
     },
     "TST-CORE-870": {
       "path": "27",
       "row": 2,
       "scenario": "Estate recovery: custodian threshold met, per-beneficiary DEK derivation",
-      "line": 1576
+      "line": 1612
     },
     "TST-CORE-871": {
       "path": "27",
       "row": 3,
       "scenario": "No Dead Man's Switch \u2014 no timer-based estate activation",
-      "line": 1577
+      "line": 1613
     },
     "TST-CORE-872": {
       "path": "27",
       "row": 4,
       "scenario": "Estate `read_only_90_days` access type expires after 90 days",
-      "line": 1578
+      "line": 1614
     },
     "TST-CORE-873": {
       "path": "27",
       "row": 5,
       "scenario": "Estate `default_action` enforcement (destroy vs archive)",
-      "line": 1579
+      "line": 1615
     },
     "TST-CORE-874": {
       "path": "27",
       "row": 6,
       "scenario": "Estate SSS shares reused from identity recovery (same set, not separate)",
-      "line": 1580
+      "line": 1616
     },
     "TST-CORE-875": {
       "path": "27",
       "row": 7,
       "scenario": "Estate plan JSON structure validated (trigger, custodians, beneficiaries)",
-      "line": 1581
+      "line": 1617
     },
     "TST-CORE-876": {
       "path": "27",
       "row": 8,
       "scenario": "Estate notification list informs contacts on activation",
-      "line": 1582
+      "line": 1618
     },
     "TST-CORE-877": {
       "path": "27",
       "row": 9,
       "scenario": "Estate recovery: keys delivered via Dina-to-Dina encrypted channel",
-      "line": 1583
+      "line": 1619
     },
     "TST-CORE-878": {
       "path": "27",
       "row": 10,
       "scenario": "Estate recovery: non-assigned data destroyed per default_action",
-      "line": 1584
+      "line": 1620
     },
     "TST-CORE-879": {
       "path": "27",
       "row": 11,
       "scenario": "Estate recovery: no timer trigger exists in codebase",
-      "line": 1585
+      "line": 1621
     },
     "TST-CORE-934": {
       "path": "29.1",
       "row": 1,
       "scenario": "SendMessage stores Ed25519 signature in outbox",
-      "line": 1632
+      "line": 1668
     },
     "TST-CORE-935": {
       "path": "29.1",
       "row": 2,
       "scenario": "Valid signature accepted on receive",
-      "line": 1633
+      "line": 1669
     },
     "TST-CORE-936": {
       "path": "29.1",
       "row": 3,
       "scenario": "Wrong signature rejected (wrong signer key)",
-      "line": 1634
+      "line": 1670
     },
     "TST-CORE-937": {
       "path": "29.1",
       "row": 4,
       "scenario": "Tampered ciphertext rejected (bit flip)",
-      "line": 1635
+      "line": 1671
     },
     "TST-CORE-938": {
       "path": "29.1",
       "row": 5,
       "scenario": "Empty signature passes (backward compatibility)",
-      "line": 1636
+      "line": 1672
     },
     "TST-CORE-939": {
       "path": "29.2",
       "row": 1,
       "scenario": "ProcessOutbox delivers pending messages",
-      "line": 1642
+      "line": 1678
     },
     "TST-CORE-940": {
       "path": "29.2",
       "row": 2,
       "scenario": "Delivery failure marks message failed",
-      "line": 1643
+      "line": 1679
     },
     "TST-CORE-941": {
       "path": "29.2",
       "row": 3,
       "scenario": "Retry after transient failure succeeds",
-      "line": 1644
+      "line": 1680
     },
     "TST-CORE-942": {
       "path": "29.2",
       "row": 4,
       "scenario": "Unresolvable DID marked failed",
-      "line": 1645
+      "line": 1681
     },
     "TST-CORE-943": {
       "path": "29.2",
       "row": 5,
       "scenario": "No deliverer marks all failed",
-      "line": 1646
+      "line": 1682
     },
     "TST-CORE-944": {
       "path": "29.2",
       "row": 6,
       "scenario": "Context cancellation stops ProcessOutbox",
-      "line": 1647
+      "line": 1683
     },
     "TST-CORE-945": {
       "path": "29.2",
       "row": 7,
       "scenario": "Queue limit enforced (reject when full)",
-      "line": 1648
+      "line": 1684
     },
     "TST-CORE-946": {
       "path": "29.2",
       "row": 8,
       "scenario": "Retry count increments across attempts",
-      "line": 1649
+      "line": 1685
     },
     "TST-CORE-947": {
       "path": "29.3",
       "row": 1,
       "scenario": "IP rate limit rejects excess requests",
-      "line": 1655
+      "line": 1691
     },
     "TST-CORE-948": {
       "path": "29.3",
       "row": 2,
       "scenario": "Router.Ingest rejects flood via ErrRateLimited",
-      "line": 1656
+      "line": 1692
     },
     "TST-CORE-949": {
       "path": "29.3",
       "row": 3,
       "scenario": "Dead drop stores when vault locked",
-      "line": 1657
+      "line": 1693
     },
     "TST-CORE-950": {
       "path": "29.3",
       "row": 4,
       "scenario": "Inbox spools when vault unlocked",
-      "line": 1658
+      "line": 1694
     },
     "TST-CORE-951": {
       "path": "29.3",
       "row": 5,
       "scenario": "Spool full rejects new messages (Valve 2)",
-      "line": 1659
+      "line": 1695
     },
     "TST-CORE-952": {
       "path": "29.3",
       "row": 6,
       "scenario": "Sweeper processes dead drop blobs",
-      "line": 1660
+      "line": 1696
     },
     "TST-CORE-953": {
       "path": "29.3",
       "row": 7,
       "scenario": "ProcessPending sweeps + drains inbox",
-      "line": 1661
+      "line": 1697
     },
     "TST-CORE-954": {
       "path": "29.3",
       "row": 8,
       "scenario": "Oversized payload rejected (>256KB)",
-      "line": 1662
+      "line": 1698
     },
     "TST-CORE-955": {
       "path": "29.3",
       "row": 9,
       "scenario": "SweepFull returns detailed results",
-      "line": 1663
+      "line": 1699
     },
     "TST-CORE-956": {
       "path": "29.4",
       "row": 1,
       "scenario": "Replayed message (same ID) detected",
-      "line": 1669
+      "line": 1705
     },
     "TST-CORE-957": {
       "path": "29.4",
       "row": 2,
       "scenario": "DID spoofing rejected (FromKID mismatch)",
-      "line": 1670
+      "line": 1706
     },
     "TST-CORE-958": {
       "path": "29.5",
       "row": 1,
       "scenario": "SQL injection in message body safely deserialized",
-      "line": 1676
+      "line": 1712
     },
     "TST-CORE-959": {
       "path": "29.5",
       "row": 2,
       "scenario": "JSON escape injection safely deserialized",
-      "line": 1677
+      "line": 1713
     },
     "TST-CORE-960": {
       "path": "29.5",
       "row": 3,
       "scenario": "Oversized field in body safely deserialized",
-      "line": 1678
+      "line": 1714
     },
     "TST-CORE-961": {
       "path": "29.5",
       "row": 4,
       "scenario": "Null bytes in body safely deserialized",
-      "line": 1679
+      "line": 1715
     },
     "TST-CORE-962": {
       "path": "29.5",
       "row": 5,
       "scenario": "Nested JSON in body safely deserialized",
-      "line": 1680
+      "line": 1716
     },
     "TST-CORE-963": {
       "path": "29.5",
       "row": 6,
       "scenario": "HTML/XSS in body safely deserialized",
-      "line": 1681
+      "line": 1717
     },
     "TST-CORE-964": {
       "path": "29.6",
       "row": 1,
       "scenario": "Cross-persona DEK isolation (5 personas)",
-      "line": 1687
+      "line": 1723
     },
     "TST-CORE-965": {
       "path": "29.6",
       "row": 2,
       "scenario": "User salt uniqueness",
-      "line": 1688
+      "line": 1724
     },
     "TST-CORE-966": {
       "path": "29.6",
       "row": 3,
       "scenario": "HKDF determinism",
-      "line": 1689
+      "line": 1725
     },
     "TST-CORE-967": {
       "path": "29.6",
       "row": 4,
       "scenario": "KeyDeriver persona DEK isolation",
-      "line": 1690
+      "line": 1726
     },
     "TST-CORE-968": {
       "path": "29.6",
       "row": 5,
       "scenario": "Signing key index independence",
-      "line": 1691
+      "line": 1727
     },
     "TST-CORE-969": {
       "path": "29.7",
       "row": 1,
       "scenario": "Non-hardened path rejected",
-      "line": 1697
+      "line": 1733
     },
     "TST-CORE-970": {
       "path": "29.7",
       "row": 2,
       "scenario": "BIP-44 purpose 44' forbidden",
-      "line": 1698
+      "line": 1734
     },
     "TST-CORE-971": {
       "path": "29.7",
       "row": 3,
       "scenario": "Sibling hardened path unlinkability",
-      "line": 1699
+      "line": 1735
     },
     "TST-CORE-972": {
       "path": "29.8",
       "row": 1,
       "scenario": "Invalid checksum rejected",
-      "line": 1705
+      "line": 1741
     },
     "TST-CORE-973": {
       "path": "29.8",
       "row": 2,
       "scenario": "Wrong word count rejected (12 vs 24)",
-      "line": 1706
+      "line": 1742
     },
     "TST-CORE-974": {
       "path": "29.8",
       "row": 3,
       "scenario": "Deterministic seed derivation",
-      "line": 1707
+      "line": 1743
     },
     "TST-CORE-975": {
       "path": "29.9",
       "row": 1,
       "scenario": "Locked persona denied despite gatekeeper allow",
-      "line": 1713
+      "line": 1749
     },
     "TST-CORE-976": {
       "path": "29.9",
       "row": 2,
       "scenario": "Locked persona denial audited",
-      "line": 1714
+      "line": 1750
     },
     "TST-CORE-977": {
       "path": "29.9",
       "row": 3,
       "scenario": "Egress denied and audited",
-      "line": 1715
+      "line": 1751
     },
     "TST-CORE-978": {
       "path": "29.10",
       "row": 1,
       "scenario": "Missing policy category denied (default deny)",
-      "line": 1721
+      "line": 1757
     },
     "TST-CORE-979": {
       "path": "29.10",
       "row": 2,
-      "scenario": "Tier none blocks category",
-      "line": 1722
+      "scenario": "Tier \"none\" blocks category",
+      "line": 1758
     },
     "TST-CORE-980": {
       "path": "29.10",
       "row": 3,
-      "scenario": "No policy for contact - all categories denied",
-      "line": 1723
+      "scenario": "No policy for contact \u2192 all categories denied",
+      "line": 1759
     },
     "TST-CORE-981": {
       "path": "29.10",
       "row": 4,
       "scenario": "Malformed payload (non-TieredPayload) denied",
-      "line": 1724
+      "line": 1760
     },
     "TST-CORE-982": {
       "path": "30.1",
       "row": 1,
-      "scenario": "DINA_STRICT_REAL=1 fails on any real API fallback"
+      "scenario": "`DINA_STRICT_REAL=1` fails on any real API fallback",
+      "line": 1775
     },
     "TST-CORE-983": {
       "path": "30.1",
       "row": 2,
-      "scenario": "real_clients.py _try_request() raises on non-2xx in strict mode"
+      "scenario": "`real_clients.py _try_request()` raises on non-2xx in strict mode",
+      "line": 1776
     },
     "TST-CORE-984": {
       "path": "30.1",
       "row": 3,
-      "scenario": "real_nodes.py _api_request() raises on failure in strict mode"
+      "scenario": "`real_nodes.py _api_request()` raises on failure in strict mode",
+      "line": 1777
     },
     "TST-CORE-985": {
       "path": "30.1",
       "row": 4,
-      "scenario": "Mock side-effects disabled in strict-real suites"
+      "scenario": "Mock side-effects disabled in strict-real suites",
+      "line": 1778
     },
     "TST-CORE-986": {
       "path": "30.1",
       "row": 5,
-      "scenario": "All 45 fallback locations verified strict"
+      "scenario": "All 45 fallback locations (22+22+1) verified strict",
+      "line": 1779
     },
     "TST-CORE-987": {
       "path": "30.2",
       "row": 1,
-      "scenario": "E2E conftest uses CLIENT_TOKEN for persona create/unlock"
+      "scenario": "E2E conftest uses CLIENT_TOKEN for persona create/unlock",
+      "line": 1788
     },
     "TST-CORE-988": {
       "path": "30.2",
       "row": 2,
-      "scenario": "Integration conftest uses CLIENT_TOKEN for admin setup"
+      "scenario": "Integration conftest uses CLIENT_TOKEN for admin setup",
+      "line": 1789
     },
     "TST-CORE-989": {
       "path": "30.2",
       "row": 3,
-      "scenario": "Docker mode fails fast if CLIENT_TOKEN missing"
+      "scenario": "Docker mode fails fast if CLIENT_TOKEN missing",
+      "line": 1790
     },
     "TST-CORE-990": {
       "path": "30.2",
       "row": 4,
-      "scenario": "Matrix test: every admin endpoint rejects Service Signature Auth"
+      "scenario": "Matrix test: every admin endpoint rejects Service Signature Auth",
+      "line": 1791
     },
     "TST-CORE-991": {
       "path": "30.3",
       "row": 1,
-      "scenario": "Contract test runs against real core HTTP router"
+      "scenario": "Contract test runs against real core HTTP router",
+      "line": 1800
     },
     "TST-CORE-992": {
       "path": "30.3",
       "row": 2,
-      "scenario": "Contract test runs against real brain FastAPI app"
+      "scenario": "Contract test runs against real brain FastAPI app",
+      "line": 1801
     },
     "TST-CORE-993": {
       "path": "30.3",
       "row": 3,
-      "scenario": "Core\u2192Brain: /healthz returns 200 with status"
+      "scenario": "Core\u2192Brain: `/healthz` returns 200 with status",
+      "line": 1802
     },
     "TST-CORE-994": {
       "path": "30.3",
       "row": 4,
-      "scenario": "Core\u2192Brain: /api/v1/process accepts {task_id, type, payload}"
+      "scenario": "Core\u2192Brain: `/api/v1/process` accepts `{task_id, type, payload}`",
+      "line": 1803
     },
     "TST-CORE-995": {
       "path": "30.3",
       "row": 5,
-      "scenario": "Core\u2192Brain: /api/v1/reason accepts {prompt:...}"
+      "scenario": "Core\u2192Brain: `/api/v1/reason` accepts `{\"prompt\":...}`",
+      "line": 1804
     },
     "TST-CORE-996": {
       "path": "30.3",
       "row": 6,
-      "scenario": "Brain\u2192Core: /v1/vault/query with persona+q"
+      "scenario": "Brain\u2192Core: `/v1/vault/query` with persona+q",
+      "line": 1805
     },
     "TST-CORE-997": {
       "path": "30.3",
       "row": 7,
-      "scenario": "Brain\u2192Core: /v1/pii/scrub with text body"
+      "scenario": "Brain\u2192Core: `/v1/pii/scrub` with text body",
+      "line": 1806
     },
     "TST-CORE-998": {
       "path": "30.3",
       "row": 8,
-      "scenario": "JSON schema frozen: golden request/response examples"
+      "scenario": "JSON schema frozen: golden request/response examples",
+      "line": 1807
     },
     "TST-CORE-999": {
       "path": "30.4",
       "row": 1,
-      "scenario": "create_app() boot smoke under minimal env"
+      "scenario": "`create_app()` boot smoke under minimal env",
+      "line": 1815
     },
     "TST-CORE-1000": {
       "path": "30.4",
       "row": 2,
-      "scenario": "Degraded startup: missing spaCy model"
+      "scenario": "Degraded startup: missing spaCy model",
+      "line": 1816
     },
     "TST-CORE-1001": {
       "path": "30.4",
       "row": 3,
-      "scenario": "/healthz component status correctness"
+      "scenario": "`/healthz` component status correctness",
+      "line": 1817
     },
     "TST-CORE-1002": {
       "path": "30.5",
       "row": 1,
-      "scenario": "send_d2d produces valid JSON (no bytes-in-JSON)"
+      "scenario": "`send_d2d` produces valid JSON (no bytes-in-JSON)",
+      "line": 1826
     },
     "TST-CORE-1003": {
       "path": "30.5",
       "row": 2,
-      "scenario": "wiring_test.go mock brain serves /healthz"
+      "scenario": "`wiring_test.go` mock brain serves `/healthz`",
+      "line": 1827
     },
     "TST-CORE-1004": {
       "path": "30.5",
       "row": 3,
-      "scenario": "brainclient_test.go health tests use /healthz"
+      "scenario": "`brainclient_test.go` health tests use `/healthz`",
+      "line": 1828
     },
     "TST-CORE-1005": {
       "path": "30.5",
       "row": 4,
-      "scenario": "No client_token or brain_token fallback in conftest"
+      "scenario": "No `client_token or brain_token` fallback in any conftest",
+      "line": 1829
     },
     "TST-CORE-1006": {
       "path": "30.5",
       "row": 5,
-      "scenario": "Negative assertions for old contracts"
+      "scenario": "Negative assertions for old contracts",
+      "line": 1830
     },
     "TST-CORE-1007": {
       "path": "30.6",
       "row": 1,
-      "scenario": "Hard cleanup per test class in real suites"
+      "scenario": "Hard cleanup per test class in real suites",
+      "line": 1838
     },
     "TST-CORE-1008": {
       "path": "30.6",
       "row": 2,
-      "scenario": "Dirty state detector fails on prior-run artifacts"
+      "scenario": "Dirty state detector fails on prior-run artifacts",
+      "line": 1839
     },
     "TST-CORE-1009": {
       "path": "30.6",
       "row": 3,
-      "scenario": "Real delete APIs used (not visibility filtering)"
+      "scenario": "Real delete APIs used (not visibility filtering)",
+      "line": 1840
     },
     "TST-CORE-1010": {
       "path": "30.7",
       "row": 1,
-      "scenario": "Manifest total counts match actual test counts"
+      "scenario": "Manifest `total` counts match actual test counts",
+      "line": 1848
     },
     "TST-CORE-1011": {
       "path": "30.7",
       "row": 2,
-      "scenario": "pytest --collect-only maps to plan IDs"
+      "scenario": "`pytest --collect-only` maps to plan IDs",
+      "line": 1849
     },
     "TST-CORE-1012": {
       "path": "30.7",
       "row": 3,
-      "scenario": "go test -list maps to plan IDs"
+      "scenario": "`go test -list` maps to plan IDs",
+      "line": 1850
     },
     "TST-CORE-1013": {
       "path": "30.7",
       "row": 4,
-      "scenario": "CI validates manifest totals are non-zero"
+      "scenario": "CI validates manifest totals are non-zero",
+      "line": 1851
     },
     "TST-CORE-1014": {
       "path": "30.8",
       "row": 1,
-      "scenario": "CI stage: unit-core"
+      "scenario": "CI stage: `unit-core`",
+      "line": 1859
     },
     "TST-CORE-1015": {
       "path": "30.8",
       "row": 2,
-      "scenario": "CI stage: unit-brain"
+      "scenario": "CI stage: `unit-brain`",
+      "line": 1860
     },
     "TST-CORE-1016": {
       "path": "30.8",
       "row": 3,
-      "scenario": "CI stage: contract-core-brain"
+      "scenario": "CI stage: `contract-core-brain`",
+      "line": 1861
     },
     "TST-CORE-1017": {
       "path": "30.8",
       "row": 4,
-      "scenario": "CI stage: integration-real"
+      "scenario": "CI stage: `integration-real`",
+      "line": 1862
     },
     "TST-CORE-1018": {
       "path": "30.8",
       "row": 5,
-      "scenario": "CI stage: e2e-smoke-real"
+      "scenario": "CI stage: `e2e-smoke-real`",
+      "line": 1863
     },
     "TST-CORE-1019": {
       "path": "30.9",
       "row": 1,
-      "scenario": "Legacy tests in explicit profile"
+      "scenario": "Legacy tests in explicit profile",
+      "line": 1871
     },
     "TST-CORE-1020": {
       "path": "30.9",
       "row": 2,
-      "scenario": "Default pipeline excludes legacy tests"
+      "scenario": "Default pipeline excludes legacy tests",
+      "line": 1872
     },
     "TST-CORE-1021": {
       "path": "30.9",
       "row": 3,
-      "scenario": "Compatibility tests labeled explicitly"
+      "scenario": "Compatibility tests labeled explicitly",
+      "line": 1873
     },
     "TST-CORE-1022": {
       "path": "30.10",
       "row": 1,
-      "scenario": "Service Signature Auth denied on all admin endpoints (real HTTP)"
+      "scenario": "Service Signature Auth denied on all admin endpoints (real HTTP)",
+      "line": 1882
     },
     "TST-CORE-1023": {
       "path": "30.10",
       "row": 2,
-      "scenario": "CLIENT_TOKEN denied on brain-internal endpoints (real HTTP)"
+      "scenario": "CLIENT_TOKEN denied on brain-internal endpoints (real HTTP)",
+      "line": 1883
     },
     "TST-CORE-1024": {
       "path": "30.10",
       "row": 3,
-      "scenario": "Locked persona: dead-drop ingress, no reads (real)"
+      "scenario": "Locked persona: dead-drop ingress, no reads (real)",
+      "line": 1884
     },
     "TST-CORE-1025": {
       "path": "30.10",
       "row": 4,
-      "scenario": "Draft-don't-send: no direct send path from brain"
+      "scenario": "Draft-don't-send: no direct send path from brain",
+      "line": 1885
     },
     "TST-CORE-1026": {
       "path": "30.10",
       "row": 5,
-      "scenario": "Egress policy enforcement for all categories (real)"
+      "scenario": "Egress policy enforcement for all categories (real)",
+      "line": 1886
     },
     "TST-CORE-1027": {
       "path": "30.11",
       "row": 1,
-      "scenario": "Real cross-node D2D: sign \u2192 encrypt \u2192 POST \u2192 decrypt \u2192 verify"
+      "scenario": "Real cross-node D2D: sign \u2192 encrypt \u2192 POST \u2192 decrypt \u2192 verify",
+      "line": 1895
     },
     "TST-CORE-1028": {
       "path": "30.11",
       "row": 2,
-      "scenario": "DID resolution + endpoint verification (networked)"
+      "scenario": "DID resolution + endpoint verification (networked)",
+      "line": 1896
     },
     "TST-CORE-1029": {
       "path": "30.11",
       "row": 3,
-      "scenario": "Key rotation tested with real persistence + restart"
+      "scenario": "Key rotation tested with real persistence + restart",
+      "line": 1897
     },
     "TST-CORE-1030": {
       "path": "30.11",
       "row": 4,
-      "scenario": "Ed25519 \u2192 X25519 conversion verified across nodes"
+      "scenario": "Ed25519 \u2192 X25519 conversion verified across nodes",
+      "line": 1898
     },
     "TST-CORE-1031": {
       "path": "31.1",
       "row": 1,
-      "scenario": "DrainSpool returns all non-expired payloads"
+      "scenario": "DrainSpool returns all non-expired payloads",
+      "line": 1918
     },
     "TST-CORE-1032": {
       "path": "31.1",
       "row": 2,
-      "scenario": "DrainSpool skips expired messages"
+      "scenario": "DrainSpool skips expired messages",
+      "line": 1919
     },
     "TST-CORE-1033": {
       "path": "31.1",
       "row": 3,
-      "scenario": "onEnvelope callback fires on fast-path ingest"
+      "scenario": "onEnvelope callback fires on fast-path ingest",
+      "line": 1920
     },
     "TST-CORE-1034": {
       "path": "31.1",
       "row": 4,
-      "scenario": "SendMessage populates msg.From from senderDID"
+      "scenario": "SendMessage populates msg.From from senderDID",
+      "line": 1921
     },
     "TST-CORE-1035": {
       "path": "31.1",
       "row": 5,
-      "scenario": "DINA_OWN_DID loaded into Config.OwnDID"
+      "scenario": "DINA_OWN_DID loaded into Config.OwnDID",
+      "line": 1922
     },
     "TST-CORE-1036": {
       "path": "31.1",
       "row": 6,
-      "scenario": "Immediate decrypt: no 10s delay for D2D"
+      "scenario": "Immediate decrypt: no 10s delay for D2D",
+      "line": 1923
     },
     "TST-CORE-1037": {
       "path": "31.1",
       "row": 7,
-      "scenario": "Cross-node D2D: Alonso \u2192 Sancho roundtrip"
+      "scenario": "Cross-node D2D: Alonso \u2192 Sancho roundtrip",
+      "line": 1924
     },
     "TST-CORE-1038": {
       "path": "31.1",
       "row": 8,
-      "scenario": "Cross-node D2D: Sancho \u2192 Alonso roundtrip"
+      "scenario": "Cross-node D2D: Sancho \u2192 Alonso roundtrip",
+      "line": 1925
     },
     "TST-CORE-1039": {
       "path": "31.1",
       "row": 9,
-      "scenario": "Cross-node D2D: multicast (Alonso \u2192 all 3)"
+      "scenario": "Cross-node D2D: multicast (Alonso \u2192 all 3)",
+      "line": 1926
     },
     "TST-CORE-1040": {
       "path": "31.2",
       "row": 1,
-      "scenario": "TaskEvent marshals to snake_case JSON"
+      "scenario": "TaskEvent marshals to `{\"task_id\":\"...\",\"type\":\"...\",\"payload\":{}}`",
+      "line": 1936
     },
     "TST-CORE-1041": {
       "path": "31.2",
       "row": 2,
-      "scenario": "ProcessEventRequest accepts task_id field"
+      "scenario": "ProcessEventRequest accepts `task_id` field",
+      "line": 1937
     },
     "TST-CORE-1042": {
       "path": "31.2",
       "row": 3,
-      "scenario": "BrainClient.Reason sends prompt (not query)"
+      "scenario": "BrainClient.Reason sends `{\"prompt\":\"...\"}`",
+      "line": 1938
     },
     "TST-CORE-1043": {
       "path": "31.2",
       "row": 4,
-      "scenario": "ReasonResult: content,model,tokens_in,tokens_out"
+      "scenario": "ReasonResult: `{content, model, tokens_in, tokens_out}`",
+      "line": 1939
     },
     "TST-CORE-1044": {
       "path": "31.2",
       "row": 5,
-      "scenario": "BrainClient health check hits /healthz"
+      "scenario": "BrainClient health check hits `/healthz`",
+      "line": 1940
     },
     "TST-CORE-1045": {
       "path": "31.2",
       "row": 6,
-      "scenario": "Circuit breaker tracks /healthz failures"
+      "scenario": "Circuit breaker tracks `/healthz` failures",
+      "line": 1941
     },
     "TST-CORE-1046": {
       "path": "31.3",
       "row": 1,
-      "scenario": "PUT KV with JSON body {value:hello}"
+      "scenario": "PUT KV with JSON body `{\"value\":\"hello\"}`",
+      "line": 1949
     },
     "TST-CORE-1047": {
       "path": "31.3",
       "row": 2,
-      "scenario": "GET KV returns JSON {value:...}"
+      "scenario": "GET KV returns JSON `{\"value\":\"...\"}`",
+      "line": 1950
     },
     "TST-CORE-1048": {
       "path": "31.3",
       "row": 3,
-      "scenario": "PUT KV with raw body (backward compat)"
+      "scenario": "PUT KV with raw body (backward compat)",
+      "line": 1951
     },
     "TST-CORE-1049": {
       "path": "31.4",
       "row": 1,
-      "scenario": "Hybrid query returns FTS5 results (not empty)"
+      "scenario": "Hybrid query returns FTS5 results (not empty)",
+      "line": 1959
     },
     "TST-CORE-1050": {
       "path": "31.4",
       "row": 2,
-      "scenario": "Degradation signal in response"
+      "scenario": "Degradation signal in response",
+      "line": 1960
     },
     "TST-CORE-1051": {
       "path": "31.4",
       "row": 3,
-      "scenario": "Semantic query returns FTS5 with degradation flag"
+      "scenario": "Semantic query returns FTS5 with degradation flag",
+      "line": 1961
     },
     "TST-CORE-1052": {
       "path": "31.5",
       "row": 1,
-      "scenario": "PUT /v1/contacts/{did} updates contact name"
+      "scenario": "PUT /v1/contacts/{did} updates contact name",
+      "line": 1969
     },
     "TST-CORE-1053": {
       "path": "31.5",
       "row": 2,
-      "scenario": "DELETE /v1/contacts/{did} removes contact"
+      "scenario": "DELETE /v1/contacts/{did} removes contact",
+      "line": 1970
     },
     "TST-CORE-1054": {
       "path": "31.5",
       "row": 3,
-      "scenario": "Admin UI update calls core API (not vault hack)"
+      "scenario": "Admin UI update calls core API (not vault hack)",
+      "line": 1971
     },
     "TST-CORE-1055": {
       "path": "31.6",
       "row": 1,
-      "scenario": "Default brain config core URL is http://core:8100"
+      "scenario": "Default brain config core URL is `http://core:8100`",
+      "line": 1980
     },
     "TST-CORE-1056": {
       "path": "31.6",
       "row": 2,
-      "scenario": "DINA_OWN_DID env var loaded"
+      "scenario": "DINA_OWN_DID env var loaded",
+      "line": 1981
     },
     "TST-CORE-1057": {
       "path": "31.6",
       "row": 3,
-      "scenario": "DINA_KNOWN_PEERS parsed into peer registry"
+      "scenario": "DINA_KNOWN_PEERS parsed into peer registry",
+      "line": 1982
+    },
+    "TST-CORE-1071": {
+      "path": "31.7",
+      "row": 1,
+      "scenario": "OnEnvelope error falls back to dead-drop",
+      "line": 1992
+    },
+    "TST-CORE-1072": {
+      "path": "31.7",
+      "row": 2,
+      "scenario": "ProcessPending re-spools on error",
+      "line": 1993
+    },
+    "TST-CORE-1073": {
+      "path": "31.7",
+      "row": 3,
+      "scenario": "Complete removes in-flight task",
+      "line": 1994
+    },
+    "TST-CORE-1074": {
+      "path": "31.7",
+      "row": 4,
+      "scenario": "Sweeper has SetTransport",
+      "line": 1995
+    },
+    "TST-CORE-1075": {
+      "path": "31.7",
+      "row": 5,
+      "scenario": "Error sanitization hides internal details",
+      "line": 1996
+    },
+    "TST-CORE-1076": {
+      "path": "31.7",
+      "row": 6,
+      "scenario": "WS components constructable",
+      "line": 1997
+    },
+    "TST-CORE-1077": {
+      "path": "31.7",
+      "row": 7,
+      "scenario": "DeleteExpired prunes sentIDs",
+      "line": 1998
+    },
+    "TST-CORE-1078": {
+      "path": "31.7",
+      "row": 8,
+      "scenario": "VaultStore rejects oversized item",
+      "line": 1999
+    },
+    "TST-CORE-1079": {
+      "path": "31.7",
+      "row": 9,
+      "scenario": "VaultStore rejects invalid type",
+      "line": 2000
+    },
+    "TST-CORE-1080": {
+      "path": "31.7",
+      "row": 10,
+      "scenario": "VaultStoreBatch rejects invalid item",
+      "line": 2001
+    },
+    "TST-CORE-1081": {
+      "path": "31.7",
+      "row": 11,
+      "scenario": "VaultStore accepts valid types",
+      "line": 2002
+    },
+    "TST-CORE-1082": {
+      "path": "31.7",
+      "row": 12,
+      "scenario": "CORS wildcard sets * no credentials",
+      "line": 2003
+    },
+    "TST-CORE-1083": {
+      "path": "31.7",
+      "row": 13,
+      "scenario": "CORS whitelist sets credentials",
+      "line": 2004
+    },
+    "TST-CORE-1084": {
+      "path": "31.7",
+      "row": 14,
+      "scenario": "CORS wildcard preflight returns 204",
+      "line": 2005
+    },
+    "TST-CORE-1085": {
+      "path": "31.7",
+      "row": 15,
+      "scenario": "WS default upgrader secure by default",
+      "line": 2006
+    },
+    "TST-CORE-1086": {
+      "path": "31.7",
+      "row": 16,
+      "scenario": "WS InsecureSkipVerify enabled",
+      "line": 2007
+    },
+    "TST-CORE-1087": {
+      "path": "31.7",
+      "row": 17,
+      "scenario": "WS WithOriginPatterns configurable",
+      "line": 2008
+    },
+    "TST-CORE-1088": {
+      "path": "31.8",
+      "row": 1,
+      "scenario": "SendMessage delivery is JSON wrapper",
+      "line": 2016
+    },
+    "TST-CORE-1089": {
+      "path": "31.8",
+      "row": 2,
+      "scenario": "ProcessInbound JSON wrapper valid sig",
+      "line": 2017
+    },
+    "TST-CORE-1090": {
+      "path": "31.8",
+      "row": 3,
+      "scenario": "ProcessInbound JSON wrapper tampered sig",
+      "line": 2018
+    },
+    "TST-CORE-1091": {
+      "path": "31.8",
+      "row": 4,
+      "scenario": "ProcessInbound JSON wrapper empty sig",
+      "line": 2019
+    },
+    "TST-CORE-1092": {
+      "path": "31.8",
+      "row": 5,
+      "scenario": "ProcessInbound raw bytes legacy migration",
+      "line": 2020
+    },
+    "TST-CORE-1093": {
+      "path": "31.8",
+      "row": 6,
+      "scenario": "ProcessInbound raw bytes legacy rejected",
+      "line": 2021
+    },
+    "TST-CORE-1094": {
+      "path": "31.8",
+      "row": 7,
+      "scenario": "ProcessInbound DID spoofing rejected",
+      "line": 2022
+    },
+    "TST-CORE-1095": {
+      "path": "31.8",
+      "row": 8,
+      "scenario": "ProcessOutbox uses JSON wrapper",
+      "line": 2023
+    },
+    "TST-CORE-1096": {
+      "path": "31.8",
+      "row": 9,
+      "scenario": "Full roundtrip send and receive with sig",
+      "line": 2024
+    },
+    "TST-CORE-1058": {
+      "path": "32.1",
+      "row": 1,
+      "scenario": "Replay signature rejected",
+      "line": 2040
+    },
+    "TST-CORE-1059": {
+      "path": "32.1",
+      "row": 2,
+      "scenario": "Different signatures accepted",
+      "line": 2041
+    },
+    "TST-CORE-1060": {
+      "path": "32.1",
+      "row": 3,
+      "scenario": "Double-buffer rotation",
+      "line": 2042
+    },
+    "TST-CORE-1061": {
+      "path": "32.1",
+      "row": 4,
+      "scenario": "Safety valve under load",
+      "line": 2043
+    },
+    "TST-CORE-1062": {
+      "path": "32.2",
+      "row": 1,
+      "scenario": "Inbound cap enforced",
+      "line": 2051
+    },
+    "TST-CORE-1063": {
+      "path": "32.2",
+      "row": 2,
+      "scenario": "Clear inbound works",
+      "line": 2052
+    },
+    "TST-CORE-1064": {
+      "path": "32.3",
+      "row": 1,
+      "scenario": "Per-DID rate isolation",
+      "line": 2060
+    },
+    "TST-CORE-1065": {
+      "path": "32.3",
+      "row": 2,
+      "scenario": "Rate limit reset after window",
+      "line": 2061
+    },
+    "TST-CORE-1066": {
+      "path": "32.4",
+      "row": 1,
+      "scenario": "Hard cap enforced",
+      "line": 2069
+    },
+    "TST-CORE-1067": {
+      "path": "32.4",
+      "row": 2,
+      "scenario": "CompletePairing frees slot",
+      "line": 2070
+    },
+    "TST-CORE-1068": {
+      "path": "32.4",
+      "row": 3,
+      "scenario": "Purge frees expired slots",
+      "line": 2071
+    },
+    "TST-CORE-1069": {
+      "path": "32.4",
+      "row": 4,
+      "scenario": "Immediate cleanup on use",
+      "line": 2072
+    },
+    "TST-CORE-1070": {
+      "path": "32.5",
+      "row": 1,
+      "scenario": "WellKnown idempotent",
+      "line": 2080
     },
     "TST-CORE-1106": {
       "path": "33.1",
       "row": 1,
-      "scenario": "DID metadata corruption fails closed on startup path"
+      "scenario": "DID metadata corruption fails closed on startup path",
+      "line": 2090
     },
     "TST-CORE-1107": {
       "path": "33.1",
       "row": 2,
-      "scenario": "Root signing generation persists across restart"
+      "scenario": "Root signing generation persists across restart",
+      "line": 2091
     },
     "TST-CORE-1108": {
       "path": "33.1",
       "row": 3,
-      "scenario": "Deterministic rotation rejects non-next-generation key"
+      "scenario": "Deterministic rotation rejects non-next-generation key",
+      "line": 2092
     },
     "TST-CORE-1109": {
       "path": "33.1",
       "row": 4,
-      "scenario": "PLC derivation branch isolated from persona and service branches"
+      "scenario": "PLC derivation branch isolated from persona and service branches",
+      "line": 2093
     },
     "TST-CORE-1110": {
       "path": "33.2",
       "row": 1,
-      "scenario": "Unlock hydrates in-memory HNSW from encrypted blobs"
+      "scenario": "Unlock hydrates in-memory HNSW from encrypted blobs",
+      "line": 2099
     },
     "TST-CORE-1111": {
       "path": "33.2",
       "row": 2,
-      "scenario": "Persona lock destroys HNSW index"
+      "scenario": "Persona lock destroys HNSW index",
+      "line": 2100
     },
     "TST-CORE-1112": {
       "path": "33.2",
       "row": 3,
-      "scenario": "No plaintext vector side files exist"
+      "scenario": "No plaintext vector side files exist",
+      "line": 2101
     },
     "TST-CORE-1113": {
       "path": "33.2",
       "row": 4,
-      "scenario": "Restart rebuilds vector index from SQLCipher data"
+      "scenario": "Restart rebuilds vector index from SQLCipher data",
+      "line": 2102
     },
     "TST-CORE-1114": {
       "path": "33.3",
       "row": 1,
-      "scenario": "Production compose files use no floating latest tags"
+      "scenario": "Production compose files use no floating `latest` tags",
+      "line": 2108
     },
     "TST-CORE-1115": {
       "path": "33.3",
       "row": 2,
-      "scenario": "No unexpected public routes beyond documented API surface"
+      "scenario": "No unexpected public routes beyond documented API surface",
+      "line": 2109
     },
     "TST-CORE-1116": {
       "path": "33.3",
       "row": 3,
-      "scenario": "No plaintext vector or index artifact patterns in codebase"
+      "scenario": "No plaintext vector or index artifact patterns in codebase",
+      "line": 2110
+    },
+    "TST-CORE-1117": {
+      "path": "34.1",
+      "row": 1,
+      "scenario": "Bot response with sponsored content tagged",
+      "line": 2125
+    },
+    "TST-CORE-1118": {
+      "path": "34.1",
+      "row": 2,
+      "scenario": "Bot response without attribution rejected at ingestion",
+      "line": 2126
+    },
+    "TST-CORE-1119": {
+      "path": "34.1",
+      "row": 3,
+      "scenario": "Deep link preserved through vault store/retrieve cycle",
+      "line": 2127
+    },
+    "TST-CORE-1120": {
+      "path": "34.1",
+      "row": 4,
+      "scenario": "Vault item provenance chain immutable after storage",
+      "line": 2128
+    },
+    "TST-CORE-1121": {
+      "path": "34.1",
+      "row": 5,
+      "scenario": "User sharing policy overrides bot-suggested visibility",
+      "line": 2129
+    },
+    "TST-CORE-1144": {
+      "path": "34.1",
+      "row": 6,
+      "scenario": "Sponsorship has zero ranking weight",
+      "line": 2130
+    },
+    "TST-CORE-1122": {
+      "path": "34.2",
+      "row": 1,
+      "scenario": "Agent attempts cross-persona vault query",
+      "line": 2139
+    },
+    "TST-CORE-1123": {
+      "path": "34.2",
+      "row": 2,
+      "scenario": "Agent attempts admin endpoint via service signature",
+      "line": 2140
+    },
+    "TST-CORE-1124": {
+      "path": "34.2",
+      "row": 3,
+      "scenario": "Agent attempts to read other agents' data",
+      "line": 2141
+    },
+    "TST-CORE-1125": {
+      "path": "34.2",
+      "row": 4,
+      "scenario": "Agent attempts rate limit bypass via concurrent requests",
+      "line": 2142
+    },
+    "TST-CORE-1126": {
+      "path": "34.2",
+      "row": 5,
+      "scenario": "Agent attempts to exfiltrate vault via oversized query",
+      "line": 2143
+    },
+    "TST-CORE-1127": {
+      "path": "34.2",
+      "row": 6,
+      "scenario": "Agent sends malformed intent to bypass gatekeeper",
+      "line": 2144
+    },
+    "TST-CORE-1128": {
+      "path": "34.2",
+      "row": 7,
+      "scenario": "Agent attempts credential harvesting via error messages",
+      "line": 2145
+    },
+    "TST-CORE-1129": {
+      "path": "34.2",
+      "row": 8,
+      "scenario": "Agent revocation takes immediate effect",
+      "line": 2146
+    },
+    "TST-CORE-1130": {
+      "path": "34.2",
+      "row": 9,
+      "scenario": "Agent cannot escalate from task-scoped to full access",
+      "line": 2147
+    },
+    "TST-CORE-1131": {
+      "path": "34.2",
+      "row": 10,
+      "scenario": "Agent cannot forge `from_did` in outbound D2D messages",
+      "line": 2148
+    },
+    "TST-CORE-1132": {
+      "path": "35.1",
+      "row": 1,
+      "scenario": "WebSocket push requires explicit priority",
+      "line": 2162
+    },
+    "TST-CORE-1133": {
+      "path": "35.1",
+      "row": 2,
+      "scenario": "Engagement-tier notification never pushed via WebSocket",
+      "line": 2163
+    },
+    "TST-CORE-1134": {
+      "path": "35.1",
+      "row": 3,
+      "scenario": "Fiduciary notification pushed even during DND",
+      "line": 2164
+    },
+    "TST-CORE-1135": {
+      "path": "35.1",
+      "row": 4,
+      "scenario": "Solicited notification deferred during DND",
+      "line": 2165
+    },
+    "TST-CORE-1136": {
+      "path": "35.1",
+      "row": 5,
+      "scenario": "Notification rate limiting per client",
+      "line": 2166
+    },
+    "TST-CORE-1137": {
+      "path": "35.1",
+      "row": 6,
+      "scenario": "Brain cannot bypass priority classification",
+      "line": 2167
+    },
+    "TST-CORE-1138": {
+      "path": "36.1",
+      "row": 1,
+      "scenario": "Staging items auto-expire after TTL",
+      "line": 2181
+    },
+    "TST-CORE-1139": {
+      "path": "36.1",
+      "row": 2,
+      "scenario": "Staging item cannot be executed without user approval",
+      "line": 2182
+    },
+    "TST-CORE-1140": {
+      "path": "36.1",
+      "row": 3,
+      "scenario": "Approval token single-use",
+      "line": 2183
+    },
+    "TST-CORE-1141": {
+      "path": "36.1",
+      "row": 4,
+      "scenario": "Approval expires if not acted on",
+      "line": 2184
+    },
+    "TST-CORE-1142": {
+      "path": "36.1",
+      "row": 5,
+      "scenario": "Batch approvals require individual consent",
+      "line": 2185
+    },
+    "TST-CORE-1143": {
+      "path": "36.1",
+      "row": 6,
+      "scenario": "Cart handover intent: no payment credentials stored",
+      "line": 2186
+    },
+    "TST-CORE-1145": {
+      "path": "37.1",
+      "row": 1,
+      "scenario": "Happy path \u2014 completed execution task bridged to D2D response",
+      "line": 2204
+    },
+    "TST-CORE-1146": {
+      "path": "37.1",
+      "row": 2,
+      "scenario": "Result fails schema validation",
+      "line": 2205
+    },
+    "TST-CORE-1147": {
+      "path": "37.1",
+      "row": 3,
+      "scenario": "Failed execution task bridges to error response",
+      "line": 2206
+    },
+    "TST-CORE-1148": {
+      "path": "37.1",
+      "row": 4,
+      "scenario": "Reconciler finds Python-serialised tasks",
+      "line": 2207
+    },
+    "TST-CORE-1149": {
+      "path": "37.1",
+      "row": 5,
+      "scenario": "Transport send failure leaves no `service_response_sent` event",
+      "line": 2208
+    },
+    "TST-CORE-1150": {
+      "path": "37.2",
+      "row": 1,
+      "scenario": "Valid public config accepted",
+      "line": 2216
+    },
+    "TST-CORE-1151": {
+      "path": "37.2",
+      "row": 2,
+      "scenario": "Public capability missing capability_schemas entry",
+      "line": 2217
+    },
+    "TST-CORE-1152": {
+      "path": "37.2",
+      "row": 3,
+      "scenario": "Capability schema missing schema_hash",
+      "line": 2218
+    },
+    "TST-CORE-1153": {
+      "path": "37.2",
+      "row": 4,
+      "scenario": "Malformed JSON Schema rejected",
+      "line": 2219
+    },
+    "TST-CORE-1154": {
+      "path": "37.2",
+      "row": 5,
+      "scenario": "Auto policy without mcp_server/mcp_tool accepted",
+      "line": 2220
     }
   },
   "sections": {
@@ -6387,6 +6990,17 @@
       "TST-CORE-053",
       "TST-CORE-054",
       "TST-CORE-055"
+    ],
+    "1.6": [
+      "TST-CORE-1097",
+      "TST-CORE-1098",
+      "TST-CORE-1099",
+      "TST-CORE-1100",
+      "TST-CORE-1101",
+      "TST-CORE-1102",
+      "TST-CORE-1103",
+      "TST-CORE-1104",
+      "TST-CORE-1105"
     ],
     "2.1": [
       "TST-CORE-056",
@@ -7448,6 +8062,28 @@
       "TST-CORE-878",
       "TST-CORE-879"
     ],
+    "28": [
+      "TST-CORE-880",
+      "TST-CORE-881",
+      "TST-CORE-882",
+      "TST-CORE-883",
+      "TST-CORE-884",
+      "TST-CORE-885",
+      "TST-CORE-886",
+      "TST-CORE-887",
+      "TST-CORE-888",
+      "TST-CORE-889",
+      "TST-CORE-890",
+      "TST-CORE-891",
+      "TST-CORE-892",
+      "TST-CORE-893",
+      "TST-CORE-894",
+      "TST-CORE-895",
+      "TST-CORE-896",
+      "TST-CORE-897",
+      "TST-CORE-898",
+      "TST-CORE-899"
+    ],
     "29.1": [
       "TST-CORE-934",
       "TST-CORE-935",
@@ -7625,7 +8261,129 @@
       "TST-CORE-1055",
       "TST-CORE-1056",
       "TST-CORE-1057"
+    ],
+    "31.7": [
+      "TST-CORE-1071",
+      "TST-CORE-1072",
+      "TST-CORE-1073",
+      "TST-CORE-1074",
+      "TST-CORE-1075",
+      "TST-CORE-1076",
+      "TST-CORE-1077",
+      "TST-CORE-1078",
+      "TST-CORE-1079",
+      "TST-CORE-1080",
+      "TST-CORE-1081",
+      "TST-CORE-1082",
+      "TST-CORE-1083",
+      "TST-CORE-1084",
+      "TST-CORE-1085",
+      "TST-CORE-1086",
+      "TST-CORE-1087"
+    ],
+    "31.8": [
+      "TST-CORE-1088",
+      "TST-CORE-1089",
+      "TST-CORE-1090",
+      "TST-CORE-1091",
+      "TST-CORE-1092",
+      "TST-CORE-1093",
+      "TST-CORE-1094",
+      "TST-CORE-1095",
+      "TST-CORE-1096"
+    ],
+    "32.1": [
+      "TST-CORE-1058",
+      "TST-CORE-1059",
+      "TST-CORE-1060",
+      "TST-CORE-1061"
+    ],
+    "32.2": [
+      "TST-CORE-1062",
+      "TST-CORE-1063"
+    ],
+    "32.3": [
+      "TST-CORE-1064",
+      "TST-CORE-1065"
+    ],
+    "32.4": [
+      "TST-CORE-1066",
+      "TST-CORE-1067",
+      "TST-CORE-1068",
+      "TST-CORE-1069"
+    ],
+    "32.5": [
+      "TST-CORE-1070"
+    ],
+    "33.1": [
+      "TST-CORE-1106",
+      "TST-CORE-1107",
+      "TST-CORE-1108",
+      "TST-CORE-1109"
+    ],
+    "33.2": [
+      "TST-CORE-1110",
+      "TST-CORE-1111",
+      "TST-CORE-1112",
+      "TST-CORE-1113"
+    ],
+    "33.3": [
+      "TST-CORE-1114",
+      "TST-CORE-1115",
+      "TST-CORE-1116"
+    ],
+    "34.1": [
+      "TST-CORE-1117",
+      "TST-CORE-1118",
+      "TST-CORE-1119",
+      "TST-CORE-1120",
+      "TST-CORE-1121",
+      "TST-CORE-1144"
+    ],
+    "34.2": [
+      "TST-CORE-1122",
+      "TST-CORE-1123",
+      "TST-CORE-1124",
+      "TST-CORE-1125",
+      "TST-CORE-1126",
+      "TST-CORE-1127",
+      "TST-CORE-1128",
+      "TST-CORE-1129",
+      "TST-CORE-1130",
+      "TST-CORE-1131"
+    ],
+    "35.1": [
+      "TST-CORE-1132",
+      "TST-CORE-1133",
+      "TST-CORE-1134",
+      "TST-CORE-1135",
+      "TST-CORE-1136",
+      "TST-CORE-1137"
+    ],
+    "36.1": [
+      "TST-CORE-1138",
+      "TST-CORE-1139",
+      "TST-CORE-1140",
+      "TST-CORE-1141",
+      "TST-CORE-1142",
+      "TST-CORE-1143"
+    ],
+    "37.1": [
+      "TST-CORE-1145",
+      "TST-CORE-1146",
+      "TST-CORE-1147",
+      "TST-CORE-1148",
+      "TST-CORE-1149"
+    ],
+    "37.2": [
+      "TST-CORE-1150",
+      "TST-CORE-1151",
+      "TST-CORE-1152",
+      "TST-CORE-1153",
+      "TST-CORE-1154"
     ]
   },
-  "total": 1057
+  "total": 1154,
+  "highest_id": 1154,
+  "newly_tagged": 0
 }

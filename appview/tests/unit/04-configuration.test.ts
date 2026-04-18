@@ -173,15 +173,18 @@ describe('§4.2 Constants', () => {
 // §4.3 Lexicons
 // ---------------------------------------------------------------------------
 describe('§4.3 Lexicons', () => {
-  // TRACE: {"suite": "APPVIEW", "case": "0219", "section": "01", "sectionName": "General", "title": "UT-LEX-001: TRUST_COLLECTIONS has 19 entries"}
-  it('UT-LEX-001: TRUST_COLLECTIONS has 19 entries', () => {
-    expect(TRUST_COLLECTIONS).toHaveLength(19)
+  // TRACE: {"suite": "APPVIEW", "case": "0219", "section": "01", "sectionName": "General", "title": "UT-LEX-001: TRUST_COLLECTIONS has 20 entries"}
+  it('UT-LEX-001: TRUST_COLLECTIONS has 20 entries', () => {
+    // 19 trust.* records + 1 service.profile (the WS2 discovery record).
+    expect(TRUST_COLLECTIONS).toHaveLength(20)
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0220", "section": "01", "sectionName": "General", "title": "UT-LEX-002: all entries prefixed with "}
-  it('UT-LEX-002: all entries prefixed with "com.dina.trust."', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0220", "section": "01", "sectionName": "General", "title": "UT-LEX-002: entries live under com.dina.*"}
+  it('UT-LEX-002: entries live under com.dina.*', () => {
+    // Most are com.dina.trust.*; com.dina.service.profile is the
+    // service-discovery record published alongside trust records.
     for (const collection of TRUST_COLLECTIONS) {
-      expect(collection).toMatch(/^com\.dina\.trust\./)
+      expect(collection).toMatch(/^com\.dina\.(trust|service)\./)
     }
   })
 
@@ -229,6 +232,6 @@ describe('§4.3 Lexicons', () => {
     // Also verify that the type is a union of string literals, not just `string`
     // by checking that every element satisfies the type
     const allTyped: readonly TrustCollection[] = TRUST_COLLECTIONS
-    expect(allTyped.length).toBe(19)
+    expect(allTyped.length).toBe(20)
   })
 })

@@ -167,9 +167,11 @@ Traces to: Architecture §"Record Validator"
 | UT-RV-031 | cosignature — missing sig field | Cosignature without sig | success = false |
 | UT-RV-032 | confidence enum — all valid values | "certain", "high", "moderate", "speculative" | All pass |
 | UT-RV-033 | confidence — invalid value | confidence = "low" | success = false |
-| UT-RV-034 | all 19 collection types — valid minimal records | Minimal valid record for each of the 19 collections | All return success = true |
+| UT-RV-034 | all 20 collection types — valid minimal records | Minimal valid record for each of the 20 collections (19 trust.* + service.profile) | All return success = true |
 | UT-RV-035 | extra fields ignored (passthrough) | Record with extra fields not in schema | success = true (zod strips extras by default) |
 | UT-RV-036 | relatedRecords max on report | 11 relatedRecords (max 10) | success = false |
+| UT-RV-037 | service.profile retains capabilitySchemas with per-cap schema_hash | Record with capabilitySchemas map keyed by capability, each entry carries params + result + schema_hash | success = true; parsed record still contains the schemas and hashes (Zod does not silently strip them) |
+| UT-RV-038 | service.profile rejects capability schema missing schema_hash | capabilitySchemas entry with params+result but no schema_hash | success = false; schema-driven contract refuses to publish a capability whose version cannot be pinned |
 
 ### §2.2 Rate Limiter (`rate-limiter.test.ts`)
 
@@ -364,11 +366,11 @@ Traces to: Architecture §"Environment & Configuration"
 
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
-| UT-LEX-001 | TRUST_COLLECTIONS has 19 entries | Array length check | length = 19 |
-| UT-LEX-002 | all entries prefixed with "com.dina.trust." | Iterate and check prefix | All match |
+| UT-LEX-001 | TRUST_COLLECTIONS has 20 entries | Array length check | length = 20 (19 trust.* records + com.dina.service.profile from WS2) |
+| UT-LEX-002 | entries live under com.dina.* | Iterate and check prefix | All match `com.dina.(trust\|service)\.` — service.profile is in the service namespace, trust records are in trust.* |
 | UT-LEX-003 | no duplicate entries | Set comparison | Set size = array length |
-| UT-LEX-004 | expected collections present | Check for attestation, vouch, endorsement, flag, reply, reaction, etc. | All 19 present |
-| UT-LEX-005 | type safety — TrustCollection type | TypeScript compile-time check | Type derived from const array |
+| UT-LEX-004 | expected collections present | Check for attestation, vouch, endorsement, flag, reply, reaction, etc. | All 19 trust records present (service.profile has dedicated ingester tests UT-RV-037/038) |
+| UT-LEX-005 | type safety — TrustCollection type | TypeScript compile-time check | Type derived from const array (length = 20) |
 
 ---
 

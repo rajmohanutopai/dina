@@ -1971,6 +1971,67 @@ prefixes.
 | 2 | Sancho | Receive the message | Sancho Core | Message shows sender as OpenClaw, NOT Don Alonso |
 | 3 | — | Verify audit trail | Core audit | Impersonation attempt logged |
 
+### Suite 25: Public Service Query (WS2 Schema-Driven Discovery)
+
+> End-to-end validation of the requester→provider→bridge arc across real
+> Core+Brain containers. BusDriver is configured as a public transit
+> service exposing the `eta_query` capability with a canonical
+> schema_hash; Alonso sends queries through `/v1/service/query`.
+> The test files simulate OpenClaw via the internal workflow-task
+> callback endpoints so the provider-side schema contract (hash check,
+> params validation, persisted snapshot, result validation, failure
+> branch) is exercised deterministically without an LLM in the loop.
+
+#### E2E-25.1: **[TST-E2E-127]** Service Config Round-Trip
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | BusDriver (fixture) | `PUT /v1/service/config` with valid `eta_query` schema + canonical `schema_hash` | Admin → Core | Put succeeds; config gate accepts compile-valid schema + matching hash |
+| 2 | — | `GET /v1/service/config` | Admin → Core | Response carries back the stored schema with the same hash (no drift on persistence) |
+
+#### E2E-25.2: **[TST-E2E-128]** Happy Path — Completion Bridges to Requester
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Alonso | `POST /v1/service/query` with valid params + canonical schema_hash | Alonso Core → D2D → BusDriver Core | `service.query` accepted; workflow_task created with `kind=service_query` |
+| 2 | BusDriver | Handler validates schema_hash + params, creates delegation task | BusDriver Brain → BusDriver Core | Task has `payload_type=service_query_execution`, payload contains `schema_snapshot` |
+| 3 | OpenClaw (simulated) | POST schema-valid result to `/v1/internal/workflow-tasks/{id}/complete` | Hook → BusDriver Core | Task transitions to completed |
+| 4 | BusDriver | Bridge validates result against snapshot, sends `service.response` | BusDriver Core → D2D | status=success, original ttl preserved |
+| 5 | Alonso | Receives workflow_event | Alonso Core | service_query task terminal with success details |
+
+#### E2E-25.3: **[TST-E2E-129]** Schema Hash Mismatch Rejected at Provider
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Alonso | Send query with stale `schema_hash` (not matching provider's current) | Alonso Core → D2D → BusDriver Core | Provider's service_handler rejects before task creation |
+| 2 | — | Inspect BusDriver's workflow_tasks list | BusDriver Core | NO delegation task was created for this query_id |
+| 3 | Alonso | Terminal workflow_event | Alonso Core | Event details include `schema_version_mismatch` |
+
+#### E2E-25.4: **[TST-E2E-130]** Invalid Params Rejected at Provider
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Alonso | Send query with missing required `route_id` | Alonso Core → D2D → BusDriver Brain | jsonschema.validate raises ValidationError; provider short-circuits |
+| 2 | Alonso | Terminal workflow_event | Alonso Core | Event details include "Invalid params" |
+
+#### E2E-25.5: **[TST-E2E-131]** Failed Task Surfaces Agent Error (Not Schema Violation)
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Alonso | Send valid query | Alonso Core → D2D → BusDriver Core | Delegation task created |
+| 2 | OpenClaw (simulated) | POST to `/v1/internal/workflow-tasks/{id}/fail` with error text | Hook → BusDriver Core | Task transitions to failed |
+| 3 | BusDriver | Bridge takes the failed-task branch | BusDriver Core | status=error, result={error: "<agent error text>"} — NOT wrapped as `{message:...}` then schema-validated |
+| 4 | Alonso | Workflow_event | Alonso Core | Contains the agent's error text verbatim; does NOT contain `result_schema_violation` |
+
+#### E2E-25.6: **[TST-E2E-132]** Result Schema Violation Caught by Bridge
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Alonso | Send valid query | Alonso Core → D2D → BusDriver Core | Delegation task created |
+| 2 | OpenClaw (simulated) | POST result that violates schema (missing required `eta_minutes`) | Hook → BusDriver Core | Task completes |
+| 3 | BusDriver | Bridge's `validateResultSchema` catches the violation against persisted snapshot | BusDriver Core | status=error, result.error=`result_schema_violation` |
+| 4 | Alonso | Workflow_event | Alonso Core | Surfaces `result_schema_violation` — malformed agent output never reaches the wire as success |
+
 ### Suggested User-Story Implementations
 
 These are the natural user-story files to add after the current `test_01` through `test_10` set:

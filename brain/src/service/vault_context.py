@@ -729,6 +729,12 @@ class ToolExecutor:
                         or schema.get("schemaHash")
                         or ""
                     )
+                    # Expose the TTL hint so the LLM-path ttl resolver can pick
+                    # it up via _query_service. Lives at the schema root, not
+                    # nested inside params_schema.
+                    ttl_hint = schema.get("default_ttl_seconds")
+                    if isinstance(ttl_hint, int) and ttl_hint > 0:
+                        svc["default_ttl_seconds"] = ttl_hint
                 services.append(svc)
 
             return {
@@ -782,22 +788,34 @@ class ToolExecutor:
         service_name = args.get("service_name", "")
         schema_hash = args.get("schema_hash", "")
         params_schema = args.get("params_schema", {})
+        default_ttl_seconds = args.get("default_ttl_seconds")
 
         if not operator_did or not capability:
             return {"error": "operator_did and capability are required"}
         if params is None:
             params = {}
 
-        # Mandatory sender-side validation when schema is present.
+        # Mandatory sender-side validation when schema is present. A
+        # malformed remote schema surfaces as SchemaError rather than
+        # letting the exception escape and aborting the LLM flow.
         if params_schema:
             import jsonschema
             try:
                 jsonschema.validate(params, params_schema)
             except jsonschema.ValidationError as e:
                 return {"error": f"Params validation failed: {e.message}"}
+            except jsonschema.SchemaError as e:
+                return {"error": f"Provider schema is invalid: {e.message}"}
 
         query_id = str(uuid.uuid4())
-        ttl_seconds = get_ttl(capability)
+        # Prefer the provider-published schema's TTL hint (if any) over
+        # the hardcoded registry so unknown capabilities aren't silently
+        # capped at 60s. The hint lives at the schema root, not inside
+        # params_schema.
+        schema_for_ttl: dict = {}
+        if isinstance(default_ttl_seconds, int) and default_ttl_seconds > 0:
+            schema_for_ttl["default_ttl_seconds"] = default_ttl_seconds
+        ttl_seconds = get_ttl(capability, schema_for_ttl)
 
         try:
             result = await self._core.send_service_query(

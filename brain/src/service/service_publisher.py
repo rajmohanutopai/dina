@@ -46,6 +46,9 @@ class ServicePublisher:
         # Build per-capability published schemas. Each entry is the canonical
         # schema object plus a schema_hash. If the config didn't supply a hash,
         # compute it here from the canonical (description, params, result).
+        # default_ttl_seconds is a provider hint to requesters — it travels
+        # alongside the schema but is NOT part of the canonical form (so it
+        # can change without invalidating the schema_hash).
         capability_schemas: dict[str, dict] = {}
         for cap_name in capabilities.keys():
             raw = capability_schemas_raw.get(cap_name)
@@ -57,9 +60,24 @@ class ServicePublisher:
                 "result": raw.get("result", {}),
             }
             schema_hash = raw.get("schema_hash") or compute_schema_hash(canonical)
-            capability_schemas[cap_name] = {
-                **canonical,
-                "schema_hash": schema_hash,
+            entry: dict = {**canonical, "schema_hash": schema_hash}
+            ttl = raw.get("default_ttl_seconds")
+            if isinstance(ttl, int) and ttl > 0:
+                entry["default_ttl_seconds"] = ttl
+            capability_schemas[cap_name] = entry
+
+        # AT Protocol records are CBOR-encoded and the lexicon forbids floats
+        # (PDS rejects putRecord with "Bad record" when a number has a
+        # fractional part). Scale lat/lng by 1e7 into integers at the wire
+        # boundary; the ingester divides back when writing to Postgres.
+        # radius_km stays integer-coercible (already 0..500).
+        svc_area = config.get("service_area") or {}
+        service_area_record: dict[str, int] | None = None
+        if svc_area and "lat" in svc_area and "lng" in svc_area:
+            service_area_record = {
+                "latE7": round(float(svc_area["lat"]) * 1e7),
+                "lngE7": round(float(svc_area["lng"]) * 1e7),
+                "radiusKm": int(svc_area.get("radius_km", 0)),
             }
 
         record: dict[str, Any] = {
@@ -67,7 +85,6 @@ class ServicePublisher:
             "name": config.get("name", ""),
             "description": config.get("description", ""),
             "capabilities": list(capabilities.keys()),
-            "serviceArea": config.get("service_area"),
             "responsePolicy": {
                 k: v.get("response_policy", "auto")
                 for k, v in capabilities.items()
@@ -75,6 +92,8 @@ class ServicePublisher:
             "isPublic": True,
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if service_area_record is not None:
+            record["serviceArea"] = service_area_record
         if capability_schemas:
             record["capabilitySchemas"] = capability_schemas
 
@@ -103,7 +122,10 @@ class ServicePublisher:
             )
             log.info(
                 "service_publisher.published",
-                extra={"name": record["name"], "capabilities": record["capabilities"]},
+                extra={
+                    "service_name": record["name"],
+                    "capabilities": record["capabilities"],
+                },
             )
         except Exception as exc:
             log.warning(

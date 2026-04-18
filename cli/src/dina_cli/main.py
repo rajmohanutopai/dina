@@ -1535,6 +1535,144 @@ def session_list(ctx: click.Context) -> None:
 
 
 
+# ── service (WS2 public-service discovery) ──────────────────────────────
+
+
+@cli.group()
+def service() -> None:
+    """Send and track queries against public services on the Trust Network.
+
+    Schema-driven: the provider publishes a JSON Schema for each
+    capability on AppView; this CLI validates and forwards the schema
+    hash so version drift surfaces as a clean error rather than a
+    silent contract break.
+    """
+
+
+@service.command("query")
+@click.argument("to_did")
+@click.argument("capability")
+@click.argument("params_json")
+@click.option(
+    "--schema-hash", "schema_hash", default="",
+    help="Provider's canonical schema_hash for this capability (from AppView).",
+)
+@click.option(
+    "--ttl", default=60, type=int,
+    help="Max seconds to wait for a response (1..600).",
+)
+@click.option(
+    "--service-name", default="",
+    help="Human-readable service name for logs/notifications.",
+)
+@click.option(
+    "--origin-channel", default="",
+    help="Optional channel tag (e.g. 'cli:session-42') for targeted reply routing.",
+)
+@click.pass_context
+def service_query(
+    ctx: click.Context,
+    to_did: str,
+    capability: str,
+    params_json: str,
+    schema_hash: str,
+    ttl: int,
+    service_name: str,
+    origin_channel: str,
+) -> None:
+    """Send a schema-driven service query to a provider DID.
+
+    PARAMS_JSON must be a JSON object matching the provider's published
+    params schema for this capability. Example:
+
+        dina service query \\
+          did:plc:busdriver eta_query '{"route_id":"42"}' \\
+          --schema-hash c48434... --ttl 120
+
+    Returns {"task_id": "...", "query_id": "..."}; the response arrives
+    asynchronously. Poll with ``dina service status <task_id>``.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+
+    try:
+        params = json.loads(params_json) if params_json else {}
+    except json.JSONDecodeError as e:
+        print_error_with_trace(
+            f"Invalid params_json: {e}", json_mode, client.req_id,
+        )
+        ctx.exit(2)
+        return
+    if not isinstance(params, dict):
+        print_error_with_trace(
+            "params_json must be a JSON object (e.g. '{\"route_id\":\"42\"}')",
+            json_mode, client.req_id,
+        )
+        ctx.exit(2)
+        return
+
+    try:
+        result = client.send_service_query(
+            to_did=to_did,
+            capability=capability,
+            params=params,
+            service_name=service_name,
+            ttl_seconds=ttl,
+            schema_hash=schema_hash,
+            origin_channel=origin_channel,
+        )
+        if json_mode:
+            print_result_with_trace(result, json_mode, client.req_id)
+        else:
+            click.echo(
+                f"  Query sent. task_id={result.get('task_id', '?')} "
+                f"query_id={result.get('query_id', '?')}"
+            )
+            click.echo(
+                f"  Poll: dina service status {result.get('task_id', '?')}"
+            )
+    except DinaClientError as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
+@service.command("status")
+@click.argument("task_id")
+@click.pass_context
+def service_status(ctx: click.Context, task_id: str) -> None:
+    """Fetch the terminal state of a previously-sent service query.
+
+    Returns the full workflow_task JSON. When the status is ``completed``
+    or ``failed``, the response details live in the task's events. When
+    still ``running``, the requester is waiting for the provider.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        task = client.get_task(task_id)
+        if task is None:
+            print_error_with_trace(
+                f"No task found with id={task_id}", json_mode, client.req_id,
+            )
+            ctx.exit(1)
+            return
+        if json_mode:
+            print_result_with_trace(task, json_mode, client.req_id)
+        else:
+            click.echo(
+                f"  task_id: {task.get('id', '?')} "
+                f"status: {task.get('status', '?')} "
+                f"corr: {task.get('correlation_id', '?')}"
+            )
+            if task.get("status") in ("completed", "failed"):
+                click.echo(
+                    f"  result: {task.get('result_summary', '')[:200]}"
+                )
+    except DinaClientError as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
 # ── task (OpenClaw delegation) ──────────────────────────────────────────
 
 

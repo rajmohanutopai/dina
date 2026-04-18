@@ -46,6 +46,41 @@ from ..port.scrubber import PIIScrubber
 
 log = structlog.get_logger(__name__)
 
+
+def _summarise_provider_response(detail: str) -> str:
+    """Render a service-provider's structured response as a short line.
+
+    Completion notifications on the provider side show ``detail`` as raw
+    (it's the result_summary string the agent passed back, usually JSON).
+    A raw dump reads like diagnostic noise; we try to parse it and emit
+    a single human sentence per status. Falls back to a trimmed raw
+    string so surprise shapes still surface something readable.
+    """
+    if not detail:
+        return ""
+    try:
+        parsed = json.loads(detail)
+    except (ValueError, TypeError):
+        return detail
+    if not isinstance(parsed, dict):
+        return detail
+    status = (parsed.get("status") or "").lower()
+    if status == "on_route":
+        eta = parsed.get("eta_minutes")
+        stop = parsed.get("stop_name") or "the stop"
+        if isinstance(eta, (int, float)):
+            return f"ETA {int(eta)} min to {stop}"
+        return f"on route to {stop}"
+    if status == "not_on_route":
+        return parsed.get("message") or "not on route"
+    if status == "out_of_service":
+        return parsed.get("message") or "out of service"
+    if status == "not_found":
+        return parsed.get("message") or "not found"
+    msg = parsed.get("message")
+    return msg if isinstance(msg, str) and msg else detail
+
+
 # ---------------------------------------------------------------------------
 # Keyword / source heuristics for silence classification
 # ---------------------------------------------------------------------------
@@ -2148,9 +2183,17 @@ class GuardianLoop:
         }
         try:
             if task_kind == "service_query" and event_kind == "notification":
-                result = await self._handle_service_query_result(details)
+                result = await self._handle_service_query_result(
+                    details, task_id=payload.get("workflow_task_id", ""),
+                )
             elif task_kind == "approval" and event_kind == "notification":
                 result = await self._handle_approval_event(payload, details)
+            elif task_kind == "delegation" and event_kind == "notification":
+                # Provider-side completion visibility: surface a brief
+                # success/failure follow-up on the operator's channels
+                # for service_query_execution delegations so they can see
+                # the full handled-a-request arc, not just the ingress.
+                await self._notify_delegation_completion(payload, details)
         except Exception as exc:
             log.error(
                 "guardian.workflow_event.processing_failed",
@@ -2174,34 +2217,146 @@ class GuardianLoop:
 
         return result
 
-    async def _handle_service_query_result(self, details: dict) -> dict:
+    async def _notify_delegation_completion(self, payload: dict, details: dict) -> None:
+        """Emit a brief operator notification when a delegation task ends.
+
+        Pairs with the "Public service request received" notification
+        fired by ServiceHandler at ingress: closes the loop so the
+        operator sees not just "query arrived" but also "response
+        delivered (status/summary)". Silent for non-service delegations.
+
+        Filter by the task-id prefix ``svc-exec-`` that ServiceHandler
+        assigns to every service_query_execution delegation. Core's
+        notification event payload doesn't currently carry
+        ``payload_type``, so the prefix is the cheap signal here —
+        avoids a round-trip to fetch the task just to decide whether
+        to speak.
+        """
+        task_id = payload.get("workflow_task_id") or details.get("task_id") or ""
+        if not task_id.startswith("svc-exec-"):
+            return
+        short_id = task_id[len("svc-exec-"):][:8]
+
+        # Core's terminalTransition writes {"state": "...", "detail": "..."}.
+        # "state" is the terminal state (completed/failed/cancelled);
+        # "detail" is result_summary for Complete, error for Fail.
+        state = (details.get("state") or details.get("status") or "").lower()
+        detail = (
+            details.get("detail")
+            or details.get("result_summary")
+            or details.get("error")
+            or ""
+        )
+        detail_raw = detail if isinstance(detail, str) else ""
+
+        def _trim(s: str) -> str:
+            s = s.strip().replace("\n", " ")
+            return s if len(s) <= 140 else s[:137] + "…"
+
+        if state == "completed":
+            lines = [f"✓ Service request handled [{short_id}]"]
+            # Parse on the untruncated string — truncation first would
+            # shred the JSON and silently fall back to the raw dump.
+            summary = _summarise_provider_response(detail_raw)
+            if summary:
+                lines.append(f"Response: {_trim(summary)}")
+        elif state == "failed":
+            lines = [f"✗ Service request failed [{short_id}]"]
+            if detail_raw:
+                lines.append(f"Reason: {_trim(detail_raw)}")
+        elif state == "cancelled":
+            lines = [f"Service request cancelled [{short_id}]"]
+        else:
+            lines = [f"Service request state: {state or 'unknown'} [{short_id}]"]
+
+        try:
+            await self._push_notification("\n".join(lines), "service_provider")
+        except Exception:
+            pass  # visibility, not correctness
+
+    async def _handle_service_query_result(self, details: dict, *, task_id: str = "") -> dict:
         """Format a service query result and push notification to user.
+
+        Routes to the ``origin_channel`` recorded on the original query
+        when present (e.g. ``telegram:<chat_id>`` or ``bluesky:dm``) so the
+        response lands where the ask was made. Only falls back to
+        broadcasting to all paired channels when no origin_channel was
+        supplied (legacy requests without channel attribution).
+
+        On ``error`` / ``schema_version_mismatch``: fetches the original
+        task to recover operator_did + params, asks AppView for a fresh
+        service profile (so stale schema_hash is replaced), validates
+        sender-side, and re-sends exactly once. A KV marker keyed by
+        query_id guarantees we don't loop if the provider keeps rejecting.
 
         Unlike _push_notification (best-effort), this raises on delivery
         failure so the workflow event is NOT ACKed and Core retries.
         """
         from .service_query import format_service_query_result
 
+        # Schema-mismatch recovery path: attempt a refresh + retry before
+        # surfacing the error. If retry succeeds, we ACK this event (the
+        # new query will deliver its own result event) and suppress the
+        # user-visible notification.
+        if (
+            details.get("response_status") == "error"
+            and details.get("error") == "schema_version_mismatch"
+            and task_id
+        ):
+            if await self._retry_service_query_after_schema_mismatch(details, task_id):
+                return {"action": "service_query_retried", "task_id": task_id}
+
         message = format_service_query_result(details)
-        log.info("guardian.service_query_result", message=message)
+        origin_channel = (details.get("origin_channel") or "").strip()
+        log.info(
+            "guardian.service_query_result",
+            message=message,
+            origin_channel=origin_channel,
+        )
 
         # Push notification with error propagation (ACK-after-effects).
         # At least one channel must succeed for the event to be ACKed.
         delivered = False
         last_error = None
 
-        if hasattr(self, "_telegram") and self._telegram:
+        # Parse origin_channel into (kind, target). Empty → broadcast.
+        channel_kind = ""
+        channel_target = ""
+        if origin_channel:
+            if ":" in origin_channel:
+                channel_kind, channel_target = origin_channel.split(":", 1)
+            else:
+                channel_kind = origin_channel
+
+        use_telegram = hasattr(self, "_telegram") and self._telegram and (
+            not origin_channel or channel_kind == "telegram"
+        )
+        use_bluesky = hasattr(self, "_bluesky") and self._bluesky and (
+            not origin_channel or channel_kind == "bluesky"
+        )
+
+        if use_telegram:
             try:
-                if not self._telegram._paired_users:
-                    await self._telegram.load_paired_users()
-                for chat_id in self._telegram._paired_users:
+                if channel_target:
+                    # Route to the specific chat that issued the query.
+                    try:
+                        chat_id = int(channel_target)
+                    except ValueError:
+                        chat_id = channel_target
                     await self._telegram._bot.send_message(chat_id, message)
-                delivered = True
+                    delivered = True
+                else:
+                    # Legacy path: no origin_channel known — fan out to all.
+                    if not self._telegram._paired_users:
+                        await self._telegram.load_paired_users()
+                    for chat_id in self._telegram._paired_users:
+                        await self._telegram._bot.send_message(chat_id, message)
+                    delivered = True
             except Exception as exc:
                 last_error = exc
                 log.warning("guardian.service_query.telegram_failed", error=str(exc))
 
-        if hasattr(self, "_bluesky") and self._bluesky:
+        if use_bluesky:
             try:
                 await self._bluesky.send_owner_dm(message)
                 delivered = True
@@ -2212,10 +2367,107 @@ class GuardianLoop:
         if not delivered:
             if last_error:
                 raise last_error  # don't ACK — Core retries
-            # No channels configured — ACK anyway (no point retrying).
-            log.warning("guardian.service_query.no_channels_configured")
+            # No channels configured (or origin_channel pointed at a kind
+            # with no active adapter) — ACK anyway so the event doesn't
+            # stay pinned in the delivery queue forever.
+            log.warning(
+                "guardian.service_query.no_channels_configured",
+                origin_channel=origin_channel,
+            )
 
         return {"action": "service_query_notified", "message": message}
+
+    async def _retry_service_query_after_schema_mismatch(
+        self, details: dict, task_id: str,
+    ) -> bool:
+        """Attempt a single refresh+retry for a schema_version_mismatch error.
+
+        Returns ``True`` when a retry was issued (the caller should ACK
+        this event and suppress the user notification); ``False`` when no
+        retry is possible (too many retries already, no orchestrator
+        wired, missing task data, etc.) and the normal error path should
+        run.
+        """
+        orchestrator = getattr(self, "_service_query_orchestrator", None)
+        if not orchestrator or not self._core:
+            return False
+
+        query_id = details.get("query_id", "") or ""
+        if not query_id:
+            return False
+
+        # At-most-once guard. KV is durable so we don't loop across
+        # restarts. Value is the ISO timestamp of the first retry.
+        marker_key = f"service_query:schema_retry:{query_id}"
+        try:
+            existing = await self._core.get_kv(marker_key)
+        except Exception as exc:
+            log.warning("guardian.schema_retry.kv_read_failed", error=str(exc))
+            existing = None
+        if existing:
+            log.info("guardian.schema_retry.already_attempted", query_id=query_id)
+            return False
+
+        try:
+            task = await self._core.get_workflow_task(task_id)
+        except Exception as exc:
+            log.warning("guardian.schema_retry.task_lookup_failed", error=str(exc))
+            return False
+        if not task:
+            return False
+
+        import json as _json
+        payload = task.get("payload", {})
+        if isinstance(payload, str):
+            try:
+                payload = _json.loads(payload)
+            except Exception:
+                return False
+        capability = payload.get("capability", "")
+        params = payload.get("params", {}) or {}
+        origin_channel = payload.get("origin_channel", "") or ""
+        # Crucial: retry must target the ORIGINAL provider. Re-running
+        # discovery could otherwise silently reroute the query to a
+        # different DID whose schema happens to match — which is not
+        # what the requester asked for.
+        to_did = payload.get("to_did", "") or ""
+        user_text = payload.get("user_text", "") or ""
+        if not capability or not params or not to_did:
+            return False
+
+        # Record the retry attempt BEFORE issuing so a crash mid-retry
+        # still counts as "attempted" (better to under-retry than loop).
+        try:
+            from datetime import datetime, timezone
+            await self._core.set_kv(
+                marker_key, datetime.now(timezone.utc).isoformat(),
+            )
+        except Exception as exc:
+            log.warning("guardian.schema_retry.kv_write_failed", error=str(exc))
+            return False
+
+        log.info(
+            "guardian.schema_retry.issuing",
+            query_id=query_id,
+            capability=capability,
+            to_did=to_did,
+            origin_channel=origin_channel,
+        )
+        try:
+            # Targeted retry: refresh this provider's schema from AppView
+            # and re-send only to them. Does not re-rank or pick a new
+            # provider.
+            issued = await orchestrator.retry_with_fresh_schema(
+                to_did=to_did,
+                capability=capability,
+                params=params,
+                user_text=user_text,
+                origin_channel=origin_channel,
+            )
+        except Exception as exc:
+            log.warning("guardian.schema_retry.resend_failed", error=str(exc))
+            return False
+        return bool(issued)
 
     async def _handle_approval_event(self, payload: dict, details: dict) -> dict:
         """Handle an approved service review — trigger execution."""

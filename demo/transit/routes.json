@@ -5,8 +5,8 @@
       "name": "Market St Express",
       "vehicle_type": "Bus",
       "frequency_minutes": 12,
-      "service_start": "06:00",
-      "service_end": "23:00",
+      "service_start": "00:00",
+      "service_end": "23:59",
       "stops": [
         {"name": "Embarcadero", "lat": 37.7936, "lng": -122.3930},
         {"name": "Montgomery St", "lat": 37.7894, "lng": -122.4013},
@@ -23,8 +23,8 @@
       "name": "Geary Blvd",
       "vehicle_type": "Bus",
       "frequency_minutes": 15,
-      "service_start": "05:30",
-      "service_end": "00:00",
+      "service_start": "00:00",
+      "service_end": "23:59",
       "stops": [
         {"name": "Transbay Terminal", "lat": 37.7898, "lng": -122.3943},
         {"name": "Union Square", "lat": 37.7876, "lng": -122.4074},
@@ -41,8 +41,8 @@
       "name": "Mission Express",
       "vehicle_type": "Bus",
       "frequency_minutes": 10,
-      "service_start": "06:00",
-      "service_end": "22:00",
+      "service_start": "00:00",
+      "service_end": "23:59",
       "stops": [
         {"name": "Mission Bay", "lat": 37.7710, "lng": -122.3898},
         {"name": "16th St Mission", "lat": 37.7650, "lng": -122.4197},

@@ -28,8 +28,22 @@ CAPABILITY_REGISTRY: dict[str, dict] = {
 SUPPORTED_CAPABILITIES = list(CAPABILITY_REGISTRY.keys())
 
 
-def get_ttl(capability: str) -> int:
-    """Return the default TTL in seconds for a capability, or 60 as fallback."""
+def get_ttl(capability: str, schema: dict | None = None) -> int:
+    """Return the default TTL in seconds for a capability.
+
+    Resolution order:
+      1. ``schema["default_ttl_seconds"]`` — provider-published hint on
+         the discovered capability schema, if present. This is the
+         schema-driven path: any capability (known or not) can carry its
+         own TTL hint in the AT Protocol record.
+      2. ``CAPABILITY_REGISTRY`` — hardcoded default for capabilities the
+         Brain specifically knows about.
+      3. Fallback of 60 seconds.
+    """
+    if schema and isinstance(schema, dict):
+        ttl = schema.get("default_ttl_seconds")
+        if isinstance(ttl, int) and ttl > 0:
+            return ttl
     entry = CAPABILITY_REGISTRY.get(capability)
     if entry:
         return entry.get("default_ttl_seconds", 60)

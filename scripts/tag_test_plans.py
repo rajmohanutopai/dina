@@ -55,7 +55,18 @@ def process_plan(plan_config: dict) -> dict:
     manifest = {}
     sections = {}  # path -> list of IDs
 
-    counter = 0
+    # Seed the counter from the highest existing tag in the file so new
+    # rows get IDs that continue the sequence instead of restarting from
+    # 001 and colliding with previously-tagged sections. Appendix-only or
+    # placeholder rows that carry tags but live outside scenario tables
+    # don't matter — we just want the max numeric suffix.
+    existing_id_re = re.compile(r"\[" + re.escape(prefix) + r"-(\d+)\]")
+    max_existing = 0
+    for existing_match in existing_id_re.finditer(text):
+        n = int(existing_match.group(1))
+        if n > max_existing:
+            max_existing = n
+    counter = max_existing
     current_path = None
     in_scenario_table = False
 
@@ -146,7 +157,9 @@ def process_plan(plan_config: dict) -> dict:
     output = {
         "scenarios": manifest,
         "sections": sections,
-        "total": counter,
+        "total": len(manifest),
+        "highest_id": counter,
+        "newly_tagged": counter - max_existing,
     }
     manifest_path.write_text(json.dumps(output, indent=2) + "\n")
 
@@ -157,7 +170,10 @@ def main():
     for plan in PLANS:
         print(f"Processing {plan['file'].relative_to(PROJECT_ROOT)}...")
         result = process_plan(plan)
-        print(f"  Tagged {result['total']} scenarios with {plan['prefix']}-NNN IDs")
+        print(
+            f"  Newly tagged: {result['newly_tagged']}  "
+            f"(total in manifest: {result['total']}, highest ID: {plan['prefix']}-{result['highest_id']:03d})"
+        )
         print(f"  Manifest: {plan['manifest'].relative_to(PROJECT_ROOT)}")
         print(f"  Sections: {len(result['sections'])}")
 

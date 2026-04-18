@@ -44,6 +44,11 @@ const (
 type WorkflowTask struct {
 	ID              string `json:"id"`
 	Kind            string `json:"kind"`
+	// PayloadType is an indexed, strongly-typed discriminator for the
+	// contents of Payload. Set at create time so queries like "find all
+	// service_query_execution tasks" can be an index lookup instead of a
+	// fragile substring match against the JSON blob.
+	PayloadType     string `json:"payload_type,omitempty"`
 	Status          string `json:"status"`          // wire field = "status" for backward compat
 	CorrelationID   string `json:"correlation_id,omitempty"`
 	ParentID        string `json:"parent_id,omitempty"`

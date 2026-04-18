@@ -815,23 +815,32 @@ def create_app() -> FastAPI:
                                     extra={"task_id": task_id, "error": str(exc)},
                                 )
 
-                    # Tier 2: running approval tasks with run_id (crash recovery).
+                    # Tier 2: running approval tasks left over from the old
+                    # architecture where the Brain claimed the approval task
+                    # itself and sent an (eventually empty) /v1/service/respond.
+                    # Under the current model an approved approval task is
+                    # cancelled after the execution task is spawned, so
+                    # "running approval" is only a legacy stuck state.
+                    # Cancel those so the requester can receive an
+                    # "unavailable" from the approval-expiry sweeper instead
+                    # of staying pinned forever.
+                    from src.domain.errors import WorkflowConflictError
                     running = await brain_core_client.list_workflow_tasks(
                         status="running", kind="approval", limit=200, order="oldest",
                     )
                     for t in running:
-                        if not t.get("run_id"):
-                            continue
                         task_id = t.get("id", "")
                         log.info(
-                            "brain.reconciliation.running_with_marker",
+                            "brain.reconciliation.stale_running_approval",
                             extra={"task_id": task_id},
                         )
                         try:
-                            await brain_core_client.send_service_respond(task_id, {})
+                            await brain_core_client.cancel_workflow_task(task_id)
+                        except WorkflowConflictError:
+                            continue  # already terminal — expected race
                         except Exception as exc:
                             log.warning(
-                                "brain.reconciliation.tier2_recovery_failed",
+                                "brain.reconciliation.stale_cancel_failed",
                                 extra={"task_id": task_id, "error": str(exc)},
                             )
 

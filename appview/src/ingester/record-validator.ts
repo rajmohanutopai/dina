@@ -238,14 +238,31 @@ const notificationPrefsSchema = z.object({
   createdAt: boundedIsoDate,
 })
 
+// Per-capability schema contract: params + result JSON Schema plus a
+// deterministic schema_hash and optional TTL hint. Params/result are
+// required — a capability without them can't be validated, which defeats
+// the whole point of schema-driven discovery. The JSON Schema payloads
+// themselves are indexed as opaque blobs.
+const capabilitySchemaEntrySchema = z.object({
+  description: z.string().max(2000).optional(),
+  params: z.record(z.unknown()),
+  result: z.record(z.unknown()),
+  schema_hash: z.string().min(1).max(128),
+  default_ttl_seconds: z.number().int().positive().max(86400).optional(),
+})
+
 const serviceProfileSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000),
   capabilities: z.array(z.string().max(100)).min(1).max(50),
+  capabilitySchemas: z.record(capabilitySchemaEntrySchema).optional(),
+  // AT Protocol lexicon forbids floats in CBOR records, so coords are
+  // scaled integers (latE7 = round(lat * 1e7)). Ingester divides back
+  // when writing to Postgres. radiusKm stays integer (≤ 500 km).
   serviceArea: z.object({
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180),
-    radiusKm: z.number().min(0).max(500),
+    latE7: z.number().int().min(-900_000_000).max(900_000_000),
+    lngE7: z.number().int().min(-1_800_000_000).max(1_800_000_000),
+    radiusKm: z.number().int().min(0).max(500),
   }).optional(),
   hours: z.object({
     open: z.string().max(10),
@@ -255,7 +272,19 @@ const serviceProfileSchema = z.object({
   responsePolicy: z.record(z.string().max(50)),
   isPublic: z.boolean(),
   updatedAt: boundedIsoDate,
-})
+}).refine(
+  // Schema-driven contract: if capabilitySchemas is supplied it must cover
+  // every capability the profile declares. Partial coverage is worse than
+  // none because consumers can't predict which capabilities will validate.
+  (data) => {
+    if (!data.capabilitySchemas) return true
+    for (const cap of data.capabilities) {
+      if (!(cap in data.capabilitySchemas)) return false
+    }
+    return true
+  },
+  { message: 'capabilitySchemas must cover every declared capability' },
+)
 
 // ── Schema map ──────────────────────────────────────────────────────
 

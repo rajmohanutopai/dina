@@ -24,22 +24,24 @@ class AppViewClient:
     async def search_services(
         self,
         capability: str,
-        lat: float,
-        lng: float,
+        lat: float | None = None,
+        lng: float | None = None,
         radius_km: float = 5,
         q: str | None = None,
     ) -> list[dict]:
-        """Search for public services by capability and location.
+        """Search for public services by capability, optionally by location.
 
-        Returns a list of service dicts from AppView, ranked by trust
-        score and proximity.
+        When ``lat`` and ``lng`` are supplied the results are ranked by
+        proximity + text + trust. When omitted (non-geospatial queries),
+        distance scoring is skipped and ranking falls back to text + trust.
         """
         params: dict[str, str | float] = {
             "capability": capability,
-            "lat": lat,
-            "lng": lng,
             "radiusKm": radius_km,
         }
+        if lat is not None and lng is not None:
+            params["lat"] = lat
+            params["lng"] = lng
         if q:
             params["q"] = q
         resp = await self._client.get(

@@ -4,9 +4,13 @@ The entire E2E suite requires DINA_E2E=docker and running Docker
 containers (docker-compose-test-stack.yml).  Each actor gets its own
 Core+Brain container pair.  test_status.py manages the Docker lifecycle.
 
-All actor fixtures (Don Alonso, Sancho, ChairMaker, Albert) create
+All actor fixtures (Don Alonso, Sancho, ChairMaker) create
 RealHomeNode instances backed by real Go Core HTTP APIs.  There is
 no mock fallback — if Docker isn't running, the suite skips.
+
+Albert (Digital Estate beneficiary) has been commented out along with
+test_suite_09 — re-enable by uncommenting his fixture + the matching
+compose entries.
 
 Infrastructure mocks (PLC Directory, AppView, Relay, FCM, Payment
 Gateway) are used for services that don't have Docker containers
@@ -102,8 +106,8 @@ _ALL_PERSONAS = list(_PERSONA_TIERS.keys())
 def e2e_persona_setup(docker_services):
     """Create and unlock personas on ALL real Go Core instances once per session.
 
-    Iterates over all 4 actors (alonso, sancho, chairmaker, albert) and
-    creates/unlocks every persona on each node.  Also clears vault data
+    Iterates over the active actors (alonso, sancho, chairmaker, busdriver)
+    and creates/unlocks every persona on each node.  Also clears vault data
     from prior runs via POST /v1/vault/clear.
 
     Uses CLIENT_TOKEN for persona and vault operations, respecting the
@@ -116,7 +120,8 @@ def e2e_persona_setup(docker_services):
     admin_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
     data_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
 
-    for actor in ["alonso", "sancho", "chairmaker", "albert", "busdriver"]:
+    # "albert" removed — Digital Estate suite deferred.
+    for actor in ["alonso", "sancho", "chairmaker", "busdriver"]:
         base = docker_services.core_url(actor)
 
         for name, tier in _PERSONA_TIERS.items():
@@ -158,7 +163,8 @@ def plc_directory() -> MockPLCDirectory:
 def d2d_network(docker_services) -> MockD2DNetwork:
     """D2D delivery between Home Nodes via real Go Core HTTP calls."""
     did_to_core_url = {}
-    for actor in ["alonso", "sancho", "chairmaker", "albert", "busdriver"]:
+    # "albert" removed — Digital Estate suite deferred.
+    for actor in ["alonso", "sancho", "chairmaker", "busdriver"]:
         did = docker_services.actor_did(actor)
         did_to_core_url[did] = docker_services.core_url(actor)
     return RealD2DNetwork(did_to_core_url, docker_services.client_token)
@@ -204,7 +210,8 @@ def _core_private_keys(docker_services) -> dict[str, bytes | None]:
     (same protocol as BrainSigner in tests/system/conftest.py).
     """
     keys: dict[str, bytes | None] = {}
-    for actor in ["alonso", "sancho", "chairmaker", "albert", "busdriver"]:
+    # "albert" removed — Digital Estate suite deferred.
+    for actor in ["alonso", "sancho", "chairmaker", "busdriver"]:
         try:
             keys[actor] = docker_services.core_private_key(actor)
         except (RuntimeError, FileNotFoundError, Exception):
@@ -222,7 +229,7 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
     """
     alonso_did = docker_services.actor_did("alonso")
     sancho_did = docker_services.actor_did("sancho")
-    albert_did = docker_services.actor_did("albert")
+    # albert_did = docker_services.actor_did("albert")  # Digital Estate deferred
     chairmaker_did = docker_services.actor_did("chairmaker")
 
     node = RealHomeNode(
@@ -257,7 +264,7 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
     # Contacts — pushes to real Go Core via POST /v1/contacts
     node.add_contact(sancho_did, "Sancho", TrustRing.RING_2_VERIFIED)
     node.add_contact("did:plc:drcarl", "Dr. Carl", TrustRing.RING_2_VERIFIED)
-    node.add_contact(albert_did, "Albert", TrustRing.RING_2_VERIFIED)
+    # node.add_contact(albert_did, "Albert", TrustRing.RING_2_VERIFIED)  # Digital Estate deferred
     node.add_contact(chairmaker_did, "ChairMaker", TrustRing.RING_3_SKIN_IN_GAME)
 
     # Sharing policies
@@ -277,19 +284,21 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
                      {"item": "The Little Prince", "for": "daughter",
                       "date": "last Tuesday"})
 
-    # Estate plan
-    node.set_estate_plan(EstatePlan(
-        beneficiaries=[
-            EstateBeneficiary(
-                did=albert_did,
-                personas=["general", "health"],
-                access_level="full_decrypt",
-            ),
-        ],
-        custodian_threshold=3,
-        custodian_total=5,
-        default_action="destroy",
-    ))
+    # Estate plan — Digital Estate suite deferred (Albert beneficiary
+    # removed from test stack). Uncomment with the Albert fixture to
+    # restore.
+    # node.set_estate_plan(EstatePlan(
+    #     beneficiaries=[
+    #         EstateBeneficiary(
+    #             did=albert_did,
+    #             personas=["general", "health"],
+    #             access_level="full_decrypt",
+    #         ),
+    #     ],
+    #     custodian_threshold=3,
+    #     custodian_total=5,
+    #     default_action="destroy",
+    # ))
 
     return node
 
@@ -370,31 +379,146 @@ def chairmaker(plc_directory, d2d_network, docker_services, _core_private_keys) 
     return node
 
 
-@pytest.fixture(scope="session")
-def albert(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
-    """Albert -- Estate Beneficiary (Trust Ring 2).
+# Albert (Digital Estate beneficiary) — fixture commented out along
+# with test_suite_09. Re-enable by uncommenting this fixture AND
+# restoring albert-core/albert-brain/keygen-albert in
+# docker-compose-test-stack.yml + the albert entries in
+# prepare_non_unit_env.sh (actor loop, health checks, manifest).
+#
+# @pytest.fixture(scope="session")
+# def albert(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
+#     """Albert -- Estate Beneficiary (Trust Ring 2).
+#
+#     RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
+#     """
+#     albert_did = docker_services.actor_did("albert")
+#     alonso_did = docker_services.actor_did("alonso")
+#
+#     node = RealHomeNode(
+#         core_url=docker_services.core_url("albert"),
+#         brain_url=docker_services.brain_url("albert"),
+#         client_token=docker_services.client_token,
+#         core_private_key_pem=_core_private_keys.get("albert"),
+#         did=albert_did,
+#         display_name="Albert",
+#         trust_ring=TrustRing.RING_2_VERIFIED,
+#         plc=plc_directory,
+#         network=d2d_network,
+#     )
+#
+#     node.first_run_setup("albert@example.com", "passphrase_albert")
+#
+#     # Contacts — pushes to real Go Core via POST /v1/contacts
+#     node.add_contact(alonso_did, "Don Alonso", TrustRing.RING_2_VERIFIED)
+#
+#     return node
 
-    RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
+
+# ---------------------------------------------------------------------------
+# BusDriver — WS2 transit service provider (session-scoped)
+# ---------------------------------------------------------------------------
+
+# Canonical SHA-256 of the eta_query capability schema in its canonical
+# form. Matches what Brain's compute_schema_hash() and Core's
+# canonicalSchemaHash() produce for this exact schema. Keeping it as a
+# baked-in constant means a canonicaliser drift breaks the fixture
+# (and hence every test that uses it) rather than producing a
+# silently-inconsistent test config.
+ETA_QUERY_SCHEMA_HASH = "2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71"
+
+ETA_QUERY_SCHEMA = {
+    "description": "Query estimated time of arrival for a transit service.",
+    "params": {
+        "type": "object",
+        "required": ["route_id"],
+        "properties": {
+            "route_id": {"type": "string"},
+            "location": {
+                "type": "object",
+                "required": ["lat", "lng"],
+                "properties": {
+                    "lat": {"type": "number"},
+                    "lng": {"type": "number"},
+                },
+            },
+        },
+    },
+    "result": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+            "status": {
+                "type": "string",
+                "enum": ["on_route", "not_on_route", "out_of_service", "not_found"],
+            },
+            "eta_minutes": {"type": "integer"},
+            "route_name": {"type": "string"},
+            "vehicle_type": {"type": "string"},
+            "stop_name": {"type": "string"},
+            "stop_distance_m": {"type": "number"},
+            "map_url": {"type": "string"},
+            "message": {"type": "string"},
+        },
+    },
+    "schema_hash": ETA_QUERY_SCHEMA_HASH,
+}
+
+
+@pytest.fixture(scope="session")
+def busdriver(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
+    """BusDriver — WS2 public transit provider (Trust Ring 2).
+
+    Provisions a real Core+Brain pair configured as a public service for
+    the ``eta_query`` capability. The schema config is PUT via the real
+    ``/v1/service/config`` admin endpoint so the provider enforces
+    schema_hash and params validation during service.query ingress.
     """
-    albert_did = docker_services.actor_did("albert")
+    import httpx
+
+    busdriver_did = docker_services.actor_did("busdriver")
     alonso_did = docker_services.actor_did("alonso")
 
     node = RealHomeNode(
-        core_url=docker_services.core_url("albert"),
-        brain_url=docker_services.brain_url("albert"),
+        core_url=docker_services.core_url("busdriver"),
+        brain_url=docker_services.brain_url("busdriver"),
         client_token=docker_services.client_token,
-        core_private_key_pem=_core_private_keys.get("albert"),
-        did=albert_did,
-        display_name="Albert",
+        core_private_key_pem=_core_private_keys.get("busdriver"),
+        did=busdriver_did,
+        display_name="SF Transit Authority",
         trust_ring=TrustRing.RING_2_VERIFIED,
         plc=plc_directory,
         network=d2d_network,
     )
+    node.first_run_setup("busdriver@test.dina.local", "passphrase_busdriver")
 
-    node.first_run_setup("albert@example.com", "passphrase_albert")
-
-    # Contacts — pushes to real Go Core via POST /v1/contacts
+    # Alonso is in BusDriver's contact list so D2D service.query from a
+    # non-contact is still accepted as a public-service request (egress
+    # contact-gate bypass is governed by the service_config).
     node.add_contact(alonso_did, "Don Alonso", TrustRing.RING_2_VERIFIED)
+
+    # Publish the service config. Schema-driven provider ingress requires:
+    #   - is_public=true
+    #   - capabilities + capability_schemas parity (every capability
+    #     declared has a schema with params + result + canonical hash)
+    #   - service_area for discovery scoring
+    service_config = {
+        "is_public": True,
+        "name": "SF Transit Authority",
+        "description": "Schedule-based bus ETAs for SF Muni routes.",
+        "capabilities": {
+            "eta_query": {"response_policy": "auto"},
+        },
+        "capability_schemas": {"eta_query": ETA_QUERY_SCHEMA},
+        "service_area": {"lat": 37.77, "lng": -122.43, "radius_km": 25.0},
+    }
+    resp = httpx.put(
+        f"{docker_services.core_url('busdriver')}/v1/service/config",
+        json=service_config,
+        headers={"Authorization": f"Bearer {docker_services.client_token}"},
+        timeout=10,
+    )
+    if resp.status_code >= 400:
+        pytest.fail(f"BusDriver /v1/service/config rejected: {resp.status_code} {resp.text}")
 
     return node
 
@@ -498,7 +622,7 @@ def cli_identity(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def reset_node_state(don_alonso, sancho, chairmaker, albert):
+def reset_node_state(don_alonso, sancho, chairmaker):
     """Reset per-test mutable state while preserving session setup.
 
     Cleared: notifications, briefing queue, DND, brain crash flag,
@@ -509,7 +633,7 @@ def reset_node_state(don_alonso, sancho, chairmaker, albert):
     Preserved: vault data, devices, contacts, sharing policies,
     personas, estate plan, identity, LLM responses.
     """
-    for node in [don_alonso, sancho, chairmaker, albert]:
+    for node in [don_alonso, sancho, chairmaker]:
         # Clear real Go Core KV state if backed by Docker
         if isinstance(node, RealHomeNode):
             node.clear_real_kv()

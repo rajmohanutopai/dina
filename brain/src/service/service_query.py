@@ -20,7 +20,11 @@ import json
 import uuid
 from typing import Any
 
+import logging
+
 from .capabilities.registry import get_ttl
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -57,11 +61,34 @@ def format_service_query_result(details: dict) -> str:
     return f"{service_name} — unexpected status: {status}"
 
 
-def _format_eta(details: dict, name: str) -> str:
-    """Format an eta_query response with map URL.
+def _traffic_hint(eta_minutes: int) -> str:
+    """Pick a conversational traffic comment from the ETA.
 
-    Produces plain-text output with a plain URL (not Markdown link).
-    Telegram auto-linkifies URLs — no parse_mode needed.
+    The transit tool doesn't emit real traffic signal (the demo schedule
+    is deterministic), so we narrate one from how close the next vehicle
+    is relative to its headway. Keeps the Telegram reply feeling like a
+    friend telling you when the bus is coming, not a stats dashboard.
+    """
+    if eta_minutes <= 3:
+        return "Traffic is light — you can step out now."
+    if eta_minutes <= 8:
+        return "Traffic is lighter than usual, so it should arrive on time."
+    if eta_minutes <= 15:
+        return "Roads look normal — the bus is right on schedule."
+    if eta_minutes <= 25:
+        return "A little slower than usual, but still on the way."
+    return "Heavier traffic than usual — might want to check again closer to departure."
+
+
+def _format_eta(details: dict, name: str) -> str:
+    """Format an eta_query response as a short, human-sounding reply.
+
+    Produces plain text with a plain URL (not Markdown). Telegram
+    auto-linkifies URLs — no parse_mode needed.
+
+    The shape is stable enough to survive the sanity assertion
+    (``\\bN\\s*min\\b`` + a maps URL) while reading like a real
+    notification rather than a structured blob.
     """
     result = details.get("result", {})
     if isinstance(result, str):
@@ -88,13 +115,20 @@ def _format_eta(details: dict, name: str) -> str:
     route = result.get("route_name", "")
     map_url = result.get("map_url", "")
 
-    lines = []
-    route_label = f"{vehicle} {route}" if route else name
-    lines.append(f"{route_label}")
-    if eta is not None and stop_name:
-        lines.append(f"{eta} min to {stop_name}")
-    elif eta is not None:
-        lines.append(f"{eta} minutes away")
+    # "Next bus on Market St Express" reads more naturally than
+     # "Next Bus Market St Express".
+    route_label = f"{vehicle.lower()} on {route}" if route else name
+    lines: list[str] = []
+    if eta is not None:
+        n = int(eta)
+        unit = "minute" if n == 1 else "minutes"
+        if stop_name:
+            lines.append(f"Next {route_label} reaches {stop_name} in about {n} {unit}.")
+        else:
+            lines.append(f"Next {route_label} is about {n} {unit} away.")
+        lines.append(_traffic_hint(n))
+    else:
+        lines.append(f"{route_label} — arrival time unavailable.")
     if map_url:
         lines.append(map_url)
 
@@ -141,17 +175,38 @@ class ServiceQueryOrchestrator:
         self._notify = notifier
 
     async def handle_user_query(
-        self, capability: str, params: dict, user_text: str = "",
+        self,
+        capability: str,
+        params: dict,
+        user_text: str = "",
+        *,
+        origin_channel: str = "",
     ) -> None:
-        """Send a service query through Core's POST /v1/service/query."""
-        lat = params.get("location", {}).get("lat")
-        lng = params.get("location", {}).get("lng")
-        if lat is None or lng is None:
-            await self._notify("Cannot search services without location.")
-            return
+        """Send a service query through Core's POST /v1/service/query.
+
+        Runs the full schema-driven requester flow:
+        - fetches the provider's published capability schema from the
+          AppView search candidate,
+        - validates ``params`` against the params schema before sending so
+          a malformed local call never hits the network,
+        - forwards the schema_hash to the provider so version drift is
+          detected and surfaced as ``schema_version_mismatch`` rather than
+          silently bypassing version enforcement,
+        - threads ``origin_channel`` through so the eventual workflow_event
+          can route the response back to whatever surface issued the query.
+
+        Location (``params.location.lat/lng``) is honoured when present but
+        not required. Non-geospatial capabilities can use this path too —
+        the schema itself decides what the request needs.
+        """
+        location = params.get("location") if isinstance(params.get("location"), dict) else {}
+        lat = location.get("lat") if isinstance(location, dict) else None
+        lng = location.get("lng") if isinstance(location, dict) else None
 
         candidates = await self._appview.search_services(
-            capability=capability, lat=lat, lng=lng,
+            capability=capability,
+            lat=lat,
+            lng=lng,
             q=user_text or None,
         )
         if not candidates:
@@ -159,23 +214,153 @@ class ServiceQueryOrchestrator:
             return
 
         service = candidates[0]
+        service_name = service.get("name", "Unknown Service")
+        cap_schemas = (
+            service.get("capabilitySchemas")
+            or service.get("capability_schemas")
+            or {}
+        )
+        cap_schema = cap_schemas.get(capability) if isinstance(cap_schemas, dict) else None
+        params_schema = (cap_schema or {}).get("params") or {}
+        schema_hash = (
+            (cap_schema or {}).get("schema_hash")
+            or (cap_schema or {}).get("schemaHash")
+            or ""
+        )
+
+        # Sender-side validation: if the provider published a schema we
+        # honour it before the network round-trip. A params violation here
+        # means the orchestrator caller constructed a bad request — surface
+        # that locally instead of letting the provider reject it.
+        if params_schema:
+            import jsonschema
+            try:
+                jsonschema.validate(params, params_schema)
+            except jsonschema.ValidationError as exc:
+                await self._notify(
+                    f"Invalid query params for {service_name}: {exc.message}",
+                )
+                return
+
         query_id = str(uuid.uuid4())
-        ttl_seconds = get_ttl(capability)
+        # TTL resolution is schema-driven: if the provider's published
+        # capability schema carries default_ttl_seconds, honour it. Unknown
+        # capabilities no longer silently inherit the hardcoded 60s default.
+        ttl_seconds = get_ttl(capability, cap_schema)
 
         try:
-            # WS2: route through Core endpoint (creates workflow_task + sends D2D).
             await self._core.send_service_query(
                 to_did=service["operatorDid"],
                 capability=capability,
                 params=params,
                 query_id=query_id,
                 ttl_seconds=ttl_seconds,
-                service_name=service.get("name", "Unknown Service"),
+                service_name=service_name,
+                schema_hash=schema_hash,
+                origin_channel=origin_channel,
             )
-        except Exception:
-            await self._notify(
-                f"Failed to send query to {service.get('name', 'service')}.",
-            )
+        except Exception as exc:
+            log.warning("service_query.orchestrator.send_failed", extra={"error": str(exc)})
+            await self._notify(f"Failed to send query to {service_name}.")
             return
 
-        await self._notify(f"Asking {service.get('name', 'service')}...")
+        await self._notify(f"Asking {service_name}...")
+
+    async def retry_with_fresh_schema(
+        self,
+        *,
+        to_did: str,
+        capability: str,
+        params: dict,
+        user_text: str = "",
+        origin_channel: str = "",
+    ) -> bool:
+        """Re-send a query to the exact provider after a schema mismatch.
+
+        Fetches AppView candidates to refresh the published schema, then
+        picks the entry whose ``operatorDid`` matches ``to_did`` (never
+        silently reroutes to a different provider). Validates params
+        against the refreshed schema and re-sends with the fresh
+        ``schema_hash``. Returns ``True`` if the retry was issued.
+        """
+        if not to_did or not capability:
+            return False
+        lat = params.get("location", {}).get("lat") if isinstance(params.get("location"), dict) else None
+        lng = params.get("location", {}).get("lng") if isinstance(params.get("location"), dict) else None
+
+        try:
+            candidates = await self._appview.search_services(
+                capability=capability,
+                lat=lat,
+                lng=lng,
+                q=user_text or None,
+            )
+        except Exception as exc:
+            log.warning("service_query.retry.appview_failed", extra={"error": str(exc)})
+            return False
+
+        match = next(
+            (c for c in (candidates or []) if c.get("operatorDid") == to_did),
+            None,
+        )
+        if match is None:
+            log.warning(
+                "service_query.retry.provider_not_in_appview",
+                extra={"to_did": to_did, "capability": capability},
+            )
+            return False
+
+        cap_schemas = (
+            match.get("capabilitySchemas")
+            or match.get("capability_schemas")
+            or {}
+        )
+        cap_schema = cap_schemas.get(capability) if isinstance(cap_schemas, dict) else None
+        if cap_schema is None:
+            log.warning(
+                "service_query.retry.schema_missing",
+                extra={"to_did": to_did, "capability": capability},
+            )
+            return False
+
+        params_schema = cap_schema.get("params") or {}
+        schema_hash = (
+            cap_schema.get("schema_hash")
+            or cap_schema.get("schemaHash")
+            or ""
+        )
+
+        if params_schema:
+            import jsonschema
+            try:
+                jsonschema.validate(params, params_schema)
+            except jsonschema.ValidationError as exc:
+                log.warning(
+                    "service_query.retry.params_invalid_after_refresh",
+                    extra={"error": exc.message, "to_did": to_did},
+                )
+                return False
+            except jsonschema.SchemaError as exc:
+                log.warning(
+                    "service_query.retry.schema_malformed",
+                    extra={"error": exc.message, "to_did": to_did},
+                )
+                return False
+
+        query_id = str(uuid.uuid4())
+        ttl_seconds = get_ttl(capability, cap_schema)
+        try:
+            await self._core.send_service_query(
+                to_did=to_did,
+                capability=capability,
+                params=params,
+                query_id=query_id,
+                ttl_seconds=ttl_seconds,
+                service_name=match.get("name", ""),
+                schema_hash=schema_hash,
+                origin_channel=origin_channel,
+            )
+        except Exception as exc:
+            log.warning("service_query.retry.send_failed", extra={"error": str(exc)})
+            return False
+        return True

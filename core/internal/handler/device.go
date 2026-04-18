@@ -115,6 +115,43 @@ func (h *DeviceHandler) HandleListDevices(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]interface{}{"devices": devices})
 }
 
+// HandleListAgents handles GET /v1/service/agents. Narrow read-only
+// surface for Brain's service-discovery path: returns just the identity
+// (name + did) of paired agent-role devices, with revoked entries
+// filtered out. Exists so the provider-side ServiceHandler can render
+// notifications like "Dispatching to busdriver-openclaw" without being
+// given full /v1/devices access, which would also let Brain revoke
+// devices.
+func (h *DeviceHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	devices, err := h.Device.ListDevices(r.Context())
+	if err != nil {
+		clientError(w, "failed to list agents", http.StatusInternalServerError, err)
+		return
+	}
+
+	agents := make([]map[string]string, 0, len(devices))
+	for _, d := range devices {
+		if d.Revoked {
+			continue
+		}
+		if d.Role != "agent" {
+			continue
+		}
+		agents = append(agents, map[string]string{
+			"name": d.Name,
+			"did":  d.DID,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"agents": agents})
+}
+
 // HandleRevokeDevice handles DELETE /v1/devices/{id}. It revokes a paired
 // device's access token and returns 204 No Content.
 func (h *DeviceHandler) HandleRevokeDevice(w http.ResponseWriter, r *http.Request) {

@@ -45,7 +45,11 @@ do_compose() {
 health_check_all() {
   local FAILED=0
   local CHECKED=0
-  local TOTAL=12
+  # 4 active actors (alonso/sancho/chairmaker/busdriver) × 2 (core + brain)
+  # = 8 local health checks. Albert (Digital Estate) is deferred.
+  # Infrastructure (PLC/PDS/AppView/MsgBox) lives on Hetzner and is not
+  # probed here — tests that need it surface infra outages directly.
+  local TOTAL=8
   local FAIL_LIST=""
 
   _check() {
@@ -85,15 +89,13 @@ health_check_all() {
   _check "alonso-core"     "http://localhost:19100/healthz" || true
   _check "sancho-core"     "http://localhost:19300/healthz" || true
   _check "chairmaker-core" "http://localhost:19500/healthz" || true
-  _check "albert-core"     "http://localhost:19700/healthz" || true
+  # _check "albert-core"     "http://localhost:19700/healthz" || true  # Digital Estate deferred
+  _check "busdriver-core"  "http://localhost:19900/healthz" || true
   _check "alonso-brain"    "http://localhost:19200/healthz" || true
   _check "sancho-brain"    "http://localhost:19400/healthz" || true
   _check "chairmaker-brain" "http://localhost:19600/healthz" || true
-  _check "albert-brain"    "http://localhost:19800/healthz" || true
-  _check "plc"             "http://localhost:2582/healthz" || true
-  _check "pds"             "http://localhost:2583/xrpc/_health" || true
-  _check "appview"         "http://localhost:3001/health" || true
-  _check_tcp "postgres"    "localhost" 5433 || true
+  # _check "albert-brain"    "http://localhost:19800/healthz" || true  # Digital Estate deferred
+  _check "busdriver-brain" "http://localhost:20000/healthz" || true
 
   if [ "$FAILED" -eq 0 ]; then
     printf "\r  Health checks: %s/%s ✓                    \n" "$TOTAL" "$TOTAL"
@@ -106,7 +108,8 @@ health_check_all() {
 extract_keys() {
   printf "  Extracting service keys... "
   rm -rf "$KEY_DIR"
-  for actor in alonso sancho chairmaker albert; do
+  # "albert" removed — Digital Estate suite deferred.
+  for actor in alonso sancho chairmaker busdriver; do
     for role in core brain; do
       dir="$KEY_DIR/$actor/$role"
       mkdir -p "$dir"
@@ -128,13 +131,13 @@ write_manifest() {
     "alonso":     {"core": "http://localhost:19100", "brain": "http://localhost:19200"},
     "sancho":     {"core": "http://localhost:19300", "brain": "http://localhost:19400"},
     "chairmaker": {"core": "http://localhost:19500", "brain": "http://localhost:19600"},
-    "albert":     {"core": "http://localhost:19700", "brain": "http://localhost:19800"}
+    "busdriver":  {"core": "http://localhost:19900", "brain": "http://localhost:20000"}
   },
   "services": {
-    "plc":      "http://localhost:2582",
-    "pds":      "http://localhost:2583",
-    "postgres": "postgresql://dina:dina@localhost:5433/dina_trust",
-    "appview":  "http://localhost:3001"
+    "plc":      "https://plc.directory",
+    "pds":      "https://test-pds.dinakernel.com",
+    "appview":  "https://test-appview.dinakernel.com",
+    "msgbox":   "wss://test-mailbox.dinakernel.com"
   },
   "secrets": {
     "client_token": "secrets/client_token",
@@ -142,7 +145,7 @@ write_manifest() {
     "alonso_keys":  "$KEY_DIR/alonso",
     "sancho_keys":  "$KEY_DIR/sancho",
     "chairmaker_keys": "$KEY_DIR/chairmaker",
-    "albert_keys":  "$KEY_DIR/albert"
+    "busdriver_keys": "$KEY_DIR/busdriver"
   }
 }
 MANIFEST

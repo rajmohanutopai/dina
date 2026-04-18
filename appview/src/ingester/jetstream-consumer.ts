@@ -49,17 +49,24 @@ function validateJetstreamUrl(rawUrl: string): void {
 
   const isProduction = process.env.NODE_ENV === 'production'
 
-  // In production, require wss: (TLS)
-  if (isProduction && parsed.protocol !== 'wss:') {
-    throw new Error(
-      `Jetstream URL must use wss: in production (got ${parsed.protocol}): ${rawUrl}`,
-    )
-  }
-
-  // In any environment, reject protocols other than ws: and wss:
+  // Only ws: or wss: are valid
   if (parsed.protocol !== 'wss:' && parsed.protocol !== 'ws:') {
     throw new Error(
       `Jetstream URL must use ws: or wss: protocol (got ${parsed.protocol}): ${rawUrl}`,
+    )
+  }
+
+  // In production, ws: (no TLS) is only acceptable for explicitly allowlisted
+  // hosts — e.g. an internal docker-network Jetstream sidecar whose traffic
+  // never crosses the public internet. The operator opts in by adding the
+  // hostname to JETSTREAM_ALLOWED_HOSTS.
+  if (
+    isProduction &&
+    parsed.protocol === 'ws:' &&
+    !JETSTREAM_ALLOWED_HOSTS.has(parsed.hostname)
+  ) {
+    throw new Error(
+      `Jetstream URL must use wss: in production for non-allowlisted host: ${rawUrl}`,
     )
   }
 
