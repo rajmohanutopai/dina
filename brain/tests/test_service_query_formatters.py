@@ -35,9 +35,11 @@ class TestAppointmentStatusFormatter:
              "patient_ref": "self", "note": ""},
         )
         msg = _format_appointment_status(details, "Dr Carl's Clinic")
+        # Provenance-first: provider name in header; body reads cleanly
+        # on the second line.
         assert msg == (
-            "Your appointment with Dr Carl's Clinic on 2026-04-19 at 15:00 "
-            "is confirmed."
+            "📬 Reply from Dr Carl's Clinic\n"
+            "Your appointment on 2026-04-19 at 15:00 is confirmed."
         )
 
     # TST-BRAIN-875 — confirmed with empty date/time degrades gracefully
@@ -48,8 +50,11 @@ class TestAppointmentStatusFormatter:
              "patient_ref": "self", "note": "See you on the scheduled date."},
         )
         msg = _format_appointment_status(details, "Dr Carl's Clinic")
-        # Reads cleanly — no raw JSON, no empty quotes, no awkward spacing.
-        assert msg == "Your appointment with Dr Carl's Clinic is confirmed."
+        # No empty quotes, no awkward spacing, header still carries
+        # the attribution.
+        assert msg == (
+            "📬 Reply from Dr Carl's Clinic\nYour appointment is confirmed."
+        )
 
     def test_confirmed_date_only(self) -> None:
         details = _success(
@@ -59,7 +64,8 @@ class TestAppointmentStatusFormatter:
         )
         msg = _format_appointment_status(details, "Dr Carl's Clinic")
         assert msg == (
-            "Your appointment with Dr Carl's Clinic on 2026-04-19 is confirmed."
+            "📬 Reply from Dr Carl's Clinic\n"
+            "Your appointment on 2026-04-19 is confirmed."
         )
 
     # TST-BRAIN-876 — rescheduled with new date
@@ -70,6 +76,7 @@ class TestAppointmentStatusFormatter:
              "patient_ref": "self", "note": "Moved from 2026-04-19 to 2026-04-20."},
         )
         msg = _format_appointment_status(details, "Dr Carl's Clinic")
+        assert msg.startswith("📬 Reply from Dr Carl's Clinic\n")
         assert "rescheduled" in msg.lower()
         assert "2026-04-20" in msg
         assert "10:00" in msg
@@ -84,6 +91,7 @@ class TestAppointmentStatusFormatter:
              "note": "Appointment cancelled — please reschedule via the clinic."},
         )
         msg = _format_appointment_status(details, "Dr Carl's Clinic")
+        assert msg.startswith("📬 Reply from Dr Carl's Clinic\n")
         assert "cancelled" in msg.lower()
         assert "reschedule via the clinic" in msg
 
@@ -95,7 +103,10 @@ class TestAppointmentStatusFormatter:
              "patient_ref": "", "note": "No patient reference supplied."},
         )
         msg = _format_appointment_status(details, "Dr Carl's Clinic")
-        assert msg == "Dr Carl's Clinic has no record of your appointment."
+        assert msg == (
+            "📬 Reply from Dr Carl's Clinic\n"
+            "No record of your appointment was found."
+        )
 
     # TST-BRAIN-879 — never returns raw JSON
     def test_never_returns_raw_json(self) -> None:
@@ -119,6 +130,7 @@ class TestAppointmentStatusFormatter:
              "patient_ref": "self", "note": ""},
         )
         msg = _format_appointment_status(details, "Dr Carl's Clinic")
+        assert msg.startswith("📬 Reply from Dr Carl's Clinic\n")
         # No JSON in output.
         assert "{" not in msg
         assert "mysterious_new_status" in msg
@@ -138,6 +150,7 @@ class TestAppointmentStatusFormatter:
         assert "2026-04-19" in msg
         assert "15:00" in msg
         assert "confirmed" in msg
+        assert msg.startswith("📬 Reply from Dr Carl's Clinic\n")
 
 
 class TestFormatterRegistry:
@@ -156,3 +169,4 @@ class TestFormatterRegistry:
         # Should come from _format_appointment_status, not _format_generic.
         assert "response received" not in msg  # generic's signature
         assert "confirmed" in msg
+        assert "📬 Reply from" in msg  # provenance header always present

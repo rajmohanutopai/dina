@@ -156,10 +156,12 @@ def _format_appointment_status(details: dict, name: str) -> str:
         time: echoed back
         note: provider-supplied free text (may be empty)
 
-    We surface status + date/time when present, plus the note when it
-    carries useful info (rescheduled/cancelled). For a plain confirmed
-    without date/time, keep the message tight — the user already has
-    the date from their own vault.
+    Provenance-first format: lead with the provider name so the user
+    sees "this came from Dr Carl's Clinic" before reading the status.
+    The prefix "📬 Reply from <name>" makes it clear this is a live
+    response from an external provider, not Dina's own reasoning over
+    the vault. The icon is consistent across all formatted provider
+    replies.
     """
     result = details.get("result", {})
     if isinstance(result, str):
@@ -181,26 +183,28 @@ def _format_appointment_status(details: dict, name: str) -> str:
     elif time_val:
         when = f" at {time_val}"
 
+    header = f"📬 Reply from {name}"
+
     if status == "confirmed":
-        return f"Your appointment with {name}{when} is confirmed."
+        return f"{header}\nYour appointment{when} is confirmed."
     if status == "rescheduled":
-        msg = f"Your appointment with {name} has been rescheduled"
+        body = "Your appointment has been rescheduled"
         if when:
-            msg += f" to{when}"
-        msg += "."
+            body += f" to{when}"
+        body += "."
         if note:
-            msg += f" {note}"
-        return msg
+            body += f"\n{note}"
+        return f"{header}\n{body}"
     if status == "cancelled":
-        msg = f"Your appointment with {name} has been cancelled."
+        body = "Your appointment has been cancelled."
         if note:
-            msg += f" {note}"
-        return msg
+            body += f"\n{note}"
+        return f"{header}\n{body}"
     if status == "not_found":
-        return f"{name} has no record of your appointment."
+        return f"{header}\nNo record of your appointment was found."
 
     # Unknown / missing status — degrade gracefully without dumping JSON.
-    return f"{name} — status: {status or 'unknown'}"
+    return f"{header}\nUnexpected status: {status or 'unknown'}"
 
 
 _FORMATTERS: dict[str, Any] = {
