@@ -1578,7 +1578,30 @@ Traces to: `brain/src/service/staging_processor.py::_lookup_discoverable_cached`
 | 3 | **[TST-BRAIN-872]** Failed lookup does NOT poison cache | First call raises, second call succeeds | Second call makes a real AppView call (not cached `None`); returns the success result |
 | 4 | **[TST-BRAIN-873]** Per-DID cache isolation | Two DIDs looked up | Each DID has its own cache entry; one invalidating doesn't affect the other |
 
-### 29.5 Traceability — Post-Commit Audit → Test IDs
+### 29.6 Appointment-Status Formatter (service_query)
+
+Traces to: `brain/src/service/service_query.py::_format_appointment_status` + the `_FORMATTERS` registry.
+
+> Provider responses arrive as structured JSON. The per-capability
+> formatter converts them into human-readable text shown via Telegram
+> / whisper channels. Without a per-capability formatter, the generic
+> path dumps raw JSON — reliably ugly. These tests lock the
+> appointment_status path in place.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-874]** Confirmed with full date + time | `{status: confirmed, date: 2026-04-19, time: 15:00, ...}` | Reads as `"Your appointment with <name> on 2026-04-19 at 15:00 is confirmed."` — both values inlined |
+| 2 | **[TST-BRAIN-875]** Confirmed with empty date/time degrades gracefully | `{status: confirmed, date: "", time: "", ...}` | `"Your appointment with <name> is confirmed."` — no empty quotes, no awkward spacing |
+| 3 | **[TST-BRAIN-876]** Rescheduled includes new date + provider note | `{status: rescheduled, date: 2026-04-20, time: 10:00, note: "Moved from ..."}` | Mentions "rescheduled", new date/time, preserves the note |
+| 4 | **[TST-BRAIN-877]** Cancelled includes provider note | `{status: cancelled, note: "…please reschedule via the clinic."}` | Mentions "cancelled" and the provider's note verbatim |
+| 5 | **[TST-BRAIN-878]** not_found produces useful text | `{status: not_found, patient_ref: "", ...}` | `"<name> has no record of your appointment."` |
+| 6 | **[TST-BRAIN-879]** Never dumps raw JSON | Any valid result shape | Output contains no `{`, `}`, or JSON-style `"` |
+| 7 | **[TST-BRAIN-880]** Unknown status degrades without JSON dump | `{status: "mysterious_new_status", ...}` | Output mentions the status string but contains no JSON |
+| 8 | **[TST-BRAIN-881]** JSON-string result is parsed before formatting | `result` field is a JSON-encoded string (e.g. after storage round-trip) | Formatter parses it; user sees structured message, not the raw JSON string |
+| 9 | **[TST-BRAIN-882]** `appointment_status` wired into `_FORMATTERS` | Registry lookup | `_FORMATTERS["appointment_status"] is _format_appointment_status` |
+| 10 | **[TST-BRAIN-883]** `format_service_query_result` routes via registry | Success result with `capability=appointment_status` | Output comes from the appointment formatter (not the generic `response received` path) |
+
+### 29.7 Traceability — Post-Commit Audit → Test IDs
 
 Links each finding in the post-commit audit (2026-04-18) to the
 regression tests that cover it. New audit findings append rows here.

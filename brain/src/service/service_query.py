@@ -146,8 +146,66 @@ def _format_generic(details: dict, name: str) -> str:
     return f"{name} — response received: {json.dumps(result)[:200]}"
 
 
+def _format_appointment_status(details: dict, name: str) -> str:
+    """Format an appointment_status response as human-readable text.
+
+    Result schema shape (see demo/appointment/server.py):
+        status: "confirmed" | "rescheduled" | "cancelled" | "not_found"
+        patient_ref: echoed back
+        date: echoed back (may be empty when requester didn't supply)
+        time: echoed back
+        note: provider-supplied free text (may be empty)
+
+    We surface status + date/time when present, plus the note when it
+    carries useful info (rescheduled/cancelled). For a plain confirmed
+    without date/time, keep the message tight — the user already has
+    the date from their own vault.
+    """
+    result = details.get("result", {})
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            result = {}
+
+    status = (result.get("status") or "").strip().lower()
+    date = (result.get("date") or "").strip()
+    time_val = (result.get("time") or "").strip()
+    note = (result.get("note") or "").strip()
+
+    when = ""
+    if date and time_val:
+        when = f" on {date} at {time_val}"
+    elif date:
+        when = f" on {date}"
+    elif time_val:
+        when = f" at {time_val}"
+
+    if status == "confirmed":
+        return f"Your appointment with {name}{when} is confirmed."
+    if status == "rescheduled":
+        msg = f"Your appointment with {name} has been rescheduled"
+        if when:
+            msg += f" to{when}"
+        msg += "."
+        if note:
+            msg += f" {note}"
+        return msg
+    if status == "cancelled":
+        msg = f"Your appointment with {name} has been cancelled."
+        if note:
+            msg += f" {note}"
+        return msg
+    if status == "not_found":
+        return f"{name} has no record of your appointment."
+
+    # Unknown / missing status — degrade gracefully without dumping JSON.
+    return f"{name} — status: {status or 'unknown'}"
+
+
 _FORMATTERS: dict[str, Any] = {
     "eta_query": _format_eta,
+    "appointment_status": _format_appointment_status,
 }
 
 
