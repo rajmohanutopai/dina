@@ -42,11 +42,17 @@ type CapabilityConfig struct {
 
 // CapabilitySchema is the provider-published JSON Schema for a capability.
 // Used for param validation (Brain) and result validation (Core bridge).
+//
+// DefaultTTLSeconds is a provider hint passed through to requesters via
+// the published profile. It does NOT participate in the canonical hash
+// (see canonicalSchemaHash) so providers can tune latency budgets
+// without triggering a schema version bump.
 type CapabilitySchema struct {
-	Description string                 `json:"description,omitempty"`
-	Params      map[string]interface{} `json:"params,omitempty"`
-	Result      map[string]interface{} `json:"result,omitempty"`
-	SchemaHash  string                 `json:"schema_hash,omitempty"`
+	Description       string                 `json:"description,omitempty"`
+	Params            map[string]interface{} `json:"params,omitempty"`
+	Result            map[string]interface{} `json:"result,omitempty"`
+	SchemaHash        string                 `json:"schema_hash,omitempty"`
+	DefaultTTLSeconds int                    `json:"default_ttl_seconds,omitempty"`
 }
 
 // ServiceArea defines the geographic area served.

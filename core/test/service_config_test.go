@@ -45,22 +45,40 @@ func validPublicConfig() *service.ServiceConfig {
 		},
 		CapabilitySchemas: map[string]service.CapabilitySchema{
 			"eta_query": {
-				Description: "Query ETA",
+				Description: "Query estimated time of arrival for a transit service.",
 				Params: map[string]interface{}{
 					"type":     "object",
 					"required": []string{"route_id"},
 					"properties": map[string]interface{}{
 						"route_id": map[string]interface{}{"type": "string"},
+						"location": map[string]interface{}{
+							"type":     "object",
+							"required": []string{"lat", "lng"},
+							"properties": map[string]interface{}{
+								"lat": map[string]interface{}{"type": "number"},
+								"lng": map[string]interface{}{"type": "number"},
+							},
+						},
 					},
 				},
 				Result: map[string]interface{}{
 					"type":     "object",
-					"required": []string{"eta_minutes"},
+					"required": []string{"status"},
 					"properties": map[string]interface{}{
-						"eta_minutes": map[string]interface{}{"type": "integer"},
+						"status": map[string]interface{}{
+							"type": "string",
+							"enum": []string{"on_route", "not_on_route", "out_of_service", "not_found"},
+						},
+						"eta_minutes":     map[string]interface{}{"type": "integer"},
+						"route_name":      map[string]interface{}{"type": "string"},
+						"vehicle_type":    map[string]interface{}{"type": "string"},
+						"stop_name":       map[string]interface{}{"type": "string"},
+						"stop_distance_m": map[string]interface{}{"type": "number"},
+						"map_url":         map[string]interface{}{"type": "string"},
+						"message":         map[string]interface{}{"type": "string"},
 					},
 				},
-				SchemaHash: "c48434dfc06a33520eb7543f29ef3a0aba7582d9ace25f5b9a838f84d27172ce",
+				SchemaHash: "2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71",
 			},
 		},
 		ServiceArea: &service.ServiceArea{Lat: 37.77, Lng: -122.43, RadiusKm: 10},

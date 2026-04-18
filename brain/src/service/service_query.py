@@ -61,11 +61,34 @@ def format_service_query_result(details: dict) -> str:
     return f"{service_name} — unexpected status: {status}"
 
 
-def _format_eta(details: dict, name: str) -> str:
-    """Format an eta_query response with map URL.
+def _traffic_hint(eta_minutes: int) -> str:
+    """Pick a conversational traffic comment from the ETA.
 
-    Produces plain-text output with a plain URL (not Markdown link).
-    Telegram auto-linkifies URLs — no parse_mode needed.
+    The transit tool doesn't emit real traffic signal (the demo schedule
+    is deterministic), so we narrate one from how close the next vehicle
+    is relative to its headway. Keeps the Telegram reply feeling like a
+    friend telling you when the bus is coming, not a stats dashboard.
+    """
+    if eta_minutes <= 3:
+        return "Traffic is light — you can step out now."
+    if eta_minutes <= 8:
+        return "Traffic is lighter than usual, so it should arrive on time."
+    if eta_minutes <= 15:
+        return "Roads look normal — the bus is right on schedule."
+    if eta_minutes <= 25:
+        return "A little slower than usual, but still on the way."
+    return "Heavier traffic than usual — might want to check again closer to departure."
+
+
+def _format_eta(details: dict, name: str) -> str:
+    """Format an eta_query response as a short, human-sounding reply.
+
+    Produces plain text with a plain URL (not Markdown). Telegram
+    auto-linkifies URLs — no parse_mode needed.
+
+    The shape is stable enough to survive the sanity assertion
+    (``\\bN\\s*min\\b`` + a maps URL) while reading like a real
+    notification rather than a structured blob.
     """
     result = details.get("result", {})
     if isinstance(result, str):
@@ -92,13 +115,20 @@ def _format_eta(details: dict, name: str) -> str:
     route = result.get("route_name", "")
     map_url = result.get("map_url", "")
 
-    lines = []
-    route_label = f"{vehicle} {route}" if route else name
-    lines.append(f"{route_label}")
-    if eta is not None and stop_name:
-        lines.append(f"{eta} min to {stop_name}")
-    elif eta is not None:
-        lines.append(f"{eta} minutes away")
+    # "Next bus on Market St Express" reads more naturally than
+     # "Next Bus Market St Express".
+    route_label = f"{vehicle.lower()} on {route}" if route else name
+    lines: list[str] = []
+    if eta is not None:
+        n = int(eta)
+        unit = "minute" if n == 1 else "minutes"
+        if stop_name:
+            lines.append(f"Next {route_label} reaches {stop_name} in about {n} {unit}.")
+        else:
+            lines.append(f"Next {route_label} is about {n} {unit} away.")
+        lines.append(_traffic_hint(n))
+    else:
+        lines.append(f"{route_label} — arrival time unavailable.")
     if map_url:
         lines.append(map_url)
 

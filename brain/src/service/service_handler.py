@@ -29,6 +29,21 @@ from .capabilities.registry import get_ttl
 logger = logging.getLogger(__name__)
 
 
+def _capability_params_preview(capability: str, params: dict | None) -> str:
+    """Render a tiny, human-readable summary of a service query's params.
+
+    Kept capability-aware so the operator notification shows the actual
+    thing being asked (``route 42``), not a raw dict dump. New
+    capabilities can add a branch here; default is empty (no preview).
+    """
+    if not isinstance(params, dict):
+        return ""
+    if capability == "eta_query":
+        route_id = params.get("route_id")
+        return f"route {route_id}" if route_id else ""
+    return ""
+
+
 class ServiceHandler:
     """Handles inbound service.query messages on the provider side.
 
@@ -122,6 +137,60 @@ class ServiceHandler:
             schema_hash=request_schema_hash,
             schema_snapshot=cap_schema,
         )
+
+        # 5. Auto-path owner visibility. Review-policy queries already
+        #    notify via `_create_approval_task`; auto-policy queries did
+        #    not surface anywhere on the provider's own channels, so the
+        #    operator had no way to see their node was handling traffic.
+        #    Fire an info-only notification — no action required.
+        if self._notifier:
+            try:
+                params_preview = _capability_params_preview(capability, params)
+                short_did = from_did if len(from_did) <= 24 else from_did[:22] + "…"
+                agent_label = await self._describe_agent_pool()
+                lines = [
+                    "📥 Public service request received",
+                    f"Capability: {capability}"
+                    + (f" ({params_preview})" if params_preview else ""),
+                    f"From: {short_did}",
+                    f"→ Dispatching to {agent_label} for auto-response",
+                ]
+                await self._notifier("\n".join(lines))
+            except Exception:
+                pass  # best-effort — visibility, not correctness
+
+    async def _describe_agent_pool(self) -> str:
+        """Return a human label for the paired agent-role devices.
+
+        Uses the device names set at pairing time (e.g. ``busdriver-openclaw``)
+        so operator notifications reflect the real peer identity instead
+        of the generic platform word. Falls back to a neutral phrase when
+        no agents are paired or the lookup fails — the notification is
+        best-effort visibility, never load-bearing.
+        """
+        try:
+            agents = await self._core.list_service_agents()
+        except Exception:
+            return "paired agent"
+        # Dedupe by name — repeated re-pairings show up as multiple rows
+        # with the same device name but different DIDs. For the human
+        # label we care about the identity the operator typed, not the
+        # number of tokens that have been issued against it.
+        seen: set[str] = set()
+        names: list[str] = []
+        for a in agents or []:
+            name = (a.get("name") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+        if not names:
+            return "paired agent"
+        if len(names) == 1:
+            return names[0]
+        if len(names) <= 3:
+            return ", ".join(names)
+        return f"{', '.join(names[:2])} (+{len(names) - 2} more)"
 
     async def _create_execution_task(
         self,

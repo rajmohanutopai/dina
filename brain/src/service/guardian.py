@@ -46,6 +46,41 @@ from ..port.scrubber import PIIScrubber
 
 log = structlog.get_logger(__name__)
 
+
+def _summarise_provider_response(detail: str) -> str:
+    """Render a service-provider's structured response as a short line.
+
+    Completion notifications on the provider side show ``detail`` as raw
+    (it's the result_summary string the agent passed back, usually JSON).
+    A raw dump reads like diagnostic noise; we try to parse it and emit
+    a single human sentence per status. Falls back to a trimmed raw
+    string so surprise shapes still surface something readable.
+    """
+    if not detail:
+        return ""
+    try:
+        parsed = json.loads(detail)
+    except (ValueError, TypeError):
+        return detail
+    if not isinstance(parsed, dict):
+        return detail
+    status = (parsed.get("status") or "").lower()
+    if status == "on_route":
+        eta = parsed.get("eta_minutes")
+        stop = parsed.get("stop_name") or "the stop"
+        if isinstance(eta, (int, float)):
+            return f"ETA {int(eta)} min to {stop}"
+        return f"on route to {stop}"
+    if status == "not_on_route":
+        return parsed.get("message") or "not on route"
+    if status == "out_of_service":
+        return parsed.get("message") or "out of service"
+    if status == "not_found":
+        return parsed.get("message") or "not found"
+    msg = parsed.get("message")
+    return msg if isinstance(msg, str) and msg else detail
+
+
 # ---------------------------------------------------------------------------
 # Keyword / source heuristics for silence classification
 # ---------------------------------------------------------------------------
@@ -2153,6 +2188,12 @@ class GuardianLoop:
                 )
             elif task_kind == "approval" and event_kind == "notification":
                 result = await self._handle_approval_event(payload, details)
+            elif task_kind == "delegation" and event_kind == "notification":
+                # Provider-side completion visibility: surface a brief
+                # success/failure follow-up on the operator's channels
+                # for service_query_execution delegations so they can see
+                # the full handled-a-request arc, not just the ingress.
+                await self._notify_delegation_completion(payload, details)
         except Exception as exc:
             log.error(
                 "guardian.workflow_event.processing_failed",
@@ -2175,6 +2216,63 @@ class GuardianLoop:
                 )
 
         return result
+
+    async def _notify_delegation_completion(self, payload: dict, details: dict) -> None:
+        """Emit a brief operator notification when a delegation task ends.
+
+        Pairs with the "Public service request received" notification
+        fired by ServiceHandler at ingress: closes the loop so the
+        operator sees not just "query arrived" but also "response
+        delivered (status/summary)". Silent for non-service delegations.
+
+        Filter by the task-id prefix ``svc-exec-`` that ServiceHandler
+        assigns to every service_query_execution delegation. Core's
+        notification event payload doesn't currently carry
+        ``payload_type``, so the prefix is the cheap signal here —
+        avoids a round-trip to fetch the task just to decide whether
+        to speak.
+        """
+        task_id = payload.get("workflow_task_id") or details.get("task_id") or ""
+        if not task_id.startswith("svc-exec-"):
+            return
+        short_id = task_id[len("svc-exec-"):][:8]
+
+        # Core's terminalTransition writes {"state": "...", "detail": "..."}.
+        # "state" is the terminal state (completed/failed/cancelled);
+        # "detail" is result_summary for Complete, error for Fail.
+        state = (details.get("state") or details.get("status") or "").lower()
+        detail = (
+            details.get("detail")
+            or details.get("result_summary")
+            or details.get("error")
+            or ""
+        )
+        detail_raw = detail if isinstance(detail, str) else ""
+
+        def _trim(s: str) -> str:
+            s = s.strip().replace("\n", " ")
+            return s if len(s) <= 140 else s[:137] + "…"
+
+        if state == "completed":
+            lines = [f"✓ Service request handled [{short_id}]"]
+            # Parse on the untruncated string — truncation first would
+            # shred the JSON and silently fall back to the raw dump.
+            summary = _summarise_provider_response(detail_raw)
+            if summary:
+                lines.append(f"Response: {_trim(summary)}")
+        elif state == "failed":
+            lines = [f"✗ Service request failed [{short_id}]"]
+            if detail_raw:
+                lines.append(f"Reason: {_trim(detail_raw)}")
+        elif state == "cancelled":
+            lines = [f"Service request cancelled [{short_id}]"]
+        else:
+            lines = [f"Service request state: {state or 'unknown'} [{short_id}]"]
+
+        try:
+            await self._push_notification("\n".join(lines), "service_provider")
+        except Exception:
+            pass  # visibility, not correctness
 
     async def _handle_service_query_result(self, details: dict, *, task_id: str = "") -> dict:
         """Format a service query result and push notification to user.

@@ -51,26 +51,46 @@ func pythonCanonicalHash(t *testing.T, obj map[string]interface{}) string {
 // the time this protocol was specified. Any change in the canonicaliser
 // that moves this constant means Brain and Core would stop agreeing.
 func TestCanonicalHash_MatchesPythonReferenceForEtaQuery(t *testing.T) {
+	// Mirrors the canonical eta_query capability schema that BusDriver
+	// publishes — status required, eta_minutes only present when on_route.
+	// The Python reference for this exact object is computed in
+	// tests/release/test_rel_029_service_query.py.
 	schema := service.CapabilitySchema{
-		Description: "Query ETA",
+		Description: "Query estimated time of arrival for a transit service.",
 		Params: map[string]interface{}{
 			"type":     "object",
 			"required": []string{"route_id"},
 			"properties": map[string]interface{}{
 				"route_id": map[string]interface{}{"type": "string"},
+				"location": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"lat", "lng"},
+					"properties": map[string]interface{}{
+						"lat": map[string]interface{}{"type": "number"},
+						"lng": map[string]interface{}{"type": "number"},
+					},
+				},
 			},
 		},
 		Result: map[string]interface{}{
 			"type":     "object",
-			"required": []string{"eta_minutes"},
+			"required": []string{"status"},
 			"properties": map[string]interface{}{
-				"eta_minutes": map[string]interface{}{"type": "integer"},
+				"status": map[string]interface{}{
+					"type": "string",
+					"enum": []string{"on_route", "not_on_route", "out_of_service", "not_found"},
+				},
+				"eta_minutes":     map[string]interface{}{"type": "integer"},
+				"route_name":      map[string]interface{}{"type": "string"},
+				"vehicle_type":    map[string]interface{}{"type": "string"},
+				"stop_name":       map[string]interface{}{"type": "string"},
+				"stop_distance_m": map[string]interface{}{"type": "number"},
+				"map_url":         map[string]interface{}{"type": "string"},
+				"message":         map[string]interface{}{"type": "string"},
 			},
 		},
 	}
-	// Reference computed with Python (documented in test_service_handler.py
-	// and used as the baked-in hash in service_config_test.go).
-	const want = "c48434dfc06a33520eb7543f29ef3a0aba7582d9ace25f5b9a838f84d27172ce"
+	const want = "2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71"
 
 	store := &inMemServiceConfigStore{}
 	svc := service.NewServiceConfigService(store)

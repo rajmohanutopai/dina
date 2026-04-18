@@ -76,7 +76,7 @@ TRANSIT_ENABLED = os.environ.get("SANITY_TRANSIT_ENABLED", "0") == "1"
 # Canonical hash for the demo eta_query schema. Must match what
 # ``demo/transit/openclaw-setup.sh`` publishes via PUT /v1/service/config.
 # Same constant the E2E suite + User Story 15 + REL-029 all verify.
-ETA_QUERY_SCHEMA_HASH = "c48434dfc06a33520eb7543f29ef3a0aba7582d9ace25f5b9a838f84d27172ce"
+ETA_QUERY_SCHEMA_HASH = "2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71"
 
 # Approximate Castro Station coordinates — the demo SF Muni route 42's
 # schedule has a stop called "Castro Station" at this location.

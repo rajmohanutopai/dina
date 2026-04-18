@@ -960,6 +960,18 @@ class CoreHTTPClient:
         data = resp.json()
         return [PairedDevice.model_validate(d) for d in data.get("devices", [])]
 
+    async def list_service_agents(self) -> list[dict]:
+        """GET /v1/service/agents — names + DIDs of paired agent-role devices.
+
+        Narrow surface Brain is allowed to call (unlike /v1/devices which
+        is admin-only). Used by the provider-side ServiceHandler to
+        render operator notifications like "Dispatching to
+        busdriver-openclaw" using real device names.
+        """
+        resp = await self._request("GET", "/v1/service/agents")
+        data = resp.json()
+        return list(data.get("agents") or [])
+
     async def initiate_pairing(self) -> InitiatePairingResponse:
         """POST /v1/pair/initiate — generate pairing code."""
         resp = await self._request("POST", "/v1/pair/initiate")

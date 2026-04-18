@@ -134,15 +134,15 @@ services:
       - chairmaker-keys-brain-priv:/keys-brain-priv
       - chairmaker-keys-pub:/keys-pub
 
-  keygen-albert:
-    <<: *keygen-base
-    environment:
-      DINA_SEED_HEX: "0404040404040404040404040404040404040404040404040404040404040404"
-    volumes:
-      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
-      - albert-keys-core-priv:/keys-core-priv
-      - albert-keys-brain-priv:/keys-brain-priv
-      - albert-keys-pub:/keys-pub
+  # keygen-albert:  # Digital Estate deferred — Albert actor commented out
+  #   <<: *keygen-base
+  #   environment:
+  #     DINA_SEED_HEX: "0404040404040404040404040404040404040404040404040404040404040404"
+  #   volumes:
+  #     - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+  #     - albert-keys-core-priv:/keys-core-priv
+  #     - albert-keys-brain-priv:/keys-brain-priv
+  #     - albert-keys-pub:/keys-pub
 
   keygen-busdriver:
     <<: *keygen-base
@@ -169,7 +169,7 @@ services:
       DINA_PDS_HANDLE: "alonso.test-pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "alonso@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100,http://busdriver-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://sancho-core:8100,http://chairmaker-core:8100,http://busdriver-core:8100"
     volumes:
       - alonso-data:/data
       - alonso-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -213,7 +213,7 @@ services:
       DINA_PDS_HANDLE: "sancho.test-pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "sancho@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://albert-core:8100,http://busdriver-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://chairmaker-core:8100,http://busdriver-core:8100"
     volumes:
       - sancho-data:/data
       - sancho-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -256,7 +256,7 @@ services:
       DINA_PDS_HANDLE: "chairmaker.test-pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "chairmaker@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://albert-core:8100,http://busdriver-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://busdriver-core:8100"
     volumes:
       - chairmaker-data:/data
       - chairmaker-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -285,47 +285,52 @@ services:
         condition: service_completed_successfully
 
   # ==========================================================================
-  # Actor 4: Albert (contact) — Core port 19700, Brain port 19800
+  # Actor 4: Albert (Digital Estate beneficiary) — DEFERRED
+  # Digital Estate suite is out of scope for now; Albert's Core/Brain and
+  # keygen are commented out. Restore this block (and keygen-albert above,
+  # albert-* volumes below, albert entries in tests/e2e/conftest.py and
+  # prepare_non_unit_env.sh) to re-enable.
+  # Ports were 19700 (Core) and 19800 (Brain).
   # ==========================================================================
 
-  albert-core:
-    <<: *core-base
-    ports:
-      - "19700:8100"
-    environment:
-      <<: *core-env
-      DINA_BRAIN_URL: http://albert-brain:8200
-      DINA_MASTER_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
-      DINA_PDS_HANDLE: "albert.test-pds.dinakernel.com"
-      DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
-      DINA_PDS_EMAIL: "albert@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100,http://busdriver-core:8100"
-    volumes:
-      - albert-data:/data
-      - albert-keys-core-priv:/run/secrets/service_keys/private:ro
-      - albert-keys-pub:/run/secrets/service_keys/public:ro
-      - ./secrets/client_token:/run/secrets/client_token:ro
-    depends_on:
-      albert-brain:
-        condition: service_healthy
-      keygen-albert:
-        condition: service_completed_successfully
+  # albert-core:
+  #   <<: *core-base
+  #   ports:
+  #     - "19700:8100"
+  #   environment:
+  #     <<: *core-env
+  #     DINA_BRAIN_URL: http://albert-brain:8200
+  #     DINA_MASTER_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
+  #     DINA_PDS_HANDLE: "albert.test-pds.dinakernel.com"
+  #     DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
+  #     DINA_PDS_EMAIL: "albert@test.dina.local"
+  #     DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100,http://busdriver-core:8100"
+  #   volumes:
+  #     - albert-data:/data
+  #     - albert-keys-core-priv:/run/secrets/service_keys/private:ro
+  #     - albert-keys-pub:/run/secrets/service_keys/public:ro
+  #     - ./secrets/client_token:/run/secrets/client_token:ro
+  #   depends_on:
+  #     albert-brain:
+  #       condition: service_healthy
+  #     keygen-albert:
+  #       condition: service_completed_successfully
 
-  albert-brain:
-    <<: *brain-base
-    ports:
-      - "19800:8200"
-    environment:
-      <<: *brain-env
-      DINA_CORE_URL: http://albert-core:8100
-    volumes:
-      - albert-data:/data
-      - albert-keys-brain-priv:/run/secrets/service_keys/private:ro
-      - albert-keys-pub:/run/secrets/service_keys/public:ro
-      - ./models.json:/app/models.json:ro
-    depends_on:
-      keygen-albert:
-        condition: service_completed_successfully
+  # albert-brain:
+  #   <<: *brain-base
+  #   ports:
+  #     - "19800:8200"
+  #   environment:
+  #     <<: *brain-env
+  #     DINA_CORE_URL: http://albert-core:8100
+  #   volumes:
+  #     - albert-data:/data
+  #     - albert-keys-brain-priv:/run/secrets/service_keys/private:ro
+  #     - albert-keys-pub:/run/secrets/service_keys/public:ro
+  #     - ./models.json:/app/models.json:ro
+  #   depends_on:
+  #     keygen-albert:
+  #       condition: service_completed_successfully
 
   # ==========================================================================
   # Actor 5: BusDriver (transit provider) — Core port 19900, Brain port 20000
@@ -343,7 +348,7 @@ services:
       DINA_PDS_HANDLE: "busdriver.test-pds.dinakernel.com"
       DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
       DINA_PDS_EMAIL: "busdriver@test.dina.local"
-      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100,http://albert-core:8100"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100"
     volumes:
       - busdriver-data:/data
       - busdriver-keys-core-priv:/run/secrets/service_keys/private:ro
@@ -429,7 +434,7 @@ volumes:
   alonso-data:
   sancho-data:
   chairmaker-data:
-  albert-data:
+  # albert-data:  # Digital Estate deferred
   busdriver-data:
 
   # Actor keys — isolated per service (Core private, Brain private, shared public)
@@ -445,9 +450,9 @@ volumes:
   chairmaker-keys-brain-priv:
   chairmaker-keys-pub:
 
-  albert-keys-core-priv:
-  albert-keys-brain-priv:
-  albert-keys-pub:
+  # albert-keys-core-priv:  # Digital Estate deferred
+  # albert-keys-brain-priv:
+  # albert-keys-pub:
 
   busdriver-keys-core-priv:
   busdriver-keys-brain-priv:

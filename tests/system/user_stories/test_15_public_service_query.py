@@ -84,22 +84,40 @@ _state: dict = {}
 # produce for this exact shape. Drift in either canonicaliser breaks this
 # test (which is the point — regression guard for the cross-language
 # canonical agreement).
-ETA_QUERY_SCHEMA_HASH = "c48434dfc06a33520eb7543f29ef3a0aba7582d9ace25f5b9a838f84d27172ce"
+ETA_QUERY_SCHEMA_HASH = "2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71"
 
 ETA_QUERY_SCHEMA = {
-    "description": "Query ETA",
+    "description": "Query estimated time of arrival for a transit service.",
     "params": {
         "type": "object",
         "required": ["route_id"],
         "properties": {
             "route_id": {"type": "string"},
+            "location": {
+                "type": "object",
+                "required": ["lat", "lng"],
+                "properties": {
+                    "lat": {"type": "number"},
+                    "lng": {"type": "number"},
+                },
+            },
         },
     },
     "result": {
         "type": "object",
-        "required": ["eta_minutes"],
+        "required": ["status"],
         "properties": {
+            "status": {
+                "type": "string",
+                "enum": ["on_route", "not_on_route", "out_of_service", "not_found"],
+            },
             "eta_minutes": {"type": "integer"},
+            "route_name": {"type": "string"},
+            "vehicle_type": {"type": "string"},
+            "stop_name": {"type": "string"},
+            "stop_distance_m": {"type": "number"},
+            "map_url": {"type": "string"},
+            "message": {"type": "string"},
         },
     },
     "schema_hash": ETA_QUERY_SCHEMA_HASH,
