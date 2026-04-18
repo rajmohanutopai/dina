@@ -812,7 +812,7 @@ Hybrid.
 
 ### Objective
 
-Verify that public-facing documentation is materially true as written.
+Verify that provider-facing documentation is materially true as written.
 
 ### Checks
 
@@ -1601,7 +1601,7 @@ Pre-release Harness.
 
 ### Objective
 
-Verify that an external agent can send a schema-driven `service.query` from Dina's CLI and correlate the asynchronous response via the CLI. Proves the full wire protocol works when invoked by a real paired agent, not just by test-internal helpers: the `schema_hash` + params contract is enforced provider-side, the response bridges cleanly, and `dina service status` surfaces the terminal state. Release gate for the WS2 public service protocol from the user-facing CLI perspective.
+Verify that an external agent can send a schema-driven `service.query` from Dina's CLI and correlate the asynchronous response via the CLI. Proves the full wire protocol works when invoked by a real paired agent, not just by test-internal helpers: the `schema_hash` + params contract is enforced provider-side, the response bridges cleanly, and `dina service status` surfaces the terminal state. Release gate for the WS2 provider service protocol from the user-facing CLI perspective.
 
 ### Preconditions
 
@@ -1643,7 +1643,7 @@ Verify that an external agent can send a schema-driven `service.query` from Dina
 
 - Fully automated via `tests/release/test_rel_029_service_query.py`
 - Depends on the same `release_services` / `agent_paired` fixtures as REL-023
-- Uses the same stack as the E2E Suite 25 (`tests/e2e/test_suite_25_public_service_query.py`) — a passing E2E suite is a good precondition before running REL-029
+- Uses the same stack as the E2E Suite 25 (`tests/e2e/test_suite_25_provider_service_query.py`) — a passing E2E suite is a good precondition before running REL-029
 
 ---
 

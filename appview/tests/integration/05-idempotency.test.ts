@@ -294,7 +294,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         record: {
           name: 'My Collection',
           items: ['at://did:plc:item/com.dina.trust.attestation/item1'],
-          isPublic: true,
+          isDiscoverable: true,
           createdAt: now,
         },
         table: schema.collections,

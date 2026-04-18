@@ -468,7 +468,7 @@ ETA_QUERY_SCHEMA = {
 def busdriver(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
     """BusDriver — WS2 public transit provider (Trust Ring 2).
 
-    Provisions a real Core+Brain pair configured as a public service for
+    Provisions a real Core+Brain pair configured as a provider service for
     the ``eta_query`` capability. The schema config is PUT via the real
     ``/v1/service/config`` admin endpoint so the provider enforces
     schema_hash and params validation during service.query ingress.
@@ -492,17 +492,17 @@ def busdriver(plc_directory, d2d_network, docker_services, _core_private_keys) -
     node.first_run_setup("busdriver@test.dina.local", "passphrase_busdriver")
 
     # Alonso is in BusDriver's contact list so D2D service.query from a
-    # non-contact is still accepted as a public-service request (egress
+    # non-contact is still accepted as a provider-service request (egress
     # contact-gate bypass is governed by the service_config).
     node.add_contact(alonso_did, "Don Alonso", TrustRing.RING_2_VERIFIED)
 
     # Publish the service config. Schema-driven provider ingress requires:
-    #   - is_public=true
+    #   - is_discoverable=true
     #   - capabilities + capability_schemas parity (every capability
     #     declared has a schema with params + result + canonical hash)
     #   - service_area for discovery scoring
     service_config = {
-        "is_public": True,
+        "is_discoverable": True,
         "name": "SF Transit Authority",
         "description": "Schedule-based bus ETAs for SF Muni routes.",
         "capabilities": {

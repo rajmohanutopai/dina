@@ -1431,7 +1431,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
           'at://did:plc:other/com.dina.trust.attestation/1',
           'at://did:plc:other/com.dina.trust.attestation/2',
         ],
-        isPublic: true,
+        isDiscoverable: true,
         createdAt: new Date().toISOString(),
       },
     }
@@ -1439,7 +1439,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     const rows = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dina.trust.collection/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe('My Trusted Reviews')
-    expect(rows[0].isPublic).toBe(true)
+    expect(rows[0].isDiscoverable).toBe(true)
     expect(rows[0].itemsJson).toEqual([
       'at://did:plc:other/com.dina.trust.attestation/1',
       'at://did:plc:other/com.dina.trust.attestation/2',

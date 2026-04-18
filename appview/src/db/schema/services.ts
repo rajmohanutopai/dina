@@ -13,12 +13,12 @@ export const services = pgTable('services', {
   hoursJson: jsonb('hours_json'),
   responsePolicyJson: jsonb('response_policy_json'),
   capabilitySchemasJson: jsonb('capability_schemas_json'),  // WS2: per-capability JSON schemas; each entry holds its own schema_hash
-  isPublic: boolean('is_public').notNull().default(true),
+  isDiscoverable: boolean('is_discoverable').notNull().default(true),
   searchContent: text('search_content'),
   indexedAt: timestamp('indexed_at').notNull().defaultNow(),
 }, (table) => [
   index('services_operator_did_idx').on(table.operatorDid),
-  index('services_is_public_idx').on(table.isPublic),
+  index('services_is_discoverable_idx').on(table.isDiscoverable),
   index('services_lat_lng_idx').on(table.lat, table.lng),
   index('services_capabilities_idx').using('gin', table.capabilitiesJson),
   // For ILIKE queries, a btree index on searchContent helps with prefix matching.

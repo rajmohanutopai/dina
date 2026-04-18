@@ -4,7 +4,7 @@ Implements the requester-side lookups against the Trust Network's
 service registry:
 
     GET /xrpc/com.dina.service.search   — find services by capability + geo
-    GET /xrpc/com.dina.service.isPublic  — check if a DID is a public service
+    GET /xrpc/com.dina.service.isDiscoverable  — check if a DID is a provider service
 
 Third-party imports: httpx.
 """
@@ -29,7 +29,7 @@ class AppViewClient:
         radius_km: float = 5,
         q: str | None = None,
     ) -> list[dict]:
-        """Search for public services by capability, optionally by location.
+        """Search for provider services by capability, optionally by location.
 
         When ``lat`` and ``lng`` are supplied the results are ranked by
         proximity + text + trust. When omitted (non-geospatial queries),
@@ -50,14 +50,14 @@ class AppViewClient:
         resp.raise_for_status()
         return resp.json().get("services", [])
 
-    async def is_public(self, did: str) -> tuple[bool, list[str]]:
-        """Check whether a DID is registered as a public service.
+    async def is_discoverable(self, did: str) -> tuple[bool, list[str]]:
+        """Check whether a DID is registered as a provider service.
 
-        Returns (is_public, capabilities) tuple.
+        Returns (is_discoverable, capabilities) tuple.
         """
         resp = await self._client.get(
-            f"{self._url}/xrpc/com.dina.service.isPublic", params={"did": did},
+            f"{self._url}/xrpc/com.dina.service.isDiscoverable", params={"did": did},
         )
         resp.raise_for_status()
         data = resp.json()
-        return data.get("isPublic", False), data.get("capabilities", [])
+        return data.get("isDiscoverable", False), data.get("capabilities", [])

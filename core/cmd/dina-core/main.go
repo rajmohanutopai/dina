@@ -803,29 +803,39 @@ func main() {
 		slog.Info("D2D sender DID configured", "did", ownDID)
 	}
 
-	// Public service discovery: provider window for egress + workflow service for ingress.
+	// Provider service discovery: provider window for egress + workflow service for ingress.
 	// WS2: requester window removed — workflow task IS the authorization for service.response.
 	providerWindow := service.NewQueryWindow()
 	transportSvc.SetQueryWindows(providerWindow, nil)
 	// transportSvc.SetWorkflowService is called later, after workflowSvc is created.
 	go providerWindow.CleanupLoop(context.Background(), 10*time.Second)
 
-	// Local service config (determines if this node is a public service).
+	// Local service config (determines if this node is a provider service).
 	serviceConfigSvc := newServiceConfigService(vaultMgr)
 	if serviceConfigSvc != nil {
 		transportSvc.SetLocalServiceConfig(serviceConfigSvc)
 	}
 	serviceConfigHandler := &handler.ServiceConfigHandler{Config: serviceConfigSvc, Brain: brain}
 
-	// PublicServiceResolver: check AppView for public services on egress.
+	// Working-memory handler (docs/WORKING_MEMORY_DESIGN.md). Reuses
+	// the pool as TopicStoreProvider; pool also satisfies OpenPersonas
+	// via a runtime type assertion in the handler.
+	memorySvc, memoryProvider := newMemoryService(vaultMgr, clk)
+	memoryHandler := &handler.MemoryHandler{
+		Memory:   memorySvc,
+		Provider: memoryProvider,
+		Clock:    clk,
+	}
+
+	// ProviderServiceResolver: check AppView for provider services on egress.
 	if appViewURL := os.Getenv("DINA_APPVIEW_URL"); appViewURL != "" {
 		resolver := appviewAdapter.NewServiceResolver(appViewURL)
-		transportSvc.SetPublicServiceResolver(resolver)
-		slog.Info("Public service resolver wired", "appview", appViewURL)
+		transportSvc.SetProviderServiceResolver(resolver)
+		slog.Info("Provider service resolver wired", "appview", appViewURL)
 	} else if cfg.AppViewURL != "" {
 		resolver := appviewAdapter.NewServiceResolver(cfg.AppViewURL)
-		transportSvc.SetPublicServiceResolver(resolver)
-		slog.Info("Public service resolver wired", "appview", cfg.AppViewURL)
+		transportSvc.SetProviderServiceResolver(resolver)
+		slog.Info("Provider service resolver wired", "appview", cfg.AppViewURL)
 	}
 
 	// Start MsgBox client if configured. The client:
@@ -891,7 +901,7 @@ func main() {
 				return
 			}
 		}
-		// Public service bypass (after trust blocklist, before quarantine audit).
+		// Provider service bypass (after trust blocklist, before quarantine audit).
 		if serviceResult := transportSvc.CheckServiceIngress(msg); serviceResult != "" {
 			if serviceResult == "drop" {
 				slog.Debug("sweeper: service message dropped", "type", msg.Type, "from", msg.From)
@@ -902,10 +912,10 @@ func main() {
 		}
 		// service.* messages that didn't pass the bypass must NOT enter normal inbox.
 		if strings.HasPrefix(string(msg.Type), "service.") {
-			slog.Debug("sweeper: service message rejected (not a public service or unsupported capability)", "type", msg.Type, "from", msg.From)
+			slog.Debug("sweeper: service message rejected (not a provider service or unsupported capability)", "type", msg.Type, "from", msg.From)
 			return
 		}
-		// Quarantine unknown senders (after service bypass — public services skip quarantine).
+		// Quarantine unknown senders (after service bypass — provider services skip quarantine).
 		if msg.From != "" {
 			decision := trustSvc.EvaluateIngress(msg.From)
 			if decision == domain.IngressQuarantine {
@@ -977,7 +987,7 @@ func main() {
 				return nil // Not an error — intentionally discarded
 			}
 		}
-		// Public service bypass (after trust blocklist, before quarantine audit).
+		// Provider service bypass (after trust blocklist, before quarantine audit).
 		if serviceResult := transportSvc.CheckServiceIngress(msg); serviceResult != "" {
 			if serviceResult == "drop" {
 				slog.Debug("ingress: service message dropped", "type", msg.Type, "from", msg.From)
@@ -990,7 +1000,7 @@ func main() {
 			slog.Debug("ingress: service message rejected", "type", msg.Type, "from", msg.From)
 			return nil
 		}
-		// Quarantine unknown senders (after service bypass — public services skip quarantine).
+		// Quarantine unknown senders (after service bypass — provider services skip quarantine).
 		if msg.From != "" {
 			decision := trustSvc.EvaluateIngress(msg.From)
 			if decision == domain.IngressQuarantine {
@@ -1637,13 +1647,19 @@ func main() {
 	mux.HandleFunc("/v1/devices", deviceH.HandleListDevices)
 	mux.HandleFunc("/v1/devices/", deviceH.HandleRevokeDevice)
 
-	// Service config — public service discovery
+	// Service config — provider service discovery
 	mux.HandleFunc("/v1/service/config", serviceConfigHandler.Handle)
 	// Narrow Brain-accessible device lookup (names of paired agents) —
 	// feeds provider-side "dispatching to X" notifications without
 	// widening Brain's authz to all of /v1/devices.
 	mux.HandleFunc("/v1/service/agents", deviceH.HandleListAgents)
 	// NOTE: /v1/service/query is registered later, after workflowSvc is created.
+
+	// Working-memory endpoints (see docs/WORKING_MEMORY_DESIGN.md).
+	// Narrow read/write surface for Brain: topic Touch during ingest,
+	// ToC render before reasoning. Allowlisted via the /v1/memory prefix.
+	mux.HandleFunc("/v1/memory/topic/touch", memoryHandler.HandleTouch)
+	mux.HandleFunc("/v1/memory/toc", memoryHandler.HandleToc)
 
 	// Agent Safety Layer — proxies to brain's guardian
 	mux.HandleFunc("/v1/agent/validate", agentH.HandleValidate)

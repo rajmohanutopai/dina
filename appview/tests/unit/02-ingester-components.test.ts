@@ -118,7 +118,7 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
     'com.dina.trust.collection': {
       name: 'My favorites',
       items: ['at://did:plc:abc/com.dina.trust.attestation/tid1'],
-      isPublic: true,
+      isDiscoverable: true,
       createdAt: now,
     },
     'com.dina.trust.media': {
@@ -185,7 +185,7 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
         },
       },
       responsePolicy: { eta_query: 'auto' },
-      isPublic: true,
+      isDiscoverable: true,
       updatedAt: new Date(Date.now() - 60_000).toISOString(),
     },
   }
@@ -666,7 +666,7 @@ describe('§2.1 Record Validator', () => {
       },
       serviceArea: { latE7: 377700000, lngE7: -1224300000, radiusKm: 10 },
       responsePolicy: { eta_query: 'auto' },
-      isPublic: true,
+      isDiscoverable: true,
       updatedAt: new Date(Date.now() - 60_000).toISOString(),
     }
     const result = validateRecord('com.dina.service.profile', record)
@@ -692,7 +692,7 @@ describe('§2.1 Record Validator', () => {
       },
       serviceArea: { latE7: 377700000, lngE7: -1224300000, radiusKm: 10 },
       responsePolicy: { eta_query: 'auto' },
-      isPublic: true,
+      isDiscoverable: true,
       updatedAt: new Date(Date.now() - 60_000).toISOString(),
     }
     const result = validateRecord('com.dina.service.profile', record)

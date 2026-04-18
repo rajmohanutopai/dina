@@ -381,7 +381,7 @@ The AppView serves 7 read-only endpoints (5 trust + 2 service discovery). Expres
 
 6. **com.dina.service.search** — Ranked service discovery by capability, location, and text query. Ranking: distance (40%) + text (30%) + trust (30%). Composite cursor pagination.
 
-7. **com.dina.service.isPublic** — Deterministic boolean check: is this DID a public service provider? Returns `{isPublic, capabilities[]}`. Cached 5 min by Core.
+7. **com.dina.service.isDiscoverable** — Deterministic boolean check: is this DID a provider service provider? Returns `{isDiscoverable, capabilities[]}`. Cached 5 min by Core.
 
 ### SWR Caching (api/middleware/swr-cache.ts)
 
@@ -427,22 +427,22 @@ Each of the 20 AT Protocol record types has a corresponding PostgreSQL table:
 - **Subject Claims** — Assertions that two subjects are the same entity (triggers Tier 3 merge).
 - **Trust Policies** — User-defined trust parameters (max graph depth, blocked DIDs, etc.).
 - **Notification Preferences** — Per-user notification settings.
-- **Service Profiles** — Public service capability advertisements (see below).
+- **Service Profiles** — Provider service capability advertisements (see below).
 
 ### Service Discovery Records
 
-**`com.dina.service.profile`** — Public service capability advertisement.
+**`com.dina.service.profile`** — Provider service capability advertisement.
 - Published by service providers (bus operators, shops, etc.)
 - DID binding: author DID = service operator DID (no delegation in Phase 1)
-- Fields: name, description, capabilities[], serviceArea, hours, responsePolicy, isPublic
-- Phase 1: only `isPublic: true` and `responsePolicy: "auto"` accepted
+- Fields: name, description, capabilities[], serviceArea, hours, responsePolicy, isDiscoverable
+- Phase 1: only `isDiscoverable: true` and `responsePolicy: "auto"` accepted
 
 **New xRPC endpoints:**
 - `com.dina.service.search` — ranked retrieval by capability + location + text
   - Ranking: distance (40%) + text (30%) + trust (30%)
   - Cursor: composite (score_bucket, uri) for pagination
-- `com.dina.service.isPublic` — deterministic boolean check by DID
-  - Returns `{isPublic, capabilities[]}`, cached 5 min by Core
+- `com.dina.service.isDiscoverable` — deterministic boolean check by DID
+  - Returns `{isDiscoverable, capabilities[]}`, cached 5 min by Core
 
 ### System Tables
 
@@ -530,7 +530,7 @@ The AppView is part of Dina's four-layer architecture:
 
 Core gives Dina her identity. Brain gives her judgment. MsgBox lets Dinas talk to each other. AppView gives her memory of who to trust.
 
-Home Nodes make only outbound connections — no public IP required. The shared infrastructure (MsgBox, PDS, AppView) handles the public-facing networking. This is the default deployment. Operators who want full sovereignty can self-host the shared infrastructure on their own server with a single deployment script.
+Home Nodes make only outbound connections — no public IP required. The shared infrastructure (MsgBox, PDS, AppView) handles the provider-facing networking. This is the default deployment. Operators who want full sovereignty can self-host the shared infrastructure on their own server with a single deployment script.
 
 When a user says "I want to buy a chair," the Brain searches the vault (finds back pain, WFH, budget), infers the user needs an ergonomic chair, calls `search_trust_network` to query the AppView, and synthesizes a recommendation from verified peer reviews. The user never asked for "ergonomic" — Dina figured that out from context. The trust data comes from real identities on the AT Protocol, not anonymous star ratings.
 

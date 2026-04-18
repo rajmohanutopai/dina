@@ -74,7 +74,7 @@ func (r *recordingSender) snapshot() []sentResponse {
 func etaQueryServiceConfigJSON(t *testing.T) string {
 	t.Helper()
 	cfg := map[string]interface{}{
-		"is_public":    true,
+		"is_discoverable":    true,
 		"name":         "Test Transit",
 		"capabilities": map[string]interface{}{"eta_query": map[string]interface{}{"response_policy": "auto", "mcp_server": "transit", "mcp_tool": "get_eta"}},
 		"capability_schemas": map[string]interface{}{

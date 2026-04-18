@@ -1507,6 +1507,115 @@ Traces to: `brain/src/service/service_publisher.py`.
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-628]** Emits capabilitySchemas with per-capability hashes | Config with capability_schemas; session DID matches Core DID | Record has `capabilitySchemas` map; each entry has `schema_hash` deterministic per canonical form; no top-level `schemaHash` |
+| 2 | **[TST-BRAIN-852]** Hash always computed from canonical (supplied hash ignored) | Config supplies a stale `schema_hash` that disagrees with canonical | Published entry uses the canonically-computed hash, NOT the supplied one — stale cached hashes cannot silently ship |
+| 3 | **[TST-BRAIN-853]** Drift warning on supplied-hash mismatch | Config supplies a hash that differs from canonical | A log warning is emitted naming capability, supplied, and computed values — operator can see hash drift without breaking publish |
+
+### 28.5 Service-Handler Hardening (Provider-side strip + mcp_tool refactor)
+
+Traces to: `brain/src/service/service_handler.py`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-848]** Undeclared params stripped from task payload | Valid request with an extra key not declared in `params.properties` (e.g. `{patient_ref, provider}`) | Task payload carries only declared keys — defense-in-depth against LLMs packing stray fields even when the schema omits `additionalProperties: false` |
+| 2 | **[TST-BRAIN-849]** Declared params preserved verbatim | Valid request with all declared keys | Task payload's `params` equals the request's `params` for declared keys; values unchanged |
+| 3 | **[TST-BRAIN-850]** `mcp_tool` lives in task payload, not schema_snapshot | Valid request, provider config declares `mcp_tool` for the capability | Task payload has a top-level `mcp_tool` field; `schema_snapshot` contains only the canonical contract (description/params/result) — no `mcp_tool` key |
+| 4 | **[TST-BRAIN-851]** `execute_and_respond` threads `mcp_tool` from approval payload | Approval task payload carries `mcp_tool` | Downstream `_create_execution_task` is invoked with that `mcp_tool`; review-path execution binds to the same tool as auto-path |
+
+---
+
+## 29. Working Memory (ToC, Intent Classifier, Topic Extraction)
+
+> The Working-Memory pipeline: topic extraction at ingest, salience-
+> ranked table of contents, and the intent classifier that routes
+> queries across vault / trust_network / provider_services. See
+> `docs/WORKING_MEMORY_DESIGN.md`.
+
+### 29.1 Topic Extractor Helpers
+
+Traces to: `brain/src/service/topic_extractor.py`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-854]** `_parse_json_response` strips code fence | LLM response wrapped in ` ```json ... ``` ` | Returns parsed dict — fence is stripped before `json.loads` |
+| 2 | **[TST-BRAIN-855]** `_parse_json_response` rejects non-object | LLM returns bare list or `null` | Returns empty dict — extractor protocol requires an object |
+| 3 | **[TST-BRAIN-856]** `_sanitise_list` dedupes case-insensitively | `["Dr Carl", "dr carl", "DR CARL"]` | Returns `["Dr Carl"]` — first occurrence wins, preserves original casing |
+| 4 | **[TST-BRAIN-857]** `_sanitise_list` drops overlong / non-string items | Mix of 80+ char strings, ints, `None`, dicts, valid strings | Only valid strings shorter than 80 chars survive |
+
+### 29.2 Intent Classifier Helpers
+
+Traces to: `brain/src/service/intent_classifier.py`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-858]** `_coerce` filters unknown sources | `{sources: ["vault", "fake_source", "trust_network"]}` | Returns `sources=["vault", "trust_network"]` — unknown values dropped before the reasoning agent sees them |
+| 2 | **[TST-BRAIN-859]** `_coerce` falls back to `vault` on empty/unrecognised | `{sources: ["nonsense"]}` OR `{}` | Returns `sources=["vault"]` — conservative default when the LLM gives nothing actionable |
+| 3 | **[TST-BRAIN-860]** `_coerce` filters unknown temporal values | `{sources: ["vault"], temporal: "eternal"}` | `temporal == ""` — only `static`/`live_state`/`comparative`/`""` permitted |
+| 4 | **[TST-BRAIN-861]** `_render_toc_for_prompt` groups by persona + annotates live_capability | Mix of entries with and without live_capability across personas | Output groups by persona name; entries with `live_capability` + `live_provider_did` render as `<topic> [live: <cap> via <did>]` |
+
+### 29.3 Requester-Identity Auto-Fill (query_service)
+
+Traces to: `brain/src/service/vault_context.py::_query_service`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-862]** `_looks_like_requester_field` recognises identity prefixes | Field names `patient_ref`, `customer_id`, `account_holder`, `member_id` | Returns True |
+| 2 | **[TST-BRAIN-863]** `_looks_like_requester_field` rejects generic `id` / `ref` | Field names `id`, `ref`, `route_id`, `destination_ref` | Returns False — generic identifiers might be third-party IDs, not the requester |
+| 3 | **[TST-BRAIN-864]** `_autofill_requester_fields` fills missing required identity field with `self` | Schema: `{required: [patient_ref, date], properties: ...}`, params: `{date: ...}` | Output: `{patient_ref: "self", date: ...}` — deterministic fallback replaces procedural prompt guidance |
+| 4 | **[TST-BRAIN-865]** Never overwrites supplied identity values | Schema required `patient_ref`, params already `{patient_ref: "alonso"}` | Output preserves `"alonso"` — the LLM's choice wins |
+| 5 | **[TST-BRAIN-866]** Does NOT fill non-identity fields (e.g. `route_id`) | Required `route_id` + `location`, empty params | Neither field is auto-filled — auto-fill is scoped to requester-identity patterns |
+| 6 | **[TST-BRAIN-867]** Optional fields never auto-filled | Schema `{required: [], properties: {patient_ref: ...}}`, empty params | Output is empty — only required-missing fields get filled |
+| 7 | **[TST-BRAIN-868]** Pure function: no input mutation | Valid schema + params | Returned dict is a new object; original params unchanged |
+| 8 | **[TST-BRAIN-869]** Empty string treated as missing | Schema required `patient_ref`, params `{patient_ref: ""}` | Output: `{patient_ref: "self"}` — LLMs occasionally emit `""` for required fields |
+
+### 29.4 Live-Capability Enrichment Cache (staging_processor)
+
+Traces to: `brain/src/service/staging_processor.py::_lookup_discoverable_cached`.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-870]** Cache hit skips AppView call | Same DID looked up twice within TTL | Second call returns cached value; `AppViewClient.is_discoverable` called only once |
+| 2 | **[TST-BRAIN-871]** TTL expiry forces refresh | Same DID, cache entry past TTL | AppView called again; returns fresh result |
+| 3 | **[TST-BRAIN-872]** Failed lookup does NOT poison cache | First call raises, second call succeeds | Second call makes a real AppView call (not cached `None`); returns the success result |
+| 4 | **[TST-BRAIN-873]** Per-DID cache isolation | Two DIDs looked up | Each DID has its own cache entry; one invalidating doesn't affect the other |
+
+### 29.6 Appointment-Status Formatter (service_query)
+
+Traces to: `brain/src/service/service_query.py::_format_appointment_status` + the `_FORMATTERS` registry.
+
+> Provider responses arrive as structured JSON. The per-capability
+> formatter converts them into human-readable text shown via Telegram
+> / whisper channels. Without a per-capability formatter, the generic
+> path dumps raw JSON — reliably ugly. These tests lock the
+> appointment_status path in place.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-874]** Confirmed with full date + time | `{status: confirmed, date: 2026-04-19, time: 15:00, ...}` | Two-line output: header `"📬 Reply from <name>"` + body `"Your appointment on 2026-04-19 at 15:00 is confirmed."` |
+| 2 | **[TST-BRAIN-875]** Confirmed with empty date/time degrades gracefully | `{status: confirmed, date: "", time: "", ...}` | Body reads `"Your appointment is confirmed."` — no empty quotes, no awkward spacing; header still present |
+| 3 | **[TST-BRAIN-876]** Rescheduled includes new date + provider note | `{status: rescheduled, date: 2026-04-20, time: 10:00, note: "Moved from ..."}` | Header present; body mentions "rescheduled", new date/time, preserves the note on its own line |
+| 4 | **[TST-BRAIN-877]** Cancelled includes provider note | `{status: cancelled, note: "…please reschedule via the clinic."}` | Header present; body mentions "cancelled" and the provider's note |
+| 5 | **[TST-BRAIN-878]** not_found produces useful text | `{status: not_found, patient_ref: "", ...}` | Header `"📬 Reply from <name>"` + body `"No record of your appointment was found."` |
+| 6 | **[TST-BRAIN-879]** Never dumps raw JSON | Any valid result shape | Output contains no `{`, `}`, or JSON-style `"` |
+| 7 | **[TST-BRAIN-880]** Unknown status degrades without JSON dump | `{status: "mysterious_new_status", ...}` | Header present; body mentions the status string; no JSON anywhere |
+| 8 | **[TST-BRAIN-881]** JSON-string result is parsed before formatting | `result` field is a JSON-encoded string (e.g. after storage round-trip) | Formatter parses it; user sees structured header+body, not the raw JSON string |
+| 9 | **[TST-BRAIN-882]** `appointment_status` wired into `_FORMATTERS` | Registry lookup | `_FORMATTERS["appointment_status"] is _format_appointment_status` |
+| 10 | **[TST-BRAIN-883]** `format_service_query_result` routes via registry | Success result with `capability=appointment_status` | Output comes from the appointment formatter (header present, not the generic `response received` path) |
+
+### 29.7 Traceability — Post-Commit Audit → Test IDs
+
+Links each finding in the post-commit audit (2026-04-18) to the
+regression tests that cover it. New audit findings append rows here.
+
+| # | Audit Finding | Fix | Test IDs |
+|---|---|---|---|
+| 1 | `mcp_tool` piggybacking on `schema_snapshot` | Separate parameter through task creation; pure canonical snapshot | TST-BRAIN-850, 632 |
+| 2 | Canonical schema-hash can silently drift | Always compute from canonical on publish; warn on mismatch | TST-BRAIN-852, 634 |
+| 4 | Schema autofetch is a shortcut over a missing piece | Kept as fallback; ToC-stored hash migration deferred | (tracked but no test yet) |
+| 5 | SHORTCUT guidance is prose in a system prompt | `_autofill_requester_fields` moves identity-filling into code | TST-BRAIN-862 through 650 |
+| 6 | Enrichment calls AppView per entity | TTL cache on `is_discoverable` | TST-BRAIN-870 through 654 |
+| 11 | Prompt domain-leak | Abstracted example list in SHORTCUT guidance | (text-only change; no test) |
+| B (prior) | Provider schema allowed extra properties to flow through | Provider-side strip of undeclared params after validation | TST-BRAIN-848, 630 |
+| C (prior) | No explicit capability → MCP tool mapping | `mcp_tool` field in capability schema threaded to agent prompt | TST-BRAIN-850 (and CLI test forthcoming) |
 
 ---
 

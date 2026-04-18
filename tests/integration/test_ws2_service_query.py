@@ -230,7 +230,7 @@ class TestWS2ConfigPush:
     def test_put_service_config(self):
         """PUT /v1/service/config succeeds and Core responds 200."""
         config = {
-            "is_public": True,
+            "is_discoverable": True,
             "name": "E2E Test Service",
             "description": "Integration test",
             "capabilities": {

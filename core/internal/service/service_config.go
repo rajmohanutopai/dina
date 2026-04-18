@@ -1,4 +1,4 @@
-// service_config.go — Service configuration for public service discovery.
+// service_config.go — Service configuration for provider service discovery.
 //
 // The service config determines whether this Home Node operates as a public
 // service. It is the single local authority — Brain reads it to dispatch
@@ -25,7 +25,7 @@ import (
 // capability inside CapabilitySchemas. The field is kept only so legacy
 // configs parse without error.
 type ServiceConfig struct {
-	IsPublic          bool                        `json:"is_public"`
+	IsDiscoverable          bool                        `json:"is_discoverable"`
 	Capabilities      map[string]CapabilityConfig `json:"capabilities"`
 	CapabilitySchemas map[string]CapabilitySchema `json:"capability_schemas,omitempty"`
 	ServiceArea       *ServiceArea                `json:"service_area,omitempty"`
@@ -93,15 +93,15 @@ func (s *ServiceConfigService) Get() (*ServiceConfig, error) {
 // so downstream consumers can trust it. Fails closed on any problem: an
 // invalid schema never lands in the store.
 func (s *ServiceConfigService) Put(cfg *ServiceConfig) error {
-	if cfg.IsPublic {
+	if cfg.IsDiscoverable {
 		if cfg.Name == "" {
-			return fmt.Errorf("service_config: public service must have a name")
+			return fmt.Errorf("service_config: provider service must have a name")
 		}
 		if len(cfg.Capabilities) == 0 {
-			return fmt.Errorf("service_config: public service must have at least one capability")
+			return fmt.Errorf("service_config: provider service must have at least one capability")
 		}
 		if cfg.ServiceArea == nil {
-			return fmt.Errorf("service_config: public service must have a service_area (lat/lng/radius)")
+			return fmt.Errorf("service_config: provider service must have a service_area (lat/lng/radius)")
 		}
 	}
 
@@ -116,10 +116,10 @@ func (s *ServiceConfigService) Put(cfg *ServiceConfig) error {
 		}
 	}
 
-	// Public services must ship a valid JSON Schema contract for every
+	// Provider services must ship a valid JSON Schema contract for every
 	// capability, and every schema must compile. This is the protocol
 	// gate — discovery and validation paths downstream rely on it.
-	if cfg.IsPublic {
+	if cfg.IsDiscoverable {
 		if cfg.CapabilitySchemas == nil {
 			cfg.CapabilitySchemas = map[string]CapabilitySchema{}
 		}
@@ -233,13 +233,13 @@ func canonicalSchemaHash(schema CapabilitySchema) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// IsPublic returns whether this node is a public service.
-func (s *ServiceConfigService) IsPublic() bool {
+// IsDiscoverable returns whether this node is a provider service.
+func (s *ServiceConfigService) IsDiscoverable() bool {
 	cfg, err := s.Get()
 	if err != nil || cfg == nil {
 		return false
 	}
-	return cfg.IsPublic
+	return cfg.IsDiscoverable
 }
 
 // HasCapability returns whether this node supports the given capability.

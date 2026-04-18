@@ -112,7 +112,7 @@ type TransportService struct {
 	contacts       port.ContactLookup         // D2D v1: contact gate on egress
 	auditor        port.VaultAuditLogger      // D2D v1: audit trail
 	approvals      port.ApprovalManager       // D2D v1: outbound approval (explicit_once)
-	publicResolver port.PublicServiceResolver  // public service query: egress contact-gate bypass
+	publicResolver port.ProviderServiceResolver  // provider service query: egress contact-gate bypass
 	localService   *ServiceConfigService       // local service config: ingress query acceptance
 	providerWindow *QueryWindow                // provider-side reply window for service.response egress
 	requesterWindow *QueryWindow               // requester-side query window for service.response ingress (legacy, nil in WS2)
@@ -199,8 +199,8 @@ func (s *TransportService) SetContacts(cl port.ContactLookup) {
 	s.contacts = cl
 }
 
-// SetPublicServiceResolver sets the AppView client for public service lookup.
-func (s *TransportService) SetPublicServiceResolver(r port.PublicServiceResolver) {
+// SetProviderServiceResolver sets the AppView client for provider service lookup.
+func (s *TransportService) SetProviderServiceResolver(r port.ProviderServiceResolver) {
 	s.publicResolver = r
 }
 
@@ -209,7 +209,7 @@ func (s *TransportService) SetLocalServiceConfig(sc *ServiceConfigService) {
 	s.localService = sc
 }
 
-// SetQueryWindows sets the query windows for public service D2D bypass.
+// SetQueryWindows sets the query windows for provider service D2D bypass.
 func (s *TransportService) SetQueryWindows(provider, requester *QueryWindow) {
 	s.providerWindow = provider
 	s.requesterWindow = requester
@@ -237,7 +237,7 @@ func (s *TransportService) ReleaseProviderWindow(peerDID, queryID, capability st
 }
 
 // CheckServiceIngress checks whether an inbound message should be accepted
-// via the public service bypass. Returns:
+// via the provider service bypass. Returns:
 //   - "accept"    → service.query accepted, provider window opened
 //   - "accept"    → service.response matched requester window, consumed
 //   - "drop"      → service.response with no matching window (unsolicited)
@@ -252,8 +252,8 @@ func (s *TransportService) CheckServiceIngress(msg *domain.DinaMessage) string {
 
 	switch msg.Type {
 	case domain.MsgTypeServiceQuery:
-		// Provider side: am I a public service with this capability?
-		if s.localService == nil || !s.localService.IsPublic() {
+		// Provider side: am I a provider service with this capability?
+		if s.localService == nil || !s.localService.IsDiscoverable() {
 			return ""
 		}
 		var body domain.ServiceQueryBody
@@ -432,8 +432,8 @@ func (s *TransportService) SetAllowUnsignedD2D(allow bool) {
 // wraps ErrExplicitOnceParked and the caller can type-assert it to
 // *EgressApprovalResult to surface approval details to the owner.
 func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg domain.DinaMessage) error {
-	// --- Public service bypass (before contact/scenario gates) ---
-	// service.query to a public service: skip contact + scenario gates.
+	// --- Provider service bypass (before contact/scenario gates) ---
+	// service.query to a provider service: skip contact + scenario gates.
 	// service.response with an open reply window: skip contact + scenario gates.
 	serviceBypass := false
 	var serviceQueryBody *domain.ServiceQueryBody
@@ -441,10 +441,10 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 
 	if msg.Type == domain.MsgTypeServiceQuery && s.publicResolver != nil {
 		if err := json.Unmarshal(msg.Body, &serviceQueryBody); err == nil && serviceQueryBody != nil {
-			isPublic, pubErr := s.publicResolver.IsPublicService(string(to), serviceQueryBody.Capability)
+			isDiscoverable, pubErr := s.publicResolver.IsDiscoverableService(string(to), serviceQueryBody.Capability)
 			if pubErr != nil {
-				slog.Warn("transport: public service lookup failed (fail-closed)", "to", to, "error", pubErr)
-			} else if isPublic {
+				slog.Warn("transport: provider service lookup failed (fail-closed)", "to", to, "error", pubErr)
+			} else if isDiscoverable {
 				serviceBypass = true
 			}
 		}
@@ -460,7 +460,7 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 	}
 
 	// Gate 1: Contact check — recipient must be an explicit contact.
-	// Bypassed for public service queries and windowed responses.
+	// Bypassed for provider service queries and windowed responses.
 	if !serviceBypass && s.contacts != nil {
 		if !s.contacts.IsContact(string(to)) {
 			s.appendAudit(ctx, "d2d_egress_blocked", string(to), string(msg.Type), "contact_gate", "not_a_contact")
@@ -596,7 +596,7 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 		return fmt.Errorf("transport: enqueue message: %w", err)
 	}
 
-	// Post-enqueue: commit query windows for public service traffic.
+	// Post-enqueue: commit query windows for provider service traffic.
 	if serviceBypass {
 		// WS2: no requesterWindow.Open for service.query — task IS the authorization.
 		if serviceResponseBody != nil && s.providerWindow != nil {

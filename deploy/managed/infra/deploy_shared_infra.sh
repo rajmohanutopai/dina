@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy_shared_infra.sh — Deploy Dina SHARED infrastructure (not a Home Node)
 #
-# This deploys the public services that multiple Home Nodes connect to:
+# This deploys the provider services that multiple Home Nodes connect to:
 #   - Community PDS  (AT Protocol, hosts user trust repos)
 #   - MsgBox         (D2D encrypted mailbox, WebSocket + HTTP)
 #   - AppView        (Trust Network, 5 xRPC endpoints)

@@ -146,8 +146,70 @@ def _format_generic(details: dict, name: str) -> str:
     return f"{name} — response received: {json.dumps(result)[:200]}"
 
 
+def _format_appointment_status(details: dict, name: str) -> str:
+    """Format an appointment_status response as human-readable text.
+
+    Result schema shape (see demo/appointment/server.py):
+        status: "confirmed" | "rescheduled" | "cancelled" | "not_found"
+        patient_ref: echoed back
+        date: echoed back (may be empty when requester didn't supply)
+        time: echoed back
+        note: provider-supplied free text (may be empty)
+
+    Provenance-first format: lead with the provider name so the user
+    sees "this came from Dr Carl's Clinic" before reading the status.
+    The prefix "📬 Reply from <name>" makes it clear this is a live
+    response from an external provider, not Dina's own reasoning over
+    the vault. The icon is consistent across all formatted provider
+    replies.
+    """
+    result = details.get("result", {})
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            result = {}
+
+    status = (result.get("status") or "").strip().lower()
+    date = (result.get("date") or "").strip()
+    time_val = (result.get("time") or "").strip()
+    note = (result.get("note") or "").strip()
+
+    when = ""
+    if date and time_val:
+        when = f" on {date} at {time_val}"
+    elif date:
+        when = f" on {date}"
+    elif time_val:
+        when = f" at {time_val}"
+
+    header = f"📬 Reply from {name}"
+
+    if status == "confirmed":
+        return f"{header}\nYour appointment{when} is confirmed."
+    if status == "rescheduled":
+        body = "Your appointment has been rescheduled"
+        if when:
+            body += f" to{when}"
+        body += "."
+        if note:
+            body += f"\n{note}"
+        return f"{header}\n{body}"
+    if status == "cancelled":
+        body = "Your appointment has been cancelled."
+        if note:
+            body += f"\n{note}"
+        return f"{header}\n{body}"
+    if status == "not_found":
+        return f"{header}\nNo record of your appointment was found."
+
+    # Unknown / missing status — degrade gracefully without dumping JSON.
+    return f"{header}\nUnexpected status: {status or 'unknown'}"
+
+
 _FORMATTERS: dict[str, Any] = {
     "eta_query": _format_eta,
+    "appointment_status": _format_appointment_status,
 }
 
 
@@ -157,7 +219,7 @@ _FORMATTERS: dict[str, Any] = {
 
 
 class ServiceQueryOrchestrator:
-    """Turns a user ask into a public service query via Core endpoint.
+    """Turns a user ask into a provider service query via Core endpoint.
 
     WS2: no in-memory tracking. Core creates a durable workflow_task,
     sends D2D, and tracks the response. Brain receives the result as a

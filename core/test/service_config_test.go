@@ -38,7 +38,7 @@ func (s *memServiceConfigStore) Put(cfg string) error {
 // failure rather than silently recomputing against itself.
 func validPublicConfig() *service.ServiceConfig {
 	return &service.ServiceConfig{
-		IsPublic: true,
+		IsDiscoverable: true,
 		Name:     "Test Transit",
 		Capabilities: map[string]service.CapabilityConfig{
 			"eta_query": {ResponsePolicy: "auto"},

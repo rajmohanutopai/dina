@@ -160,7 +160,7 @@ const collectionSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   items: z.array(z.string().max(2048)).max(100),
-  isPublic: z.boolean(),
+  isDiscoverable: z.boolean(),
   createdAt: boundedIsoDate,
 })
 
@@ -270,7 +270,7 @@ const serviceProfileSchema = z.object({
     timezone: z.string().max(50),
   }).optional(),
   responsePolicy: z.record(z.string().max(50)),
-  isPublic: z.boolean(),
+  isDiscoverable: z.boolean(),
   updatedAt: boundedIsoDate,
 }).refine(
   // Schema-driven contract: if capabilitySchemas is supplied it must cover

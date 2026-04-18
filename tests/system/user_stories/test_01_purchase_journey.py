@@ -56,7 +56,7 @@ This is what makes Dina unique:
 
 Architecture
 ------------
-AppView is the aggregation layer — a public service (like a Bluesky
+AppView is the aggregation layer — a provider service (like a Bluesky
 AppView) that ingests the firehose of attestations from all PDS repos
 via Jetstream, stores them in Postgres, and runs scorer jobs. Your Dina
 queries AppView XRPC endpoints to get pre-computed, trust-weighted

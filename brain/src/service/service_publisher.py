@@ -32,11 +32,11 @@ class ServicePublisher:
     async def publish(self) -> None:
         """Read service config from Core and publish to PDS.
 
-        If the config is missing or ``is_public`` is False, unpublishes
+        If the config is missing or ``is_discoverable`` is False, unpublishes
         instead (idempotent delete).
         """
         config = await self._core.get_service_config()
-        if not config or not config.get("is_public"):
+        if not config or not config.get("is_discoverable"):
             await self.unpublish()
             return
 
@@ -59,7 +59,20 @@ class ServicePublisher:
                 "params": raw.get("params", {}),
                 "result": raw.get("result", {}),
             }
-            schema_hash = raw.get("schema_hash") or compute_schema_hash(canonical)
+            # Always compute from canonical — never trust a provider-supplied
+            # hash. A stale cached hash paired with edited params/result would
+            # silently publish a mismatched hash, and requesters would never
+            # see a version-mismatch error. The provider's local copy should
+            # treat its own schema_hash as a cache, not a source of truth.
+            schema_hash = compute_schema_hash(canonical)
+            supplied = raw.get("schema_hash")
+            if supplied and supplied != schema_hash:
+                log.warning(
+                    "service_publisher: supplied schema_hash does not match "
+                    "canonical for %s — using computed hash (supplied=%s, "
+                    "computed=%s)",
+                    cap_name, supplied, schema_hash,
+                )
             entry: dict = {**canonical, "schema_hash": schema_hash}
             ttl = raw.get("default_ttl_seconds")
             if isinstance(ttl, int) and ttl > 0:
@@ -89,7 +102,7 @@ class ServicePublisher:
                 k: v.get("response_policy", "auto")
                 for k, v in capabilities.items()
             },
-            "isPublic": True,
+            "isDiscoverable": True,
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
         if service_area_record is not None:

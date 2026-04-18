@@ -154,6 +154,16 @@ services:
       - busdriver-keys-brain-priv:/keys-brain-priv
       - busdriver-keys-pub:/keys-pub
 
+  keygen-drcarl:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0606060606060606060606060606060606060606060606060606060606060606"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - drcarl-keys-core-priv:/keys-core-priv
+      - drcarl-keys-brain-priv:/keys-brain-priv
+      - drcarl-keys-pub:/keys-pub
+
   # ==========================================================================
   # Actor 1: Don Alonso (primary user) — Core port 19100, Brain port 19200
   # ==========================================================================
@@ -409,6 +419,77 @@ services:
         condition: service_healthy
 
   # ==========================================================================
+  # Actor 6: Dr Carl (appointment provider) — Core 21100, Brain 21200
+  # ==========================================================================
+  # Demo Dina node for a dentist/doctor publishing appointment_status via
+  # OpenClaw + a simple FastMCP tool (demo/appointment). Mirrors BusDriver
+  # at smaller scale — same mechanism, individual practitioner vs
+  # institution.
+
+  drcarl-core:
+    <<: *core-base
+    ports:
+      - "21100:8100"
+    environment:
+      <<: *core-env
+      DINA_BRAIN_URL: http://drcarl-brain:8200
+      DINA_MASTER_SEED: "0606060606060606060606060606060606060606060606060606060606060606"
+      DINA_HOOK_CALLBACK_TOKEN: "${DINA_HOOK_CALLBACK_TOKEN:-dina-callback-drcarl-token}"
+      DINA_PDS_HANDLE: "drcarl.test-pds.dinakernel.com"
+      DINA_PDS_ADMIN_PASSWORD: "2c9fcd3feee602ed2726155590d7e9b1"
+      DINA_PDS_EMAIL: "drcarl@test.dina.local"
+      DINA_ALLOWED_ENDPOINTS: "http://alonso-core:8100,http://sancho-core:8100,http://chairmaker-core:8100,http://busdriver-core:8100"
+    volumes:
+      - drcarl-data:/data
+      - drcarl-keys-core-priv:/run/secrets/service_keys/private:ro
+      - drcarl-keys-pub:/run/secrets/service_keys/public:ro
+      - ./secrets/client_token:/run/secrets/client_token:ro
+    depends_on:
+      drcarl-brain:
+        condition: service_healthy
+      keygen-drcarl:
+        condition: service_completed_successfully
+
+  drcarl-brain:
+    <<: *brain-base
+    ports:
+      - "21200:8200"
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://drcarl-core:8100
+      DINA_APPVIEW_URL: https://test-appview.dinakernel.com
+      # Appointment MCP lives only in the OpenClaw plane (same
+      # "Dina never executes" rule as BusDriver).
+    volumes:
+      - drcarl-data:/data
+      - drcarl-keys-brain-priv:/run/secrets/service_keys/private:ro
+      - drcarl-keys-pub:/run/secrets/service_keys/public:ro
+      - ./models.json:/app/models.json:ro
+    depends_on:
+      keygen-drcarl:
+        condition: service_completed_successfully
+
+  drcarl-openclaw:
+    build:
+      context: .
+      dockerfile: tests/sanity/Dockerfile.openclaw
+    environment:
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      DINA_CORE_URL: http://drcarl-core:8100
+      DINA_PAIRING_CODE: "${DRCARL_PAIRING_CODE:-}"
+      DINA_HOOK_CALLBACK_TOKEN: "${DINA_HOOK_CALLBACK_TOKEN:-dina-callback-drcarl-token}"
+      OPENCLAW_TOKEN: "drcarl-oc-token"
+      PYTHONPATH: /app
+    volumes:
+      - ./demo/appointment:/app/demo/appointment:ro
+      - ./demo/appointment/openclaw-setup.sh:/usr/local/bin/openclaw-setup.sh:ro
+    networks:
+      - test-net
+    depends_on:
+      drcarl-core:
+        condition: service_healthy
+
+  # ==========================================================================
   # Dummy Agent — CLI container for pairing and agent testing
   # ==========================================================================
 
@@ -457,6 +538,11 @@ volumes:
   busdriver-keys-core-priv:
   busdriver-keys-brain-priv:
   busdriver-keys-pub:
+
+  drcarl-data:
+  drcarl-keys-core-priv:
+  drcarl-keys-brain-priv:
+  drcarl-keys-pub:
 
 # ============================================================================
 # Networks — single flat bridge for all actor services

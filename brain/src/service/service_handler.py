@@ -122,11 +122,39 @@ class ServiceHandler:
                 )
                 return
 
+            # Strip keys not declared in the schema's `properties` before
+            # the task payload leaves Brain. Defense-in-depth: even if a
+            # provider's schema omits `additionalProperties: false`, the
+            # MCP tool downstream won't see junk keys (e.g. an LLM
+            # packing a stray `provider` field) that it can't accept.
+            declared = (cap_schema["params"].get("properties") or {}).keys()
+            if isinstance(params, dict) and declared:
+                stripped = {k: v for k, v in params.items() if k in declared}
+                if len(stripped) != len(params):
+                    dropped = sorted(set(params) - set(stripped))
+                    logger.info(
+                        "service_handler: dropped undeclared params for %s: %s",
+                        capability, dropped,
+                    )
+                    params = stripped
+
+        # Extract provider-internal MCP tool binding (not part of the
+        # requester-facing snapshot). Kept separate so the snapshot
+        # persisted with the task stays a pure params+result contract.
+        mcp_tool = ""
+        canonical_snapshot = None
+        if isinstance(cap_schema, dict):
+            mcp_tool = cap_schema.get("mcp_tool") or ""
+            canonical_snapshot = {
+                k: v for k, v in cap_schema.items() if k != "mcp_tool"
+            }
+
         # 3. Review policy → create approval task, notify operator.
         if response_policy == "review":
             await self._create_approval_task(
                 from_did, query_id, capability, params, body, request_schema_hash,
-                schema_snapshot=cap_schema,
+                schema_snapshot=canonical_snapshot,
+                mcp_tool=mcp_tool,
             )
             return
 
@@ -135,7 +163,8 @@ class ServiceHandler:
         await self._create_execution_task(
             from_did, query_id, capability, params, inbound_ttl,
             schema_hash=request_schema_hash,
-            schema_snapshot=cap_schema,
+            schema_snapshot=canonical_snapshot,
+            mcp_tool=mcp_tool,
         )
 
         # 5. Auto-path owner visibility. Review-policy queries already
@@ -149,7 +178,7 @@ class ServiceHandler:
                 short_did = from_did if len(from_did) <= 24 else from_did[:22] + "…"
                 agent_label = await self._describe_agent_pool()
                 lines = [
-                    "📥 Public service request received",
+                    "📥 Provider service request received",
                     f"Capability: {capability}"
                     + (f" ({params_preview})" if params_preview else ""),
                     f"From: {short_did}",
@@ -202,6 +231,7 @@ class ServiceHandler:
         *,
         schema_hash: str = "",
         schema_snapshot: dict | None = None,
+        mcp_tool: str = "",
         task_id: str | None = None,
     ) -> str:
         """Create a delegation task for OpenClaw to execute. Returns task_id.
@@ -211,6 +241,10 @@ class ServiceHandler:
         validates the result against the snapshot, not whatever the provider
         config says at completion time — so an in-flight schema update
         can't violate the contract the requester thought it had.
+
+        `mcp_tool` is provider-internal execution metadata (which MCP tool
+        the executing agent should call) — kept separate from the snapshot
+        so the persisted contract remains pure params+result.
         """
         tid = task_id or f"svc-exec-{uuid.uuid4()}"
         task_payload = {
@@ -223,6 +257,7 @@ class ServiceHandler:
             "service_name": self._config.get("name", ""),
             "schema_hash": schema_hash,
             "schema_snapshot": schema_snapshot or {},
+            "mcp_tool": mcp_tool,
         }
         # Description is human-readable metadata that surfaces in task lists
         # and logs — keep it abstract. Params live in the structured payload
@@ -254,6 +289,7 @@ class ServiceHandler:
         schema_hash: str = "",
         *,
         schema_snapshot: dict | None = None,
+        mcp_tool: str = "",
     ) -> None:
         """Create an approval workflow_task for manual review + notify operator."""
         ttl = body.get("ttl_seconds", get_ttl(capability))
@@ -267,6 +303,7 @@ class ServiceHandler:
             "ttl_seconds": ttl,
             "schema_hash": schema_hash,
             "schema_snapshot": schema_snapshot or {},
+            "mcp_tool": mcp_tool,
         }
         task_id = f"approval-{uuid.uuid4()}"
         await self._core.create_workflow_task(
@@ -315,6 +352,7 @@ class ServiceHandler:
         ttl_seconds = task_payload.get("ttl_seconds", 0) or get_ttl(capability)
         schema_hash = task_payload.get("schema_hash", "")
         schema_snapshot = task_payload.get("schema_snapshot") or {}
+        mcp_tool = task_payload.get("mcp_tool", "")
 
         if not from_did or not query_id or not capability:
             logger.error(
@@ -337,6 +375,7 @@ class ServiceHandler:
                 ttl_seconds=ttl_seconds,
                 schema_hash=schema_hash,
                 schema_snapshot=schema_snapshot,
+                mcp_tool=mcp_tool,
                 task_id=exec_task_id,
             )
         except WorkflowConflictError:

@@ -1535,12 +1535,12 @@ def session_list(ctx: click.Context) -> None:
 
 
 
-# ── service (WS2 public-service discovery) ──────────────────────────────
+# ── service (WS2 provider-service discovery) ──────────────────────────────
 
 
 @cli.group()
 def service() -> None:
-    """Send and track queries against public services on the Trust Network.
+    """Send and track queries against provider services on the Trust Network.
 
     Schema-driven: the provider publishes a JSON Schema for each
     capability on AppView; this CLI validates and forwards the schema

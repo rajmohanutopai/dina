@@ -2,7 +2,7 @@
 
 ## Overview
 
-Dina supports public service discovery. Service providers publish capabilities via AT Protocol records (`com.dina.service.profile`). Other Dinas discover them via AppView search and send D2D `service.query` messages. The provider's agent (OpenClaw via MCP) auto-responds with structured results.
+Dina supports provider service discovery. Service providers publish capabilities via AT Protocol records (`com.dina.service.profile`). Other Dinas discover them via AppView search and send D2D `service.query` messages. The provider's agent (OpenClaw via MCP) auto-responds with structured results.
 
 ## Example: Bus ETA
 

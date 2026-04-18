@@ -1,7 +1,7 @@
-// service_resolver.go — AppView client for public service lookup.
+// service_resolver.go — AppView client for provider service lookup.
 //
-// Calls com.dina.service.isPublic to check if a remote DID is a published
-// public service with a given capability. Results are cached with a 5-minute
+// Calls com.dina.service.isDiscoverable to check if a remote DID is a published
+// provider service with a given capability. Results are cached with a 5-minute
 // TTL. Fails closed: if AppView is unreachable, returns (false, error).
 package appview
 
@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-// ServiceResolver checks whether a remote DID is a published public service.
-// Implements port.PublicServiceResolver.
+// ServiceResolver checks whether a remote DID is a published provider service.
+// Implements port.ProviderServiceResolver.
 type ServiceResolver struct {
 	appViewURL string
 	client     *http.Client
@@ -26,7 +26,7 @@ type ServiceResolver struct {
 }
 
 type cacheEntry struct {
-	isPublic     bool
+	isDiscoverable     bool
 	capabilities []string
 	fetchedAt    time.Time
 }
@@ -41,22 +41,22 @@ func NewServiceResolver(appViewURL string) *ServiceResolver {
 	}
 }
 
-// IsPublicService returns true if the DID has a published public service
+// IsDiscoverableService returns true if the DID has a published provider service
 // profile with the given capability. Fails closed on error.
-func (r *ServiceResolver) IsPublicService(did string, capability string) (bool, error) {
+func (r *ServiceResolver) IsDiscoverableService(did string, capability string) (bool, error) {
 	entry, ok := r.getCached(did)
 	if ok {
-		return entry.isPublic && containsCapability(entry.capabilities, capability), nil
+		return entry.isDiscoverable && containsCapability(entry.capabilities, capability), nil
 	}
 
 	// Fetch from AppView.
-	isPublic, caps, err := r.fetch(did)
+	isDiscoverable, caps, err := r.fetch(did)
 	if err != nil {
 		return false, err // fail closed
 	}
 
-	r.putCache(did, isPublic, caps)
-	return isPublic && containsCapability(caps, capability), nil
+	r.putCache(did, isDiscoverable, caps)
+	return isDiscoverable && containsCapability(caps, capability), nil
 }
 
 func (r *ServiceResolver) getCached(did string) (*cacheEntry, bool) {
@@ -70,40 +70,40 @@ func (r *ServiceResolver) getCached(did string) (*cacheEntry, bool) {
 	return entry, true
 }
 
-func (r *ServiceResolver) putCache(did string, isPublic bool, caps []string) {
+func (r *ServiceResolver) putCache(did string, isDiscoverable bool, caps []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.cache[did] = &cacheEntry{
-		isPublic:     isPublic,
+		isDiscoverable:     isDiscoverable,
 		capabilities: caps,
 		fetchedAt:    time.Now(),
 	}
 }
 
 func (r *ServiceResolver) fetch(did string) (bool, []string, error) {
-	u := fmt.Sprintf("%s/xrpc/com.dina.service.isPublic?did=%s",
+	u := fmt.Sprintf("%s/xrpc/com.dina.service.isDiscoverable?did=%s",
 		r.appViewURL, url.QueryEscape(did))
 
 	resp, err := r.client.Get(u)
 	if err != nil {
-		return false, nil, fmt.Errorf("appview: isPublic request failed: %w", err)
+		return false, nil, fmt.Errorf("appview: isDiscoverable request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return false, nil, fmt.Errorf("appview: isPublic returned %d", resp.StatusCode)
+		return false, nil, fmt.Errorf("appview: isDiscoverable returned %d", resp.StatusCode)
 	}
 
 	var result struct {
-		IsPublic     bool     `json:"isPublic"`
+		IsDiscoverable     bool     `json:"isDiscoverable"`
 		Capabilities []string `json:"capabilities"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return false, nil, fmt.Errorf("appview: isPublic parse failed: %w", err)
+		return false, nil, fmt.Errorf("appview: isDiscoverable parse failed: %w", err)
 	}
 
-	return result.IsPublic, result.Capabilities, nil
+	return result.IsDiscoverable, result.Capabilities, nil
 }
 
 func containsCapability(caps []string, target string) bool {

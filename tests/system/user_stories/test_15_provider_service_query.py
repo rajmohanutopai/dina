@@ -288,8 +288,8 @@ def _task_events(
 # Story 15: Public Service Query
 # ---------------------------------------------------------------------------
 
-class TestPublicServiceQuery:
-    """User Story 15: Schema-driven public service discovery + query."""
+class TestProviderServiceQuery:
+    """User Story 15: Schema-driven provider service discovery + query."""
 
     # ==================================================================
     # test_00: Publish BusDriver's service config
@@ -301,7 +301,7 @@ class TestPublicServiceQuery:
     ):
         """Configure BusDriver's Home Node as a public ``eta_query`` provider.
 
-        Admin flow: ``PUT /v1/service/config`` with is_public=true, one
+        Admin flow: ``PUT /v1/service/config`` with is_discoverable=true, one
         capability, and a canonically-hashed schema. The Put gate
         verifies the supplied schema_hash matches the canonical form, so
         a drift between Python's compute_schema_hash and Go's
@@ -309,7 +309,7 @@ class TestPublicServiceQuery:
         agreement regression guard at the story level.
         """
         cfg = {
-            "is_public": True,
+            "is_discoverable": True,
             "name": "SF Transit Authority",
             "description": "Schedule-based bus ETAs for SF Muni routes.",
             "capabilities": {
@@ -339,7 +339,7 @@ class TestPublicServiceQuery:
         )
         assert r.status_code == 200
         cfg = r.json()
-        assert cfg and cfg.get("is_public") is True
+        assert cfg and cfg.get("is_discoverable") is True
         eta = (cfg.get("capability_schemas") or {}).get("eta_query") or {}
         assert eta.get("schema_hash") == ETA_QUERY_SCHEMA_HASH, (
             f"schema_hash drifted between PUT and GET: "

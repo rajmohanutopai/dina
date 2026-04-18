@@ -856,12 +856,12 @@ The MsgBox relay eliminates the need for public ports on the Home Node. Both Cor
 Service traffic uses the D2D transport but bypasses the contact gate via **query windows** — time-limited authorization tuples `(peerDID, queryID, capability)` that expire after 60 seconds.
 
 **Egress (transport.go SendMessage):**
-- `service.query`: checks `PublicServiceResolver.IsPublicService(did, capability)` via AppView → skips contact + scenario gates → opens `requesterWindow` on enqueue
+- `service.query`: checks `ProviderServiceResolver.IsDiscoverableService(did, capability)` via AppView → skips contact + scenario gates → opens `requesterWindow` on enqueue
 - `service.response`: `providerWindow.Reserve()` → skips contact gate → `Commit()` on enqueue, `Release()` on failure
 
 **Ingress (main.go both paths):**
 - `CheckServiceIngress()` runs after trust blocklist, before quarantine/scenario
-- `service.query`: checks local config (IsPublic + HasCapability) → opens `providerWindow`
+- `service.query`: checks local config (IsDiscoverable + HasCapability) → opens `providerWindow`
 - `service.response`: `requesterWindow.CheckAndConsume()` → one-shot accept
 
 **Exclusions (service traffic stays on its own path):**

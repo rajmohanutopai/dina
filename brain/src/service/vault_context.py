@@ -185,7 +185,7 @@ VAULT_TOOLS: list[dict[str, Any]] = [
             "Convert an address or place name to geographic coordinates (latitude/longitude). "
             "Privacy note: this sends the address to an external geocoding service. "
             "Use when the user mentions a location by name and you need coordinates for "
-            "search_public_services."
+            "search_provider_services."
         ),
         "parameters": {
             "type": "object",
@@ -199,9 +199,9 @@ VAULT_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "search_public_services",
+        "name": "search_provider_services",
         "description": (
-            "Search for nearby public services (bus routes, taxi, delivery, etc.) by capability "
+            "Search for nearby provider services (bus routes, taxi, delivery, etc.) by capability "
             "and location. Returns ranked candidates with operator DIDs that can be queried. "
             "Use after geocoding to find services near the user's location."
         ),
@@ -225,8 +225,8 @@ VAULT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "query_service",
         "description": (
-            "Send a query to a specific public service operator and track the response. "
-            "Use after search_public_services to query the best candidate. "
+            "Send a query to a specific provider service operator and track the response. "
+            "Use after search_provider_services to query the best candidate. "
             "The response will be delivered asynchronously via a workflow event."
         ),
         "parameters": {
@@ -234,7 +234,7 @@ VAULT_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "operator_did": {
                     "type": "string",
-                    "description": "DID of the service operator (from search_public_services results).",
+                    "description": "DID of the service operator (from search_provider_services results).",
                 },
                 "capability": {
                     "type": "string",
@@ -250,11 +250,11 @@ VAULT_TOOLS: list[dict[str, Any]] = [
                 },
                 "schema_hash": {
                     "type": "string",
-                    "description": "Schema hash from search_public_services (for version matching).",
+                    "description": "Schema hash from search_provider_services (for version matching).",
                 },
                 "params_schema": {
                     "type": "object",
-                    "description": "JSON Schema for params (from search_public_services). Used for sender-side validation.",
+                    "description": "JSON Schema for params (from search_provider_services). Used for sender-side validation.",
                 },
             },
             "required": ["operator_did", "capability", "params"],
@@ -302,7 +302,7 @@ class ToolExecutor:
     ) -> None:
         self._core = core
         self._llm_router = llm_router
-        self._appview = appview_client  # WS2: AppView search for public services
+        self._appview = appview_client  # WS2: AppView search for provider services
         self._mcp = mcp_client          # WS2: MCP client for geocoding
         self._tools_called: list[dict] = []
         self._approval_required: dict | None = None  # set when a persona needs approval
@@ -337,7 +337,7 @@ class ToolExecutor:
             "search_trust_network": self._search_trust_network,
             # WS2: Service Discovery
             "geocode": self._geocode,
-            "search_public_services": self._search_public_services,
+            "search_provider_services": self._search_provider_services,
             "query_service": self._query_service,
         }.get(name)
 
@@ -684,8 +684,8 @@ class ToolExecutor:
             log.warning("tool_executor.geocode_failed", address=address, error=str(exc))
             return {"error": f"geocoding failed: {exc}"}
 
-    async def _search_public_services(self, args: dict) -> dict:
-        """Search AppView for public services by capability and location."""
+    async def _search_provider_services(self, args: dict) -> dict:
+        """Search AppView for provider services by capability and location."""
         capability = args.get("capability", "")
         lat = args.get("lat")
         lng = args.get("lng")
@@ -781,7 +781,7 @@ class ToolExecutor:
             return candidates  # fail-open: return original ranking
 
     async def _query_service(self, args: dict) -> dict:
-        """Send a query to a public service via Core POST /v1/service/query."""
+        """Send a query to a provider service via Core POST /v1/service/query."""
         operator_did = args.get("operator_did", "")
         capability = args.get("capability", "")
         params = args.get("params", {})
@@ -794,6 +794,39 @@ class ToolExecutor:
             return {"error": "operator_did and capability are required"}
         if params is None:
             params = {}
+
+        # Auto-fetch schema_hash + params_schema from AppView when the
+        # caller skipped search_provider_services (the Working-Memory
+        # shortcut lets the classifier point straight at a provider via
+        # live_capability, but the ToC entry doesn't carry the hash).
+        # Without the hash, providers reject with schema_version_mismatch.
+        if self._appview is not None and (not schema_hash or not params_schema):
+            try:
+                cands = await self._appview.search_services(capability=capability)
+                for c in cands or []:
+                    if c.get("operatorDid") == operator_did:
+                        cs = (c.get("capabilitySchemas") or {}).get(capability) or {}
+                        if not schema_hash:
+                            schema_hash = cs.get("schema_hash") or cs.get("schemaHash") or ""
+                        if not params_schema:
+                            params_schema = cs.get("params") or {}
+                        if not default_ttl_seconds:
+                            ttl_hint = cs.get("default_ttl_seconds")
+                            if isinstance(ttl_hint, int) and ttl_hint > 0:
+                                default_ttl_seconds = ttl_hint
+                        break
+            except Exception as exc:
+                log.warning("tool_executor.query_service.schema_autofetch_failed", error=str(exc))
+
+        # Deterministic auto-fill for requester-identity fields the LLM
+        # forgot to supply. When a schema marks a field as required AND
+        # the field looks like a customer/patient/account reference, the
+        # requester IS the user — fill it with "self" rather than bouncing
+        # on sender-side validation. This moves the "use 'self' as
+        # fallback" rule out of the LLM prompt (where it's probabilistic)
+        # into code (where it's deterministic). See issue #5.
+        if params_schema and isinstance(params, dict):
+            params = _autofill_requester_fields(params, params_schema)
 
         # Mandatory sender-side validation when schema is present. A
         # malformed remote schema surfaces as SchemaError rather than
@@ -835,6 +868,63 @@ class ToolExecutor:
         except Exception as exc:
             log.warning("tool_executor.query_service_failed", error=str(exc))
             return {"error": f"service query failed: {exc}"}
+
+
+# ---------------------------------------------------------------------------
+# query_service helpers
+# ---------------------------------------------------------------------------
+
+
+# Field-name patterns that denote "a reference to the requester" — the
+# user asking the question. When a provider marks one of these as
+# required and the LLM didn't supply it, the right value is "self"
+# (or the user's vault-known name, but the provider usually accepts
+# "self" for the requester-is-the-user demo case).
+#
+# Conservative list: we only auto-fill when confident, to avoid
+# stuffing "self" into fields that genuinely want a third-party ID
+# (e.g. a lookup-by-email where the user is asking about someone else).
+_REQUESTER_FIELD_SUFFIXES = ("_ref", "_id")
+_REQUESTER_FIELD_PREFIXES = ("patient_", "customer_", "account_", "member_")
+
+
+def _looks_like_requester_field(name: str) -> bool:
+    n = (name or "").lower()
+    if not n:
+        return False
+    for p in _REQUESTER_FIELD_PREFIXES:
+        if n.startswith(p):
+            return True
+    for s in _REQUESTER_FIELD_SUFFIXES:
+        # Suffix-match only when combined with a requester-ish prefix
+        # (e.g. patient_ref, customer_id) — plain `id` or `ref` is too
+        # generic to auto-fill.
+        if n.endswith(s) and any(n.startswith(p.rstrip("_")) for p in _REQUESTER_FIELD_PREFIXES):
+            return True
+    return False
+
+
+def _autofill_requester_fields(params: dict, params_schema: dict) -> dict:
+    """Fill missing required requester-identity fields with 'self'.
+
+    Pure function over (params, params_schema). Does not mutate input.
+    Returns a new dict. Only fills fields that are:
+      - declared required in the schema
+      - missing or empty in params
+      - named in a way that signals requester-identity
+
+    Values the LLM already supplied are never overwritten.
+    """
+    required = params_schema.get("required") or []
+    if not required:
+        return dict(params)
+    out = dict(params)
+    for field in required:
+        if out.get(field):
+            continue  # LLM filled it — respect their choice
+        if _looks_like_requester_field(field):
+            out[field] = "self"
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -966,17 +1056,17 @@ class ReasoningAgent:
         into its native format (Gemini FunctionDeclaration, OpenAI
         function schema, Claude tool schema, etc.).
 
-        WS2 tools (geocode, search_public_services, query_service) are only
+        WS2 tools (geocode, search_provider_services, query_service) are only
         advertised when their dependencies are available.
         """
         # WS2 tool names that require optional deps.
-        _SERVICE_TOOLS = {"geocode", "search_public_services", "query_service"}
+        _SERVICE_TOOLS = {"geocode", "search_provider_services", "query_service"}
         tools = []
         for tool in VAULT_TOOLS:
             name = tool["name"]
             if name == "geocode" and self._mcp is None:
                 continue
-            if name in ("search_public_services", "query_service") and self._appview is None:
+            if name in ("search_provider_services", "query_service") and self._appview is None:
                 continue
             tools.append(tool)
         return tools
@@ -991,6 +1081,7 @@ class ReasoningAgent:
         session: str = "",
         user_origin: str = "",
         contact_hints: list[dict] | None = None,
+        intent_hint: dict | None = None,
     ) -> dict:
         """Run the agentic reasoning loop.
 
@@ -1065,6 +1156,48 @@ class ReasoningAgent:
                 if aliases:
                     hints_text += f"- {h['name']}: also known as {aliases}\n"
             system += hints_text
+
+        # Inject the intent classifier's routing hint (Working Memory).
+        # This replaces the hard-coded scenario list that used to live
+        # in PROMPT_VAULT_CONTEXT_SYSTEM — the classifier already read
+        # the ToC and emitted the source-of-truth decision, so the
+        # reasoning agent no longer re-reads the ToC itself. See
+        # docs/WORKING_MEMORY_DESIGN.md §9.
+        if intent_hint:
+            import json as _json
+            toc_ev = intent_hint.get("toc_evidence") or {}
+            live_caps = toc_ev.get("live_capabilities_available") or []
+            system += (
+                "\n\nRouting hint from the intent classifier (use as soft guidance, not a hard shortlist):\n"
+                f"  sources to consult:   {intent_hint.get('sources') or []}\n"
+                f"  relevant personas:    {intent_hint.get('relevant_personas') or []}\n"
+                f"  temporal nature:      {intent_hint.get('temporal') or 'unspecified'}\n"
+                f"  reasoning:            {intent_hint.get('reasoning_hint') or '(none)'}\n"
+                f"  ToC evidence:\n{_json.dumps(toc_ev, indent=2)}\n\n"
+                "Prefer the suggested sources on your first tool call. If the ToC\n"
+                "evidence names specific topics or live capabilities, use those as\n"
+                "anchors. The hint reflects what the classifier actually saw —\n"
+                "trust it over your prior about where information typically lives."
+            )
+            if live_caps:
+                system += (
+                    "\n\nSHORTCUT — live_capabilities_available is populated.\n"
+                    "Each entry names a provider DID + capability already bound\n"
+                    "to an entity in Working Memory. For a live-state question\n"
+                    "about that entity, call query_service directly with the\n"
+                    "provided operator_did and capability — skip geocode and\n"
+                    "search_provider_services. The Brain auto-fetches the\n"
+                    "schema and auto-fills requester-identity fields.\n\n"
+                    "Before calling query_service, search the vault for the\n"
+                    "entity (e.g. 'appointment with Dr Carl') and pull any\n"
+                    "dates, times, amounts, or reference numbers into the\n"
+                    "params. Providers that get empty date/time fields\n"
+                    "respond with generic text ('see you on the scheduled\n"
+                    "date'); providers that get the actual values respond\n"
+                    "with specifics the user can confirm against memory.\n"
+                    "Fall back to search_provider_services only if no\n"
+                    "live_capability matches the query."
+                )
 
         messages: list[dict] = [
             {"role": "system", "content": system},
@@ -1244,6 +1377,7 @@ class VaultContextAssembler:
         agent_did: str = "",
         session: str = "",
         user_origin: str = "",
+        intent_hint: dict | None = None,
     ) -> dict:
         """Run full agentic reasoning and return the complete result.
 
@@ -1260,6 +1394,10 @@ class VaultContextAssembler:
         user_origin:
             When set (e.g. ``"telegram"``), Core auto-unlocks sensitive
             persona vaults for user-originated requests.
+        intent_hint:
+            Routing hint from the Working Memory intent classifier.
+            Passed through to the reasoning agent as soft priming.
+            See docs/WORKING_MEMORY_DESIGN.md §9.
         """
         # Build contact alias hints ONLY for contacts mentioned in the query.
         # This avoids leaking unrelated contact aliases into the prompt.
@@ -1310,4 +1448,5 @@ class VaultContextAssembler:
             prompt, persona_tier, entity_vault=entity_vault, provider=provider,
             agent_did=agent_did, session=session, user_origin=user_origin,
             contact_hints=contact_hints,
+            intent_hint=intent_hint,
         )

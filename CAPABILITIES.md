@@ -436,7 +436,7 @@ You can edit or delete any reminder using the buttons that came with it.
 
 ### Public Service Discovery (Phase 1)
 
-- **Discover public services** by capability + location via AppView search
+- **Discover provider services** by capability + location via AppView search
 - **Query services** via D2D `service.query` (e.g., "when does bus 42 arrive?")
 - **Auto-respond** via MCP tool delegation (OpenClaw handles the actual work)
 - **Contact-gate bypass** using time-limited query windows (60s TTL)
