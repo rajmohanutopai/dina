@@ -1,9 +1,10 @@
 """Unit tests for intent_classifier pure helpers.
 
-Covers the parse/coerce/render paths — the logic that normalises raw
-LLM output into a typed IntentClassification and the ToC renderer that
-feeds the classifier prompt. The `classify()` coroutine itself is
-covered by sanity tests (real LLM) and is mocked elsewhere.
+Traces to TEST_PLAN §29.2. Covers the parse/coerce/render paths — the
+logic that normalises raw LLM output into a typed
+IntentClassification and the ToC renderer that feeds the classifier
+prompt. The `classify()` coroutine itself is covered by sanity tests
+(real LLM) and is mocked elsewhere.
 """
 from __future__ import annotations
 
@@ -35,13 +36,14 @@ class TestParseJson:
 
 
 class TestCoerce:
+    # TST-BRAIN-858 — unknown sources filtered
     def test_filters_unknown_sources(self) -> None:
         data = {"sources": ["vault", "fake_source", "trust_network"]}
         result = _coerce(data)
         assert result.sources == ["vault", "trust_network"]
 
+    # TST-BRAIN-859 — fallback to vault when nothing recognisable
     def test_all_unknown_sources_fallback_to_vault(self) -> None:
-        # When LLM emits nothing we recognise, conservative default.
         data = {"sources": ["nonsense"]}
         result = _coerce(data)
         assert result.sources == ["vault"]
@@ -54,6 +56,7 @@ class TestCoerce:
         result = _coerce({"sources": ["provider_services"]})
         assert result.sources == ["provider_services"]
 
+    # TST-BRAIN-860 — unknown temporal filtered
     def test_filters_unknown_temporal(self) -> None:
         data = {"sources": ["vault"], "temporal": "eternal"}
         result = _coerce(data)
@@ -119,6 +122,7 @@ class TestRenderToc:
         out = _render_toc_for_prompt([])
         assert "empty" in out.lower()
 
+    # TST-BRAIN-861 — persona grouping + live_capability annotation
     def test_groups_by_persona(self) -> None:
         entries = [
             {"persona": "health", "topic": "dentist appointment"},

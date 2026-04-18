@@ -256,7 +256,7 @@ async def test_execute_and_respond_tolerates_duplicate_execution_task():
 # ServicePublisher: emits capabilitySchemas + schemaHash
 # ---------------------------------------------------------------------------
 
-# TRACE: {"suite": "BRAIN", "case": "0629", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "02", "title": "publisher_refuses_on_did_mismatch"}
+# TRACE: {"suite": "BRAIN", "case": "0848", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "02", "title": "publisher_refuses_on_did_mismatch"}
 @pytest.mark.asyncio
 async def test_publish_refuses_when_pds_session_did_mismatches_core():
     """Publisher must not publish under a foreign identity.
@@ -281,7 +281,7 @@ async def test_publish_refuses_when_pds_session_did_mismatches_core():
     pds.put_record.assert_not_called()
 
 
-# TRACE: {"suite": "BRAIN", "case": "0630", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "03", "title": "publisher_passes_default_ttl_seconds"}
+# TRACE: {"suite": "BRAIN", "case": "0849", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "03", "title": "publisher_passes_default_ttl_seconds"}
 @pytest.mark.asyncio
 async def test_publish_preserves_default_ttl_seconds_hint():
     """TTL hint must survive the publisher's projection step.
@@ -344,7 +344,7 @@ async def test_publish_emits_per_capability_schemas_and_hashes():
     assert cap["schema_hash"] == expected_hash
 
 
-# TRACE: {"suite": "BRAIN", "case": "0631", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "04", "title": "publisher_scales_service_area_coords_to_e7"}
+# TRACE: {"suite": "BRAIN", "case": "0850", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "04", "title": "publisher_scales_service_area_coords_to_e7"}
 @pytest.mark.asyncio
 async def test_publish_scales_service_area_coords_to_integer_e7():
     """serviceArea must use integer latE7/lngE7 at the PDS boundary.
@@ -442,3 +442,190 @@ async def test_execution_task_description_does_not_leak_params():
     description = core.create_workflow_task.await_args.kwargs["description"]
     for value in ("37.762345", "-122.434567", "route_id"):
         assert value not in description, f"description leaked {value!r}"
+
+
+# ===========================================================================
+# Section 28.5: Service-Handler Hardening (TEST_PLAN §28.5)
+# ===========================================================================
+
+# TRACE: {"suite": "BRAIN", "case": "0848", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "05", "scenario": "01", "title": "undeclared_params_stripped"}
+@pytest.mark.asyncio
+async def test_undeclared_params_stripped_from_task_payload():
+    """TST-BRAIN-848: Provider-side strip — keys not in schema.properties
+    are dropped after validation, before the task payload leaves Brain.
+    Defense-in-depth against LLMs packing stray fields.
+    """
+    config = _service_config("auto")
+    expected_hash = config["capability_schemas"]["eta_query"]["schema_hash"]
+    core = MagicMock()
+    core.create_workflow_task = AsyncMock()
+    handler = ServiceHandler(core_client=core, service_config=config)
+
+    # Declared params (route_id, lat, lng) plus an undeclared `provider` key
+    # — the kind of stray field an LLM might pack into a service.query.
+    params_with_junk = {
+        "route_id": "42",
+        "lat": 37.77,
+        "lng": -122.43,
+        "provider": "some-random-value",
+        "note": "another stray field",
+    }
+    await handler.handle_query(
+        "did:plc:requester", _query_body(expected_hash, params=params_with_junk),
+    )
+
+    payload = json.loads(core.create_workflow_task.await_args.kwargs["payload"])
+    assert set(payload["params"].keys()) == {"route_id", "lat", "lng"}
+    assert "provider" not in payload["params"]
+    assert "note" not in payload["params"]
+
+
+# TRACE: {"suite": "BRAIN", "case": "0849", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "05", "scenario": "02", "title": "declared_params_preserved"}
+@pytest.mark.asyncio
+async def test_declared_params_preserved_verbatim():
+    """TST-BRAIN-849: Valid params pass through the strip unchanged."""
+    config = _service_config("auto")
+    expected_hash = config["capability_schemas"]["eta_query"]["schema_hash"]
+    core = MagicMock()
+    core.create_workflow_task = AsyncMock()
+    handler = ServiceHandler(core_client=core, service_config=config)
+
+    clean = {"route_id": "42", "lat": 37.77, "lng": -122.43}
+    await handler.handle_query(
+        "did:plc:requester", _query_body(expected_hash, params=clean),
+    )
+
+    payload = json.loads(core.create_workflow_task.await_args.kwargs["payload"])
+    assert payload["params"] == clean
+
+
+# TRACE: {"suite": "BRAIN", "case": "0850", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "05", "scenario": "03", "title": "mcp_tool_separate_from_schema_snapshot"}
+@pytest.mark.asyncio
+async def test_mcp_tool_in_payload_not_schema_snapshot():
+    """TST-BRAIN-850: mcp_tool is provider-internal execution metadata, not
+    part of the requester-facing contract. Keep it out of schema_snapshot
+    so the snapshot persisted on the task stays a pure params+result
+    contract.
+    """
+    config = _service_config("auto")
+    # Declare the mcp_tool in the capability schema (alongside canonical
+    # fields). It's local provider config, not published.
+    config["capability_schemas"]["eta_query"]["mcp_tool"] = "transit__get_eta"
+    expected_hash = config["capability_schemas"]["eta_query"]["schema_hash"]
+
+    core = MagicMock()
+    core.create_workflow_task = AsyncMock()
+    handler = ServiceHandler(core_client=core, service_config=config)
+
+    await handler.handle_query("did:plc:requester", _query_body(expected_hash))
+
+    payload = json.loads(core.create_workflow_task.await_args.kwargs["payload"])
+    # mcp_tool is a top-level payload field.
+    assert payload.get("mcp_tool") == "transit__get_eta"
+    # And NOT inside the canonical snapshot.
+    snapshot = payload["schema_snapshot"]
+    assert "mcp_tool" not in snapshot
+    # Canonical fields survive in the snapshot.
+    assert snapshot["params"] == ETA_PARAMS_SCHEMA
+    assert snapshot["result"] == ETA_RESULT_SCHEMA
+
+
+# TRACE: {"suite": "BRAIN", "case": "0851", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "05", "scenario": "04", "title": "execute_and_respond_threads_mcp_tool"}
+@pytest.mark.asyncio
+async def test_execute_and_respond_threads_mcp_tool_from_approval_payload():
+    """TST-BRAIN-851: Approval → execution path preserves mcp_tool binding.
+    After operator approval, the execution task must call the same MCP
+    tool the auto-path would have called.
+    """
+    config = _service_config("review")
+    core = MagicMock()
+    core.create_workflow_task = AsyncMock()
+    core.cancel_workflow_task = AsyncMock()
+    handler = ServiceHandler(core_client=core, service_config=config)
+
+    approval_payload = {
+        "type": "service_query_execution",
+        "from_did": "did:plc:requester",
+        "query_id": "q-review",
+        "capability": "eta_query",
+        "params": {"route_id": "42", "lat": 37.77, "lng": -122.43},
+        "ttl_seconds": 90,
+        "schema_hash": "hash-abc",
+        "schema_snapshot": {"params": ETA_PARAMS_SCHEMA, "result": ETA_RESULT_SCHEMA},
+        "mcp_tool": "transit__get_eta",
+    }
+    await handler.execute_and_respond("approval-xyz", approval_payload)
+
+    core.create_workflow_task.assert_awaited_once()
+    payload = json.loads(core.create_workflow_task.await_args.kwargs["payload"])
+    assert payload["mcp_tool"] == "transit__get_eta"
+
+
+# ===========================================================================
+# Section 28.4 extensions: Publisher canonical-hash discipline
+# ===========================================================================
+
+# TRACE: {"suite": "BRAIN", "case": "0852", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "02", "title": "publisher_always_computes_canonical_hash"}
+@pytest.mark.asyncio
+async def test_publish_always_recomputes_canonical_hash_ignoring_supplied():
+    """TST-BRAIN-852: Provider may cache a stale schema_hash locally. The
+    publisher must always recompute from (description, params, result)
+    so stale hashes cannot silently ship to AppView.
+    """
+    config = _service_config("auto", include_schema_hash=False)
+    canonical_hash = compute_schema_hash({
+        "description": config["capability_schemas"]["eta_query"]["description"],
+        "params": ETA_PARAMS_SCHEMA,
+        "result": ETA_RESULT_SCHEMA,
+    })
+    # Inject a deliberately wrong supplied hash — the publisher should
+    # ignore it and use the canonical one.
+    config["capability_schemas"]["eta_query"]["schema_hash"] = "stale-cached-hash"
+
+    core = MagicMock()
+    core.get_service_config = AsyncMock(return_value=config)
+    core.get_did = AsyncMock(return_value={"id": "did:plc:publisher"})
+    pds = MagicMock()
+    pds.did = "did:plc:publisher"
+    pds.put_record = AsyncMock()
+
+    publisher = ServicePublisher(core_client=core, pds_publisher=pds)
+    await publisher.publish()
+
+    record = pds.put_record.await_args.kwargs["record"]
+    published_hash = record["capabilitySchemas"]["eta_query"]["schema_hash"]
+    assert published_hash == canonical_hash
+    assert published_hash != "stale-cached-hash"
+
+
+# TRACE: {"suite": "BRAIN", "case": "0853", "section": "28", "sectionName": "WS2 Schema-Driven Service Discovery", "subsection": "04", "scenario": "03", "title": "publisher_warns_on_supplied_hash_drift"}
+@pytest.mark.asyncio
+async def test_publish_warns_when_supplied_hash_differs_from_canonical(caplog):
+    """TST-BRAIN-853: Drift between the provider's cached hash and the
+    canonical one is a signal their local cache is stale. Publisher
+    must warn (naming capability + both hashes) so the operator can
+    see drift without silently breaking discovery.
+    """
+    import logging
+    config = _service_config("auto", include_schema_hash=False)
+    config["capability_schemas"]["eta_query"]["schema_hash"] = "stale-cached-hash"
+
+    core = MagicMock()
+    core.get_service_config = AsyncMock(return_value=config)
+    core.get_did = AsyncMock(return_value={"id": "did:plc:publisher"})
+    pds = MagicMock()
+    pds.did = "did:plc:publisher"
+    pds.put_record = AsyncMock()
+
+    publisher = ServicePublisher(core_client=core, pds_publisher=pds)
+    with caplog.at_level(logging.WARNING):
+        await publisher.publish()
+
+    warnings = [rec for rec in caplog.records if rec.levelno >= logging.WARNING]
+    drift_warnings = [
+        rec for rec in warnings
+        if "schema_hash" in rec.getMessage() and "eta_query" in rec.getMessage()
+    ]
+    assert drift_warnings, "Expected a warning naming capability + hash drift"
+    msg = drift_warnings[0].getMessage()
+    assert "stale-cached-hash" in msg
