@@ -444,11 +444,16 @@ def create_app() -> FastAPI:
     from .service.event_extractor import EventExtractor
     from .service.reminder_planner import ReminderPlanner
     from .service.topic_extractor import TopicExtractor
+    from .service.preference_extractor import PreferenceExtractor
     event_extractor = EventExtractor(core=brain_core_client)
     reminder_planner = ReminderPlanner(core=brain_core_client, llm=llm_router)
     # Working-memory topic extractor (docs/WORKING_MEMORY_DESIGN.md).
     # Piggybacks on the enrichment LLM; scrubs PII via entity_vault.
     topic_extractor = TopicExtractor(llm=llm_router, entity_vault=entity_vault)
+    # Preference extractor — regex-based, no LLM spend. Surfaces
+    # "my dentist Dr Carl"-style user assertions and auto-updates the
+    # matched contact's preferred_for list.
+    preference_extractor = PreferenceExtractor()
     staging_processor = StagingProcessor(
         core=brain_core_client,
         enrichment=enrichment_svc,
@@ -461,6 +466,7 @@ def create_app() -> FastAPI:
         persona_selector=persona_selector,
         reminder_planner=reminder_planner,
         topic_extractor=topic_extractor,
+        preference_extractor=preference_extractor,
         # telegram is wired later (after TelegramService creation)
     )
     sync_engine = SyncEngine(
@@ -563,11 +569,6 @@ def create_app() -> FastAPI:
 
         # WS2: wire AppView into VaultContextAssembler for LLM tools.
         vault_context._agent._appview = appview_client
-
-        # Working Memory: give staging_processor the same AppView client
-        # so entity topic extraction can tag live_capability markers
-        # (docs/WORKING_MEMORY_DESIGN.md §6.1).
-        staging_processor._appview_client = appview_client
 
         log.info(
             "brain.service_discovery.configured",

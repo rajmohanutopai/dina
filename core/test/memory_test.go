@@ -304,45 +304,14 @@ func TestMemory_AliasStemMatch(t *testing.T) {
 // Live capability propagation
 // ---------------------------------------------------------------------------
 
-// Touch carries through live_capability + live_provider_did on first
-// insert, and keeps them across subsequent touches that omit them.
-func TestMemory_LiveCapabilityPersists(t *testing.T) {
-	pool := newMemoryTestPool(t)
-	store := pool.TopicStoreFor("general")
-	ctx := context.Background()
-
-	nowUnix := time.Now().Unix()
-	if err := store.Touch(ctx, port.TouchRequest{
-		Topic:           "Dr Carl",
-		Kind:            domain.TopicKindEntity,
-		NowUnix:         nowUnix,
-		LiveCapability:  "appointment_status",
-		LiveProviderDID: "did:plc:drcarl",
-	}); err != nil {
-		t.Fatalf("first Touch: %v", err)
-	}
-
-	// Second touch without the live fields — stored values should
-	// persist (not be cleared by empty strings).
-	if err := store.Touch(ctx, port.TouchRequest{
-		Topic:   "Dr Carl",
-		Kind:    domain.TopicKindEntity,
-		NowUnix: nowUnix + 3600,
-	}); err != nil {
-		t.Fatalf("second Touch: %v", err)
-	}
-
-	got, err := store.Get(ctx, "Dr Carl")
-	if err != nil || got == nil {
-		t.Fatalf("Get: err=%v got=%v", err, got)
-	}
-	if got.LiveCapability != "appointment_status" {
-		t.Errorf("live_capability lost: got %q", got.LiveCapability)
-	}
-	if got.LiveProviderDID != "did:plc:drcarl" {
-		t.Errorf("live_provider_did lost: got %q", got.LiveProviderDID)
-	}
-}
+// Note: a previous test (TestMemory_LiveCapabilityPersists) locked
+// the live_capability + live_provider_did columns being round-tripped
+// through Touch. Those fields were retired — capability bindings now
+// live on contacts via preferred_for. The columns remain in the
+// schema as dead storage (SQLite 3.33 lacks DROP COLUMN) but are
+// neither read nor written. Coverage for the replacement path lives
+// in brain/tests/test_preference_extractor.py and
+// core/test/contact_preferred_for_test.go.
 
 // ---------------------------------------------------------------------------
 // Cross-persona ToC merge (MemoryService)

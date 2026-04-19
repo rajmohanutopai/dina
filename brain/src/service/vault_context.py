@@ -40,7 +40,7 @@ from .capabilities.registry import get_ttl
 log = structlog.get_logger(__name__)
 
 # Maximum tool-calling turns before forcing a text response.
-_MAX_TOOL_TURNS = 6
+_MAX_TOOL_TURNS = 10
 
 # Maximum items to return per search_vault call.
 _MAX_ITEMS_PER_QUERY = 5
@@ -199,11 +199,45 @@ VAULT_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "find_preferred_provider",
+        "description": (
+            "Find the user's go-to contact for a given service category "
+            "(e.g. 'dental', 'legal', 'tax'). Returns the user's preferred "
+            "provider(s) — already-established contacts the user has "
+            "explicitly chosen for that category — plus their currently-"
+            "published capabilities from AppView. PREFER THIS over "
+            "search_provider_services when the question is about an "
+            "established service relationship ('my dentist', 'my lawyer', "
+            "'my accountant'), because it honours the user's choice rather "
+            "than re-ranking providers each time. "
+            "If this returns no candidates, fall back to search_provider_services."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "Service category, lowercase single token where "
+                        "possible: dental, medical, legal, tax, automotive, "
+                        "plumbing, electrical, veterinary, hair, mental_health, "
+                        "fitness, pharmacy, optical, chiropractic, physiotherapy, "
+                        "real_estate, banking, childcare, education, construction, "
+                        "landscaping, floral, tailoring, architecture."
+                    ),
+                },
+            },
+            "required": ["category"],
+        },
+    },
+    {
         "name": "search_provider_services",
         "description": (
             "Search for nearby provider services (bus routes, taxi, delivery, etc.) by capability "
             "and location. Returns ranked candidates with operator DIDs that can be queried. "
-            "Use after geocoding to find services near the user's location."
+            "Use after geocoding to find services near the user's location. "
+            "For established service relationships (my dentist, my lawyer), "
+            "call find_preferred_provider first — it honours the user's choice."
         ),
         "parameters": {
             "type": "object",
@@ -337,6 +371,7 @@ class ToolExecutor:
             "search_trust_network": self._search_trust_network,
             # WS2: Service Discovery
             "geocode": self._geocode,
+            "find_preferred_provider": self._find_preferred_provider,
             "search_provider_services": self._search_provider_services,
             "query_service": self._query_service,
         }.get(name)
@@ -683,6 +718,79 @@ class ToolExecutor:
         except Exception as exc:
             log.warning("tool_executor.geocode_failed", address=address, error=str(exc))
             return {"error": f"geocoding failed: {exc}"}
+
+    async def _find_preferred_provider(self, args: dict) -> dict:
+        """Find the user's go-to contact(s) for a service category.
+
+        Returns ``{"providers": [{contact_did, contact_name, trust_level,
+        capabilities: [...]}]}``. For each matched contact we ALSO fetch
+        their published capabilities from AppView (by DID) so the LLM
+        has everything it needs to pick a capability and call
+        query_service — no separate search round-trip required.
+
+        Failure modes are all ``{"providers": []}`` plus an optional
+        ``message``: no contacts match, AppView unreachable, etc. The
+        LLM is instructed to fall back to search_provider_services on
+        empty results, so silent no-op is safe.
+        """
+        category = (args.get("category") or "").strip()
+        if not category:
+            return {"error": "category is required"}
+
+        try:
+            contacts = await self._core.find_contacts_by_preference(category)
+        except Exception as exc:
+            log.warning("tool_executor.find_preferred_contacts_failed", error=str(exc))
+            return {"providers": [], "message": f"contact lookup failed: {exc}"}
+
+        if not contacts:
+            return {
+                "providers": [],
+                "message": (
+                    f"No contact has category {category!r} in their "
+                    f"preferred_for. Do NOT call search_vault again — this "
+                    f"is a live-state external query. Call "
+                    f"search_provider_services next, with a matching "
+                    f"capability and the geocoded location (lat/lng)."
+                ),
+            }
+
+        providers: list[dict] = []
+        for c in contacts:
+            did = getattr(c, "did", None) or (c.get("did") if isinstance(c, dict) else "")
+            name = getattr(c, "name", None) or (c.get("name") if isinstance(c, dict) else "")
+            trust = getattr(c, "trust_level", None) or (
+                c.get("trust_level") if isinstance(c, dict) else ""
+            )
+            provider: dict = {
+                "contact_did": did,
+                "contact_name": name,
+                "trust_level": trust or "unknown",
+                "capabilities": [],
+            }
+
+            # Pull current capabilities from AppView by DID. Each contact's
+            # published profile may expose multiple capabilities; include
+            # them all so the LLM can pick by intent.
+            if self._appview is not None and did:
+                try:
+                    _, cap_names = await self._appview.is_discoverable(did)
+                    # is_discoverable returns only the list of capability
+                    # names. For schemas + hashes we need a per-capability
+                    # AppView search — keep it simple for V1 and surface
+                    # just the names; query_service auto-fetches schema
+                    # from AppView on dispatch.
+                    for cap in cap_names or []:
+                        provider["capabilities"].append({"name": cap})
+                except Exception as exc:
+                    log.debug(
+                        "tool_executor.find_preferred_appview_failed",
+                        did=did, error=str(exc),
+                    )
+
+            providers.append(provider)
+
+        return {"providers": providers, "count": len(providers)}
 
     async def _search_provider_services(self, args: dict) -> dict:
         """Search AppView for provider services by capability and location."""
@@ -1166,7 +1274,6 @@ class ReasoningAgent:
         if intent_hint:
             import json as _json
             toc_ev = intent_hint.get("toc_evidence") or {}
-            live_caps = toc_ev.get("live_capabilities_available") or []
             system += (
                 "\n\nRouting hint from the intent classifier (use as soft guidance, not a hard shortlist):\n"
                 f"  sources to consult:   {intent_hint.get('sources') or []}\n"
@@ -1175,28 +1282,36 @@ class ReasoningAgent:
                 f"  reasoning:            {intent_hint.get('reasoning_hint') or '(none)'}\n"
                 f"  ToC evidence:\n{_json.dumps(toc_ev, indent=2)}\n\n"
                 "Prefer the suggested sources on your first tool call. If the ToC\n"
-                "evidence names specific topics or live capabilities, use those as\n"
-                "anchors. The hint reflects what the classifier actually saw —\n"
-                "trust it over your prior about where information typically lives."
+                "evidence names specific topics, use those as anchors. The hint\n"
+                "reflects what the classifier actually saw — trust it over your\n"
+                "prior about where information typically lives."
             )
-            if live_caps:
+            if "provider_services" in (intent_hint.get("sources") or []):
                 system += (
-                    "\n\nSHORTCUT — live_capabilities_available is populated.\n"
-                    "Each entry names a provider DID + capability already bound\n"
-                    "to an entity in Working Memory. For a live-state question\n"
-                    "about that entity, call query_service directly with the\n"
-                    "provided operator_did and capability — skip geocode and\n"
-                    "search_provider_services. The Brain auto-fetches the\n"
-                    "schema and auto-fills requester-identity fields.\n\n"
-                    "Before calling query_service, search the vault for the\n"
-                    "entity (e.g. 'appointment with Dr Carl') and pull any\n"
-                    "dates, times, amounts, or reference numbers into the\n"
-                    "params. Providers that get empty date/time fields\n"
-                    "respond with generic text ('see you on the scheduled\n"
-                    "date'); providers that get the actual values respond\n"
-                    "with specifics the user can confirm against memory.\n"
-                    "Fall back to search_provider_services only if no\n"
-                    "live_capability matches the query."
+                    "\n\nProvider-services routing — pick the right path on\n"
+                    "your FIRST tool call. Do NOT waste turns on search_vault\n"
+                    "when the question is about external live state (ETA,\n"
+                    "appointment status, stock price, etc.) — the vault does\n"
+                    "not hold that data.\n\n"
+                    "Path 1: established service relationships ('my dentist',\n"
+                    "'my lawyer', 'my accountant', etc.). Call\n"
+                    "find_preferred_provider(category) FIRST. The user has\n"
+                    "designated a go-to contact for that category and it\n"
+                    "should be honoured before re-searching AppView. Categories\n"
+                    "are lowercase single tokens: dental, legal, tax, medical,\n"
+                    "automotive, plumbing, electrical, etc. If it returns\n"
+                    "candidates, pass the contact_did + a matching capability\n"
+                    "to query_service.\n\n"
+                    "Path 2: public-facing services ('bus 42 to Castro',\n"
+                    "'nearest pharmacy', 'weather in SF'). There is no 'my X'\n"
+                    "relationship here. Skip find_preferred_provider; go\n"
+                    "directly to geocode (if a place is mentioned) +\n"
+                    "search_provider_services(capability, lat, lng, q) +\n"
+                    "query_service. One first tool turn can call geocode +\n"
+                    "search_provider_services in parallel.\n\n"
+                    "Fall-through: if Path 1 returns no candidates, treat it\n"
+                    "as Path 2 and fall back to geocode +\n"
+                    "search_provider_services."
                 )
 
         messages: list[dict] = [

@@ -104,6 +104,28 @@ def get_provider_models(provider: str) -> list[str]:
     return list(prov.get("models", {}).keys())
 
 
+def get_provider_tiers(provider: str) -> dict[str, str]:
+    """Return ``{primary, lite, heavy}`` model IDs for a provider.
+
+    Each provider block in models.json declares its own tier mappings
+    so the router can pick the right model once the user selects a
+    provider (not just the Gemini defaults). If a tier is missing on
+    the provider block, falls back to the provider's first listed
+    model — better than silently breaking at request time.
+
+    Returned values are bare model IDs (not ``provider/model``), since
+    each tier is scoped to the provider block already.
+    """
+    prov = get_provider_config(provider)
+    models = list(prov.get("models", {}).keys())
+    default = models[0] if models else ""
+    return {
+        "primary": prov.get("primary", default),
+        "lite":    prov.get("lite",    default),
+        "heavy":   prov.get("heavy",   prov.get("primary", default)),
+    }
+
+
 def get_all_pricing() -> dict[str, tuple[float, float]]:
     """Merge all provider pricing into a flat dict for LLMRouter.
 

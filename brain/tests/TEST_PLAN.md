@@ -1567,16 +1567,33 @@ Traces to: `brain/src/service/vault_context.py::_query_service`.
 | 7 | **[TST-BRAIN-868]** Pure function: no input mutation | Valid schema + params | Returned dict is a new object; original params unchanged |
 | 8 | **[TST-BRAIN-869]** Empty string treated as missing | Schema required `patient_ref`, params `{patient_ref: ""}` | Output: `{patient_ref: "self"}` — LLMs occasionally emit `""` for required fields |
 
-### 29.4 Live-Capability Enrichment Cache (staging_processor)
+### 29.4 Live-Capability Enrichment Cache (RETIRED)
 
-Traces to: `brain/src/service/staging_processor.py::_lookup_discoverable_cached`.
+> **Retired 2026-04-18.** The auto-enriched `live_capability` path was
+> replaced by user-asserted `preferred_for` bindings on contacts. See
+> §29.8 for the replacement scenarios. TST-BRAIN-870 through 873 are
+> intentionally unused going forward — the IDs stay reserved so future
+> plan edits don't silently reuse them.
+
+### 29.8 Preference Extraction at Ingest (PreferenceExtractor)
+
+Traces to: `brain/src/service/preference_extractor.py` and
+`brain/src/service/staging_processor.py::_apply_preference_bindings`.
+
+> Regex-based extractor surfaces "my <role> <Name>"-style assertions
+> from stored text, maps role → category set, and the staging
+> processor resolves the name to a contact DID and merges the
+> categories into that contact's `preferred_for` list. Replaces the
+> old AppView-auto-enrichment path (§6.1 of WORKING_MEMORY_DESIGN).
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-BRAIN-870]** Cache hit skips AppView call | Same DID looked up twice within TTL | Second call returns cached value; `AppViewClient.is_discoverable` called only once |
-| 2 | **[TST-BRAIN-871]** TTL expiry forces refresh | Same DID, cache entry past TTL | AppView called again; returns fresh result |
-| 3 | **[TST-BRAIN-872]** Failed lookup does NOT poison cache | First call raises, second call succeeds | Second call makes a real AppView call (not cached `None`); returns the success result |
-| 4 | **[TST-BRAIN-873]** Per-DID cache isolation | Two DIDs looked up | Each DID has its own cache entry; one invalidating doesn't affect the other |
+| 1 | **[TST-BRAIN-890]** Direct form: `my <role> <Name>` | `"My dentist Dr Carl is on April 19"` | Single candidate: role=dentist, name="Dr Carl", categories=("dental",) |
+| 2 | **[TST-BRAIN-891]** `is` form: `my <role> is <Name>` | `"my dentist is Dr Carl"` | Single candidate (dedup collapses direct+is when they match); name="Dr Carl" |
+| 3 | **[TST-BRAIN-892]** Multiple roles + case-insensitive role | Mix of mechanic/lawyer/physio/trainer + uppercase `THERAPIST` | All roles recognised; category sets correct |
+| 4 | **[TST-BRAIN-893]** Dedup same (role, name) pair | `"My dentist Dr Carl. I saw my dentist Dr Carl again."` | Emits one candidate, not two |
+| 5 | **[TST-BRAIN-894]** No match when role is absent | `"dentistry stuff, gazillionaire Bob"` | Empty list — role alternation rejects unknown tokens, 'dentistry' isn't 'dentist' |
+| 6 | **[TST-BRAIN-895]** Name group does not grab trailing lowercase | `"my dentist Dr Carl is on April 19"` | Name is `"Dr Carl"`, not `"Dr Carl is on April 19"` — case-sensitive name group anchors the stop |
 
 ### 29.6 Appointment-Status Formatter (service_query)
 
@@ -1612,7 +1629,7 @@ regression tests that cover it. New audit findings append rows here.
 | 2 | Canonical schema-hash can silently drift | Always compute from canonical on publish; warn on mismatch | TST-BRAIN-852, 634 |
 | 4 | Schema autofetch is a shortcut over a missing piece | Kept as fallback; ToC-stored hash migration deferred | (tracked but no test yet) |
 | 5 | SHORTCUT guidance is prose in a system prompt | `_autofill_requester_fields` moves identity-filling into code | TST-BRAIN-862 through 650 |
-| 6 | Enrichment calls AppView per entity | TTL cache on `is_discoverable` | TST-BRAIN-870 through 654 |
+| 6 | Enrichment calls AppView per entity | Superseded: auto-enrichment retired; preferences now user-asserted via `preferred_for` on contacts | TST-BRAIN-890 through 895 (extractor) + TST-CORE-1000 through 1012 (core data model) |
 | 11 | Prompt domain-leak | Abstracted example list in SHORTCUT guidance | (text-only change; no test) |
 | B (prior) | Provider schema allowed extra properties to flow through | Provider-side strip of undeclared params after validation | TST-BRAIN-848, 630 |
 | C (prior) | No explicit capability → MCP tool mapping | `mcp_tool` field in capability schema threaded to agent prompt | TST-BRAIN-850 (and CLI test forthcoming) |

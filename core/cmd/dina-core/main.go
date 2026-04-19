@@ -1561,6 +1561,7 @@ func main() {
 	// Contact API
 	mux.HandleFunc("/v1/contacts", routeByMethod(contactH.HandleListContacts, contactH.HandleAddContact))
 	mux.HandleFunc("/v1/contacts/by-name/", contactH.HandleDeleteContactByName)
+	mux.HandleFunc("/v1/contacts/by-preference", contactH.HandleFindContactsByPreference)
 	mux.HandleFunc("/v1/contacts/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/policy") {
 			// /v1/contacts/{did}/policy → policy handlers

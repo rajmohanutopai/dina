@@ -57,19 +57,20 @@ func (s *SQLiteTopicStore) Touch(ctx context.Context, req port.TouchRequest) err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Read existing row (if any).
+	// Read existing row (if any). The live_capability / live_provider_did
+	// columns remain in the schema (SQLite 3.33 doesn't support DROP
+	// COLUMN) but are no longer read or written — capability bindings
+	// live on contacts now, not on ToC entries. See topic.go comment.
 	var (
 		lastUpdate int64
 		sShort     float64
 		sLong      float64
-		liveCap    string
-		liveDID    string
 		sampleID   string
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT last_update, s_short, s_long, live_capability, live_provider_did, sample_item_id
+		`SELECT last_update, s_short, s_long, sample_item_id
 		 FROM topic_salience WHERE topic = ?`, req.Topic,
-	).Scan(&lastUpdate, &sShort, &sLong, &liveCap, &liveDID, &sampleID)
+	).Scan(&lastUpdate, &sShort, &sLong, &sampleID)
 
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("topic_store.Touch: read: %w", err)
@@ -89,31 +90,24 @@ func (s *SQLiteTopicStore) Touch(ctx context.Context, req port.TouchRequest) err
 	}
 
 	// Merge optional fields: overwrite with new value only when non-empty.
-	if req.LiveCapability != "" {
-		liveCap = req.LiveCapability
-	}
-	if req.LiveProviderDID != "" {
-		liveDID = req.LiveProviderDID
-	}
 	if req.SampleItemID != "" {
 		sampleID = req.SampleItemID
 	}
 
+	// The dead live_capability + live_provider_did columns are NOT NULL
+	// DEFAULT '' in the schema — leave them unmentioned in the INSERT
+	// and the defaults kick in.
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO topic_salience
-		    (topic, kind, last_update, s_short, s_long,
-		     live_capability, live_provider_did, sample_item_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		    (topic, kind, last_update, s_short, s_long, sample_item_id)
+		 VALUES (?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(topic) DO UPDATE SET
 		    kind = excluded.kind,
 		    last_update = excluded.last_update,
 		    s_short = excluded.s_short,
 		    s_long = excluded.s_long,
-		    live_capability = excluded.live_capability,
-		    live_provider_did = excluded.live_provider_did,
 		    sample_item_id = excluded.sample_item_id`,
-		req.Topic, string(req.Kind), req.NowUnix, sShort, sLong,
-		liveCap, liveDID, sampleID,
+		req.Topic, string(req.Kind), req.NowUnix, sShort, sLong, sampleID,
 	)
 	if err != nil {
 		return fmt.Errorf("topic_store.Touch: upsert: %w", err)
@@ -144,8 +138,7 @@ func (s *SQLiteTopicStore) Top(ctx context.Context, limit int, nowUnix int64) ([
 	candidateLimit := limit*4 + 50
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT topic, kind, last_update, s_short, s_long,
-		        live_capability, live_provider_did, sample_item_id
+		`SELECT topic, kind, last_update, s_short, s_long, sample_item_id
 		 FROM topic_salience
 		 ORDER BY s_long DESC, s_short DESC
 		 LIMIT ?`,
@@ -164,8 +157,7 @@ func (s *SQLiteTopicStore) Top(ctx context.Context, limit int, nowUnix int64) ([
 			kindStr string
 		)
 		if err := rows.Scan(
-			&t.Topic, &kindStr, &t.LastUpdate, &t.SShort, &t.SLong,
-			&t.LiveCapability, &t.LiveProviderDID, &t.SampleItemID,
+			&t.Topic, &kindStr, &t.LastUpdate, &t.SShort, &t.SLong, &t.SampleItemID,
 		); err != nil {
 			return nil, fmt.Errorf("topic_store.Top: scan: %w", err)
 		}
@@ -214,12 +206,10 @@ func (s *SQLiteTopicStore) Get(ctx context.Context, topic string) (*domain.Topic
 		kindStr string
 	)
 	err := s.db.QueryRowContext(ctx,
-		`SELECT topic, kind, last_update, s_short, s_long,
-		        live_capability, live_provider_did, sample_item_id
+		`SELECT topic, kind, last_update, s_short, s_long, sample_item_id
 		 FROM topic_salience WHERE topic = ?`, topic,
 	).Scan(
-		&t.Topic, &kindStr, &t.LastUpdate, &t.SShort, &t.SLong,
-		&t.LiveCapability, &t.LiveProviderDID, &t.SampleItemID,
+		&t.Topic, &kindStr, &t.LastUpdate, &t.SShort, &t.SLong, &t.SampleItemID,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

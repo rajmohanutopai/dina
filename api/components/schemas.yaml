@@ -228,11 +228,22 @@ Contact:
     source:
       type: string
     source_confidence:
-      type: number
-      format: float
+      type: string
+      description: Provenance confidence tier ('high', 'medium', 'low').
     last_contact:
       type: integer
       format: int64
+    preferred_for:
+      type: array
+      items:
+        type: string
+      description: >
+        User-asserted "this is my go-to contact for X" category bindings
+        (e.g. ["dental"], ["tax", "accounting"]). Drives the
+        provider-service resolver: live-state queries matching one of
+        these categories route directly to this contact's DID instead
+        of AppView-searching anew. Values are normalised server-side
+        (lowercased, trimmed, deduped).
 
 TrustEntry:
   type: object

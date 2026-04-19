@@ -37,12 +37,10 @@ type MemoryHandler struct {
 // ---------------------------------------------------------------------------
 
 type touchRequestBody struct {
-	Persona         string `json:"persona"`
-	Topic           string `json:"topic"`
-	Kind            string `json:"kind"`
-	LiveCapability  string `json:"live_capability,omitempty"`
-	LiveProviderDID string `json:"live_provider_did,omitempty"`
-	SampleItemID    string `json:"sample_item_id,omitempty"`
+	Persona      string `json:"persona"`
+	Topic        string `json:"topic"`
+	Kind         string `json:"kind"`
+	SampleItemID string `json:"sample_item_id,omitempty"`
 }
 
 // HandleTouch applies a topic mention to the named persona's salience
@@ -100,12 +98,10 @@ func (h *MemoryHandler) HandleTouch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = store.Touch(r.Context(), port.TouchRequest{
-		Topic:           canonical,
-		Kind:            kind,
-		NowUnix:         h.Clock.Now().Unix(),
-		LiveCapability:  req.LiveCapability,
-		LiveProviderDID: req.LiveProviderDID,
-		SampleItemID:    req.SampleItemID,
+		Topic:        canonical,
+		Kind:         kind,
+		NowUnix:      h.Clock.Now().Unix(),
+		SampleItemID: req.SampleItemID,
 	})
 	if err != nil {
 		clientError(w, "topic touch failed", http.StatusInternalServerError, err)
