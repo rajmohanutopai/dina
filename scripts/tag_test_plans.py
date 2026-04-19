@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Inject [TST-CORE-NNN] / [TST-BRAIN-NNN] IDs into test plan markdown tables.
 
-One-time script. Idempotent — skips rows already tagged.
+Idempotent — skips rows already tagged.
 Outputs JSON manifests alongside the modified files.
+
+Dry-run by default: prints what would change. Pass --apply to write.
 """
 
+import argparse
 import json
 import re
 import sys
@@ -43,7 +46,7 @@ def extract_section_path(line: str) -> str | None:
     return None
 
 
-def process_plan(plan_config: dict) -> dict:
+def process_plan(plan_config: dict, apply: bool) -> dict:
     """Process a single test plan file. Returns manifest dict."""
     filepath = plan_config["file"]
     prefix = plan_config["prefix"]
@@ -150,10 +153,7 @@ def process_plan(plan_config: dict) -> dict:
         # Non-matching table row (e.g., Appendix tables with text in first cell)
         new_lines.append(line)
 
-    # Write modified file
-    filepath.write_text("\n".join(new_lines))
-
-    # Write manifest
+    # Write modified file + manifest (only when applying)
     output = {
         "scenarios": manifest,
         "sections": sections,
@@ -161,15 +161,31 @@ def process_plan(plan_config: dict) -> dict:
         "highest_id": counter,
         "newly_tagged": counter - max_existing,
     }
-    manifest_path.write_text(json.dumps(output, indent=2) + "\n")
+    if apply:
+        filepath.write_text("\n".join(new_lines))
+        manifest_path.write_text(json.dumps(output, indent=2) + "\n")
 
     return output
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Inject TST-CORE-/TST-BRAIN- IDs into TEST_PLAN.md tables.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write changes to disk. Without this flag, runs dry and reports planned edits.",
+    )
+    args = parser.parse_args()
+    apply = args.apply
+
+    if not apply:
+        print("DRY RUN — no files will be modified. Pass --apply to write.")
+
     for plan in PLANS:
         print(f"Processing {plan['file'].relative_to(PROJECT_ROOT)}...")
-        result = process_plan(plan)
+        result = process_plan(plan, apply)
         print(
             f"  Newly tagged: {result['newly_tagged']}  "
             f"(total in manifest: {result['total']}, highest ID: {plan['prefix']}-{result['highest_id']:03d})"
@@ -177,7 +193,7 @@ def main():
         print(f"  Manifest: {plan['manifest'].relative_to(PROJECT_ROOT)}")
         print(f"  Sections: {len(result['sections'])}")
 
-    print("\nDone.")
+    print("\nDone." if apply else "\nDry-run complete. Re-run with --apply to write.")
 
 
 if __name__ == "__main__":

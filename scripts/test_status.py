@@ -1237,6 +1237,9 @@ SUITES = {
         "cwd": None,
         "parser": "pytest",
         "test_dir": "tests/prompt",
+        # Opt-in: needs real LLM API keys + network. Skipped unless --suite prompt
+        # or --all is passed; otherwise it always times out at 5 minutes.
+        "opt_in": True,
     },
     "appview": {
         "name": "AppView (TS)",
@@ -2001,7 +2004,10 @@ def parse_args(argv: list[str]) -> dict:
         elif a in ("-v", "--verbose"):
             opts["verbose"] = True
         elif a == "--unit":
-            opts["suite"] = "core,brain,cli,admin_cli,appview,prompt"
+            # Prompt (LLM) is opt-in — needs real API keys + network, always
+            # times out in the default 5-minute budget. Run it via --suite prompt
+            # when you actually want it.
+            opts["suite"] = "core,brain,cli,admin_cli,appview"
         elif a == "--suite" and i + 1 < len(argv):
             i += 1
             opts["suite"] = argv[i].lower()
@@ -2032,7 +2038,11 @@ def main() -> None:
 
     c = Colors(enabled=_use_color(no_color))
 
-    keys = list(SUITES)
+    # Default excludes opt-in suites (e.g. Prompt LLM — needs API keys + network,
+    # always times out in unit-test mode). Request them explicitly with --suite.
+    keys = [k for k, cfg in SUITES.items() if not cfg.get("opt_in")]
+    if all_mode:
+        keys = list(SUITES)
     if suite_filter:
         requested = [s.strip() for s in suite_filter.split(",")]
         bad = [s for s in requested if s not in SUITES]
