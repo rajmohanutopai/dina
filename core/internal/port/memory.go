@@ -47,12 +47,10 @@ type TopicStore interface {
 // (embedding hashes for V2 similarity matching, etc.) without churning
 // call sites.
 type TouchRequest struct {
-	Topic           string
-	Kind            domain.TopicKind
-	NowUnix         int64
-	LiveCapability  string
-	LiveProviderDID string
-	SampleItemID    string
+	Topic        string
+	Kind         domain.TopicKind
+	NowUnix      int64
+	SampleItemID string
 }
 
 // MemoryReader is the cross-persona read surface used by the HTTP

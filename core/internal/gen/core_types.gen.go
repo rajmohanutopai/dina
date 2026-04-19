@@ -871,6 +871,9 @@ type Contact struct {
 	LastContact        int64              `json:"last_contact,omitempty"`
 	Name               string             `json:"name"`
 
+	// PreferredFor User-asserted "this is my go-to contact for X" category bindings (e.g. ["dental"], ["tax", "accounting"]). Drives the provider-service resolver: live-state queries matching one of these categories route directly to this contact's DID instead of AppView-searching anew. Values are normalised server-side (lowercased, trimmed, deduped).
+	PreferredFor []string `json:"preferred_for,omitempty"`
+
 	// Relationship Social relationship of the contact to the owner.
 	Relationship ContactRelationship `json:"relationship,omitempty"`
 
@@ -878,9 +881,11 @@ type Contact struct {
 	ResponsibilityExplicit bool `json:"responsibility_explicit,omitempty"`
 
 	// SharingPolicy JSON-encoded sharing policy.
-	SharingPolicy    string  `json:"sharing_policy,omitempty"`
-	Source           string  `json:"source,omitempty"`
-	SourceConfidence float32 `json:"source_confidence,omitempty"`
+	SharingPolicy string `json:"sharing_policy,omitempty"`
+	Source        string `json:"source,omitempty"`
+
+	// SourceConfidence Provenance confidence tier ('high', 'medium', 'low').
+	SourceConfidence string `json:"source_confidence,omitempty"`
 
 	// TrustLevel Contact/agent trust classification.
 	TrustLevel TrustLevel `json:"trust_level,omitempty"`

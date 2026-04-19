@@ -72,6 +72,17 @@ type ContactDirectory interface {
 	UpdateLastContact(ctx context.Context, did string, timestamp int64) error
 	Delete(ctx context.Context, did string) error
 	List(ctx context.Context) ([]domain.Contact, error)
+	// SetPreferredFor replaces a contact's preferred_for category list.
+	// Categories are normalised (lowercased + trimmed + deduped) inside
+	// the implementation — callers can pass raw user input.
+	SetPreferredFor(ctx context.Context, did string, categories []string) error
+	// GetPreferredFor returns a contact's preferred_for list, or an
+	// empty slice when none are set.
+	GetPreferredFor(ctx context.Context, did string) ([]string, error)
+	// FindByPreferredFor returns contacts whose preferred_for list
+	// contains the given category (case-insensitive). Drives the
+	// intent-to-provider resolver for live-state queries.
+	FindByPreferredFor(ctx context.Context, category string) ([]domain.Contact, error)
 }
 
 // ContactAliasStore manages multiple aliases per contact.

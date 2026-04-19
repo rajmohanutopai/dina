@@ -35,6 +35,17 @@ type Contact struct {
 	Source                string `json:"source"`                   // who provided this contact data
 	SourceConfidence      string `json:"source_confidence"`        // high, medium, low
 	LastContact           int64  `json:"last_contact"`             // unix timestamp of last interaction
+	// PreferredFor records user-asserted "this is my go-to contact for X"
+	// category bindings (e.g. ["dental"], ["tax", "accounting"]). Used by
+	// the provider-service resolver: when the user asks a live-state
+	// question matching one of these categories, the resolver routes
+	// directly to this contact's DID (and fetches fresh capability
+	// details from AppView) instead of AppView-searching anew.
+	//
+	// User-curated — set explicitly or extracted from memory statements
+	// like "my dentist Dr Xyz". AppView remains the source of truth for
+	// what that DID actually publishes right now.
+	PreferredFor          []string `json:"preferred_for,omitempty"`
 }
 
 // Relationship values.

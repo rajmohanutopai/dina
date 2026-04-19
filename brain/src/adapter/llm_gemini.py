@@ -18,7 +18,7 @@ from ..domain.errors import ConfigError, LLMError
 
 logger = structlog.get_logger(__name__)
 
-_TIMEOUT_S = 60.0
+_TIMEOUT_S = 180.0
 _EMBED_MODEL = "models/gemini-embedding-001"
 
 

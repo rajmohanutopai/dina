@@ -64,7 +64,7 @@ class StagingProcessor:
         reminder_planner: Any = None,
         telegram: Any = None,
         topic_extractor: Any = None,
-        appview_client: Any = None,
+        preference_extractor: Any = None,
     ) -> None:
         self._core = core
         self._enrichment = enrichment
@@ -78,21 +78,15 @@ class StagingProcessor:
         # via POST /v1/memory/topic/touch after each successful resolve.
         # Optional: if None, memory updates are skipped (no-op).
         self._topic_extractor = topic_extractor
-        # AppView client — optional; when present, entity topics are
-        # enriched with live_capability markers by resolving entity →
-        # contact DID → that DID's published service profile (see
-        # docs/WORKING_MEMORY_DESIGN.md §6.1). Silent no-op if absent.
-        self._appview_client = appview_client
+        # Preference extractor — surfaces "my dentist Dr Carl"-style
+        # user assertions and maps them to contact.preferred_for bindings.
+        # Replaces the old auto-enriched live_capability path that
+        # conflated AppView capability data with user preference. See
+        # docs/WORKING_MEMORY_DESIGN.md §6.1 for the architectural shift.
+        # Optional: if None, preference auto-update is skipped.
+        self._preference_extractor = preference_extractor
         self._person_extractor = None  # Set externally after construction.
         self._last_attribution_corrections: list[dict] = []
-        # In-process TTL cache for AppView is_discoverable lookups. Each
-        # staging batch may mention the same provider DID repeatedly (and
-        # different batches over the day re-discover the same contacts),
-        # so caching saves an AppView round-trip per entity occurrence.
-        # 30-minute TTL balances freshness (a provider newly (un)listing
-        # itself shows up within half an hour) against call volume.
-        self._discoverability_cache: dict[str, tuple[float, bool, list[str]]] = {}
-        self._discoverability_ttl_seconds = 30 * 60
 
     async def process_pending(self, limit: int = 10) -> int:
         """Claim and classify pending staging items.
@@ -359,24 +353,12 @@ class StagingProcessor:
                         topics = await self._topic_extractor.extract(base_classified)
                         entities = topics.get("entities") or []
                         themes = topics.get("themes") or []
-                        # Enrich entities with live_capability (§6.1):
-                        # entity name → contacts lookup → DID → AppView
-                        # service profile → first capability. This is what
-                        # lets the classifier route "is my dentist
-                        # appointment still confirmed?" to both vault and
-                        # the dentist's service, instead of vault alone.
-                        entity_enrichment = await self._enrich_entities_with_live_capability(
-                            entities,
-                        )
                         for persona in personas:
                             for name in entities:
-                                enrich = entity_enrichment.get(name.lower(), {})
                                 try:
                                     await self._core.memory_touch(
                                         persona=persona, topic=name, kind="entity",
                                         sample_item_id=f"stg-{item_id}",
-                                        live_capability=enrich.get("capability", ""),
-                                        live_provider_did=enrich.get("did", ""),
                                     )
                                 except Exception as texc:
                                     log.debug(
@@ -400,14 +382,31 @@ class StagingProcessor:
                                 id=item_id,
                                 entities=len(entities),
                                 themes=len(themes),
-                                enriched_entities=sum(
-                                    1 for e in entity_enrichment.values() if e.get("capability")
-                                ),
                             )
                     except Exception as texc:
                         log.warning(
                             "staging.topic_extract_failed",
                             id=item_id, error=str(texc),
+                        )
+
+                # Preference binding: scan the stored text for assertions
+                # like "my dentist Dr Carl" and update the matched
+                # contact's preferred_for list. Best-effort; regex-only,
+                # no LLM spend. Silent no-op if the extractor isn't wired
+                # or no contact matches the extracted name.
+                # See docs/WORKING_MEMORY_DESIGN.md §6.1.
+                if self._preference_extractor and resolve_status in ("stored", "resolved"):
+                    try:
+                        await self._apply_preference_bindings(
+                            item_id=item_id,
+                            text=(base_classified.get("summary") or "")
+                                 + "\n"
+                                 + (base_classified.get("body") or ""),
+                        )
+                    except Exception as pexc:
+                        log.warning(
+                            "staging.preference_bind_failed",
+                            id=item_id, error=str(pexc),
                         )
 
                 # Surface routing review items for daily brief.
@@ -469,97 +468,96 @@ class StagingProcessor:
 
         return resolved
 
-    async def _enrich_entities_with_live_capability(
-        self, entity_names: list[str],
-    ) -> dict[str, dict]:
-        """Resolve entity topic names to DID + capability via contacts + AppView.
+    async def _apply_preference_bindings(self, item_id: str, text: str) -> None:
+        """Extract preference assertions from text and update contacts.
 
-        For each extracted entity, try to find a matching contact in
-        Core's contacts table (case-insensitive name/alias match), then
-        look up that DID's service profile on AppView. If the DID
-        advertises any capability, return it so the memory_touch call
-        can stamp ``live_capability`` + ``live_provider_did`` on the
-        topic row.
+        For each "my <role> <Name>" candidate the extractor returns:
+        1. Resolve <Name> to a contact DID via Core's contact directory
+           (name-or-alias match, case-insensitive).
+        2. Merge the role's category set into that contact's
+           ``preferred_for`` list — union, not replace, so the user
+           retains earlier bindings.
+        3. Update the contact via Core's PUT endpoint. Empty changes
+           (category already present) are skipped to save a round-trip.
 
-        Best-effort everywhere: an unreachable AppView, missing
-        contacts endpoint, or unknown entity all produce an empty
-        mapping for that name — the caller treats "no enrichment" as
-        the absence of a live-service path, not an error.
-
-        Returns a dict keyed by lower-cased entity name:
-            {"dr carl": {"did": "did:plc:...", "capability": "appointment_status"}}
+        All failures are logged at debug level and swallowed — the
+        preference path must never block ingestion.
         """
-        if not entity_names:
-            return {}
-        if self._appview_client is None:
-            return {}
+        if not self._preference_extractor or not text:
+            return
+        candidates = self._preference_extractor.extract(text)
+        if not candidates:
+            return
 
-        # Load contacts once per batch (small list, one HTTP round-trip).
+        # Load contacts once per call — the list is small and we may
+        # match several candidates from the same item.
         try:
             contacts_resp = await self._core._request("GET", "/v1/contacts")
             contacts = contacts_resp.json().get("contacts", []) or []
         except Exception as exc:
-            log.debug("staging.enrich_contacts_failed", error=str(exc))
-            return {}
+            log.debug("staging.preference_contacts_failed", error=str(exc))
+            return
 
-        # Build lowercase name → DID map, including aliases.
-        name_to_did: dict[str, str] = {}
+        # Build lowercase name → (did, current preferred_for) map. Include
+        # aliases so "Dr Carl" matches a contact whose display_name is
+        # "Dr. Carl Jones" if it has "Dr Carl" as an alias.
+        by_key: dict[str, tuple[str, list[str]]] = {}
         for c in contacts:
             did = c.get("did") or ""
             if not did:
                 continue
+            current = list(c.get("preferred_for") or [])
             name = (c.get("name") or c.get("display_name") or "").strip().lower()
             if name and len(name) >= 2:
-                name_to_did[name] = did
+                by_key[name] = (did, current)
             for alias in c.get("aliases") or []:
                 alias_l = (alias or "").strip().lower()
                 if alias_l and len(alias_l) >= 2:
-                    name_to_did[alias_l] = did
+                    by_key[alias_l] = (did, current)
 
-        out: dict[str, dict] = {}
-        for name in entity_names:
-            key = (name or "").strip().lower()
-            if not key:
+        bound = 0
+        for cand in candidates:
+            key = cand.name.strip().lower()
+            hit = by_key.get(key)
+            if not hit:
+                # Try dropping an honorific prefix ("Dr Carl" → "carl")
+                # so a contact stored as "Carl Jones" can still match.
+                parts = key.split()
+                if len(parts) > 1 and parts[0].rstrip(".") in (
+                    "dr", "mr", "mrs", "ms", "prof",
+                ):
+                    hit = by_key.get(" ".join(parts[1:]))
+            if not hit:
+                log.debug(
+                    "staging.preference_no_contact",
+                    id=item_id, name=cand.name, role=cand.role,
+                )
                 continue
-            did = name_to_did.get(key)
-            if not did:
-                continue  # entity isn't a known contact → no live path
-            discoverable, capabilities = await self._lookup_discoverable_cached(did)
-            if discoverable is None:
-                continue  # lookup failed — treat as unknown, no live path
-            if not discoverable or not capabilities:
+
+            did, current = hit
+            merged = list(dict.fromkeys([*current, *cand.categories]))
+            if set(merged) == set(current):
+                # Nothing new — skip the network call.
                 continue
-            # First capability wins. For multi-capability providers we
-            # could extend this later to record all of them, but the
-            # ToC row has a single live_capability slot — a reasonable
-            # V1 constraint until we see providers that actually need
-            # multiple.
-            out[key] = {"did": did, "capability": capabilities[0]}
-        return out
+            try:
+                await self._core.update_contact(did, preferred_for=merged)
+                bound += 1
+                log.info(
+                    "staging.preference_bound",
+                    id=item_id, did=did, role=cand.role,
+                    categories_added=list(
+                        c for c in cand.categories if c not in current
+                    ),
+                )
+            except Exception as exc:
+                log.debug(
+                    "staging.preference_update_failed",
+                    id=item_id, did=did, error=str(exc),
+                )
 
-    async def _lookup_discoverable_cached(
-        self, did: str,
-    ) -> tuple[bool | None, list[str]]:
-        """TTL-cached wrapper around AppView's is_discoverable.
-
-        Returns ``(None, [])`` on lookup failure so callers can distinguish
-        "unknown" from "known-not-discoverable". Cache hits skip the
-        AppView call entirely; cache misses populate the cache after a
-        successful lookup.
-        """
-        import time as _time
-        now = _time.time()
-        hit = self._discoverability_cache.get(did)
-        if hit and (now - hit[0]) < self._discoverability_ttl_seconds:
-            return hit[1], hit[2]
-        try:
-            discoverable, capabilities = await self._appview_client.is_discoverable(did)
-        except Exception as exc:
-            log.debug("staging.enrich_appview_failed", did=did, error=str(exc))
-            return None, []
-        caps = list(capabilities or [])
-        self._discoverability_cache[did] = (now, bool(discoverable), caps)
-        return bool(discoverable), caps
+        if bound:
+            log.info("staging.preference_bindings_applied",
+                     id=item_id, count=bound)
 
     async def _classify_personas(self, item: dict) -> tuple[list[str], dict | None]:
         """Classify item into one or more personas. Highest sensitivity first.

@@ -827,6 +827,31 @@ class CoreHTTPClient:
         data = resp.json()
         return [Contact.model_validate(c) for c in data.get("contacts", [])]
 
+    async def find_contacts_by_preference(self, category: str) -> list[Contact]:
+        """GET /v1/contacts/by-preference?category=X — contacts whose
+        ``preferred_for`` list contains the given category.
+
+        Used by the reasoning agent's resolver: a dental-intent query
+        looks up ``category=dental`` and gets back the user's go-to
+        dentist contact(s). Empty category returns no contacts (Core
+        rejects empty with 400; we surface that as an empty list rather
+        than an exception to keep the caller code simple).
+        """
+        from urllib.parse import quote, urlencode
+
+        category = (category or "").strip()
+        if not category:
+            return []
+        try:
+            path = "/v1/contacts/by-preference?" + urlencode({"category": category})
+            resp = await self._request("GET", path)
+        except Exception:
+            return []
+        data = resp.json() or {}
+        # Go marshals a nil slice as `null`, not `[]`, so `.get(..., [])`
+        # returns None when there are no matches. Use `or []` to normalise.
+        return [Contact.model_validate(c) for c in (data.get("contacts") or [])]
+
     async def add_contact(
         self,
         did: str,
@@ -856,9 +881,16 @@ class CoreHTTPClient:
         sharing_tier: str = "",
         relationship: str = "",
         data_responsibility: str = "",
+        preferred_for: list[str] | None = None,
     ) -> dict:
-        """PUT /v1/contacts/{did} — update contact fields (partial)."""
-        body: dict[str, str] = {}
+        """PUT /v1/contacts/{did} — update contact fields (partial).
+
+        ``preferred_for`` is None by default (don't touch the field).
+        Pass an empty list to clear all preferences, or a list of
+        category strings to replace them. Core normalises the values
+        (lowercased, trimmed, deduped).
+        """
+        body: dict = {}
         if name:
             body["name"] = name
         if trust_level:
@@ -869,6 +901,10 @@ class CoreHTTPClient:
             body["relationship"] = relationship
         if data_responsibility:
             body["data_responsibility"] = data_responsibility
+        if preferred_for is not None:
+            # Explicit None-check: `[]` is a legal payload meaning
+            # "clear all preferences", and truthiness would swallow it.
+            body["preferred_for"] = list(preferred_for)
         resp = await self._request("PUT", f"/v1/contacts/{did}", json=body)
         return resp.json()
 
@@ -980,8 +1016,6 @@ class CoreHTTPClient:
         persona: str,
         topic: str,
         kind: str,
-        live_capability: str = "",
-        live_provider_did: str = "",
         sample_item_id: str = "",
     ) -> dict:
         """POST /v1/memory/topic/touch — record a topic mention.
@@ -990,16 +1024,17 @@ class CoreHTTPClient:
         Variant → canonical mapping happens inside Core; the caller
         passes the extracted surface form. See
         docs/WORKING_MEMORY_DESIGN.md.
+
+        Note: this no longer carries ``live_capability`` /
+        ``live_provider_did``. Capability bindings live on the contact
+        (``preferred_for``) and are resolved at query time via the
+        reasoning agent's ``find_preferred_provider`` tool.
         """
         body = {
             "persona": persona,
             "topic": topic,
             "kind": kind,
         }
-        if live_capability:
-            body["live_capability"] = live_capability
-        if live_provider_did:
-            body["live_provider_did"] = live_provider_did
         if sample_item_id:
             body["sample_item_id"] = sample_item_id
         resp = await self._request("POST", "/v1/memory/topic/touch", json=body)

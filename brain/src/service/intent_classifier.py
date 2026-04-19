@@ -71,9 +71,11 @@ captured recently, grouped by persona. Use it to decide:
 
 - Is a topic from the query present in Working Memory? Then the vault
   has context; include "vault".
-- Does a Working Memory entry carry a `live_capability` marker? Then
-  a provider_service exists for that entity; include "provider_services"
-  too when the query is about live state.
+- Is the query about an established service relationship ("my dentist",
+  "my lawyer", etc.)? Then live data likely lives with that provider —
+  include "provider_services". The downstream agent will look up the
+  user's preferred contact for that category via its own tool; you
+  don't need to resolve the specific provider here.
 - Is a persona (like "health" or "finance") clearly relevant to the
   query even if no specific topic matches? Name it in relevant_personas.
 
@@ -89,12 +91,7 @@ Return ONLY a JSON object, no prose, no code fence:
     "theme_matches": [],                         // ToC themes matching the query
     "persona_context": {                         // per-persona: topics worth anchoring on
       "health": ["dentist appointment", "Dr Carl"]
-    },
-    "live_capabilities_available": [             // entities in ToC whose service can answer
-      {"provider": "did:plc:drcarl",
-       "capability": "appointment_status",
-       "for_entity": "Dr Carl"}
-    ]
+    }
   },
   "temporal": "live_state",                      // "static" | "live_state" | "comparative"
   "reasoning_hint": "Short prose: why this routing."
@@ -221,8 +218,10 @@ def _render_toc_for_prompt(entries: list[dict]) -> str:
     """Compact, persona-grouped ToC view the classifier prompt can read.
 
     Format mirrors §8 of the design doc — persona name, then a short
-    list of topics. Entities with `live_capability` annotate inline so
-    the classifier can include them in `live_capabilities_available`.
+    list of topics. Capability metadata is no longer rendered inline
+    here: the downstream reasoning agent resolves provider bindings
+    via contact preferences (``preferred_for``) rather than via
+    pre-stamped ToC markers.
     """
     if not entries:
         return "(empty — user has not captured any topics yet)"
@@ -238,12 +237,7 @@ def _render_toc_for_prompt(entries: list[dict]) -> str:
             topic = row.get("topic") or ""
             if not topic:
                 continue
-            label = topic
-            live_cap = row.get("live_capability") or ""
-            live_did = row.get("live_provider_did") or ""
-            if live_cap and live_did:
-                label = f"{topic} [live: {live_cap} via {live_did}]"
-            labels.append(label)
+            labels.append(topic)
         if labels:
             lines.append(f"  {persona}: " + ", ".join(labels))
     return "\n".join(lines) if lines else "(empty)"

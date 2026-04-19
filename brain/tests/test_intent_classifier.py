@@ -136,7 +136,14 @@ class TestRenderToc:
         assert "Dr Carl" in out
         assert "Acme deal" in out
 
-    def test_inlines_live_capability_annotation(self) -> None:
+    def test_ignores_live_capability_fields(self) -> None:
+        """Capability metadata used to be inlined into the rendered ToC
+        ('Dr Carl [live: appointment_status via did:plc:abc]') so the
+        classifier could fill live_capabilities_available. That path
+        was retired when capability bindings moved to the Contact row
+        (preferred_for). The renderer must now ignore any such fields
+        if they're present on a ToC entry — no leak into the prompt.
+        """
         entries = [
             {
                 "persona": "health",
@@ -147,21 +154,9 @@ class TestRenderToc:
         ]
         out = _render_toc_for_prompt(entries)
         assert "Dr Carl" in out
-        assert "live: appointment_status" in out
-        assert "did:plc:abc" in out
-
-    def test_skips_annotation_when_cap_missing(self) -> None:
-        entries = [
-            {
-                "persona": "health",
-                "topic": "Dr Carl",
-                "live_capability": "",
-                "live_provider_did": "",
-            },
-        ]
-        out = _render_toc_for_prompt(entries)
-        assert "Dr Carl" in out
         assert "live:" not in out
+        assert "appointment_status" not in out
+        assert "did:plc:abc" not in out
 
     def test_missing_persona_defaults_to_general(self) -> None:
         entries = [{"topic": "orphan"}]

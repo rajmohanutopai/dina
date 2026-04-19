@@ -38,6 +38,54 @@ type setPolicyRequest struct {
 	Categories map[string]domain.SharingTier `json:"categories"`
 }
 
+// HandleFindContactsByPreference handles GET /v1/contacts/by-preference?category=X.
+//
+// Returns the contacts whose `preferred_for` list contains the given
+// category. Drives the reasoning agent's resolver: a query with a
+// dental intent looks up `category=dental` and gets back the user's
+// go-to dentist(s) without having to AppView-search for a provider.
+//
+// Empty category returns 400 — the resolver must always pass a
+// concrete intent; there's no "match anything" semantics.
+func (h *ContactHandler) HandleFindContactsByPreference(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	category := strings.TrimSpace(r.URL.Query().Get("category"))
+	if category == "" {
+		http.Error(w, `{"error":"category query parameter is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	contacts, err := h.Contacts.FindByPreferredFor(r.Context(), category)
+	if err != nil {
+		slog.Warn("failed to find contacts by preference", "category", category, "error", err)
+		http.Error(w, `{"error":"failed to query contacts"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Populate aliases from the alias store (same enrichment as List).
+	if h.Aliases != nil {
+		allAliases, err := h.Aliases.ListAllAliases(r.Context())
+		if err == nil {
+			for i := range contacts {
+				if aliases, ok := allAliases[contacts[i].DID]; ok {
+					contacts[i].Aliases = aliases
+					if len(aliases) > 0 {
+						contacts[i].Alias = aliases[0]
+					}
+				}
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"contacts": contacts}); err != nil {
+		http.Error(w, `{"error":"failed to encode response"}`, http.StatusInternalServerError)
+	}
+}
+
 // HandleListContacts handles GET /v1/contacts.
 func (h *ContactHandler) HandleListContacts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -300,11 +348,16 @@ func (h *ContactHandler) HandleSetScenarios(w http.ResponseWriter, r *http.Reque
 
 // updateContactRequest is the JSON body for PUT /v1/contacts/{did}.
 type updateContactRequest struct {
-	Name               string  `json:"name"`
-	TrustLevel         string  `json:"trust_level"`
-	LastContact        int64   `json:"last_contact"`
-	Relationship       *string `json:"relationship,omitempty"`
-	DataResponsibility *string `json:"data_responsibility,omitempty"`
+	Name               string    `json:"name"`
+	TrustLevel         string    `json:"trust_level"`
+	LastContact        int64     `json:"last_contact"`
+	Relationship       *string   `json:"relationship,omitempty"`
+	DataResponsibility *string   `json:"data_responsibility,omitempty"`
+	// PreferredFor is a pointer-to-slice so the caller can distinguish
+	// "don't touch" (nil) from "clear all preferences" (empty slice).
+	// Values are normalised (lowercased + trimmed + deduped) inside the
+	// directory — callers can pass raw input.
+	PreferredFor       *[]string `json:"preferred_for,omitempty"`
 }
 
 // HandleUpdateContact handles PUT /v1/contacts/{did}.
@@ -379,6 +432,16 @@ func (h *ContactHandler) HandleUpdateContact(w http.ResponseWriter, r *http.Requ
 		}
 		if err := h.Contacts.UpdateRelationship(r.Context(), did, rel); err != nil {
 			slog.Warn("failed to update contact relationship", "did", did, "error", err)
+			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// PreferredFor: pointer-to-slice so nil = no-op, empty = clear.
+	// The directory normalises input; callers can be sloppy.
+	if req.PreferredFor != nil {
+		if err := h.Contacts.SetPreferredFor(r.Context(), did, *req.PreferredFor); err != nil {
+			slog.Warn("failed to update contact preferred_for", "did", did, "error", err)
 			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
 			return
 		}

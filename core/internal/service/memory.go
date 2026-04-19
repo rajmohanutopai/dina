@@ -75,14 +75,12 @@ func (s *MemoryService) Toc(ctx context.Context, personas []string, limit int) (
 		}
 		for _, t := range topics {
 			merged = append(merged, domain.TocEntry{
-				Persona:         persona,
-				Topic:           t.Topic,
-				Kind:            t.Kind,
-				Salience:        salienceAt(t, nowUnix),
-				LastUpdate:      t.LastUpdate,
-				LiveCapability:  t.LiveCapability,
-				LiveProviderDID: t.LiveProviderDID,
-				SampleItemID:    t.SampleItemID,
+				Persona:      persona,
+				Topic:        t.Topic,
+				Kind:         t.Kind,
+				Salience:     salienceAt(t, nowUnix),
+				LastUpdate:   t.LastUpdate,
+				SampleItemID: t.SampleItemID,
 			})
 		}
 	}

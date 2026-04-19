@@ -26,20 +26,19 @@ func (k TopicKind) IsValid() bool {
 // identity is implicit — each persona keeps its own SQLite database, so
 // there is no `persona` column here.
 //
-// LiveCapability + LiveProviderDID mark topics that have a live
-// external counterpart (e.g. "Dr Carl" → `appointment_status` via
-// did:plc:drcarl). Populated at ingest by resolving the entity through
-// the contacts table and looking up its AppView service profile; empty
-// for topics with no external counterpart. See §6.1 of the design.
+// Capability bindings used to live here (LiveCapability,
+// LiveProviderDID) but have been moved onto the Contact row
+// (PreferredFor). Memory stores "what the user has talked about";
+// contacts store "who the user goes to for what". AppView remains
+// the source of truth for a DID's currently-published capabilities.
+// See docs/WORKING_MEMORY_DESIGN.md §6.1.
 type Topic struct {
-	Topic           string    `json:"topic"`
-	Kind            TopicKind `json:"kind"`
-	LastUpdate      int64     `json:"last_update"`
-	SShort          float64   `json:"s_short"`
-	SLong           float64   `json:"s_long"`
-	LiveCapability  string    `json:"live_capability,omitempty"`
-	LiveProviderDID string    `json:"live_provider_did,omitempty"`
-	SampleItemID    string    `json:"sample_item_id,omitempty"`
+	Topic        string    `json:"topic"`
+	Kind         TopicKind `json:"kind"`
+	LastUpdate   int64     `json:"last_update"`
+	SShort       float64   `json:"s_short"`
+	SLong        float64   `json:"s_long"`
+	SampleItemID string    `json:"sample_item_id,omitempty"`
 }
 
 // TocEntry is what the ToC read endpoint returns — a Topic plus the
@@ -47,14 +46,12 @@ type Topic struct {
 // unlocked personas) and its current salience (decay applied at read).
 // JSON-serialised as the ToC payload Brain consumes.
 type TocEntry struct {
-	Persona         string    `json:"persona"`
-	Topic           string    `json:"topic"`
-	Kind            TopicKind `json:"kind"`
-	Salience        float64   `json:"salience"`
-	LastUpdate      int64     `json:"last_update"`
-	LiveCapability  string    `json:"live_capability,omitempty"`
-	LiveProviderDID string    `json:"live_provider_did,omitempty"`
-	SampleItemID    string    `json:"sample_item_id,omitempty"`
+	Persona      string    `json:"persona"`
+	Topic        string    `json:"topic"`
+	Kind         TopicKind `json:"kind"`
+	Salience     float64   `json:"salience"`
+	LastUpdate   int64     `json:"last_update"`
+	SampleItemID string    `json:"sample_item_id,omitempty"`
 }
 
 // TopicAlias maps a surface-form variant to its canonical topic name.

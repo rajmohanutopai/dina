@@ -858,6 +858,25 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v14 complete")
 	}
 
+	// --- Identity migration v15: contacts.preferred_for ---
+	// User-asserted "this is my go-to contact for X" bindings. Stored as a
+	// JSON-encoded list of category strings (e.g. `["dental"]`). Replaces
+	// the auto-enriched live_capability/live_provider_did fields that were
+	// stamped on ToC entries — those conflated AppView capability data
+	// (what a DID publishes) with user preference (who the user chooses
+	// to use). See docs/WORKING_MEMORY_DESIGN.md §6.1.
+	if !hasColumn(db, "contacts", "preferred_for") {
+		slog.Info("sqlite: applying identity migration v15 (contacts.preferred_for)")
+		if _, err := db.ExecContext(ctx,
+			`ALTER TABLE contacts ADD COLUMN preferred_for TEXT NOT NULL DEFAULT '[]'`,
+		); err != nil && !isAlterColumnExists(err) {
+			return fmt.Errorf("identity v15: add preferred_for: %w", err)
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (15, 'Contact preferred_for — user-asserted category bindings')`)
+		slog.Info("sqlite: identity migration v15 complete")
+	}
+
 	return nil
 }
 

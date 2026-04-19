@@ -2099,10 +2099,79 @@ func (cd *ContactDirectory) List(_ context.Context) ([]domain.Contact, error) {
 			Alias:         c.Alias,
 			TrustLevel:    c.TrustLevel,
 			SharingPolicy: c.SharingPolicy,
+			PreferredFor:  append([]string(nil), c.PreferredFor...),
 		})
 	}
 
 	return result, nil
+}
+
+// SetPreferredFor replaces a contact's preferred_for list.
+// Normalises input (lowercase + trim + dedup); empty input clears all.
+func (cd *ContactDirectory) SetPreferredFor(_ context.Context, did string, categories []string) error {
+	cd.mu.Lock()
+	defer cd.mu.Unlock()
+
+	c, ok := cd.contacts[did]
+	if !ok {
+		return ErrContactNotFound
+	}
+	c.PreferredFor = normalisePreferredForCategories(categories)
+	return nil
+}
+
+// GetPreferredFor returns a contact's preferred_for list.
+func (cd *ContactDirectory) GetPreferredFor(_ context.Context, did string) ([]string, error) {
+	cd.mu.RLock()
+	defer cd.mu.RUnlock()
+
+	c, ok := cd.contacts[did]
+	if !ok {
+		return nil, ErrContactNotFound
+	}
+	return append([]string(nil), c.PreferredFor...), nil
+}
+
+// FindByPreferredFor returns contacts whose preferred_for list contains
+// the given category (case-insensitive). Empty category → no results.
+func (cd *ContactDirectory) FindByPreferredFor(_ context.Context, category string) ([]domain.Contact, error) {
+	cd.mu.RLock()
+	defer cd.mu.RUnlock()
+
+	category = strings.ToLower(strings.TrimSpace(category))
+	if category == "" {
+		return nil, nil
+	}
+	var matches []domain.Contact
+	for _, c := range cd.contacts {
+		for _, p := range c.PreferredFor {
+			if p == category {
+				matches = append(matches, *c)
+				break
+			}
+		}
+	}
+	return matches, nil
+}
+
+// normalisePreferredForCategories mirrors the SQLite adapter's
+// normalisation so the in-memory and persistent paths store the same
+// shape (lowercased, trimmed, deduped, empty dropped).
+func normalisePreferredForCategories(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		n := strings.ToLower(strings.TrimSpace(v))
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
 }
 
 // ---------- Device Registry ----------
