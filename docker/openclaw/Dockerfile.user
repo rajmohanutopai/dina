@@ -1,0 +1,34 @@
+# OpenClaw user image — base + Chromium + gog + Hermes.
+# For personal tenants doing real work: browse the web, read Gmail/Calendar,
+# run the Hermes agent runner. Heavy (~1GB) — use Dockerfile.provider for
+# thin service tenants that only expose an MCP.
+#
+# Build from repo root (base must exist):
+#   docker build -f docker/openclaw/Dockerfile.base -t dina-openclaw-base:latest .
+#   docker build -f docker/openclaw/Dockerfile.user -t dina-openclaw-user:latest .
+#
+# Runtime: mount gog auth store at /root/.config/gogcli (contains Gmail OAuth).
+
+FROM dina-openclaw-base:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CHROME_PATH=/usr/bin/chromium \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PUPPETEER_CHROMIUM_REVISION=skip \
+    CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
+
+# Hermes agent runner (optional — --runner hermes). Non-fatal if upstream is down.
+RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+        | bash -s -- --skip-setup --no-venv 2>/dev/null \
+    || echo "WARNING: Hermes install failed — --runner hermes will not be available"
+
+# gog (Google CLI) for Gmail/Calendar — auth directory mounted at runtime.
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://github.com/steipete/gogcli/releases/latest/download/gogcli_0.12.0_linux_${ARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin gog && chmod +x /usr/local/bin/gog && \
+    mkdir -p /root/.config/gogcli
+
+ENV OPENCLAW_ROLE=user

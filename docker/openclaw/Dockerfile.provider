@@ -1,0 +1,17 @@
+# OpenClaw provider image — base image, provider role.
+# For tenants publishing a service (transit, appointment, ...). Runs a single
+# Python MCP alongside the Dina MCP. No browser, no Gmail.
+#
+# `fastmcp` is already pulled in by `dina-agent` in the base image, so this
+# file adds nothing but the role label — kept as a distinct tag so compose
+# files can refer to `dina-openclaw-provider:latest` explicitly.
+#
+# Build from repo root (base must exist):
+#   ./docker/openclaw/build.sh
+#
+# Provider MCP code is NOT baked in — mount it at /app at runtime, e.g.
+#   -v ./demo/transit:/app/demo/transit:ro
+
+FROM dina-openclaw-base:latest
+
+ENV OPENCLAW_ROLE=provider

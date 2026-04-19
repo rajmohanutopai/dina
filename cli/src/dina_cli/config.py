@@ -50,6 +50,11 @@ class Config:
     timeout: float
     device_name: str = ""
     role: str = "user"         # "user" or "agent" — set during configure
+    # MsgBox transport — required for NAT'd/mobile deployments. `auto` falls
+    # back from direct→msgbox when Core isn't reachable on core_url.
+    msgbox_url: str = ""       # wss://mailbox.example.com/ws
+    homenode_did: str = ""     # did:plc:... of the paired Home Node
+    transport_mode: str = "auto"  # "direct" | "msgbox" | "auto"
     openclaw_url: str = ""     # ws://localhost:3000 — OpenClaw Gateway
     openclaw_token: str = ""   # Gateway auth token
     openclaw_device_token: str = ""  # Cached per-device Gateway token
@@ -104,6 +109,17 @@ def load_config() -> Config:
     core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
     timeout = float(os.environ.get("DINA_TIMEOUT") or saved.get("timeout") or 30.0)
     device_name = saved.get("device_name") or ""
+    msgbox_url = os.environ.get("DINA_MSGBOX_URL") or saved.get("msgbox_url") or ""
+    homenode_did = os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+    transport_mode = (
+        os.environ.get("DINA_TRANSPORT")
+        or saved.get("transport_mode")
+        or "auto"
+    ).lower()
+    if transport_mode not in ("direct", "msgbox", "auto"):
+        raise click.UsageError(
+            f"Invalid transport mode {transport_mode!r}. Must be direct, msgbox, or auto."
+        )
 
     # Ed25519 keypair is required — nudge users to run configure.
     if not (IDENTITY_DIR / "ed25519_private.pem").exists():
@@ -131,6 +147,9 @@ def load_config() -> Config:
         timeout=timeout,
         device_name=device_name,
         role=role,
+        msgbox_url=msgbox_url,
+        homenode_did=homenode_did,
+        transport_mode=transport_mode,
         openclaw_url=openclaw_url,
         openclaw_token=openclaw_token,
         openclaw_device_token=openclaw_device_token,

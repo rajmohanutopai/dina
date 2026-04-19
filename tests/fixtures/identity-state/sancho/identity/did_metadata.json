@@ -1,10 +1,10 @@
 {
-  "did": "did:plc:su5xmxtg3bimmsn7sciazfvg",
+  "did": "did:plc:fbi6azec2aua53fxzmdtby3f",
   "signing_key_path": "m/9999'/0'/0'",
   "signing_generation": 0,
   "rotation_key_path": "m/9999'/2'/0'",
   "plc_registered": true,
-  "pds_url": "http://pds:3000",
-  "handle": "sancho.test",
-  "created_at": "2026-04-03T06:30:08Z"
+  "pds_url": "https://test-pds.dinakernel.com",
+  "handle": "sancho.test-pds.dinakernel.com",
+  "created_at": "2026-04-19T13:41:18Z"
 }

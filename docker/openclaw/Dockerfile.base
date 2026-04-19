@@ -1,0 +1,52 @@
+# OpenClaw base image — shared by provider and user images.
+# Contains: Node (OpenClaw runtime), Python (dina-agent from PyPI), OpenClaw
+# itself, dina-agent CLI, and the dina_callback hook. No browser, no Gmail,
+# no Hermes.
+#
+# Self-contained: build context can be the docker/openclaw/ folder alone.
+# That's what makes copying this directory into dina-mobile work.
+#
+# Build with either of:
+#   # from repo root
+#   docker build -f docker/openclaw/Dockerfile.base -t dina-openclaw-base:latest docker/openclaw
+#   # or use the helper
+#   ./docker/openclaw/build.sh
+#
+# To iterate on an uncommitted cli/ without going through PyPI, pass
+#   --build-arg DINA_AGENT_PKG=/tmp/dina-cli
+# and mount cli/ into the build context. See docker/openclaw/README.md.
+
+FROM node:22-slim
+
+# Pin to the PyPI version that carries the MsgBox / WS2 / Working-Memory
+# changes. Override with --build-arg DINA_AGENT_PKG=<pip spec> for local dev.
+ARG DINA_AGENT_PKG=dina-agent==0.12.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# OpenClaw CLI — tries upstream installer, falls back to npm.
+RUN curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard \
+    || npm install -g openclaw@latest
+
+# dina-agent (provides the `dina` CLI, `dina mcp-server`, `dina agent-daemon`).
+# Default pulls from PyPI; override DINA_AGENT_PKG to install from a local path.
+RUN pip install --break-system-packages "${DINA_AGENT_PKG}"
+
+# OpenClaw skill describing Dina's hook contract (vendored — self-contained).
+RUN mkdir -p /usr/local/lib/node_modules/openclaw/skills/dina \
+             /root/.openclaw/skills /root/.openclaw/workspace \
+             /root/.openclaw/logs /root/.openclaw/hooks
+COPY skills/SKILL.md /usr/local/lib/node_modules/openclaw/skills/dina/SKILL.md
+
+# agent_end hook — copy from the installed wheel, not the repo. That lets
+# the build succeed with just the docker/openclaw/ directory as context.
+RUN cp "$(python3 -c 'import dina_cli, os; print(os.path.dirname(dina_cli.__file__))')/openclaw_hook.py" \
+       /root/.openclaw/hooks/dina_callback.py
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 3000
+CMD ["/usr/local/bin/entrypoint.sh"]

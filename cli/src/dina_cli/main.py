@@ -243,8 +243,13 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
     try:
         result = client.ask(query, session=session)
 
-        # Check for async approval-wait (202 from Core)
-        if result.get("status") == "pending_approval":
+        # Two async cases from Core now produce a 202 with request_id:
+        #   - pending_approval: sensitive persona needs human approval
+        #   - in_flight:        Brain is still reasoning (service queries,
+        #                       long tool loops) — too slow for the sync write
+        #                       timeout, so Core asks us to poll.
+        result_status = result.get("status", "")
+        if result_status in ("pending_approval", "in_flight"):
             request_id = result.get("request_id", "")
             persona = result.get("persona", "sensitive")
 
@@ -252,11 +257,16 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                 print_result_with_trace(result, json_mode, client.req_id)
                 return
 
-            click.echo(
-                f"Access to '{persona}' data requires approval.",
-                err=True,
-            )
-            click.echo("A notification has been sent. Approve via Telegram or dina-admin.", err=True)
+            if result_status == "pending_approval":
+                click.echo(f"Access to '{persona}' data requires approval.", err=True)
+                click.echo("A notification has been sent. Approve via Telegram or dina-admin.", err=True)
+                banner = "Awaiting approval..."
+                # Poll intervals: be patient — user may take minutes.
+                fast_interval, slow_interval, fast_window = 5, 15, 30
+            else:  # in_flight
+                banner = "Still reasoning..."
+                # Poll intervals: reasoning finishes in seconds–tens of seconds.
+                fast_interval, slow_interval, fast_window = 1, 3, 15
             click.echo(f"  req_id: {client.req_id}", err=True)
 
             if not request_id:
@@ -264,15 +274,13 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                 ctx.exit(1)
                 return
 
-            click.echo("Awaiting approval...", err=True)
+            click.echo(banner, err=True)
 
             import time
             timeout = min(max(timeout, 30), 1800)  # clamp: 30s min, 30min max
             elapsed = 0
             while elapsed < timeout:
-                # Fast poll first 30s (user may approve quickly from Telegram),
-                # then slow down — they're clearly not at the screen.
-                interval = 5 if elapsed < 30 else 15
+                interval = fast_interval if elapsed < fast_window else slow_interval
                 time.sleep(interval)
                 elapsed += interval
                 try:
@@ -300,9 +308,12 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                     click.echo("Request expired.", err=True)
                     ctx.exit(1)
                     return
-                # else: still pending or resuming — keep polling
+                # else: still pending / in_flight / resuming — keep polling
 
-            click.echo("Timed out waiting for approval.", err=True)
+            if result_status == "pending_approval":
+                click.echo("Timed out waiting for approval.", err=True)
+            else:
+                click.echo("Timed out waiting for reasoning to complete.", err=True)
             click.echo(f"Check later: dina ask-status {request_id}", err=True)
             ctx.exit(1)
             return
@@ -736,14 +747,23 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
 )
 @click.option("--headless", is_flag=True, default=False, help="Non-interactive mode with CLI flags (no prompts)")
 @click.option("--core-url", default=None, help="[headless] Core URL (e.g. http://localhost:8100)")
+@click.option("--msgbox-url", default=None, help="[headless] MsgBox WebSocket URL (e.g. wss://mailbox.example.com/ws)")
+@click.option("--homenode-did", default=None, help="[headless] DID of the paired Home Node (did:plc:...)")
+@click.option(
+    "--transport", "transport_mode", default=None,
+    type=click.Choice(["direct", "msgbox", "auto"]),
+    help="[headless] Transport mode: direct | msgbox | auto (default: auto)",
+)
 @click.option("--device-name", default=None, help="[headless] Device name")
 @click.option("--pairing-code", default=None, help="[headless] Pairing code from dina-admin device pair")
 @click.option("--config-dir", default=None, help="[headless] Config directory (default: .dina/cli in cwd)")
 @click.pass_context
 def configure(
     ctx: click.Context, role: str, config_file: str | None,
-    headless: bool, core_url: str | None, device_name: str | None,
-    pairing_code: str | None, config_dir: str | None,
+    headless: bool, core_url: str | None, msgbox_url: str | None,
+    homenode_did: str | None, transport_mode: str | None,
+    device_name: str | None, pairing_code: str | None,
+    config_dir: str | None,
 ) -> None:
     """Set up connection to a Dina Home Node.
 
@@ -775,6 +795,9 @@ def configure(
     if headless:
         _configure_headless(
             core_url=core_url or "http://localhost:8100",
+            msgbox_url=msgbox_url or "",
+            homenode_did=homenode_did or "",
+            transport_mode=(transport_mode or "auto"),
             device_name=device_name or _default_device_name(),
             role=role,
             pairing_code=pairing_code or "",
@@ -832,13 +855,48 @@ def configure(
     if cfg_input:
         core_url = cfg_input.get("core_url", existing.get("core_url", "http://localhost:8100"))
         device_name = cfg_input.get("device_name", existing.get("device_name") or _default_device_name())
+        msgbox_url = cfg_input.get("msgbox_url", existing.get("msgbox_url", ""))
+        homenode_did = cfg_input.get("homenode_did", existing.get("homenode_did", ""))
+        transport_mode_val = cfg_input.get(
+            "transport_mode", existing.get("transport_mode", "auto"),
+        )
         click.echo(f"  Core URL: {core_url}")
+        click.echo(f"  MsgBox: {msgbox_url or '(none)'}")
+        click.echo(f"  Home Node: {homenode_did or '(none)'}")
+        click.echo(f"  Transport: {transport_mode_val}")
         click.echo(f"  Device: {device_name}")
     else:
         core_url = click.prompt(
             "Core URL",
             default=existing.get("core_url", "http://localhost:8100"),
         )
+        # MsgBox transport is mandatory for mobile / NAT'd deployments.
+        # Prompt even if blank — users on LAN can accept "" to force direct.
+        msgbox_url = click.prompt(
+            "MsgBox WebSocket URL (wss://... — required for mobile / NAT'd Home Nodes)",
+            default=existing.get("msgbox_url", ""),
+            show_default=bool(existing.get("msgbox_url")),
+        )
+        homenode_did_default = existing.get("homenode_did", "")
+        homenode_did = click.prompt(
+            "Home Node DID (did:plc:... — required if MsgBox URL is set)",
+            default=homenode_did_default,
+            show_default=bool(homenode_did_default),
+        )
+        if msgbox_url and not homenode_did:
+            raise click.UsageError(
+                "Home Node DID is required when MsgBox URL is set — the relay "
+                "needs it to route your requests to the right node."
+            )
+        transport_mode_val = click.prompt(
+            "Transport mode",
+            type=click.Choice(["direct", "msgbox", "auto"]),
+            default=existing.get("transport_mode", "auto"),
+        )
+        if transport_mode_val == "msgbox" and not (msgbox_url and homenode_did):
+            raise click.UsageError(
+                "transport=msgbox requires both MsgBox URL and Home Node DID"
+            )
         device_name = click.prompt(
             "Device name",
             default=existing.get("device_name") or _default_device_name(),
@@ -853,6 +911,9 @@ def configure(
         "core_url": core_url,
         "device_name": device_name,
         "role": role,
+        "msgbox_url": msgbox_url,
+        "homenode_did": homenode_did,
+        "transport_mode": transport_mode_val,
     }
 
     path = save_config(values)
@@ -969,12 +1030,24 @@ def _default_device_name() -> str:
 
 
 def _configure_headless(
-    core_url: str, device_name: str, role: str,
+    core_url: str, msgbox_url: str, homenode_did: str,
+    transport_mode: str, device_name: str, role: str,
     pairing_code: str, config_dir_path: str | None,
 ) -> None:
     """Headless configure: all params from CLI flags, zero prompts."""
     from .config import set_config_dir
     from .signing import CLIIdentity
+
+    # Validate transport requirements up front so the error surfaces before
+    # we generate keys or attempt to pair.
+    if transport_mode not in ("direct", "msgbox", "auto"):
+        raise click.UsageError(
+            f"--transport must be direct|msgbox|auto (got {transport_mode!r})"
+        )
+    if transport_mode == "msgbox" and (not msgbox_url or not homenode_did):
+        raise click.UsageError(
+            "--transport=msgbox requires both --msgbox-url and --homenode-did"
+        )
 
     # Set config directory
     if config_dir_path:
@@ -985,6 +1058,11 @@ def _configure_headless(
 
     click.echo(f"  Config dir: {cfg_dir}")
     click.echo(f"  Core URL: {core_url}")
+    if msgbox_url:
+        click.echo(f"  MsgBox: {msgbox_url}")
+    if homenode_did:
+        click.echo(f"  Home Node: {homenode_did}")
+    click.echo(f"  Transport: {transport_mode}")
     click.echo(f"  Device: {device_name}")
     click.echo(f"  Role: {role}")
 
@@ -1007,6 +1085,9 @@ def _configure_headless(
         "core_url": core_url,
         "device_name": device_name,
         "role": role,
+        "msgbox_url": msgbox_url,
+        "homenode_did": homenode_did,
+        "transport_mode": transport_mode,
     }
     path = save_config(values)
     click.echo(f"  Configuration saved to {path}")

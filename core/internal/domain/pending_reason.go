@@ -19,6 +19,11 @@ type PendingReasonRecord struct {
 
 // Pending reason status constants.
 const (
+	// ReasonInFlight — Brain is still reasoning. Core returned 202 up-front
+	// so the CLI isn't held hostage by Core's HTTP write timeout on slow
+	// reasoning paths (service queries across D2D can take tens of seconds).
+	// The CLI polls /api/v1/ask/{id}/status until a terminal status.
+	ReasonInFlight        = "in_flight"
 	ReasonPendingApproval = "pending_approval"
 	ReasonResuming        = "resuming"
 	ReasonComplete        = "complete"

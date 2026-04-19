@@ -1,4 +1,9 @@
-"""Synchronous HTTP client wrapping Dina Core."""
+"""Synchronous HTTP client wrapping Dina Core.
+
+Routes every request through the transport selector (direct HTTP or
+MsgBox WebSocket relay) so the same code works on LAN, Docker, and
+NAT'd mobile deployments.
+"""
 
 from __future__ import annotations
 
@@ -10,17 +15,62 @@ import httpx
 
 from .config import Config
 from .signing import CLIIdentity
+from .transport import (
+    Transport,
+    TransportError,
+    TransportResponse,
+    select_transport,
+)
 
 
 class DinaClientError(Exception):
     """Raised when a Dina API call fails."""
 
 
+class _ClientResponse:
+    """Minimal httpx.Response-like adapter around TransportResponse.
+
+    The DinaClient body only uses ``.status_code``, ``.text``, ``.content``,
+    ``.json()``, ``.headers``, and ``.raise_for_status()`` — implementing
+    those lets the rest of the client stay unchanged.
+    """
+
+    def __init__(self, tr: TransportResponse) -> None:
+        self._tr = tr
+        self.status_code = tr.status
+        self.headers = tr.headers
+        self.text = tr.body
+
+    @property
+    def content(self) -> bytes:
+        return self.text.encode("utf-8") if self.text else b""
+
+    def json(self) -> Any:
+        return _json.loads(self.text) if self.text else {}
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            # Build a lightweight HTTPStatusError so existing except-handlers
+            # (which pull .status_code, .json(), .text from exc.response) keep
+            # working unchanged.
+            fake_req = httpx.Request("GET", "http://dina")
+            fake_resp = httpx.Response(
+                status_code=self.status_code,
+                content=self.content,
+                headers=dict(self.headers),
+                request=fake_req,
+            )
+            raise httpx.HTTPStatusError(
+                f"HTTP {self.status_code}", request=fake_req, response=fake_resp,
+            )
+
+
 class DinaClient:
     """Synchronous HTTP client for Dina Core.
 
     All requests are authenticated via Ed25519 request signing
-    (X-DID / X-Timestamp / X-Signature headers).
+    (X-DID / X-Timestamp / X-Signature headers) and tunnelled over
+    the configured transport (direct HTTP or MsgBox WS relay).
     """
 
     def __init__(self, config: Config, verbose: bool = False) -> None:
@@ -28,10 +78,25 @@ class DinaClient:
         self._identity.ensure_loaded()
         self._verbose = verbose
         self._req_id = uuid.uuid4().hex[:12]
-        self._core = httpx.Client(
-            base_url=config.core_url,
-            timeout=config.timeout,
-        )
+        self._config = config
+        # Legacy sentinel — callers still pass `self._core` as the first arg to
+        # `_request` for backward compat; `_request` ignores the value, but the
+        # attribute must exist on the instance.
+        self._core = None
+        try:
+            self._transport: Transport = select_transport(
+                mode=config.transport_mode,
+                core_url=config.core_url or None,
+                msgbox_url=config.msgbox_url or None,
+                homenode_did=config.homenode_did or None,
+                timeout=config.timeout,
+            )
+        except TransportError as exc:
+            raise DinaClientError(
+                f"Cannot establish transport: {exc}. "
+                f"Check DINA_CORE_URL / DINA_MSGBOX_URL / DINA_HOMENODE_DID "
+                f"or rerun `dina configure`."
+            ) from exc
 
     @property
     def req_id(self) -> str:
@@ -52,8 +117,13 @@ class DinaClient:
         self.close()
 
     def close(self) -> None:
-        """Close the underlying HTTP client."""
-        self._core.close()
+        """Release transport resources (no-op for direct; idempotent for msgbox)."""
+        close_fn = getattr(self._transport, "close", None)
+        if close_fn:
+            try:
+                close_fn()
+            except Exception:
+                pass
 
     # -- Private helpers ---------------------------------------------------
 
@@ -81,77 +151,83 @@ class DinaClient:
 
     def _request(
         self,
-        client: httpx.Client,
+        client: Any,
         method: str,
         path: str,
         **kwargs: Any,
-    ) -> httpx.Response:
-        """Send a request and translate transport / HTTP errors."""
-        # Sign Core requests with Ed25519.
-        if client is self._core:
-            body_bytes = self._extract_body(kwargs)
-            # Extract query string from params if present
-            query = ""
-            if "params" in kwargs and kwargs["params"]:
-                from urllib.parse import urlencode
-                query = urlencode(kwargs["params"], doseq=True)
-            did, ts, nonce, sig = self._identity.sign_request(method, path, body_bytes, query=query)
-            headers = kwargs.get("headers") or {}
-            headers["X-DID"] = did
-            headers["X-Timestamp"] = ts
-            headers["X-Nonce"] = nonce
-            headers["X-Signature"] = sig
-            headers["X-Request-ID"] = self._req_id
-            kwargs["headers"] = headers
+    ) -> _ClientResponse:
+        """Send a request via the configured transport and translate errors.
+
+        The ``client`` arg is kept for signature compatibility with earlier
+        callers that passed ``self._core``; it is ignored — everything routes
+        through ``self._transport`` now.
+        """
+        body_bytes = self._extract_body(kwargs)
+        query = ""
+        if "params" in kwargs and kwargs["params"]:
+            from urllib.parse import urlencode
+            query = urlencode(kwargs["params"], doseq=True)
+        did, ts, nonce, sig = self._identity.sign_request(
+            method, path, body_bytes, query=query,
+        )
+        headers = dict(kwargs.get("headers") or {})
+        headers["X-DID"] = did
+        headers["X-Timestamp"] = ts
+        headers["X-Nonce"] = nonce
+        headers["X-Signature"] = sig
+        headers["X-Request-ID"] = self._req_id
 
         if self._verbose:
             import sys
             print(f"  >> {method} {path}", file=sys.stderr)
-            print(f"     DID: {kwargs.get('headers', {}).get('X-DID', 'n/a')}", file=sys.stderr)
-            if "json" in kwargs:
-                import json as _json
-                print(f"     Body: {_json.dumps(kwargs['json'])[:200]}", file=sys.stderr)
+            print(f"     DID: {did}", file=sys.stderr)
+            if body_bytes:
+                preview = body_bytes[:200].decode("utf-8", errors="replace")
+                print(f"     Body: {preview}", file=sys.stderr)
+
+        full_path = f"{path}?{query}" if query else path
+        body_str = body_bytes.decode("utf-8") if body_bytes else None
 
         try:
-            response = client.request(method, path, **kwargs)
-            if self._verbose:
-                import sys
-                print(f"  << {response.status_code} ({len(response.content)} bytes)", file=sys.stderr)
-                if response.status_code >= 400:
-                    print(f"     Response: {response.text[:300]}", file=sys.stderr)
-            response.raise_for_status()
-            return response
-        except httpx.ConnectError:
-            raise DinaClientError(
-                f"Cannot reach Dina at {client.base_url}. Is it running?"
+            tr = self._transport.request(
+                method, full_path, headers, body=body_str, request_id=self._req_id,
             )
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            # Parse server error message
-            try:
-                err_body = exc.response.json()
-                server_msg = err_body.get("error", exc.response.text)
-                # Surface actionable guidance when present (e.g. migration hints).
-                detail = err_body.get("message", "")
-                if detail:
-                    server_msg = f"{server_msg} — {detail}"
-            except Exception:
-                server_msg = exc.response.text.strip()
-            if status == 401:
-                raise DinaClientError(
-                    f"Authentication failed: {server_msg}"
-                ) from exc
-            if status == 403:
-                raise DinaClientError(
-                    f"Access denied: {server_msg}"
-                ) from exc
-            if status >= 500:
-                raise DinaClientError(
-                    f"Server error ({status}): {server_msg}"
-                ) from exc
+        except TransportError as exc:
             raise DinaClientError(
-                f"HTTP {status}: {server_msg}"
+                f"Cannot reach Dina: {exc}"
             ) from exc
+
+        response = _ClientResponse(tr)
+        if self._verbose:
+            import sys
+            print(
+                f"  << {response.status_code} ({len(response.content)} bytes)",
+                file=sys.stderr,
+            )
+            if response.status_code >= 400:
+                print(f"     Response: {response.text[:300]}", file=sys.stderr)
+
+        if response.status_code < 400:
+            return response
+
+        # Parse server error message for user-facing context.
+        try:
+            err_body = response.json()
+            server_msg = err_body.get("error", response.text)
+            detail = err_body.get("message", "")
+            if detail:
+                server_msg = f"{server_msg} — {detail}"
+        except Exception:
+            server_msg = (response.text or "").strip()
+
+        status = response.status_code
+        if status == 401:
+            raise DinaClientError(f"Authentication failed: {server_msg}")
+        if status == 403:
+            raise DinaClientError(f"Access denied: {server_msg}")
+        if status >= 500:
+            raise DinaClientError(f"Server error ({status}): {server_msg}")
+        raise DinaClientError(f"HTTP {status}: {server_msg}")
 
     # -- Ask (Brain-mediated reasoning, persona-blind) ---------------------
 
@@ -250,7 +326,10 @@ class DinaClient:
                 self._core, "GET", f"/v1/vault/kv/{key}",
                 headers=extra if extra else None,
             )
-            data = resp.json()
+            try:
+                data = resp.json()
+            except (_json.JSONDecodeError, ValueError, TypeError):
+                data = None
             return data.get("value") if isinstance(data, dict) else resp.text
         except DinaClientError as exc:
             if "HTTP 404" in str(exc):

@@ -1,0 +1,27 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/multikey/v1"
+  ],
+  "id": "did:plc:fbi6azec2aua53fxzmdtby3f",
+  "verificationMethod": [
+    {
+      "id": "did:plc:fbi6azec2aua53fxzmdtby3f#key-1",
+      "type": "Multikey",
+      "controller": "did:plc:fbi6azec2aua53fxzmdtby3f",
+      "publicKeyMultibase": "z6Mki4CDNNpeAiHH5ZTUboc618GbNx5xqkaWNwPKe8mW9BiQ"
+    }
+  ],
+  "authentication": [
+    "did:plc:fbi6azec2aua53fxzmdtby3f#key-1"
+  ],
+  "service": [
+    {
+      "id": "did:plc:fbi6azec2aua53fxzmdtby3f#dina-messaging",
+      "type": "DinaMsgBox",
+      "serviceEndpoint": "wss://test-mailbox.dinakernel.com"
+    }
+  ],
+  "created_at": "2026-04-19T13:41:18Z",
+  "device_origin": "bf91bc944144"
+}

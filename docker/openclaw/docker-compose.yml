@@ -1,0 +1,71 @@
+# Standalone OpenClaw stack — two minimal containers, one provider + one user.
+# Designed to run against an existing Dina Core (on the host, or in another stack).
+# Meant to be copied into dina-mobile without modification; paths in the Dockerfiles
+# expect the repo root as the build context (i.e. run `docker compose` from here).
+#
+# Usage:
+#   cp docker/openclaw/.env.example docker/openclaw/.env
+#   # edit .env: set DINA_CORE_URL, pairing codes, GOOGLE_API_KEY
+#   ./docker/openclaw/build.sh          # builds base + provider + user in order
+#   docker compose -f docker/openclaw/docker-compose.yml up
+#
+# The provider image ships with the Dina MCP only; bind-mount your provider MCP
+# code under /app and point OPENCLAW_MCP_* at it (see the volumes/env below).
+
+x-build-context: &build-context
+  context: .
+
+services:
+  openclaw-provider:
+    image: dina-openclaw-provider:latest
+    build:
+      <<: *build-context
+      dockerfile: Dockerfile.provider
+    environment:
+      OPENCLAW_ROLE: provider
+      DINA_CORE_URL:           ${PROVIDER_DINA_CORE_URL:-http://host.docker.internal:8100}
+      DINA_PAIRING_CODE:       ${PROVIDER_PAIRING_CODE:-}
+      OPENCLAW_TOKEN:          ${PROVIDER_OPENCLAW_TOKEN:-provider-oc-token}
+      OPENCLAW_DEVICE_NAME:    ${PROVIDER_DEVICE_NAME:-openclaw-provider}
+      DINA_HOOK_CALLBACK_TOKEN: ${PROVIDER_HOOK_CALLBACK_TOKEN:-dina-callback-provider-token}
+      GOOGLE_API_KEY:          ${GOOGLE_API_KEY:-}
+      DINA_MSGBOX_URL:         ${DINA_MSGBOX_URL:-}
+      DINA_HOMENODE_DID:       ${DINA_HOMENODE_DID:-}
+      DINA_TRANSPORT:          ${DINA_TRANSPORT:-auto}
+      # Example — swap to your MCP:
+      OPENCLAW_MCP_NAME:        ${PROVIDER_MCP_NAME:-transit}
+      OPENCLAW_MCP_COMMAND:     ${PROVIDER_MCP_COMMAND:-python3}
+      OPENCLAW_MCP_ARGS:        ${PROVIDER_MCP_ARGS:-["-m","demo.transit"]}
+      OPENCLAW_MCP_PYTHONPATH:  ${PROVIDER_MCP_PYTHONPATH:-/app}
+      PYTHONPATH: /app
+    volumes:
+      # Bind-mount the provider MCP source. Override PROVIDER_MCP_PATH in .env
+      # to point at your own module (e.g. ../../demo/appointment).
+      - ${PROVIDER_MCP_PATH:-../../demo/transit}:/app/${PROVIDER_MCP_MODULE:-demo/transit}:ro
+    ports:
+      - "${PROVIDER_GATEWAY_PORT:-13000}:3000"
+    restart: unless-stopped
+
+  openclaw-user:
+    image: dina-openclaw-user:latest
+    build:
+      <<: *build-context
+      dockerfile: Dockerfile.user
+    environment:
+      OPENCLAW_ROLE: user
+      DINA_CORE_URL:           ${USER_DINA_CORE_URL:-http://host.docker.internal:8100}
+      DINA_PAIRING_CODE:       ${USER_PAIRING_CODE:-}
+      OPENCLAW_TOKEN:          ${USER_OPENCLAW_TOKEN:-user-oc-token}
+      OPENCLAW_DEVICE_NAME:    ${USER_DEVICE_NAME:-openclaw-user}
+      DINA_HOOK_CALLBACK_TOKEN: ${USER_HOOK_CALLBACK_TOKEN:-dina-callback-user-token}
+      GOOGLE_API_KEY:          ${GOOGLE_API_KEY:-}
+      GOG_KEYRING_PASSWORD:    ${GOG_KEYRING_PASSWORD:-}
+      DINA_MSGBOX_URL:         ${DINA_MSGBOX_URL:-}
+      DINA_HOMENODE_DID:       ${DINA_HOMENODE_DID:-}
+      DINA_TRANSPORT:          ${DINA_TRANSPORT:-auto}
+    # Optional: uncomment to mount gog (Gmail) auth store.
+    # volumes:
+    #   - ${GOG_AUTH_PATH:-./gog-auth}:/root/.config/gogcli
+    ports:
+      - "${USER_GATEWAY_PORT:-13001}:3000"
+    restart: unless-stopped

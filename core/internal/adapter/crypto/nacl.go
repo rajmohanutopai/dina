@@ -2,10 +2,10 @@ package crypto
 
 import (
 	"crypto/rand"
-	"crypto/sha512"
 	"fmt"
 
 	"github.com/rajmohanutopai/dina/core/internal/port"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/nacl/box"
 )
 
@@ -71,14 +71,20 @@ func (s *NaClBoxSealer) OpenAnonymous(ciphertext, recipientPub, recipientPriv []
 }
 
 // sealNonce derives the 24-byte nonce for anonymous sealed boxes.
-// Uses SHA-512(ephPub || recipientPub) truncated to 24 bytes.
-// This is compatible within Dina's Go implementation.
+// Uses BLAKE2b(ephPub || recipientPub) with 24-byte output — the libsodium
+// sealed-box standard (crypto_box_seal). This lets anything that speaks
+// libsodium sealed-box (Python's PyNaCl, iOS/Android native sodium,
+// tweetnacl-js, dina-mobile) interop with Core.
+//
+// Earlier versions used SHA-512[:24] which was Go-only and broke interop;
+// changed to match libsodium. Security is equivalent — BLAKE2b is a PRF-
+// quality hash for this purpose.
 func sealNonce(ephPub, recipientPub []byte) [24]byte {
-	h := sha512.New()
+	h, _ := blake2b.New(24, nil) // Size = 24 bytes, no key
 	h.Write(ephPub)
 	h.Write(recipientPub)
 	digest := h.Sum(nil)
 	var nonce [24]byte
-	copy(nonce[:], digest[:24])
+	copy(nonce[:], digest)
 	return nonce
 }

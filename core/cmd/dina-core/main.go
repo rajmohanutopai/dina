@@ -330,6 +330,39 @@ func main() {
 		}
 	}
 
+	// In test/dev mode: probe the restored DID against the configured PLC
+	// directory and refuse to start if it isn't registered. Catches the
+	// silent drift where the local identity fixture points at a DID that
+	// was never published (or has been revoked) — MsgBox would otherwise
+	// surface this as an unrecoverable auth flap.
+	if isDevOrTest && ownDID != "" && strings.HasPrefix(ownDID, "did:plc:") && cfg.PDSURL != "" {
+		probeURL := cfg.PLCURL
+		if probeURL == "" {
+			probeURL = "https://plc.directory"
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, probeURL+"/"+ownDID, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			slog.Warn("plc_probe: skipped — unreachable, will retry via normal paths",
+				"plc_url", probeURL, "error", err)
+		} else {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusNotFound {
+				log.Fatalf("plc_probe: DID %s is NOT registered at %s (status 404). "+
+					"Fixture and PLC are out of sync. Delete the PDS account, wipe the "+
+					"volume, and let Core createAccount fresh — see "+
+					"scripts/seed_test_identities.py.", ownDID, probeURL)
+			}
+			if resp.StatusCode != http.StatusOK {
+				slog.Warn("plc_probe: unexpected status", "did", ownDID, "status", resp.StatusCode)
+			} else {
+				slog.Info("plc_probe: DID verified at PLC", "did", ownDID, "plc_url", probeURL)
+			}
+		}
+	}
+
 
 	personaMgr := identity.NewPersonaManager()
 	// CRITICAL-01/02: Enable file-based persona persistence.
@@ -2062,7 +2095,12 @@ func main() {
 	// The MsgBox client was started earlier (go rc.Start) but doesn't receive
 	// RPC envelopes until a CLI device connects, by which time this wiring is done.
 	if rc := transporter.GetMsgBoxClient(); rc != nil {
-		rpcBridge := transport.NewRPCBridge(mux)
+		// IMPORTANT: pass the full middleware chain, not the raw mux. Otherwise
+		// MsgBox-routed requests skip auth/logging/ratelimit and arrive at
+		// handlers with no AgentDIDKey in context (a 401 masquerading as
+		// "agent DID not found" surfaced this when dina-cli moved to
+		// MsgBox transport).
+		rpcBridge := transport.NewRPCBridge(chain)
 		rpcPool := transport.NewRPCWorkerPool(8, 32)
 		rpcCache := transport.NewIdempotencyCache(5 * time.Minute)
 		rpcNonceCache := transport.NewNonceCache(5 * time.Minute)
