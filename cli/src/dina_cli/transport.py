@@ -239,8 +239,11 @@ class MsgBoxTransport:
             if "?" in path:
                 path, query = path.split("?", 1)
             body_bytes = body.encode() if body else b""
+            # sign_request signature is (method, path, body, query) — positional.
+            # Earlier code passed (method, path, query, body_bytes) which swapped
+            # body/query into the wrong slots, breaking signature validation.
             did, ts, nonce, sig = self._identity.sign_request(
-                method, path, query, body_bytes
+                method, path, body_bytes, query=query,
             )
             inner_headers = {
                 **headers,
@@ -320,10 +323,14 @@ class MsgBoxTransport:
     def _connect_and_auth(self) -> websockets.sync.client.ClientConnection:
         """Connect to MsgBox and perform Ed25519 challenge-response auth."""
         try:
+            # compression=None disables permessage-deflate. The MsgBox server
+            # (Go coder/websocket) rejects compressed frames with RSV1 set as
+            # "protocol error" and closes the socket. Must match server caps.
             ws = websockets.sync.client.connect(
                 self._msgbox_url,
                 open_timeout=5,
                 close_timeout=2,
+                compression=None,
             )
         except Exception as e:
             raise TransportError(f"MsgBox unreachable at {self._msgbox_url}: {e}") from e

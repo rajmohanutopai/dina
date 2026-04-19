@@ -31,6 +31,7 @@ import (
 
 // TST-CORE-611
 // TRACE: {"suite": "CORE", "case": "1189", "section": "17", "sectionName": "Security Hardening", "subsection": "01", "scenario": "01", "title": "NoVacuumInto"}
+// TST-CORE-611
 func TestSecurity_17_1_NoVacuumInto(t *testing.T) {
 	// §17.1: VACUUM INTO must never be used (plaintext backup CVE).
 
@@ -58,6 +59,7 @@ db.Exec("SELECT * FROM items")`
 
 // TST-CORE-612
 // TRACE: {"suite": "CORE", "case": "1190", "section": "17", "sectionName": "Security Hardening", "subsection": "02", "scenario": "01", "title": "SQLInjectionResistance"}
+// TST-CORE-612
 func TestSecurity_17_2_SQLInjectionResistance(t *testing.T) {
 	// Verify AuditSourceCode detects SQL injection patterns (string concatenation).
 
@@ -83,6 +85,7 @@ func TestSecurity_17_2_SQLInjectionResistance(t *testing.T) {
 
 // TST-CORE-613
 // TRACE: {"suite": "CORE", "case": "1191", "section": "17", "sectionName": "Security Hardening", "subsection": "03", "scenario": "01", "title": "PathTraversal"}
+// TST-CORE-613
 func TestSecurity_17_3_PathTraversal(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
 	impl := realSecurityAuditor
@@ -110,6 +113,7 @@ func TestSecurity_17_3_PathTraversal(t *testing.T) {
 
 // TST-CORE-614
 // TRACE: {"suite": "CORE", "case": "1192", "section": "17", "sectionName": "Security Hardening", "subsection": "04", "scenario": "01", "title": "HeaderInjection"}
+// TST-CORE-614
 func TestSecurity_17_4_HeaderInjection(t *testing.T) {
 	auditor := security.NewSecurityAuditor("", nil)
 	testutil.RequireImplementation(t, auditor, "SecurityAuditor")
@@ -145,6 +149,7 @@ func TestSecurity_17_4_HeaderInjection(t *testing.T) {
 
 // TST-CORE-615
 // TRACE: {"suite": "CORE", "case": "1193", "section": "17", "sectionName": "Security Hardening", "subsection": "05", "scenario": "01", "title": "MemoryZeroization"}
+// TST-CORE-615
 func TestSecurity_17_5_MemoryZeroization(t *testing.T) {
 	// Test that sensitive data can be zeroed from a byte slice.
 	// This validates the zeroization primitive used for DEK clearing.
@@ -182,6 +187,7 @@ func TestSecurity_17_5_MemoryZeroization(t *testing.T) {
 
 // TST-CORE-616
 // TRACE: {"suite": "CORE", "case": "1194", "section": "17", "sectionName": "Security Hardening", "subsection": "06", "scenario": "01", "title": "TLSEnforcement"}
+// TST-CORE-616
 func TestSecurity_17_6_TLSEnforcement(t *testing.T) {
 	// Code audit: verify server source code has HTTP server infrastructure.
 	// TLS is enforced at deployment layer (reverse proxy / Docker network).
@@ -218,20 +224,19 @@ func TestSecurity_17_6_TLSEnforcement(t *testing.T) {
 
 // TST-CORE-617
 // TRACE: {"suite": "CORE", "case": "1195", "section": "17", "sectionName": "Security Hardening", "subsection": "07", "scenario": "01", "title": "DockerNetworkIsolation"}
+// TST-CORE-617
 func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
-	// Verify adapter config declares both networks.
+	// PDS sidecar was removed — Core uses a community PDS (e.g., bsky.social).
+	// Only the brain network remains in the local compose topology.
 	dockerCfg, err := impl.InspectDockerConfig()
 	testutil.RequireNoError(t, err)
 
-	pdsInternal, pdsExists := dockerCfg.Networks["dina-pds-net"]
-	testutil.RequireTrue(t, pdsExists, "dina-pds-net must exist in config")
-	testutil.RequireFalse(t, pdsInternal, "dina-pds-net must NOT be internal — PDS needs outbound to reach plc.directory")
-
-	_, brainExists := dockerCfg.Networks["dina-brain-net"]
+	brainInternal, brainExists := dockerCfg.Networks["dina-brain-net"]
 	testutil.RequireTrue(t, brainExists, "dina-brain-net must exist in config")
+	testutil.RequireFalse(t, brainInternal, "dina-brain-net must NOT be internal — brain needs outbound for LLM APIs")
 
 	// Cross-validate against the real docker-compose.yml on disk.
 	composeData, readErr := os.ReadFile(filepath.Join("..", "..", "docker-compose.yml"))
@@ -240,8 +245,6 @@ func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 	}
 	if readErr == nil {
 		compose := string(composeData)
-		testutil.RequireTrue(t, strings.Contains(compose, "dina-pds-net"),
-			"docker-compose.yml must define dina-pds-net network")
 		testutil.RequireTrue(t, strings.Contains(compose, "dina-brain-net"),
 			"docker-compose.yml must define dina-brain-net network")
 	}
@@ -253,6 +256,7 @@ func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 
 // TST-CORE-618
 // TRACE: {"suite": "CORE", "case": "1196", "section": "17", "sectionName": "Security Hardening", "subsection": "08", "scenario": "01", "title": "SecretsNotInEnvironment"}
+// TST-CORE-618
 func TestSecurity_17_8_SecretsNotInEnvironment(t *testing.T) {
 	// §17.8: Secrets must be mounted as files (/run/secrets/), never as env vars.
 
@@ -305,6 +309,7 @@ func TestSecurity_17_8_SecretsNotInEnvironment(t *testing.T) {
 
 // TST-CORE-619
 // TRACE: {"suite": "CORE", "case": "1197", "section": "17", "sectionName": "Security Hardening", "subsection": "09", "scenario": "01", "title": "NoPlaintextKeysOnDisk"}
+// TST-CORE-619
 func TestSecurity_17_9_NoPlaintextKeysOnDisk(t *testing.T) {
 	// Read actual production source code from the adapter directory so
 	// AuditSourceCode has real content to scan (not empty string).
@@ -357,6 +362,7 @@ func TestSecurity_17_9_NoPlaintextKeysOnDisk(t *testing.T) {
 
 // TST-CORE-620
 // TRACE: {"suite": "CORE", "case": "1198", "section": "17", "sectionName": "Security Hardening", "subsection": "10", "scenario": "01", "title": "ConstantTimeComparisons"}
+// TST-CORE-620
 func TestSecurity_17_10_ConstantTimeComparisons(t *testing.T) {
 	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
@@ -393,6 +399,7 @@ func TestSecurity_17_10_ConstantTimeComparisons(t *testing.T) {
 
 // TST-CORE-621
 // TRACE: {"suite": "CORE", "case": "1199", "section": "17", "sectionName": "Security Hardening", "subsection": "11", "scenario": "01", "title": "NoPluginLoading"}
+// TST-CORE-621
 func TestSecurity_17_11_NoPluginLoading(t *testing.T) {
 	// Scan real production Go source files for forbidden plugin/dynamic-loading
 	// patterns. The SecurityAuditor.AuditSourceCode is constructed with an empty
@@ -442,6 +449,7 @@ func TestSecurity_17_11_NoPluginLoading(t *testing.T) {
 
 // TST-CORE-622
 // TRACE: {"suite": "CORE", "case": "1200", "section": "17", "sectionName": "Security Hardening", "subsection": "12", "scenario": "01", "title": "NoPluginAPIEndpoint"}
+// TST-CORE-622
 func TestSecurity_17_12_NoPluginAPIEndpoint(t *testing.T) {
 	// var impl testutil.Server = realserver.New(...)
 	impl := realServer
@@ -465,6 +473,7 @@ func TestSecurity_17_12_NoPluginAPIEndpoint(t *testing.T) {
 
 // TST-CORE-623
 // TRACE: {"suite": "CORE", "case": "1201", "section": "17", "sectionName": "Security Hardening", "subsection": "13", "scenario": "01", "title": "OnlyTwoExtensionPoints"}
+// TST-CORE-623
 func TestSecurity_17_13_OnlyTwoExtensionPoints(t *testing.T) {
 	// §17.13: Only two extension points — NaCl transport (peers) and HTTP (brain).
 	// Read actual production source — realSecurityAuditor has empty sourceCode.
@@ -511,6 +520,7 @@ func TestSecurity_17_13_OnlyTwoExtensionPoints(t *testing.T) {
 
 // TST-CORE-624
 // TRACE: {"suite": "CORE", "case": "1202", "section": "17", "sectionName": "Security Hardening", "subsection": "14", "scenario": "01", "title": "NoPlaintextVaultDataOnDisk"}
+// TST-CORE-624
 func TestSecurity_17_14_NoPlaintextVaultDataOnDisk(t *testing.T) {
 	// Code audit: vault always uses SQLCipher encryption, never plain SQLite.
 	impl := realSecurityAuditor
@@ -533,6 +543,7 @@ func TestSecurity_17_14_NoPlaintextVaultDataOnDisk(t *testing.T) {
 
 // TST-CORE-625
 // TRACE: {"suite": "CORE", "case": "1203", "section": "17", "sectionName": "Security Hardening", "subsection": "15", "scenario": "01", "title": "PlaintextDiscardedAfterProcessing"}
+// TST-CORE-625
 func TestSecurity_17_15_PlaintextDiscardedAfterProcessing(t *testing.T) {
 	// §17.15: Production code must not log or retain plaintext keys/DEKs.
 	// Scan actual adapter source for plaintext-leaking patterns.
@@ -590,6 +601,7 @@ func TestSecurity_17_15_PlaintextDiscardedAfterProcessing(t *testing.T) {
 
 // TST-CORE-626
 // TRACE: {"suite": "CORE", "case": "1204", "section": "17", "sectionName": "Security Hardening", "subsection": "16", "scenario": "01", "title": "KeysInRAMOnlyWhileNeeded"}
+// TST-CORE-626
 func TestSecurity_17_16_KeysInRAMOnlyWhileNeeded(t *testing.T) {
 	// §17.16: DEK loaded only while needed — locked tier starts locked, unlock loads DEK,
 	// lock clears it. Wrong passphrase must not unlock.
@@ -642,6 +654,7 @@ func TestSecurity_17_16_KeysInRAMOnlyWhileNeeded(t *testing.T) {
 
 // TST-CORE-627
 // TRACE: {"suite": "CORE", "case": "1205", "section": "17", "sectionName": "Security Hardening", "subsection": "17", "scenario": "01", "title": "SQLCipherLibrary"}
+// TST-CORE-627
 func TestSecurity_17_17_SQLCipherLibrary(t *testing.T) {
 	// §17.17: Project must use go-sqlcipher (encrypted), NOT mattn/go-sqlite3 (plaintext).
 	// Read go.mod directly — the shared realSecurityAuditor has empty sourceCode
@@ -667,6 +680,7 @@ func TestSecurity_17_17_SQLCipherLibrary(t *testing.T) {
 
 // TST-CORE-628
 // TRACE: {"suite": "CORE", "case": "1206", "section": "17", "sectionName": "Security Hardening", "subsection": "18", "scenario": "01", "title": "RawSQLiteNotValid"}
+// TST-CORE-628
 func TestSecurity_17_18_RawSQLiteNotValid(t *testing.T) {
 	// Verify vault uses SQLCipher by reading go.mod and confirming go-sqlcipher import.
 	// If the project uses go-sqlcipher, raw SQLite opens will fail on vault files.
@@ -691,6 +705,7 @@ func TestSecurity_17_18_RawSQLiteNotValid(t *testing.T) {
 
 // TST-CORE-629
 // TRACE: {"suite": "CORE", "case": "1207", "section": "17", "sectionName": "Security Hardening", "subsection": "19", "scenario": "01", "title": "JSONSerialization"}
+// TST-CORE-629
 func TestSecurity_17_19_JSONSerialization(t *testing.T) {
 	// §17.19: No MessagePack/Protobuf in inter-container API calls — JSON only (Phase 1).
 
@@ -730,15 +745,17 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 // TST-CORE-630
 // TRACE: {"suite": "CORE", "case": "1208", "section": "17", "sectionName": "Security Hardening", "subsection": "20", "scenario": "01", "title": "DigestPinning"}
+// TST-CORE-630
 func TestSecurity_17_20_DigestPinning(t *testing.T) {
 	auditor := security.NewSecurityAuditor("", nil)
 	testutil.RequireImplementation(t, auditor, "SecurityAuditor")
 
 	// Positive: all FROM statements must use @sha256: digest — never :latest tag.
+	// PDS sidecar was removed; only core + brain images are built locally.
 	dockerCfg, err := auditor.InspectDockerConfig()
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(dockerCfg.ImageDigests) >= 3,
-		"must have digest pins for at least core, brain, pds images")
+	testutil.RequireTrue(t, len(dockerCfg.ImageDigests) >= 2,
+		"must have digest pins for at least core and brain images")
 
 	for image, digest := range dockerCfg.ImageDigests {
 		testutil.RequireTrue(t, len(digest) > 0,
@@ -751,8 +768,6 @@ func TestSecurity_17_20_DigestPinning(t *testing.T) {
 	testutil.RequireTrue(t, hasCore, "dina-core must have a pinned digest")
 	_, hasBrain := dockerCfg.ImageDigests["dina-brain"]
 	testutil.RequireTrue(t, hasBrain, "dina-brain must have a pinned digest")
-	_, hasPds := dockerCfg.ImageDigests["dina-pds"]
-	testutil.RequireTrue(t, hasPds, "dina-pds must have a pinned digest")
 }
 
 // --------------------------------------------------------------------------
@@ -761,6 +776,7 @@ func TestSecurity_17_20_DigestPinning(t *testing.T) {
 
 // TST-CORE-631
 // TRACE: {"suite": "CORE", "case": "1209", "section": "17", "sectionName": "Security Hardening", "subsection": "21", "scenario": "01", "title": "CosignSignature"}
+// TST-CORE-631
 func TestSecurity_17_21_CosignSignature(t *testing.T) {
 	// CI pipeline must include cosign signing. Verify Dockerfile or CI config references cosign.
 	// Check for cosign in Dockerfile or docker-compose.yml comments/labels.
@@ -783,6 +799,7 @@ func TestSecurity_17_21_CosignSignature(t *testing.T) {
 
 // TST-CORE-632
 // TRACE: {"suite": "CORE", "case": "1210", "section": "17", "sectionName": "Security Hardening", "subsection": "22", "scenario": "01", "title": "SBOMGenerated"}
+// TST-CORE-632
 func TestSecurity_17_22_SBOMGenerated(t *testing.T) {
 	// CI pipeline must generate SBOM using syft. Check for configuration.
 	dockerfile, err := os.ReadFile("../../Dockerfile")
@@ -803,6 +820,7 @@ func TestSecurity_17_22_SBOMGenerated(t *testing.T) {
 
 // TST-CORE-633
 // TRACE: {"suite": "CORE", "case": "1211", "section": "17", "sectionName": "Security Hardening", "subsection": "23", "scenario": "01", "title": "SecretsNeverInEnvVars"}
+// TST-CORE-633
 func TestSecurity_17_23_SecretsNeverInEnvVars(t *testing.T) {
 	// Fresh SecurityAuditor with default docker config.
 	impl := security.NewSecurityAuditor("", nil)
@@ -860,6 +878,7 @@ func TestSecurity_17_23_SecretsNeverInEnvVars(t *testing.T) {
 
 // TST-CORE-634
 // TRACE: {"suite": "CORE", "case": "1212", "section": "17", "sectionName": "Security Hardening", "subsection": "24", "scenario": "01", "title": "SecretsTmpfsMount"}
+// TST-CORE-634
 func TestSecurity_17_24_SecretsTmpfsMount(t *testing.T) {
 	// Config audit: verify docker-compose.yml uses file-based secrets (tmpfs in Docker).
 	compose, err := os.ReadFile("../../docker-compose.yml")
@@ -910,6 +929,7 @@ func TestSecurity_17_24_SecretsTmpfsMount(t *testing.T) {
 
 // TST-CORE-635
 // TRACE: {"suite": "CORE", "case": "1213", "section": "17", "sectionName": "Security Hardening", "subsection": "25", "scenario": "01", "title": "GoogleAPIKeyException"}
+// TST-CORE-635
 func TestSecurity_17_25_GoogleAPIKeyException(t *testing.T) {
 	// GOOGLE_API_KEY is a documented exception — revocable cloud key, not a local credential.
 	// Fresh SecurityAuditor — no shared state.
@@ -972,40 +992,8 @@ func TestSecurity_17_25_GoogleAPIKeyException(t *testing.T) {
 // §17.26 Docker Network: dina-pds-net outbound (PDS needs plc.directory)
 // --------------------------------------------------------------------------
 
-// TST-CORE-636
-// TRACE: {"suite": "CORE", "case": "1214", "section": "17", "sectionName": "Security Hardening", "subsection": "26", "scenario": "01", "title": "PdsNetOutbound"}
-func TestSecurity_17_26_PdsNetOutbound(t *testing.T) {
-	// Fresh SecurityAuditor — no shared state.
-	impl := security.NewSecurityAuditor("", nil)
-	testutil.RequireImplementation(t, impl, "SecurityAuditor")
-
-	dockerCfg, err := impl.InspectDockerConfig()
-	testutil.RequireNoError(t, err)
-
-	// Positive: dina-pds-net must be defined and NOT internal.
-	// PDS needs outbound to reach public plc.directory for DID resolution.
-	internal, exists := dockerCfg.Networks["dina-pds-net"]
-	testutil.RequireTrue(t, exists, "dina-pds-net must be defined in Networks")
-	testutil.RequireFalse(t, internal, "dina-pds-net must NOT be internal — PDS needs outbound to reach plc.directory")
-
-	// Positive: dina-brain-net must exist and NOT be internal (brain needs outbound for LLM APIs).
-	brainInternal, brainExists := dockerCfg.Networks["dina-brain-net"]
-	testutil.RequireTrue(t, brainExists, "dina-brain-net must be defined in Networks")
-	testutil.RequireFalse(t, brainInternal, "dina-brain-net must NOT be internal — brain needs outbound for LLM APIs")
-
-	// Negative: a non-existent network should not be present.
-	_, fakeExists := dockerCfg.Networks["dina-fake-net"]
-	testutil.RequireFalse(t, fakeExists, "non-existent network should not be in config")
-
-	// Verify via docker-compose.yml that pds network is not exposed externally.
-	compose, err := os.ReadFile("../../docker-compose.yml")
-	if err == nil {
-		composeStr := string(compose)
-		// PDS should not have host port exposure.
-		testutil.RequireTrue(t, strings.Contains(composeStr, "dina-pds-net"),
-			"docker-compose.yml must reference dina-pds-net")
-	}
-}
+// §17.26 retired — PDS sidecar removed. Core now uses a community PDS
+// (e.g., bsky.social); there is no dina-pds-net network to validate.
 
 // --------------------------------------------------------------------------
 // §17.27 Docker Network: dina-brain-net is Standard
@@ -1013,6 +1001,7 @@ func TestSecurity_17_26_PdsNetOutbound(t *testing.T) {
 
 // TST-CORE-637
 // TRACE: {"suite": "CORE", "case": "1215", "section": "17", "sectionName": "Security Hardening", "subsection": "27", "scenario": "01", "title": "BrainNetStandard"}
+// TST-CORE-637
 func TestSecurity_17_27_BrainNetStandard(t *testing.T) {
 	// Brain needs outbound internet for Gemini/Claude API calls.
 	// If custom networks are defined in docker-compose.yml, verify the brain
@@ -1089,8 +1078,10 @@ func TestSecurity_17_27_BrainNetStandard(t *testing.T) {
 
 // TST-CORE-638
 // TRACE: {"suite": "CORE", "case": "1216", "section": "17", "sectionName": "Security Hardening", "subsection": "28", "scenario": "01", "title": "ExternalPortsOnly"}
+// TST-CORE-638
 func TestSecurity_17_28_ExternalPortsOnly(t *testing.T) {
 	// Fresh instance — no shared state.
+	// PDS sidecar was removed — port 2583 is no longer part of the local topology.
 	impl := security.NewSecurityAuditor("", nil)
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
@@ -1098,26 +1089,26 @@ func TestSecurity_17_28_ExternalPortsOnly(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// Positive control: verify the expected ports ARE present.
-	testutil.RequireTrue(t, len(dockerCfg.ExposedPorts) >= 2,
-		fmt.Sprintf("expected at least 2 exposed ports, got %d", len(dockerCfg.ExposedPorts)))
+	testutil.RequireTrue(t, len(dockerCfg.ExposedPorts) >= 1,
+		fmt.Sprintf("expected at least 1 exposed port, got %d", len(dockerCfg.ExposedPorts)))
 
 	portSet := map[string]bool{}
 	for _, port := range dockerCfg.ExposedPorts {
 		portSet[port] = true
 	}
 	testutil.RequireTrue(t, portSet["8100"], "port 8100 (core) must be exposed")
-	testutil.RequireTrue(t, portSet["2583"], "port 2583 (PDS) must be exposed")
 
 	// Negative control: no unauthorized ports beyond the allowed set.
-	allowedPorts := map[string]bool{"8100": true, "2583": true}
+	allowedPorts := map[string]bool{"8100": true}
 	for _, port := range dockerCfg.ExposedPorts {
 		testutil.RequireTrue(t, allowedPorts[port],
-			"unexpected exposed port: "+port+" — only 8100 and 2583 should be exposed")
+			"unexpected exposed port: "+port+" — only 8100 should be exposed")
 	}
 }
 
 // TST-CORE-903
 // TRACE: {"suite": "CORE", "case": "1217", "section": "17", "sectionName": "Security Hardening", "subsection": "29", "scenario": "01", "title": "NoGoPluginImport"}
+// TST-CORE-903
 func TestSecurity_17_29_NoGoPluginImport(t *testing.T) {
 	// §17.29: No Go plugin.Open() or dynamic library loading.
 	// Read actual production source — realSecurityAuditor has empty sourceCode
@@ -1162,6 +1153,7 @@ func TestSecurity_17_29_NoGoPluginImport(t *testing.T) {
 
 // TST-CORE-904
 // TRACE: {"suite": "CORE", "case": "1218", "section": "17", "sectionName": "Security Hardening", "subsection": "30", "scenario": "01", "title": "NoExternalOAuthTokenStorage"}
+// TST-CORE-904
 func TestSecurity_17_30_NoExternalOAuthTokenStorage(t *testing.T) {
 	// §17.30: Core must not store external OAuth tokens.
 	// Read actual production source — realSecurityAuditor has empty sourceCode
@@ -1201,6 +1193,7 @@ func TestSecurity_17_30_NoExternalOAuthTokenStorage(t *testing.T) {
 
 // TST-CORE-905
 // TRACE: {"suite": "CORE", "case": "1219", "section": "17", "sectionName": "Security Hardening", "subsection": "31", "scenario": "01", "title": "NoVectorClocksNoCRDTs"}
+// TST-CORE-905
 func TestSecurity_17_31_NoVectorClocksNoCRDTs(t *testing.T) {
 	// Read actual production source code so AuditSourceCode has real content.
 	adapterDir := filepath.Join("..", "internal", "adapter")
@@ -1248,6 +1241,8 @@ func TestSecurity_17_31_NoVectorClocksNoCRDTs(t *testing.T) {
 
 // TST-CORE-065
 // TRACE: {"suite": "CORE", "case": "1220", "section": "02", "sectionName": "Key Derivation & Cryptography", "subsection": "01", "scenario": "01", "title": "RootIdentityNeverTransmittedInPlaintext"}
+// TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
+// TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestSecurity_2_1_RootIdentityNeverTransmittedInPlaintext(t *testing.T) {
 	// Requirement: Master seed, mnemonic, and DEKs must never appear in any
 	// network traffic. This test audits the handler and adapter source code

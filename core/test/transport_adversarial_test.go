@@ -270,6 +270,7 @@ func newTransportTestEnv(t *testing.T) *transportTestEnv {
 
 // TST-CORE-934
 // TRACE: {"suite": "CORE", "case": "1618", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "SendStoresSignature"}
+// TST-CORE-934, TST-CORE-935, TST-CORE-936, TST-CORE-937, TST-CORE-938
 func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 	// Requirements (§29.1):
 	//   - SendMessage signs the plaintext DinaMessage JSON with Ed25519
@@ -289,7 +290,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"hello"}`),
+			Body: []byte(`{"text":"hello"}`),
 		}
 
 		err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -320,7 +321,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"size check"}`),
+			Body: []byte(`{"text":"size check"}`),
 		}
 
 		_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -344,7 +345,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: 1700000000,
-			Body:        []byte(`{"q":"verify me"}`),
+			Body:        []byte(`{"text":"verify me"}`),
 		}
 
 		_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -383,7 +384,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"wire format test"}`),
+			Body: []byte(`{"text":"wire format test"}`),
 		}
 
 		_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -430,14 +431,14 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"message one"}`),
+			Body: []byte(`{"text":"message one"}`),
 		}
 		msg2 := domain.DinaMessage{
 			ID:   "msg-diff-2",
 			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"message two"}`),
+			Body: []byte(`{"text":"message two"}`),
 		}
 
 		_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg1)
@@ -455,6 +456,7 @@ func TestAdv_29_1_SendStoresSignature(t *testing.T) {
 // TST-ADV-002: ReceiveMessage with valid signature succeeds.
 // TST-CORE-935
 // TRACE: {"suite": "CORE", "case": "1624", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "ValidSignatureAccepted"}
+// TST-CORE-934, TST-CORE-935, TST-CORE-936, TST-CORE-937, TST-CORE-938
 func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 	// Requirement: Signed+encrypted envelope from known sender →
 	// Decrypted message returned, no error. The full receive path must:
@@ -473,7 +475,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"valid sig test"}`),
+			Body:        []byte(`{"text":"valid sig test"}`),
 		}
 		plaintext, _ := json.Marshal(msg)
 
@@ -572,7 +574,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"sig verification check"}`),
+			Body:        []byte(`{"text":"sig verification check"}`),
 		}
 		plaintext, _ := json.Marshal(msg)
 
@@ -648,6 +650,7 @@ func TestAdv_29_1_ValidSignatureAccepted(t *testing.T) {
 // TST-CORE-936
 // TST-ADV-003: ReceiveMessage with wrong signature is rejected.
 // TRACE: {"suite": "CORE", "case": "1629", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "WrongSignatureRejected"}
+// TST-CORE-934, TST-CORE-935, TST-CORE-936, TST-CORE-937, TST-CORE-938
 func TestAdv_29_1_WrongSignatureRejected(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -658,7 +661,7 @@ func TestAdv_29_1_WrongSignatureRejected(t *testing.T) {
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"tampered sig test"}`),
+		Body:        []byte(`{"text":"tampered sig test"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -692,6 +695,7 @@ func TestAdv_29_1_WrongSignatureRejected(t *testing.T) {
 // TST-CORE-937
 // TST-ADV-004: ReceiveMessage with tampered ciphertext (bit flip) is rejected.
 // TRACE: {"suite": "CORE", "case": "1630", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "TamperedCiphertextRejected"}
+// TST-CORE-934, TST-CORE-935, TST-CORE-936, TST-CORE-937, TST-CORE-938
 func TestAdv_29_1_TamperedCiphertextRejected(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -702,7 +706,7 @@ func TestAdv_29_1_TamperedCiphertextRejected(t *testing.T) {
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"tamper test"}`),
+		Body:        []byte(`{"text":"tamper test"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -732,6 +736,7 @@ func TestAdv_29_1_TamperedCiphertextRejected(t *testing.T) {
 
 // TST-ADV-005: ReceiveMessage with empty sig is rejected (no unsigned messages accepted).
 // TRACE: {"suite": "CORE", "case": "1631", "section": "29", "sectionName": "Adversarial & Security", "subsection": "01", "scenario": "01", "title": "EmptySigRejected"}
+// TST-CORE-934, TST-CORE-935, TST-CORE-936, TST-CORE-937, TST-CORE-938
 func TestAdv_29_1_EmptySigRejected(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -742,7 +747,7 @@ func TestAdv_29_1_EmptySigRejected(t *testing.T) {
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"no sig rejected"}`),
+		Body:        []byte(`{"text":"no sig rejected"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -769,6 +774,8 @@ func TestAdv_29_1_EmptySigRejected(t *testing.T) {
 // TST-ADV-006: ProcessOutbox delivers pending messages and marks delivered.
 // (Note: tests SendMessage immediate delivery path, not ProcessOutbox retry path.)
 // TRACE: {"suite": "CORE", "case": "1632", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxDeliverSuccess"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxDeliverSuccess(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -779,7 +786,7 @@ func TestAdv_29_2_OutboxDeliverSuccess(t *testing.T) {
 		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
-		Body: []byte(`{"q":"outbox test"}`),
+		Body: []byte(`{"text":"outbox test"}`),
 	}
 	err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 	if err != nil {
@@ -798,6 +805,8 @@ func TestAdv_29_2_OutboxDeliverSuccess(t *testing.T) {
 // TST-CORE-940
 // TST-ADV-007: ProcessOutbox marks failed when delivery errors.
 // TRACE: {"suite": "CORE", "case": "1633", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxDeliveryFailure"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxDeliveryFailure(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -810,7 +819,7 @@ func TestAdv_29_2_OutboxDeliveryFailure(t *testing.T) {
 		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
-		Body: []byte(`{"q":"fail delivery test"}`),
+		Body: []byte(`{"text":"fail delivery test"}`),
 	}
 	err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 	if err != nil {
@@ -843,6 +852,8 @@ func TestAdv_29_2_OutboxDeliveryFailure(t *testing.T) {
 // TST-CORE-941
 // TST-ADV-008: ProcessOutbox retries succeed after transient failure.
 // TRACE: {"suite": "CORE", "case": "1634", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxRetryTransient"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxRetryTransient(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -855,7 +866,7 @@ func TestAdv_29_2_OutboxRetryTransient(t *testing.T) {
 		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
-		Body: []byte(`{"q":"retry test"}`),
+		Body: []byte(`{"text":"retry test"}`),
 	}
 	_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 
@@ -895,6 +906,8 @@ func TestAdv_29_2_OutboxRetryTransient(t *testing.T) {
 
 // TST-ADV-009: ProcessOutbox with unresolvable DID marks failed.
 // TRACE: {"suite": "CORE", "case": "1635", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxUnresolvableDID"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxUnresolvableDID(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -931,6 +944,8 @@ func TestAdv_29_2_OutboxUnresolvableDID(t *testing.T) {
 // TST-CORE-943
 // TST-ADV-010: ProcessOutbox with no deliverer marks all failed.
 // TRACE: {"suite": "CORE", "case": "1636", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxNoDeliverer"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxNoDeliverer(t *testing.T) {
 	// Create a service without a deliverer.
 	signer := dinacrypto.NewEd25519Signer()
@@ -1007,6 +1022,8 @@ func TestAdv_29_2_OutboxNoDeliverer(t *testing.T) {
 // hit the ctx.Done() select case on the first iteration, returning context.Canceled
 // with 0 messages processed.
 // TRACE: {"suite": "CORE", "case": "1637", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxContextCancel"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxContextCancel(t *testing.T) {
 	env := newTransportTestEnv(t)
 
@@ -1057,6 +1074,8 @@ func TestAdv_29_2_OutboxContextCancel(t *testing.T) {
 // TST-CORE-947
 // TST-ADV-012: RateLimiter rejects after IP rate limit exceeded.
 // TRACE: {"suite": "CORE", "case": "1638", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressIPRateLimit"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressIPRateLimit(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDrop := ingress.NewDeadDrop(filepath.Join(tmpDir, "dd"), 10000, 500*1024*1024)
@@ -1083,6 +1102,8 @@ func TestAdv_29_3_IngressIPRateLimit(t *testing.T) {
 // TST-CORE-948
 // TST-ADV-013: Router.Ingest rejects after IP rate limit via ErrRateLimited.
 // TRACE: {"suite": "CORE", "case": "1639", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressRouterFlood"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressRouterFlood(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1122,6 +1143,8 @@ func TestAdv_29_3_IngressRouterFlood(t *testing.T) {
 // The 3-Valve Defense routes messages to the dead drop filesystem when the
 // vault DEK is not in RAM, preserving them for later processing after unlock.
 // TRACE: {"suite": "CORE", "case": "1640", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressDeadDropLocked"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressDeadDropLocked(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1215,6 +1238,8 @@ func TestAdv_29_3_IngressDeadDropLocked(t *testing.T) {
 // TST-ADV-015: Router spools to inbox when vault is unlocked.
 // TST-CORE-950
 // TRACE: {"suite": "CORE", "case": "1644", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressInboxUnlocked"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 	// Requirement: When the vault is unlocked, ingested messages go to the
 	// inbox (fast path), NOT the dead drop. The dead drop is ONLY for the
@@ -1398,6 +1423,8 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 // TST-CORE-951
 // TST-ADV-016: Dead drop spool full rejects new messages (Valve 2).
 // TRACE: {"suite": "CORE", "case": "1650", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSpoolFull"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressSpoolFull(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1431,6 +1458,8 @@ func TestAdv_29_3_IngressSpoolFull(t *testing.T) {
 // TST-ADV-017: Sweeper skips dead drop blobs when keys not configured (fail-closed).
 // SEC-LOW-03: Without decrypt prerequisites, blobs are skipped (not delivered).
 // TRACE: {"suite": "CORE", "case": "1651", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSweeperSweep"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressSweeperSweep(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1460,6 +1489,8 @@ func TestAdv_29_3_IngressSweeperSweep(t *testing.T) {
 // TST-CORE-953
 // TST-ADV-018: Router.ProcessPending sweeps dead drop + processes inbox spool.
 // TRACE: {"suite": "CORE", "case": "1652", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressProcessPending"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressProcessPending(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1499,6 +1530,8 @@ func TestAdv_29_3_IngressProcessPending(t *testing.T) {
 // TST-CORE-954
 // TST-ADV-019: Oversized payload rejected at ingress.
 // TRACE: {"suite": "CORE", "case": "1653", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressOversizedPayload"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressOversizedPayload(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1524,6 +1557,8 @@ func TestAdv_29_3_IngressOversizedPayload(t *testing.T) {
 // TST-CORE-955
 // TST-ADV-020: SweepFull returns detailed results.
 // TRACE: {"suite": "CORE", "case": "1654", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSweepFull"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressSweepFull(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -1561,6 +1596,7 @@ func TestAdv_29_3_IngressSweepFull(t *testing.T) {
 // TST-ADV-021: Replayed message with same ID is detected via outbox dedup.
 // Architecture §9: "msg_id prevents replay — each message has a unique ULID."
 // TRACE: {"suite": "CORE", "case": "1655", "section": "29", "sectionName": "Adversarial & Security", "subsection": "04", "scenario": "01", "title": "ReplayDuplicateID"}
+// TST-CORE-956, TST-CORE-957
 func TestAdv_29_4_ReplayDuplicateID(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1571,7 +1607,7 @@ func TestAdv_29_4_ReplayDuplicateID(t *testing.T) {
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"first send"}`),
+		Body:        []byte(`{"text":"first send"}`),
 	}
 
 	// First send succeeds.
@@ -1636,6 +1672,7 @@ func TestAdv_29_4_ReplayDuplicateID(t *testing.T) {
 // TST-ADV-022: Envelope claims sender DID that doesn't match the actual signer.
 // Architecture §9: "mutual authentication — both Dinas verify Ed25519 signatures."
 // TRACE: {"suite": "CORE", "case": "1656", "section": "29", "sectionName": "Adversarial & Security", "subsection": "04", "scenario": "01", "title": "DIDSpoofingFromKID"}
+// TST-CORE-956, TST-CORE-957
 func TestAdv_29_4_DIDSpoofingFromKID(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1648,7 +1685,7 @@ func TestAdv_29_4_DIDSpoofingFromKID(t *testing.T) {
 		From:        "did:key:z6MkSenderTest", // claims to be sender
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"spoofed sender"}`),
+		Body:        []byte(`{"text":"spoofed sender"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -1682,6 +1719,8 @@ func TestAdv_29_4_DIDSpoofingFromKID(t *testing.T) {
 // TST-ADV-023: Outbox rejects new messages when queue is full (100 limit).
 // Architecture §9: "Outbox Queue Limit: 100 pending messages."
 // TRACE: {"suite": "CORE", "case": "1657", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxQueueLimit"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1698,7 +1737,7 @@ func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			From: "did:key:z6MkSenderTest",
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"queue test"}`),
+			Body: []byte(`{"text":"queue test"}`),
 		}
 		err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 		if err != nil {
@@ -1712,7 +1751,7 @@ func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
-		Body: []byte(`{"q":"overflow"}`),
+		Body: []byte(`{"text":"overflow"}`),
 	}
 	err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg6)
 	if err == nil {
@@ -1728,6 +1767,8 @@ func TestAdv_29_2_OutboxQueueLimit(t *testing.T) {
 // TST-ADV-024: Outbox retry count increments on repeated failures.
 // Architecture §9: "max 5 retries, backoff 30s→1m→5m→30m→2h."
 // TRACE: {"suite": "CORE", "case": "1658", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "OutboxRetryCount"}
+// TST-CORE-939, TST-CORE-940, TST-CORE-941, TST-CORE-942, TST-CORE-943, TST-CORE-944, TST-CORE-945
+// TST-CORE-946
 func TestAdv_29_2_OutboxRetryCount(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1740,7 +1781,7 @@ func TestAdv_29_2_OutboxRetryCount(t *testing.T) {
 		Type: domain.MsgTypeSocialUpdate,
 		From: "did:key:z6MkSenderTest",
 		To:   []string{"did:key:z6MkRecipientTest"},
-		Body: []byte(`{"q":"retry count test"}`),
+		Body: []byte(`{"text":"retry count test"}`),
 	}
 	_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 
@@ -1769,6 +1810,7 @@ func TestAdv_29_2_OutboxRetryCount(t *testing.T) {
 // TST-ADV-025: Malicious message body with injection payloads is safely deserialized.
 // Architecture §19: "Serialization boundary — type/length validation."
 // TRACE: {"suite": "CORE", "case": "1659", "section": "29", "sectionName": "Adversarial & Security", "subsection": "05", "scenario": "01", "title": "PromptInjectionBodySafe"}
+// TST-CORE-958, TST-CORE-959, TST-CORE-960, TST-CORE-961, TST-CORE-962, TST-CORE-963
 func TestAdv_29_5_PromptInjectionBodySafe(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
@@ -1778,12 +1820,12 @@ func TestAdv_29_5_PromptInjectionBodySafe(t *testing.T) {
 		name string
 		body []byte
 	}{
-		{"sql_injection", []byte(`{"q":"'; DROP TABLE users; --"}`)},
-		{"json_escape", []byte(`{"q":"test\",\"admin\":true,\"x\":\""}`)},
-		{"oversized_field", []byte(`{"q":"` + strings.Repeat("A", 10000) + `"}`)},
-		{"null_bytes", []byte("{\"q\":\"test\x00injection\"}")},
-		{"nested_json", []byte(`{"q":"{\"nested\":{\"deep\":{\"a\":1}}}"}`)},
-		{"html_xss", []byte(`{"q":"<script>alert('xss')</script>"}`)},
+		{"sql_injection", []byte(`{"text":"'; DROP TABLE users; --"}`)},
+		{"json_escape", []byte(`{"text":"test\",\"admin\":true,\"x\":\""}`)},
+		{"oversized_field", []byte(`{"text":"` + strings.Repeat("A", 10000) + `"}`)},
+		{"null_bytes", []byte("{\"text\":\"test\x00injection\"}")},
+		{"nested_json", []byte(`{"text":"{\"nested\":{\"deep\":{\"a\":1}}}"}`)},
+		{"html_xss", []byte(`{"text":"<script>alert('xss')</script>"}`)},
 	}
 
 	for _, tc := range injectionPayloads {
@@ -1839,6 +1881,7 @@ func TestAdv_29_5_PromptInjectionBodySafe(t *testing.T) {
 
 // TST-CORE-963
 // TRACE: {"suite": "CORE", "case": "1660", "section": "29", "sectionName": "Adversarial & Security", "subsection": "05", "scenario": "01", "title": "HTMLXSSBodySafe"}
+// TST-CORE-958, TST-CORE-959, TST-CORE-960, TST-CORE-961, TST-CORE-962, TST-CORE-963
 func TestAdv_29_5_HTMLXSSBodySafe(t *testing.T) {
 	// Requirement: <script> tag in Body → Body preserved byte-for-byte.
 	// The D2D transport layer must treat message bodies as opaque data,
@@ -2002,6 +2045,8 @@ func TestAdv_29_5_HTMLXSSBodySafe(t *testing.T) {
 
 // TST-CORE-952
 // TRACE: {"suite": "CORE", "case": "1662", "section": "29", "sectionName": "Adversarial & Security", "subsection": "03", "scenario": "01", "title": "IngressSweeperProcessesBlobs"}
+// TST-CORE-947, TST-CORE-948, TST-CORE-949, TST-CORE-950, TST-CORE-951, TST-CORE-952, TST-CORE-953
+// TST-CORE-954, TST-CORE-955
 func TestAdv_29_3_IngressSweeperProcessesBlobs(t *testing.T) {
 
 	// mockTransportProcessor simulates the full transport service for sweeper tests.
@@ -2320,6 +2365,7 @@ func (f transportProcessorFunc) ProcessInbound(ctx context.Context, sealed []byt
 
 // TST-CORE-942
 // TRACE: {"suite": "CORE", "case": "1670", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "04", "title": "UnresolvableDIDMarkedFailed"}
+// TST-CORE-942
 func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 	// Requirement (§29.2, row 4):
 	//   When ProcessOutbox encounters a message to an unknown DID that cannot
@@ -2536,6 +2582,7 @@ func TestTransport_29_2_4_UnresolvableDIDMarkedFailed(t *testing.T) {
 
 // TST-CORE-956
 // TRACE: {"suite": "CORE", "case": "1675", "section": "29", "sectionName": "Adversarial & Security", "subsection": "04", "scenario": "01", "title": "ReplayedMessageSameIDDetected"}
+// TST-CORE-956
 func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 	// Requirement (§9, SEC-HIGH-08):
 	//   ProcessInbound maintains a bounded (sender, msgID) cache.
@@ -2598,7 +2645,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"replay test"}`),
+			Body:        []byte(`{"text":"replay test"}`),
 		}
 		sealed := buildSealed(env, msg)
 
@@ -2637,7 +2684,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"message A"}`),
+			Body:        []byte(`{"text":"message A"}`),
 		}
 		msg2 := domain.DinaMessage{
 			ID:          "msg-unique-B",
@@ -2645,7 +2692,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"message B"}`),
+			Body:        []byte(`{"text":"message B"}`),
 		}
 
 		// Both must succeed — different IDs are distinct messages.
@@ -2674,7 +2721,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"from sender"}`),
+			Body:        []byte(`{"text":"from sender"}`),
 		}
 		_, err := env.svc.ProcessInbound(ctx, buildSealed(env, msg1))
 		if err != nil {
@@ -2711,7 +2758,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 			From:        sender2DID,
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"from sender2"}`),
+			Body:        []byte(`{"text":"from sender2"}`),
 		}
 		plaintext2, _ := json.Marshal(msg2)
 		sig2, _ := signer2.Sign(sender2Priv, plaintext2)
@@ -2747,7 +2794,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"will be purged"}`),
+			Body:        []byte(`{"text":"will be purged"}`),
 		}
 		sealed := buildSealed(env, msg)
 
@@ -2797,7 +2844,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 				From:        "did:key:z6MkSenderTest",
 				To:          []string{"did:key:z6MkRecipientTest"},
 				CreatedTime: time.Now().Unix(),
-				Body:        []byte(fmt.Sprintf(`{"q":"fresh message %d"}`, i)),
+				Body:        []byte(fmt.Sprintf(`{"text":"fresh message %d"}`, i)),
 			}
 			result, err := env.svc.ProcessInbound(ctx, buildSealed(env, msg))
 			if err != nil {
@@ -2819,6 +2866,7 @@ func TestTransport_29_4_1_ReplayedMessageSameIDDetected(t *testing.T) {
 // ==========================================================================
 
 // TRACE: {"suite": "CORE", "case": "1681", "section": "29", "sectionName": "Adversarial & Security", "subsection": "02", "scenario": "01", "title": "ProcessOutboxDeliversPendingMessages"}
+// TST-CORE-939
 func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 
 	// TRACE: {"suite": "CORE", "case": "1682", "section": "29", "sectionName": "Adversarial & Security", "title": "pending_message_becomes_delivered_after_ProcessOutbox"}
@@ -2835,7 +2883,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 			ID:   "msg-process-001",
 			Type: domain.MsgTypeSocialUpdate,
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"pending test"}`),
+			Body: []byte(`{"text":"pending test"}`),
 		}
 		err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 		if err != nil {
@@ -2887,7 +2935,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 			ID:   "msg-payload-check",
 			Type: domain.MsgTypeSocialUpdate,
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"payload test"}`),
+			Body: []byte(`{"text":"payload test"}`),
 		}
 		_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 
@@ -2935,7 +2983,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 				ID:   fmt.Sprintf("msg-batch-%d", i),
 				Type: domain.MsgTypeSocialUpdate,
 				To:   []string{"did:key:z6MkRecipientTest"},
-				Body: []byte(fmt.Sprintf(`{"q":"batch %d"}`, i)),
+				Body: []byte(fmt.Sprintf(`{"text":"batch %d"}`, i)),
 			}
 			_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 		}
@@ -3035,6 +3083,7 @@ func TestTransport_29_2_1_ProcessOutboxDeliversPendingMessages(t *testing.T) {
 // ==========================================================================
 
 // TRACE: {"suite": "CORE", "case": "1687", "section": "34", "sectionName": "Thesis: Loyalty", "subsection": "02", "scenario": "10", "title": "AgentCannotForgeFromDID"}
+// TST-CORE-1131
 func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 
 	// TRACE: {"suite": "CORE", "case": "1688", "section": "34", "sectionName": "Thesis: Loyalty", "title": "empty_From_gets_senderDID_in_round_trip"}
@@ -3052,7 +3101,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			// From intentionally empty — simulates the handler path.
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"from test"}`),
+			Body: []byte(`{"text":"from test"}`),
 		}
 
 		err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -3096,7 +3145,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			From: forgedDID, // Attempted impersonation
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"forged sender"}`),
+			Body: []byte(`{"text":"forged sender"}`),
 		}
 
 		err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -3165,7 +3214,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			From: forgedDID, // Claims to be from forged DID
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"impersonation attempt"}`),
+			Body: []byte(`{"text":"impersonation attempt"}`),
 		}
 
 		_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -3226,7 +3275,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 			Type: domain.MsgTypeSocialUpdate,
 			// From left empty — SendMessage fills in senderDID correctly.
 			To:   []string{"did:key:z6MkRecipientTest"},
-			Body: []byte(`{"q":"legitimate message"}`),
+			Body: []byte(`{"text":"legitimate message"}`),
 		}
 
 		_ = env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -3243,7 +3292,7 @@ func TestTransport_34_2_10_AgentCannotForgeFromDID(t *testing.T) {
 		if received.From != "did:key:z6MkSenderTest" {
 			t.Fatalf("From mismatch: want senderDID, got %q", received.From)
 		}
-		if string(received.Body) != `{"q":"legitimate message"}` {
+		if string(received.Body) != `{"text":"legitimate message"}` {
 			t.Fatalf("Body mismatch: %s", received.Body)
 		}
 	})

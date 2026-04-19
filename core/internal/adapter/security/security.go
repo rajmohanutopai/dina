@@ -30,9 +30,8 @@ func NewSecurityAuditor(sourceCode string, dockerConfig *DockerConfig) *Security
 
 func defaultDockerConfig() *DockerConfig {
 	return &DockerConfig{
-		ExposedPorts: []string{"8100", "2583"},
+		ExposedPorts: []string{"8100"},
 		Networks: map[string]bool{
-			"dina-pds-net":   false, // standard bridge — PDS needs outbound to reach plc.directory
 			"dina-brain-net": false, // standard bridge — brain needs outbound for LLM APIs
 		},
 		SecretsMountPath: "/run/secrets/",
@@ -40,7 +39,6 @@ func defaultDockerConfig() *DockerConfig {
 		ImageDigests: map[string]string{
 			"dina-core":  "sha256:abc123",
 			"dina-brain": "sha256:def456",
-			"dina-pds":   "sha256:ghi789",
 		},
 	}
 }

@@ -353,12 +353,12 @@ class TestReasoningAgent:
             _make_tool_call_response([
                 {"name": "list_personas", "args": {}, "id": f"call-{i}"},
             ])
-            for i in range(10)
+            for i in range(14)
         ] + [_make_text_response("Forced response")]
 
         result = await reasoning_agent.reason("infinite loop query")
-        # Should have stopped at _MAX_TOOL_TURNS (6) + 1 final call
-        assert mock_llm_router.route.call_count <= 7
+        # Should have stopped at _MAX_TOOL_TURNS (10) + 1 final call
+        assert mock_llm_router.route.call_count <= 11
 
     @pytest.mark.asyncio
     # TRACE: {"suite": "BRAIN", "case": "0257", "section": "02", "sectionName": "Guardian Loop (Core AI Reasoning)", "subsection": "02", "scenario": "05", "title": "tool_messages_sent_to_llm"}

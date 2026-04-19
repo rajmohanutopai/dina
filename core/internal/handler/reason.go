@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,11 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
+
+// fastPathReasonWait is how long HandleReason blocks waiting for Brain to
+// finish before returning 202 and letting the CLI poll. Short enough to feel
+// snappy for trivial asks, long enough to avoid most polls.
+const fastPathReasonWait = 3 * time.Second
 
 // ReasonHandler proxies reasoning requests to Brain with proper service-key auth.
 // Supports async approval-wait-resume: when Brain needs persona approval, Core
@@ -62,16 +68,79 @@ func (h *ReasonHandler) HandleReason(w http.ResponseWriter, r *http.Request) {
 		source = "admin"
 	}
 
-	var result *domain.ReasonResult
-	var err error
-	if agentDID != "" {
-		result, err = h.Brain.ReasonWithContext(r.Context(), req.Prompt, agentDID, sessionName)
-	} else {
-		result, err = h.Brain.ReasonAsUser(r.Context(), req.Prompt, source)
+	// Run Brain in a background goroutine. The fast-path below waits a few
+	// seconds for a quick answer; if Brain takes longer (e.g. service queries
+	// over D2D), we persist a pending record and return 202 so the caller can
+	// poll. This decouples the caller's transport timeout from Brain's work.
+	type brainOutcome struct {
+		result *domain.ReasonResult
+		err    error
 	}
+	// context.Background so the goroutine survives the caller's request
+	// timeout. Brain calls still honour their own internal timeouts.
+	bgCtx := context.Background()
+	outcomeCh := make(chan brainOutcome, 1)
+	go func() {
+		var result *domain.ReasonResult
+		var err error
+		if agentDID != "" {
+			result, err = h.Brain.ReasonWithContext(bgCtx, req.Prompt, agentDID, sessionName)
+		} else {
+			result, err = h.Brain.ReasonAsUser(bgCtx, req.Prompt, source)
+		}
+		outcomeCh <- brainOutcome{result: result, err: err}
+	}()
+
+	// Fast path — if Brain returns quickly, respond inline.
+	select {
+	case out := <-outcomeCh:
+		h.finalizeReason(w, r, out.result, out.err, req.Prompt, agentDID, sessionName, source)
+		return
+	case <-time.After(fastPathReasonWait):
+		// Fall through to async path below.
+	}
+
+	// Async path — persist a pending record, launch the finaliser goroutine,
+	// return 202 with a request_id so the CLI can poll.
+	if h.PendingReasons == nil {
+		// No store → fall back to waiting for the outcome (legacy behaviour).
+		out := <-outcomeCh
+		h.finalizeReason(w, r, out.result, out.err, req.Prompt, agentDID, sessionName, source)
+		return
+	}
+
+	requestID, err := h.createInFlightRecord(r.Context(), agentDID, sessionName, source, req.Prompt)
 	if err != nil {
-		// If Brain returned approval_required, forward as 403 to the CLI
-		// so the approval UX triggers properly.
+		slog.Warn("reason.create_inflight_failed", "error", err)
+		http.Error(w, `{"error":"failed to track in-flight request"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Finaliser goroutine — writes the outcome into the pending store when
+	// Brain returns. Uses background context so it survives the HTTP handler.
+	go func() {
+		out := <-outcomeCh
+		h.persistReasonOutcome(bgCtx, requestID, out.result, out.err, agentDID, sessionName, source, req.Prompt)
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"request_id": requestID,
+		"status":     domain.ReasonInFlight,
+		"message":    "Reasoning in progress. Poll GET /api/v1/ask/{request_id}/status for the result.",
+	})
+}
+
+// finalizeReason writes the Brain outcome directly to the response (fast-path
+// synchronous return). Shared by the in-line and the "no PendingReasons
+// configured" legacy fallback path.
+func (h *ReasonHandler) finalizeReason(
+	w http.ResponseWriter, r *http.Request,
+	result *domain.ReasonResult, err error,
+	prompt, agentDID, sessionName, source string,
+) {
+	if err != nil {
 		if strings.Contains(err.Error(), "approval_required") {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
@@ -81,21 +150,85 @@ func (h *ReasonHandler) HandleReason(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		// GH1: Log full error server-side; return generic message to caller.
-		// err.Error() may contain vault context, model output, or PII.
 		slog.Warn("reason.failed", "error", err)
 		http.Error(w, `{"error":"reasoning failed"}`, http.StatusBadGateway)
 		return
 	}
-
-	// Check if Brain returned pending_approval (async approval-wait-resume).
 	if result != nil && result.Status == domain.ReasonPendingApproval {
-		h.handlePendingApproval(w, r, result, req.Prompt, agentDID, sessionName, source)
+		h.handlePendingApproval(w, r, result, prompt, agentDID, sessionName, source)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// createInFlightRecord persists a new pending_reason record with status=in_flight.
+// Returns the generated request_id.
+func (h *ReasonHandler) createInFlightRecord(ctx context.Context, agentDID, sessionName, source, prompt string) (string, error) {
+	idBytes := make([]byte, 12)
+	if _, err := rand.Read(idBytes); err != nil {
+		return "", fmt.Errorf("generate request id: %w", err)
+	}
+	requestID := "reason-" + hex.EncodeToString(idBytes)
+
+	callerDID := agentDID
+	if callerDID == "" {
+		callerDID = "admin"
+	}
+	meta, _ := json.Marshal(map[string]string{
+		"prompt":    prompt,
+		"source":    source,
+		"agent_did": agentDID,
+		"session":   sessionName,
+	})
+	now := time.Now().Unix()
+	record := domain.PendingReasonRecord{
+		RequestID:   requestID,
+		CallerDID:   callerDID,
+		SessionName: sessionName,
+		Status:      domain.ReasonInFlight,
+		RequestMeta: string(meta),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		ExpiresAt:   now + domain.DefaultPendingReasonTTL,
+	}
+	if err := h.PendingReasons.Create(ctx, record); err != nil {
+		return "", fmt.Errorf("persist pending record: %w", err)
+	}
+	return requestID, nil
+}
+
+// persistReasonOutcome writes the Brain outcome into the pending store so
+// the status endpoint can serve it to the polling caller.
+func (h *ReasonHandler) persistReasonOutcome(
+	ctx context.Context, requestID string,
+	result *domain.ReasonResult, err error,
+	agentDID, sessionName, source, prompt string,
+) {
+	if err != nil {
+		if strings.Contains(err.Error(), "approval_required") {
+			// Approval flow is handled separately — the fast path already
+			// returned 403 to the caller. If we got here with an approval
+			// error the caller is polling, so surface it as failed with a
+			// clear message.
+			_ = h.PendingReasons.UpdateStatus(ctx, requestID, domain.ReasonFailed, "", "approval_required")
+			return
+		}
+		slog.Warn("reason.async_failed", "request_id", requestID, "error", err)
+		_ = h.PendingReasons.UpdateStatus(ctx, requestID, domain.ReasonFailed, "", "reasoning failed")
+		return
+	}
+	if result != nil && result.Status == domain.ReasonPendingApproval {
+		// Async approval required — fold into the existing pending_approval
+		// bookkeeping so the approval flow still works on this record.
+		_ = h.PendingReasons.UpdateApprovalID(ctx, requestID, result.ApprovalID)
+		_ = h.PendingReasons.UpdateStatus(ctx, requestID, domain.ReasonPendingApproval, "", "")
+		return
+	}
+	resultJSON, _ := json.Marshal(result)
+	if err := h.PendingReasons.UpdateStatus(ctx, requestID, domain.ReasonComplete, string(resultJSON), ""); err != nil {
+		slog.Warn("reason.persist_complete_failed", "request_id", requestID, "error", err)
+	}
 }
 
 // handlePendingApproval creates a PendingReasonRecord and returns 202.

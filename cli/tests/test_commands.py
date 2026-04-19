@@ -522,10 +522,14 @@ def test_configure_signature_mode(tmp_path):
          patch("dina_cli.main.save_config") as mock_save, \
          patch("dina_cli.main._load_saved", return_value={}):
         mock_save.return_value = tmp_path / "config.json"
-        # Input: config_location (default=global), core_url (default), device_name, test=no
+        # Prompts (in order): config_location → core_url → msgbox_url →
+        # homenode_did → transport mode → device_name → test connection?
         user_input = "\n".join([
             "",           # config_location (default: global)
             "",           # core_url (default)
+            "",           # msgbox_url (blank — LAN only)
+            "",           # homenode_did (blank)
+            "",           # transport mode (default: auto)
             "my-laptop",  # device name
             "n",          # don't test connection
         ])
@@ -535,6 +539,9 @@ def test_configure_signature_mode(tmp_path):
     mock_sig.assert_called_once()
     saved = mock_save.call_args[0][0]
     assert saved["device_name"] == "my-laptop"
+    assert saved["transport_mode"] == "auto"
+    assert saved["msgbox_url"] == ""
+    assert saved["homenode_did"] == ""
     assert "client_token" not in saved
     assert "auth_mode" not in saved
     assert "brain_url" not in saved

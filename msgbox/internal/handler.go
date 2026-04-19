@@ -79,8 +79,13 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("msgbox.connected", "did", did, "remote", r.RemoteAddr)
 
-	// Use the connection's own context so it lives beyond the HTTP handler.
-	connCtx := ws.CloseRead(r.Context())
+	// The connection's lifetime is governed by the HTTP request context.
+	// NOTE: earlier this called ws.CloseRead(), which was a bug —
+	// CloseRead spawns a goroutine that closes the connection with
+	// "unexpected data message" (1008) whenever the peer sends ANY frame.
+	// We need to read peer frames (D2D/RPC/cancel envelopes), so use the
+	// request context directly and let the outer read loop handle frames.
+	connCtx := r.Context()
 
 	conn := &MsgBoxConn{
 		WS:         ws,

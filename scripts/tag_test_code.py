@@ -9,9 +9,16 @@ Matching algorithm:
   4. For table-driven tests (no scenario), tag with all IDs for that path
 
 Reports unmatched scenarios and functions for manual review.
-Idempotent — skips functions already tagged.
+Idempotent — skips functions already tagged OR already carrying a
+`// TRACE: {...}` / `# TRACE: {...}` comment (those are already traceable;
+inserting an ID line displaces the TRACE and breaks the
+`TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs` regex which
+requires TRACE on the line immediately above the test declaration).
+
+Dry-run by default: prints what would change. Pass --apply to write.
 """
 
+import argparse
 import json
 import re
 import sys
@@ -148,13 +155,14 @@ def format_id_comment(ids, comment_char):
     return lines
 
 
-def process_go_file(filepath, valid_paths, id_by_path_row, rows_by_path):
+def process_go_file(filepath, valid_paths, id_by_path_row, rows_by_path, apply):
     """Process a Go test file. Returns (matched_ids, unmatched_funcs)."""
     text = filepath.read_text()
     lines = text.split("\n")
 
     func_re = re.compile(r"^func (Test\w+)\(")
     tag_re = re.compile(r"^// TST-")
+    trace_re = re.compile(r"^\s*//\s*TRACE:\s*\{")
     # Subtest patterns (must be indented — inside function body)
     subtest_name_re = re.compile(r'^\s+name:\s*"(\d+)_')
     subtest_run_re = re.compile(r'^\s+t\.Run\("(\d+)_')
@@ -176,8 +184,11 @@ def process_go_file(filepath, valid_paths, id_by_path_row, rows_by_path):
             if ids:
                 matched_ids.update(ids)
                 current_path = path if len(ids) > 1 else None
-                # Check if already tagged
-                if i == 0 or not tag_re.match(lines[i - 1]):
+                # Skip if already has a TST- tag OR a TRACE comment on the
+                # preceding line — both count as traceable, and inserting
+                # between TRACE and the func breaks 30_7_4 recognition.
+                prev = lines[i - 1] if i > 0 else ""
+                if not (tag_re.match(prev) or trace_re.match(prev)):
                     func_comments[i] = format_id_comment(ids, "//")
             else:
                 unmatched_funcs.append(func_name)
@@ -206,17 +217,20 @@ def process_go_file(filepath, valid_paths, id_by_path_row, rows_by_path):
         for comment_line in reversed(func_comments[idx]):
             lines.insert(idx, comment_line)
 
-    filepath.write_text("\n".join(lines))
-    return matched_ids, unmatched_funcs
+    planned = len(func_comments) + len(inline_edits)
+    if planned and apply:
+        filepath.write_text("\n".join(lines))
+    return matched_ids, unmatched_funcs, planned
 
 
-def process_py_file(filepath, valid_paths, id_by_path_row, rows_by_path):
+def process_py_file(filepath, valid_paths, id_by_path_row, rows_by_path, apply):
     """Process a Python test file. Returns (matched_ids, unmatched_funcs)."""
     text = filepath.read_text()
     lines = text.split("\n")
 
     func_re = re.compile(r"^(?:async )?def (test_\w+)\(")
     tag_re = re.compile(r"^# TST-")
+    trace_re = re.compile(r"^\s*#\s*TRACE:\s*\{")
     decorator_re = re.compile(r"^@")
 
     func_comments = {}  # insert_idx -> list of comment lines
@@ -243,8 +257,10 @@ def process_py_file(filepath, valid_paths, id_by_path_row, rows_by_path):
         while insert_idx > 0 and decorator_re.match(lines[insert_idx - 1]):
             insert_idx -= 1
 
-        # Skip if already tagged
-        if insert_idx > 0 and tag_re.match(lines[insert_idx - 1]):
+        # Skip if already tagged OR already has a TRACE comment — both are
+        # traceable, and inserting would displace TRACE and break 30_7_4.
+        prev = lines[insert_idx - 1] if insert_idx > 0 else ""
+        if tag_re.match(prev) or trace_re.match(prev):
             continue
 
         func_comments[insert_idx] = format_id_comment(ids, "#")
@@ -254,13 +270,30 @@ def process_py_file(filepath, valid_paths, id_by_path_row, rows_by_path):
         for comment_line in reversed(func_comments[idx]):
             lines.insert(idx, comment_line)
 
-    filepath.write_text("\n".join(lines))
-    return matched_ids, unmatched_funcs
+    planned = len(func_comments)
+    if planned and apply:
+        filepath.write_text("\n".join(lines))
+    return matched_ids, unmatched_funcs, planned
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Insert TST-CORE-/TST-BRAIN- ID comments above test functions.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write changes to disk. Without this flag, runs dry and reports planned edits.",
+    )
+    args = parser.parse_args()
+    apply = args.apply
+
     total_matched = set()
     total_all = set()
+    total_planned = 0
+
+    if not apply:
+        print("DRY RUN — no files will be modified. Pass --apply to write.")
 
     for config in CONFIGS:
         manifest_path = config["manifest"]
@@ -287,23 +320,26 @@ def main():
 
         for filepath in sorted(test_dir.glob(config["file_glob"])):
             if lang == "go":
-                m, u = process_go_file(
-                    filepath, valid_paths, id_by_path_row, rows_by_path
+                m, u, planned = process_go_file(
+                    filepath, valid_paths, id_by_path_row, rows_by_path, apply
                 )
             else:
-                m, u = process_py_file(
-                    filepath, valid_paths, id_by_path_row, rows_by_path
+                m, u, planned = process_py_file(
+                    filepath, valid_paths, id_by_path_row, rows_by_path, apply
                 )
 
             matched.update(m)
             all_unmatched.extend(u)
+            total_planned += planned
 
             fname = filepath.name
             tag_count = len(m)
+            verb = "wrote" if apply else "would insert"
+            change_note = f" — {verb} {planned} comment line(s)" if planned else ""
             if u:
-                print(f"  {fname}: {tag_count} IDs, {len(u)} unmatched funcs")
+                print(f"  {fname}: {tag_count} IDs, {len(u)} unmatched funcs{change_note}")
             else:
-                print(f"  {fname}: {tag_count} IDs")
+                print(f"  {fname}: {tag_count} IDs{change_note}")
 
         missing = all_ids - matched
         print(f"\n  Summary: {len(matched)}/{len(all_ids)} scenario IDs matched")
@@ -326,6 +362,10 @@ def main():
         print(f"  Missing: {len(total_missing)}")
     else:
         print("  All scenario IDs referenced in test code!")
+    if apply:
+        print(f"  Wrote {total_planned} comment line(s) across test files.")
+    else:
+        print(f"  Would insert {total_planned} comment line(s). Re-run with --apply to write.")
     print(f"{'='*60}")
 
 

@@ -399,19 +399,25 @@ services:
   #   2. Set DINA_PAIRING_CODE env and restart: docker compose -f docker-compose-test-stack.yml up -d busdriver-openclaw
 
   busdriver-openclaw:
+    image: dina-openclaw-provider:latest
     build:
       context: .
-      dockerfile: tests/sanity/Dockerfile.openclaw
+      dockerfile: docker/openclaw/Dockerfile.provider
     environment:
-      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      OPENCLAW_ROLE: provider
       DINA_CORE_URL: http://busdriver-core:8100
       DINA_PAIRING_CODE: "${BUSDRIVER_PAIRING_CODE:-}"
       DINA_HOOK_CALLBACK_TOKEN: "${DINA_HOOK_CALLBACK_TOKEN:-dina-callback-busdriver}"
       OPENCLAW_TOKEN: "busdriver-oc-token"
+      OPENCLAW_DEVICE_NAME: "busdriver-openclaw"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      OPENCLAW_MCP_NAME: "transit"
+      OPENCLAW_MCP_COMMAND: "python3"
+      OPENCLAW_MCP_ARGS: '["-m","demo.transit"]'
+      OPENCLAW_MCP_PYTHONPATH: /app
       PYTHONPATH: /app
     volumes:
       - ./demo/transit:/app/demo/transit:ro
-      - ./demo/transit/openclaw-setup.sh:/usr/local/bin/openclaw-setup.sh:ro
     networks:
       - test-net
     depends_on:
@@ -470,19 +476,25 @@ services:
         condition: service_completed_successfully
 
   drcarl-openclaw:
+    image: dina-openclaw-provider:latest
     build:
       context: .
-      dockerfile: tests/sanity/Dockerfile.openclaw
+      dockerfile: docker/openclaw/Dockerfile.provider
     environment:
-      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      OPENCLAW_ROLE: provider
       DINA_CORE_URL: http://drcarl-core:8100
       DINA_PAIRING_CODE: "${DRCARL_PAIRING_CODE:-}"
       DINA_HOOK_CALLBACK_TOKEN: "${DINA_HOOK_CALLBACK_TOKEN:-dina-callback-drcarl-token}"
       OPENCLAW_TOKEN: "drcarl-oc-token"
+      OPENCLAW_DEVICE_NAME: "drcarl-openclaw"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      OPENCLAW_MCP_NAME: "appointment"
+      OPENCLAW_MCP_COMMAND: "python3"
+      OPENCLAW_MCP_ARGS: '["-m","demo.appointment"]'
+      OPENCLAW_MCP_PYTHONPATH: /app
       PYTHONPATH: /app
     volumes:
       - ./demo/appointment:/app/demo/appointment:ro
-      - ./demo/appointment/openclaw-setup.sh:/usr/local/bin/openclaw-setup.sh:ro
     networks:
       - test-net
     depends_on:

@@ -143,6 +143,7 @@ type d2dPayloadWire struct {
 // --------------------------------------------------------------------------
 
 // TRACE: {"suite": "CORE", "case": "1693", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "01", "title": "SendMessage_DeliveryPayloadIsJSONWrapper"}
+// TST-CORE-1088
 func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -153,7 +154,7 @@ func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T)
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"fix 11 test"}`),
+		Body:        []byte(`{"text":"fix 11 test"}`),
 	}
 
 	err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
@@ -221,6 +222,7 @@ func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T)
 
 // TST-CORE-1089
 // TRACE: {"suite": "CORE", "case": "1694", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "02", "title": "ProcessInbound_JSONWrapperValidSig_Success"}
+// TST-CORE-1089
 func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -232,7 +234,7 @@ func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"valid sig inbound test"}`),
+		Body:        []byte(`{"text":"valid sig inbound test"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -272,6 +274,7 @@ func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.
 
 // TST-CORE-1090
 // TRACE: {"suite": "CORE", "case": "1695", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "03", "title": "ProcessInbound_JSONWrapperTamperedSig_Error"}
+// TST-CORE-1090
 func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -282,7 +285,7 @@ func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"tampered sig inbound test"}`),
+		Body:        []byte(`{"text":"tampered sig inbound test"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -319,6 +322,7 @@ func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing
 // --------------------------------------------------------------------------
 
 // TRACE: {"suite": "CORE", "case": "1696", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "06", "title": "ProcessInbound_RawBytesLegacy_Rejected"}
+// TST-CORE-1093
 func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	// TST-CORE-1093: ProcessInbound raw bytes legacy rejected
 	// Requirement: Raw NaCl bytes (no JSON wrapper), without DINA_ALLOW_UNSIGNED_D2D
@@ -335,7 +339,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"legacy raw bytes test"}`),
+			Body:        []byte(`{"text":"legacy raw bytes test"}`),
 		}
 		plaintext, _ := json.Marshal(msg)
 
@@ -396,6 +400,7 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 
 // TST-CORE-1095
 // TRACE: {"suite": "CORE", "case": "1701", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "08", "title": "ProcessOutbox_UsesJSONWrapper"}
+// TST-CORE-1095
 func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -409,7 +414,7 @@ func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"outbox retry wrapper test"}`),
+		Body:        []byte(`{"text":"outbox retry wrapper test"}`),
 	}
 	err := env.svc.SendMessage(ctx, "did:key:z6MkRecipientTest", msg)
 	if err != nil {
@@ -474,6 +479,7 @@ func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TRACE: {"suite": "CORE", "case": "1702", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "09", "title": "FullRoundTrip_SendAndReceiveWithSig"}
+// TST-CORE-1096
 func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -484,7 +490,7 @@ func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"full round trip with sig"}`),
+		Body:        []byte(`{"text":"full round trip with sig"}`),
 	}
 
 	// SendMessage produces a JSON wrapper payload.
@@ -512,7 +518,7 @@ func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 	if result.From != "did:key:z6MkSenderTest" {
 		t.Fatalf("expected From 'did:key:z6MkSenderTest', got %q", result.From)
 	}
-	if string(result.Body) != `{"q":"full round trip with sig"}` {
+	if string(result.Body) != `{"text":"full round trip with sig"}` {
 		t.Fatalf("unexpected body: %s", string(result.Body))
 	}
 }
@@ -523,6 +529,7 @@ func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 
 // TST-CORE-1091
 // TRACE: {"suite": "CORE", "case": "1703", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "04", "title": "ProcessInbound_JSONWrapperEmptySig_Rejected"}
+// TST-CORE-1091
 func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing.T) {
 	// CRITICAL-04: unsigned messages (empty sig) are now rejected by default.
 	env := newD2DSigTestEnv(t)
@@ -534,7 +541,7 @@ func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"empty sig wrapper test"}`),
+		Body:        []byte(`{"text":"empty sig wrapper test"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -562,6 +569,7 @@ func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing
 
 // TST-CORE-1094
 // TRACE: {"suite": "CORE", "case": "1704", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "07", "title": "ProcessInbound_JSONWrapper_DIDSpoofing_Rejected"}
+// TST-CORE-1094
 func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -573,7 +581,7 @@ func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *tes
 		From:        "did:key:z6MkSenderTest", // claims sender
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"DID spoofing via ProcessInbound"}`),
+		Body:        []byte(`{"text":"DID spoofing via ProcessInbound"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
@@ -614,6 +622,7 @@ func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *tes
 // generate a log warning for migration tracking.
 
 // TRACE: {"suite": "CORE", "case": "1705", "section": "31", "sectionName": "Code Review Fix Verification", "subsection": "08", "scenario": "05", "title": "ProcessInbound_RawBytesLegacy_Migration"}
+// TST-CORE-1092
 func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) {
 	ctx := context.Background()
 
@@ -630,7 +639,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"legacy message"}`),
+			Body:        []byte(`{"text":"legacy message"}`),
 		}
 		plaintext, _ := json.Marshal(msg)
 
@@ -666,7 +675,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"should be rejected"}`),
+			Body:        []byte(`{"text":"should be rejected"}`),
 		}
 		plaintext, _ := json.Marshal(msg)
 		rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
@@ -695,7 +704,7 @@ func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) 
 			From:        "did:key:z6MkSenderTest",
 			To:          []string{"did:key:z6MkRecipientTest"},
 			CreatedTime: time.Now().Unix(),
-			Body:        []byte(`{"q":"signed message"}`),
+			Body:        []byte(`{"text":"signed message"}`),
 		}
 		plaintext, _ := json.Marshal(msg)
 

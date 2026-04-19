@@ -174,7 +174,7 @@ class TestStackServices:
         # Infrastructure (HTTP services)
         health_paths = {
             "pds": "/xrpc/_health",
-            "plc": "/healthz",
+            "plc": "/_health",  # plc.directory exposes /_health, not /healthz
             "appview": "/health",
         }
         for name, url in self._manifest["services"].items():

@@ -4,7 +4,7 @@
   "_plc_url": "https://plc.directory",
   "actors": {
     "alonso": {
-      "did": "did:plc:movmdzs6ypxm3ndfkmzqc4nw",
+      "did": "did:plc:siyv5fymouvy5rz65aujgfq2",
       "seed": "0101010101010101010101010101010101010101010101010101010101010101",
       "handle": "alonso-test.test-pds.dinakernel.com",
       "display_name": "Don Alonso",
@@ -12,7 +12,7 @@
       "brain_port": 19200
     },
     "sancho": {
-      "did": "did:plc:adx5nkfde563627p55n4xu7l",
+      "did": "did:plc:fbi6azec2aua53fxzmdtby3f",
       "seed": "0202020202020202020202020202020202020202020202020202020202020202",
       "handle": "sancho-test.test-pds.dinakernel.com",
       "display_name": "Sancho",
@@ -20,7 +20,7 @@
       "brain_port": 19400
     },
     "chairmaker": {
-      "did": "did:plc:gwdoxjpd6qoz4mzxhui5dhxm",
+      "did": "did:plc:h4en7flpfoqpnzlh7np6erwm",
       "seed": "0303030303030303030303030303030303030303030303030303030303030303",
       "handle": "chairmaker-test.test-pds.dinakernel.com",
       "display_name": "ChairMaker",
