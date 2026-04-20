@@ -335,6 +335,39 @@ The network is treated as zero-trust:
 
 No intermediary (relay, server, platform) can read the message content.
 
+**Sealed-box nonce: BLAKE2b(24 bytes).** Ed25519 identity keys are converted to
+X25519 for the sealed box (Edwards→Montgomery map). The nonce used by Dina's
+sealed box is `BLAKE2b(ephPub ‖ recipientPub, outlen=24)` — the libsodium
+`crypto_box_seal` standard. This is what every libsodium-compatible
+implementation ships (Python `PyNaCl`, iOS/Android native sodium, `tweetnacl-js`,
+Rust `sodiumoxide`), so the dina-mobile client, browser SDKs, and Core all
+interop out of the box. Earlier builds used SHA-512 truncated to 24 bytes,
+which was Go-only and silently broke cross-library decryption; that was fixed
+in #9. Security is equivalent — BLAKE2b is a PRF-quality hash for this purpose.
+
+### CLI ↔ Core over MsgBox (RPC envelopes)
+
+When the CLI (dina-mobile, paired desktop) talks to Core through the MsgBox
+relay, each RPC uses the same sealed-box primitive:
+
+- CLI builds the inner request as `{method, path, headers, body}`, signs it
+  with Ed25519 (X-DID / X-Timestamp / X-Nonce / X-Signature — same canonical
+  format as direct HTTP), and seals it to Core's X25519 public key.
+- Core's MsgBox client decrypts, verifies the inner Ed25519 signature is
+  bound to the envelope's `from_did`, then routes through the **full** HTTP
+  middleware chain (CORS → BodyLimit → Recovery → Logging → RateLimit → Auth
+  → Authz → Timeout → mux). Auth middleware sets the same `AgentDIDKey` in
+  context that a direct HTTPS request would — handlers are transport-blind.
+- The response is sealed to the CLI's X25519 public key (derived from its
+  did:key Ed25519 public key) and sent back.
+
+Pairing over MsgBox works the same way, with one exception: `/v1/pair/complete`
+is in the `optionalAuthPaths` list (the pairing code *is* the auth), and the
+inner identity binding check accepts a `did:key:…` envelope whose public key
+matches the `public_key_multibase` field inside the pairing body. That lets
+a fresh, unpaired CLI complete pairing over MsgBox without having to reach
+Core directly first.
+
 ---
 
 ## Trust Network

@@ -20,7 +20,12 @@ from pathlib import Path
 PROJECT = "dina-test"
 FIXTURE_PATH = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "test_actors.json"
 IDENTITY_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "identity-state"
-ACTORS = ["alonso", "sancho", "chairmaker", "albert"]
+# Albert is a deferred actor (Digital Estate flow). Its container is commented
+# out in docker-compose-test-stack.yml. Keeping it in this list would trigger
+# a "wrong DID" warning on every stack-up and the plc_probe would refuse to
+# start Albert's Core if it were ever uncommented without a fixture refresh.
+# When Digital Estate is reactivated, re-add here and run --save.
+ACTORS = ["alonso", "sancho", "chairmaker"]
 
 
 def read_volume_metadata(actor: str) -> dict | None:

@@ -1,11 +1,20 @@
 # Working Memory — Design
 
-**Status:** Draft, pre-implementation. Replaces the hard-coded scenario list
-in `brain/src/prompts.py` (search for "bus/train/flight ETAs" — that's the
-stopgap this doc retires).
+**Status:** Shipped. Landed in three PRs:
+- **#6 WS2** — schema-driven public service discovery (transit demo, Dr Carl
+  demo); AppView publishes capability JSON Schemas + `schema_hash`; Brain
+  fetches them at query time.
+- **#7 Working Memory** — topic store + Table of Contents; EWMA salience
+  with dual-timescale (1 h short-term, 30 d long-term); ToC rendered into
+  Brain's system prompt before vault queries.
+- **#8 Preferred contacts** — retires the `live_capability` annotation
+  from the original design. Users assert preferences directly on contacts
+  (`preferred_for: ["dentist", "transit", ...]`) and the resolver matches
+  natural-language roles to a contact before public service discovery.
+  See "Evolution to preferred contacts" at the end of this doc.
 
 **Author:** Dina team
-**Date:** 2026-04-18
+**Date:** 2026-04-18 (design); shipped 2026-04-19.
 
 
 ## 1. Problem
@@ -510,3 +519,63 @@ We are not:
 We are:
 - Making the LLM's implicit question ("what kinds of things might the
   user know?") answerable before it calls a tool.
+
+---
+
+## Evolution to preferred contacts (PR #8, 2026-04-19)
+
+The original design annotated topics with a `live_capability` field — e.g.,
+topic "appointment with Dr Carl" carried `live_capability: "appointment_status"`
+pointing at Dr Carl's DID. The resolver then looked up that provider when
+the user asked a related question.
+
+In practice this conflated two concerns:
+
+1. *Who the user prefers for a role* (my dentist is Dr Carl) — a fact about
+   the **contact**, asserted intentionally.
+2. *What live capability a topic opens up* (this topic implies I should ask
+   about ETAs / appointments) — a derivation the system was making on the
+   user's behalf.
+
+PR #8 retires `live_capability` and replaces it with `preferred_for: []string`
+**on contacts** — a plain list of role tags the user asserts on each
+contact:
+
+```json
+{
+  "did": "did:plc:ozslhsj5beu4wpp7wa2p7alc",
+  "name": "Dr Carl",
+  "preferred_for": ["dentist"]
+}
+```
+
+Routing at query time becomes:
+
+1. **Path 1 — preferred contact match.** Brain extracts role(s) from the
+   utterance ("my dentist appointment"), calls
+   `GET /v1/contacts/by-preference?category=dentist`, and if a contact
+   matches, queries them directly.
+2. **Path 2 — public service discovery** (original WS2 path). Brain calls
+   `search_public_services` on AppView, picks the top provider by trust +
+   distance, and queries with the published schema.
+
+The `preference_extractor` in Brain mines `preferred_for` hints from
+ingested content ("my dentist appointment with Dr Carl" → upsert
+`Contact(Dr Carl).preferred_for += ["dentist"]`). Users can also set them
+explicitly via `PUT /v1/contacts/<did>` or `dina-admin contact`.
+
+### What changed in code
+
+| File | Change |
+|------|--------|
+| `core/internal/domain/contact.go` | `Contact.PreferredFor []string` |
+| `core/internal/adapter/sqlite/contacts.go` | `Set/Get/FindByPreferredFor` + `normalisePreferredFor` (lowercase, trim, dedup) |
+| `core/internal/handler/contact.go` | `GET /v1/contacts/by-preference?category=<role>` |
+| `core/internal/domain/topic.go` | Drop `LiveCapability` / `LiveProviderDID`. Legacy columns remain as dead storage (SQLite 3.33 has no `DROP COLUMN`). |
+| `brain/src/service/preference_extractor.py` | Regex-based extractor with `_ROLE_TO_CATEGORIES` — three patterns (`my <role> <Name>`, `my <role> is <Name>`, `my <role> ... with <Name>`). |
+| `brain/src/service/staging_processor.py` | `_apply_preference_bindings` — writes extracted hints onto contacts at ingest. |
+| `brain/src/service/vault_context.py` | `find_preferred_provider` tool + rewritten system prompt (Path 1 / Path 2 structure). |
+
+The original design's `live_capability` sections are kept below for
+historical context but no longer describe shipping code. Anyone looking at
+today's resolver should read the contact-preferred path first.

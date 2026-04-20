@@ -541,7 +541,13 @@ All WebSocket frames use a **unified JSON envelope** — one format for D2D, RPC
 
 **WebSocket auth**: Ed25519 challenge-response. Server sends `{type: "auth_challenge", nonce, ts}`. Client signs `AUTH_RELAY\n{nonce}\n{ts}` and returns `{type: "auth_response", did, sig, pub}`.
 
-**RPC bridge** (`rpc_bridge.go`): Decrypts inner request, builds `http.Request`, routes through Core's handler chain via `httptest.NewRecorder`. From the handler's perspective, a relayed request is indistinguishable from direct HTTPS.
+**RPC bridge** (`rpc_bridge.go`): Decrypts inner request, builds `http.Request`, routes through Core's **full** handler chain (`NewRPCBridge(chain)`, not the raw mux — the middleware chain runs CORS → BodyLimit → Recovery → Logging → RateLimit → Auth → Authz → Timeout → mux). From the handler's perspective, a relayed request is indistinguishable from direct HTTPS; `AgentDIDKey` / `TokenKindKey` / `SessionNameKey` all land in the request context the same way.
+
+**Sealed-box nonce**: `BLAKE2b(ephPub ‖ recipientPub, outlen=24)`. This is the libsodium `crypto_box_seal` standard — every binding that ships with libsodium (Python `PyNaCl`, iOS/Android native sodium, JS `tweetnacl`, Rust `sodiumoxide`) produces the same nonce. Earlier builds used SHA-512[:24] which was Go-only and silently broke cross-library decryption; fixed in #9.
+
+**Pair over MsgBox**: a fresh `did:key:…` CLI can complete pairing through the relay without first reaching Core directly. `/v1/pair/complete` is in `optionalAuthPaths` (the pairing code is the auth), and `VerifyPairingIdentityBinding` accepts a `did:key` envelope whose public key matches `public_key_multibase` in the inner body. MsgBox applies an IP-scoped throttle to `subtype: "pair"` RPC envelopes (10 pairs / 5 min) as defense-in-depth.
+
+**Signal for drift**: Core runs a `plc_probe` on startup in test/dev mode — probes `<plc_url>/<ownDID>` after restoring DID from metadata, and refuses to start with `log.Fatalf` if the response is 404. Catches the pattern where a fixture's DID gets out of sync with what's actually published; MsgBox auth would otherwise surface this as an unrecoverable reconnect flap.
 
 **Bounded worker pool**: 8 workers, 32 backlog. Overflow → 503. Duplicate in-flight → 409. Expired on receipt/worker-start → 408. Panic recovery prevents worker goroutine death.
 

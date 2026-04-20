@@ -393,7 +393,6 @@ func (s *TransportService) CheckServiceIngress(msg *domain.DinaMessage) string {
 		s.workflowSvc.DeliverEventsForTask(context.Background(), task.ID)
 
 		return "accept"
-		return "drop"
 	}
 
 	return "" // not a service message

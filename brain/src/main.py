@@ -765,18 +765,52 @@ def create_app() -> FastAPI:
             )
             # Guardian keeps the default policy set at construction time.
 
-        # Load service config into handler (Phase 1: load once at startup).
+        # Load service config into handler with retry. On compose-stack start
+        # Core can be briefly unreachable from Brain's DNS (initial healthcheck
+        # race); a single-shot attempt used to leave the provider Brain with
+        # an empty config and return "unavailable" for every service.query.
+        # Retry in the background until we get it, then refresh periodically
+        # so in-place PUT /v1/service/config updates propagate without a Brain
+        # restart.
         if _service_handler is not None:
-            try:
-                _loaded_cfg = await brain_core_client.get_service_config()
-                if _loaded_cfg:
-                    _service_handler._config = _loaded_cfg
-                    log.info("brain.service_handler.config_loaded")
-            except Exception as exc:
-                log.warning(
-                    "brain.service_handler.config_load_failed",
-                    extra={"error": str(exc)},
-                )
+            async def _service_config_loader() -> None:
+                # Phase 1: aggressive retry until first successful load.
+                backoff = 1.0
+                while True:
+                    try:
+                        cfg = await brain_core_client.get_service_config()
+                        if cfg:
+                            _service_handler._config = cfg
+                            log.info("brain.service_handler.config_loaded")
+                            break
+                        # Empty config (no service configured yet) — stop
+                        # polling; nothing to load. config_updated_at check
+                        # below will pick it up when the operator publishes.
+                        log.info("brain.service_handler.no_config_yet")
+                        break
+                    except Exception as exc:
+                        log.warning(
+                            "brain.service_handler.config_load_retry",
+                            extra={"error": str(exc), "backoff_s": backoff},
+                        )
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, 30.0)
+
+                # Phase 2: periodic refresh so config updates propagate.
+                while True:
+                    await asyncio.sleep(60.0)
+                    try:
+                        cfg = await brain_core_client.get_service_config()
+                        if cfg and cfg != _service_handler._config:
+                            _service_handler._config = cfg
+                            log.info("brain.service_handler.config_refreshed")
+                    except Exception:
+                        # Transient — try again next tick.
+                        pass
+
+            service_config_task = asyncio.create_task(_service_config_loader())
+        else:
+            service_config_task = None
 
         sync_task = asyncio.create_task(_sync_loop(sync_engine))
 
@@ -967,11 +1001,16 @@ def create_app() -> FastAPI:
                     extra={"error": str(exc)},
                 )
 
-        # Stop service timeout scanner.
-        if service_timeout_task and not service_timeout_task.done():
-            service_timeout_task.cancel()
+        # The former service_timeout scanner was removed when WS2 moved service
+        # query timeout handling into Core's workflow sweeper. The teardown
+        # block still referenced `service_timeout_task` as an undefined name
+        # and raised NameError on every shutdown — cleaned up here.
+
+        # Stop the service-config refresh loop (provider-side only).
+        if service_config_task is not None and not service_config_task.done():
+            service_config_task.cancel()
             try:
-                await service_timeout_task
+                await service_config_task
             except asyncio.CancelledError:
                 pass
 

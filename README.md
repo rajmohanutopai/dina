@@ -17,7 +17,8 @@
 * **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) 
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
-* **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
+* **For dina-mobile / NAT'd clients:** see [`docker/openclaw/`](./docker/openclaw/README.md) — standalone OpenClaw container stack that talks to your Home Node through the MsgBox relay (no port forwarding). Pins `dina-agent==0.13.0` from PyPI; copies cleanly into `dina-mobile`.
+* **The Stack:** Go Core + Python Brain + Python CLI ([`dina-agent` on PyPI](https://pypi.org/project/dina-agent/)) + SQLite/SQLCipher.
 
 ---
 

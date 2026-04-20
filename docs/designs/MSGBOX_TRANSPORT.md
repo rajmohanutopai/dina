@@ -727,3 +727,180 @@ See [MSGBOX_TRANSPORT_TESTCASES.md](MSGBOX_TRANSPORT_TESTCASES.md) — 136 tests
 - **True sovereignty** — no tunnel services, no cloud providers, no static IPs
 - **Mobile app** (future) — same MsgBox transport, different client
 - **Multiple devices** — each paired device gets its own `did:key`, all relay through MsgBox
+
+---
+
+## Shipped (2026-04-19)
+
+The design above landed. Getting a signed CLI request end-to-end through
+MsgBox required finding four classes of bugs plus teaching `DinaClient` to
+speak the transport. Captured here so the next person touching this code
+doesn't re-learn each one the hard way.
+
+### Four gotchas, all fixed
+
+| # | Layer | Symptom | Root cause | Fix |
+|---|-------|---------|-----------|-----|
+| 1 | `msgbox/internal/handler.go` | Every CLI-initiated MsgBox request silently died at ~100 ms. Connection reported `connected` on the server then disconnected immediately — never a `rpc_routed` event. | `ws.CloseRead(ctx)` spawns a goroutine that closes the connection with `1008 "unexpected data message"` the moment the peer sends *any* frame, racing the outer read loop. Home Nodes worked because they only **receive** from MsgBox (Hub.Deliver writes to them); the CLI's send→read pattern collided with CloseRead. | Use `r.Context()` directly instead of `ws.CloseRead()`. |
+| 2 | `cli/src/dina_cli/transport.py` | Python client connects, authenticates, then server closes with `1002 protocol error: received header with unexpected rsv bits set`. | Python `websockets` negotiates permessage-deflate by default, which sets RSV1 on data frames. Go `coder/websocket` doesn't support compression extensions on inbound frames and rejects them as a protocol error. | Pass `compression=None` to `websockets.sync.client.connect(...)`. |
+| 3 | `cli/src/dina_cli/transport.py` | Signature verification on the server would always fail for requests with a non-empty query string. | Pre-existing positional-arg swap in `MsgBoxTransport.request`: `sign_request(method, path, query, body)` — but the signature is `sign_request(method, path, body, query)`. Query was passed in the body slot and vice versa. | Use keyword arg: `sign_request(method, path, body_bytes, query=query)`. |
+| 4 | `core/internal/adapter/crypto/nacl.go` | Alonso sends a D2D to BusDriver via MsgBox; BusDriver logs `nacl: decryption failed`. Also "Response decryption failed" on the CLI. | Dina's Go sealed-box used `SHA-512(ephPub ‖ recipientPub)[:24]` as the nonce. `libsodium` (and every binding: PyNaCl, native sodium on iOS/Android, tweetnacl-js) uses `BLAKE2b(ephPub ‖ recipientPub, outlen=24)`. X25519 pubkeys matched cleanly; the nonces didn't. | Replace the hash with `blake2b.New(24, nil)`. BLAKE2b is the libsodium `crypto_box_seal` standard. Security is equivalent. |
+| 5 | `core/cmd/dina-core/main.go` | MsgBox-routed signed requests reached handlers with no `AgentDIDKey` in context; handlers returned `"agent DID not found in context"` 401. | `transport.NewRPCBridge(mux)` was passing the raw `ServeMux`, bypassing the full middleware chain (`CORS → BodyLimit → Recovery → Logging → RateLimit → Auth → Authz → Timeout → mux`). Auth middleware never ran to validate signatures and stamp the context. | `transport.NewRPCBridge(chain)`. Now MsgBox-routed requests and direct-HTTP requests take the identical middleware path; handlers are transport-blind. |
+
+### Pair-over-MsgBox fix — 0.13.0
+
+The 0.12 line wired `DinaClient` through the transport selector, but
+`_pair_with_key` / `_try_unpair` in `cli/src/dina_cli/main.py` still called
+`httpx.post(core_url, ...)` directly. On any host that can reach Core over
+LAN/Docker that worked; on dina-mobile (phone behind carrier NAT) pairing
+always failed with `ConnectError`, even with `--transport=msgbox` in config.
+
+Three changes shipped:
+
+1. `MsgBoxTransport.request` skips Ed25519 inner-request signing when
+   `path.startswith('/v1/pair/')`. Signed headers would trigger Core's auth
+   middleware's Ed25519 branch, which tries to look up the fresh `did:key`
+   in `device_keys`, doesn't find it, and returns `401 "invalid
+   signature"` before the `/v1/pair/complete` `optionalAuthPaths` bypass
+   runs. Without signed headers, the middleware falls through to the
+   Bearer branch, finds no Authorization header either, sees the path in
+   `optionalAuthPaths`, and admits the request. The envelope's `from_did`
+   + body's `public_key_multibase` is the auth — Core's
+   `VerifyPairingIdentityBinding` enforces
+   `from_did == "did:key:" + body.public_key_multibase`.
+
+2. `_pair_with_key` and `_try_unpair` now route through a new
+   `_build_pairing_transport(core_url, msgbox_url, homenode_did,
+   transport_mode, identity)` helper that mirrors `select_transport` but
+   injects the CLI's fresh identity so `MsgBoxTransport` can construct
+   envelopes with the correct `from_did`.
+
+3. All three configure paths (`_configure_headless`,
+   `_configure_signature`, `_configure_signature_noninteractive`) now
+   thread `msgbox_url` / `homenode_did` / `transport_mode` through to the
+   pair/unpair calls.
+
+Verified with a "mobile-sim" run:
+```
+dina configure --headless \
+  --core-url http://unreachable.invalid:8100 \
+  --msgbox-url wss://test-mailbox.dinakernel.com/ws \
+  --homenode-did did:plc:siyv5fymouvy5rz65aujgfq2 \
+  --transport msgbox \
+  --pairing-code RNVRC5K7 \
+  --device-name mobile-sim --role user
+```
+Pairing succeeded, new device `tok-6 mobile-sim` appeared in
+`dina-admin device list`, and subsequent `dina remember` / `dina ask`
+commands worked through MsgBox. `core_url` was never reachable —
+every byte went through the relay, including the pair-complete envelope.
+
+### CLI wire-up (dina-agent 0.13.0)
+
+`DinaClient` was still using raw `httpx.Client(base_url=config.core_url)` as
+recently as 0.11. The Tier-1 rewiring:
+
+- `cli/src/dina_cli/config.py` — `Config` gains `msgbox_url`, `homenode_did`,
+  `transport_mode`. `load_config` reads `DINA_MSGBOX_URL`,
+  `DINA_HOMENODE_DID`, `DINA_TRANSPORT` (default `auto`).
+- `cli/src/dina_cli/client.py` — `DinaClient` routes every request through
+  `transport.select_transport(...)`. `_ClientResponse` adapts
+  `TransportResponse` to the `.status_code / .text / .content / .json() /
+  .raise_for_status()` surface the rest of the client expects, so call sites
+  didn't need to change.
+- `cli/src/dina_cli/main.py` — `dina configure` accepts (and prompts for,
+  in interactive mode) `--msgbox-url`, `--homenode-did`, `--transport`.
+
+### `/api/v1/ask` → 202 + poll
+
+Brain reasoning that fans out to a service query (BusDriver, Dr Carl) often
+takes 20–40 s. Core's 30 s `WriteTimeout` was killing those requests before
+they completed. With MsgBox added on top, the CLI-side transport timeout was
+another cliff.
+
+Fix (`core/internal/handler/reason.go`): run Brain in a goroutine, 3-second
+fast-path wait. If Brain returns in time, write the full result inline. If
+not, persist a `PendingReasonRecord{status: in_flight}` and return **202**
+with a `request_id`. A finaliser goroutine writes the outcome (complete /
+failed / pending_approval) into the same record. CLI polls
+`GET /api/v1/ask/<id>/status` until a terminal status.
+
+Domain:
+- New status constant `ReasonInFlight = "in_flight"` in
+  `core/internal/domain/pending_reason.go`.
+- `dina ask` recognises both `pending_approval` and `in_flight` as async
+  polling statuses (different banners + cadences, shared terminal detection).
+
+### `plc_probe` — catches silent DID drift at boot
+
+Separate from the transport bugs above, the test-stack kept hitting a drift
+pattern: fixtures persisted a DID that was never registered at
+`plc.directory` (either it was never published, or the PDS account got
+re-created under a different DID). MsgBox auth checks the PLC document on
+every handshake and rejects mismatches as `auth: resolve PLC document: plc:
+fetch did:plc:...: status 404` — so a stale fixture turns the Home Node
+into a flapping reconnect loop.
+
+`core/cmd/dina-core/main.go` now probes `<plc_url>/<ownDID>` on startup
+(test/dev mode only). 404 = `log.Fatalf` with a pointer at
+`scripts/seed_test_identities.py`. The silent drift surfaces loudly.
+
+### BLAKE2b vs SHA-512 rationale
+
+Neither is "better" in the abstract — both are cryptographically strong and
+appropriate for deriving a 24-byte nonce from two public keys. The choice is
+about **ecosystem alignment**:
+
+- BLAKE2b is the libsodium `crypto_box_seal` standard. Every binding ships
+  it out of the box: Python `PyNaCl`, iOS/Android native sodium, JS
+  `tweetnacl`, Rust `sodiumoxide`.
+- SHA-512[:24] was a Go-convenient choice (`golang.org/x/crypto/nacl/box`
+  doesn't ship a sealed-box primitive; the Go author rolled one). It worked
+  as long as Dina was Go-to-Go. The moment a Python/iOS/Android client
+  joined, interop broke with no good error.
+
+BLAKE2b also avoids the "truncate a 64-byte digest to 24 bytes" hack —
+BLAKE2b produces the exact 24 bytes the nonce needs.
+
+### Verification matrix (MsgBox forced, no direct fallback)
+
+Verified end-to-end from the `dummy-agent` container over
+`wss://test-mailbox.dinakernel.com/ws`:
+
+| Scenario | Outcome |
+|----------|---------|
+| `dina validate` | `approved, risk: SAFE` |
+| `dina remember` | `status: stored` |
+| `dina ask` (short query) | inline fast-path response |
+| `dina ask` (service query, long) | 202 `in_flight` → polls → completes |
+| `dina task --dry-run` | validated via MsgBox |
+
+And from a Telethon-driven real Telegram session against
+`@regression_test_dina_alonso_bot` (Alonso Brain polling MsgBox inbound):
+
+| Command | Latency | Response |
+|---------|---------|----------|
+| `/remember I love dark roast pour-over coffee in the morning` | 13.5 s | `Stored in general vault.` |
+| `/ask What coffee do I like?` | 28.8 s | `You love dark roast pour-over coffee in the morning!` |
+| `/ask When does bus 42 next reach Castro Station? I'm at 37.762, -122.435` | 13.5 s | `Next bus on Market St Express reaches Castro Station in about 10 minutes. Roads look normal — the bus is right on schedule. https://...` |
+
+### `docker/openclaw/` — the mobile-ready container stack
+
+New top-level directory. Self-contained: pulls `dina-agent==0.13.0` from
+PyPI, vendors `docs/dina-openclaw-skill.md`, extracts the `agent_end`
+callback hook from the installed wheel. The whole folder can be copied
+into dina-mobile without needing any other files from this repo.
+
+Three images:
+- `dina-openclaw-base` (2.2 GB) — Node + Python + OpenClaw + `dina` CLI + hook
+- `dina-openclaw-provider` (2.2 GB) — role label only; bind-mount a Python
+  MCP module at `/app/<mod>` and set `OPENCLAW_MCP_*` env vars
+- `dina-openclaw-user` (3.1 GB) — base + Chromium + gog + Hermes runner
+
+Provider image is ~1.25 GB smaller than the previous
+`tests/sanity/Dockerfile.openclaw` because it drops everything a service
+tenant never needs (browser, Gmail, Hermes).
+
+The `docker-compose-test-stack.yml`'s `busdriver-openclaw` and
+`drcarl-openclaw` were migrated to this thinner image in the same PR.
+

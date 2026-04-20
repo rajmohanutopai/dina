@@ -1,8 +1,22 @@
 
-# Everything through MSGBOX
+# Everything through MSGBOX — SHIPPED (2026-04-19)
 
-❯ ok the next big feature - all ed25519 requests responses go through MSGBOX. It becomes more than just D2D - this becomes the way all connections to homenode happens. This will allow the home node to run        
-  without it being a server, because it is pulling the data - not pushing through. What                                                                                                                              
+> ✅ CLI↔Core, D2D, and pair-over-MsgBox all work end-to-end via
+> `wss://test-mailbox.dinakernel.com/ws`. Published as `dina-agent==0.13.0`
+> on PyPI. See `docs/designs/MSGBOX_TRANSPORT.md` § "Shipped" for the
+> interop gotchas (BLAKE2b sealed-box nonce, `CloseRead()` race,
+> permessage-deflate, RPC-bridge-through-middleware) and
+> `docker/openclaw/` for the mobile-ready container stack.
+
+Original note — kept for context:
+
+> ok the next big feature - all ed25519 requests responses go through MSGBOX. It becomes more than just D2D - this becomes the way all connections to homenode happens. This will allow the home node to run without it being a server, because it is pulling the data - not pushing through.
+
+Remaining follow-ups:
+- `/api/v1/ask` async polling path is CLI-only today; document the 202
+  contract for any third-party integrator writing their own client.
+- `docker/openclaw/` needs to be copied/vendored into `dina-mobile` —
+  standalone by design, pins `dina-agent==0.13.0` from PyPI.
 
 
 # OpenAPI Issue

@@ -199,6 +199,11 @@ services:
       <<: *brain-env
       DINA_CORE_URL: http://alonso-core:8100
       DINA_APPVIEW_URL: https://test-appview.dinakernel.com
+      # Telegram for manual / Telethon-driven testing. Token is the
+      # alonso bot from tests/sanity/.env.sanity; allowed user is the
+      # sanity session owner. Optional — leaving blank disables the bot.
+      DINA_TELEGRAM_TOKEN: "${ALONSO_TELEGRAM_TOKEN:-}"
+      DINA_TELEGRAM_ALLOWED_USERS: "${ALONSO_TELEGRAM_ALLOWED_USERS:-}"
     volumes:
       - alonso-data:/data
       - alonso-keys-brain-priv:/run/secrets/service_keys/private:ro

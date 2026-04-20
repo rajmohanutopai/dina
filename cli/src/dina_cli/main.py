@@ -903,9 +903,15 @@ def configure(
         )
     click.echo()
     if cfg_input:
-        _configure_signature_noninteractive(core_url, device_name, role, cfg_input)
+        _configure_signature_noninteractive(
+            core_url, device_name, role, cfg_input,
+            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode_val,
+        )
     else:
-        _configure_signature(core_url, device_name, role)
+        _configure_signature(
+            core_url, device_name, role,
+            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode_val,
+        )
 
     values: dict[str, Any] = {
         "core_url": core_url,
@@ -1066,17 +1072,25 @@ def _configure_headless(
     click.echo(f"  Device: {device_name}")
     click.echo(f"  Role: {role}")
 
-    # Generate keypair (always fresh in headless mode)
+    # Generate keypair (always fresh in headless mode). Pass transport
+    # params so pair/unpair route through MsgBox when direct HTTP to Core
+    # isn't reachable (mobile, NAT'd).
     identity = CLIIdentity()
     if identity.exists:
-        _try_unpair(core_url, identity)
+        _try_unpair(
+            core_url, identity,
+            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+        )
     click.echo("  Generating Ed25519 keypair...")
     identity.generate()
     click.echo(f"  DID: {identity.did()}")
 
     # Pair with Core
     if pairing_code:
-        _pair_with_key(core_url, identity, device_name, role, pairing_code=pairing_code)
+        _pair_with_key(
+            core_url, identity, device_name, role, pairing_code=pairing_code,
+            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+        )
     else:
         click.echo("  No --pairing-code provided — skipping pairing.")
 
@@ -1103,7 +1117,52 @@ def _configure_headless(
         click.echo(f"  Core: unreachable ({exc})", err=True)
 
 
-def _try_unpair(core_url: str, identity: Any) -> None:
+def _build_pairing_transport(
+    core_url: str, msgbox_url: str = "",
+    homenode_did: str = "", transport_mode: str = "auto",
+    identity: Any = None,
+):
+    """Build a Transport for use during pairing/unpairing.
+
+    Unlike DinaClient this doesn't need an authenticated identity — pairing
+    is unsigned and the Transport's signing path is bypassed for /v1/pair/.
+    msgbox-mode still needs the CLI identity (envelope from_did is the CLI's
+    fresh did:key, and that binds to the body's public_key_multibase in
+    VerifyPairingIdentityBinding on the server).
+    """
+    from .transport import MsgBoxTransport, DirectTransport, select_transport
+
+    # Route through the same selector DinaClient uses. When the CLI has a
+    # fresh identity (pairing), inject it so envelope from_did is correct.
+    if transport_mode == "msgbox":
+        if not msgbox_url or not homenode_did:
+            raise click.UsageError(
+                "transport=msgbox requires --msgbox-url and --homenode-did"
+            )
+        return MsgBoxTransport(msgbox_url, homenode_did, identity=identity, timeout=15.0)
+    if transport_mode == "direct":
+        if not core_url:
+            raise click.UsageError("transport=direct requires --core-url")
+        return DirectTransport(core_url, timeout=15.0)
+    # auto — mirror select_transport's logic but inject identity for the msgbox case.
+    if core_url:
+        try:
+            health = httpx.get(f"{core_url.rstrip('/')}/healthz", timeout=2.0)
+            if health.status_code == 200:
+                return DirectTransport(core_url, timeout=15.0)
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+    if msgbox_url and homenode_did:
+        return MsgBoxTransport(msgbox_url, homenode_did, identity=identity, timeout=15.0)
+    # Fall back to direct with a reachable-URL check — lets the raw-HTTP
+    # request give a clearer error than "Home Node unreachable".
+    return DirectTransport(core_url or "http://localhost:8100", timeout=15.0)
+
+
+def _try_unpair(
+    core_url: str, identity: Any,
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
+) -> None:
     """Best-effort unpair: revoke the current device from Core."""
     saved = _load_saved()
     device_id = saved.get("device_id", "")
@@ -1111,18 +1170,27 @@ def _try_unpair(core_url: str, identity: Any) -> None:
         click.echo("  No device_id saved — skipping unpair.")
         return
     click.echo(f"  Unpairing old device ({device_id})...")
+    from .transport import TransportError
     try:
-        did, ts, nonce, sig = identity.sign_request("DELETE", f"/v1/devices/{device_id}", b"")
-        resp = httpx.delete(
-            f"{core_url}/v1/devices/{device_id}",
-            headers={"X-DID": did, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig},
-            timeout=10.0,
+        transport = _build_pairing_transport(
+            core_url, msgbox_url, homenode_did, transport_mode, identity=identity,
         )
-        if resp.status_code in (200, 204, 404):
+        did, ts, nonce, sig = identity.sign_request(
+            "DELETE", f"/v1/devices/{device_id}", b"",
+        )
+        resp = transport.request(
+            "DELETE", f"/v1/devices/{device_id}",
+            headers={
+                "X-DID": did, "X-Timestamp": ts,
+                "X-Nonce": nonce, "X-Signature": sig,
+            },
+            body=None,
+        )
+        if resp.status in (200, 204, 404):
             click.echo("  Old device revoked.")
         else:
-            click.echo(f"  Unpair returned {resp.status_code} — continuing anyway.")
-    except Exception as exc:
+            click.echo(f"  Unpair returned {resp.status} — continuing anyway.")
+    except (TransportError, Exception) as exc:
         click.echo(f"  Could not reach Core to unpair: {exc}")
         click.echo("  Continuing — revoke the old device manually: dina-admin device revoke")
     # Clear device_id from config
@@ -1132,6 +1200,7 @@ def _try_unpair(core_url: str, identity: Any) -> None:
 
 def _configure_signature_noninteractive(
     core_url: str, device_name: str, role: str, cfg: dict,
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
 ) -> None:
     """Non-interactive keypair generation and pairing from config file."""
     from .signing import CLIIdentity
@@ -1140,19 +1209,28 @@ def _configure_signature_noninteractive(
 
     if cfg.get("generate_keypair", True) or not identity.exists:
         if identity.exists:
-            _try_unpair(core_url, identity)
+            _try_unpair(
+                core_url, identity,
+                msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+            )
         click.echo("  Generating Ed25519 keypair...")
         identity.generate()
         click.echo(f"  DID: {identity.did()}")
 
     pairing_code = cfg.get("pairing_code", "")
     if pairing_code:
-        _pair_with_key(core_url, identity, device_name, role, pairing_code=pairing_code)
+        _pair_with_key(
+            core_url, identity, device_name, role, pairing_code=pairing_code,
+            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+        )
     else:
         click.echo("  No pairing_code in config — skipping pairing.")
 
 
-def _configure_signature(core_url: str, device_name: str, role: str = "user") -> None:
+def _configure_signature(
+    core_url: str, device_name: str, role: str = "user",
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
+) -> None:
     """Generate keypair and pair with Core using Ed25519 public key."""
     from .signing import CLIIdentity
 
@@ -1162,10 +1240,16 @@ def _configure_signature(core_url: str, device_name: str, role: str = "user") ->
         click.echo(f"  Keypair exists: {identity.did()}")
         if not click.confirm("  Generate a new keypair?", default=False):
             # Re-pair with existing key
-            _pair_with_key(core_url, identity, device_name, role)
+            _pair_with_key(
+                core_url, identity, device_name, role,
+                msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+            )
             return
         # Unpair old device before generating new keypair
-        _try_unpair(core_url, identity)
+        _try_unpair(
+            core_url, identity,
+            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+        )
 
     click.echo("  Generating Ed25519 keypair...")
     identity.generate()
@@ -1173,14 +1257,30 @@ def _configure_signature(core_url: str, device_name: str, role: str = "user") ->
     click.echo(f"  Keypair saved to {identity._dir}")
     click.echo()
 
-    _pair_with_key(core_url, identity, device_name, role)
+    _pair_with_key(
+        core_url, identity, device_name, role,
+        msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+    )
 
 
 def _pair_with_key(
     core_url: str, identity: Any, device_name: str,
     role: str = "user", pairing_code: str = "",
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
 ) -> None:
-    """Register the public key with Core using a pairing code."""
+    """Register the public key with Core using a pairing code.
+
+    Routes the POST /v1/pair/complete call through the configured transport
+    (direct HTTP or MsgBox WebSocket). Mobile / NAT'd clients that can't
+    reach Core directly pass transport_mode="msgbox" + msgbox_url +
+    homenode_did — the envelope's from_did (the fresh did:key) plus the
+    body's public_key_multibase identify the caller to Core via
+    VerifyPairingIdentityBinding. Pairing-path envelopes are also tagged
+    subtype=pair for the MsgBox IP rate-limit bucket.
+    """
+    from .transport import TransportError
+    import json as _json
+
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         if not pairing_code:
@@ -1190,18 +1290,38 @@ def _pair_with_key(
 
         click.echo("  Registering device...")
         try:
-            resp = httpx.post(
-                f"{core_url}/v1/pair/complete",
-                json={
-                    "code": pairing_code,
-                    "device_name": device_name,
-                    "public_key_multibase": identity.public_key_multibase(),
-                    "role": role,
-                },
-                timeout=10.0,
+            transport = _build_pairing_transport(
+                core_url, msgbox_url, homenode_did, transport_mode, identity=identity,
             )
-            resp.raise_for_status()
-            data = resp.json()
+            body_dict = {
+                "code": pairing_code,
+                "device_name": device_name,
+                "public_key_multibase": identity.public_key_multibase(),
+                "role": role,
+            }
+            resp = transport.request(
+                "POST", "/v1/pair/complete",
+                headers={"Content-Type": "application/json"},
+                body=_json.dumps(body_dict),
+            )
+            if resp.status >= 400:
+                # Treat like the old HTTPStatusError branch.
+                remaining = max_attempts - attempt
+                if remaining > 0:
+                    click.echo(
+                        "  Pairing failed. Check that the code is correct and "
+                        "the Home Node is reachable.", err=True,
+                    )
+                    click.echo(f"  {remaining} attempt(s) remaining.", err=True)
+                    click.echo()
+                    pairing_code = ""  # prompt again
+                    continue
+                click.echo("  Pairing failed after 3 attempts.", err=True)
+                return
+            try:
+                data = _json.loads(resp.body) if resp.body else {}
+            except (_json.JSONDecodeError, ValueError):
+                data = {}
             device_id = data.get("device_id", "")
             click.echo(f"  Paired! Device ID: {device_id or 'ok'}")
             node_did = data.get("node_did", "")
@@ -1213,21 +1333,14 @@ def _pair_with_key(
                 saved["device_id"] = device_id
                 save_config(saved)
             return  # success
-        except httpx.ConnectError:
-            click.echo(f"  Cannot reach Core at {core_url}.", err=True)
-            click.echo("  Check that your Home Node is running and the URL is correct.", err=True)
+        except TransportError as exc:
+            click.echo(f"  Cannot reach Core: {exc}", err=True)
+            click.echo(
+                "  Check that your Home Node is running and the URL is correct.",
+                err=True,
+            )
             click.echo("  Keypair saved. Pair later with: dina configure", err=True)
             return
-        except httpx.HTTPStatusError:
-            remaining = max_attempts - attempt
-            if remaining > 0:
-                click.echo(f"  Pairing failed. Check that the code is correct and the Home Node is reachable.", err=True)
-                click.echo(f"  {remaining} attempt(s) remaining.", err=True)
-                click.echo()
-            else:
-                click.echo("  Pairing failed after 3 attempts.", err=True)
-                click.echo("  Check that you are connecting to the correct Home Node.", err=True)
-                click.echo("  Keypair saved. Try again with: dina configure", err=True)
 
 
 # ── init-identity ────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ FROM node:22-slim
 
 # Pin to the PyPI version that carries the MsgBox / WS2 / Working-Memory
 # changes. Override with --build-arg DINA_AGENT_PKG=<pip spec> for local dev.
-ARG DINA_AGENT_PKG=dina-agent==0.12.2
+ARG DINA_AGENT_PKG=dina-agent==0.13.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv curl ca-certificates \

@@ -239,19 +239,35 @@ class MsgBoxTransport:
             if "?" in path:
                 path, query = path.split("?", 1)
             body_bytes = body.encode() if body else b""
-            # sign_request signature is (method, path, body, query) — positional.
-            # Earlier code passed (method, path, query, body_bytes) which swapped
-            # body/query into the wrong slots, breaking signature validation.
-            did, ts, nonce, sig = self._identity.sign_request(
-                method, path, body_bytes, query=query,
-            )
-            inner_headers = {
-                **headers,
-                "X-DID": did,
-                "X-Timestamp": ts,
-                "X-Nonce": nonce,
-                "X-Signature": sig,
-            }
+
+            # Pairing requests are NOT Ed25519-signed on the inner request.
+            # /v1/pair/complete is in Core's optionalAuthPaths (the pairing
+            # code is the auth); if we send X-DID + X-Signature the auth
+            # middleware's Ed25519 branch runs first, tries to look up a
+            # fresh did:key that isn't registered yet, and returns 401
+            # "invalid signature" before the optionalAuthPaths bypass is
+            # consulted. The envelope's from_did + body.public_key_multibase
+            # give Core the binding it needs via VerifyPairingIdentityBinding.
+            # See docs/designs/MSGBOX_TRANSPORT.md §"Pairing over MsgBox".
+            is_pairing = path.startswith("/v1/pair/")
+            if is_pairing:
+                did = self._identity.did()  # still need did for envelope below
+                inner_headers = dict(headers)
+            else:
+                # sign_request signature is (method, path, body, query) —
+                # positional. Earlier code passed (method, path, query,
+                # body_bytes) which swapped body/query into the wrong slots,
+                # breaking signature validation.
+                did, ts, nonce, sig = self._identity.sign_request(
+                    method, path, body_bytes, query=query,
+                )
+                inner_headers = {
+                    **headers,
+                    "X-DID": did,
+                    "X-Timestamp": ts,
+                    "X-Nonce": nonce,
+                    "X-Signature": sig,
+                }
             inner = json.dumps({
                 "method": method,
                 "path": f"{path}?{query}" if query else path,

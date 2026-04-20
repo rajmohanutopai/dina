@@ -53,7 +53,10 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo, AddSource: true}))
+	// AddSource=false: the fully-qualified Go path (github.com/rajmohanutopai/...)
+	// clutters every line and leaks the module structure. Use slog.With if a
+	// specific code site wants to identify itself.
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo, AddSource: false}))
 	slog.SetDefault(logger)
 
 	// ---------- Load configuration ----------
