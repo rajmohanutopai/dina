@@ -1,0 +1,43 @@
+{
+  "name": "blake2b_24_sealed_nonce",
+  "description": "libsodium sealed-box nonce derivation: BLAKE2b with 24-byte output over (ephemeral_pubkey || recipient_pubkey). Pins the libsodium-compat formula — Dina's pre-#9 Go implementation used truncated SHA-512(24) which broke interop with every other libsodium binding; this vector proves the repair.",
+  "level": "L2",
+  "task": "10.9",
+  "producer": {
+    "tool": "@noble/hashes/blake2.js blake2b(input, {dkLen: 24})",
+    "frozen_at": "2026-04-22",
+    "reference_implementation_note": "Matches libsodium's crypto_box_seal nonce derivation — see core/internal/adapter/crypto/nacl.go:sealNonce (Go) and tweetnacl-js / libsodium-wrappers-based NaCl.seal on the TS side."
+  },
+  "cases": [
+    {
+      "name": "basic",
+      "ephemeral_pub_hex": "0011223344556677889900112233445566778899001122334455667788990011",
+      "recipient_pub_hex": "aabbccddeeff00112233445566778899aabbccddeeff001122334455667788aa",
+      "concatenated_input_hex": "0011223344556677889900112233445566778899001122334455667788990011aabbccddeeff00112233445566778899aabbccddeeff001122334455667788aa",
+      "expected_nonce_hex": "134c0ce07c3f58f766bab7ee69a2438010e3309a9be67ecc",
+      "expected_nonce_byte_count": 24
+    },
+    {
+      "name": "all_zero_inputs",
+      "ephemeral_pub_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "recipient_pub_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "concatenated_input_hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "expected_nonce_hex": "cc5610ee902940c82f56b2fad85a328efef362e85983d926",
+      "expected_nonce_byte_count": 24
+    },
+    {
+      "name": "distinct_high_entropy",
+      "ephemeral_pub_hex": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient_pub_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "concatenated_input_hex": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "expected_nonce_hex": "0d52877643ee5f0abaef05e7c7108c5d5874a05f5edf76a0",
+      "expected_nonce_byte_count": 24
+    }
+  ],
+  "notes": [
+    "libsodium's `crypto_box_seal` derives the nonce deterministically so the recipient can recompute it from the ephemeral pub (carried in the ciphertext envelope) + its own pub. Without this, the recipient can't know the nonce the sender used.",
+    "Input layout: ephemeral_pubkey (32 bytes) concatenated with recipient_pubkey (32 bytes). Both are X25519 public keys (raw, not compressed). Concatenation order is (ephemeral, recipient) — swapping them produces a different hash and breaks interop.",
+    "BLAKE2b parameters: plain 'BLAKE2b' (not BLAKE2bp, not keyed, not salted, no personalisation). Only the output length is customised — 24 bytes.",
+    "Historical note: pre-#9 Go Dina computed the nonce as SHA-512(input)[:24]. That produces different bytes and breaks interop with every libsodium binding (Python PyNaCl, mobile native sodium, JS tweetnacl). The BLAKE2b(24) formula is what libsodium actually implements — this vector is the canonical test that catches a regression back to the SHA-512 form."
+  ]
+}

@@ -38,7 +38,26 @@ from tests.integration.mocks import (
     WSMessage,
 )
 
-pytestmark = pytest.mark.slow
+# Task 8.31 migration prep. Performance throughput + latency + resource-
+# usage tests are M4 scope (tasks 8.28-8.32). Lite's perf story is
+# separately covered by iter 56-58's probe suite:
+#   - probe-throughput.py (task 11.3) — sustained RPS + error-ceiling
+#   - probe-ask-latency-vs-go.py (task 11.6) — Lite.p95 / Go.p95 ratio
+#   - soak-runner.sh (task 11.7) — 24h soak + memory-growth ceiling
+#   - benchmark.sh (tasks 11.1 + 11.2) — idle RSS + cold-start
+# Those probes land Lite's perf parity story. This Python test file
+# is Go-stack's own perf validation — Lite M4 will use its own
+# infrastructure, not this file's assertions. Stacked with the pre-
+# existing `slow` marker so --runslow runs still discriminate.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skip_in_lite(
+        reason="M4 perf gates on Lite are measured by the Lite-native "
+        "probe suite (tasks 11.1-11.10). This file tests Go stack's own "
+        "perf. LITE_SKIPS.md category `pending-feature`."
+    ),
+]
 
 
 # -----------------------------------------------------------------------

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // Same inherited-strictness debt as sibling Expo adapters.
+    // Phase 2 owns cleanup of donor-source violations; drop then.
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "types": ["node", "jest"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src/**/*"]
+}

@@ -26,6 +26,18 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+# Task 8.25 migration prep. Cart handover is the final step of M3's
+# open-economy flow (task 8.24). It requires staging-tier drafts
+# (task 8.15 TestTier4Staging / M2), trust-ring gating (8.21), and
+# payment-intent handoff. File-level skip — no M1/M2-compatible slice.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Cart handover (Dina advises but never touches money; staging-"
+    "tier draft → trust-gated cart → human completes purchase in browser) "
+    "is M3 scope. Depends on M2 staging + M3 trust rings. Lite's cart-"
+    "handover flow lands with Phase 5+. LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # TestCartHandover

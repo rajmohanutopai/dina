@@ -33,6 +33,23 @@ import time
 
 import pytest
 
+# Task 8.46 migration prep. "Phase 2+ Features" (ironic name — this is
+# the Go stack's Phase 2 work which spans Lite's M2-M5 + beyond):
+# 12 classes covering client sync, TEE enclaves, progressive disclosure,
+# local-LLM profiles, ingress tiers (Tailscale Funnel / Cloudflare
+# Tunnel / Yggdrasil mesh), forward secrecy (Noise sessions), AppView
+# indexer, three-layer verification, timestamp anchoring, bot protocol,
+# push notifications, deployment profiles. Every class is cross-M
+# milestone scope. File-level skip for M5 per task plan.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Phase 2+ advanced features (TEE, ingress tiers, Noise forward "
+    "secrecy, progressive disclosure, 3-layer verification, timestamp "
+    "anchor, bot protocol, push notifications, deployment profiles) — "
+    "cross-M5 scope. Lite's equivalents land across Phase 5+ with the "
+    "corresponding subsystem tasks. LITE_SKIPS.md category `pending-feature`."
+)
+
 from tests.integration.mocks import (
     DIDDocument,
     LLMTarget,

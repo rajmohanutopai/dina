@@ -16,8 +16,23 @@ import httpx
 import pytest
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
+LITE_MODE = os.environ.get("DINA_LITE") == "docker"
 
-pytestmark = pytest.mark.skipif(not DOCKER_MODE, reason="requires Docker")
+# Task 8.22 migration prep. Source trust + provenance + retrieval-
+# policy filtering is part of the M3 Trust Network gate (tasks
+# 8.20-8.26). Lite's provenance + retrieval-policy subsystem lands
+# with Phase 5+. LITE_SKIPS.md category `pending-feature`.
+pytestmark = [
+    pytest.mark.skipif(
+        not (DOCKER_MODE or LITE_MODE),
+        reason="requires DINA_INTEGRATION=docker or DINA_LITE=docker",
+    ),
+    pytest.mark.skip_in_lite(
+        reason="Source trust + provenance + retrieval_policy filtering is "
+        "M3 scope (tasks 8.20-8.26). Lite's provenance subsystem lands with "
+        "Phase 5+. LITE_SKIPS.md category `pending-feature`."
+    ),
+]
 
 
 @pytest.fixture

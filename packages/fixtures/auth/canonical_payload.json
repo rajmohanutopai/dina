@@ -1,0 +1,56 @@
+{
+  "domain": "auth/canonical",
+  "version": 1,
+  "generated_from": "middleware/auth.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "POST with JSON body",
+      "source_test": "auth_test.go",
+      "inputs": {
+        "body": "{\"source\":\"gmail\",\"type\":\"email\"}",
+        "method": "POST",
+        "nonce": "abc123def456",
+        "path": "/v1/vault/store",
+        "query": "",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "body_hash_hex": "03182d343ac69003aafe76349b7e19678a368de7e20b9a282a9032876f47a52e",
+        "canonical_string": "POST\n/v1/vault/store\n\n2026-04-09T12:00:00Z\nabc123def456\n03182d343ac69003aafe76349b7e19678a368de7e20b9a282a9032876f47a52e"
+      }
+    },
+    {
+      "description": "GET with empty body",
+      "source_test": "auth_test.go",
+      "inputs": {
+        "body": "",
+        "method": "GET",
+        "nonce": "nonce999",
+        "path": "/healthz",
+        "query": "",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "body_hash_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical_string": "GET\n/healthz\n\n2026-04-09T12:00:00Z\nnonce999\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "description": "GET with query string",
+      "source_test": "auth_test.go",
+      "inputs": {
+        "body": "",
+        "method": "GET",
+        "nonce": "qrynonce",
+        "path": "/v1/personas",
+        "query": "limit=10",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "body_hash_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical_string": "GET\n/v1/personas\nlimit=10\n2026-04-09T12:00:00Z\nqrynonce\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

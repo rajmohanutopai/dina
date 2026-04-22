@@ -34,6 +34,20 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.28 migration prep. Chaos engineering (container kills, network
+# partitions, slow networks, CPU/memory/disk pressure, graceful
+# degradation without data loss) is the M4 gate's hero capability
+# (tasks 8.28-8.32 scope). Lite's chaos-recovery subsystem lands with
+# Phase 11c soak + the `tc netem` probe (task 11.10, iter 58).
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Chaos engineering (failure injection, graceful degradation, "
+    "no data loss under container kills / net partitions / resource "
+    "pressure) is the M4 gate (tasks 8.28-8.32). LITE_SKIPS.md category "
+    "`pending-feature`. See probe-ws-reconnect.sh (task 11.10) for the "
+    "Lite-side chaos probe infrastructure."
+)
+
 
 # -----------------------------------------------------------------------
 # TestChaosEngineering  (S14)

@@ -27,6 +27,20 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.40 migration prep. User agency protection (impulse protection
+# via emotional-state detection + pre-approved-list gating; manipulation
+# detection for deceptive ads / dark patterns / fake urgency / dead-
+# internet bot traffic) is M5 scope (tasks 8.34-8.51). Depends on Brain's
+# emotional-state classifier (related to task 8.41 anti-her + task 8.48
+# silence-tiers) + M3 trust-network bot-trust signals (task 8.21).
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="User-agency protection (impulse protection, manipulation "
+    "detection, dead-internet bot filtering) is M5 scope. Depends on "
+    "Brain's emotional-state classifier + M3 trust-network bot-trust. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

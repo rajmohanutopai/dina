@@ -26,6 +26,24 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.47 migration prep. Safety-layer is Dina's flagship
+# architecture — every agent action flows through a risk classifier;
+# safe auto-approves, moderate/high requires human approval, blocked
+# rejects. 8 classes cover agent intent approval, credential
+# protection, edge cases, crash safety, revocation, audit trail,
+# persona access, multi-tenant isolation. M5 scope (tasks 8.34-8.51)
+# + depends on M2 staging (task 8.15) + M2 audit (task 8.17) + M3
+# trust rings (task 8.21). Lite's safety-layer subsystem lands with
+# Phase 5+ brain-server finalisation.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Safety layer (agent intent approval, credential protection, "
+    "risk classifier, revocation, audit trail, persona access, multi-"
+    "tenant isolation) is Dina's flagship architecture per README. M5 "
+    "scope. Depends on M2 staging + M2 audit + M3 trust rings. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # TestAgentIntentApproval

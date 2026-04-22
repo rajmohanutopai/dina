@@ -9,6 +9,18 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
+# Task 8.38 migration prep. Arch validation remaining gaps
+# (TST-INT-665 through TST-INT-690). Closes out the arch_validation
+# trio (8.35 + 8.36 + 8.37 + 8.38). File-level skip for M5 per task
+# plan. LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Arch validation remaining gaps (TST-INT-665 through 690) — "
+    "M5 scope (tasks 8.34-8.51). Closes out the arch_validation trio. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 from tests.integration.mocks import (
     MockAdminAPI,
     MockAppView,

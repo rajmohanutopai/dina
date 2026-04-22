@@ -1,0 +1,88 @@
+# Runtime-dependency audit for the TS workspace.
+#
+# Enforces task 11.13 — zero HIGH/CRITICAL vulnerabilities in
+# production (non-dev) dependencies. Runs on every PR that touches
+# the lockfile or a workspace package.json, on pushes to main, and
+# on a weekly cron so a newly-disclosed CVE in a pinned dep surfaces
+# within a week even when the tree is quiet.
+#
+# The audit only inspects `--omit=dev` deps — dev-only tooling
+# (jest, tsx, ts-jest, eslint) is out of the runtime blast radius.
+# If a dev dep flagged HIGH, we'd still want to know; that lives in
+# a separate, non-blocking issue rather than gating releases.
+#
+# Owner: docs/HOME_NODE_LITE_TASKS.md Phase 11 task 11.13.
+
+name: ts-audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**/package.json"
+      - "apps/**/package.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ts-audit.yml"
+  pull_request:
+    paths:
+      - "packages/**/package.json"
+      - "apps/**/package.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ts-audit.yml"
+  schedule:
+    # Mondays 07:00 UTC — far enough from weekend releases that most
+    # vendors have published their advisories, early enough that any
+    # failure lands at start-of-week triage.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ts-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: npm audit (production deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Node version from .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # The audit walks the lockfile directly — it doesn't require
+      # `npm ci`. Skipping install shaves ~90s off the job and keeps
+      # the signal focused on the lockfile content rather than
+      # install-time drift.
+      - name: npm audit (omit dev, fail on high/critical)
+        run: npm run audit:prod
+
+      # JSON artefact for triage when the gate fails — helps the on-call
+      # see which package + which advisory before cloning locally.
+      - name: Upload JSON audit report on failure
+        if: failure()
+        run: npm audit --omit=dev --json > audit-report.json || true
+
+      - name: Attach JSON audit report
+        if: failure() && hashFiles('audit-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: audit-report.json
+          retention-days: 30

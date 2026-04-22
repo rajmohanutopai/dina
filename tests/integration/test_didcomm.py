@@ -524,6 +524,11 @@ class TestMessageTypes:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Per-contact sharing rules depend on Lite's `SharingPolicyManager` "
+    "(M2, task 8.13+) + persona-tier gating. Wire-level DIDComm (TestConnection + "
+    "TestMessageTypes) is M1-compatible. LITE_SKIPS.md category `pending-feature`."
+)
 class TestSharingRules:
     """Per-contact sharing rules — cryptographic enforcement, offline queuing."""
 

@@ -22,6 +22,20 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.50 migration prep. Whispers (Dina's private contextual overlay
+# for the user — assembled from vault before a conversation or meeting;
+# displayed only to the user; respects silence tier) + disconnect
+# detection (conversation interruption + social-cue awareness). 2
+# classes. M5 scope. Depends on Lite's silence-classifier (task 8.48)
+# + whisper-assembler + vault-context building. Both subsystems land
+# Phase 5+ brain-server. LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Whispers (private contextual overlay assembled from vault + "
+    "silence-tier aware) + disconnect detection are M5 scope. Depends on "
+    "silence-classifier (task 8.48) + whisper-assembler. LITE_SKIPS.md "
+    "category `pending-feature`."
+)
+
 
 # -----------------------------------------------------------------------
 # TestWhisperAssembly

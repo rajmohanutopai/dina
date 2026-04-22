@@ -27,6 +27,13 @@ from tests.integration.mocks import (
 # TestPrivateRecall
 # =========================================================================
 
+@pytest.mark.skip_in_lite(
+    reason="Private recall requires Brain's `/api/v1/reason` route + "
+    "LLM-driven semantic synthesis over vault content. Phase 5c landing. "
+    "Pure vault CRUD is tested by `test_home_node.py::TestSidecarPattern`; "
+    "this file's TestPrivateRecall specifically exercises LLM-assisted "
+    "recall, which is M1 pending. LITE_SKIPS.md category `pending-route`."
+)
 class TestPrivateRecall:
     """Dina remembers the user's life — promises, emotions, meaning."""
 
@@ -206,6 +213,12 @@ class TestMemoryPrivacy:
 # TestMemoryIngestion
 # =========================================================================
 
+@pytest.mark.skip_in_lite(
+    reason="Memory ingestion uses connector → Brain classification "
+    "(`/api/v1/process`) → vault-store pipeline. Phase 5c lands the Brain "
+    "route. LITE_SKIPS.md category `pending-route`. Pure vault-store + "
+    "FTS retrieval is oracle-neutral and tested elsewhere."
+)
 class TestMemoryIngestion:
     """Connectors ingest external data into the vault correctly."""
 

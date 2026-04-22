@@ -1,0 +1,31 @@
+{
+  "name": "ed25519_sign_verify",
+  "description": "Known Ed25519 public key + message + signature. External implementations verify via their Ed25519 stack and assert (a) signature validates, (b) tampered message fails verification. L3 round-trip — exercises the public-key path without requiring access to the seed.",
+  "level": "L3",
+  "task": "10.5",
+  "producer": {
+    "tool": "node:crypto.generateKeyPairSync('ed25519') + crypto.sign(null, msg, privKey) on Node v24",
+    "frozen_at": "2026-04-22"
+  },
+  "cases": [
+    {
+      "name": "hello_dina_basic",
+      "message_utf8": "hello dina",
+      "message_hex": "68656c6c6f2064696e61",
+      "public_key_hex": "8fe20e538a2f96c4727427f79150f440db6eb0852110a58dc8dfc772e6d44935",
+      "signature_hex": "d85a7ea81bbf338d9d17196bfdfe3fb561ee4931cba0ed1553f2597ae18ac7df573768b420fffc9e1591df9d9bf5f847eba5482d04e3048be2c5b4418f370d02",
+      "expected_verify": true,
+      "tamper": {
+        "message_utf8": "hello dino",
+        "message_hex": "68656c6c6f2064696e6f",
+        "expected_verify": false
+      }
+    }
+  ],
+  "notes": [
+    "Ed25519 signatures are deterministic — the same (privKey, message) pair always produces the same signature. Implementations MUST agree on the signature bytes, not just 'any valid signature'. Vector bytes pinned to the exact output of Node's native Ed25519.",
+    "public_key_hex is the raw 32-byte Ed25519 point encoding. To verify, external implementations import it directly or wrap in JWK/DER per their library. No seed is shipped — verification doesn't need it.",
+    "signature_hex is 64 bytes (128 hex chars) — standard Ed25519 signature size (R:32 + S:32).",
+    "The tamper sub-case changes one ASCII byte in the message (a → o). Implementations MUST reject signatures over the tampered message, proving they're checking message bytes not just signature format."
+  ]
+}

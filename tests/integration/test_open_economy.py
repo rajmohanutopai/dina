@@ -32,6 +32,18 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+# Task 8.24 migration prep. Open economy (direct buyer-seller D2D
+# transactions + plugin economy + multi-party coordination) is M3
+# scope (tasks 8.20-8.26) — depends on trust rings + persona gating +
+# cart-handover flow (task 8.25). LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Open economy protocol (direct D2D transactions + plugin "
+    "economy + multi-party coordination) is M3 scope. Depends on trust "
+    "rings (task 8.21) + cart-handover (task 8.25). Lite's payment-intent "
+    "+ trust-gated transaction flow lands with Phase 5+. LITE_SKIPS.md "
+    "category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

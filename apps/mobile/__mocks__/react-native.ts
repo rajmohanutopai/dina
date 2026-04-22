@@ -1,0 +1,7 @@
+/**
+ * Minimal react-native mock for Jest tests.
+ */
+export const Platform = {
+  OS: 'ios',
+  select: (obj: any) => obj.ios ?? obj.default ?? {},
+};

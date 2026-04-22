@@ -1,0 +1,195 @@
+{
+  "domain": "staging/state_machine",
+  "version": 1,
+  "generated_from": "staging_inbox_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "received → classifying (valid=true)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "received",
+        "to": "classifying"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "classifying → stored (valid=true)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "classifying",
+        "to": "stored"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "classifying → pending_unlock (valid=true)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "classifying",
+        "to": "pending_unlock"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "classifying → failed (valid=true)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "classifying",
+        "to": "failed"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "classifying → received (valid=true)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "classifying",
+        "to": "received"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "failed → received (valid=true)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "failed",
+        "to": "received"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "pending_unlock → stored (valid=true)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "pending_unlock",
+        "to": "stored"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "received → stored (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "received",
+        "to": "stored"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "received → pending_unlock (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "received",
+        "to": "pending_unlock"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "received → failed (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "received",
+        "to": "failed"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "stored → received (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "stored",
+        "to": "received"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "stored → classifying (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "stored",
+        "to": "classifying"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "failed → stored (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "failed",
+        "to": "stored"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "failed → classifying (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "failed",
+        "to": "classifying"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "pending_unlock → received (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "pending_unlock",
+        "to": "received"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "pending_unlock → classifying (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "pending_unlock",
+        "to": "classifying"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "pending_unlock → failed (valid=false)",
+      "source_test": "staging_inbox_test.go",
+      "inputs": {
+        "from": "pending_unlock",
+        "to": "failed"
+      },
+      "expected": {
+        "valid": false
+      }
+    }
+  ]
+}

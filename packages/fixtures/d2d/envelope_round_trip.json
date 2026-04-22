@@ -1,0 +1,19 @@
+{
+  "domain": "d2d/envelope",
+  "version": 1,
+  "generated_from": "transport_d2d_sig_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Sign DinaMessage JSON → signature",
+      "source_test": "",
+      "inputs": {
+        "message_json": "{\"id\":\"msg_001\",\"type\":\"social.update\",\"from\":\"did:plc:sender\",\"to\":\"did:plc:recipient\",\"created_time\":1740000000,\"body\":\"{\\\"text\\\":\\\"hello\\\"}\"}",
+        "private_key_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+      },
+      "expected": {
+        "signature_hex": "bb9bb7268b80d007dd2a5fe6c30d3e8d423033c259e4b3fdfbf2e05d48c35b6bc066c1bddbe3778dffc0303112e55a0efcf1f6b4f0ac53080f78c42079a3380c"
+      }
+    }
+  ]
+}

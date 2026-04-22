@@ -1,0 +1,85 @@
+{
+  "domain": "auth/timestamp",
+  "version": 1,
+  "generated_from": "middleware/auth.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "current time → valid",
+      "source_test": "",
+      "inputs": {
+        "now": "2026-04-09T12:00:00Z",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "4 min ago → valid",
+      "source_test": "",
+      "inputs": {
+        "now": "2026-04-09T12:04:00Z",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "6 min ago → invalid",
+      "source_test": "",
+      "inputs": {
+        "now": "2026-04-09T12:06:00Z",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "4 min future → valid",
+      "source_test": "",
+      "inputs": {
+        "now": "2026-04-09T11:56:00Z",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "6 min future → invalid",
+      "source_test": "",
+      "inputs": {
+        "now": "2026-04-09T11:54:00Z",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "exactly 5 min → valid (boundary)",
+      "source_test": "",
+      "inputs": {
+        "now": "2026-04-09T12:05:00Z",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "5 min + 1 sec → invalid",
+      "source_test": "",
+      "inputs": {
+        "now": "2026-04-09T12:05:01Z",
+        "timestamp": "2026-04-09T12:00:00Z"
+      },
+      "expected": {
+        "valid": false
+      }
+    }
+  ]
+}

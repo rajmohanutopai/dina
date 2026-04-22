@@ -285,6 +285,12 @@ class TestSidecarPattern:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Go's Python LLM router (local llama-server + cloud Gemini "
+    "profiles) differs from Lite's `@dina/brain` ModelRouter (task 5.24). "
+    "LITE_SKIPS.md category `pending-feature`. Re-audit per-test once "
+    "Lite's router wiring lands in Phase 5d brain-server."
+)
 class TestLLMRouting:
     """Verify that tasks are routed to the correct LLM target."""
 
@@ -433,6 +439,11 @@ class TestLLMRouting:
         assert on_device_entries[0]["reason"] == "latency_sensitive"
 
 
+@pytest.mark.skip_in_lite(
+    reason="Go's 'online mode' = skip-local-LLM-route-to-Gemini heuristic "
+    "is baked into Python router. Lite's ModelRouter uses per-task policy "
+    "(task 5.24) — different scheme. LITE_SKIPS.md category `pending-feature`."
+)
 class TestOnlineModeLLMRouting:
     """Online Mode: no local LLM, basic tasks go to Gemini 2.5 Flash Lite."""
 
@@ -498,6 +509,14 @@ class TestOnlineModeLLMRouting:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Go stack uses pre-shared BRAIN_TOKEN secret for Core↔Brain auth; "
+    "Lite uses Ed25519 service keys (SLIP-0010 derived, install-time) per "
+    "CLAUDE.md §Security Architecture. Different auth mechanism; tests that "
+    "verify BRAIN_TOKEN presence + check don't apply. LITE_SKIPS.md category "
+    "`environmental` (architectural — both mechanisms enforce the same "
+    "boundary, just via different keying)."
+)
 class TestBrainTokenAuth:
     """Verify BRAIN_TOKEN shared-secret authentication between Core and Brain.
 
@@ -1061,6 +1080,12 @@ class TestUserQueryWS:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Lite's admin UI form-factor is the open task 5.50 decision "
+    "(dashboard vs CLI-only vs hybrid). Go's admin-UI HTTP surface + Argon2id "
+    "login flow doesn't have a direct Lite counterpart yet. LITE_SKIPS.md "
+    "category `pending-feature`. Re-audit after task 5.50 resolves."
+)
 class TestAdminUI:
     """User query via Admin UI -- browser login, dashboard, session expiry.
 
@@ -1218,6 +1243,12 @@ class TestAdminUI:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Lite's pairing ceremony is task 7.33 (pending — needs MsgBox "
+    "brain-server round-trip). Go's pairing uses 6-digit code + admin UI; "
+    "Lite uses CLI-initiated flow. Different UX + transport. LITE_SKIPS.md "
+    "category `pending-route`. Re-audit when 7.33 lands."
+)
 class TestDevicePairing:
     """Device pairing via 6-digit code and immediate use after pairing."""
 
@@ -1322,6 +1353,13 @@ class TestDevicePairing:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Go's managed onboarding uses install.sh + Python ADK guardian "
+    "silent-step classifier. Lite's install-lite.sh is CLI-interactive "
+    "(different ergonomics). Onboarding flow diverges architecturally. "
+    "LITE_SKIPS.md category `pending-feature` (Lite's equivalent lands with "
+    "Phase 5 brain-server finish)."
+)
 class TestOnboarding:
     """Managed onboarding flow -- the 10 silent steps.
 
@@ -1673,6 +1711,12 @@ class TestCompromisedBrain:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Go's local-LLM is llama-server subprocess. Lite's local-LLM "
+    "path (task 5.29) uses node-llama-cpp peer-dep — different integration "
+    "layer. LITE_SKIPS.md category `pending-feature` until Lite's LLM "
+    "profile tests land alongside task 5.29's optional integration."
+)
 class TestBrainLocalLLM:
     """Verify Brain sends prompts to local LLM router and receives completions."""
 
@@ -1742,6 +1786,12 @@ class TestBrainLocalLLM:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Go's cloud-LLM rate-limit handling is Python-router-specific "
+    "retry/backoff logic. Lite's ModelRouter (task 5.24) has its own "
+    "rate-limit contract (per-provider, `TokenLedger` task 5.28). Not a "
+    "direct 1:1 mapping. LITE_SKIPS.md category `pending-feature`."
+)
 class TestCloudLLMRateLimited:
     """Verify graceful handling when a cloud LLM returns rate-limited errors."""
 

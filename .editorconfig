@@ -1,0 +1,36 @@
+# EditorConfig: https://editorconfig.org
+#
+# Mirrors language conventions already in use across the polyglot repo:
+#   Python → 4-space (PEP 8)
+#   Go     → tabs, displayed at width 4 (gofmt)
+#   TS/JS  → 2-space (matches .prettierrc in this repo)
+#   YAML   → 2-space
+#   Make   → tabs (required by Make syntax)
+#   MD     → 2-space, trailing whitespace preserved (double-space = line break)
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+
+[*.go]
+indent_style = tab
+indent_size = 4
+
+[Makefile]
+indent_style = tab
+
+[*.{yaml,yml}]
+indent_size = 2
+
+[*.md]
+# Markdown uses trailing double-space for hard line breaks — preserve it.
+trim_trailing_whitespace = false

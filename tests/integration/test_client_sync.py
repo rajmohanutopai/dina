@@ -26,6 +26,19 @@ from tests.integration.mocks import (
     PersonaType,
 )
 
+# Task 8.32 migration prep. Client device sync (rich + thin + onboarding)
+# is M4 scope (tasks 8.28-8.32). Lite's device-sync model mirrors the
+# production pattern: rich clients (phone/laptop) with local cache +
+# offline queue + checkpoint sync; thin clients (glasses/watch) via
+# authenticated WebSocket only. Lite's implementation lands with the
+# Phase 5+ mobile app consolidation + Phase 7 pairing work (task 7.33).
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Client device sync (rich + thin + QR onboarding) is M4 scope "
+    "(tasks 8.28-8.32). Lite's equivalent lands with Phase 5+ + Phase 7 "
+    "pairing (task 7.33). LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # =========================================================================
 # TestRichClientSync

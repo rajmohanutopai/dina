@@ -1,0 +1,18 @@
+{
+  "domain": "wire_format/error_500",
+  "version": 1,
+  "generated_from": "core/internal/handler/error.go (masked thrown-Error path)",
+  "generated_at": "2026-04-21",
+  "route": {
+    "method": "GET",
+    "path": "<handler that throws>"
+  },
+  "expected": {
+    "status": 500,
+    "content_type_prefix": "application/json",
+    "body_keys": ["error"],
+    "body_exact": {
+      "error": "internal server error"
+    }
+  }
+}

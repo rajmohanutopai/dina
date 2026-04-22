@@ -9,6 +9,19 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
+# Task 8.37 migration prep. Arch validation MEDIUM severity gaps M31-M60
+# (TST-INT-635 through TST-INT-664). Same pattern as test_arch_validation
+# (task 8.35) + test_arch_medium_1 (8.36): grab-bag of subsystem-level
+# invariants spanning multiple milestones, file-level skip for M5 per
+# task plan. LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Arch validation MEDIUM severity gaps M31-M60 — M5 scope "
+    "(tasks 8.34-8.51). Same pattern as tasks 8.35 + 8.36. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 from tests.integration.mocks import (
     AgentIntent,
     DinaMessage,

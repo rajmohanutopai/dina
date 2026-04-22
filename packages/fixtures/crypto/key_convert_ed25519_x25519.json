@@ -1,0 +1,30 @@
+{
+  "domain": "crypto/key_convert",
+  "version": 1,
+  "generated_from": "crypto/convert.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Ed25519 public key → X25519 public key",
+      "source_test": "crypto_test.go",
+      "inputs": {
+        "ed25519_pub_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "expected": {
+        "length": "32",
+        "x25519_pub_hex": "d85e07ec22b0ad881537c2f44d662d1a143cf830c57aca4305d85c7a90f6b62e"
+      }
+    },
+    {
+      "description": "Ed25519 private key → X25519 private key",
+      "source_test": "crypto_test.go",
+      "inputs": {
+        "ed25519_priv_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+      },
+      "expected": {
+        "length": "32",
+        "x25519_priv_hex": "307c83864f2833cb427a2ef1c00a013cfdff2768d980c0a3a520f006904de94f"
+      }
+    }
+  ]
+}

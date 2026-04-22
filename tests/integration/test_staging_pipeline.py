@@ -21,8 +21,24 @@ import httpx
 import pytest
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
+LITE_MODE = os.environ.get("DINA_LITE") == "docker"
 
-pytestmark = pytest.mark.skipif(not DOCKER_MODE, reason="requires Docker")
+# Task 8.49 migration prep. Staging-ingestion pipeline (connector →
+# staging → Brain claim → classify → resolve → persona vault) is M5
+# scope. Depends on M2 staging subsystem (task 8.15 TestTier4Staging +
+# task 8.18 TestStagingAreaLifecycle) + Brain's classifier + Phase 5c
+# routes. LITE_SKIPS.md category `pending-feature`.
+pytestmark = [
+    pytest.mark.skipif(
+        not (DOCKER_MODE or LITE_MODE),
+        reason="requires DINA_INTEGRATION=docker or DINA_LITE=docker",
+    ),
+    pytest.mark.skip_in_lite(
+        reason="Staging-ingest pipeline (connector → staging → classify → "
+        "resolve) is M5 scope. Depends on M2 staging (tasks 8.15, 8.18) + "
+        "Brain's classifier. LITE_SKIPS.md category `pending-feature`."
+    ),
+]
 
 
 @pytest.fixture

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // Inherited from the 5 granular adapters' tsconfigs — donor core's
+    // strictness debt propagates via transitive re-exports. Phase 2 owns.
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "types": ["node", "jest"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src/**/*"]
+}

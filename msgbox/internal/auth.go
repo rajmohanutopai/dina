@@ -19,6 +19,7 @@ import (
 const (
 	AuthChallengeType = "auth_challenge"
 	AuthResponseType  = "auth_response"
+	AuthSuccessType   = "auth_success"
 )
 
 // AuthChallenge is sent by the msgbox on new WebSocket connections.
@@ -201,6 +202,16 @@ func AuthenticateWithResolver(ctx context.Context, ws *websocket.Conn, resolver 
 	if !ed25519.Verify(pubBytes, []byte(challengePayload), sigBytes) {
 		return "", errors.New("auth: signature verification failed")
 	}
+
+	// 6. Tell the client the handshake passed. Older clients never waited
+	// for this frame and fell through to an optimistic-success assumption,
+	// which is racy under slow links. Writing an explicit {"type":
+	// "auth_success"} lets new clients block until the server confirms.
+	// Best-effort: if the write fails the connection is already dead.
+	ack, _ := json.Marshal(struct {
+		Type string `json:"type"`
+	}{Type: AuthSuccessType})
+	_ = ws.Write(authCtx, websocket.MessageText, ack)
 
 	return resp.DID, nil
 }

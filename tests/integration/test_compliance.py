@@ -37,6 +37,18 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.34 migration prep. Compliance + audit (PII-in-logs prohibition,
+# audit-trail completeness, data-subject-rights erasure/portability/consent)
+# is M5 scope (tasks 8.34-8.51). Lite's compliance story layers on top of
+# M2 audit (task 8.17) + M2 PII scrubber (already oracle-neutral per
+# 8.11) + M5 consent-tracking subsystem. LITE_SKIPS.md category
+# `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Compliance + audit trail + data-subject rights (erasure, "
+    "portability, consent tracking for cloud LLM) is M5 scope "
+    "(tasks 8.34-8.51). LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # -----------------------------------------------------------------------
 # Common PII patterns for compliance checks

@@ -21,6 +21,21 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+# Task 8.26 migration prep. Deep-link source attribution (verdicts
+# always cite the original creator with a timestamp into the source
+# material; creators get traffic; user can override) depends on the
+# M3 trust-network evidence chain + expert-attestation pipeline.
+# Every test in this file exercises the deep-link attribution flow.
+# File-level skip — no M1/M2-compatible slice.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Deep-link source attribution (verdicts cite creator + timestamp "
+    "into source material; creator-gets-traffic invariant; sponsored-vs-"
+    "authentic ranking) depends on M3 trust-network + attestation pipeline. "
+    "Lite's attribution + deep-link machinery lands with Phase 5+. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # =========================================================================
 # TestDeepLinkDefault

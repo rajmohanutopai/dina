@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // See packages/storage-expo/tsconfig.json for the rationale on these
+    // two overrides — inherited strictness debt from donor core source,
+    // cleaned in Phase 2.
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    // "jest" pulled for the same reason as storage-expo — transitive reach
+    // into test-harness's public helpers. Drop when test-harness moves its
+    // Jest helpers behind a subpath export.
+    "types": ["node", "jest"],
+    // `@dina/core/src/trust/query_client.ts` uses `AbortSignal.timeout()`,
+    // a Node 18+ / modern-browser static method not present in the ES2022
+    // lib's AbortSignal shape. Add DOM lib to surface it. Scoped to this
+    // package since storage-expo doesn't reach that code path.
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src/**/*"]
+}

@@ -25,6 +25,20 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.43 migration prep. Task delegation to external agents
+# (LegalBot for license renewal, OpenClaw for general tasks) with
+# Dina oversight: read-only auto-approve, write needs approval,
+# financial always HIGH-flagged, scope strictly limited. M5 scope —
+# depends on M2 staging (8.15) + M2 approval UI + safety-layer
+# classifier (task 8.47). Lite's delegation machinery lands with
+# Phase 5+ brain-server. LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Task delegation to external agents with Dina oversight "
+    "(read-only auto-approve, write needs approval, financial HIGH-"
+    "flagged) is M5 scope. Depends on M2 staging + safety-layer "
+    "(task 8.47). LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # TestLicenseRenewalFlow

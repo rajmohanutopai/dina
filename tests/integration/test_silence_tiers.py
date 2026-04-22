@@ -28,6 +28,23 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.48 migration prep. Three-tier Silence First system —
+# Tier 1 Fiduciary (interrupt immediately; silence causes harm),
+# Tier 2 Solicited (notify when appropriate; user asked),
+# Tier 3 Engagement (save for briefing; never interrupt).
+# This is one of Dina's Four Laws made concrete. 10 classes cover
+# tier gates, classifier, full notification pipeline, PII scrubbing,
+# DND state, priority conflict resolution. M5 scope — Lite's
+# silence-classifier + whisper assembler land with Phase 5+
+# (referenced by anti-her task 8.41, whisper task 8.50).
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Silence First three-tier system (Fiduciary / Solicited / "
+    "Engagement) is M5 scope + one of Dina's Four Laws. Lite's silence-"
+    "classifier + whisper-assembler land with Phase 5+ brain-server. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # -----------------------------------------------------------------------
 # TestTier1Fiduciary

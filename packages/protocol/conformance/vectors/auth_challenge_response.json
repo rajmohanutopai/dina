@@ -1,0 +1,50 @@
+{
+  "name": "auth_challenge_response",
+  "description": "MsgBox WebSocket auth handshake end-to-end. Server-produced challenge frame + client-produced response frame (with buildAuthSignedPayload output, Ed25519 signature over it, public key) + server success frame. L3 — round-trip validates the auth_response signature using the public key.",
+  "level": "L3",
+  "task": "10.11",
+  "producer": {
+    "tool": "packages/protocol/src/types/auth_frames.ts :: buildAuthSignedPayload + node:crypto Ed25519",
+    "frozen_at": "2026-04-22"
+  },
+  "scenario": {
+    "description": "A client opens a WebSocket to the MsgBox relay. Relay sends auth_challenge with {nonce, ts}. Client signs 'AUTH_RELAY\\n{nonce}\\n{ts}' with its Ed25519 signing key and sends back auth_response. Relay verifies against the DID-published public key and responds with auth_success.",
+    "nonce": "a1b2c3d4e5f6789abcdef0123456789a",
+    "ts": 1745318400,
+    "did": "did:plc:example7alonso7alice012345ab"
+  },
+  "frames": {
+    "auth_challenge": {
+      "type": "auth_challenge",
+      "nonce": "a1b2c3d4e5f6789abcdef0123456789a",
+      "ts": 1745318400
+    },
+    "signed_payload_utf8": "AUTH_RELAY\na1b2c3d4e5f6789abcdef0123456789a\n1745318400",
+    "signed_payload_hex": "415554485f52454c41590a61316232633364346535663637383961626364656630313233343536373839610a31373435333138343030",
+    "auth_response": {
+      "type": "auth_response",
+      "did": "did:plc:example7alonso7alice012345ab",
+      "sig": "d3d9de16c3b0c4f45b441b95ff8c6fbfde1a933b8ab4e4419db4b87cb778a047491450e8aa2703b3577c237d805d5b45e843dabb1ae16c15266c8256626bc906",
+      "pub": "55995ce2ae906a0a3891b0e8946c7cfecb73b2785dcc45e4e8561a5322d1db09"
+    },
+    "auth_success": {
+      "type": "auth_success"
+    }
+  },
+  "assertions": {
+    "signed_payload_format": "literal 'AUTH_RELAY' + LF + nonce + LF + ts-as-decimal",
+    "signed_payload_byte_count": 54,
+    "signature_algorithm": "Ed25519",
+    "signature_byte_count": 64,
+    "public_key_byte_count": 32,
+    "signature_verifies_against_public_key": true,
+    "tampered_ts_rejected": true
+  },
+  "notes": [
+    "buildAuthSignedPayload(nonce, ts) produces exactly 'AUTH_RELAY\\n{nonce}\\n{ts}' — three lines separated by LF (0x0A). `{ts}` is rendered as a decimal integer string via JavaScript's default number-to-string conversion.",
+    "The payload is UTF-8 encoded before signing. For this vector: 10 bytes 'AUTH_RELAY' + 1 LF + 32 bytes nonce + 1 LF + 10 bytes ts decimal = 54 bytes total. No trailing LF. The test re-derives via Buffer.byteLength and asserts equality with `signed_payload_byte_count`.",
+    "`sig` is hex (not base64) per the AuthResponseFrame interface. Implementations MUST emit hex.",
+    "`pub` is the raw Ed25519 point (32 bytes → 64 hex chars) that corresponds to the DID's signing key. Relays verify that `pub` matches what the DID's `#dina_signing` verification method publishes — a public-key-substitution attack fails because the PLC doc's publicKeyMultibase (decoded from base58btc) must equal this `pub`.",
+    "auth_success has no payload fields — introduced in msgbox 0.14 as a strict-fail-closed success acknowledgment. Older (pre-0.14) relays omit this frame entirely; that transitional behaviour is no longer supported."
+  ]
+}

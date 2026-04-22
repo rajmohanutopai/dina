@@ -24,6 +24,20 @@ from tests.integration.mocks import (
     PersonaType,
 )
 
+# Task 8.30 migration prep. Intra-Lite migration (schema version bumps,
+# export/import round-trips, hosting-level moves, device re-pairing
+# after restore) is user-story 08 "Move to new machine" — M4 scope
+# (tasks 8.28-8.32). Distinct from Go→Lite migration, which is NOT
+# supported per `docs/lite-adoption-gate.md` Option B. This file tests
+# Lite's own move-to-new-machine capability.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Intra-Lite migration (schema bumps, export/import, device "
+    "re-pairing) is M4 user-story 08 scope (tasks 8.30 + 9.14). Lite's "
+    "export-archive subsystem lands with Phase 5+ along with the pairing "
+    "M1 work (task 7.33). LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # Schema Migration

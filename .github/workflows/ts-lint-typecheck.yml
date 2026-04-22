@@ -1,0 +1,88 @@
+# Lint + typecheck the TS workspace (packages/, apps/home-node-lite/, apps/mobile).
+# Runs only when TS-workspace files change — Go/Python changes skip this entirely.
+#
+# Owner: docs/HOME_NODE_LITE_TASKS.md Phase 0c (task 0.14)
+
+name: ts-lint-typecheck
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - "eslint.config.mjs"
+      - ".prettierrc.json"
+      - ".github/workflows/ts-lint-typecheck.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - "eslint.config.mjs"
+      - ".prettierrc.json"
+      - ".github/workflows/ts-lint-typecheck.yml"
+  # Manual invocation for debugging.
+  workflow_dispatch:
+
+# Avoid redundant runs when a branch is force-pushed.
+concurrency:
+  group: ts-lint-typecheck-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege defaults. Jobs that need more (e.g. comment on a PR) will
+# override at the job level.
+permissions:
+  contents: read
+
+jobs:
+  lint-typecheck:
+    name: Lint + typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Node version from .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Cache TS incremental build state. Key on source tree + tsconfig so a
+      # source change invalidates the cache; a restore-keys fallback picks up
+      # any recent cache so incremental rebuilds are still faster than cold.
+      - name: Cache TypeScript build info
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/*.tsbuildinfo
+            packages/*/dist
+            apps/home-node-lite/*/dist
+          key: tsbuildinfo-${{ runner.os }}-${{ hashFiles('packages/**/src/**/*.ts', 'packages/**/src/**/*.tsx', 'apps/**/src/**/*.ts', 'apps/**/src/**/*.tsx', 'tsconfig*.json', 'packages/**/tsconfig.json', 'apps/**/tsconfig.json') }}
+          restore-keys: |
+            tsbuildinfo-${{ runner.os }}-
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format

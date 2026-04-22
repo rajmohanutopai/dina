@@ -1,0 +1,68 @@
+{
+  "domain": "d2d/egress",
+  "version": 1,
+  "generated_from": "d2d_v1_protocol_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "known contact + allowed type → pass",
+      "source_test": "",
+      "inputs": {
+        "categories": "",
+        "contact": "known",
+        "type": "social.update"
+      },
+      "expected": {
+        "allowed": true
+      }
+    },
+    {
+      "description": "unknown contact → deny at gate 1",
+      "source_test": "",
+      "inputs": {
+        "contact": "unknown",
+        "type": "social.update"
+      },
+      "expected": {
+        "allowed": false,
+        "denied_at": "contact"
+      }
+    },
+    {
+      "description": "blocked type → deny at gate 2",
+      "source_test": "",
+      "inputs": {
+        "contact": "known",
+        "type": "presence.signal"
+      },
+      "expected": {
+        "allowed": false,
+        "denied_at": "scenario"
+      }
+    },
+    {
+      "description": "restricted category → deny at gate 3",
+      "source_test": "",
+      "inputs": {
+        "categories": "health",
+        "contact": "known",
+        "type": "social.update"
+      },
+      "expected": {
+        "allowed": false,
+        "denied_at": "sharing"
+      }
+    },
+    {
+      "description": "safety.alert always passes",
+      "source_test": "",
+      "inputs": {
+        "contact": "known",
+        "type": "safety.alert"
+      },
+      "expected": {
+        "allowed": true
+      }
+    }
+  ]
+}

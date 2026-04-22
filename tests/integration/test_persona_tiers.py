@@ -20,8 +20,25 @@ import httpx
 import pytest
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
+LITE_MODE = os.environ.get("DINA_LITE") == "docker"
 
-pytestmark = pytest.mark.skipif(not DOCKER_MODE, reason="requires Docker")
+# Task 8.13 migration prep. Two markers:
+#   1. Existing gate: requires Docker or Lite — skip in mock mode.
+#   2. `skip_in_lite` at file level: the 4-tier persona model is the
+#      defining M2 feature (tasks 8.13-8.18 scope). Lite's persona-tier
+#      implementation lands with Phase 5+ (sensitive/locked gating,
+#      passphrase unlock). Category `pending-feature` per LITE_SKIPS.md.
+pytestmark = [
+    pytest.mark.skipif(
+        not (DOCKER_MODE or LITE_MODE),
+        reason="requires DINA_INTEGRATION=docker or DINA_LITE=docker",
+    ),
+    pytest.mark.skip_in_lite(
+        reason="4-tier persona model is the M2 gate (tasks 8.13-8.18). "
+        "Lite's sensitive/locked tier enforcement + passphrase unlock land "
+        "with Phase 5+. LITE_SKIPS.md category `pending-feature`."
+    ),
+]
 
 
 @pytest.fixture

@@ -42,6 +42,12 @@ from tests.integration.mocks import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Sancho scenario uses whisper-assembly + silence tiers which "
+    "land with M2 persona model (Phase 8b tasks 8.13-8.18). Task 8.9's "
+    "M1 scope is the D2D smoke path only. LITE_SKIPS.md category "
+    "`pending-feature`."
+)
 class TestSanchoArrival:
     """Sancho arrives in the user's city. Dina silently assembles context
     and whispers relevant information to the user."""
@@ -401,6 +407,11 @@ class TestDinaToDinaProtocol:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Buyer-seller negotiation depends on Trust Network (task 8.20+ M3) "
+    "+ persona-gating (task 8.13+ M2). M1 smoke covers the wire only. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
 class TestSellerNegotiation:
     """Buyer-to-seller direct negotiation via Dina-to-Dina protocol."""
 
@@ -616,6 +627,12 @@ class TestSellerNegotiation:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Sharing-tier enforcement + audit-trail integration depends on "
+    "persona tiering (M2 task 8.13+) + audit WAL (M2 task 8.17). PII "
+    "egress itself works wire-level but sharing-policy gating needs Lite's "
+    "`SharingPolicyManager` (M2). LITE_SKIPS.md category `pending-feature`."
+)
 class TestSharingPolicyAndEgress:
     """Verify sharing tiers, PII scrubbing on egress, and audit trails
     for all outbound Dina-to-Dina messages."""

@@ -419,6 +419,12 @@ class TestConnectorSecurityRules:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="OAuth token-refresh heuristics live in Go Core's connector-service "
+    "subsystem; Lite's connector path (Phase 5 + mobile) uses a different "
+    "refresh model. Behavior parity is a Phase 5 concern, not M1 smoke. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
 class TestOAuthTokenLifecycle:
     """OAuth token health state machine.
 
@@ -715,6 +721,12 @@ class TestOAuthTokenLifecycle:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Full ingestion pipelines require Brain's `/api/v1/process` + "
+    "LLM classification, which lands in Phase 5c. M1 smoke doesn't need "
+    "the full pipeline; connector + wire-level tests in other classes "
+    "cover what M1 needs. LITE_SKIPS.md category `pending-route`."
+)
 class TestFullIngestionPipelines:
     """End-to-end ingestion flows — Gmail full pipeline, contacts, cursors."""
 

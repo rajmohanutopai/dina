@@ -1,0 +1,41 @@
+{
+  "domain": "auth/nonce",
+  "version": 1,
+  "generated_from": "signature_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "fresh nonce → accepted",
+      "source_test": "",
+      "inputs": {
+        "nonce": "abc123",
+        "seen_before": "false"
+      },
+      "expected": {
+        "accepted": true
+      }
+    },
+    {
+      "description": "replayed nonce → rejected",
+      "source_test": "",
+      "inputs": {
+        "nonce": "abc123",
+        "seen_before": "true"
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "description": "different nonce → accepted",
+      "source_test": "",
+      "inputs": {
+        "nonce": "def456",
+        "seen_before": "false"
+      },
+      "expected": {
+        "accepted": true
+      }
+    }
+  ]
+}

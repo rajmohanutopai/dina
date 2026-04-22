@@ -1,0 +1,36 @@
+{
+  "domain": "vault/tiered",
+  "version": 1,
+  "generated_from": "tiered_content_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "10 items, default config",
+      "source_test": "",
+      "inputs": {
+        "count": "10",
+        "topN_L1": "5",
+        "topN_L2": "1"
+      },
+      "expected": {
+        "items_with_L0": 10,
+        "items_with_L1": 5,
+        "items_with_L2": 1
+      }
+    },
+    {
+      "description": "custom: top 3 L1, top 2 L2",
+      "source_test": "",
+      "inputs": {
+        "count": "10",
+        "topN_L1": "3",
+        "topN_L2": "2"
+      },
+      "expected": {
+        "items_with_L0": 10,
+        "items_with_L1": 3,
+        "items_with_L2": 2
+      }
+    }
+  ]
+}

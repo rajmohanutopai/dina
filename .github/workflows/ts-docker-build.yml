@@ -1,0 +1,110 @@
+# Multi-arch docker build for the Node home-node-lite images.
+# Runs on:
+#   - push to main (post-merge validation)
+#   - pull_request with the `build-docker` label (opt-in; avoids slow buildx
+#     on every PR)
+#   - manual workflow_dispatch
+#
+# Builds only — no push to ghcr.io yet (auth + tagging policy land in Phase 7
+# via docker/HOME_NODE_LITE_TASKS.md task 7.34).
+#
+# Path-filter guards prevent triggering until Dockerfiles exist. Until Phase 7
+# creates apps/home-node-lite/docker/Dockerfile.{core,brain}, this workflow
+# is effectively dormant.
+#
+# Owner: docs/HOME_NODE_LITE_TASKS.md Phase 0c (task 0.16)
+
+name: ts-docker-build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/home-node-lite/docker/**"
+      - "apps/home-node-lite/core-server/**"
+      - "apps/home-node-lite/brain-server/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - ".github/workflows/ts-docker-build.yml"
+  pull_request:
+    types: [labeled, synchronize, reopened]
+    paths:
+      - "apps/home-node-lite/docker/**"
+      - "apps/home-node-lite/core-server/**"
+      - "apps/home-node-lite/brain-server/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - ".github/workflows/ts-docker-build.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ts-docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }} (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Skip on PR unless the `build-docker` label is applied (opt-in gate).
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'build-docker')
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [core, brain]
+        platform: [linux/amd64, linux/arm64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Guard: skip the build step if the referenced Dockerfile does not exist
+      # yet (pre-Phase-7 state). The job will appear green (no-op) rather than
+      # failing — which matches the "buildable when ready" intent.
+      - name: Check Dockerfile presence
+        id: guard
+        run: |
+          if [ -f "apps/home-node-lite/docker/Dockerfile.${{ matrix.image }}" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dockerfile.${{ matrix.image }} not present yet — skipping (Phase 7 will create it)."
+          fi
+
+      - name: Set up QEMU (for cross-arch builds)
+        if: steps.guard.outputs.exists == 'true'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Set up Docker Buildx
+        if: steps.guard.outputs.exists == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        if: steps.guard.outputs.exists == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/home-node-lite/docker/Dockerfile.${{ matrix.image }}
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: false
+          tags: dina-home-node-lite-${{ matrix.image }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=docker-${{ matrix.image }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.image }}-${{ matrix.platform }}
+          # SLSA provenance attestation is only useful when pushing to a
+          # registry; skip for build-only to avoid unused metadata churn.
+          # Revisit when Phase 7 wires ghcr.io push (task 7.34).
+          provenance: false

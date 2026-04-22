@@ -1,0 +1,23 @@
+{
+  "domain": "crypto/aesgcm",
+  "version": 1,
+  "generated_from": "crypto/keywrap.go Wrap/Unwrap",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Wrap DEK with KEK, then unwrap",
+      "source_test": "crypto_test.go TestCrypto_5",
+      "inputs": {
+        "dek_hex": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        "kek_hex": "112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00"
+      },
+      "expected": {
+        "note": "wrapped = nonce(12) + ciphertext + tag(16). Ciphertext is non-deterministic (random nonce), so wrapped_hex will differ each run. Verify roundtrip instead.",
+        "roundtrip": true,
+        "unwrapped_hex": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        "wrapped_hex": "f8d31de0be7f0036e41e9aa9ef0a1fd98ce3ba0a53534bbf28db0274ade68567b0d2334c49c5cd01c76a374d8e001e2183eb9effc5f939a0799dceac",
+        "wrapped_length": 60
+      }
+    }
+  ]
+}

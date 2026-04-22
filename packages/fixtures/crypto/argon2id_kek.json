@@ -1,0 +1,23 @@
+{
+  "domain": "crypto/argon2id",
+  "version": 1,
+  "generated_from": "crypto/argon2.go DeriveKEK",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Argon2id KEK from test passphrase (128MB/3/4)",
+      "source_test": "crypto_test.go TestCrypto_4",
+      "inputs": {
+        "iterations": "3",
+        "memory_kb": "131072",
+        "parallelism": "4",
+        "passphrase": "correct horse battery staple",
+        "salt_hex": "0102030405060708090a0b0c0d0e0f10"
+      },
+      "expected": {
+        "kek_hex": "bf64a106023218c7ef7e92cd770aa65f2c0c70e67d95efd0a008b8ba02cbc2f9",
+        "kek_length": "32"
+      }
+    }
+  ]
+}

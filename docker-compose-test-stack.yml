@@ -523,6 +523,89 @@ services:
     networks:
       - test-net
 
+  # ==========================================================================
+  # Lite profile (task 9.1) — TypeScript Home Node Lite alongside the
+  # Go/Python production actors. Opt-in via `--profile lite` so the default
+  # `up` keeps the Go/Python footprint unchanged.
+  #
+  # Usage:
+  #   docker compose -f docker-compose-test-stack.yml --profile lite up -d
+  #
+  # Actor coverage at M1 scope: **don-alonso only** (single actor, proves the
+  # profile pattern + unblocks tasks 9.2–9.3). Sancho / ChairMaker / Albert /
+  # DrCarl Lite counterparts land with tasks 9.4–9.6 as the Lite M2+
+  # features that story requires come online. Ports are offset by +20000
+  # from the Go/Python actor to avoid clashes — matches the 28100/28200
+  # pattern established in `tests/integration/conftest.py`'s
+  # `LiteDockerServices` (task 8.2).
+  # ==========================================================================
+
+  alonso-lite-core:
+    profiles: ["lite"]
+    image: ghcr.io/rajmohan/dina-home-node-lite-core:${DINA_LITE_IMAGE_TAG:-dev}
+    container_name: alonso-lite-core
+    restart: unless-stopped
+    cap_drop: ['ALL']
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - alonso-lite-vault:/var/lib/dina
+    environment:
+      DINA_CORE_HOST: 0.0.0.0
+      DINA_CORE_PORT: 8100
+      DINA_VAULT_DIR: /var/lib/dina
+      DINA_PDS_URL: ${DINA_PDS_URL:-https://test-pds.dinakernel.com}
+      DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
+      DINA_PDS_HANDLE: ${DINA_LITE_ALONSO_PDS_HANDLE:-}
+      DINA_PDS_PASSWORD: ${DINA_LITE_ALONSO_PDS_PASSWORD:-}
+    ports:
+      - "28100:8100"
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8100/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  alonso-lite-brain:
+    profiles: ["lite"]
+    image: ghcr.io/rajmohan/dina-home-node-lite-brain:${DINA_LITE_IMAGE_TAG:-dev}
+    container_name: alonso-lite-brain
+    restart: unless-stopped
+    cap_drop: ['ALL']
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      DINA_BRAIN_HOST: 0.0.0.0
+      DINA_BRAIN_PORT: 8200
+      DINA_CORE_URL: http://alonso-lite-core:8100
+      DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
+      DINA_ANTHROPIC_API_KEY: ${DINA_ANTHROPIC_API_KEY:-}
+      DINA_OPENAI_API_KEY: ${DINA_OPENAI_API_KEY:-}
+      DINA_GEMINI_API_KEY: ${DINA_GEMINI_API_KEY:-}
+      DINA_MODEL_DEFAULT: ${DINA_MODEL_DEFAULT:-anthropic:claude-haiku-4-5}
+    ports:
+      - "28200:8200"
+    networks:
+      - test-net
+    depends_on:
+      alonso-lite-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8200/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
 # ============================================================================
 # Volumes — actor data + keys only (no infrastructure volumes)
 # ============================================================================
@@ -534,6 +617,11 @@ volumes:
   chairmaker-data:
   # albert-data:  # Digital Estate deferred
   busdriver-data:
+
+  # Lite profile (task 9.1). Parallel vault for the Lite Core actor —
+  # distinct volume name so Go-stack + Lite runs don't share persona
+  # state even though both claim Don Alonso's identity.
+  alonso-lite-vault:
 
   # Actor keys — isolated per service (Core private, Brain private, shared public)
   alonso-keys-core-priv:
@@ -561,7 +649,6 @@ volumes:
   drcarl-keys-brain-priv:
   drcarl-keys-pub:
 
-# ============================================================================
 # Networks — single flat bridge for all actor services
 # ============================================================================
 

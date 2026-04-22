@@ -1,0 +1,22 @@
+{
+  "domain": "trust/attestation",
+  "version": 1,
+  "generated_from": "pds_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Sign attestation record",
+      "source_test": "",
+      "inputs": {
+        "private_key_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        "record_json": "{\"subject_did\":\"did:plc:seller\",\"category\":\"product_review\",\"rating\":85}"
+      },
+      "expected": {
+        "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "rating_max": "100",
+        "rating_min": "0",
+        "signature_hex": "0cacbf33176b76d264097f6a9769b62d29061da993b3369f9596adf064ac5471bff80c0686a8dc048fb71ea88d5c71376260573d7c480c8c4a1d0046347b2602"
+      }
+    }
+  ]
+}

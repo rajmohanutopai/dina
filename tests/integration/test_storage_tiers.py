@@ -454,6 +454,11 @@ class TestTier1Vault:
 # TestTier4Staging
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip_in_lite(
+    reason="Tier-4 staging (drafts, payment intents, auto-expire 72h) is "
+    "an M2 feature. Lite's staging subsystem lands with Phase 5+. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
 class TestTier4Staging:
     """Tier 4 is ephemeral staging: drafts and payment intents, auto-expire."""
 
@@ -610,6 +615,11 @@ class TestTier4Staging:
 # TestTier5DeepArchive
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip_in_lite(
+    reason="Tier-5 deep-archive (immutable encrypted snapshots, right-to-delete) "
+    "is M4 chaos/recovery scope (tasks 8.28-8.32). Lite's archive subsystem "
+    "doesn't exist yet. LITE_SKIPS.md category `pending-feature`."
+)
 class TestTier5DeepArchive:
     """Tier 5 is deep archive: encrypted, immutable, but deletable."""
 
@@ -1103,6 +1113,11 @@ class TestDataFlowBoundaries:
 # TestStagingAreaLifecycle — §10 Staging
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip_in_lite(
+    reason="Staging area lifecycle (draft → claimed → resolved) is M2 "
+    "scope. Same architectural dependency as TestTier4Staging above. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
 class TestStagingAreaLifecycle:
     """Staging area (Tier 4) manages drafts through their lifecycle."""
 

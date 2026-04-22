@@ -1,0 +1,28 @@
+{
+  "name": "@dina/adapters-expo",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./polyfills": {
+      "types": "./src/polyfills.ts",
+      "default": "./src/polyfills.ts"
+    }
+  },
+  "description": "Convenience meta-package re-exporting the 5 granular Expo adapters. Apps inside this repo depend on this for one-dep ergonomics; external consumers pick granular packages for precision.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dina/storage-expo": "*",
+    "@dina/crypto-expo": "*",
+    "@dina/fs-expo": "*",
+    "@dina/net-expo": "*",
+    "@dina/keystore-expo": "*"
+  }
+}

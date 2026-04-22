@@ -33,6 +33,19 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+# Task 8.20 migration prep. File-level skip_in_lite — Trust Network is
+# the M3 gate's defining capability (tasks 8.20-8.26 scope). Expert
+# attestations, outcome data, bot trust, AT Protocol PDS integration
+# on the trust-data side, and trust-data-density all depend on Lite's
+# AppView + trust scorer subsystem, which lands with M3 features.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Trust Network (expert attestations, outcome data, bot trust, "
+    "AT Protocol PDS publishing to trust-facing lexicons) is the M3 gate "
+    "(tasks 8.20-8.26). Lite's trust-scorer subsystem lands with Phase 5+ "
+    "+ AppView integration. LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # Expert Attestations

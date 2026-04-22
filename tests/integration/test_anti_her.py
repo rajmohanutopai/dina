@@ -25,6 +25,22 @@ from tests.integration.mocks import (
     SilenceTier,
 )
 
+# Task 8.41 migration prep. Anti-Her safeguards (emotional-dependency
+# detection + connection nudges + emotional boundary enforcement) are
+# one of Dina's Four Laws — "Never Replace a Human" — and enforced by
+# Brain's silence-classifier + nudge-assembly pipelines. M5 scope
+# (tasks 8.34-8.51 include task 8.48 silence_tiers + task 8.50 whisper
+# which anti-her depends on). Lite's silence-classifier lands with
+# Phase 5d brain-server finalisation.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Anti-Her safeguards (emotional-dependency detection, connection "
+    "nudges toward humans, emotional-boundary enforcement) are M5 scope. "
+    "Depends on Lite's silence-classifier + whisper-assembly (tasks 8.48, "
+    "8.50). Four Laws' 'Never Replace a Human' enforcement. LITE_SKIPS.md "
+    "category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -1,0 +1,73 @@
+# TS codegen drift gate — re-runs openapi-typescript against the YAML
+# specs in api/ and fails CI if the committed files under
+# packages/protocol/src/gen/ don't match. Protects the Phase 1d
+# invariant that generated types stay in sync with the spec.
+#
+# Owner: docs/HOME_NODE_LITE_TASKS.md Phase 1d (task 1.41)
+
+name: ts-codegen-drift
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/core-api.yaml"
+      - "api/brain-api.yaml"
+      - "packages/protocol/src/gen/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ts-codegen-drift.yml"
+  pull_request:
+    paths:
+      - "api/core-api.yaml"
+      - "api/brain-api.yaml"
+      - "packages/protocol/src/gen/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ts-codegen-drift.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ts-codegen-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  drift-check:
+    name: TS codegen drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Node version from .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `generate:check` regenerates the two .d.ts files then runs
+      # `git diff --exit-code` over packages/protocol/src/gen/. Any
+      # drift between the committed output and what openapi-typescript
+      # produces right now fails the step — CI instructs the author to
+      # run `npm run generate` and commit the result.
+      - name: Regenerate + diff-check
+        run: npm run generate:check
+
+      # Extra signal on failure: print the diff so the PR author sees
+      # exactly what would change without having to rerun locally.
+      - name: Show drift diff on failure
+        if: failure()
+        run: git diff -- packages/protocol/src/gen/

@@ -1,0 +1,19 @@
+{
+  "domain": "identity/did_key",
+  "version": 1,
+  "generated_from": "tests/test_did_key.py equivalent",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Ed25519 pub → did:key (test seed)",
+      "source_test": "",
+      "inputs": {
+        "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "expected": {
+        "did": "did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw",
+        "prefix": "did:key:z6Mk"
+      }
+    }
+  ]
+}

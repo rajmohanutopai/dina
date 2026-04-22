@@ -1,0 +1,43 @@
+{
+  "name": "did_key_from_ed25519_pub",
+  "description": "did:key URI derivation from a raw Ed25519 public key. Algorithm: prepend multicodec varint 0xed 0x01 (ed25519-pub) to the 32-byte pubkey, base58btc-encode the 34-byte payload, prefix with 'z' (multibase base58btc indicator), prefix with 'did:key:'. Same pubkey as ed25519_sign_verify vector — implementations can cross-reference.",
+  "level": "L1",
+  "task": "10.6",
+  "producer": {
+    "tool": "@scure/base base58 + multicodec varint 0xed 0x01 prefix",
+    "frozen_at": "2026-04-22"
+  },
+  "cases": [
+    {
+      "name": "cross_reference_with_10_5_pubkey",
+      "public_key_hex": "8fe20e538a2f96c4727427f79150f440db6eb0852110a58dc8dfc772e6d44935",
+      "multicodec_prefix_hex": "ed01",
+      "payload_hex": "ed018fe20e538a2f96c4727427f79150f440db6eb0852110a58dc8dfc772e6d44935",
+      "payload_byte_count": 34,
+      "base58btc_encoded": "6Mkp8vGguD3vSgcza1CvepTYGebUbduFxfsNY8d8XWW3bPr",
+      "expected_did_key": "did:key:z6Mkp8vGguD3vSgcza1CvepTYGebUbduFxfsNY8d8XWW3bPr"
+    },
+    {
+      "name": "all_zero_pubkey_edge_case",
+      "public_key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "multicodec_prefix_hex": "ed01",
+      "payload_hex": "ed010000000000000000000000000000000000000000000000000000000000000000",
+      "payload_byte_count": 34,
+      "base58btc_encoded": "6MkeTG3bFFSLYVU7VqhgZxqr6YzpaGrQtFMh1uvqGy1vDnP",
+      "expected_did_key": "did:key:z6MkeTG3bFFSLYVU7VqhgZxqr6YzpaGrQtFMh1uvqGy1vDnP"
+    }
+  ],
+  "assertions": {
+    "multicodec_for_ed25519_pub": "0xed 0x01 (two-byte varint — 0xed is the unsigned-varint-encoded 237 which maps to ed25519-pub in the multicodec registry)",
+    "expected_prefix": "did:key:z",
+    "did_key_always_starts_with_z": true,
+    "base58btc_does_not_include_zero_character": true
+  },
+  "notes": [
+    "The leading 'z' after 'did:key:' is a multibase indicator — z = base58btc. NOT part of the base58 output itself.",
+    "The 0xed multicodec ID is a varint. For values ≤ 127 it's a single byte; 0xed (237) needs two bytes: 0xed 0x01. Full varint decode: (0xed & 0x7f) | ((0x01) << 7) = 0x6d | 0x80 = 0xed = 237 — matches the ed25519-pub codec ID.",
+    "base58btc uses the Bitcoin alphabet — 58 chars excluding 0 (zero), O (capital-O), I (capital-i), l (lowercase-L). Decoding MUST preserve leading zero bytes as leading '1' characters; our multicodec prefix 0xed avoids that edge case.",
+    "did:key is the same across every ed25519 keypair — this encoding is deterministic. An implementation that derives a different string for the same pubkey is non-conforming.",
+    "Second case uses an all-zero pubkey to pin the output for edge-case pubkeys. All-zero is not a valid Ed25519 key (it's the identity point) but the did:key encoding doesn't validate curve points — it only encodes bytes."
+  ]
+}

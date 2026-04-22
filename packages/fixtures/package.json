@@ -1,0 +1,6 @@
+{
+  "name": "@dina/fixtures",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Cross-language test vectors extracted from Go/Python test suites. Populated by Phase F0 fixture extraction."
+}

@@ -4,17 +4,24 @@ set -euo pipefail
 # ============================================================================
 # Dina Full Test Suite
 # ============================================================================
-# Runs unit tests, tears down old stack, brings up fresh Docker stack,
-# runs non-unit tests, and produces a combined report (terminal + HTML).
+# Runs unit tests, the TypeScript Lite suite, tears down old Docker stack,
+# brings up fresh stack, runs non-unit tests, and produces a combined
+# report (terminal + HTML).
 #
 # Usage:
-#   ./run_all_tests.sh                                  # unit + default non-unit
+#   ./run_all_tests.sh                                  # unit + lite + default non-unit
 #   ./run_all_tests.sh --all                            # include install-pexpect
-#   ./run_all_tests.sh --run integration,e2e            # unit + specific non-unit (faster)
+#   ./run_all_tests.sh --run integration,e2e            # unit + lite + specific non-unit
 #   ./run_all_tests.sh --continue                       # don't stop on first failure
-#   ./run_all_tests.sh --unit-only                      # unit tests only (no Docker)
-#   ./run_all_tests.sh --skip-unit                      # non-unit only (stack must be up)
+#   ./run_all_tests.sh --unit-only                      # unit + lite tests only (no Docker)
+#   ./run_all_tests.sh --skip-unit                      # non-unit only (skips unit + lite)
 #   ./run_all_tests.sh --skip-prepare                   # reuse running stack (no down/up)
+#
+# Phases:
+#   Phase 1   — Go/Python unit suites (test_status.py --unit --mock)
+#   Phase 1b  — TypeScript Lite suite (npm test across packages/ + apps/)
+#   Phase 2   — Docker stack prepare (down → up)
+#   Phase 3   — Non-unit suites (integration, e2e, release, user stories, …)
 #
 # Non-unit suite selection (passed to run_non_unit_tests.sh):
 #   Default:  integration,e2e,release,install,user_stories,appview_integration
@@ -45,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     --verbose|-v)     EXTRA_ARGS+=("$1"); shift ;;
     --no-color)       EXTRA_ARGS+=("$1"); shift ;;
     --help|-h)
-      head -26 "$0" | tail -23
+      head -33 "$0" | tail -30
       exit 0
       ;;
     *)
@@ -93,6 +100,34 @@ if [ "$SKIP_UNIT" = false ]; then
     if [ "$CONTINUE" = false ]; then
       echo ""
       echo "UNIT TESTS FAILED — stopping (use --continue to proceed)"
+      rm -rf "$TMPDIR_BASE"
+      exit 1
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 1b. Lite Suite (TypeScript workspace — @dina/core, @dina/brain,
+#     @dina/storage-node, @dina/home-node-lite-*, mobile, etc.)
+# ---------------------------------------------------------------------------
+# Honours the same --skip-unit / --unit-only controls as Phase 1 — the
+# Lite suite is unit-scope (no Docker). Contributes to FAILURES the
+# same way; --continue governs whether a failure stops the script.
+if [ "$SKIP_UNIT" = false ]; then
+  echo ""
+  echo "============================================"
+  echo "  Phase 1b: Lite Suite (TS workspace)"
+  echo "============================================"
+  echo ""
+
+  LITE_RC=0
+  npm test || LITE_RC=$?
+
+  if [ "$LITE_RC" -ne 0 ]; then
+    FAILURES=$((FAILURES + 1))
+    if [ "$CONTINUE" = false ]; then
+      echo ""
+      echo "LITE SUITE FAILED — stopping (use --continue to proceed)"
       rm -rf "$TMPDIR_BASE"
       exit 1
     fi

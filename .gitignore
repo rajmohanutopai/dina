@@ -210,7 +210,13 @@ __marimo__/
 
 # Node.js
 node_modules/
-package-lock.json
+# Blanket `package-lock.json` was previously ignored here; we narrow that now
+# because the root workspace introduced in docs/HOME_NODE_LITE_TASKS.md needs
+# its lockfile tracked for reproducible installs. Per-subdir lockfiles that
+# were historically untracked (e.g. appview/) are preserved by the rules below;
+# removing those rules is a separate decision.
+appview/package-lock.json
+msgbox/package-lock.json
 
 # Dina — local vector memory (lives in ~/.dina/, but ignore if copied here)
 .dina/
@@ -277,3 +283,29 @@ tests/sanity/regression-sancho/
 tests/sanity/config-*.json
 tests/sanity/gmail_credentials.json
 tests/sanity/gog-auth/
+
+# ── TypeScript workspace (packages/, apps/, home-node-lite) ──
+# node_modules/ and dist/ are already covered above; the following are specific
+# to the TS monorepo landing per docs/HOME_NODE_LITE_TASKS.md.
+*.tsbuildinfo
+coverage/
+.turbo/
+.changeset/.cache/
+
+# SQLCipher / SQLite vault files written by storage-node adapter (and tests).
+# Specific db.sqlite3[-journal] above stays; this wildcard covers
+# per-persona *.sqlite, identity.sqlite, WAL/SHM sidecars.
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Local dev env overlays (parent .env is already ignored above).
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# npm pack artifacts (in case we ever publish @dina/protocol etc. manually).
+*.tgz
+

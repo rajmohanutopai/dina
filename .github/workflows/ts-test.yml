@@ -1,0 +1,89 @@
+# Run the TS workspace test suites (Jest per-package).
+# Runs only when TS-workspace files change — Go/Python changes skip this entirely.
+#
+# Owner: docs/HOME_NODE_LITE_TASKS.md Phase 0c (task 0.15)
+
+name: ts-test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - ".github/workflows/ts-test.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - ".github/workflows/ts-test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ts-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Multi-version matrix — keep the minimum (22) on the tin and also
+    # check the current supported LTS. Add 24 when it becomes LTS.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Incremental TS build cache — same key shape as ts-lint-typecheck.yml
+      # so a single cache entry serves both workflows. Node major is in the
+      # key because compiled output can differ (libs, target).
+      - name: Cache TypeScript build info
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/*.tsbuildinfo
+            packages/*/dist
+            apps/home-node-lite/*/dist
+          key: tsbuildinfo-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('packages/**/src/**/*.ts', 'packages/**/src/**/*.tsx', 'apps/**/src/**/*.ts', 'apps/**/src/**/*.tsx', 'tsconfig*.json', 'packages/**/tsconfig.json', 'apps/**/tsconfig.json') }}
+          restore-keys: |
+            tsbuildinfo-${{ runner.os }}-node${{ matrix.node }}-
+
+      - name: Build (project references)
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Upload coverage (if produced)
+        if: always() && hashFiles('**/coverage/lcov.info') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-node-${{ matrix.node }}
+          path: "**/coverage/lcov.info"
+          if-no-files-found: ignore
+          retention-days: 7

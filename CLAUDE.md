@@ -161,6 +161,85 @@ python scripts/test_status.py --suite integration      # Integration tests (buil
 DINA_RATE_LIMIT=100000 pytest tests/integration/       # Direct pytest (needs high rate limit)
 ```
 
+### Home Node Lite (TypeScript stack)
+
+An all-TypeScript re-implementation of the Home Node runs alongside
+the Go/Python production stack. See `apps/home-node-lite/README.md`
+for the quickstart and `docs/HOME_NODE_LITE_TASKS.md` for the
+milestone roadmap.
+
+```bash
+# Prerequisites: Node ≥ 22 (see .nvmrc). Native build toolchain NOT
+# needed for darwin/linux x64/arm64 — storage-node uses prebuilt
+# better-sqlite3-multiple-ciphers binaries.
+npm install                                           # repo-root workspace install
+
+# Run the Fastify Core server (dev)
+cd apps/home-node-lite/core-server && npm start       # tsx src/bin.ts — listens :8100
+
+# Run the Fastify Brain server (dev)
+cd apps/home-node-lite/brain-server && npm start      # tsx src/bin.ts — listens :8200
+
+# Workspace-wide commands (from repo root)
+npm test                                              # jest in every package + app
+npm run typecheck                                     # composite tsc --build
+npm run lint                                          # eslint across packages/ + apps/
+npm run format                                        # prettier check
+npm run audit:prod                                    # npm audit --omit=dev --audit-level=high
+
+# Full-suite runner now includes the Lite suite (Phase 1b)
+./run_all_tests.sh --unit-only                        # Go/Py unit + TS Lite, no Docker
+./run_all_tests.sh                                    # unit + Lite + Docker non-unit
+```
+
+Layout:
+
+```
+packages/                    shared workspace (pure — runtime-agnostic)
+  protocol/                  wire types + canonical signing + validators
+  core/ brain/               pure domain
+  storage-node/ crypto-node/ fs-node/ net-node/ keystore-node/
+  adapters-node/             meta-package (one-dep convenience)
+  storage-expo/ crypto-expo/ …  mobile-side counterparts
+  fixtures/ test-harness/    test support
+
+apps/
+  home-node-lite/
+    core-server/             Fastify Core wrapper (vault keeper)
+    brain-server/            Fastify Brain wrapper (analyst)
+  mobile/                    Expo app
+```
+
+### `@dina/protocol` — the byte-exact wire contract
+
+`packages/protocol/` is the independently consumable wire-format
+package. Zero runtime deps (enforced by `dep_hygiene.test.ts`).
+What's there:
+
+- **Wire types + helpers** — DID documents, D2D envelopes, auth
+  frames, Core RPC envelope, capability schemas; canonical-sign
+  builder; envelope builders; validators. All in `src/`.
+- **Conformance spec** — `docs/conformance.md` pins the L1–L4
+  levels an implementation claims compliance against.
+- **Per-feature guides** — `docs/features/` covers canonical
+  signing, D2D envelope, auth handshake, sealed-box, PLC document.
+- **9 frozen test vectors** under `conformance/vectors/` —
+  Ed25519 sign/verify, did:key derivation, canonical request
+  string, SHA-256 body hash, BLAKE2b(24) sealed-box nonce, NaCl
+  sealed-box, auth handshake, D2D envelope round-trip, PLC
+  document.
+- **Runnable self-check** — `conformance/suite.ts` (programmatic)
+  + `conformance/http_harness.ts` (HTTP endpoints for remote
+  implementations to fetch state).
+- **160 tests** — 8 suites cover fixture-compat, validators,
+  envelope builders, dep-hygiene gate, and the conformance
+  harness.
+
+Dina-language ports (Go / Rust / Swift / Kotlin / Python) target
+this package. It's the compatibility contract. Changes to the
+wire format go through `packages/protocol/docs/conformance.md` §14
+(changelog) and bump the protocol major.
+
 ### Key Build Details
 
 - **CGO + FTS5:** `go build -tags fts5 ./cmd/dina-core/` required for SQLite FTS5 support

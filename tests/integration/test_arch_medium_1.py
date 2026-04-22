@@ -11,6 +11,23 @@ import hashlib
 import json
 import time
 
+import pytest
+
+# Task 8.36 migration prep. Arch validation MEDIUM severity gaps M1-M30
+# cover dead-drop ingress rate limits, service-auth, boot manager minimal-
+# persona opening, import manifest validation, HKDF key manager, hybrid
+# search, timestamp anchor — a grab-bag of subsystem-level invariants
+# spanning multiple milestones. Pattern matches test_arch_validation.py
+# (task 8.35 iter 76). File-level pytestmark for M5; re-audit per-test
+# when specific subsystems land earlier.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Arch validation MEDIUM severity gaps M1-M30 (dead-drop ingress, "
+    "service-auth, boot manager, import manifest, HKDF, hybrid search, "
+    "timestamp anchor) — M5 scope (tasks 8.34-8.51). LITE_SKIPS.md "
+    "category `pending-feature`."
+)
+
 from tests.integration.mocks import (
     Argon2idParams,
     ExpertAttestation,

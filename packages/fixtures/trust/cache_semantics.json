@@ -1,0 +1,48 @@
+{
+  "domain": "trust/cache",
+  "version": 1,
+  "generated_from": "trust_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "30 min old → not stale",
+      "source_test": "",
+      "inputs": {
+        "age_seconds": "1800"
+      },
+      "expected": {
+        "stale": false
+      }
+    },
+    {
+      "description": "2 hours old → stale",
+      "source_test": "",
+      "inputs": {
+        "age_seconds": "7200"
+      },
+      "expected": {
+        "stale": true
+      }
+    },
+    {
+      "description": "exactly 1 hour → stale (boundary)",
+      "source_test": "",
+      "inputs": {
+        "age_seconds": "3600"
+      },
+      "expected": {
+        "stale": true
+      }
+    },
+    {
+      "description": "59 min → not stale",
+      "source_test": "",
+      "inputs": {
+        "age_seconds": "3540"
+      },
+      "expected": {
+        "stale": false
+      }
+    }
+  ]
+}

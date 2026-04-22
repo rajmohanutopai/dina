@@ -1,0 +1,48 @@
+{
+  "domain": "pii/scrub_rehydrate",
+  "version": 1,
+  "generated_from": "pii_handler_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "scrub email → rehydrate",
+      "source_test": "",
+      "inputs": {
+        "text": "Email john@example.com"
+      },
+      "expected": {
+        "entities": [
+          {
+            "token": "[EMAIL_1]",
+            "value": "john@example.com"
+          }
+        ],
+        "rehydrated": "Email john@example.com",
+        "scrubbed": "Email [EMAIL_1]"
+      }
+    },
+    {
+      "description": "scrub mixed → rehydrate",
+      "source_test": "",
+      "inputs": {
+        "text": "Contact john@example.com or call 555-123-4567"
+      },
+      "expected": {
+        "rehydrated": "Contact john@example.com or call 555-123-4567",
+        "scrubbed": "Contact [EMAIL_1] or call [PHONE_1]"
+      }
+    },
+    {
+      "description": "no PII → unchanged",
+      "source_test": "",
+      "inputs": {
+        "text": "The weather is nice"
+      },
+      "expected": {
+        "entities": [],
+        "rehydrated": "The weather is nice",
+        "scrubbed": "The weather is nice"
+      }
+    }
+  ]
+}

@@ -16,6 +16,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# Task 8.39 migration prep. This file tests the **Python Brain's**
+# Pydantic-model wire compatibility with Go Core's JSON output — the
+# Core-Brain contract within the production stack. Lite's equivalent
+# wire-contract coverage lives in `@dina/protocol`'s conformance
+# vectors (tasks 10.5-10.13, all 9 vectors frozen + verified via
+# `npm run conformance`). Running these Python tests against Lite
+# would mix stacks (Python Brain parsing Lite Core's TypeScript-
+# emitted JSON) — not the intended wire-contract gate.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Python-Brain Pydantic wire-compat with Go Core. Lite's wire "
+    "compat is enforced by `@dina/protocol` conformance vectors (tasks "
+    "10.5-10.13) + `npm run conformance`. LITE_SKIPS.md category "
+    "`pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # 1. ReminderFiredEvent payload field

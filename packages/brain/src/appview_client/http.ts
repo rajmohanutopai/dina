@@ -1,0 +1,305 @@
+/**
+ * Brain's HTTP client for the AppView service discovery API.
+ *
+ * This is the **requester-side** surface. The provider side publishes records
+ * via PDS (`packages/brain/src/pds/publisher.ts`); the requester reads the
+ * indexed view via AppView:
+ *
+ *   GET /xrpc/com.dina.service.search    — find services by capability + geo
+ *   GET /xrpc/com.dina.service.isDiscoverable  — check whether a DID is discoverable
+ *
+ * The Core-side `AppViewServiceResolver` (`packages/core/src/appview/`) exists
+ * for egress-gate bypass decisions and caches `isDiscoverable` results. It is a
+ * separate role — Core's resolver is a policy input for D2D sending, while
+ * this client drives ranked discovery for LLM tools and Brain orchestration.
+ *
+ * Retry: 3× exponential backoff on 5xx (reuses `core/src/transport/http_retry`).
+ * Non-retryable 4xx (other than 408/429) bubble up as `AppViewError`.
+ * Timeout per attempt: 10 s default (matches Python reference `httpx.AsyncClient(timeout=10)`).
+ *
+ * Source: brain/src/adapter/appview_client.py
+ */
+
+import {
+  backoff,
+  isRetryableStatus,
+  parseResponseBody,
+} from '../../../core/src/transport/http_retry';
+
+/** Retryable client-side response statuses beyond 5xx. */
+const RETRYABLE_4XX = new Set([408, 429]);
+
+/** Default per-attempt timeout (ms). Mirrors Python `httpx.AsyncClient(timeout=10)`. */
+const DEFAULT_TIMEOUT_MS = 10_000;
+
+/** Default max retries. Mirrors Brain's `STAGING_MAX_RETRIES`. */
+const DEFAULT_MAX_RETRIES = 3;
+
+/**
+ * One service profile entry from `com.dina.service.search` results.
+ * Field naming is camelCase — this matches AppView's lexicon on the wire.
+ */
+/**
+ * Per-capability published schema. Fidelity with main-dina's shape
+ * so the mobile reasoning agent sees the same provider contract the
+ * Python agent does. Extended in the PC-remediation audit to carry
+ * `description` + `defaultTtlSeconds` + ensure `params`/`result`
+ * are surfaced to the model (GAP-PROF-01).
+ */
+export interface PublishedCapabilitySchema {
+  params: Record<string, unknown>;
+  result: Record<string, unknown>;
+  schemaHash: string;
+  /** Human-facing description of what this capability returns —
+   *  the reasoning agent uses it when picking between capabilities
+   *  on a profile. Optional because older profiles don't carry it. */
+  description?: string;
+  /** Per-capability TTL hint in seconds. When absent the requester
+   *  falls back to the registry default (`getTTL(capability)`). */
+  defaultTtlSeconds?: number;
+}
+
+export interface ServiceProfile {
+  did: string;
+  handle?: string;
+  name: string;
+  description?: string;
+  capabilities: string[];
+  responsePolicy?: Record<string, 'auto' | 'review'>;
+  isDiscoverable: boolean;
+  /** Published schemas, one per capability. */
+  capabilitySchemas?: Record<string, PublishedCapabilitySchema>;
+  /** Distance in km from the query location, if the query supplied lat/lng. */
+  distanceKm?: number;
+}
+
+/** Parameters for `searchServices`. */
+export interface SearchServicesParams {
+  capability: string;
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
+  /** Free-text match against service name/description. */
+  q?: string;
+  /** Maximum results returned. AppView caps this at 50 today. */
+  limit?: number;
+}
+
+/** Result of `isDiscoverable`. */
+export interface IsDiscoverableResult {
+  isDiscoverable: boolean;
+  capabilities: string[];
+}
+
+/** Configuration for `AppViewClient`. */
+export interface AppViewClientOptions {
+  /** Base URL of the AppView (trailing slash stripped). */
+  appViewURL: string;
+  /** Per-attempt request timeout in ms. Default 10_000. */
+  timeoutMs?: number;
+  /** Maximum retries on transient failure. Default 3. */
+  maxRetries?: number;
+  /** Injectable `fetch`. Defaults to `globalThis.fetch`. */
+  fetch?: typeof globalThis.fetch;
+  /**
+   * Injectable sleep for retry backoff — tests override to skip real waits.
+   * Must honour the standard `backoff(attempt)` signature (attempt 0-indexed).
+   */
+  sleepFn?: (attemptZeroIndexed: number) => Promise<void>;
+}
+
+/** Structured error raised for every non-success terminal outcome. */
+export class AppViewError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly path: string,
+  ) {
+    super(message);
+    this.name = 'AppViewError';
+  }
+}
+
+/**
+ * Read-only AppView client. Safe to share across callers — no mutable state
+ * beyond the injected `fetch`.
+ */
+export class AppViewClient {
+  private readonly appViewURL: string;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
+  private readonly fetchFn: typeof globalThis.fetch;
+  private readonly sleepFn: (attempt: number) => Promise<void>;
+
+  constructor(options: AppViewClientOptions) {
+    if (!options.appViewURL) {
+      throw new Error('AppViewClient: appViewURL is required');
+    }
+    this.appViewURL = options.appViewURL.replace(/\/$/, '');
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.sleepFn = options.sleepFn ?? backoff;
+    if (this.timeoutMs <= 0) {
+      throw new Error(`AppViewClient: timeoutMs must be > 0 (got ${this.timeoutMs})`);
+    }
+    if (this.maxRetries < 0) {
+      throw new Error(`AppViewClient: maxRetries must be ≥ 0 (got ${this.maxRetries})`);
+    }
+  }
+
+  /**
+   * Search for public services by capability (optionally scoped by geo).
+   * Returns the `services` array, ordered by trust + proximity as AppView
+   * decides. An empty list means "no matches" (not an error).
+   *
+   * Throws `AppViewError` on HTTP failure past the retry budget.
+   */
+  async searchServices(params: SearchServicesParams): Promise<ServiceProfile[]> {
+    if (!params.capability) {
+      throw new AppViewError(
+        'searchServices: capability is required',
+        null,
+        '/xrpc/com.dina.service.search',
+      );
+    }
+    const query: Record<string, string> = { capability: params.capability };
+    if (params.lat !== undefined) query.lat = String(params.lat);
+    if (params.lng !== undefined) query.lng = String(params.lng);
+    if (params.radiusKm !== undefined) query.radiusKm = String(params.radiusKm);
+    if (params.q !== undefined && params.q !== '') query.q = params.q;
+    if (params.limit !== undefined) query.limit = String(params.limit);
+
+    const body = await this.get('/xrpc/com.dina.service.search', query);
+    const services = (body as { services?: unknown }).services;
+    if (!Array.isArray(services)) return [];
+    return services.filter((s): s is ServiceProfile => isServiceProfile(s)).map(normalizeProfile);
+  }
+
+  /**
+   * Check whether a DID is registered as a public service, and list its
+   * advertised capabilities. Matches Python `is_public` tuple return as an
+   * object for ergonomic destructuring: `const {isDiscoverable, capabilities} = …`.
+   */
+  async isDiscoverable(did: string): Promise<IsDiscoverableResult> {
+    if (!did) {
+      throw new AppViewError(
+        'isDiscoverable: did is required',
+        null,
+        '/xrpc/com.dina.service.isDiscoverable',
+      );
+    }
+    const body = await this.get('/xrpc/com.dina.service.isDiscoverable', { did });
+    const r = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+    return {
+      isDiscoverable: typeof r.isDiscoverable === 'boolean' ? r.isDiscoverable : false,
+      capabilities: Array.isArray(r.capabilities)
+        ? r.capabilities.filter((c): c is string => typeof c === 'string')
+        : [],
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Internals
+  // -------------------------------------------------------------------------
+
+  private async get(path: string, query: Record<string, string>): Promise<unknown> {
+    const qs = new URLSearchParams(query).toString();
+    const url = `${this.appViewURL}${path}${qs ? '?' + qs : ''}`;
+
+    let lastError: AppViewError | null = null;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      let response: Response;
+      try {
+        response = await this.fetchFn(url, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: { Accept: 'application/json' },
+        });
+      } catch (err) {
+        lastError = new AppViewError(`network error: ${(err as Error).message}`, null, path);
+        if (attempt < this.maxRetries) {
+          await this.sleepFn(attempt);
+          continue;
+        }
+        throw lastError;
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (response.status === 200) {
+        return parseResponseBody(response);
+      }
+
+      const retryable = isRetryableStatus(response.status) || RETRYABLE_4XX.has(response.status);
+      lastError = new AppViewError(`AppView responded ${response.status}`, response.status, path);
+      if (retryable && attempt < this.maxRetries) {
+        await this.sleepFn(attempt);
+        continue;
+      }
+      throw lastError;
+    }
+    // Unreachable — loop either returns or throws.
+    throw lastError ?? new AppViewError('AppView: retries exhausted', null, path);
+  }
+}
+
+function isServiceProfile(x: unknown): x is ServiceProfile {
+  if (!x || typeof x !== 'object') return false;
+  const r = x as Record<string, unknown>;
+  return (
+    typeof r.did === 'string' &&
+    typeof r.name === 'string' &&
+    Array.isArray(r.capabilities) &&
+    r.capabilities.every((c) => typeof c === 'string') &&
+    typeof r.isDiscoverable === 'boolean'
+  );
+}
+
+/**
+ * GAP-WIRE-01: main-dina publishes per-capability schemas with
+ * snake_case inner keys (`schema_hash`, `default_ttl_seconds`).
+ * Normalise AppView responses into the idiomatic camelCase shape
+ * `PublishedCapabilitySchema` exposes, tolerating either casing so
+ * mobile reads survive a mixed ecosystem (main-style providers
+ * alongside older mobile-published profiles).
+ */
+function normalizeProfile(p: ServiceProfile): ServiceProfile {
+  if (p.capabilitySchemas === undefined) return p;
+  const normalized: Record<string, PublishedCapabilitySchema> = {};
+  let mutated = false;
+  for (const [cap, raw] of Object.entries(p.capabilitySchemas)) {
+    const r = raw as unknown as Record<string, unknown>;
+    const hash =
+      typeof r.schema_hash === 'string' && r.schema_hash !== ''
+        ? r.schema_hash
+        : typeof r.schemaHash === 'string'
+          ? r.schemaHash
+          : '';
+    const ttl =
+      typeof r.default_ttl_seconds === 'number'
+        ? r.default_ttl_seconds
+        : typeof r.defaultTtlSeconds === 'number'
+          ? r.defaultTtlSeconds
+          : undefined;
+    const description = typeof r.description === 'string' ? r.description : undefined;
+    const entry: PublishedCapabilitySchema = {
+      params: (r.params as Record<string, unknown>) ?? {},
+      result: (r.result as Record<string, unknown>) ?? {},
+      schemaHash: hash,
+    };
+    if (description !== undefined) entry.description = description;
+    if (ttl !== undefined) entry.defaultTtlSeconds = ttl;
+    normalized[cap] = entry;
+    if (
+      entry.schemaHash !== (raw as PublishedCapabilitySchema).schemaHash ||
+      entry.defaultTtlSeconds !== (raw as PublishedCapabilitySchema).defaultTtlSeconds
+    ) {
+      mutated = true;
+    }
+  }
+  if (!mutated) return p;
+  return { ...p, capabilitySchemas: normalized };
+}

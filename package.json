@@ -1,0 +1,51 @@
+{
+  "name": "dina-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dina home-node-lite TypeScript workspace (shared pure packages + Node server app; mobile lands in Phase 1 per docs/HOME_NODE_LITE_TASKS.md option c).",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/home-node-lite/*",
+    "apps/mobile"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@11.3.0",
+  "scripts": {
+    "build": "tsc --build",
+    "test": "if find packages apps/home-node-lite apps/mobile -maxdepth 2 -name package.json 2>/dev/null | grep -q .; then npm test --workspaces --if-present; else echo 'TS workspace is empty — npm test skipped. (Phase 1 will populate packages/.)'; fi",
+    "lint": "eslint --no-error-on-unmatched-pattern \"packages/**/*.{ts,tsx,mts,cts}\" \"apps/**/*.{ts,tsx,mts,cts}\"",
+    "format": "prettier --check \"packages/**/*.{ts,tsx,json,md}\" \"apps/**/*.{ts,tsx,json,md}\"",
+    "format:fix": "prettier --write \"packages/**/*.{ts,tsx,json,md}\" \"apps/**/*.{ts,tsx,json,md}\"",
+    "typecheck": "tsc --build --verbose",
+    "clean": "tsc --build --clean",
+    "generate": "openapi-typescript api/core-api.yaml -o packages/protocol/src/gen/core-api.d.ts && openapi-typescript api/brain-api.yaml -o packages/protocol/src/gen/brain-api.d.ts",
+    "generate:check": "npm run generate && git diff --exit-code -- packages/protocol/src/gen/",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.19.17",
+    "eslint": "^9.39.4",
+    "eslint-import-resolver-typescript": "^3.10.1",
+    "eslint-plugin-import": "^2.32.0",
+    "globals": "^15.15.0",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.59.0",
+    "ws": "^8.20.0"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/ed25519": "^3.1.0",
+    "@noble/hashes": "^2.2.0",
+    "@scure/base": "^2.0.0",
+    "@scure/bip39": "^2.0.1",
+    "hash-wasm": "^4.12.0"
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "domain": "crypto/slip0010_personas",
+  "version": 1,
+  "generated_from": "crypto/slip0010.go DerivePath",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Persona signing key: financial at m/9999'/1'/4'/0'",
+      "source_test": "crypto_test.go TestCrypto_2_3",
+      "inputs": {
+        "path": "m/9999'/1'/4'/0'",
+        "persona_name": "financial",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "e652396c84fe93cb297f23d0b46ecafd8bdef2fa795db1eeffed2bf5e973aba9",
+        "public_key_hex": "b4079b290089861248b5774b4c323f1ef20e45d2f68efe4ecdd49532305cb528"
+      }
+    },
+    {
+      "description": "Persona signing key: citizen at m/9999'/1'/5'/0'",
+      "source_test": "crypto_test.go TestCrypto_2_3",
+      "inputs": {
+        "path": "m/9999'/1'/5'/0'",
+        "persona_name": "citizen",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "9b65d3d19b816587cc0aad9a30238681a6ff67b5e3c163bf2c0a8351a0729334",
+        "public_key_hex": "c9443fdc4305c55ef944f5253f674c9bea34239019e4dbeba70caafeefad2380"
+      }
+    },
+    {
+      "description": "Persona signing key: consumer at m/9999'/1'/0'/0'",
+      "source_test": "crypto_test.go TestCrypto_2_3",
+      "inputs": {
+        "path": "m/9999'/1'/0'/0'",
+        "persona_name": "consumer",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "103d2b003c0523f97a703ceac1a825fbd51b93a7bca6b5aa5dfe8ca624a92645",
+        "public_key_hex": "3fed8ada2c5cc567ae73bec17193f571708bfa2f8a0ea295d9d2030b6af3a091"
+      }
+    },
+    {
+      "description": "Persona signing key: professional at m/9999'/1'/1'/0'",
+      "source_test": "crypto_test.go TestCrypto_2_3",
+      "inputs": {
+        "path": "m/9999'/1'/1'/0'",
+        "persona_name": "professional",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "a97c8f5e8de07e99aebbeefd1f8e4b54cf074ba09ac3acc0975765c46cd696b0",
+        "public_key_hex": "9600decacdb07593e91e39e60101dcbad628cd52087131a138b17af7903027f5"
+      }
+    },
+    {
+      "description": "Persona signing key: social at m/9999'/1'/2'/0'",
+      "source_test": "crypto_test.go TestCrypto_2_3",
+      "inputs": {
+        "path": "m/9999'/1'/2'/0'",
+        "persona_name": "social",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "be0d4ee1c873a2f237d146417416be5d6be2e84da4f1f5184ab866e93135539a",
+        "public_key_hex": "51dff78eb4531d07aab61fa30ac2c6a51bd391390a3b824377b4d905cfc03dc5"
+      }
+    },
+    {
+      "description": "Persona signing key: health at m/9999'/1'/3'/0'",
+      "source_test": "crypto_test.go TestCrypto_2_3",
+      "inputs": {
+        "path": "m/9999'/1'/3'/0'",
+        "persona_name": "health",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "3c76b8d661ba5f105998c7fdb18e34c3e1760ffca81cc6996257068d1411f3a5",
+        "public_key_hex": "e0d138849f29db3d6ea42f5f0977828fbce48453927d6fc1335571ff61f9a765"
+      }
+    }
+  ]
+}

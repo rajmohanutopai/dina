@@ -17,6 +17,19 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+# Task 8.14 migration prep. File-level skip_in_lite — the three classes
+# (PersonaCreation / PersonaIsolation / PersonaInInteraction) all depend
+# on Lite's persona subsystem (M2 scope, tasks 8.13-8.18). Persona
+# CREATION + ISOLATION specifically — unlike storage-tiers which has
+# wire-level-M1-compatible sub-classes — every test in this file exercises
+# the persona state machine, not just vault CRUD. Category
+# `pending-feature` per `tests/integration/LITE_SKIPS.md`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Persona compartments (SLIP-0010 derivation, isolation, "
+    "auto-selection by context) are M2 scope (tasks 8.13-8.18). "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # TestPersonaCreation

@@ -1,0 +1,19 @@
+{
+  "domain": "wire_format/readyz_not_ready",
+  "version": 1,
+  "generated_from": "core/internal/handler/readyz.go",
+  "generated_at": "2026-04-21",
+  "route": {
+    "method": "GET",
+    "path": "/readyz"
+  },
+  "expected": {
+    "status": 503,
+    "content_type_prefix": "application/json",
+    "body_keys": ["status", "checks"],
+    "body_shape": {
+      "status": "not_ready",
+      "checks": "<object:name->\"ok\"|\"fail\">"
+    }
+  }
+}

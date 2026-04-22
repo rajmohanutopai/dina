@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "types": ["node", "jest"],
+    "lib": ["ES2022"],
+    // Inherited from storage-expo: donor `@dina/core` source was authored
+    // against looser strictness than our shared tsconfig.base.json. When
+    // this package typechecks, tsc recursively re-types core's .ts source
+    // (via the workspace symlink) and reports ~145 inherited
+    // `exactOptionalPropertyTypes` + `noUncheckedIndexedAccess` violations.
+    // Override those two flags here so this package's own code compiles;
+    // Phase 2 (async-port audit gate) will clean core's donor source to
+    // satisfy the base rules, at which point these two overrides should
+    // be removed.
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src/**/*", "__tests__/**/*"]
+}

@@ -17,8 +17,28 @@ import httpx
 import pytest
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
+LITE_MODE = os.environ.get("DINA_LITE") == "docker"
 
-pytestmark = pytest.mark.skipif(not DOCKER_MODE, reason="requires Docker")
+# Task 8.16 migration prep. Two markers:
+#   1. Docker-or-Lite gate (extended from original Docker-only)
+#   2. skip_in_lite — L0/L1/L2 content-tier model's PATCH-enrich flow
+#      needs Brain's `/api/v1/process` (classification) + embedding
+#      service (Phase 5c). The storage primitives (FTS5 + HNSW) are
+#      already in Lite via @dina/storage-node + @dina/core; what's
+#      missing is the Brain route that orchestrates the PATCH pipeline.
+#      LITE_SKIPS.md category `pending-route`.
+pytestmark = [
+    pytest.mark.skipif(
+        not (DOCKER_MODE or LITE_MODE),
+        reason="requires DINA_INTEGRATION=docker or DINA_LITE=docker",
+    ),
+    pytest.mark.skip_in_lite(
+        reason="L0/L1/L2 content-tier model's PATCH-enrich flow depends on "
+        "Brain's `/api/v1/process` + embedding service (Phase 5c). "
+        "Storage primitives (FTS5 + HNSW) are in Lite; the Brain route "
+        "that drives the pipeline isn't. LITE_SKIPS.md category `pending-route`."
+    ),
+]
 
 
 @pytest.fixture

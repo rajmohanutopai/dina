@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Conformance-vector manifest. Status 'pending' means the vector file does not yet exist; the populating task is named in 'task'. When a task lands, swap .pending → the real .json file and flip status to 'frozen'.",
+  "version": "0",
+  "updated": "2026-04-22",
+  "vectors": [
+    {
+      "name": "ed25519_sign_verify",
+      "slot": "ed25519_sign_verify.json",
+      "level": "L3",
+      "task": "10.5",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "Known pubkey + message + signature — verify round-trip via node:crypto plus tamper-fails. 1 case."
+    },
+    {
+      "name": "did_key_from_ed25519_pub",
+      "slot": "did_key_from_ed25519_pub.json",
+      "level": "L1",
+      "task": "10.6",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "did:key URI derivation from raw Ed25519 public key. 2 cases (cross-ref with 10.5 pubkey + all-zero edge). Re-derivable via @scure/base base58btc + 0xed 0x01 multicodec varint."
+    },
+    {
+      "name": "canonical_request_string",
+      "slot": "canonical_request_string.json",
+      "level": "L2",
+      "task": "10.7",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "buildCanonicalPayload happy path + empty-query + empty-body-hash edge cases. 5 cases."
+    },
+    {
+      "name": "sha256_body_hash",
+      "slot": "sha256_body_hash.json",
+      "level": "L2",
+      "task": "10.8",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "SHA-256 body-hash hex output for empty body + representative request bodies. 5 cases, all re-derivable via node:crypto."
+    },
+    {
+      "name": "blake2b_24_sealed_nonce",
+      "slot": "blake2b_24_sealed_nonce.json",
+      "level": "L2",
+      "task": "10.9",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "BLAKE2b with 24-byte output over (ephemeral_pub || recipient_pub). 3 cases. Re-derivable via @noble/hashes blake2b{dkLen:24}. Pins the libsodium-compat formula and catches the pre-#9 SHA-512 regression."
+    },
+    {
+      "name": "nacl_sealed_box",
+      "slot": "nacl_sealed_box.json",
+      "level": "L3",
+      "task": "10.10",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "libsodium crypto_box_seal decrypt vectors — 3 cases (hello_dina, empty, json_body). External implementations verify by decrypting with the shipped recipient keypair and matching plaintext. Ciphertext overhead is 48 bytes (32-byte ephemeral pub + 16-byte Poly1305 MAC)."
+    },
+    {
+      "name": "auth_challenge_response",
+      "slot": "auth_challenge_response.json",
+      "level": "L3",
+      "task": "10.11",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "Full MsgBox WebSocket auth handshake — challenge frame → signed response (with pub + sig hex) → success frame. L3 round-trip + tamper-fail."
+    },
+    {
+      "name": "d2d_envelope_round_trip",
+      "slot": "d2d_envelope_round_trip.json",
+      "level": "L2",
+      "task": "10.12",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "buildMessageJSON output bytes for a representative DinaMessage — key order + to-array normalisation. 4 cases."
+    },
+    {
+      "name": "plc_document_verification",
+      "slot": "plc_document_verification.json",
+      "level": "L1",
+      "task": "10.13",
+      "status": "frozen",
+      "frozen_at": "2026-04-22",
+      "summary": "Dina-flavoured PLC document with Multikey + #dina_signing + #dina_messaging fragments. Shape-level assertions only; crypto verification lands with task 10.11."
+    }
+  ]
+}

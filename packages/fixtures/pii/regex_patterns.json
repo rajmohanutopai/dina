@@ -1,0 +1,85 @@
+{
+  "domain": "pii/regex",
+  "version": 1,
+  "generated_from": "fixtures.go PIITestCases",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "PII: email",
+      "source_test": "pii_test.go",
+      "inputs": {
+        "text": "Email me at john@example.com"
+      },
+      "expected": {
+        "entities": ["john@example.com"],
+        "scrubbed": "Email me at [EMAIL_1]"
+      }
+    },
+    {
+      "description": "PII: phone_us",
+      "source_test": "pii_test.go",
+      "inputs": {
+        "text": "Call 555-123-4567"
+      },
+      "expected": {
+        "entities": ["555-123-4567"],
+        "scrubbed": "Call [PHONE_1]"
+      }
+    },
+    {
+      "description": "PII: ssn",
+      "source_test": "pii_test.go",
+      "inputs": {
+        "text": "SSN 123-45-6789"
+      },
+      "expected": {
+        "entities": ["123-45-6789"],
+        "scrubbed": "SSN [SSN_1]"
+      }
+    },
+    {
+      "description": "PII: credit_card",
+      "source_test": "pii_test.go",
+      "inputs": {
+        "text": "Card 4111-1111-1111-1111"
+      },
+      "expected": {
+        "entities": ["4111-1111-1111-1111"],
+        "scrubbed": "Card [CREDIT_CARD_1]"
+      }
+    },
+    {
+      "description": "PII: multiple_emails",
+      "source_test": "pii_test.go",
+      "inputs": {
+        "text": "From john@example.com to jane@example.com"
+      },
+      "expected": {
+        "entities": ["john@example.com", "jane@example.com"],
+        "scrubbed": "From [EMAIL_1] to [EMAIL_2]"
+      }
+    },
+    {
+      "description": "PII: no_pii",
+      "source_test": "pii_test.go",
+      "inputs": {
+        "text": "The weather is nice today"
+      },
+      "expected": {
+        "entities": null,
+        "scrubbed": "The weather is nice today"
+      }
+    },
+    {
+      "description": "PII: mixed_pii",
+      "source_test": "pii_test.go",
+      "inputs": {
+        "text": "Contact john@example.com or call 555-123-4567"
+      },
+      "expected": {
+        "entities": ["john@example.com", "555-123-4567"],
+        "scrubbed": "Contact [EMAIL_1] or call [PHONE_1]"
+      }
+    }
+  ]
+}

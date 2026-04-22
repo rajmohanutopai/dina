@@ -8,6 +8,14 @@ Covers:
   S5.5 Volumes and secrets mounting.
   S5.6 Install script behaviour.
   S5.7 Secrets management (tmpfs, .env, .gitignore).
+
+**Lite migration (task 8.10).** Tests that assert against the Go/Python
+compose topology (multi-net `dina-brain-net` / `dina-pds-net` isolation,
+local PDS sidecar) carry `skip_in_lite` markers at the class level.
+Lite ships a single-bridge compose (`dina-lite`) and connects to an
+external PDS; the isolation invariants are architecturally different,
+not a Lite bug. All skips registered in
+`tests/integration/LITE_SKIPS.md` under category `environmental`.
 """
 
 from __future__ import annotations
@@ -39,6 +47,11 @@ from tests.integration.mocks import (
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.skip_in_lite(
+    reason="Lite compose has a single `dina-lite` bridge; Go's multi-net "
+    "`dina-brain-net` + `dina-pds-net` topology isolation invariants don't "
+    "translate — see LITE_SKIPS.md category `environmental`"
+)
 class TestNetworkIsolation:
     """Verify Docker network segmentation between containers."""
 
@@ -301,6 +314,10 @@ class TestHealthAndLogs:
 
     # TST-INT-099
     # TRACE: {"suite": "INT", "case": "0099", "section": "05", "sectionName": "Docker Networking & Isolation", "subsection": "02", "scenario": "06", "title": "pds_healthcheck_endpoint"}
+    @pytest.mark.skip_in_lite(
+        reason="Lite compose has no PDS sidecar — connects to external "
+        "test-pds.dinakernel.com. Not a Lite bug; architectural split."
+    )
     def test_pds_healthcheck_endpoint(
         self, mock_compose: MockDockerCompose
     ) -> None:

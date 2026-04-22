@@ -1,0 +1,54 @@
+{
+  "domain": "gatekeeper/sharing",
+  "version": 1,
+  "generated_from": "gatekeeper_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "full → keeps everything",
+      "source_test": "",
+      "inputs": {
+        "tier": "full"
+      },
+      "expected": {
+        "keeps_body": true,
+        "keeps_l0l1": true
+      }
+    },
+    {
+      "description": "summary → keeps L0/L1, removes body",
+      "source_test": "",
+      "inputs": {
+        "tier": "summary"
+      },
+      "expected": {
+        "keeps_body": false,
+        "keeps_l0l1": true
+      }
+    },
+    {
+      "description": "none → removes entirely",
+      "source_test": "",
+      "inputs": {
+        "tier": "none"
+      },
+      "expected": {
+        "keeps_body": false,
+        "keeps_l0l1": false,
+        "returns_null": true
+      }
+    },
+    {
+      "description": "locked → removes entirely",
+      "source_test": "",
+      "inputs": {
+        "tier": "locked"
+      },
+      "expected": {
+        "keeps_body": false,
+        "keeps_l0l1": false,
+        "returns_null": true
+      }
+    }
+  ]
+}

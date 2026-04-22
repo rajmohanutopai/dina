@@ -1,0 +1,95 @@
+# syntax=docker/dockerfile:1.7
+#
+# Home Node Lite — Brain server container.
+#
+# Multi-stage build — Phase 7b of docs/HOME_NODE_LITE_TASKS.md.
+# Satisfies tasks 7.10 (this file), 7.11 (slimmer than core — no argon2),
+# 7.12 (EXPOSE 8200), 7.13 (HEALTHCHECK + CMD).
+#
+# **Slimmer than Dockerfile.core** because Brain owns no keys and holds
+# no encrypted vault:
+#   - No argon2 (that's Core's KEK derivation)
+#   - No libsodium (D2D sealed-box opens on the Core side)
+#   - No SQLCipher binding (Brain never touches storage directly)
+# Native-toolchain deps in the builder are kept minimal for this
+# reason — Brain's native surface is just pino-pretty + node-llama-cpp
+# (if a local model profile is enabled, which is opt-in per task 5.29).
+#
+# Build context: repo root.
+#   docker build -f apps/home-node-lite/docker/Dockerfile.brain -t dina-lite-brain:dev .
+#
+# Same `tsx` at runtime TODO as Dockerfile.core — see the M1+
+# optimisation note there for context.
+
+# ─── Builder stage ────────────────────────────────────────────────────────
+FROM node:22-alpine AS builder
+
+# Toolchain kept minimal — no build-base unless a native dep asks for it.
+# The lightest practical combo for Brain's current dep set. If Phase 5d
+# lands local llama via node-llama-cpp, extend here or split a
+# separate `Dockerfile.brain-local-llm` profile.
+RUN apk add --no-cache python3
+
+WORKDIR /workspace
+
+COPY package.json package-lock.json ./
+COPY tsconfig.base.json tsconfig.json ./
+
+# Workspace package manifests (same set as core — npm ci resolves the
+# graph before any src file exists, so this list doesn't vary by which
+# app we're building).
+COPY packages/protocol/package.json packages/protocol/tsconfig.json packages/protocol/
+COPY packages/core/package.json packages/core/tsconfig.json packages/core/
+COPY packages/brain/package.json packages/brain/tsconfig.json packages/brain/
+COPY packages/crypto-node/package.json packages/crypto-node/tsconfig.json packages/crypto-node/
+COPY packages/storage-node/package.json packages/storage-node/tsconfig.json packages/storage-node/
+COPY packages/fs-node/package.json packages/fs-node/tsconfig.json packages/fs-node/
+COPY packages/net-node/package.json packages/net-node/tsconfig.json packages/net-node/
+COPY packages/keystore-node/package.json packages/keystore-node/tsconfig.json packages/keystore-node/
+COPY packages/adapters-node/package.json packages/adapters-node/tsconfig.json packages/adapters-node/
+COPY packages/fixtures/package.json packages/fixtures/
+COPY packages/test-harness/package.json packages/test-harness/tsconfig.json packages/test-harness/
+COPY apps/home-node-lite/brain-server/package.json apps/home-node-lite/brain-server/tsconfig.json apps/home-node-lite/brain-server/
+
+RUN npm ci --workspaces --include-workspace-root
+
+COPY packages/ ./packages/
+COPY apps/home-node-lite/brain-server/ ./apps/home-node-lite/brain-server/
+
+# ─── Runtime stage ────────────────────────────────────────────────────────
+FROM node:22-alpine AS runtime
+
+RUN apk add --no-cache tini
+
+# Dedicated non-root user. UID 10001 matches Core's — they're different
+# containers so UID overlap in the image is fine; what matters is that
+# neither process runs as root and neither has write access to the
+# other's bind mounts (enforced at compose-file layer, task 7.16).
+RUN addgroup -g 10001 -S dina \
+ && adduser  -u 10001 -S -G dina -s /sbin/nologin dina
+
+WORKDIR /app
+
+# Copy built workspace verbatim (see Dockerfile.core's equivalent
+# comment). The tsx devDep ships in runtime until the composite-build
+# M1+ optimisation lands.
+COPY --from=builder --chown=dina:dina /workspace ./
+
+USER dina
+
+# Brain listens on 8200 per DEFAULT_BRAIN_PORT in @dina/protocol +
+# our brain-server config.
+EXPOSE 8200
+
+# No /var/lib/dina volume here — Brain holds no persistent state.
+# Ephemeral working memory + agent-session state live in RAM, lost on
+# restart by design (the audit trail + persona vaults live in Core).
+
+ENV NODE_ENV=production \
+    DINA_BRAIN_HOST=0.0.0.0
+
+HEALTHCHECK --start-period=30s --interval=30s --timeout=5s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:8200/healthz || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node_modules/.bin/tsx", "apps/home-node-lite/brain-server/src/bin.ts"]

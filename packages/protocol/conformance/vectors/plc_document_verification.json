@@ -1,0 +1,60 @@
+{
+  "name": "plc_document_verification",
+  "description": "Canonical Dina-flavoured PLC DID document. Pinning the field shape, context set, verification-method fragment (#dina_signing), messaging-service fragment (#dina_messaging), and Multikey encoding. Shape-level only — Ed25519 / secp256k1 signature verification is out-of-scope for this vector (that lands in task 10.11 / crypto-backed vectors).",
+  "level": "L1",
+  "task": "10.13",
+  "producer": {
+    "tool": "Hand-assembled to match @dina/core/src/identity/did_document.ts output shape; conforming to packages/protocol/src/types/plc_document.ts.",
+    "frozen_at": "2026-04-22"
+  },
+  "document": {
+    "@context": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/security/multikey/v1"
+    ],
+    "id": "did:plc:example7alonso7alice012345ab",
+    "verificationMethod": [
+      {
+        "id": "did:plc:example7alonso7alice012345ab#dina_signing",
+        "type": "Multikey",
+        "controller": "did:plc:example7alonso7alice012345ab",
+        "publicKeyMultibase": "z6MkjYDx4Wr3pPd3HuxM6qQHyNvaNN5Y7RSk9xNoTr8Anhdx"
+      }
+    ],
+    "authentication": [
+      "did:plc:example7alonso7alice012345ab#dina_signing"
+    ],
+    "service": [
+      {
+        "id": "did:plc:example7alonso7alice012345ab#dina_messaging",
+        "type": "DinaMsgBox",
+        "serviceEndpoint": "wss://msgbox.dinakernel.com/ws"
+      }
+    ],
+    "created": "2026-04-22T10:30:00.000Z"
+  },
+  "assertions": {
+    "context_must_include": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/security/multikey/v1"
+    ],
+    "verification_method_fragment": "#dina_signing",
+    "backward_compat_accepted_fragment": "#dina-signing",
+    "messaging_service_fragment": "#dina_messaging",
+    "backward_compat_accepted_messaging_fragment": "#dina-messaging",
+    "verification_method_type": "Multikey",
+    "publicKeyMultibase_prefix": "z",
+    "allowed_service_types": ["DinaMsgBox", "DinaDirectHTTPS"],
+    "id_format_regex": "^did:plc:[a-z0-9]{24,}$",
+    "authentication_references_verification_method": true,
+    "created_format": "RFC3339 with fractional seconds, Z-suffixed"
+  },
+  "notes": [
+    "publicKeyMultibase uses multibase base58-btc encoding (z-prefix). The 34-byte payload for Ed25519 is: multicodec prefix 0xed 0x01 (2 bytes) followed by 32 bytes of raw Ed25519 public key.",
+    "The #dina_signing fragment (underscore form) is the publish-time canonical; readers MUST also accept the legacy #dina-signing (hyphen) form for backward compat with pre-0.14 Dina builds. Same backward-compat rule applies to #dina_messaging.",
+    "service[].type is one of two literal strings: DinaMsgBox (for MsgBox-relayed D2D) or DinaDirectHTTPS (for direct-to-home-node over HTTPS). Anything else is non-conforming.",
+    "did:plc identifier body is 24 or more lowercase alphanumeric characters (Bluesky's PLC spec — base32 over the truncated SHA-256 of the genesis record). The example 'example7alonso7alice012345ab' is a test fixture and not a real registered DID.",
+    "authentication[] is a list of verification-method URIs. Each entry MUST be the full URL form (DID + fragment), not just the fragment.",
+    "The document is JSON-serialised with arbitrary key order — unlike DinaMessage, the PLC document is a W3C DID doc and consumers (Bluesky infra, AT Protocol relays) accept any key ordering. Dina's emitter picks a stable order for readability but does not depend on it for signatures."
+  ]
+}

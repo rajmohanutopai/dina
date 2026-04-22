@@ -1,0 +1,21 @@
+{
+  "domain": "identity/did",
+  "version": 1,
+  "generated_from": "identity_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Seed → SLIP-0010 root key → did:key",
+      "source_test": "identity_test.go + identity_deterministic_test.go",
+      "inputs": {
+        "path": "m/9999'/0'/0'",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "did": "did:key:z6MkrSrpHH6hHMuEkWC8bebwRPTkdSWfHHC5a7EiXEWDMhsh",
+        "did_prefix": "did:key:z6Mk",
+        "public_key_hex": "b231fa3ad71ccd526628fe9c82df5187caa4b9c10c7d4b7463813979dda0db5c"
+      }
+    }
+  ]
+}

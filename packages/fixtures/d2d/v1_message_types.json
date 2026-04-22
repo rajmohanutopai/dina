@@ -1,0 +1,87 @@
+{
+  "domain": "d2d/families",
+  "version": 1,
+  "generated_from": "domain/d2d.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "coordination.response",
+      "source_test": "d2d_v1_domain_test.go",
+      "inputs": {
+        "message_type": "coordination.response"
+      },
+      "expected": {
+        "always_passes": false,
+        "stored": true
+      }
+    },
+    {
+      "description": "social.update",
+      "source_test": "d2d_v1_domain_test.go",
+      "inputs": {
+        "message_type": "social.update"
+      },
+      "expected": {
+        "always_passes": false,
+        "stored": true,
+        "vault_type": "relationship_note"
+      }
+    },
+    {
+      "description": "safety.alert",
+      "source_test": "d2d_v1_domain_test.go",
+      "inputs": {
+        "message_type": "safety.alert"
+      },
+      "expected": {
+        "always_passes": true,
+        "stored": true
+      }
+    },
+    {
+      "description": "trust.vouch.request",
+      "source_test": "d2d_v1_domain_test.go",
+      "inputs": {
+        "message_type": "trust.vouch.request"
+      },
+      "expected": {
+        "always_passes": false,
+        "stored": true
+      }
+    },
+    {
+      "description": "trust.vouch.response",
+      "source_test": "d2d_v1_domain_test.go",
+      "inputs": {
+        "message_type": "trust.vouch.response"
+      },
+      "expected": {
+        "always_passes": false,
+        "stored": true,
+        "vault_type": "trust_attestation"
+      }
+    },
+    {
+      "description": "presence.signal",
+      "source_test": "d2d_v1_domain_test.go",
+      "inputs": {
+        "message_type": "presence.signal"
+      },
+      "expected": {
+        "always_passes": false,
+        "stored": false
+      }
+    },
+    {
+      "description": "coordination.request",
+      "source_test": "d2d_v1_domain_test.go",
+      "inputs": {
+        "message_type": "coordination.request"
+      },
+      "expected": {
+        "always_passes": false,
+        "stored": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "domain": "auth/ratelimit",
+  "version": 1,
+  "generated_from": "ratelimit_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "under limit → allowed",
+      "source_test": "",
+      "inputs": {
+        "limit": "50",
+        "requests": "5",
+        "window": "60s"
+      },
+      "expected": {
+        "allowed": true
+      }
+    },
+    {
+      "description": "at limit → allowed",
+      "source_test": "",
+      "inputs": {
+        "limit": "50",
+        "requests": "50"
+      },
+      "expected": {
+        "allowed": true
+      }
+    },
+    {
+      "description": "over limit → rejected",
+      "source_test": "",
+      "inputs": {
+        "limit": "50",
+        "requests": "51"
+      },
+      "expected": {
+        "allowed": false
+      }
+    },
+    {
+      "description": "different DIDs independent",
+      "source_test": "",
+      "inputs": {
+        "did_a_requests": "50",
+        "did_b_requests": "1",
+        "limit": "50"
+      },
+      "expected": {
+        "did_a_allowed": false,
+        "did_b_allowed": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "name": "d2d_envelope_round_trip",
+  "description": "buildMessageJSON output for a representative DinaMessage — pinned key order + to-array normalisation. Consumed by __tests__/conformance_vectors.test.ts.",
+  "level": "L2",
+  "task": "10.12",
+  "producer": {
+    "tool": "packages/protocol/src/envelope_builder.ts :: buildMessageJSON",
+    "frozen_at": "2026-04-22"
+  },
+  "cases": [
+    {
+      "name": "single_recipient_string_lifted_to_array",
+      "inputs": {
+        "id": "m-0001",
+        "type": "presence.signal",
+        "from": "did:plc:alice",
+        "to": "did:plc:bob",
+        "created_time": 1745318400,
+        "bodyBase64": "PGJhc2U2NCBjb250ZW50Pg=="
+      },
+      "expected_json_string": "{\"id\":\"m-0001\",\"type\":\"presence.signal\",\"from\":\"did:plc:alice\",\"to\":[\"did:plc:bob\"],\"created_time\":1745318400,\"body\":\"PGJhc2U2NCBjb250ZW50Pg==\"}"
+    },
+    {
+      "name": "already_array_recipient",
+      "inputs": {
+        "id": "m-0002",
+        "type": "service.query",
+        "from": "did:plc:alonso",
+        "to": ["did:plc:busdriver"],
+        "created_time": 1745318410,
+        "bodyBase64": "eyJxdWVyeV9pZCI6InEtYWJjIn0="
+      },
+      "expected_json_string": "{\"id\":\"m-0002\",\"type\":\"service.query\",\"from\":\"did:plc:alonso\",\"to\":[\"did:plc:busdriver\"],\"created_time\":1745318410,\"body\":\"eyJxdWVyeV9pZCI6InEtYWJjIn0=\"}"
+    },
+    {
+      "name": "multi_recipient_array",
+      "inputs": {
+        "id": "m-0003",
+        "type": "nudge.invite",
+        "from": "did:plc:alice",
+        "to": ["did:plc:bob", "did:plc:carol"],
+        "created_time": 1745318420,
+        "bodyBase64": ""
+      },
+      "expected_json_string": "{\"id\":\"m-0003\",\"type\":\"nudge.invite\",\"from\":\"did:plc:alice\",\"to\":[\"did:plc:bob\",\"did:plc:carol\"],\"created_time\":1745318420,\"body\":\"\"}"
+    },
+    {
+      "name": "service_response_short_body",
+      "inputs": {
+        "id": "m-0004",
+        "type": "service.response",
+        "from": "did:plc:busdriver",
+        "to": "did:plc:alonso",
+        "created_time": 1745318430,
+        "bodyBase64": "eyJzdGF0dXMiOiJvayJ9"
+      },
+      "expected_json_string": "{\"id\":\"m-0004\",\"type\":\"service.response\",\"from\":\"did:plc:busdriver\",\"to\":[\"did:plc:alonso\"],\"created_time\":1745318430,\"body\":\"eyJzdGF0dXMiOiJvayJ9\"}"
+    }
+  ],
+  "notes": [
+    "Key order is pinned: id → type → from → to → created_time → body. Reordering breaks cross-runtime Ed25519 signature verification.",
+    "`to` is always an array on the wire even for a single recipient — buildMessageJSON lifts bare strings via `Array.isArray(msg.to) ? msg.to : [msg.to]`.",
+    "`created_time` is Unix seconds as an integer (not quoted string).",
+    "bodyBase64 is the standard alphabet (A-Z, a-z, 0-9, +, /, =). Empty body is the empty string — NOT `null` or absent.",
+    "Output is compact JSON — no whitespace, no trailing newline. This is what gets signed for D2D messages."
+  ]
+}

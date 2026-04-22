@@ -324,3 +324,64 @@ The same philosophy applies to our signing keys, and this is where the AT Protoc
 If a signing key feels compromised, you simply swap it out and update your AT Protocol registry (did:plc) to broadcast your new Public Key. From that moment on, AppViews will check any new data you produce against this new key.
 
 But what about the data you signed last year? Because the AT Protocol is temporal (time-aware), your historical data is completely fine. When an AppView checks an old signature, it looks at the registry's timeline and says, "Ah, this was signed with the Public Key that was officially active during that specific start and end time." By isolating the Master Seed, we get the agility to swap out our keys whenever we need to, without ever orphaning our past or losing our data.
+
+## The Core / Brain Boundary — Same Architecture, Two Different Enforcements
+
+There is one more piece of the security story worth spelling out, because it trips people up. Dina is built as two halves that never trust each other the same way: **Core** is the vault keeper that owns the keys and the encrypted database files, and **Brain** is the analyst that thinks, plans, calls LLMs, and orchestrates agents. The rule is simple — Brain cannot touch the vault directly. Every read and every write goes through a narrow, audited HTTP API on Core. Even if someone compromises the Brain process — a prompt injection, a malicious agent, a buggy plugin — the blast radius is bounded by what that API is willing to let them do.
+
+That architecture is identical on every deployment Dina runs. But **how** that boundary is enforced has to change depending on where Dina is running, and that's worth understanding.
+
+### On a server (both the Go/Python stack and the TypeScript Lite stack)
+
+On a server — a Raspberry Pi, a small VPS, a home mini-PC — the boundary is enforced the strong way: **two separate OS processes**, each in its own Docker container, with a signed HTTP call between them.
+
+What this gets you:
+
+- **Process isolation.** The OS kernel sits between the two halves. Brain has its own memory, its own file descriptors, its own process ID. A memory-corruption bug in Brain cannot reach into Core's address space, because they don't share one.
+- **Filesystem isolation.** Core's private key lives on disk at a path that is only bind-mounted into the Core container. Brain's container has no path that resolves to that file. If Brain tries to `open("/var/lib/dina/service.key")` it gets `ENOENT` — the file genuinely does not exist in its view of the filesystem. This is not a permission check you can forget to enable; it's the absence of the file from the mount namespace.
+- **Cryptographic requests.** Every request Brain makes to Core carries four headers — `X-DID`, `X-Timestamp`, `X-Nonce`, `X-Signature` — over canonical-JSON-signed with Ed25519. Core verifies the signature before routing the request. A compromised Brain can still make legal requests, but it can't forge Core's identity, and it can't replay old requests (the timestamp window and the nonce cache block that).
+- **Audit trail.** Every authenticated request is recorded. If Brain ever did something it shouldn't, the audit log shows which DID did what when.
+
+If you imagine the worst — an attacker gets remote code execution inside Brain — the most they can do is make the same requests Brain was already authorised to make, within the 4-tier persona gating, subject to the same rate limits and audit trail. They cannot read unlocked vault files directly, because they don't have access to them. They cannot steal the root signing key, because it was never in their process.
+
+That's the boundary on server. The same story whether you're running the long-standing Go/Python production stack or the newer TypeScript Lite stack — both use two Docker containers, bind-mounted separately, and Brain speaks to Core over signed HTTP on an internal loopback port. You get the full process-isolation boundary either way.
+
+### On mobile (TypeScript Lite stack only)
+
+On a phone — iOS or Android running the Expo app that ships from `apps/mobile/` — things are different, and I want to be up front about that.
+
+Mobile platforms run one JavaScript VM. React Native does not spin up two processes for one app. Brain and Core both execute inside that single VM, sharing the same memory, the same event loop, the same GC heap. You cannot drop a Docker container between them because there are no Docker containers, and you cannot drop an OS process between them because the mobile OS actively discourages multi-process apps (they eat battery, they get killed under memory pressure, and the sandboxing they buy you is weaker than the sandbox that the mobile OS itself has already put around your whole app).
+
+So on mobile the boundary is enforced differently — the TypeScript import graph is the boundary. Brain imports the `CoreClient` interface from `@dina/core`, not any of Core's internals. At wire-up time, the app gives Brain an `InProcessTransport` which dispatches typed method calls through Core's router directly. Same method shapes, same typed results, same handler-level gatekeeper code — but no HTTP hop, no Ed25519 signing. Signing with keys Brain already has access to does not add security when both halves run in the same VM, so we don't do the ceremony.
+
+What does this buy you, and what doesn't it?
+
+- **You still get the handler-level enforcement.** The sensitive-persona gatekeeper still requires unlock. The locked-persona check still returns the typed `locked` error instead of reading the vault. The audit log still records every call. All the rules that live **inside** Core's handlers run regardless of who called them or how.
+- **You still get the TypeScript rules.** Brain code is only allowed to import `CoreClient` — not any file inside `@dina/core/src/vault/`, not the SQLCipher adapter directly, not the raw crypto helpers. We enforce that with an ESLint rule (task 1.33) so drift gets caught in code review.
+- **You do not get process isolation.** A memory-corruption bug in Brain — say a buggy native module the mobile app pulled in — could in principle touch Core's data structures because they live in the same process. This is the weaker ceiling. It is also the ceiling that every mobile app operates within: the real isolation boundary on mobile is the one the OS provides around the whole app, and that one remains intact.
+- **You do not get filesystem isolation.** The process that runs Brain is the same process that runs Core, so "the file Brain can read" and "the file Core can read" are the same set of files. Operating on the assumption that Brain is honest is not a choice we like, but it is a choice we accept given the constraint.
+
+The honest summary is this: **on server, the boundary is enforced by the operating system. On mobile, the boundary is enforced by the code path you take to reach Core.** The first is stronger; the second is still meaningful, because the handler-level rules still run and because the TypeScript structure makes accidental misuse obvious to any reviewer.
+
+### Why this is an acceptable trade-off, not a silent compromise
+
+Two reasons.
+
+First, the mobile ceiling is defined by the platform, not by us. No matter how hard we tried, we couldn't build stronger isolation between Brain and Core on mobile than the platform gives us around the whole app. If we ran two processes, the OS would kill one of them under memory pressure. If we forked one process to handle vault reads, the IPC would be slow and the OS would charge us for it in battery. The ceiling is fixed; our job is to come as close to it as practical without burning the user's battery doing so.
+
+Second, the things that matter most on mobile are actually the things that still work:
+
+- Encrypted vault files at rest — unchanged. Same SQLCipher encryption, same per-persona DEKs, same sealed storage.
+- Sensitive-persona gatekeeper — unchanged. A persona that requires a passphrase still requires one, regardless of whether Brain asked via HTTP or via in-process dispatch.
+- Audit log — unchanged. Every read and every write gets a row.
+- Key derivation — unchanged. Master seed never hits disk unencrypted; DEKs derive via HKDF from the in-memory seed; seed is wiped after derivation.
+- Trust Network rules, service-query validation, Dina-to-Dina envelope signing — unchanged.
+
+What changes is the address-space barrier between two halves of Dina's own code. That barrier is the one we give up to make the mobile story viable. We think that's the right call, and we'd rather tell you clearly than paper over it.
+
+### Where this is written down
+
+- The high-level decision lives in `ARCHITECTURE.md` — see *Architectural Decision: Two-Stack Implementation*.
+- The CoreClient interface that both transports implement lives in `packages/core/src/client/core-client.ts`.
+- The lint rule that keeps Brain honest about its import graph lives in `eslint.config.mjs` under the *Transport isolation for @dina/brain* block (task 1.33).
+- If you want to verify the server-side file-isolation claim yourself, the Docker bind-mount layout is documented in `docs/HOME_NODE_LITE_TASKS.md` phase 7c and cross-checked by task 11.11.

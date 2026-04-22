@@ -1,0 +1,48 @@
+{
+  "domain": "trust/scoring",
+  "version": 1,
+  "generated_from": "brain/tests/test_trust_scorer.py",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "user content → self",
+      "inputs": { "sender": "user", "source": "personal", "channel": "chat" },
+      "expected": { "trust": "self", "confidence": "high", "policy": "normal" }
+    },
+    {
+      "description": "CLI source → self",
+      "inputs": { "sender": "user", "source": "cli", "channel": "cli" },
+      "expected": { "trust": "self", "confidence": "high", "policy": "normal" }
+    },
+    {
+      "description": "telegram → self",
+      "inputs": { "sender": "user", "source": "telegram", "channel": "chat" },
+      "expected": { "trust": "self", "confidence": "high", "policy": "normal" }
+    },
+    {
+      "description": "known contact by email",
+      "inputs": { "sender": "alice@example.com", "source": "gmail", "channel": "connector" },
+      "expected": { "trust": "contact_ring1", "confidence": "medium", "policy": "normal" }
+    },
+    {
+      "description": "known contact by alias",
+      "inputs": { "sender": "Ali", "source": "gmail", "channel": "connector" },
+      "expected": { "trust": "contact_ring1", "confidence": "medium", "policy": "normal" }
+    },
+    {
+      "description": "unknown sender",
+      "inputs": { "sender": "stranger@x.com", "source": "gmail", "channel": "connector" },
+      "expected": { "trust": "unknown", "confidence": "low", "policy": "caveated" }
+    },
+    {
+      "description": "marketing sender",
+      "inputs": { "sender": "noreply@promo.com", "source": "gmail", "channel": "connector" },
+      "expected": { "trust": "marketing", "confidence": "low", "policy": "briefing_only" }
+    },
+    {
+      "description": "missing sender → caveated",
+      "inputs": { "sender": "", "source": "gmail", "channel": "connector" },
+      "expected": { "trust": "unknown", "confidence": "low", "policy": "caveated" }
+    }
+  ]
+}

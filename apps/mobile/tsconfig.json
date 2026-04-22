@@ -1,0 +1,12 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@dina/core/*": ["../core/src/*"],
+      "@dina/brain/*": ["../brain/src/*"]
+    }
+  },
+  "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

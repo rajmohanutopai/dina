@@ -1,0 +1,44 @@
+{
+  "domain": "vault/lifecycle",
+  "version": 1,
+  "generated_from": "vault_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "tier": "default",
+      "auto_opens": true,
+      "needs_approval": false,
+      "needs_passphrase": false,
+      "brain_can_access": true,
+      "agent_without_grant": true,
+      "agent_with_grant": true
+    },
+    {
+      "tier": "standard",
+      "auto_opens": true,
+      "needs_approval": false,
+      "needs_passphrase": false,
+      "brain_can_access": true,
+      "agent_without_grant": false,
+      "agent_with_grant": true
+    },
+    {
+      "tier": "sensitive",
+      "auto_opens": false,
+      "needs_approval": true,
+      "needs_passphrase": false,
+      "brain_can_access": false,
+      "agent_without_grant": false,
+      "agent_with_grant": true
+    },
+    {
+      "tier": "locked",
+      "auto_opens": false,
+      "needs_approval": false,
+      "needs_passphrase": true,
+      "brain_can_access": false,
+      "agent_without_grant": false,
+      "agent_with_grant": false
+    }
+  ]
+}

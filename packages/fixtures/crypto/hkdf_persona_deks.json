@@ -1,0 +1,195 @@
+{
+  "domain": "crypto/hkdf",
+  "version": 1,
+  "generated_from": "crypto/hkdf.go DeriveVaultDEK",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "HKDF DEK for persona 'identity'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:identity:dek:v1",
+        "derived_salt_hex": "a1d1d69eb488dfaedd52c59fbed3d55ac7d591854874c677baf511676360cc4a",
+        "info_string": "dina:vault:identity:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "identity",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "c071d7fd326330f2f5cf73d6f31aa4986e313f4d1f052000aa240eacd3f73afa",
+        "dek_hex": "638321f51dc61c139fbcaa163b36b73db9d946a4cd815fad4b2ddade91e4babf",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'general'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:general:dek:v1",
+        "derived_salt_hex": "47abf7b877f8ee19c47d933707053e3fcb267cf0419c64dd28d73f10d5695437",
+        "info_string": "dina:vault:general:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "general",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "d3912bb596e57b546663116dbbb5ab8906d900fdc508a21a219fd2ebc87d28aa",
+        "dek_hex": "77f41301b0d76cb28e7f0a9e110fe472bb05cce56f2bf5ad674b8032b1724ba1",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'personal'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:personal:dek:v1",
+        "derived_salt_hex": "0ae515d02921e1d2b0510024df0e465a022ed2b8c25916698715187afc6dcddf",
+        "info_string": "dina:vault:personal:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "personal",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "160232a08723fc74132642e30db1d42dedcb78c32cb66964b28bcaffac6155ce",
+        "dek_hex": "10caf06fb6365ccda608b255cb87599e11779130a69bffd745f65263ddb2c2f1",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'health'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:health:dek:v1",
+        "derived_salt_hex": "457f245b5dcd40649d9f8d3bb4ec1e973c40f3e96da04f9683af71c703a1ff5c",
+        "info_string": "dina:vault:health:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "health",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "b5c5059c7f0634031373e9387a7a32cfc039f89fc5465ae62dfb2b5772dc6fec",
+        "dek_hex": "356119e63d4facbe7997dced3fdecdb03efe74ed78d9b1a5bb2170ce80c659ad",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'social'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:social:dek:v1",
+        "derived_salt_hex": "14437fd54b9b93c35680af8ac84d65712f77e0f3c84330fbb2286e7781138c47",
+        "info_string": "dina:vault:social:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "social",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "a657dcca0155de604d686789047d3955c575666fad9c1fa255b90176d15c01e8",
+        "dek_hex": "c824581cc07b49e428704969773a32398a7cb0281c81c1e2ca8e0e2183256c8c",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'consumer'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:consumer:dek:v1",
+        "derived_salt_hex": "bcfde3cc8d622c40d3ee374b376295e5c1f3d0de7886ca7647ab115fbf3e86b8",
+        "info_string": "dina:vault:consumer:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "consumer",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "57a3f9bf77394b5c7d89a009ac3d35f351a0d65cdfde22b176180f4af6be8491",
+        "dek_hex": "5366aa92bb10ef4ab76e8940c78fac3f6b2fedc11d356b78fe838b4c0485ddee",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'backup'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:backup:dek:v1",
+        "derived_salt_hex": "45cea171f6a5529d1d72b380f0a8c0d8ed676e1192116ff40ab7a134d7d09593",
+        "info_string": "dina:vault:backup:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "backup",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "990a0eeb83d23530d6c5b516a77223c4c153e51ad055183467721b2a364ca502",
+        "dek_hex": "6a0e5602e33b10a9a7e8b6b9de140fb055b6e4bd3af34366da1a6e814d36cd31",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'archive'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:archive:dek:v1",
+        "derived_salt_hex": "f91da4bf63faf83fd489ef0c1588c43b27c62c2c9daa2c53fef70f489a8788d0",
+        "info_string": "dina:vault:archive:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "archive",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "7070473de0a4156e44d693481c4f71528fc68be25e5d7a9773bc1ac5d23244f9",
+        "dek_hex": "3b43b134ba9b7f8d29c57e98470a68284125e0bb24f709ce7dc6d545257fa4e2",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'financial'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:financial:dek:v1",
+        "derived_salt_hex": "da1ba3836e6085d709566513a3fd2916fcf3ab23dda7887352d5c437c2a763a3",
+        "info_string": "dina:vault:financial:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "financial",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "9fdbda7dd27fb7d6c7c7854a5e19e9a78a0586faa0fb21272478fd6c5dcffc81",
+        "dek_hex": "9719eba168806e95ebf2604f56168fb7b157da98f7350bdf5a6b83d1d52dbb3f",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'sync'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:sync:dek:v1",
+        "derived_salt_hex": "009f23386e60f53566dc2a6f1e0beb4a8af4ca6cc10af09bdd93c2a0f58c9aa4",
+        "info_string": "dina:vault:sync:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "sync",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "4b421ce09a99471512d03e72303a3cf4ddde9daf9fcf74d184c769b0b7f76f21",
+        "dek_hex": "a0614a4e0becc2b2dff36618ff5c34edd4cc4b1e211333c3628c7bf39ee9bb85",
+        "dek_length": "32"
+      }
+    },
+    {
+      "description": "HKDF DEK for persona 'trust'",
+      "source_test": "crypto_test.go TestCrypto_3",
+      "inputs": {
+        "canonical_info": "dina:persona:trust:dek:v1",
+        "derived_salt_hex": "9796942b481091be6dc10aa9f66ec6c9b08b49c44e62419dac07a2d6829e58a1",
+        "info_string": "dina:vault:trust:v1",
+        "master_seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70",
+        "persona_name": "trust",
+        "user_salt_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      "expected": {
+        "dek_hash_hex": "c55d161867f36956419610e00ca672c35215b7c9164f50e9b595cf524958fd56",
+        "dek_hex": "3f3d5aad96eef5cb55b0111204e7cd9804a360b4e68e6bb91b411ccc74eca7cc",
+        "dek_length": "32"
+      }
+    }
+  ]
+}

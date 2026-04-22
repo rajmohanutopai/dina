@@ -30,6 +30,23 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+# Task 8.45 migration prep. Draft-Don't-Send protocol (Dina never sends
+# emails or executes payments on its own; creates drafts + payment
+# intents in Tier 4 staging; human reviews and approves). 8 classes
+# covering draft protocol, payment intents, draft lifecycle, concurrent
+# approvals, approval payload mutation, agent send downgrade, cart
+# handover lifecycle, approval survives brain crash. M5 scope —
+# depends on M2 staging (task 8.15 TestTier4Staging) + approval UI +
+# safety-layer (task 8.47) + cart-handover (task 8.25) + crash-recovery
+# (task 8.29).
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Draft-Don't-Send protocol (drafts + payment intents in Tier 4 "
+    "staging; human-approved send/pay) is the M5 integration of Silence "
+    "First + never-touch-money. Depends on M2 staging + safety-layer + "
+    "cart-handover + crash-recovery. LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # TestDraftProtocol

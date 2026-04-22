@@ -217,7 +217,14 @@ func (dm *DIDManager) RePersistCurrentDID() error {
 	for did, doc := range dm.dids {
 		if dm.messagingSvcType != "" && dm.messagingSvcEndpoint != "" {
 			doc.Service = []serviceEndpoint{{
-				ID:              did + "#dina-messaging",
+				// Matches the ATProto underscore convention and what every
+			// non-Dina consumer keys on. Earlier Dina builds emitted the
+			// hyphenated form which no one reads — the reader side
+			// (transport.go:findMessagingService) always looked for
+			// underscore, saved by an OR on svc.Type == "DinaMsgBox".
+			// New registrations emit underscore; existing PLC docs keep
+			// hyphen until a rotation op republishes.
+			ID:              did + "#dina_messaging",
 				Type:            dm.messagingSvcType,
 				ServiceEndpoint: dm.messagingSvcEndpoint,
 			}}
@@ -242,7 +249,7 @@ func (dm *DIDManager) buildServiceEndpoints(did string) []serviceEndpoint {
 		svcEndpoint = "https://localhost:8300"
 	}
 	return []serviceEndpoint{{
-		ID:              did + "#dina-messaging",
+		ID:              did + "#dina_messaging",
 		Type:            svcType,
 		ServiceEndpoint: svcEndpoint,
 	}}

@@ -1,0 +1,68 @@
+{
+  "domain": "auth/matrix",
+  "version": 1,
+  "generated_from": "authz_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "caller": "brain",
+      "path": "/v1/vault/query",
+      "allowed": true
+    },
+    {
+      "caller": "brain",
+      "path": "/v1/vault/store",
+      "allowed": true
+    },
+    {
+      "caller": "brain",
+      "path": "/v1/staging/ingest",
+      "allowed": true
+    },
+    {
+      "caller": "brain",
+      "path": "/v1/staging/claim",
+      "allowed": true
+    },
+    {
+      "caller": "admin",
+      "path": "/v1/persona/unlock",
+      "allowed": true
+    },
+    {
+      "caller": "admin",
+      "path": "/v1/devices",
+      "allowed": true
+    },
+    {
+      "caller": "admin",
+      "path": "/v1/export",
+      "allowed": true
+    },
+    {
+      "caller": "connector",
+      "path": "/v1/staging/ingest",
+      "allowed": true
+    },
+    {
+      "caller": "admin",
+      "path": "/v1/vault/query",
+      "allowed": false
+    },
+    {
+      "caller": "connector",
+      "path": "/v1/vault/store",
+      "allowed": false
+    },
+    {
+      "caller": "brain",
+      "path": "/v1/persona/unlock",
+      "allowed": false
+    },
+    {
+      "caller": "brain",
+      "path": "/v1/export",
+      "allowed": false
+    }
+  ]
+}

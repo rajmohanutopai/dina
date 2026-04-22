@@ -1,7 +1,24 @@
 """Shared pytest fixtures for Dina integration tests.
 
-Dual-mode: set DINA_INTEGRATION=docker to use real HTTP clients against
-Docker containers (docker-compose-test-stack.yml). Without it, uses mocks.
+Three modes (one at a time):
+
+- **mock** (default, env vars unset) — in-memory `Mock*` fixtures, fast
+  unit-scope feedback.
+- **docker** (`DINA_INTEGRATION=docker`) — real HTTP against Go Core +
+  Python Brain from `docker-compose-test-stack.yml`. Production-stack
+  parity test target.
+- **lite** (`DINA_LITE=docker`) — real HTTP against the TypeScript
+  Home Node Lite stack (`apps/home-node-lite/docker-compose.lite.yml`
+  or equivalent — fixture wiring lands in task 8.2). Phase 8 migration
+  target; per-test migration covered by tasks 8.5-8.11 (M1), 8.13-8.18
+  (M2), 8.20-8.26 (M3), 8.28-8.32 (M4), 8.34-8.51 (M5).
+
+`DINA_INTEGRATION=docker` and `DINA_LITE=docker` are mutually
+exclusive — setting both is a configuration error surfaced at import
+time. The selection of which stack a run targets is a per-session
+decision made by the test runner, not per-test; individual tests can
+opt out of Lite mode via `@pytest.mark.skip_in_lite` until their
+migration lands (see `tests/integration/LITE_SKIPS.md`).
 """
 
 from __future__ import annotations
@@ -15,10 +32,63 @@ import httpx
 import pytest
 
 # ---------------------------------------------------------------------------
-# Docker mode detection
+# Stack-selection mode detection (task 8.1)
 # ---------------------------------------------------------------------------
+#
+# `DOCKER_MODE` — target the Go/Python production stack over real HTTP.
+# `LITE_MODE`   — target the TypeScript Home Node Lite stack over real HTTP.
+#
+# Exactly one of these may be set per pytest session. Mock mode is the
+# default (neither env var set). If both are set, we fail loudly at
+# import time rather than silently pick one — the resulting mis-routed
+# test run would produce confusing false pass/fail signals.
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
+LITE_MODE = os.environ.get("DINA_LITE") == "docker"
+
+if DOCKER_MODE and LITE_MODE:
+    raise RuntimeError(
+        "DINA_INTEGRATION=docker and DINA_LITE=docker are mutually "
+        "exclusive. Pick exactly one target stack per test run: unset "
+        "the other env var, or run two separate sessions."
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the `skip_in_lite` marker so tests can opt out of Lite
+    mode while their migration to the Lite stack is still pending.
+
+    Usage:
+
+        @pytest.mark.skip_in_lite(reason="pending brain-server /api/v1/reason route — task 5.x")
+        def test_something(...):
+            ...
+
+    Every skip_in_lite usage must also appear in
+    `tests/integration/LITE_SKIPS.md` per task 8.58's registry rule.
+    """
+    config.addinivalue_line(
+        "markers",
+        "skip_in_lite(reason): skip this test when running under "
+        "DINA_LITE=docker. Must be paired with an entry in "
+        "tests/integration/LITE_SKIPS.md.",
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Apply `skip_in_lite` markers when running under DINA_LITE=docker."""
+    if not LITE_MODE:
+        return
+    for item in items:
+        mark = item.get_closest_marker("skip_in_lite")
+        if mark is None:
+            continue
+        reason = mark.kwargs.get("reason") or (
+            mark.args[0] if mark.args else "no reason given"
+        )
+        item.add_marker(pytest.mark.skip(reason=f"[skip_in_lite] {reason}"))
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +277,115 @@ def docker_services():
 
 
 # ---------------------------------------------------------------------------
+# Lite stack services (session-scoped) — task 8.2
+# ---------------------------------------------------------------------------
+#
+# Parallels `_IntegrationServices` for the TypeScript Home Node Lite
+# stack. Ports differ from the production Go stack (28100/28200 vs
+# 8100/8200) so a developer can run both stacks side-by-side on the
+# same host without port clash — handy for the cross-stack compat
+# checks in tasks 8.60/8.61.
+#
+# Single-actor model — Lite doesn't ship with an actor fleet (Don
+# Alonso, Sancho, ChairMaker, Albert) the way the production test
+# stack does. At M1 scope that's sufficient; multi-actor Lite lands
+# with Phase 9 user-story migration.
+#
+# Assumes containers are already up. Does NOT manage Docker lifecycle
+# — `prepare_non_unit_env.sh` (or a future `prepare_lite_env.sh`) is
+# responsible for `docker compose up`.
+
+
+class LiteDockerServices:
+    """Session-scoped handle for the Home Node Lite Docker stack.
+
+    Exposes the same `core_url` / `brain_url` / `is_running()` shape as
+    `_IntegrationServices` so Lite-branch fixtures can be built with
+    the same wrappers.
+    """
+
+    DEFAULT_CORE_PORT = 28100
+    DEFAULT_BRAIN_PORT = 28200
+
+    def __init__(
+        self,
+        host: str | None = None,
+        core_port: int | None = None,
+        brain_port: int | None = None,
+    ) -> None:
+        self._host = host or os.environ.get("DINA_LITE_HOST", "127.0.0.1")
+        self._core_port = core_port or int(
+            os.environ.get("DINA_LITE_CORE_PORT", str(self.DEFAULT_CORE_PORT))
+        )
+        self._brain_port = brain_port or int(
+            os.environ.get("DINA_LITE_BRAIN_PORT", str(self.DEFAULT_BRAIN_PORT))
+        )
+
+    @property
+    def core_url(self) -> str:
+        return f"http://{self._host}:{self._core_port}"
+
+    @property
+    def brain_url(self) -> str:
+        return f"http://{self._host}:{self._brain_port}"
+
+    @property
+    def client_token(self) -> str:
+        """Lite admin client token, pulled from env.
+
+        Empty string if not set — Lite M1 doesn't enforce admin-token
+        auth on the routes covered by 8.5-8.11; M2 / 4.84 tighten this.
+        """
+        return os.environ.get("DINA_LITE_CLIENT_TOKEN", "")
+
+    def is_running(self) -> bool:
+        """Check if Lite Core and Brain are reachable + healthy."""
+        try:
+            r1 = httpx.get(f"{self.core_url}/healthz", timeout=3)
+            r2 = httpx.get(f"{self.brain_url}/healthz", timeout=3)
+            return r1.is_success and r2.is_success
+        except Exception:
+            return False
+
+    def assert_ready(self) -> None:
+        """Raise with a clear message if the stack isn't up.
+
+        The typical failure mode is forgetting to `docker compose -f
+        apps/home-node-lite/docker-compose.lite.yml up -d` before
+        running pytest with DINA_LITE=docker.
+        """
+        if not self.is_running():
+            raise RuntimeError(
+                f"Lite stack not reachable at {self.core_url} / "
+                f"{self.brain_url}. Start with "
+                "`./apps/home-node-lite/install-lite.sh` or "
+                "`docker compose -f apps/home-node-lite/docker-compose.lite.yml "
+                "--env-file apps/home-node-lite/.env up -d` "
+                "(override ports with DINA_CORE_PORT_EXTERNAL=28100 "
+                "DINA_BRAIN_PORT_EXTERNAL=28200 to match the DINA_LITE_*_PORT "
+                "defaults this class expects)."
+            )
+
+
+@pytest.fixture(scope="session")
+def lite_services():
+    """Session-scoped handle for the Home Node Lite Docker stack.
+
+    Yields `None` unless DINA_LITE=docker is set; when set, returns a
+    `LiteDockerServices` that has passed the health-check. Tests that
+    need the Lite stack can require this fixture; tests that run
+    against the mock or docker (production) stacks ignore it.
+    """
+    if not LITE_MODE:
+        yield None
+        return
+
+    services = LiteDockerServices()
+    services.assert_ready()
+    yield services
+
+
+# ---------------------------------------------------------------------------
 # Docker persona initialization (session-scoped)
 # ---------------------------------------------------------------------------
 
@@ -287,13 +466,38 @@ def mock_human() -> MockHuman:
 
 
 @pytest.fixture
-def mock_identity(docker_services) -> MockIdentity:
+def active_services(docker_services, lite_services):
+    """Task 8.4 — one fixture, two stacks.
+
+    Returns whichever real-stack handle is active this session:
+    `docker_services` under DINA_INTEGRATION=docker, `lite_services`
+    under DINA_LITE=docker, `None` in mock mode. Mutual exclusion is
+    enforced at conftest import (see mode-detection block above).
+
+    Downstream real-mode fixtures consume `active_services` + branch
+    on LITE_MODE so the same test body works against either stack
+    where the wire contract allows — `mock_identity`, `mock_vault`,
+    `mock_dina` below. Multi-actor fixtures (sancho, chairmaker)
+    remain Go-stack-only at M1 scope; Lite's actor-fleet support
+    lands with Phase 9.
+    """
+    if LITE_MODE:
+        return lite_services
     if DOCKER_MODE:
-        # Query the actual DID from the running Core node so all fixtures agree
+        return docker_services
+    return None
+
+
+@pytest.fixture
+def mock_identity(active_services) -> MockIdentity:
+    # Under either real-stack mode, query the running Core's DID so
+    # fixtures agree on identity. Falls through to a frozen test DID
+    # in mock mode or if the well-known endpoint isn't reachable.
+    if active_services is not None:
         import httpx
         try:
             resp = httpx.get(
-                f"{docker_services.core_url}/.well-known/atproto-did",
+                f"{active_services.core_url}/.well-known/atproto-did",
                 timeout=5,
             )
             if resp.status_code == 200:
@@ -306,10 +510,19 @@ def mock_identity(docker_services) -> MockIdentity:
 
 
 @pytest.fixture
-def mock_vault(docker_services, docker_vault_cleanup) -> MockVault:
+def mock_vault(active_services, docker_vault_cleanup) -> MockVault:
+    if LITE_MODE:
+        # Lite's vault HTTP interface is wire-compatible with Go Core's
+        # (shared `@dina/protocol` wire spec). RealVault already targets
+        # a URL + vault-reset hook — reusing it here means zero new
+        # client code for M1 wire-surface tests.
+        return RealVault(
+            active_services.core_url,
+            docker_vault_cleanup,
+        )
     if DOCKER_MODE:
         return RealVault(
-            docker_services.core_url,
+            active_services.core_url,
             docker_vault_cleanup,
         )
     return MockVault()
@@ -317,11 +530,13 @@ def mock_vault(docker_services, docker_vault_cleanup) -> MockVault:
 
 @pytest.fixture
 def mock_dina(mock_identity: MockIdentity, mock_vault: MockVault,
-              docker_services) -> MockDinaCore:
+              active_services) -> MockDinaCore:
     dina = MockDinaCore(identity=mock_identity, vault=mock_vault)
-    if DOCKER_MODE:
+    if active_services is not None:
+        # PII scrubber routes to Core+Brain regardless of stack flavour —
+        # the wire contract for `/v1/pii/scrub` is pinned.
         real_scrubber = RealPIIScrubber(
-            docker_services.core_url, docker_services.brain_url,
+            active_services.core_url, active_services.brain_url,
         )
         dina.scrubber = real_scrubber
         dina.go_core._scrubber = real_scrubber

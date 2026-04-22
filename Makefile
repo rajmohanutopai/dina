@@ -47,18 +47,26 @@ check-tests:
 	python scripts/verify_tests.py
 
 # --- OpenAPI codegen ---
+# Three codegen pipelines share the same YAML specs in api/:
+#   Go  (oapi-codegen)       → core/internal/gen/*                (Core + Brain-client types)
+#   Python (datamodel-codegen) → brain/src/gen/core_types.py        (Brain's view of Core)
+#   TypeScript (openapi-typescript) → packages/protocol/src/gen/*.d.ts (TS workspace view of both)
 generate:
 	python3 scripts/bundle_openapi.py
 	$(HOME)/go/bin/oapi-codegen -config api/oapi-codegen.yaml -o core/internal/gen/core_types.gen.go api/core-api.bundled.yaml
 	$(HOME)/go/bin/oapi-codegen -config api/oapi-brain-codegen.yaml -o core/internal/gen/brainapi/brain_types.gen.go api/brain-api.yaml
 	datamodel-codegen --input api/core-api.bundled.yaml --output brain/src/gen/core_types.py --output-model-type pydantic_v2.BaseModel --snake-case-field --target-python-version 3.11
+	npm run generate --silent
 	@echo "Generated: core/internal/gen/core_types.gen.go (Go Core API types)"
 	@echo "Generated: core/internal/gen/brainapi/brain_types.gen.go (Go Brain client types)"
 	@echo "Generated: brain/src/gen/core_types.py (Python Core client types)"
+	@echo "Generated: packages/protocol/src/gen/core-api.d.ts (TS Core API types)"
+	@echo "Generated: packages/protocol/src/gen/brain-api.d.ts (TS Brain API types)"
 
 # --- CI drift gate: verify generated code matches spec ---
+# Covers all three codegen pipelines; any drift in any of them fails the gate.
 check-generate: generate
-	@git diff --ignore-matching-lines='timestamp:' --ignore-matching-lines='version:' --exit-code core/internal/gen/ brain/src/gen/ || \
+	@git diff --ignore-matching-lines='timestamp:' --ignore-matching-lines='version:' --exit-code core/internal/gen/ brain/src/gen/ packages/protocol/src/gen/ || \
 		(echo "ERROR: Generated code is out of date. Run 'make generate' and commit." && exit 1)
 
 # --- Clean ---

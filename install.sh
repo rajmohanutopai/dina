@@ -3,6 +3,8 @@
 #
 # Usage:
 #   ./install.sh                       # first-time setup (interactive, production infra)
+#   ./install.sh --stack production    # Go/Python stack (default — same as omitting the flag)
+#   ./install.sh --stack lite          # TypeScript Home Node Lite stack (task 13.3 — delegates to apps/home-node-lite/install-lite.sh)
 #   ./install.sh --test                # use test infrastructure (test-*.dinakernel.com)
 #   ./install.sh --port 9100           # use specific Core port
 #   ./install.sh --instance alice      # named instance (isolated data + containers)
@@ -30,6 +32,52 @@
 
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# ---------------------------------------------------------------------------
+# Task 13.3 — stack selection (production vs Lite)
+# ---------------------------------------------------------------------------
+# Parsed BEFORE the main production flow so `--stack lite` delegates to
+# the Lite installer + exits without touching Go/Python build state.
+# Accepted values: `production` (default), `lite`. Unknown values fail
+# with a clear message rather than silently falling through.
+
+_STACK_SELECTION="production"
+_REST_ARGS=()
+_prev_stack=""
+for _a in "$@"; do
+    if [ "$_prev_stack" = "--stack" ]; then
+        _STACK_SELECTION="$_a"
+        _prev_stack=""
+        continue
+    fi
+    if [ "$_a" = "--stack" ]; then
+        _prev_stack="--stack"
+        continue
+    fi
+    _REST_ARGS+=("$_a")
+done
+
+case "$_STACK_SELECTION" in
+    production|prod|go|""|default)
+        # Fall through to the Go/Python install path below. Reset
+        # positional args so downstream arg-parsing doesn't see the
+        # consumed --stack flag.
+        if [ "${#_REST_ARGS[@]}" -gt 0 ]; then
+            set -- "${_REST_ARGS[@]}"
+        else
+            set --
+        fi
+        ;;
+    lite|ts|typescript|node)
+        printf "→ --stack lite: delegating to apps/home-node-lite/install-lite.sh\n"
+        exec ./apps/home-node-lite/install-lite.sh "${_REST_ARGS[@]+"${_REST_ARGS[@]}"}"
+        ;;
+    *)
+        printf "error: unknown --stack value: '%s'\n" "$_STACK_SELECTION" >&2
+        printf "valid values: production (default) | lite\n" >&2
+        exit 2
+        ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Configuration

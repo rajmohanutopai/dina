@@ -1,0 +1,43 @@
+{
+  "name": "sha256_body_hash",
+  "description": "SHA-256 of representative request-body payloads, hex-encoded lowercase. These are the values that feed `body_hash_hex` into buildCanonicalPayload (see canonical_request_string.json) and commit to the request body via the canonical signing chain.",
+  "level": "L2",
+  "task": "10.8",
+  "producer": {
+    "tool": "node:crypto.createHash('sha256') — used by the reference Core/Brain for body hashing before signing.",
+    "frozen_at": "2026-04-22"
+  },
+  "cases": [
+    {
+      "name": "empty_body",
+      "body_utf8": "",
+      "expected_sha256_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "hello_world",
+      "body_utf8": "hello world",
+      "expected_sha256_hex": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+    },
+    {
+      "name": "short_json",
+      "body_utf8": "{\"persona\":\"personal\",\"limit\":10}",
+      "expected_sha256_hex": "22e574e66119d3b7cc071b311beb267e9d8182ea02c3a80f0e4d5e4fdf299cc4"
+    },
+    {
+      "name": "single_char",
+      "body_utf8": "a",
+      "expected_sha256_hex": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+    },
+    {
+      "name": "unicode_cafe",
+      "body_utf8": "café résumé",
+      "expected_sha256_hex": "787ba50328c24630d3e9094a1accc03d9fada07f531f274d20c78d0c11e2846c"
+    }
+  ],
+  "notes": [
+    "Hash output is lowercase hex (no '0x' prefix, no separators, no line breaks) — 64 characters for a 32-byte SHA-256 digest.",
+    "Body bytes are UTF-8 encoded before hashing. Strings here are UTF-8; callers with byte arrays should skip encoding.",
+    "empty_body is the canonical all-request fixture used whenever a request has no payload. Implementations MUST NOT substitute the empty string with a '0x00'-filled 32-byte hash or any other sentinel.",
+    "Unicode case verifies UTF-8 (not UTF-16 / Latin-1) encoding. café résumé encodes to 14 bytes: 63 61 66 c3 a9 20 72 c3 a9 73 75 6d c3 a9."
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "domain": "enrichment/l0_deterministic",
+  "version": 1,
+  "generated_from": "brain/tests or cli/tests",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "placeholder — behavioral contract from Python test suite",
+      "inputs": {},
+      "expected": {
+        "note": "This fixture defines the behavioral contract. Test assertions in T1/T2 files verify the contract shape. Real computed values will be added when Python extraction runs."
+      }
+    }
+  ]
+}

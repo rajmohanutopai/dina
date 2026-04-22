@@ -1,0 +1,50 @@
+{
+  "domain": "gatekeeper/adversarial",
+  "version": 1,
+  "generated_from": "gatekeeper_adversarial_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "unknown trust → treated as untrusted",
+      "source_test": "",
+      "inputs": {
+        "action": "search",
+        "trust": "not-a-level"
+      },
+      "expected": {
+        "effective_trust": "untrusted"
+      }
+    },
+    {
+      "description": "BLOCKED overrides verified trust",
+      "source_test": "",
+      "inputs": {
+        "action": "credential_export",
+        "trust": "verified"
+      },
+      "expected": {
+        "allowed": false
+      }
+    },
+    {
+      "description": "empty action → MODERATE",
+      "source_test": "",
+      "inputs": {
+        "action": ""
+      },
+      "expected": {
+        "risk": "MODERATE"
+      }
+    },
+    {
+      "description": "SQL injection action → MODERATE (unknown)",
+      "source_test": "",
+      "inputs": {
+        "action": "search; DROP TABLE"
+      },
+      "expected": {
+        "risk": "MODERATE"
+      }
+    }
+  ]
+}

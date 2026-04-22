@@ -1,0 +1,49 @@
+{
+  "domain": "audit/hash_chain",
+  "version": 1,
+  "generated_from": "traceability_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "3-entry hash chain",
+      "source_test": "traceability_test.go",
+      "inputs": {
+        "entries": [
+          {
+            "action": "vault_query",
+            "actor": "brain",
+            "detail": "searched labs",
+            "resource": "/health",
+            "seq": 1,
+            "ts": 1700000000
+          },
+          {
+            "action": "persona_unlock",
+            "actor": "admin",
+            "detail": "unlocked",
+            "resource": "/finance",
+            "seq": 2,
+            "ts": 1700000001
+          },
+          {
+            "action": "audit_purge",
+            "actor": "system",
+            "detail": "cleaned",
+            "resource": "",
+            "seq": 3,
+            "ts": 1700000002
+          }
+        ]
+      },
+      "expected": {
+        "chain_valid": true,
+        "hashes": [
+          "ad94224dea4ca5ca28104e25b1ab99c6406d9ae955311f138e7defc39b705fc0",
+          "0eadd5ee2e110e136cd71a89509e2c7820b236e80edad1eaed83a026b9c73059",
+          "d10fad1990b67c67c9576f167fc9c67359abe6c0b50552ad3378daeb1a430dfb"
+        ],
+        "note": "Hash = SHA256(seq|ts|actor|action|resource|detail|prev_hash). First entry has empty prev_hash."
+      }
+    }
+  ]
+}

@@ -5492,6 +5492,95 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 
 ---
 
+## Architectural Decision: Two-Stack Implementation — Production (Go/Python) + Lite (TypeScript)
+
+**Decision: Two implementations of the Home Node, behind one protocol. Go/Python is the production stack and correctness oracle. A pure-TypeScript stack (Home Node Lite) ships alongside it, driven by a shared monorepo of pure packages that also powers the mobile app.**
+
+The Home Node runs in two very different environments — a headless server (Raspberry Pi, VPS, home mini-PC) and a mobile phone. A single implementation can't serve both well: server code wants native threads, explicit process isolation, a real systemd unit; mobile code wants a single JavaScript VM and battery-friendly wake-up behaviour. Dina runs **two implementations** of the same Home Node protocol and lets each environment pick the right one.
+
+### The two stacks
+
+| Attribute                  | Production (Go/Python)                               | Lite (TypeScript)                                       |
+|---------------------------|------------------------------------------------------|---------------------------------------------------------|
+| Core runtime               | Go 1.22+ (`core/`)                                   | Node ≥ 22 Fastify server (`apps/home-node-lite/core-server`) |
+| Brain runtime              | Python + Google ADK (`brain/`)                       | Node Fastify (`apps/home-node-lite/brain-server`)       |
+| Shared pure domain         | N/A (per-language)                                   | `@dina/core` + `@dina/brain` + `@dina/protocol`         |
+| Storage                    | `mutecomm/go-sqlcipher`                              | `better-sqlite3-multiple-ciphers` (SQLCipher v4 compat) |
+| Crypto                     | Go `crypto/*` stdlib + `mutecomm/go-sqlcipher`       | `@noble/curves`, `@noble/ed25519`, `@noble/hashes`      |
+| Deployment                 | Two Docker containers, separate bind mounts          | Two Docker containers, separate bind mounts             |
+| Mobile target              | N/A (no second runtime needed)                       | Same `@dina/core` + `@dina/brain` packages run on Expo  |
+| Source of truth            | **The oracle** — when the two stacks disagree, Go/Python's behaviour is authoritative | Validated against production via `tests/integration/` + `tests/e2e/` under `DINA_LITE=docker` |
+
+### Why two
+
+1. **Mobile needs JavaScript, period.** React Native / Expo runs one JS VM. Go and Python don't ship on mobile in any reasonable way. The same pure packages that power the mobile Brain power the Lite Brain — zero duplicated logic between them.
+2. **Server operators often already run Node.** Lite is a single-command install for anyone who's comfortable with `npm install`. No CGO, no Python venv, no `pip install` juggling.
+3. **Go/Python production stack ships today.** Rewriting the server to TypeScript as the only implementation would have been a year-long parity march with no mobile win during that time. Two implementations cost ~30% more to keep in lockstep and buy real optionality.
+4. **Same oracle keeps both honest.** The Go implementation predates Lite by years and has the accumulated real-world test scaffolding (see `tests/integration/`, `tests/e2e/`, `tests/release/`). Lite is validated against Go's behaviour — not against a spec — which means the spec can drift but the implementations can't.
+
+### Runtime-dependent security boundary
+
+The "Core is the vault keeper / Brain is the untrusted tenant" boundary is architecturally identical in both stacks, but is **enforced differently**:
+
+| Runtime            | Boundary enforcement                                                                              |
+|--------------------|---------------------------------------------------------------------------------------------------|
+| Server (both stacks) | Two OS processes. Core's private key file is bind-mounted **only** into Core's container. Brain cannot read it at the filesystem level. Every Brain-on-Core request carries an Ed25519 signed header checked by Core. |
+| Mobile (Lite only) | One JS VM. Brain and Core share the address space. The boundary is a TypeScript import graph — Brain imports `CoreClient` as an interface; `InProcessTransport` dispatches typed method calls through `CoreRouter` directly. Handler-level gatekeeper (sensitive-persona unlock, audit-log rules) still runs. No Ed25519 signing — signing keys Brain already owns add no security when both halves execute in the same VM. |
+
+The boundary on mobile is weaker than on server. Documented, accepted: a compromised Brain on mobile has the same access as a compromised userspace process on the device, which is the ceiling of what mobile OS isolation provides anyway. Sensitive-persona gatekeeper + audit log run regardless of transport, so an agent session that goes rogue still trips the same alarms.
+
+### Transport abstraction (`CoreClient`)
+
+Shared across both stacks:
+
+```
+@dina/core:
+  interface CoreClient {
+    healthz(): Promise<CoreHealth>;
+    vaultQuery(q): Promise<VaultQueryResult>;
+    vaultStore(i): Promise<VaultStoreResult>;
+    didSign(b): Promise<SignResult>;
+    piiScrub(t): Promise<PIIScrubResult>;
+    notify(n): Promise<NotifyResult>;
+    personaStatus(p): Promise<PersonaStatusResult>;
+    serviceQuery(r): Promise<ServiceQueryResult>;
+    memoryToC(o?): Promise<MemoryToCResult>;
+    // …15 methods total — see packages/core/src/client/core-client.ts
+  }
+
+  class HttpCoreTransport   implements CoreClient { /* signed HTTP */ }
+  class InProcessTransport  implements CoreClient { /* direct dispatch */ }
+```
+
+Brain code (in `@dina/brain`) imports the interface only. The app that assembles the process (Node brain-server or Expo mobile app) picks the transport. This is the same pattern Linux kernel drivers use — one interface, multiple providers, chosen at wire-up time.
+
+### What *doesn't* differ between the stacks
+
+- **Protocol on the wire.** Dina-to-Dina D2D envelope, PDS records, AppView search xRPC, PLC identity — byte-identical formats. A Lite Home Node talking to a Go Home Node just works.
+- **Lexicons.** AT Protocol records (`com.dina.service.profile`, `com.dina.trust.attestation`, etc.) are shared lexicons validated the same way in both.
+- **Four Laws semantics.** Silence First, Verified Truth, Absolute Loyalty, Never Replace a Human are enforced identically.
+- **Persona model.** 4-tier access tiers + per-persona DEKs + audit log all run the same.
+- **Test infrastructure.** The integration test suite (`tests/integration/`) runs against either stack via a `DINA_LITE=docker` branch (task 8.1); a Dina is a Dina regardless of runtime.
+
+### Why this is not a fork
+
+Forks diverge. Dina's two stacks are kept in lockstep by:
+
+- **Production is the oracle.** Whenever Lite disagrees with the Go/Python stack, Lite is wrong until proven otherwise. Tests are written against Go's behaviour, Lite is run against the same suite.
+- **Shared pure packages.** `@dina/core` and `@dina/brain` are TS packages that both the server Lite app and the mobile app consume. Anywhere the TS rules can be shared, they are — platform adapters (`@dina/*-node`, `@dina/*-expo`) are the *only* stack-specific code.
+- **Single task plan.** `docs/HOME_NODE_LITE_TASKS.md` tracks the Lite buildout with milestone gates (M1 → M5) that are defined in terms of parity with the Go stack's behaviour.
+
+Long-term, one of the two may retire. Phase 13.5 of the Lite task plan is an explicit decision gate: "keep both stacks or schedule Go/Python retirement." That decision comes after M5 parity is measured, not before.
+
+### See also
+
+- `docs/HOME_NODE_LITE_TASKS.md` — the Lite buildout plan (14 phases, 489 checkboxes, milestone gates M1–M5).
+- `apps/home-node-lite/README.md` — Lite quickstart.
+- `packages/README.md` — layering rules for the shared TS workspace.
+- `docs/security-walkthrough.md` — runtime-dependent security boundary in detail (Phase 12 task 12.6).
+
+---
+
 ## Technology Stack Summary
 
 | Component | Technology | Why |

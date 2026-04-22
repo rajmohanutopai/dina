@@ -22,6 +22,19 @@ import pytest
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
 
+# Task 8.17 migration prep. Persistent audit trail is an M2 feature
+# (tasks 8.13-8.18 scope — audit + persona tiering ship together).
+# Lite's audit subsystem (append-only WAL, hash-chained entries,
+# per-persona partitioning) lands with Phase 5+. Mock-mode tests
+# here exercise the audit CONCEPT via MockAuditLog; under LITE_MODE
+# the real implementation isn't ready yet.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Persistent audit trail (append-only WAL, hash chain, per-persona "
+    "partitioning) is M2 scope (tasks 8.13-8.18). Lite's audit implementation "
+    "lands with Phase 5+. LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # TST-INT-AUD-001: Append and query round-trip

@@ -1,0 +1,67 @@
+{
+  "domain": "crypto/ed25519",
+  "version": 1,
+  "generated_from": "crypto/signer.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "Generate keypair from seed",
+      "source_test": "crypto_test.go + signature_test.go",
+      "inputs": {
+        "seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+      },
+      "expected": {
+        "private_key_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      }
+    },
+    {
+      "description": "Sign message",
+      "source_test": "signature_test.go",
+      "inputs": {
+        "message_hex": "64696e612074657374206d65737361676520666f72207369676e696e67",
+        "private_key_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+      },
+      "expected": {
+        "signature_hex": "49dd4971d29b5a6d3ba68e16df7947778e78008d21239289932e3ec11a66ce2a46d81abb8c6cefb4ed71331ce1cdf4db938917f1d85a5c1b624ebde650197501",
+        "signature_length": "64"
+      }
+    },
+    {
+      "description": "Verify valid signature",
+      "source_test": "signature_test.go",
+      "inputs": {
+        "message_hex": "64696e612074657374206d65737361676520666f72207369676e696e67",
+        "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "signature_hex": "49dd4971d29b5a6d3ba68e16df7947778e78008d21239289932e3ec11a66ce2a46d81abb8c6cefb4ed71331ce1cdf4db938917f1d85a5c1b624ebde650197501"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "description": "Verify tampered message → false",
+      "source_test": "signature_test.go",
+      "inputs": {
+        "message_hex": "9b696e612074657374206d65737361676520666f72207369676e696e67",
+        "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "signature_hex": "49dd4971d29b5a6d3ba68e16df7947778e78008d21239289932e3ec11a66ce2a46d81abb8c6cefb4ed71331ce1cdf4db938917f1d85a5c1b624ebde650197501"
+      },
+      "expected": {
+        "valid": false
+      }
+    },
+    {
+      "description": "Verify wrong key → false",
+      "source_test": "signature_test.go",
+      "inputs": {
+        "message_hex": "64696e612074657374206d65737361676520666f72207369676e696e67",
+        "public_key_hex": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12",
+        "signature_hex": "49dd4971d29b5a6d3ba68e16df7947778e78008d21239289932e3ec11a66ce2a46d81abb8c6cefb4ed71331ce1cdf4db938917f1d85a5c1b624ebde650197501"
+      },
+      "expected": {
+        "valid": false
+      }
+    }
+  ]
+}

@@ -377,6 +377,27 @@ class MsgBoxTransport:
             "pub": pub_raw.hex(),
         })
         ws.send(resp)
+
+        # Wait for explicit {"type":"auth_success"} from the server. Without
+        # this, the old code sent the first RPC request optimistically; under
+        # slow links the server would reject the auth and close the socket
+        # while the client was already writing, producing a spurious
+        # "connection lost" error instead of a clean auth failure. The relay
+        # is greenfield so there's no legacy server to be lenient with.
+        try:
+            ack_raw = ws.recv(timeout=5)
+        except Exception as e:
+            ws.close()
+            raise TransportError(f"MsgBox auth_success timeout: {e}") from e
+        try:
+            ack = json.loads(ack_raw)
+        except (json.JSONDecodeError, TypeError) as e:
+            ws.close()
+            raise TransportError(f"MsgBox auth_success parse error: {e}") from e
+        if ack.get("type") != "auth_success":
+            ws.close()
+            raise TransportError(f"MsgBox auth rejected (got frame {ack.get('type')!r})")
+
         return ws
 
     def _send_cancel(self, ws, request_id: str, from_did: str) -> None:

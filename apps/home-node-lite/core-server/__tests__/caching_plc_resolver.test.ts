@@ -1,0 +1,336 @@
+/**
+ * Task 6.10 — CachingPlcResolver tests.
+ */
+
+import {
+  CachingPlcResolver,
+  DEFAULT_NOT_FOUND_TTL_MS,
+  type CachingResolveOutcome,
+  type FetchWithHeadersFn,
+  type FetchWithHeadersResult,
+} from '../src/appview/caching_plc_resolver';
+
+const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
+
+function docBody(did: string = DID): Record<string, unknown> {
+  return {
+    id: did,
+    alsoKnownAs: ['at://alice'],
+    verificationMethod: [
+      {
+        id: `${did}#atproto`,
+        type: 'Multikey',
+        controller: did,
+        publicKeyMultibase: 'zQ…',
+      },
+    ],
+    service: [
+      {
+        id: '#atproto_pds',
+        type: 'AtprotoPersonalDataServer',
+        serviceEndpoint: 'https://bsky.social',
+      },
+    ],
+  };
+}
+
+function fetchOk(
+  body: Record<string, unknown> | null = docBody(),
+  cacheControl: string | null = null,
+): FetchWithHeadersFn {
+  return async () => ({ body, cacheControl });
+}
+
+function fakeClock(start = 1000) {
+  let now = start;
+  return {
+    nowMsFn: () => now,
+    advance: (d: number) => {
+      now += d;
+    },
+  };
+}
+
+describe('CachingPlcResolver (task 6.10)', () => {
+  describe('construction', () => {
+    it('throws without fetchFn', () => {
+      expect(
+        () =>
+          new CachingPlcResolver({
+            fetchFn: undefined as unknown as FetchWithHeadersFn,
+          }),
+      ).toThrow(/fetchFn/);
+    });
+
+    it('DEFAULT_NOT_FOUND_TTL_MS is 60s', () => {
+      expect(DEFAULT_NOT_FOUND_TTL_MS).toBe(60_000);
+    });
+  });
+
+  describe('resolve happy path', () => {
+    it('first call → network → returns doc', async () => {
+      const r = new CachingPlcResolver({ fetchFn: fetchOk() });
+      const out = (await r.resolve(DID)) as Extract<
+        CachingResolveOutcome,
+        { ok: true }
+      >;
+      expect(out.ok).toBe(true);
+      expect(out.doc.did).toBe(DID);
+      expect(out.source).toBe('network');
+    });
+
+    it('second call within TTL → fresh hit', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: docBody(), cacheControl: null };
+      };
+      const clock = fakeClock();
+      const r = new CachingPlcResolver({ fetchFn, nowMsFn: clock.nowMsFn });
+      await r.resolve(DID);
+      clock.advance(100); // well within 1h default
+      const r2 = (await r.resolve(DID)) as Extract<
+        CachingResolveOutcome,
+        { ok: true }
+      >;
+      expect(r2.source).toBe('fresh');
+      expect(calls).toBe(1);
+    });
+
+    it('Cache-Control: max-age=60 overrides default TTL', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: docBody(), cacheControl: 'max-age=60' };
+      };
+      const clock = fakeClock();
+      const r = new CachingPlcResolver({ fetchFn, nowMsFn: clock.nowMsFn });
+      await r.resolve(DID);
+      // At 30s — fresh (TTL=60s).
+      clock.advance(30_000);
+      await r.resolve(DID);
+      expect(calls).toBe(1);
+      // At 2 min past TTL but < stale window (5× TTL = 5min) → SWR.
+      clock.advance(90_000);
+      const r3 = (await r.resolve(DID)) as Extract<
+        CachingResolveOutcome,
+        { ok: true }
+      >;
+      expect(r3.source).toBe('stale-while-revalidate');
+    });
+
+    it('Cache-Control: no-store disables caching', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: docBody(), cacheControl: 'no-store' };
+      };
+      const r = new CachingPlcResolver({ fetchFn });
+      await r.resolve(DID);
+      await r.resolve(DID);
+      // Each call goes to network because no-store → ttl=0 + storable=false.
+      // SwrCache stores with ttl=0 → stale immediately; the second call
+      // hits the stale branch which refetches. Either way, calls >= 2.
+      expect(calls).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('not_found caching', () => {
+    it('returns ok:false kind=not_found on null body', async () => {
+      const r = new CachingPlcResolver({ fetchFn: fetchOk(null) });
+      const out = await r.resolve(DID);
+      expect(out.ok).toBe(false);
+      if (!out.ok) {
+        expect(out.kind).toBe('not_found');
+      }
+    });
+
+    it('not_found is cached — short TTL default 60s', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: null, cacheControl: null };
+      };
+      const clock = fakeClock();
+      const r = new CachingPlcResolver({ fetchFn, nowMsFn: clock.nowMsFn });
+      await r.resolve(DID);
+      clock.advance(30_000); // 30s < 60s TTL → still cached
+      await r.resolve(DID);
+      expect(calls).toBe(1);
+    });
+
+    it('custom notFoundTtlMs honoured', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: null, cacheControl: null };
+      };
+      const clock = fakeClock();
+      const r = new CachingPlcResolver({
+        fetchFn,
+        nowMsFn: clock.nowMsFn,
+        notFoundTtlMs: 10_000,
+      });
+      await r.resolve(DID);
+      clock.advance(15_000); // past custom 10s TTL
+      const r2 = await r.resolve(DID);
+      // Past TTL but within stale window → stale-while-revalidate.
+      if (!r2.ok && r2.kind === 'not_found') {
+        expect(r2.source).toBe('stale-while-revalidate');
+      }
+    });
+  });
+
+  describe('invalid DID + errors', () => {
+    it('invalid DID → invalid_did, no fetch', async () => {
+      let calls = 0;
+      const r = new CachingPlcResolver({
+        fetchFn: async () => {
+          calls++;
+          return { body: docBody(), cacheControl: null };
+        },
+      });
+      const out = await r.resolve('did:web:nope');
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.kind).toBe('invalid_did');
+      expect(calls).toBe(0);
+    });
+
+    it('fetch throw with no cached entry → network_error', async () => {
+      const r = new CachingPlcResolver({
+        fetchFn: async () => {
+          throw new Error('ENETDOWN');
+        },
+      });
+      const out = await r.resolve(DID);
+      expect(out.ok).toBe(false);
+      if (out.ok === false && out.kind === 'network_error') {
+        expect(out.error).toMatch(/ENETDOWN/);
+      }
+    });
+
+    it('malformed doc rejects + NOT cached (next call re-fetches)', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: { id: 'not-a-did' }, cacheControl: null };
+      };
+      const r = new CachingPlcResolver({ fetchFn });
+      // First call: body is malformed → fetchAndWrap throws → SwrCache
+      // treats as fetch failure → no cache entry → caller sees
+      // network_error.
+      await r.resolve(DID);
+      await r.resolve(DID);
+      expect(calls).toBe(2); // re-fetched, not cached
+    });
+  });
+
+  describe('stale-while-revalidate', () => {
+    it('serves stale + refreshes in background after TTL expires', async () => {
+      const clock = fakeClock();
+      const bodies = [docBody(), docBody()];
+      let i = 0;
+      const fetchFn: FetchWithHeadersFn = async () => ({
+        body: bodies[i++] ?? docBody(),
+        cacheControl: 'max-age=60',
+      });
+      const r = new CachingPlcResolver({ fetchFn, nowMsFn: clock.nowMsFn });
+      await r.resolve(DID);
+      clock.advance(90_000); // past TTL, inside stale window
+      const stale = (await r.resolve(DID)) as Extract<
+        CachingResolveOutcome,
+        { ok: true }
+      >;
+      expect(stale.source).toBe('stale-while-revalidate');
+    });
+
+    it('error-fallback: fetch fails past stale window → serves stale', async () => {
+      const clock = fakeClock();
+      let failAfter = false;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        if (failAfter) throw new Error('offline');
+        return { body: docBody(), cacheControl: 'max-age=60' };
+      };
+      const r = new CachingPlcResolver({ fetchFn, nowMsFn: clock.nowMsFn });
+      await r.resolve(DID);
+      failAfter = true;
+      // Past TTL + max stale window (5× TTL = 5 min), so this is a
+      // blocking refetch which fails but has stale entry.
+      clock.advance(60 * 60 * 1000); // way past everything
+      const out = (await r.resolve(DID)) as Extract<
+        CachingResolveOutcome,
+        { ok: true }
+      >;
+      expect(out.source).toBe('error-fallback');
+      expect(out.doc.did).toBe(DID);
+    });
+  });
+
+  describe('mustRevalidate + invalidation', () => {
+    it('mustRevalidate forces refetch', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: docBody(), cacheControl: null };
+      };
+      const r = new CachingPlcResolver({ fetchFn });
+      await r.resolve(DID);
+      await r.resolve(DID, { mustRevalidate: true });
+      expect(calls).toBe(2);
+    });
+
+    it('invalidate(did) drops the entry', async () => {
+      let calls = 0;
+      const fetchFn: FetchWithHeadersFn = async () => {
+        calls++;
+        return { body: docBody(), cacheControl: null };
+      };
+      const r = new CachingPlcResolver({ fetchFn });
+      await r.resolve(DID);
+      expect(r.invalidate(DID)).toBe(true);
+      await r.resolve(DID);
+      expect(calls).toBe(2);
+    });
+
+    it('invalidate with invalid DID returns false', () => {
+      const r = new CachingPlcResolver({ fetchFn: fetchOk() });
+      expect(r.invalidate('did:web:nope')).toBe(false);
+    });
+
+    it('clear() empties the cache', async () => {
+      const r = new CachingPlcResolver({ fetchFn: fetchOk() });
+      await r.resolve(DID);
+      expect(r.size()).toBe(1);
+      r.clear();
+      expect(r.size()).toBe(0);
+    });
+  });
+
+  describe('events', () => {
+    it('fires resolved event with outcome kind', async () => {
+      type Ev = { kind: 'resolved'; outcome: string };
+      const events: Ev[] = [];
+      const r = new CachingPlcResolver({
+        fetchFn: fetchOk(),
+        onEvent: (e) => {
+          if (e.kind === 'resolved') events.push(e);
+        },
+      });
+      await r.resolve(DID);
+      expect(events[0]!.outcome).toBe('found');
+    });
+
+    it('fires resolved with outcome=invalid_did for bad input', async () => {
+      type Ev = { kind: 'resolved'; outcome: string };
+      const events: Ev[] = [];
+      const r = new CachingPlcResolver({
+        fetchFn: fetchOk(),
+        onEvent: (e) => {
+          if (e.kind === 'resolved') events.push(e);
+        },
+      });
+      await r.resolve('did:web:nope');
+      expect(events[0]!.outcome).toBe('invalid_did');
+    });
+  });
+});

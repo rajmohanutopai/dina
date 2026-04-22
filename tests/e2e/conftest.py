@@ -1,12 +1,24 @@
 """Shared pytest fixtures for Dina E2E tests — Docker-only.
 
-The entire E2E suite requires DINA_E2E=docker and running Docker
-containers (docker-compose-test-stack.yml).  Each actor gets its own
-Core+Brain container pair.  test_status.py manages the Docker lifecycle.
+The entire E2E suite requires DINA_E2E=docker OR DINA_LITE_E2E=docker
+(task 9.2 — Lite branch). Each actor gets its own Core+Brain container
+pair; `test_status.py` manages the production stack's lifecycle.
+
+Two mutually exclusive modes:
+
+- **DINA_E2E=docker** — production Go/Python stack on
+  `docker-compose-test-stack.yml`. Don Alonso + Sancho + ChairMaker
+  actors, each backed by real Go Core HTTP APIs via `RealHomeNode`.
+- **DINA_LITE_E2E=docker** — TypeScript Home Node Lite stack (task 9.2
+  scaffold; actor wiring lands per tasks 9.3-9.6). Single-actor at M1
+  scope; multi-actor + story migration lands per Phase 9b (tasks
+  9.7-9.16).
+
+There is no mock fallback — if neither env var is set, the suite
+fails fast at import time. Setting both is a configuration error.
 
 All actor fixtures (Don Alonso, Sancho, ChairMaker) create
-RealHomeNode instances backed by real Go Core HTTP APIs.  There is
-no mock fallback — if Docker isn't running, the suite skips.
+RealHomeNode instances backed by real Go Core HTTP APIs.
 
 Albert (Digital Estate beneficiary) has been commented out along with
 test_suite_09 — re-enable by uncommenting his fixture + the matching
@@ -47,10 +59,18 @@ from tests.e2e.mocks import (
 )
 
 # ---------------------------------------------------------------------------
-# Docker mode — always active for E2E
+# Stack-selection mode — one of DINA_E2E or DINA_LITE_E2E must be set
 # ---------------------------------------------------------------------------
 
 DOCKER_MODE = os.environ.get("DINA_E2E") == "docker"
+LITE_E2E_MODE = os.environ.get("DINA_LITE_E2E") == "docker"
+
+if DOCKER_MODE and LITE_E2E_MODE:
+    raise RuntimeError(
+        "DINA_E2E=docker and DINA_LITE_E2E=docker are mutually "
+        "exclusive. Pick exactly one target stack per E2E session: "
+        "unset the other env var, or run two separate sessions."
+    )
 
 from tests.shared.test_stack import TestStackServices
 from tests.e2e.real_nodes import RealHomeNode
@@ -62,16 +82,43 @@ from tests.e2e.real_d2d import RealD2DNetwork
 # ---------------------------------------------------------------------------
 
 def pytest_configure(config):
-    """Fail immediately if E2E tests are collected without Docker.
+    """Fail immediately if E2E tests are collected without a stack selection.
 
     E2E tests MUST run against real Docker containers — there is no
-    mock fallback.  Set DINA_E2E=docker and run prepare_non_unit_env.sh up.
+    mock fallback. Set EITHER `DINA_E2E=docker` (production Go/Python
+    stack) OR `DINA_LITE_E2E=docker` (TypeScript Lite stack, per task
+    9.2) and bring up the matching compose file.
+
+    Also registers the `skip_in_lite_e2e` marker so story-migration
+    tests can opt out of Lite until their Phase 9b task lands.
     """
-    if not DOCKER_MODE:
+    if not (DOCKER_MODE or LITE_E2E_MODE):
         raise pytest.UsageError(
-            "E2E tests require Docker. Set DINA_E2E=docker and run "
-            "./prepare_non_unit_env.sh up first."
+            "E2E tests require Docker. Set DINA_E2E=docker (production "
+            "stack) or DINA_LITE_E2E=docker (Lite stack, task 9.2) and "
+            "bring up the matching compose file first."
         )
+
+    config.addinivalue_line(
+        "markers",
+        "skip_in_lite_e2e(reason): skip this E2E test when running "
+        "under DINA_LITE_E2E=docker. Must be paired with an entry in "
+        "tests/integration/LITE_SKIPS.md.",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Apply `skip_in_lite_e2e` markers under DINA_LITE_E2E=docker."""
+    if not LITE_E2E_MODE:
+        return
+    for item in items:
+        mark = item.get_closest_marker("skip_in_lite_e2e")
+        if mark is None:
+            continue
+        reason = mark.kwargs.get("reason") or (
+            mark.args[0] if mark.args else "no reason given"
+        )
+        item.add_marker(pytest.mark.skip(reason=f"[skip_in_lite_e2e] {reason}"))
 
 
 @pytest.fixture(scope="session")
@@ -80,7 +127,18 @@ def docker_services():
 
     Session-scoped. Reads .test-stack.json written by prepare_non_unit_env.sh.
     Does NOT manage Docker lifecycle — just verifies services are healthy.
+
+    **LITE_E2E_MODE (task 9.2 scaffold).** When DINA_LITE_E2E=docker
+    is the active selector, the production Go stack isn't expected to
+    be running. This fixture yields None so downstream consumers can
+    branch (`if docker_services is None: ...`) rather than failing at
+    fixture-setup. Per-actor Lite fixtures (tasks 9.3-9.6) add their
+    own container handles; this fixture stays production-only.
     """
+    if LITE_E2E_MODE:
+        yield None
+        return
+
     svc = TestStackServices()
     svc.assert_ready()
     yield svc
@@ -112,7 +170,16 @@ def e2e_persona_setup(docker_services):
 
     Uses CLIENT_TOKEN for persona and vault operations, respecting the
     authz model.  Only runs in Docker mode (docker_services skips otherwise).
+
+    **Skipped in LITE_E2E_MODE (task 9.2 scaffold).** Lite actor-fleet
+    persona-setup wiring lands per task 9.3 (Don Alonso M1 smoke path).
+    Until then, LITE_E2E_MODE pytest sessions don't have Go Core
+    containers available, and this autouse fixture must no-op rather
+    than fail every test with a connection refused.
     """
+    if LITE_E2E_MODE:
+        return
+
     import httpx
 
     # Persona create/unlock are admin-only → require CLIENT_TOKEN.
@@ -622,7 +689,7 @@ def cli_identity(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def reset_node_state(don_alonso, sancho, chairmaker):
+def reset_node_state(request):
     """Reset per-test mutable state while preserving session setup.
 
     Cleared: notifications, briefing queue, DND, brain crash flag,
@@ -630,9 +697,28 @@ def reset_node_state(don_alonso, sancho, chairmaker):
     tasks, staging, outbox, scratchpad, brain event/crash logs,
     PDS records/tombstones, test clock.
 
+    **LITE_E2E_MODE (task 9.2 scaffold).** Production-actor reset
+    requires the Go stack's `don_alonso`/`sancho`/`chairmaker`
+    fixtures which connect to the production compose containers.
+    Under DINA_LITE_E2E=docker those aren't running; this autouse
+    no-ops so scaffold + per-Lite-actor tests (9.3-9.6) can proceed
+    without tripping on Go-stack connection errors.
+
     Preserved: vault data, devices, contacts, sharing policies,
     personas, estate plan, identity, LLM responses.
     """
+    if LITE_E2E_MODE:
+        # reset_node_state is a yield-fixture; preserve that shape.
+        yield
+        return
+
+    # Lazy fixture resolution: only request the Go-stack actor fixtures
+    # when we're actually going to use them. Under LITE_E2E_MODE the
+    # block above yields+returns first and these requests are skipped.
+    don_alonso = request.getfixturevalue("don_alonso")
+    sancho = request.getfixturevalue("sancho")
+    chairmaker = request.getfixturevalue("chairmaker")
+
     for node in [don_alonso, sancho, chairmaker]:
         # Clear real Go Core KV state if backed by Docker
         if isinstance(node, RealHomeNode):

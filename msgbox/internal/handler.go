@@ -167,12 +167,17 @@ func (h *Handler) handleJSONEnvelope(conn *MsgBoxConn, data []byte) {
 // D2D envelopes carry the same metadata as RPC (sender binding, expires_at,
 // composite key) but use the D2D rate limit bucket.
 func (h *Handler) routeD2D(conn *MsgBoxConn, raw []byte, env *envelope) {
+	// Drops elevated from Debug → Warn. Under info-level log configs (our
+	// production default), debug drops are invisible; a client sending a
+	// malformed envelope just gets silent blackhole with no operator signal.
+	// Warn surfaces shape bugs during integration work without flooding logs
+	// in steady-state (well-formed traffic never hits these branches).
 	if env.ID == "" {
-		slog.Debug("msgbox.d2d_missing_id", "from", conn.DID)
+		slog.Warn("msgbox.d2d_missing_id", "from", conn.DID)
 		return
 	}
 	if env.FromDID == "" || env.ToDID == "" {
-		slog.Debug("msgbox.d2d_missing_did", "from", conn.DID)
+		slog.Warn("msgbox.d2d_missing_did", "from", conn.DID)
 		return
 	}
 

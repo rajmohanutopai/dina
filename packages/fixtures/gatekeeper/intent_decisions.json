@@ -1,0 +1,218 @@
+{
+  "domain": "gatekeeper/intent",
+  "version": 1,
+  "generated_from": "gatekeeper.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "'delete_small' → SAFE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "delete_small"
+      },
+      "expected": {
+        "risk_level": "SAFE"
+      }
+    },
+    {
+      "description": "'send_large' → MODERATE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "send_large"
+      },
+      "expected": {
+        "risk_level": "MODERATE"
+      }
+    },
+    {
+      "description": "'credential_export' → BLOCKED",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "credential_export"
+      },
+      "expected": {
+        "risk_level": "BLOCKED"
+      }
+    },
+    {
+      "description": "'delete_large' → MODERATE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "delete_large"
+      },
+      "expected": {
+        "risk_level": "MODERATE"
+      }
+    },
+    {
+      "description": "'purchase' → HIGH",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "purchase"
+      },
+      "expected": {
+        "risk_level": "HIGH"
+      }
+    },
+    {
+      "description": "'payment' → HIGH",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "payment"
+      },
+      "expected": {
+        "risk_level": "HIGH"
+      }
+    },
+    {
+      "description": "'bulk_operation' → HIGH",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "bulk_operation"
+      },
+      "expected": {
+        "risk_level": "HIGH"
+      }
+    },
+    {
+      "description": "'key_access' → BLOCKED",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "key_access"
+      },
+      "expected": {
+        "risk_level": "BLOCKED"
+      }
+    },
+    {
+      "description": "'query' → SAFE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "query"
+      },
+      "expected": {
+        "risk_level": "SAFE"
+      }
+    },
+    {
+      "description": "'remember' → SAFE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "remember"
+      },
+      "expected": {
+        "risk_level": "SAFE"
+      }
+    },
+    {
+      "description": "'modify_settings' → MODERATE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "modify_settings"
+      },
+      "expected": {
+        "risk_level": "MODERATE"
+      }
+    },
+    {
+      "description": "'search' → SAFE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "search"
+      },
+      "expected": {
+        "risk_level": "SAFE"
+      }
+    },
+    {
+      "description": "'list' → SAFE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "list"
+      },
+      "expected": {
+        "risk_level": "SAFE"
+      }
+    },
+    {
+      "description": "'store' → SAFE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "store"
+      },
+      "expected": {
+        "risk_level": "SAFE"
+      }
+    },
+    {
+      "description": "'send_small' → SAFE",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "send_small"
+      },
+      "expected": {
+        "risk_level": "SAFE"
+      }
+    },
+    {
+      "description": "Brain-denied: 'did_sign'",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "did_sign",
+        "caller": "brain"
+      },
+      "expected": {
+        "allowed": "false",
+        "reason": "brain-denied"
+      }
+    },
+    {
+      "description": "Brain-denied: 'did_rotate'",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "did_rotate",
+        "caller": "brain"
+      },
+      "expected": {
+        "allowed": "false",
+        "reason": "brain-denied"
+      }
+    },
+    {
+      "description": "Brain-denied: 'vault_backup'",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "vault_backup",
+        "caller": "brain"
+      },
+      "expected": {
+        "allowed": "false",
+        "reason": "brain-denied"
+      }
+    },
+    {
+      "description": "Brain-denied: 'persona_unlock'",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "persona_unlock",
+        "caller": "brain"
+      },
+      "expected": {
+        "allowed": "false",
+        "reason": "brain-denied"
+      }
+    },
+    {
+      "description": "Brain-denied: 'seed_export'",
+      "source_test": "gatekeeper_test.go",
+      "inputs": {
+        "action": "seed_export",
+        "caller": "brain"
+      },
+      "expected": {
+        "allowed": "false",
+        "reason": "brain-denied"
+      }
+    }
+  ]
+}

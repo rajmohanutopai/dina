@@ -33,6 +33,20 @@ from tests.integration.mocks import (
     PersonaType,
 )
 
+# Task 8.44 migration prep. Digital estate ("when the user is gone" —
+# SSS custodian coordination, estate plan in Tier 0, beneficiary key
+# derivation + access types, destruction gating) is M5 scope. Related
+# SSS arch invariants are already file-level-skipped in test_arch_validation
+# (task 8.35 iter 76). Lite's estate subsystem (SSS custodian service,
+# estate-manager, beneficiary-DID distribution) lands with Phase 5+.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Digital estate (SSS custodian recovery, beneficiary access, "
+    "destruction gating) is M5 scope. Lite's estate subsystem lands with "
+    "Phase 5+. Related SSS invariants skipped via task 8.35. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # =========================================================================
 # TestCustodianRecovery

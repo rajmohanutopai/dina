@@ -1,0 +1,20 @@
+{
+  "domain": "export/archive",
+  "version": 1,
+  "generated_from": "portability_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": ".dina archive header structure",
+      "source_test": "",
+      "inputs": {
+        "format": "dina-archive-v1"
+      },
+      "expected": {
+        "encryption": "AES-256-GCM",
+        "header_fields": ["version", "created_at", "persona_count", "format"],
+        "key_derivation": "Argon2id"
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "domain": "wire_format/healthz",
+  "version": 1,
+  "generated_from": "core/internal/handler/healthz.go",
+  "generated_at": "2026-04-21",
+  "route": {
+    "method": "GET",
+    "path": "/healthz"
+  },
+  "expected": {
+    "status": 200,
+    "content_type_prefix": "application/json",
+    "body_keys": ["status", "version"],
+    "body_shape": {
+      "status": "ok",
+      "version": "<string:semver>"
+    }
+  }
+}

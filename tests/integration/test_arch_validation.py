@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from tests.integration.mocks import (
     MockAppView,
     MockBackupManager,
@@ -28,6 +30,21 @@ from tests.integration.mocks import (
     OutcomeReport,
     PersonaType,
     TrustRing,
+)
+
+# Task 8.35 migration prep. Architecture-validation tests close HIGH
+# severity gaps identified during deep validation of architecture docs.
+# The individual invariants (plaintext-only-in-memory, SSS shard
+# rotation, bot-query sanitization, etc.) touch M2/M3/M4/M5 subsystems
+# — export archive, SSS custodian shards, bot-query wire format, STT
+# routing. File-level skip for M5 per the task plan; per-test unmark
+# later if/when individual invariants land in earlier milestones.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Architecture validation tests close HIGH severity gaps in "
+    "SSS shards, backup/export-archive encryption, bot-query wire "
+    "sanitization, STT routing — M5 scope (tasks 8.34-8.51). "
+    "LITE_SKIPS.md category `pending-feature`."
 )
 
 

@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // "jest" is included not because this package uses Jest, but because
+    // our `@dina/test-harness` dep (via @dina/core's transitive closure)
+    // exports helpers that reference `describe`. Dropping this once Phase 2
+    // extracts those helpers behind an explicit `@dina/test-harness/jest`
+    // subpath so only test-time consumers pull the Jest types.
+    "types": ["node", "jest"],
+    // Donor `@dina/core` source was authored against looser strictness than
+    // our shared tsconfig.base.json. When storage-expo typechecks, tsc
+    // recursively re-types core's .ts source (via the workspace symlink)
+    // and reports ~145 inherited `exactOptionalPropertyTypes` +
+    // `noUncheckedIndexedAccess` violations. Override those two flags here
+    // so storage-expo's own code compiles; Phase 2 (async-port audit gate)
+    // will clean the core donor source to satisfy the base rules, at which
+    // point these two overrides should be removed.
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src/**/*"]
+}

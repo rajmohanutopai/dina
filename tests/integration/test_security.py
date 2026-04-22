@@ -181,6 +181,11 @@ class TestKeyIsolation:
 # =========================================================================
 
 
+@pytest.mark.skip_in_lite(
+    reason="Cryptographic persona isolation is the M2 gate (tasks 8.13-8.18). "
+    "Lite's persona DEK + HKDF per-compartment derivation lands with Phase 5+. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
 class TestPersonaIsolation:
     """Cryptographic persona compartments prevent cross-access."""
 
@@ -814,6 +819,12 @@ class TestDataAtRest:
 # =========================================================================
 
 
+@pytest.mark.skip_in_lite(
+    reason="Multi-user per-database isolation is Go production's tenant "
+    "scheme (via `--instance <name>` — install.sh multi-tenant mode). Lite "
+    "is single-tenant per install; multi-user on Lite is a Phase 13 operator-"
+    "journey concern (task 9.16). LITE_SKIPS.md category `pending-feature`."
+)
 class TestMultiUserIsolation:
     """Per-user database isolation and compromise containment."""
 

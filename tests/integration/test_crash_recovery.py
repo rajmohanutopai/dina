@@ -46,6 +46,19 @@ from tests.integration.mocks import (
     WSMessage,
 )
 
+# Task 8.29 migration prep. Crash recovery across Core/Brain/LLM/power-
+# loss scenarios is the M4 gate's robustness story (tasks 8.28-8.32).
+# Requires Lite's outbox persistence, WAL, scratchpad checkpoints,
+# idempotent LLM retry, and briefing reconstruction — all M4+ landing.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Crash recovery (Core/Brain/LLM/power-loss resilience, outbox "
+    "persistence, scratchpad checkpoints, idempotent retry) is the M4 gate "
+    "(tasks 8.28-8.32). LITE_SKIPS.md category `pending-feature`. See "
+    "soak-runner.sh (task 11.7) for the Phase 11c soak harness that will "
+    "run against Lite once M4 features land."
+)
+
 
 # =========================================================================
 # §6.1 Core Crash

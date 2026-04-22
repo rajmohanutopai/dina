@@ -1,0 +1,73 @@
+{
+  "domain": "trust/source",
+  "version": 1,
+  "generated_from": "source_trust_test.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "user via CLI → self",
+      "source_test": "",
+      "inputs": {
+        "sender": "user",
+        "source": "cli"
+      },
+      "expected": {
+        "confidence": "high",
+        "policy": "normal",
+        "trust": "self"
+      }
+    },
+    {
+      "description": "known contact → ring1",
+      "source_test": "",
+      "inputs": {
+        "sender": "alice@example.com",
+        "source": "gmail"
+      },
+      "expected": {
+        "confidence": "medium",
+        "policy": "normal",
+        "trust": "contact_ring1"
+      }
+    },
+    {
+      "description": "unknown → caveated",
+      "source_test": "",
+      "inputs": {
+        "sender": "stranger@x.com",
+        "source": "gmail"
+      },
+      "expected": {
+        "confidence": "low",
+        "policy": "caveated",
+        "trust": "unknown"
+      }
+    },
+    {
+      "description": "marketing → briefing_only",
+      "source_test": "",
+      "inputs": {
+        "sender": "promo@news.com",
+        "source": "gmail"
+      },
+      "expected": {
+        "confidence": "low",
+        "policy": "briefing_only",
+        "trust": "marketing"
+      }
+    },
+    {
+      "description": "D2D unknown → quarantine",
+      "source_test": "",
+      "inputs": {
+        "sender": "did:plc:stranger",
+        "source": "d2d"
+      },
+      "expected": {
+        "confidence": "low",
+        "policy": "quarantine",
+        "trust": "unknown"
+      }
+    }
+  ]
+}

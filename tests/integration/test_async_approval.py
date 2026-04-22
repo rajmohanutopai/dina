@@ -22,8 +22,27 @@ import httpx
 import pytest
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
+LITE_MODE = os.environ.get("DINA_LITE") == "docker"
 
-pytestmark = pytest.mark.skipif(not DOCKER_MODE, reason="requires Docker")
+# Task 8.42 migration prep. Async approve-wait-resume flow (agent asks →
+# Core returns 202 → human approval → resume → answer) is M5 scope —
+# depends on Lite's pending-reason registry (task 5.19/5.20 done) +
+# approval-routing (M2) + caller binding. Lite's equivalent lands with
+# Phase 5+ brain-server finalisation; the ask-registry primitive is
+# already in place (tasks 5.19 + 5.20 from core-server iter work).
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = [
+    pytest.mark.skipif(
+        not (DOCKER_MODE or LITE_MODE),
+        reason="requires DINA_INTEGRATION=docker or DINA_LITE=docker",
+    ),
+    pytest.mark.skip_in_lite(
+        reason="Async approve-wait-resume flow is M5 scope. Lite's "
+        "ask-registry primitive is in place (tasks 5.19+5.20); the full "
+        "HTTP+approval wiring lands with Phase 5+. LITE_SKIPS.md "
+        "category `pending-feature`."
+    ),
+]
 
 
 @pytest.fixture

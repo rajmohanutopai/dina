@@ -60,6 +60,59 @@ class BrainSigner:
         return httpx.post(url, content=body, headers=headers, timeout=timeout)
 
 DOCKER_MODE = os.environ.get("DINA_RELEASE") == "docker"
+LITE_MODE = os.environ.get("DINA_LITE_RELEASE") == "docker"
+
+if DOCKER_MODE and LITE_MODE:
+    raise RuntimeError(
+        "DINA_RELEASE=docker and DINA_LITE_RELEASE=docker are mutually "
+        "exclusive. Pick exactly one target stack per release session."
+    )
+
+
+def pytest_configure(config):
+    """Task 9.17 migration prep — register the `skip_in_lite_release`
+    marker so release test files can opt out of Lite runs at
+    per-file or per-test granularity.
+
+    The release suite's 23 tests (REL-001 through REL-023) exercise
+    the full shipping contract: fresh install, first conversation,
+    vault persistence, locked state, recovery, two-dinas D2D, trust
+    network, agent gateway, persona wall, hostile network, failure
+    handling, doc-claims, install rerun, upgrade, admin lifecycle,
+    connector outage, silence + briefing, cart handover, export/import,
+    exposure audit, CLI agent. Each REL's Lite coverage lands per the
+    Phase 8/9 migration prep already done (iters 63-84).
+
+    LITE_SKIPS.md entry for the whole tests/release/ directory is
+    recorded as a single file-pattern entry rather than 23 per-file
+    rows.
+    """
+    config.addinivalue_line(
+        "markers",
+        "skip_in_lite_release(reason): skip this release test when "
+        "running under DINA_LITE_RELEASE=docker. Must be paired with an "
+        "entry in tests/integration/LITE_SKIPS.md.",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Under DINA_LITE_RELEASE=docker, skip every release test.
+
+    Release tests exercise whole-stack acceptance scenarios that
+    depend on cross-milestone features (M1-M5). Rather than migrate
+    each REL individually, the whole suite is skipped in Lite mode
+    until Lite M5 features land — matches Phase 9c's scope per
+    `docs/lite-release-signoff.md`. Individual REL tests can be
+    un-skipped here once specific scenarios are Lite-validated.
+    """
+    if not LITE_MODE:
+        return
+    skip_marker = pytest.mark.skip(
+        reason="[release-suite] Lite release tests deferred to M5 "
+        "(task 9.17); individual REL scenarios unmarked as they land"
+    )
+    for item in items:
+        item.add_marker(skip_marker)
 
 
 # ---------------------------------------------------------------------------

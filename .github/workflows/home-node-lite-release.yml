@@ -1,0 +1,155 @@
+# Home Node Lite — release-push pipeline.
+#
+# Phase 7e of docs/HOME_NODE_LITE_TASKS.md (tasks 7.28 – 7.31).
+# Complements `.github/workflows/ts-docker-build.yml` (which only does
+# PR/main build validation, no push). This workflow handles the full
+# release push:
+#
+#   - 7.28 Multi-arch buildx (amd64 + arm64)
+#   - 7.29 Push to `ghcr.io/rajmohan/dina-home-node-lite-{core,brain}`
+#   - 7.30 Tag strategy: `latest`, semver (vX.Y.Z + major/minor), and
+#          `sha-<short>` for every push
+#   - 7.31 Trivy scan on the built image, fails on HIGH/CRITICAL CVEs
+#
+# Triggers:
+#   - `push: tags: v*`       → full release (all tags + push + scan)
+#   - `workflow_dispatch`    → manual re-run (dev tags only, no semver)
+
+name: home-node-lite-release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push images to ghcr.io (off = build + scan only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: home-node-lite-release-${{ github.ref }}
+  cancel-in-progress: false  # never cancel a release build mid-push
+
+# Tokens for ghcr.io + security scanning.
+permissions:
+  contents: read
+  packages: write          # ghcr push
+  security-events: write   # upload Trivy SARIF to GitHub code-scanning
+  id-token: write          # cosign keyless signing (future task)
+
+jobs:
+  release:
+    name: Release ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [core, brain]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # QEMU so the amd64 runner can emit arm64 layers without a
+      # cross-compiler in every Dockerfile step. Buildx uses QEMU under
+      # the hood for multi-arch builds.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Registry login — only when we intend to push. On manual dispatch
+      # without `push: true`, we skip login so the workflow can run in a
+      # fork for validation without needing ghcr credentials.
+      - name: Log in to ghcr.io
+        if: github.event_name == 'push' || inputs.push == true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Task 7.30 — tag strategy. docker/metadata-action computes the
+      # full tag set from the git ref + branch context:
+      #   - `latest`         on tags matching `v*.*.*`
+      #   - `v1.2.3`         literal semver
+      #   - `v1.2`           major.minor convenience
+      #   - `v1`             major convenience
+      #   - `sha-abc1234`    always, for auditability
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/rajmohan/dina-home-node-lite-${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,prefix=sha-,format=short
+
+      # Task 7.28 + 7.29 — multi-arch build and push.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/home-node-lite/docker/Dockerfile.${{ matrix.image }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' || inputs.push == true }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Docker layer cache reuse across runs. GHA cache is free + fast
+          # for the container-image use case.
+          cache-from: type=gha,scope=home-node-lite-${{ matrix.image }}
+          cache-to: type=gha,scope=home-node-lite-${{ matrix.image }},mode=max
+          # Provenance + SBOM default-on so supply-chain consumers can
+          # verify what the image was built from.
+          provenance: true
+          sbom: true
+
+      # Task 7.31 — Trivy scan. Runs after build; uses the local image
+      # output from buildx (not a registry pull) to keep the scan step
+      # fast + independent of network.
+      #
+      # Fails the job on HIGH/CRITICAL findings. Medium/low go to the
+      # GitHub security tab via the SARIF upload below but don't block.
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ghcr.io/rajmohan/dina-home-node-lite-${{ matrix.image }}:sha-${{ github.sha }}
+          format: sarif
+          output: trivy-results-${{ matrix.image }}.sarif
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true      # only fail on CVEs that have a fix available
+
+      - name: Upload Trivy SARIF to GitHub code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Home Node Lite — ${{ matrix.image }} release"
+            echo ""
+            echo "**Tags:**"
+            echo '```'
+            echo '${{ steps.meta.outputs.tags }}'
+            echo '```'
+            echo ""
+            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
+            echo ""
+            echo "Built for: linux/amd64, linux/arm64"
+          } >> "$GITHUB_STEP_SUMMARY"

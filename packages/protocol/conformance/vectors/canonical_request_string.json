@@ -1,0 +1,78 @@
+{
+  "name": "canonical_request_string",
+  "description": "buildCanonicalPayload(method, path, query, timestamp, nonce, body_hash_hex) outputs exactly the newline-separated string these cases assert. Consumed by __tests__/conformance_vectors.test.ts.",
+  "level": "L2",
+  "task": "10.7",
+  "producer": {
+    "tool": "packages/protocol/src/canonical_sign.ts :: buildCanonicalPayload",
+    "frozen_at": "2026-04-22"
+  },
+  "cases": [
+    {
+      "name": "post_empty_query_empty_body",
+      "inputs": {
+        "method": "POST",
+        "path": "/v1/vault/query",
+        "query": "",
+        "timestamp": "2026-04-22T10:30:00Z",
+        "nonce": "f0e87a2b1c4d5e6f7a8b9c0d1e2f3a4b",
+        "body_hash_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected_canonical_string": "POST\n/v1/vault/query\n\n2026-04-22T10:30:00Z\nf0e87a2b1c4d5e6f7a8b9c0d1e2f3a4b\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "get_with_query_params",
+      "inputs": {
+        "method": "GET",
+        "path": "/v1/audit/recent",
+        "query": "limit=10&persona=personal",
+        "timestamp": "2026-04-22T10:30:00Z",
+        "nonce": "a1b2c3d4e5f6789abcdef0123456789a",
+        "body_hash_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected_canonical_string": "GET\n/v1/audit/recent\nlimit=10&persona=personal\n2026-04-22T10:30:00Z\na1b2c3d4e5f6789abcdef0123456789a\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "delete_with_path_param_and_query",
+      "inputs": {
+        "method": "DELETE",
+        "path": "/v1/vault/item/v-42",
+        "query": "persona=personal",
+        "timestamp": "2026-04-22T11:00:15Z",
+        "nonce": "deadbeefdeadbeefdeadbeefdeadbeef",
+        "body_hash_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected_canonical_string": "DELETE\n/v1/vault/item/v-42\npersona=personal\n2026-04-22T11:00:15Z\ndeadbeefdeadbeefdeadbeefdeadbeef\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "post_with_body",
+      "inputs": {
+        "method": "POST",
+        "path": "/v1/vault/store",
+        "query": "",
+        "timestamp": "2026-04-22T12:00:00Z",
+        "nonce": "cafebabe0000000000000000cafebabe",
+        "body_hash_hex": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+      },
+      "expected_canonical_string": "POST\n/v1/vault/store\n\n2026-04-22T12:00:00Z\ncafebabe0000000000000000cafebabe\nb94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+    },
+    {
+      "name": "head_with_no_body",
+      "inputs": {
+        "method": "HEAD",
+        "path": "/healthz",
+        "query": "",
+        "timestamp": "2026-04-22T12:00:00Z",
+        "nonce": "0000000000000000000000000000abcd",
+        "body_hash_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected_canonical_string": "HEAD\n/healthz\n\n2026-04-22T12:00:00Z\n0000000000000000000000000000abcd\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "notes": [
+    "Empty body hash is SHA-256 of the empty byte string, hex-encoded: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 — this is the canonical 'empty body' identifier.",
+    "post_with_body case uses the SHA-256 of the ASCII string \"hello world\" (without a trailing newline) as the body hash.",
+    "Nonces shown here are test-fixtures, not real entropy. Production nonces MUST carry at least 16 bytes of CSPRNG-derived randomness.",
+    "Timestamps are RFC3339 UTC with a 'Z' suffix — protocol rejects offset-encoded timestamps (e.g. 2026-04-22T06:30:00-04:00) per validator contract."
+  ]
+}

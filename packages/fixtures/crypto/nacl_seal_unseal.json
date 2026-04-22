@@ -1,0 +1,23 @@
+{
+  "domain": "crypto/nacl",
+  "version": 1,
+  "generated_from": "crypto/nacl.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "NaCl seal/unseal round-trip (sealed is non-deterministic)",
+      "source_test": "transport_d2d_sig_test.go",
+      "inputs": {
+        "ed25519_seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        "plaintext_hex": "64696e612074657374206d65737361676520666f72204e61436c207365616c",
+        "x25519_pub_hex": "d85e07ec22b0ad881537c2f44d662d1a143cf830c57aca4305d85c7a90f6b62e"
+      },
+      "expected": {
+        "note": "sealed_hex varies each run (ephemeral keys). Verify roundtrip, not exact ciphertext.",
+        "roundtrip_matches": true,
+        "sealed_length_min": 79,
+        "unsealed_hex": "64696e612074657374206d65737361676520666f72204e61436c207365616c"
+      }
+    }
+  ]
+}

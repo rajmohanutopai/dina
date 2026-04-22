@@ -21,6 +21,17 @@ import pytest
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
 
+# Task 8.23 migration prep. WS2 (service.query workflow, provider-side
+# delegation to OpenClaw, config push, approval lifecycle) is the M3
+# gate's hero scenario (the BusDriver demo per README). Lite's
+# WS2 subsystem lands with M3 + Phase 5+ brain-server routes.
+# LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="WS2 service-query workflow (service.query → /task delegation → "
+    "service.response) is the M3 hero scenario. Lite's WS2 brain-side lands "
+    "with Phase 5+. LITE_SKIPS.md category `pending-feature`."
+)
+
 
 def _core_url():
     """Return Core base URL from env or default local."""

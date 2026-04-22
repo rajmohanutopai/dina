@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Dina",
+    "slug": "dina-mobile",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "scheme": "dina",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dinakernel.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.dinakernel.mobile"
+    },
+    "plugins": ["expo-router"]
+  }
+}

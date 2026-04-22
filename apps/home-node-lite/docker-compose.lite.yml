@@ -1,0 +1,155 @@
+# Home Node Lite — dev / first-boot docker compose.
+#
+# Phase 7c of docs/HOME_NODE_LITE_TASKS.md (tasks 7.14 – 7.20).
+# Pairs with apps/home-node-lite/docker/Dockerfile.{core,brain}.
+#
+# Usage (from the repo root):
+#   # First run — creates .env from .env.example if absent, then starts.
+#   ./apps/home-node-lite/install-lite.sh
+#
+# Manual usage without the installer:
+#   cp apps/home-node-lite/.env.example apps/home-node-lite/.env
+#   # edit .env to set DINA_PDS_URL / credentials
+#   docker compose -f apps/home-node-lite/docker-compose.lite.yml --env-file apps/home-node-lite/.env up -d
+#
+# The compose file intentionally does NOT auto-build. Build is a
+# separate `docker compose build` step, so images can be pinned to
+# pre-pulled ghcr.io tags in production (tasks 7.28 – 7.30).
+
+name: dina-home-node-lite
+
+services:
+
+  # ─── Core — vault keeper ──────────────────────────────────────────────
+  core-lite:
+    image: ghcr.io/rajmohan/dina-home-node-lite-core:${DINA_IMAGE_TAG:-dev}
+    build:
+      context: ../..
+      dockerfile: apps/home-node-lite/docker/Dockerfile.core
+    container_name: dina-core-lite
+    restart: unless-stopped
+    # Security hardening (tasks 11.14 + 11.15). Drop every Linux
+    # capability — Core listens on 8100 (non-privileged) so nothing
+    # from the default set is needed. `no-new-privileges` blocks the
+    # setuid / ambient-capability escalation paths. `read_only: true`
+    # makes the container's root FS immutable; the vault volume is
+    # the only writable path, and /tmp is a size-capped tmpfs for
+    # pino-pretty stream buffering.
+    cap_drop: ['ALL']
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    # Task 7.16 — Core's private signing key lives under /var/lib/dina/.
+    # Bind-mounting a named volume here ONLY to core-lite (NOT to
+    # brain-lite) is the filesystem-level enforcement of decision #2's
+    # security boundary — Brain's container has no path that resolves
+    # to Core's keys. The enforcement is by ABSENCE in brain-lite's
+    # volumes block, not by careful placement; future maintainers who
+    # add a vault mount to brain-lite break the boundary. The operator
+    # can swap the left side for a host path if they want explicit
+    # mount semantics.
+    volumes:
+      - dina-core-vault:/var/lib/dina
+    environment:
+      # Bind all interfaces — docker network routes traffic to the
+      # container's 127.0.0.1 only if the server binds 0.0.0.0.
+      DINA_CORE_HOST: 0.0.0.0
+      DINA_CORE_PORT: 8100
+      DINA_VAULT_DIR: /var/lib/dina
+      DINA_PDS_URL: ${DINA_PDS_URL:-https://bsky.social}
+      DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
+      # PDS credentials — only required when Core needs to createAccount
+      # on first boot. Empty values skip publish (dev-mode).
+      DINA_PDS_HANDLE: ${DINA_PDS_HANDLE:-}
+      DINA_PDS_PASSWORD: ${DINA_PDS_PASSWORD:-}
+    # Task 7.20 — ports match the Go production compose. Operators
+    # running both stacks side-by-side override DINA_CORE_PORT_EXTERNAL
+    # on the host side.
+    ports:
+      - "${DINA_CORE_PORT_EXTERNAL:-8100}:8100"
+    networks:
+      - dina-lite
+    # The image already carries a HEALTHCHECK; compose surfaces its
+    # status and depends_on: condition: service_healthy below uses it.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8100/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─── Brain — analyst ──────────────────────────────────────────────────
+  brain-lite:
+    image: ghcr.io/rajmohan/dina-home-node-lite-brain:${DINA_IMAGE_TAG:-dev}
+    build:
+      context: ../..
+      dockerfile: apps/home-node-lite/docker/Dockerfile.brain
+    container_name: dina-brain-lite
+    restart: unless-stopped
+    # Same hardening as core-lite (tasks 11.14 + 11.15). Brain owns
+    # no persistent state, so no vault-volume carve-out needed — only
+    # /tmp needs to be writable for pino-pretty.
+    cap_drop: ['ALL']
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    # Task 7.16 counterpart — Brain holds no persistent state (see
+    # Dockerfile.brain's note). The intentional ABSENCE of a volumes
+    # block here is the other half of the two-process key-isolation
+    # boundary: brain-lite has no filesystem path that can resolve
+    # to Core's keys. If Phase 5 brain-server later needs its own
+    # persistent service key, give it a DEDICATED volume (never
+    # reuse dina-core-vault) so the boundary scales from 1 key to 2.
+    environment:
+      DINA_BRAIN_HOST: 0.0.0.0
+      DINA_BRAIN_PORT: 8200
+      # Brain-to-Core HTTP URL. Uses the compose service name —
+      # Docker's embedded DNS resolves `core-lite` to the container IP.
+      DINA_CORE_URL: http://core-lite:8100
+      DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
+      # LLM provider keys — whichever is set gets used. All optional;
+      # install-lite.sh prompts the operator to pick one.
+      DINA_ANTHROPIC_API_KEY: ${DINA_ANTHROPIC_API_KEY:-}
+      DINA_OPENAI_API_KEY: ${DINA_OPENAI_API_KEY:-}
+      DINA_GEMINI_API_KEY: ${DINA_GEMINI_API_KEY:-}
+      DINA_MODEL_DEFAULT: ${DINA_MODEL_DEFAULT:-anthropic:claude-haiku-4-5}
+    ports:
+      - "${DINA_BRAIN_PORT_EXTERNAL:-8200}:8200"
+    networks:
+      - dina-lite
+    # Task 7.18 — Brain waits for Core to be healthy before booting.
+    # Prevents Brain from making HTTP calls to Core that land before
+    # Core's handlers are registered.
+    depends_on:
+      core-lite:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8200/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+# ─── Networks ────────────────────────────────────────────────────────────
+# A single isolated bridge network. Both services attach; external
+# traffic enters via the published ports above. No internet-egress rules
+# here — operator adds them at the host firewall / Docker daemon level
+# if needed.
+networks:
+  dina-lite:
+    driver: bridge
+    name: dina-lite
+
+# ─── Volumes ─────────────────────────────────────────────────────────────
+# dina-core-vault — persists identity.sqlite + vault/<persona>.sqlite
+# across container restarts. Named volume (not a bind mount) by default
+# so the operator doesn't need to pick a host path; they can override
+# to a bind mount via a compose override file if they want to inspect
+# the contents directly.
+volumes:
+  dina-core-vault:
+    name: dina-core-vault

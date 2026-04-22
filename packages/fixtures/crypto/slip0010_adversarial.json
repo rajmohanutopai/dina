@@ -1,0 +1,86 @@
+{
+  "domain": "crypto/slip0010_adversarial",
+  "version": 1,
+  "generated_from": "crypto/slip0010.go",
+  "generated_at": "2026-04-11",
+  "vectors": [
+    {
+      "description": "all-zero seed",
+      "source_test": "crypto_adversarial_test.go",
+      "inputs": {
+        "path": "m/9999'/0'/0'",
+        "seed_hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "seed_length": "64"
+      },
+      "expected": {
+        "error": "",
+        "should_fail": false
+      }
+    },
+    {
+      "description": "short seed (16 bytes)",
+      "source_test": "crypto_adversarial_test.go",
+      "inputs": {
+        "path": "m/9999'/0'/0'",
+        "seed_hex": "00000000000000000000000000000000",
+        "seed_length": "16"
+      },
+      "expected": {
+        "error": "",
+        "should_fail": false
+      }
+    },
+    {
+      "description": "empty seed",
+      "source_test": "crypto_adversarial_test.go",
+      "inputs": {
+        "path": "m/9999'/0'/0'",
+        "seed_hex": "",
+        "seed_length": "0"
+      },
+      "expected": {
+        "error": "slip0010: seed must not be empty",
+        "should_fail": true
+      }
+    },
+    {
+      "description": "forbidden BIP-44 path",
+      "source_test": "crypto_adversarial_test.go",
+      "inputs": {
+        "path": "m/44'/0'",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840",
+        "seed_length": "64"
+      },
+      "expected": {
+        "error": "slip0010: BIP-44 purpose 44' is forbidden in Dina",
+        "should_fail": true
+      }
+    },
+    {
+      "description": "non-hardened path",
+      "source_test": "crypto_adversarial_test.go",
+      "inputs": {
+        "path": "m/9999/0",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840",
+        "seed_length": "64"
+      },
+      "expected": {
+        "error": "slip0010: only hardened derivation is allowed (path segment \"9999\" missing ')",
+        "should_fail": true
+      }
+    },
+    {
+      "description": "empty path",
+      "source_test": "crypto_adversarial_test.go",
+      "inputs": {
+        "path": "",
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840",
+        "seed_length": "64"
+      },
+      "expected": {
+        "error": "slip0010: path must not be empty",
+        "should_fail": true
+      }
+    }
+  ]
+}

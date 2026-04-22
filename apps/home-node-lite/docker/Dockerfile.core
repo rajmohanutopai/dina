@@ -1,0 +1,137 @@
+# syntax=docker/dockerfile:1.7
+#
+# Home Node Lite — Core server container.
+#
+# Multi-stage build — Phase 7a of docs/HOME_NODE_LITE_TASKS.md.
+# Satisfies tasks 7.1 (this file), 7.2 (builder stage), 7.3 (slim
+# runtime), 7.4 (non-root UID 10001 + /var/lib/dina), 7.5 (tini PID1),
+# 7.6 (native deps in builder + binary-only in runtime), 7.7
+# (HEALTHCHECK via /healthz), 7.8 (EXPOSE 8100), 7.9 (CMD bin).
+#
+# Build context: repo root (not apps/home-node-lite/).
+#   docker build -f apps/home-node-lite/docker/Dockerfile.core -t dina-lite-core:dev .
+#
+# Multi-arch (linux/amd64 + linux/arm64) is added in task 7.28 via
+# buildx. This file works on either arch unmodified — node:22-alpine
+# ships both, and better-sqlite3-multiple-ciphers has prebuilds for
+# both linuxmusl-x64 and linuxmusl-arm64.
+#
+# **TODO (M1+ optimization).** This image ships `tsx` + workspace
+# devDeps at runtime because the monorepo doesn't yet have a proper
+# composite `tsc --build` graph (each package keeps `main: src/*.ts`
+# and is consumed by tsx at runtime). A future task will set up per-
+# package `dist/` emission + swap the runtime CMD from `tsx` to
+# `node dist/bin.js`, at which point this Dockerfile flips to
+# `npm prune --omit=dev` and drops ~100 MB of dev tooling.
+
+# ─── Builder stage — install deps + native modules ────────────────────────
+FROM node:22-alpine AS builder
+
+# Toolchain for native-module prebuild-install / from-source fallbacks.
+# build-base covers gcc + make; python3 is node-gyp's Python interpreter.
+# better-sqlite3-multiple-ciphers has prebuilds for linuxmusl-x64 and
+# linuxmusl-arm64 (verified in packages/storage-node/README.md task 3.2),
+# so these tools are the fallback path only.
+RUN apk add --no-cache build-base python3
+
+WORKDIR /workspace
+
+# Copy workspace manifests first — Docker layer cache reuse across
+# source-only edits.
+COPY package.json package-lock.json ./
+COPY tsconfig.base.json tsconfig.json ./
+
+# Each workspace package's manifest + tsconfig (where present). npm ci
+# resolves the workspace graph before any src file is copied.
+COPY packages/protocol/package.json packages/protocol/tsconfig.json packages/protocol/
+COPY packages/core/package.json packages/core/tsconfig.json packages/core/
+COPY packages/brain/package.json packages/brain/tsconfig.json packages/brain/
+COPY packages/crypto-node/package.json packages/crypto-node/tsconfig.json packages/crypto-node/
+COPY packages/storage-node/package.json packages/storage-node/tsconfig.json packages/storage-node/
+COPY packages/fs-node/package.json packages/fs-node/tsconfig.json packages/fs-node/
+COPY packages/net-node/package.json packages/net-node/tsconfig.json packages/net-node/
+COPY packages/keystore-node/package.json packages/keystore-node/tsconfig.json packages/keystore-node/
+COPY packages/adapters-node/package.json packages/adapters-node/tsconfig.json packages/adapters-node/
+COPY packages/fixtures/package.json packages/fixtures/
+COPY packages/test-harness/package.json packages/test-harness/tsconfig.json packages/test-harness/
+COPY apps/home-node-lite/core-server/package.json apps/home-node-lite/core-server/tsconfig.json apps/home-node-lite/core-server/
+
+# Install every workspace's deps — including tsx at the core-server
+# level, which the runtime uses to execute src/bin.ts directly (see
+# M1-optimisation TODO at the top of this file).
+RUN npm ci --workspaces --include-workspace-root
+
+# Copy source. Split from deps so source-only edits don't re-run npm ci.
+COPY packages/ ./packages/
+COPY apps/home-node-lite/core-server/ ./apps/home-node-lite/core-server/
+
+# ─── Runtime stage — slim image, non-root, tini, healthcheck ──────────────
+# Task 7.3 — runtime base. Alpine IS the slim Node variant (there's no
+# `node:22-alpine-slim` tag; `-slim` is a Debian-family suffix and
+# Alpine is already the smallest Node-with-shell base at ~64 MB). We
+# don't go distroless because the healthcheck needs `wget` and debug
+# access benefits from `sh` when the container misbehaves.
+# **devDep pruning** is the M1+ TODO at the top of this file — the
+# current image ships `tsx` + workspace devDeps; composite-build
+# migration drops ~100 MB.
+FROM node:22-alpine AS runtime
+
+# Task 7.6 — builder-to-runtime discipline. No `build-base`/`python3`
+# installed here: native modules (better-sqlite3-multiple-ciphers et
+# al.) are compiled/prebuild-fetched in the builder stage and copied
+# as already-linked `.node` binaries via COPY --from=builder. Runtime
+# therefore has no gcc/make attack surface.
+#
+# tini reaps zombies and forwards signals — required PID-1 behaviour.
+RUN apk add --no-cache tini
+
+# Dedicated non-root user; UID 10001 per task 7.4.
+RUN addgroup -g 10001 -S dina \
+ && adduser  -u 10001 -S -G dina -s /sbin/nologin dina
+
+# Vault directory is bind-mounted at runtime. Pre-creating with the
+# right ownership means a first boot doesn't fail on chown.
+RUN mkdir -p /var/lib/dina \
+ && chown -R dina:dina /var/lib/dina
+
+WORKDIR /app
+
+# Copy the built workspace verbatim: node_modules (with tsx + workspace
+# symlinks) + source + manifests. Owned by dina; runtime has no
+# write-path to app code (read-only root filesystem enforcement lands
+# in task 11.15).
+COPY --from=builder --chown=dina:dina /workspace ./
+
+USER dina
+
+# Task 7.8 — Core listens on 8100 per DEFAULT_CORE_PORT in
+# @dina/protocol + our core-server config. Single port — admin +
+# brain-internal traffic share it in Lite (unlike the Go Core which
+# has a separate loopback). The task text mentions "8100 8101" but
+# 8101 is vestigial — no service in either the Go or Lite stack
+# binds it; it was a placeholder for a Brain-internal metrics port
+# that never materialised. Don't add an `EXPOSE 8101` line unless
+# a real service starts listening there.
+EXPOSE 8100
+
+# Persistent state volume. Operator bind-mounts their vault dir here.
+VOLUME /var/lib/dina
+
+ENV NODE_ENV=production \
+    DINA_VAULT_DIR=/var/lib/dina \
+    DINA_CORE_HOST=0.0.0.0
+
+# Probe /healthz — matches the server.ts route. `wget -q` returns
+# non-zero on any non-200; --spider skips body download. 30-second
+# startup grace period + 30-second interval.
+HEALTHCHECK --start-period=30s --interval=30s --timeout=5s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:8100/healthz || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
+# Task 7.9 — entry point. The `dina-home-node-lite-core` npm bin
+# declared in core-server/package.json maps to ./src/bin.ts, which
+# can't be exec'd directly without a TS runtime. We invoke `tsx`
+# explicitly for now; the M1+ composite-build TODO (top of file)
+# compiles ./src/bin.ts → ./dist/bin.js, after which the bin can be
+# the CMD directly: `CMD ["dina-home-node-lite-core"]`.
+CMD ["node_modules/.bin/tsx", "apps/home-node-lite/core-server/src/bin.ts"]

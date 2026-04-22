@@ -14,7 +14,7 @@
 * **What Works Now:** [Usage Guide](./CAPABILITIES.md)
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **Start Here:** [Open dina.html](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
-* **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) 
+* **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) — high-level design. For the byte-exact wire contract + 9 frozen conformance test vectors + runnable self-check suite, see [`packages/protocol/`](./packages/protocol/) and [`packages/protocol/docs/conformance.md`](./packages/protocol/docs/conformance.md).
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **For dina-mobile / NAT'd clients:** see [`docker/openclaw/`](./docker/openclaw/README.md) — standalone OpenClaw container stack that talks to your Home Node through the MsgBox relay (no port forwarding). Pins `dina-agent==0.13.0` from PyPI; copies cleanly into `dina-mobile`.
@@ -337,6 +337,78 @@ There cannot be any walled garden, no single owner, corporation, or nation-state
 ## Come Build With Us
 
 Dina is for everyone. If you believe your digital companion should work for you, and you alone, come, join us, in building this future.
+
+---
+
+## Two stacks, one protocol
+
+Dina ships two implementations of the Home Node in parallel. The wire
+protocol is the same — a Dina is a Dina regardless of runtime — but
+the environments they target are different.
+
+**Production stack (Go + Python).** The mature, load-bearing
+implementation. Go Core owns the SQLCipher vault and signing keys;
+Python Brain runs Google ADK agents, LLM routing, and the admin UI.
+Two Docker containers with separately bind-mounted keys. This is
+what `./install.sh` at the repo root gives you today — the path
+recommended for anyone deploying Dina on a VPS, Raspberry Pi, or
+home mini-PC right now.
+
+**Lite stack (TypeScript).** A pure-TypeScript implementation
+built alongside. A Fastify Core + Fastify Brain on the server;
+the same `@dina/core` + `@dina/brain` packages power a React
+Native / Expo mobile app running in a single JS VM. The server
+layout is identical (two processes, bind-mounted keys) so the
+security model carries over unchanged. Status: **pre-M1** — the
+storage, crypto, and protocol primitives are done, the servers
+boot, route binding + LLM + D2D land through milestones M1–M5.
+
+See [`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md)
+for the Lite quickstart and [`docs/try-lite.md`](./docs/try-lite.md)
+for the 10-minute first-use walkthrough. The full architectural
+decision lives in
+[`ARCHITECTURE.md`](./ARCHITECTURE.md#architectural-decision-two-stack-implementation--production-gopython--lite-typescript).
+The milestone plan is in
+[`docs/HOME_NODE_LITE_TASKS.md`](./docs/HOME_NODE_LITE_TASKS.md).
+
+| What you're doing                                              | Use          |
+|----------------------------------------------------------------|--------------|
+| Running Dina on a server today, backed by the full test matrix | **Production** |
+| Running Dina on a phone (iOS/Android)                          | **Lite**       |
+| Hacking on Dina in TypeScript / JS                             | **Lite**       |
+| Contributing to the Trust Network + AT Protocol integration    | either — both speak the same protocol |
+
+### Implementing Dina in another language
+
+`@dina/protocol` ([`packages/protocol/`](./packages/protocol/)) is
+the **wire-format package** — types, canonical-signing helpers,
+envelope builders, frame constants, validators. Zero runtime deps,
+deliberately so any language's port can depend on the spec without
+dragging in the TypeScript stack.
+
+- **Implementer overview** —
+  [`packages/protocol/README.md`](./packages/protocol/README.md).
+- **Byte-exact conformance spec** —
+  [`packages/protocol/docs/conformance.md`](./packages/protocol/docs/conformance.md)
+  with 4 conformance levels (L1 shape → L2 byte-exact → L3 signed
+  round-trip → L4 full peer).
+- **Per-feature guides** —
+  [`packages/protocol/docs/features/`](./packages/protocol/docs/features/)
+  for canonical signing, D2D envelope, auth handshake, sealed-box,
+  PLC document.
+- **Frozen test vectors** —
+  [`packages/protocol/conformance/vectors/`](./packages/protocol/conformance/vectors/)
+  with 9 vectors a Go / Rust / Swift / Kotlin / Python port runs
+  against to prove compatibility.
+- **Runnable conformance suite + HTTP harness** —
+  [`packages/protocol/conformance/suite.ts`](./packages/protocol/conformance/suite.ts)
+  and
+  [`packages/protocol/conformance/http_harness.ts`](./packages/protocol/conformance/http_harness.ts).
+
+Contributions that extend the test-vector set (task 10.x in
+[`docs/HOME_NODE_LITE_TASKS.md`](./docs/HOME_NODE_LITE_TASKS.md))
+are welcome — the more corners the reference pins, the easier every
+port's compliance claim becomes.
 
 ---
 

@@ -154,6 +154,32 @@ func (c *MsgBoxClient) connectAndAuth(ctx context.Context) error {
 		return fmt.Errorf("write auth: %w", err)
 	}
 
+	// Wait for explicit {"type":"auth_success"} from the server. Greenfield
+	// relay — every server sends one, so a timeout or mismatched frame is a
+	// real failure, not a legacy-server tolerance case.
+	ackCtx, ackCancel := context.WithTimeout(authCtx, 5*time.Second)
+	msgType, ackBytes, ackErr := conn.Read(ackCtx)
+	ackCancel()
+	if ackErr != nil {
+		conn.Close(websocket.StatusAbnormalClosure, "")
+		return fmt.Errorf("auth ack read failed: %w", ackErr)
+	}
+	if msgType != websocket.MessageText {
+		conn.Close(websocket.StatusAbnormalClosure, "")
+		return fmt.Errorf("auth ack wrong frame type: %v", msgType)
+	}
+	var ack struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(ackBytes, &ack); err != nil {
+		conn.Close(websocket.StatusAbnormalClosure, "")
+		return fmt.Errorf("auth ack parse: %w", err)
+	}
+	if ack.Type != "auth_success" {
+		conn.Close(websocket.StatusAbnormalClosure, "")
+		return fmt.Errorf("auth rejected (got frame %q)", ack.Type)
+	}
+
 	c.mu.Lock()
 	c.conn = conn
 	c.mu.Unlock()

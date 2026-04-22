@@ -23,6 +23,17 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+# Task 8.21 migration prep. Trust rings (Ring 1 unverified → Ring 3+
+# verified-actioned) + composite trust function live in Lite's trust-
+# scorer subsystem, which lands with M3 (tasks 8.20-8.26 scope).
+# Entire file exercises the ring model; file-level pytestmark is the
+# right granularity. LITE_SKIPS.md category `pending-feature`.
+pytestmark = pytest.mark.skip_in_lite(
+    reason="Trust rings + composite trust function are M3 scope "
+    "(tasks 8.20-8.26). Lite trust-scorer lands with Phase 5+. "
+    "LITE_SKIPS.md category `pending-feature`."
+)
+
 
 # ---------------------------------------------------------------------------
 # TestRing1Unverified
