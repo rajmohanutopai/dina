@@ -26,35 +26,36 @@
  * proceed, warn, or block.
  */
 
-import { createCoreRouter } from '../../../core/src/server/core_server';
-import { createInProcessDispatch } from '../../../core/src/server/in_process_dispatch';
-import { BrainCoreClient } from '../../../brain/src/core_client/http';
+import { configureRateLimiter } from '@dina/core/src/auth/middleware';
+import { createCoreRouter } from '@dina/core/src/server/core_server';
+import { createInProcessDispatch } from '@dina/core/src/server/in_process_dispatch';
+import { BrainCoreClient } from '@dina/brain/src/core_client/http';
 import {
   InMemoryWorkflowRepository,
   SQLiteWorkflowRepository,
   type WorkflowRepository,
-} from '../../../core/src/workflow/repository';
+} from '@dina/core/src/workflow/repository';
 import {
   InMemoryServiceConfigRepository,
   SQLiteServiceConfigRepository,
   type ServiceConfigRepository,
-} from '../../../core/src/service/service_config_repository';
-import { MemoryService, setMemoryService } from '../../../core/src/memory/service';
+} from '@dina/core/src/service/service_config_repository';
+import { MemoryService, setMemoryService } from '@dina/core/src/memory/service';
 import {
   getTopicRepository,
   listTopicRepositoryPersonas,
-} from '../../../core/src/memory/repository';
-import type { ServiceResponseBody } from '../../../core/src/d2d/service_bodies';
-import type { AppViewClient } from '../../../brain/src/appview_client/http';
-import type { PDSPublisher } from '../../../brain/src/pds/publisher';
-import type { IdentityKeypair } from '../../../core/src/identity/keypair';
-import type { PDSSession } from '../../../brain/src/pds/account';
-import type { DatabaseAdapter } from '../../../core/src/storage/db_adapter';
-import type { WSFactory } from '../../../core/src/relay/msgbox_ws';
-import type { CoreRouter } from '../../../core/src/server/router';
-import type { LLMProvider } from '../../../brain/src/llm/adapters/provider';
-import type { ToolRegistry } from '../../../brain/src/reasoning/tool_registry';
-import type { LocalCapabilityRunner } from '../../../core/src/workflow/local_delegation_runner';
+} from '@dina/core/src/memory/repository';
+import type { ServiceResponseBody } from '@dina/core/src/d2d/service_bodies';
+import type { AppViewClient } from '@dina/brain/src/appview_client/http';
+import type { PDSPublisher } from '@dina/brain/src/pds/publisher';
+import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
+import type { PDSSession } from '@dina/brain/src/pds/account';
+import type { DatabaseAdapter } from '@dina/core/src/storage/db_adapter';
+import type { WSFactory } from '@dina/core/src/relay/msgbox_ws';
+import type { CoreRouter } from '@dina/core/src/server/router';
+import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
+import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
+import type { LocalCapabilityRunner } from '@dina/core/src/workflow/local_delegation_runner';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { buildStagingEnrichment } from './staging_enrichment';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
@@ -243,6 +244,17 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     degradations.push({ code, message });
     log({ event: 'boot.degradation', code, message });
   };
+
+  // --- Rate-limit config for in-process Brain↔Core -----------------------
+  // The 50/min default (server builds) trips in seconds on mobile: Brain
+  // polls workflow events + hydrates ToC + drains staging + etc., and
+  // every one of those calls counts against the node's own DID because
+  // in-process dispatch still goes through the auth pipeline (same
+  // signature check, same DID). Per-DID limiting guards against external
+  // abuse — it has no useful meaning when the caller and Core share a
+  // process. Raise to 10k/min so boot converges. Server builds continue
+  // to use the 50/min default by never calling this.
+  configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
 
   // --- In-process CoreRouter (always local-composed) --------------------
   // MsgBox ingress + signed in-process dispatch share one router so the

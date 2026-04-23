@@ -16,8 +16,8 @@ import {
   getApprovalManager,
   resetApprovalManager,
   type ApprovalRequest,
-} from '../../../core/src/approval/manager';
-import { addMessage, type ChatMessage } from '../../../brain/src/chat/thread';
+} from '@dina/core/src/approval/manager';
+import { addMessage, type ChatMessage } from '@dina/brain/src/chat/thread';
 
 export interface ApprovalCardData {
   id: string;

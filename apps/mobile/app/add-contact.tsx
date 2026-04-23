@@ -25,7 +25,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { addContact, getContact } from '../../core/src/contacts/directory';
+import { addContact, getContact } from '@dina/core/src/contacts/directory';
 import { colors, spacing, radius } from '../src/theme';
 
 // TEST_PDS_URL is a sensible default for the Dina test network. Users

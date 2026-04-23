@@ -16,40 +16,40 @@ import {
   bootstrapPersistence,
   openPersonaVault,
   shutdownPersistence,
-} from '../../../core/src/storage/bootstrap';
-import { setKVRepository } from '../../../core/src/kv/store';
-import { SQLiteKVRepository } from '../../../core/src/kv/repository';
+} from '@dina/core/src/storage/bootstrap';
+import { setKVRepository } from '@dina/core/src/kv/store';
+import { SQLiteKVRepository } from '@dina/core/src/kv/repository';
 import {
   setContactRepository,
   SQLiteContactRepository,
-} from '../../../core/src/contacts/repository';
-import { hydrateContactDirectory } from '../../../core/src/contacts/directory';
+} from '@dina/core/src/contacts/repository';
+import { hydrateContactDirectory } from '@dina/core/src/contacts/directory';
 import {
   setReminderRepository,
   SQLiteReminderRepository,
-} from '../../../core/src/reminders/repository';
-import { setAuditRepository, SQLiteAuditRepository } from '../../../core/src/audit/repository';
-import { setDeviceRepository, SQLiteDeviceRepository } from '../../../core/src/devices/repository';
+} from '@dina/core/src/reminders/repository';
+import { setAuditRepository, SQLiteAuditRepository } from '@dina/core/src/audit/repository';
+import { setDeviceRepository, SQLiteDeviceRepository } from '@dina/core/src/devices/repository';
 import {
   setStagingRepository,
   SQLiteStagingRepository,
-} from '../../../core/src/staging/repository';
+} from '@dina/core/src/staging/repository';
 import {
   setVaultRepository,
   SQLiteVaultRepository,
   resetVaultRepositories,
-} from '../../../core/src/vault/repository';
+} from '@dina/core/src/vault/repository';
 import {
   setTopicRepository,
   SQLiteTopicRepository,
   resetTopicRepositories,
-} from '../../../core/src/memory/repository';
-import { setMemoryService } from '../../../core/src/memory/service';
+} from '@dina/core/src/memory/repository';
+import { setMemoryService } from '@dina/core/src/memory/service';
 import {
   setChatMessageRepository,
   SQLiteChatMessageRepository,
-} from '../../../core/src/chat/repository';
-import type { DatabaseAdapter } from '../../../core/src/storage/db_adapter';
+} from '@dina/core/src/chat/repository';
+import type { DatabaseAdapter } from '@dina/core/src/storage/db_adapter';
 // Expo 55 moved the document-directory constant behind `Paths.document` (a
 // `Directory` object exposing `.uri`). The legacy flat `documentDirectory`
 // export now lives under `expo-file-system/legacy` — we use it here because

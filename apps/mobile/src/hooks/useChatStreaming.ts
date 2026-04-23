@@ -14,7 +14,7 @@
  * Source: ARCHITECTURE.md Task 4.10
  */
 
-import type { StreamChunk } from '../../../brain/src/llm/adapters/provider';
+import type { StreamChunk } from '@dina/brain/src/llm/adapters/provider';
 
 export type StreamStatus = 'idle' | 'streaming' | 'scanning' | 'complete' | 'aborted' | 'error';
 

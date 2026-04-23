@@ -35,36 +35,36 @@ import { loadPersistedDid } from './identity_record';
 import { loadRolePreference } from './role_preference';
 import { AppViewStub, busDriverDemoProfile } from './appview_stub';
 import { getIdentityAdapter } from '../storage/init';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import { deriveDIDKey } from '../../../core/src/identity/did';
+import { getPublicKey } from '@dina/core/src/crypto/ed25519';
+import { deriveDIDKey } from '@dina/core/src/identity/did';
 import { AISDKAdapter } from '../ai/aisdk_adapter';
 import { createModel, getConfiguredProviders } from '../ai/provider';
 import { loadActiveProvider } from '../ai/active_provider';
 import type { ProviderType } from '../ai/provider';
-import { ToolRegistry } from '../../../brain/src/reasoning/tool_registry';
+import { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
 import {
   createGeocodeTool,
   createSearchProviderServicesTool,
   createQueryServiceTool,
   createFindPreferredProviderTool,
-} from '../../../brain/src/reasoning/bus_driver_tools';
+} from '@dina/brain/src/reasoning/bus_driver_tools';
 import type { BootServiceInputs } from './boot_service';
 import type { NodeRole } from './bootstrap';
-import type { IdentityKeypair } from '../../../core/src/identity/keypair';
+import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
 import {
   DEFAULT_MSGBOX_URL,
   makeResolveSender,
   makeWSFactory,
   resolveMsgBoxURL,
 } from './msgbox_wiring';
-import { DIDResolver } from '../../../core/src/d2d/resolver';
-import { multibaseToPublicKey } from '../../../core/src/identity/did';
-import { sendD2D as coreSendD2D } from '../../../core/src/d2d/send';
-import type { ServiceType } from '../../../core/src/transport/delivery';
+import { DIDResolver } from '@dina/core/src/d2d/resolver';
+import { multibaseToPublicKey } from '@dina/core/src/identity/did';
+import { sendD2D as coreSendD2D } from '@dina/core/src/d2d/send';
+import type { ServiceType } from '@dina/core/src/transport/delivery';
 import {
   addContactIfNotExists,
   hydrateContactDirectory,
-} from '../../../core/src/contacts/directory';
+} from '@dina/core/src/contacts/directory';
 
 /**
  * Dev-only seed: EXPO_PUBLIC_DINA_DEV_CONTACT=`did:method:id|Display Name`.

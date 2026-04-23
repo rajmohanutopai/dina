@@ -26,7 +26,7 @@ import {
   Alert,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import type { ChatMessage } from '../../../brain/src/chat/thread';
+import type { ChatMessage } from '@dina/brain/src/chat/thread';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
 import { colors, spacing, radius } from '../../src/theme';
 import { ChatSendError } from '../../src/services/chat_d2d';

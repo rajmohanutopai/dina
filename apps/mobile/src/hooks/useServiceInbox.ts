@@ -12,7 +12,7 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-008.
  */
 
-import type { BrainCoreClient, WorkflowTask } from '../../../brain/src/core_client/http';
+import type { BrainCoreClient, WorkflowTask } from '@dina/brain/src/core_client/http';
 
 export interface InboxEntry {
   id: string;

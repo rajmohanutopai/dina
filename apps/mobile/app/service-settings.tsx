@@ -34,7 +34,7 @@ import {
 } from '../src/hooks/useServiceConfigForm';
 import { getBootDegradations } from '../src/hooks/useNodeBootstrap';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
-import type { ServiceConfig } from '../../core/src/service/service_config';
+import type { ServiceConfig } from '@dina/core/src/service/service_config';
 
 /**
  * Degradation codes that mean "this screen overpromises."

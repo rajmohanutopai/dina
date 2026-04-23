@@ -15,14 +15,14 @@
  * Source: ARCHITECTURE.md Task 4.14
  */
 
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import { deriveDIDKey, publicKeyToMultibase } from '../../../core/src/identity/did';
+import { getPublicKey } from '@dina/core/src/crypto/ed25519';
+import { deriveDIDKey, publicKeyToMultibase } from '@dina/core/src/identity/did';
 import {
   buildDIDDocument,
   validateDIDDocument,
   getMessagingService,
   type DIDDocument,
-} from '../../../core/src/identity/did_document';
+} from '@dina/core/src/identity/did_document';
 
 export interface IdentityInfo {
   did: string;
@@ -46,7 +46,7 @@ let currentMnemonic: string | null = null;
 let identityCreatedAt: number = 0;
 let mnemonicBackup: MnemonicBackup | null = null;
 
-import { MNEMONIC_DISPLAY_TTL_MS as MNEMONIC_TTL } from '../../../core/src/constants';
+import { MNEMONIC_DISPLAY_TTL_MS as MNEMONIC_TTL } from '@dina/core/src/constants';
 const MNEMONIC_DISPLAY_TTL_MS = MNEMONIC_TTL;
 
 /**

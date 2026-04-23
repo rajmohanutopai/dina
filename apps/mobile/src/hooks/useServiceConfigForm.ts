@@ -11,11 +11,11 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-010.
  */
 
-import type { BrainCoreClient } from '../../../brain/src/core_client/http';
+import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
 import {
   validateServiceConfig,
   type ServiceConfig,
-} from '../../../core/src/service/service_config';
+} from '@dina/core/src/service/service_config';
 
 export type ServiceConfigCoreClient = Pick<
   BrainCoreClient,

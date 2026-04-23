@@ -23,7 +23,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { colors, spacing, radius, shadows } from '../src/theme';
 import { useLiveThread } from '../src/hooks/useChatThread';
-import type { ChatMessage } from '../../brain/src/chat/thread';
+import type { ChatMessage } from '@dina/brain/src/chat/thread';
 
 // Render message shape used by the screen's bubble logic. The chat UI
 // treats Brain's MessageType union as three display buckets: user text,

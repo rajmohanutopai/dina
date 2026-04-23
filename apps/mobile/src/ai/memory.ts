@@ -6,7 +6,10 @@
  * enrichment, encryption, and audit logging.
  */
 
-import { ingest } from '../../../core/src/staging/service';
+// Funnel through the package root so Metro can't duplicate this module
+// under two resolution paths (relative vs @-prefixed), which would split
+// the staging `inbox` Map and leave the drain tick empty.
+import { stagingIngest as ingest } from '@dina/core';
 
 export interface Memory {
   id: number;

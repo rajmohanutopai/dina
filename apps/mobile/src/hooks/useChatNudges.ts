@@ -13,8 +13,8 @@
  * Source: ARCHITECTURE.md Task 4.12
  */
 
-import { respectsSilenceTier } from '../../../brain/src/nudge/whisper';
-import { addMessage } from '../../../brain/src/chat/thread';
+import { respectsSilenceTier } from '@dina/brain/src/nudge/whisper';
+import { addMessage } from '@dina/brain/src/chat/thread';
 
 export type NudgeKind =
   | 'reconnection'

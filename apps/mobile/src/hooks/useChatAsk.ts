@@ -15,8 +15,8 @@
  * Source: ARCHITECTURE.md Task 4.9
  */
 
-import { handleChat, type ChatResponse } from '../../../brain/src/chat/orchestrator';
-import { addMessage, type ChatMessage } from '../../../brain/src/chat/thread';
+import { handleChat, type ChatResponse } from '@dina/brain/src/chat/orchestrator';
+import { addMessage, type ChatMessage } from '@dina/brain/src/chat/thread';
 
 export type AskStatus = 'idle' | 'thinking' | 'completed' | 'failed';
 

@@ -28,10 +28,10 @@
  * still works). The caller passes our identity in as a closure.
  */
 
-import { DIDResolver } from '../../../core/src/d2d/resolver';
-import { multibaseToPublicKey } from '../../../core/src/identity/did';
-import { getContact } from '../../../core/src/contacts/directory';
-import type { WSFactory, WSLike } from '../../../core/src/relay/msgbox_ws';
+import { DIDResolver } from '@dina/core/src/d2d/resolver';
+import { multibaseToPublicKey } from '@dina/core/src/identity/did';
+import { getContact } from '@dina/core/src/contacts/directory';
+import type { WSFactory, WSLike } from '@dina/core/src/relay/msgbox_ws';
 
 /** Default shared Dina mailbox — matches docker/openclaw/.env. */
 export const DEFAULT_MSGBOX_URL = 'wss://test-mailbox.dinakernel.com/ws';

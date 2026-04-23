@@ -25,12 +25,12 @@ import {
   generateMnemonic,
   mnemonicToEntropy,
   validateMnemonic,
-} from '../../../core/src/crypto/bip39';
-import { wrapSeed, type WrappedSeed } from '../../../core/src/crypto/aesgcm';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import { deriveRootSigningKey } from '../../../core/src/crypto/slip0010';
-import { deriveDIDKey } from '../../../core/src/identity/did';
-import { createPersona, personaExists, resetPersonaState } from '../../../core/src/persona/service';
+} from '@dina/core/src/crypto/bip39';
+import { wrapSeed, type WrappedSeed } from '@dina/core/src/crypto/aesgcm';
+import { getPublicKey } from '@dina/core/src/crypto/ed25519';
+import { deriveRootSigningKey } from '@dina/core/src/crypto/slip0010';
+import { deriveDIDKey } from '@dina/core/src/identity/did';
+import { createPersona, personaExists, resetPersonaState } from '@dina/core/src/persona/service';
 
 export type OnboardingStep =
   | 'welcome'
@@ -56,7 +56,7 @@ export interface VerificationChallenge {
   expected: string[];
 }
 
-import { ONBOARDING_VERIFY_WORD_COUNT } from '../../../core/src/constants';
+import { ONBOARDING_VERIFY_WORD_COUNT } from '@dina/core/src/constants';
 /** Number of words to verify during onboarding. */
 const VERIFY_WORD_COUNT = ONBOARDING_VERIFY_WORD_COUNT;
 

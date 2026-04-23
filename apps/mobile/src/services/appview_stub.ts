@@ -13,7 +13,7 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md Blocker #4 (demo seed).
  */
 
-import type { ServiceProfile, SearchServicesParams } from '../../../brain/src/appview_client/http';
+import type { ServiceProfile, SearchServicesParams } from '@dina/brain/src/appview_client/http';
 
 export interface AppViewStubOptions {
   /** Initial profiles to publish. Use `publish()` to add more at runtime. */

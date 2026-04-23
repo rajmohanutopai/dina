@@ -39,12 +39,12 @@ import type { LanguageModel } from 'ai';
 import { generateText } from 'ai';
 import { createModel } from './provider';
 import type { ProviderType } from './provider';
-import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
+import { scrubPII, rehydratePII } from '@dina/core/src/pii/patterns';
 import {
   registerReasoningLLM,
   resetReasoningLLM,
-} from '../../../brain/src/pipeline/chat_reasoning';
-import { setDefaultProvider, resetChatDefaults } from '../../../brain/src/chat/orchestrator';
+} from '@dina/brain/src/pipeline/chat_reasoning';
+import { setDefaultProvider, resetChatDefaults } from '@dina/brain/src/chat/orchestrator';
 
 /** LLM call timeout — matches legacy path. Exported so tests can
  *  assert on the exact window instead of hard-coding a magic number. */

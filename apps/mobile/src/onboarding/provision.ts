@@ -28,12 +28,12 @@
  * UnlockGate to swap in the tab tree.
  */
 
-import { mnemonicToEntropy } from '../../../core/src/crypto/bip39';
-import { deriveRootSigningKey, deriveRotationKey } from '../../../core/src/crypto/slip0010';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import { wrapSeed } from '../../../core/src/crypto/aesgcm';
-import { createDIDPLC, type PLCCreateResult } from '../../../core/src/identity/directory';
-import { createPersona, personaExists } from '../../../core/src/persona/service';
+import { mnemonicToEntropy } from '@dina/core/src/crypto/bip39';
+import { deriveRootSigningKey, deriveRotationKey } from '@dina/core/src/crypto/slip0010';
+import { getPublicKey } from '@dina/core/src/crypto/ed25519';
+import { wrapSeed } from '@dina/core/src/crypto/aesgcm';
+import { createDIDPLC, type PLCCreateResult } from '@dina/core/src/identity/directory';
+import { createPersona, personaExists } from '@dina/core/src/persona/service';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
 import { saveIdentitySeeds } from '../services/identity_store';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';

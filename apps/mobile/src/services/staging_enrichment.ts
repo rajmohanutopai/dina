@@ -27,18 +27,18 @@
  * core-client + LLM provider already wired elsewhere.
  */
 
-import type { BrainCoreClient } from '../../../brain/src/core_client/http';
-import type { LLMProvider } from '../../../brain/src/llm/adapters/provider';
+import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
+import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
 import {
   TopicExtractor,
   type TopicExtractorLLM,
-} from '../../../brain/src/enrichment/topic_extractor';
-import { PreferenceExtractor } from '../../../brain/src/enrichment/preference_extractor';
+} from '@dina/brain/src/enrichment/topic_extractor';
+import { PreferenceExtractor } from '@dina/brain/src/enrichment/preference_extractor';
 import type {
   TopicTouchPipelineOptions,
   ContactResolver,
-} from '../../../brain/src/enrichment/topic_touch_pipeline';
-import { resolveByName } from '../../../core/src/contacts/directory';
+} from '@dina/brain/src/enrichment/topic_touch_pipeline';
+import { resolveByName } from '@dina/core/src/contacts/directory';
 
 export interface BuildStagingEnrichmentOptions {
   /**

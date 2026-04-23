@@ -15,16 +15,16 @@
  * Source: ARCHITECTURE.md Task 4.5
  */
 
-import { unwrapSeed, type WrappedSeed } from '../../../core/src/crypto/aesgcm';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import { deriveRootSigningKey } from '../../../core/src/crypto/slip0010';
-import { deriveDIDKey } from '../../../core/src/identity/did';
+import { unwrapSeed, type WrappedSeed } from '@dina/core/src/crypto/aesgcm';
+import { getPublicKey } from '@dina/core/src/crypto/ed25519';
+import { deriveRootSigningKey } from '@dina/core/src/crypto/slip0010';
+import { deriveDIDKey } from '@dina/core/src/identity/did';
 import {
   openBootPersonas,
   createPersona,
   personaExists,
   listPersonas,
-} from '../../../core/src/persona/service';
+} from '@dina/core/src/persona/service';
 import { loadPersistedDid } from '../services/identity_record';
 import { initializePersistence, openPersonaDB, isPersistenceReady } from '../storage/init';
 

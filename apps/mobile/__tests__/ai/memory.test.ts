@@ -145,12 +145,24 @@ describe('Memory Store', () => {
       expect(date).toMatch(/^\d{4}-03-15$/);
     });
 
+    // `extractDate` formats via local-time `getFullYear/Month/Date` —
+    // comparing against `.toISOString().split('T')[0]` (UTC) flakes whenever
+    // the run lands between 00:00 local and 00:00 UTC (e.g. 04:14 IST =
+    // 22:44 UTC previous day → UTC-tomorrow differs from local-tomorrow
+    // by one day). Build the expected string using the same local-date
+    // math the impl uses to stay timezone-stable.
+    const formatLocalYMD = (d: Date): string => {
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${d.getFullYear()}-${mm}-${dd}`;
+    };
+
     it('extracts "tomorrow"', () => {
       const date = extractDate('Dentist appointment tomorrow');
       expect(date).not.toBeNull();
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      expect(date).toBe(tomorrow.toISOString().split('T')[0]);
+      expect(date).toBe(formatLocalYMD(tomorrow));
     });
 
     it('extracts "next week"', () => {
@@ -158,7 +170,7 @@ describe('Memory Store', () => {
       expect(date).not.toBeNull();
       const nextWeek = new Date();
       nextWeek.setDate(nextWeek.getDate() + 7);
-      expect(date).toBe(nextWeek.toISOString().split('T')[0]);
+      expect(date).toBe(formatLocalYMD(nextWeek));
     });
 
     it('extracts "next month"', () => {

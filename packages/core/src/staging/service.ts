@@ -52,10 +52,23 @@ const LEASE_DURATION_S = STAGING_LEASE_DURATION_S;
 const ITEM_TTL_S = STAGING_ITEM_TTL_S;
 
 /** In-memory staging inbox. */
-const inbox = new Map<string, StagingItem>();
+// Module-private state lives on `globalThis` so Metro's bundler can't
+// split it across two copies of this module when the same file resolves
+// via both a relative path (from inside @dina/core) and an `@dina/core/...`
+// symlink import (from apps/mobile). Without this, `inbox` populated by
+// `ingest()` in one copy was invisible to `claim()` in the other copy,
+// leaving the staging drain tick permanently empty. Jest + Node-side
+// tests are unaffected — they load one module instance anyway, and the
+// globalThis indirection is free.
+type StagingGlobals = { inbox: Map<string, StagingItem>; dedupIndex: Map<string, string> };
+const globalWithStaging = globalThis as unknown as { __dinaStagingState?: StagingGlobals };
+const _stagingState: StagingGlobals =
+  globalWithStaging.__dinaStagingState ??
+  (globalWithStaging.__dinaStagingState = { inbox: new Map(), dedupIndex: new Map() });
+const inbox = _stagingState.inbox;
 
 /** Dedup index: "source|source_id" → staging ID. */
-const dedupIndex = new Map<string, string>();
+const dedupIndex = _stagingState.dedupIndex;
 
 /**
  * Injectable OnDrain callback — invoked for each item written to vault

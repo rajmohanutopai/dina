@@ -18,21 +18,21 @@ import {
   buildChatPrompt,
   buildRememberAckPrompt,
 } from './prompts';
-import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
-import { scanResponse, stripViolations } from '../../../brain/src/guardian/guard_scan';
+import { scrubPII, rehydratePII } from '@dina/core/src/pii/patterns';
+import { scanResponse, stripViolations } from '@dina/brain/src/guardian/guard_scan';
 import {
   reason,
   registerReasoningLLM,
   resetReasoningLLM,
   type ReasoningResult,
-} from '../../../brain/src/pipeline/chat_reasoning';
+} from '@dina/brain/src/pipeline/chat_reasoning';
 import {
   getByShortId,
   completeReminder,
   snoozeReminder,
   deleteReminder,
   type Reminder,
-} from '../../../core/src/reminders/service';
+} from '@dina/core/src/reminders/service';
 
 /** LLM call timeout in milliseconds (60 seconds, matching main Dina). */
 export const LLM_TIMEOUT_MS = 60_000;

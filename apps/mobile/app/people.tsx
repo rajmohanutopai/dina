@@ -10,7 +10,7 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform } from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
-import { listContacts, type Contact } from '../../core/src/contacts/directory';
+import { listContacts, type Contact } from '@dina/core/src/contacts/directory';
 import { colors, spacing, radius, shadows } from '../src/theme';
 
 export default function PeopleScreen() {

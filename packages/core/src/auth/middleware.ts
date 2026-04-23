@@ -63,6 +63,20 @@ export function getRateLimiter(): PerDIDRateLimiter {
 }
 
 /**
+ * Replace the module-level rate limiter with one using `config`. Used by
+ * mobile boot, where Brain calling its own in-process Core generates
+ * request volume (workflow-event polling, hydration, etc.) that the 50/min
+ * default trips through quickly. In-process callers share a DID with Core,
+ * so per-DID limiting on the mobile's own DID is meaningless against
+ * external abuse. Call this once at app boot with a high ceiling (e.g.
+ * 10,000/min). Server builds continue to use the 50/min default by
+ * NOT calling this.
+ */
+export function configureRateLimiter(config: { maxRequests: number; windowSeconds: number }): void {
+  rateLimiter = new PerDIDRateLimiter(config);
+}
+
+/**
  * Authenticate and authorize a request through the full pipeline.
  *
  * Returns AuthResult with authenticated=true and callerType on success,

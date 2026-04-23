@@ -10,7 +10,7 @@
  * Source: ARCHITECTURE.md Task 6.19
  */
 
-import { getThread, addMessage, type ChatMessage } from '../../../brain/src/chat/thread';
+import { getThread, addMessage, type ChatMessage } from '@dina/brain/src/chat/thread';
 import {
   listQuarantined,
   getQuarantined,
@@ -19,7 +19,7 @@ import {
   deleteQuarantined,
   quarantineSize,
   resetQuarantineState,
-} from '../../../core/src/d2d/quarantine';
+} from '@dina/core/src/d2d/quarantine';
 
 export interface D2DMessageItem {
   id: string;

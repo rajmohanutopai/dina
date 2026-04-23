@@ -13,13 +13,13 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-009.
  */
 
-import type { BrainCoreClient } from '../../../brain/src/core_client/http';
+import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
 import {
   WorkflowEventConsumer,
   type WorkflowEventDeliverer,
   type WorkflowEventTickResult,
-} from '../../../brain/src/service/workflow_event_consumer';
-import { addDinaResponse, type ChatMessage } from '../../../brain/src/chat/thread';
+} from '@dina/brain/src/service/workflow_event_consumer';
+import { addDinaResponse, type ChatMessage } from '@dina/brain/src/chat/thread';
 
 export type DeliveryCoreClient = Pick<
   BrainCoreClient,

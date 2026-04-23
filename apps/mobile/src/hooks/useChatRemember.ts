@@ -14,8 +14,10 @@
  * Source: ARCHITECTURE.md Task 4.8
  */
 
-import { ingest, type StagingItem } from '../../../core/src/staging/service';
-import { addSystemMessage } from '../../../brain/src/chat/thread';
+// Funnel through the package root so Metro can't duplicate this module
+// (see note in ai/memory.ts on the same issue splitting the `inbox` Map).
+import { stagingIngest as ingest, type StagingItem } from '@dina/core';
+import { addSystemMessage } from '@dina/brain/src/chat/thread';
 
 export type RememberStatus =
   | 'idle'

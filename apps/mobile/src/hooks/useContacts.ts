@@ -22,7 +22,7 @@ import {
   type Contact,
   type TrustLevel,
   type SharingTier,
-} from '../../../core/src/contacts/directory';
+} from '@dina/core/src/contacts/directory';
 
 export interface ContactUIItem {
   did: string;

@@ -18,8 +18,8 @@ import {
   personaExists,
   resetPersonaState,
   type PersonaState,
-} from '../../../core/src/persona/service';
-import type { PersonaTier } from '../../../core/src/vault/lifecycle';
+} from '@dina/core/src/persona/service';
+import type { PersonaTier } from '@dina/core/src/vault/lifecycle';
 
 export interface PersonaUIState {
   name: string;

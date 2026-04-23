@@ -20,7 +20,7 @@ import {
   isProviderAvailable,
   resetProviderConfig,
   type ProviderName,
-} from '../../../brain/src/llm/provider_config';
+} from '@dina/brain/src/llm/provider_config';
 
 export type SetupChoice = 'claude' | 'openai' | 'gemini' | 'openrouter' | 'local' | 'skip';
 

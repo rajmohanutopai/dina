@@ -25,18 +25,27 @@ export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
   openai: {
     type: 'openai',
     label: 'OpenAI',
-    description: 'GPT-4o, GPT-4o mini',
+    description: 'GPT-5.4, GPT-5 mini',
     keyPrefix: 'sk-',
-    defaultModel: 'gpt-4o-mini',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1-nano'],
+    // Aligned with home-node `models.json` (primary=gpt-5.4, lite=gpt-5-mini).
+    defaultModel: 'gpt-5.4',
+    models: ['gpt-5.4', 'gpt-5-mini'],
   },
   gemini: {
     type: 'gemini',
     label: 'Google Gemini',
-    description: 'Gemini 2.5 Flash, Gemini 2.0 Flash',
+    description: 'Gemini 3.1 Pro, Gemini 3.1 Flash',
     keyPrefix: 'AIza',
-    defaultModel: 'gemini-2.0-flash',
-    models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'],
+    // Models aligned with the home-node `models.json` production defaults
+    // (primary=gemini-3.1-pro-preview, lite=gemini-3.1-flash-lite-preview,
+    // heavy=gemini-3.1-pro-preview). `gemini-2.0-flash` deprecated for
+    // new Google AI Studio accounts.
+    defaultModel: 'gemini-3.1-pro-preview',
+    models: [
+      'gemini-3.1-pro-preview',
+      'gemini-3.1-flash-preview',
+      'gemini-3.1-flash-lite-preview',
+    ],
   },
 };
 

@@ -31,7 +31,7 @@ import type {
   StreamChunk,
   EmbedOptions,
   EmbedResponse,
-} from '../../../brain/src/llm/adapters/provider';
+} from '@dina/brain/src/llm/adapters/provider';
 
 export interface AISDKAdapterOptions {
   /** Model handle from `@ai-sdk/openai` or `@ai-sdk/google`. */

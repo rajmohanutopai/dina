@@ -16,7 +16,7 @@
  * Source: ARCHITECTURE.md Task 4.13
  */
 
-import { addMessage, addSystemMessage, type ChatMessage } from '../../../brain/src/chat/thread';
+import { addMessage, addSystemMessage, type ChatMessage } from '@dina/brain/src/chat/thread';
 
 export type SystemEventType =
   | 'persona_unlocked'
@@ -37,7 +37,7 @@ export interface SystemEvent {
 
 /** Event history for debugging. */
 const eventHistory: SystemEvent[] = [];
-import { SYSTEM_MESSAGE_HISTORY_MAX } from '../../../core/src/constants';
+import { SYSTEM_MESSAGE_HISTORY_MAX } from '@dina/core/src/constants';
 const MAX_HISTORY = SYSTEM_MESSAGE_HISTORY_MAX;
 
 /**

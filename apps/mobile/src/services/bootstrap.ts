@@ -19,47 +19,47 @@
  * + starts the polling runners. `stop()` halts them in reverse order.
  */
 
-import type { WorkflowRepository } from '../../../core/src/workflow/repository';
-import { setWorkflowRepository } from '../../../core/src/workflow/repository';
-import type { CoreRouter } from '../../../core/src/server/router';
-import { WorkflowService, setWorkflowService } from '../../../core/src/workflow/service';
+import type { WorkflowRepository } from '@dina/core/src/workflow/repository';
+import { setWorkflowRepository } from '@dina/core/src/workflow/repository';
+import type { CoreRouter } from '@dina/core/src/server/router';
+import { WorkflowService, setWorkflowService } from '@dina/core/src/workflow/service';
 import {
   setServiceConfigRepository,
   type ServiceConfigRepository,
-} from '../../../core/src/service/service_config_repository';
+} from '@dina/core/src/service/service_config_repository';
 import {
   setServiceConfig,
   resetServiceConfigState,
   onServiceConfigChanged,
   getServiceConfig,
-} from '../../../core/src/service/service_config';
+} from '@dina/core/src/service/service_config';
 import {
   registerService,
   registerDevice as registerDeviceDID,
   setDeviceRoleResolver,
   resetCallerTypeState,
-} from '../../../core/src/auth/caller_type';
-import { registerPublicKeyResolver, resetMiddlewareState } from '../../../core/src/auth/middleware';
-import { bootstrapMsgBox, type MsgBoxBootConfig } from '../../../core/src/relay/msgbox_boot';
-import { D2DDispatcher } from '../../../brain/src/guardian/d2d_dispatcher';
-import type { DinaMessage } from '../../../core/src/d2d/envelope';
-import { setD2DSender } from '../../../core/src/server/routes/d2d_msg';
-import { TaskExpirySweeper } from '../../../core/src/workflow/task_expiry_sweeper';
-import { LeaseExpirySweeper } from '../../../core/src/workflow/lease_expiry_sweeper';
-import { BridgePendingSweeper } from '../../../core/src/workflow/bridge_pending_sweeper';
-import { StagingDrainScheduler } from '../../../brain/src/staging/scheduler';
-import type { StagingDrainOptions } from '../../../brain/src/staging/drain';
+} from '@dina/core/src/auth/caller_type';
+import { registerPublicKeyResolver, resetMiddlewareState } from '@dina/core/src/auth/middleware';
+import { bootstrapMsgBox, type MsgBoxBootConfig } from '@dina/core/src/relay/msgbox_boot';
+import { D2DDispatcher } from '@dina/brain/src/guardian/d2d_dispatcher';
+import type { DinaMessage } from '@dina/core/src/d2d/envelope';
+import { setD2DSender } from '@dina/core/src/server/routes/d2d_msg';
+import { TaskExpirySweeper } from '@dina/core/src/workflow/task_expiry_sweeper';
+import { LeaseExpirySweeper } from '@dina/core/src/workflow/lease_expiry_sweeper';
+import { BridgePendingSweeper } from '@dina/core/src/workflow/bridge_pending_sweeper';
+import { StagingDrainScheduler } from '@dina/brain/src/staging/scheduler';
+import type { StagingDrainOptions } from '@dina/brain/src/staging/drain';
 import {
   LocalDelegationRunner,
   type LocalCapabilityRunner,
-} from '../../../core/src/workflow/local_delegation_runner';
-import { setServiceQuerySender } from '../../../core/src/server/routes/service_query';
-import { setServiceRespondSender } from '../../../core/src/server/routes/service_respond';
-import { isAuthenticated as isMsgBoxAuthenticated } from '../../../core/src/relay/msgbox_ws';
-import type { ServiceQueryBody } from '../../../core/src/d2d/service_bodies';
-import { disconnect as disconnectMsgBox, type WSFactory } from '../../../core/src/relay/msgbox_ws';
-import { setWSDeliverFn } from '../../../core/src/transport/delivery';
-import { makeServiceResponseBridgeSender } from '../../../core/src/workflow/response_bridge_sender';
+} from '@dina/core/src/workflow/local_delegation_runner';
+import { setServiceQuerySender } from '@dina/core/src/server/routes/service_query';
+import { setServiceRespondSender } from '@dina/core/src/server/routes/service_respond';
+import { isAuthenticated as isMsgBoxAuthenticated } from '@dina/core/src/relay/msgbox_ws';
+import type { ServiceQueryBody } from '@dina/core/src/d2d/service_bodies';
+import { disconnect as disconnectMsgBox, type WSFactory } from '@dina/core/src/relay/msgbox_ws';
+import { setWSDeliverFn } from '@dina/core/src/transport/delivery';
+import { makeServiceResponseBridgeSender } from '@dina/core/src/workflow/response_bridge_sender';
 import { emitRuntimeWarning } from './runtime_warnings';
 
 function emitMsgboxOfflineWarning(detail: string): void {
@@ -85,25 +85,25 @@ export type AppD2DSender = (
   messageType: string,
   body: Record<string, unknown>,
 ) => Promise<void>;
-import { validateAgainstSchema } from '../../../brain/src/service/capabilities/schema_validator';
-import type { BrainCoreClient } from '../../../brain/src/core_client/http';
-import type { AppViewClient } from '../../../brain/src/appview_client/http';
-import type { PDSPublisher } from '../../../brain/src/pds/publisher';
-import type { IdentityKeypair } from '../../../core/src/identity/keypair';
-import type { PDSSession } from '../../../brain/src/pds/account';
-import type { ServiceConfig } from '../../../core/src/service/service_config';
-import { ServiceHandler, type ApprovalNotifier } from '../../../brain/src/service/service_handler';
+import { validateAgainstSchema } from '@dina/brain/src/service/capabilities/schema_validator';
+import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
+import type { AppViewClient } from '@dina/brain/src/appview_client/http';
+import type { PDSPublisher } from '@dina/brain/src/pds/publisher';
+import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
+import type { PDSSession } from '@dina/brain/src/pds/account';
+import type { ServiceConfig } from '@dina/core/src/service/service_config';
+import { ServiceHandler, type ApprovalNotifier } from '@dina/brain/src/service/service_handler';
 import {
   ServiceQueryOrchestrator,
   type OrchestratorAppView,
-} from '../../../brain/src/service/service_query_orchestrator';
+} from '@dina/brain/src/service/service_query_orchestrator';
 import {
   WorkflowEventConsumer,
   type WorkflowEventDeliverer,
   type ApprovalEventDispatcher,
-} from '../../../brain/src/service/workflow_event_consumer';
-import { ApprovalReconciler } from '../../../brain/src/service/approval_reconciliation';
-import { wireServiceOrchestrator } from '../../../brain/src/service/service_wiring';
+} from '@dina/brain/src/service/workflow_event_consumer';
+import { ApprovalReconciler } from '@dina/brain/src/service/approval_reconciliation';
+import { wireServiceOrchestrator } from '@dina/brain/src/service/service_wiring';
 import {
   setServiceApproveCommandHandler,
   resetServiceApproveCommandHandler,
@@ -111,25 +111,25 @@ import {
   resetServiceDenyCommandHandler,
   setAskCommandHandler,
   resetAskCommandHandler,
-} from '../../../brain/src/chat/orchestrator';
-import type { LLMProvider } from '../../../brain/src/llm/adapters/provider';
-import type { ToolRegistry } from '../../../brain/src/reasoning/tool_registry';
+} from '@dina/brain/src/chat/orchestrator';
+import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
+import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
 import {
   makeAgenticAskHandler,
   type AgenticAskHandlerOptions,
-} from '../../../brain/src/reasoning/ask_handler';
+} from '@dina/brain/src/reasoning/ask_handler';
 import {
   makeServiceApproveHandler,
   makeServiceDenyHandler,
-} from '../../../brain/src/service/approve_command';
-import { ServicePublisher } from '../../../brain/src/service/service_publisher';
-import { toPublisherConfig } from '../../../brain/src/service/config_sync';
+} from '@dina/brain/src/service/approve_command';
+import { ServicePublisher } from '@dina/brain/src/service/service_publisher';
+import { toPublisherConfig } from '@dina/brain/src/service/config_sync';
 import {
   addDinaResponse,
   addApprovalMessage,
   addMessage,
   hydrateThread,
-} from '../../../brain/src/chat/thread';
+} from '@dina/brain/src/chat/thread';
 import {
   MsgTypeCoordinationRequest,
   MsgTypeCoordinationResponse,
@@ -137,7 +137,7 @@ import {
   MsgTypeTrustVouchRequest,
   MsgTypeTrustVouchResponse,
   MsgTypeSafetyAlert,
-} from '../../../core/src/d2d/families';
+} from '@dina/core/src/d2d/families';
 import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
 import {
   setServiceConfigCoreClient,

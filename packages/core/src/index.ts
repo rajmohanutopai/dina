@@ -176,6 +176,24 @@ export type { TieredItem, TieredLoadConfig } from './vault/tiered_content';
 export * from './vault/crud';
 export * from './staging/state_machine';
 export type { StagingStatus, StagingTransition } from './staging/state_machine';
+// Staging service functions — exported at the root so apps (mobile,
+// home-node-lite) can call `ingest()` etc. via `@dina/core` without
+// deep-importing `@dina/core/src/staging/service`. Metro bundler has
+// known issues caching the same file under different resolution paths
+// (relative + `@`-prefixed) as SEPARATE module instances, which leaves
+// the staging `inbox` Map split across copies and the drain tick sees
+// an empty queue. Funnelling callers through the root import ensures
+// one module instance.
+export {
+  ingest as stagingIngest,
+  claim as stagingClaim,
+  resolve as stagingResolve,
+  resolveMulti as stagingResolveMulti,
+  fail as stagingFail,
+  extendLease as stagingExtendLease,
+  getItem as stagingGetItem,
+} from './staging/service';
+export type { StagingItem } from './staging/service';
 export * from './trust/levels';
 export type { TrustLevel, TrustRing } from './trust/levels';
 export * from './trust/source_trust';

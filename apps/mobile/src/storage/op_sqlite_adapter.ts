@@ -12,7 +12,7 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter, DBRow } from '../../../core/src/storage/db_adapter';
+import type { DatabaseAdapter, DBRow } from '@dina/core/src/storage/db_adapter';
 
 // op-sqlite types — imported dynamically in production
 interface OpSQLiteDB {
