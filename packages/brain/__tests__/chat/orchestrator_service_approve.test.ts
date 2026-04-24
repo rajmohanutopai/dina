@@ -17,7 +17,8 @@ import {
 } from '../../src/chat/orchestrator';
 import { resetThreads } from '../../src/chat/thread';
 import { makeServiceApproveHandler } from '../../src/service/approve_command';
-import { CoreHttpError, type BrainCoreClient } from '../../src/core_client/http';
+import { CoreHttpError } from '../../src/errors';
+import type { CoreClient } from '@dina/core';
 import type { WorkflowTask } from '../../../core/src/workflow/domain';
 
 describe('Chat orchestrator — /service_approve', () => {
@@ -95,7 +96,7 @@ describe('makeServiceApproveHandler (BRAIN-P2-W02)', () => {
   function stubClient(overrides?: {
     approveError?: Error;
     seenTasks?: string[];
-  }): Pick<BrainCoreClient, 'approveWorkflowTask'> {
+  }): Pick<CoreClient, 'approveWorkflowTask'> {
     return {
       async approveWorkflowTask(id: string) {
         overrides?.seenTasks?.push(id);
@@ -117,7 +118,7 @@ describe('makeServiceApproveHandler (BRAIN-P2-W02)', () => {
   }
 
   it('rejects a missing coreClient at build time', () => {
-    expect(() => makeServiceApproveHandler(undefined as unknown as BrainCoreClient)).toThrow(
+    expect(() => makeServiceApproveHandler(undefined as unknown as CoreClient)).toThrow(
       /coreClient/,
     );
   });

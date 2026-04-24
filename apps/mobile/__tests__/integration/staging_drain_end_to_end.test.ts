@@ -42,8 +42,8 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
 
     const core = {
       // Drain-facing surface
-      async claimStagingItems() {
-        return [
+      async stagingClaim() {
+        const items = [
           {
             id: 'stg-1',
             type: 'note',
@@ -55,13 +55,19 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
             timestamp: 1_700_000_000,
           },
         ];
+        return { items, count: items.length };
       },
-      async resolveStagingItem(itemId: string, persona: string | string[], data: unknown) {
-        resolveCalls.push({ itemId, persona, data });
-        return { ok: true };
+      async stagingResolve(req: {
+        itemId: string;
+        persona: string | string[];
+        data: Record<string, unknown>;
+      }) {
+        resolveCalls.push({ itemId: req.itemId, persona: req.persona, data: req.data });
+        return { itemId: req.itemId, status: 'stored' };
       },
-      async failStagingItem() {
+      async stagingFail(itemId: string) {
         /* happy path only */
+        return { itemId, retryCount: 1 };
       },
       // TopicTouchCoreClient-facing surface
       async memoryTouch(req: { topic: string }) {
@@ -114,8 +120,8 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
 
     const updateContactCalls: Array<{ did: string }> = [];
     const core = {
-      async claimStagingItems() {
-        return [
+      async stagingClaim() {
+        const items = [
           {
             id: 'stg-2',
             type: 'note',
@@ -125,12 +131,14 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
             summary: 'another dental visit',
           },
         ];
+        return { items, count: items.length };
       },
-      async resolveStagingItem() {
-        return { ok: true };
+      async stagingResolve(req: { itemId: string }) {
+        return { itemId: req.itemId, status: 'stored' };
       },
-      async failStagingItem() {
+      async stagingFail(itemId: string) {
         /* noop */
+        return { itemId, retryCount: 1 };
       },
       async memoryTouch(req: { topic: string }) {
         return { status: 'ok' as const, canonical: req.topic };
@@ -163,8 +171,8 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
 
     const resolveCalls: unknown[] = [];
     const core = {
-      async claimStagingItems() {
-        return [
+      async stagingClaim() {
+        const items = [
           {
             id: 'stg-3',
             type: 'note',
@@ -174,13 +182,15 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
             summary: 'dental',
           },
         ];
+        return { items, count: items.length };
       },
-      async resolveStagingItem(...args: unknown[]) {
-        resolveCalls.push(args);
-        return { ok: true };
+      async stagingResolve(req: { itemId: string }) {
+        resolveCalls.push([req]);
+        return { itemId: req.itemId, status: 'stored' };
       },
-      async failStagingItem() {
+      async stagingFail(itemId: string) {
         /* not expected to fire */
+        return { itemId, retryCount: 1 };
       },
       async memoryTouch(req: { topic: string }) {
         return { status: 'ok' as const, canonical: req.topic };

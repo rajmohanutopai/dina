@@ -1,15 +1,21 @@
 /**
- * Vault CRUD — in-memory per-persona vault item store.
+ * Vault CRUD — persona-scoped vault operations routed through a
+ * `VaultRepository` (SQLite in production, in-memory in tests). The
+ * old module-level `Map<persona, Map<id, VaultItem>>` has been
+ * retired: Metro's bundler duplicated this source file across
+ * resolution paths (relative ../ vs @dina/core/…) which gave each copy
+ * its OWN Map instance, so `/remember`'s write landed in Map A while
+ * `/ask`'s read scanned Map B. One authoritative repo per persona
+ * (SQLite when wired, auto-provisioned InMemoryVaultRepository
+ * otherwise) keeps state singular no matter how Metro slices the code.
  *
- * Provides store, query (keyword search), get, delete (soft), and batch
- * operations. Per-persona isolation: items in "health" vault are invisible
- * to "general" queries.
+ * Provides store, query (keyword + semantic + hybrid), get, delete
+ * (soft), and batch operations. Per-persona isolation: items in
+ * "health" vault are invisible to "general" queries — enforced by
+ * separate repos per persona.
  *
- * In production, this layer sits atop SQLCipher + FTS5. The in-memory
- * implementation provides the same interface for testing and early
- * integration before the storage layer is wired up.
- *
- * Source: core/test/vault_test.go (CRUD section)
+ * Source: core/test/vault_test.go (CRUD section); ARCHITECTURE.md
+ * "op-sqlite persistence layer".
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
@@ -26,9 +32,36 @@ import {
   TRUST_RERANK_LOW_CONFIDENCE,
 } from '../constants';
 import { validateVaultItem, SEARCHABLE_RETRIEVAL_POLICIES } from './validation';
-import { getVaultRepository } from './repository';
+import {
+  getVaultRepository,
+  setVaultRepository,
+  resetVaultRepositories,
+  InMemoryVaultRepository,
+  type VaultRepository,
+} from './repository';
 
 const MAX_BATCH_SIZE = 100;
+
+/**
+ * Resolve the vault repository for a persona. If none has been wired
+ * (via `setVaultRepository`), auto-provisions an in-memory repo and
+ * registers it — so the rest of the code always sees exactly one
+ * authoritative store, and the Map-based code path never runs.
+ *
+ * Production callers (mobile's `storage/init.ts::openPersonaDB`) wire
+ * a `SQLiteVaultRepository` backed by the persona's encrypted SQLite
+ * DB before any CRUD call hits. Tests that don't wire explicitly hit
+ * this auto-provision path and still exercise the real repository
+ * interface.
+ */
+function getOrAutoProvisionRepo(persona: string): VaultRepository {
+  let repo = getVaultRepository(persona);
+  if (!repo) {
+    repo = new InMemoryVaultRepository();
+    setVaultRepository(persona, repo);
+  }
+  return repo;
+}
 
 /**
  * Check if an item should appear in default search results.
@@ -72,22 +105,17 @@ function applyOffset<T>(results: T[], offset?: number): T[] {
   return results;
 }
 
-/** Per-persona vault stores. Map<persona, Map<itemId, VaultItem>>. */
-const vaults = new Map<string, Map<string, VaultItem>>();
-
-/** Get or create a persona vault. */
-function getVault(persona: string): Map<string, VaultItem> {
-  let vault = vaults.get(persona);
-  if (!vault) {
-    vault = new Map();
-    vaults.set(persona, vault);
-  }
-  return vault;
-}
-
-/** Clear all vaults (for testing). */
+/**
+ * Clear every auto-provisioned / wired vault repository (test helper).
+ *
+ * Delegates to `resetVaultRepositories()` in repository.ts — drops
+ * every registered repo so the next `getOrAutoProvisionRepo()` call
+ * creates a fresh one. Shim exists (rather than re-exporting the repo
+ * reset directly) to avoid churning the existing ~300 test callsites
+ * that still reference `clearVaults()` by name.
+ */
 export function clearVaults(): void {
-  vaults.clear();
+  resetVaultRepositories();
 }
 
 /**
@@ -102,7 +130,7 @@ export function storeItem(persona: string, item: Partial<VaultItem>): string {
     throw new Error(`vault: ${validationError}`);
   }
 
-  const vault = getVault(persona);
+  const repo = getOrAutoProvisionRepo(persona);
   const id = item.id && item.id.length > 0 ? item.id : `vi-${bytesToHex(randomBytes(8))}`;
   const now = Date.now();
 
@@ -133,23 +161,7 @@ export function storeItem(persona: string, item: Partial<VaultItem>): string {
     ...(item.embedding ? { embedding: item.embedding } : {}),
   };
 
-  // SQL persistence path (when repository is wired) — fire-and-forget
-  // since Phase 2.3 (task 2.3). In-memory `vault` Map is authoritative
-  // for reads within the process; SQL persists across restart but a
-  // transient write failure doesn't affect correctness. Double-guarded
-  // for sync-throw mocks + async rejection.
-  const sqlRepo = getVaultRepository(persona);
-  if (sqlRepo) {
-    try {
-      void sqlRepo.storeItem(stored).catch(() => {
-        /* fail-safe — transient SQL write loss is acceptable */
-      });
-    } catch {
-      /* fail-safe — sync-throw variant */
-    }
-  }
-
-  vault.set(id, stored);
+  repo.storeItemSync(stored);
   return id;
 }
 
@@ -205,41 +217,47 @@ export function queryVault(persona: string, query: SearchQuery): VaultItem[] {
   }
 }
 
-/** FTS5-style keyword search. Excludes quarantined/briefing_only items. */
+/** FTS5-style keyword search. Excludes quarantined/briefing_only items.
+ *  Delegates to the wired repository (SQLite in production, in-memory
+ *  in tests — both behind the same `VaultRepository.queryFTSSync`
+ *  interface). */
 function queryFTS(persona: string, query: SearchQuery): VaultItem[] {
-  const vault = getVault(persona);
   const limit = clampLimit(query.limit);
-  const terms = query.text
-    .toLowerCase()
+  const repo = getOrAutoProvisionRepo(persona);
+  // In-memory repo accepts free text; SQLite repo needs FTS5 MATCH
+  // syntax (quoted tokens). Sanitise once — safe for both.
+  const match = sanitizeFTSMatch(query.text);
+  if (match === '') return [];
+  const raw = repo.queryFTSSync(match, limit + (query.offset ?? 0));
+  const filtered = raw.filter((item) => isSearchable(item) && passesFilters(item, query));
+  return applyOffset(filtered, query.offset).slice(0, limit);
+}
+
+/** Escape a free-text query for SQLite FTS5 MATCH.
+ *
+ *  Strips FTS5 operators/punctuation the user didn't intend (`"`,
+ *  `(`, `)`, `*`, `NEAR`, boolean keywords) and quotes each term.
+ *
+ *  **Joins with OR, not space (AND).** SQLite FTS5's default operator
+ *  between tokens is AND — `"emma" "birthday" "is" "when"` would
+ *  require EVERY token to be present. Natural-language queries like
+ *  "When is Emma's birthday?" contain stop-words ("when", "is") that
+ *  aren't in the stored memory — AND-matching returns 0 rows and
+ *  `/ask` sees an empty vault even though the item is there. Using OR
+ *  lets the FTS5 `rank` score the match by how many tokens hit +
+ *  their column weights, which is the semantically-correct behaviour
+ *  for a user-facing search. Dropping explicit stop-words would also
+ *  work but is language-specific and fragile; OR is engine-native.
+ *
+ *  Empty input → "". */
+function sanitizeFTSMatch(text: string): string {
+  const tokens = text
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
-    .filter((t) => t.length > 0);
-
-  if (terms.length === 0) return [];
-
-  const results: Array<{ item: VaultItem; score: number }> = [];
-
-  for (const item of vault.values()) {
-    if (!isSearchable(item)) continue;
-    if (!passesFilters(item, query)) continue;
-
-    const searchable = [item.summary, item.body, item.content_l0, item.content_l1]
-      .join(' ')
-      .toLowerCase();
-
-    let score = 0;
-    for (const term of terms) {
-      if (searchable.includes(term)) score++;
-    }
-
-    if (score > 0) {
-      results.push({ item, score });
-    }
-  }
-
-  results.sort((a, b) => b.score - a.score);
-  return applyOffset(results, query.offset)
-    .slice(0, limit)
-    .map((r) => r.item);
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0 && !/^(AND|OR|NOT|NEAR)$/i.test(t));
+  if (tokens.length === 0) return '';
+  return tokens.map((t) => `"${t}"`).join(' OR ');
 }
 
 /**
@@ -249,7 +267,7 @@ function queryFTS(persona: string, query: SearchQuery): VaultItem[] {
  * Falls back to brute-force O(n) scan when HNSW is not built.
  */
 function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
-  const vault = getVault(persona);
+  const repo = getOrAutoProvisionRepo(persona);
   const limit = clampLimit(query.limit);
 
   if (!query.embedding || query.embedding.length === 0) return [];
@@ -258,10 +276,10 @@ function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
   if (hasIndex(persona)) {
     const hnswResults = searchIndex(persona, query.embedding, limit + (query.offset ?? 0));
     const filtered = hnswResults
-      .map((r) => vault.get(r.id))
+      .map((r) => repo.getItemIncludeDeletedSync(r.id))
       .filter(
         (item): item is VaultItem =>
-          item !== undefined && isSearchable(item) && passesFilters(item, query),
+          item !== null && isSearchable(item) && passesFilters(item, query),
       );
     return applyOffset(filtered, query.offset).slice(0, limit);
   }
@@ -269,7 +287,7 @@ function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
   // Fallback: brute-force scan (O(n))
   const results: Array<{ item: VaultItem; score: number }> = [];
 
-  for (const item of vault.values()) {
+  for (const item of repo.valuesSync()) {
     if (!isSearchable(item)) continue;
     if (!passesFilters(item, query)) continue;
     if (!item.embedding || item.embedding.length === 0) continue;
@@ -294,7 +312,7 @@ function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
  * The combined score determines final ranking.
  */
 function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
-  const vault = getVault(persona);
+  const repo = getOrAutoProvisionRepo(persona);
   const limit = clampLimit(query.limit);
   const terms = query.text
     .toLowerCase()
@@ -326,7 +344,7 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
     }
   }
 
-  for (const item of vault.values()) {
+  for (const item of repo.valuesSync()) {
     if (!isSearchable(item)) continue;
     if (!passesFilters(item, query)) continue;
 
@@ -371,7 +389,7 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
 
     // Trust-weighted reranking (matching Go vault.go)
     // Compounding multipliers adjust score based on item trust metadata.
-    const item = vault.get(id);
+    const item = repo.getItemIncludeDeletedSync(id);
     if (item) {
       score *= trustMultiplier(item);
     }
@@ -384,8 +402,8 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
 
   return applyOffset(sorted, query.offset)
     .slice(0, limit)
-    .map(([id]) => getVault(persona).get(id))
-    .filter((item): item is VaultItem => item !== undefined);
+    .map(([id]) => repo.getItemIncludeDeletedSync(id))
+    .filter((item): item is VaultItem => item !== null);
 }
 
 /** Clamp limit to [1, VAULT_QUERY_MAX_LIMIT]. */
@@ -468,10 +486,7 @@ function toFloat32(v: Float32Array | Uint8Array): Float32Array {
  * retrieval_policy, but getItem filters only by deleted flag.
  */
 export function getItem(persona: string, itemId: string): VaultItem | null {
-  const vault = getVault(persona);
-  const item = vault.get(itemId);
-  if (!item || item.deleted) return null;
-  return item;
+  return getOrAutoProvisionRepo(persona).getItemSync(itemId);
 }
 
 /**
@@ -481,8 +496,7 @@ export function getItem(persona: string, itemId: string): VaultItem | null {
  * (e.g., undelete, audit, export).
  */
 export function getItemIncludeDeleted(persona: string, itemId: string): VaultItem | null {
-  const vault = getVault(persona);
-  return vault.get(itemId) ?? null;
+  return getOrAutoProvisionRepo(persona).getItemIncludeDeletedSync(itemId);
 }
 
 /**
@@ -491,23 +505,36 @@ export function getItemIncludeDeleted(persona: string, itemId: string): VaultIte
  * Item remains in storage for audit/recovery. Excluded from query results.
  */
 export function deleteItem(persona: string, itemId: string): boolean {
-  const vault = getVault(persona);
-  const item = vault.get(itemId);
-  if (!item) return false;
-
-  item.deleted = 1;
-  item.updated_at = Date.now();
-  return true;
+  return getOrAutoProvisionRepo(persona).deleteItemSync(itemId);
 }
 
 /** Count non-deleted items in a persona vault. */
 export function vaultItemCount(persona: string): number {
-  const vault = getVault(persona);
   let count = 0;
-  for (const item of vault.values()) {
+  for (const item of getOrAutoProvisionRepo(persona).valuesSync()) {
     if (!item.deleted) count++;
   }
   return count;
+}
+
+/**
+ * Return the most-recent non-deleted items in a persona, bounded by
+ * `limit`. Backs the agentic `browse_vault` + `list_personas` preview
+ * tools — the empty-query "what's in here?" path.
+ *
+ * `queryVault({mode:'fts5', text:''})` short-circuits to `[]` because
+ * FTS5 can't match an empty query; this helper takes the same no-term
+ * intent and returns items ordered by timestamp DESC instead. Matches
+ * Python's `core.search_vault(persona, query="")` behaviour.
+ */
+export function listRecentItems(persona: string, limit: number): VaultItem[] {
+  if (limit <= 0) return [];
+  const repo = getOrAutoProvisionRepo(persona);
+  const all = repo.valuesSync().filter((item) => isSearchable(item));
+  // `valuesSync` on SQLite returns repository-insertion order; make the
+  // sort explicit so both backends agree on "most recent first".
+  all.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+  return all.slice(0, limit);
 }
 
 /**
@@ -522,17 +549,12 @@ export function queryByEnrichmentStatus(
   status: string,
   limit: number = 50,
 ): VaultItem[] {
-  const vault = getVault(persona);
   const results: VaultItem[] = [];
-
-  for (const item of vault.values()) {
+  for (const item of getOrAutoProvisionRepo(persona).valuesSync()) {
     if (item.deleted) continue;
-    if (item.enrichment_status === status) {
-      results.push(item);
-    }
+    if (item.enrichment_status === status) results.push(item);
   }
-
-  results.sort((a, b) => a.created_at - b.created_at); // oldest first
+  results.sort((a, b) => a.created_at - b.created_at);
   return results.slice(0, limit);
 }
 
@@ -554,19 +576,23 @@ export function updateEnrichment(
     confidence?: string;
   },
 ): boolean {
-  const vault = getVault(persona);
-  const item = vault.get(itemId);
-  if (!item || item.deleted) return false;
-
-  if (updates.content_l0 !== undefined) item.content_l0 = updates.content_l0;
-  if (updates.content_l1 !== undefined) item.content_l1 = updates.content_l1;
-  if (updates.enrichment_status !== undefined) item.enrichment_status = updates.enrichment_status;
+  const repo = getOrAutoProvisionRepo(persona);
+  // Read-merge-write via the repo — `storeItemSync` is INSERT OR REPLACE
+  // on SQLite, so overwriting the whole row after merging is safe and
+  // atomic per row. In-memory repo mutates in place inside storeItemSync
+  // by replacing the map entry.
+  const existing = repo.getItemIncludeDeletedSync(itemId);
+  if (!existing || existing.deleted) return false;
+  const merged: VaultItem = { ...existing };
+  if (updates.content_l0 !== undefined) merged.content_l0 = updates.content_l0;
+  if (updates.content_l1 !== undefined) merged.content_l1 = updates.content_l1;
+  if (updates.enrichment_status !== undefined) merged.enrichment_status = updates.enrichment_status;
   if (updates.enrichment_version !== undefined)
-    item.enrichment_version = updates.enrichment_version;
-  if (updates.embedding !== undefined) item.embedding = updates.embedding;
-  if (updates.confidence !== undefined) item.confidence = updates.confidence;
-  item.updated_at = Date.now();
-
+    merged.enrichment_version = updates.enrichment_version;
+  if (updates.embedding !== undefined) merged.embedding = updates.embedding;
+  if (updates.confidence !== undefined) merged.confidence = updates.confidence;
+  merged.updated_at = Date.now();
+  repo.storeItemSync(merged);
   return true;
 }
 
@@ -583,17 +609,13 @@ export function browseRecent(
   before: number,
   limit: number = 20,
 ): VaultItem[] {
-  if (after > before) return []; // invalid range → empty result
-
-  const vault = getVault(persona);
+  if (after > before) return [];
   const results: VaultItem[] = [];
-
-  for (const item of vault.values()) {
+  for (const item of getOrAutoProvisionRepo(persona).valuesSync()) {
     if (item.deleted) continue;
     if (item.created_at < after || item.created_at > before) continue;
     results.push(item);
   }
-
   results.sort((a, b) => b.created_at - a.created_at);
   return results.slice(0, limit);
 }

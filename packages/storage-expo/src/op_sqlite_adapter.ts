@@ -18,9 +18,17 @@
 
 import type { DatabaseAdapter, DBRow } from '@dina/core';
 
-// op-sqlite types — imported dynamically in production
+// op-sqlite types — imported dynamically in production. Typed as a
+// union because op-sqlite ≥ 15 returns `rows` as a flat array while
+// older versions used `{ _array: […] }`. The adapter's `query` method
+// handles both shapes at runtime.
 interface OpSQLiteDB {
-  execute: (sql: string, params?: unknown[]) => { rows?: { _array: Record<string, unknown>[] } };
+  execute: (
+    sql: string,
+    params?: unknown[],
+  ) => {
+    rows?: Record<string, unknown>[] | { _array: Record<string, unknown>[] };
+  };
   close: () => void;
 }
 
@@ -72,7 +80,17 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
   query<T extends DBRow = DBRow>(sql: string, params?: unknown[]): T[] {
     this.assertOpen();
     const result = this.db!.execute(sql, params);
-    return (result.rows?._array ?? []) as T[];
+    // op-sqlite 15+ returns `rows` as a flat `Array<Record<…>>`.
+    // Older versions exposed `{ _array: […] }`. Reading the old shape
+    // against the new return silently yielded `[]` for every SELECT,
+    // corrupting the migration runner's version check (see the same
+    // note in apps/mobile/src/storage/op_sqlite_adapter.ts).
+    const rows = result.rows as unknown;
+    if (Array.isArray(rows)) return rows as T[];
+    if (rows && typeof rows === 'object' && '_array' in rows) {
+      return ((rows as { _array?: T[] })._array ?? []) as T[];
+    }
+    return [] as T[];
   }
 
   run(sql: string, params?: unknown[]): number {

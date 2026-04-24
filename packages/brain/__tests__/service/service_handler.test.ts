@@ -3,7 +3,11 @@
  */
 
 import { ServiceHandler, type ServiceHandlerCoreClient } from '../../src/service/service_handler';
-import { WorkflowConflictError } from '../../src/core_client/http';
+// Task 1.32-H: ServiceHandler now catches `WorkflowConflictError` from
+// `@dina/core`. Test must throw the SAME class so `instanceof` matches —
+// previously imported from BrainCoreClient's http.ts, which was a
+// separate class that happened to share the name.
+import { WorkflowConflictError } from '@dina/core';
 import type { ServiceConfig } from '../../../core/src/service/service_config';
 
 interface CreateCall {

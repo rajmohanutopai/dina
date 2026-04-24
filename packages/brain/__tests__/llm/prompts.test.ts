@@ -29,8 +29,8 @@ import {
 
 describe('Prompt Registry', () => {
   describe('completeness', () => {
-    it('has exactly 12 prompts', () => {
-      expect(PROMPT_NAMES.length).toBe(12);
+    it('has exactly 13 prompts', () => {
+      expect(PROMPT_NAMES.length).toBe(13);
     });
 
     const expectedNames = [
@@ -43,6 +43,7 @@ describe('Prompt Registry', () => {
       'REMINDER_PLAN',
       'NUDGE_ASSEMBLE',
       'PERSON_IDENTITY_EXTRACTION',
+      'VAULT_CONTEXT',
       'CHAT_SYSTEM',
       'PII_PRESERVE_INSTRUCTION',
       'ENRICHMENT_LOW_TRUST_INSTRUCTION',
@@ -92,24 +93,41 @@ describe('Prompt Registry', () => {
   });
 
   describe('PERSONA_CLASSIFY', () => {
-    it('contains persona_list placeholder', () => {
-      expect(PERSONA_CLASSIFY).toContain('{{persona_list}}');
+    // As of the Python-parity port the prompt is a pure system
+    // message — no `{{placeholder}}` slots. Callers build the user
+    // message as a JSON blob (see `gemini_classify.ts`) so the
+    // prompt + schema pair stays byte-identical to Python.
+    it('is placeholder-free', () => {
+      expect(PERSONA_CLASSIFY).not.toMatch(/\{\{[^}]+\}\}/);
     });
 
-    it('contains item metadata placeholders', () => {
-      expect(PERSONA_CLASSIFY).toContain('{{type}}');
-      expect(PERSONA_CLASSIFY).toContain('{{source}}');
-      expect(PERSONA_CLASSIFY).toContain('{{sender}}');
-      expect(PERSONA_CLASSIFY).toContain('{{subject}}');
+    it('anchors the primary-purpose routing principle', () => {
+      expect(PERSONA_CLASSIFY).toMatch(/primary purpose/i);
     });
 
-    it('instructs JSON output format', () => {
-      expect(PERSONA_CLASSIFY).toContain('"persona"');
+    it('describes the five-persona mapping (general/work/health/finance/general)', () => {
+      expect(PERSONA_CLASSIFY).toContain('→ general');
+      expect(PERSONA_CLASSIFY).toContain('→ work');
+      expect(PERSONA_CLASSIFY).toContain('→ health');
+      expect(PERSONA_CLASSIFY).toContain('→ finance');
+    });
+
+    it('documents data_responsibility overrides', () => {
+      expect(PERSONA_CLASSIFY).toContain('data_responsibility=household');
+      expect(PERSONA_CLASSIFY).toContain('data_responsibility=care');
+      expect(PERSONA_CLASSIFY).toContain('data_responsibility=external');
+    });
+
+    it('instructs primary/secondary/has_event JSON output shape', () => {
+      expect(PERSONA_CLASSIFY).toContain('"primary"');
+      expect(PERSONA_CLASSIFY).toContain('"secondary"');
       expect(PERSONA_CLASSIFY).toContain('"confidence"');
+      expect(PERSONA_CLASSIFY).toContain('"has_event"');
+      expect(PERSONA_CLASSIFY).toContain('"event_hint"');
     });
 
-    it('includes "NEVER invent" guard rail', () => {
-      expect(PERSONA_CLASSIFY).toMatch(/never\s+invent/i);
+    it('includes "do NOT invent" guard rail', () => {
+      expect(PERSONA_CLASSIFY).toMatch(/do not invent/i);
     });
   });
 
@@ -119,29 +137,37 @@ describe('Prompt Registry', () => {
       expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties).toBeDefined();
     });
 
-    it('has required fields: persona, confidence, reason', () => {
+    it('has required fields: primary, confidence, reason, has_event', () => {
       const required = PERSONA_CLASSIFY_RESPONSE_SCHEMA.required;
-      expect(required).toContain('persona');
+      expect(required).toContain('primary');
       expect(required).toContain('confidence');
       expect(required).toContain('reason');
+      expect(required).toContain('has_event');
     });
 
-    it('defines persona as string', () => {
-      expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.persona.type).toBe('string');
+    it('defines primary as string', () => {
+      expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.primary.type).toBe('string');
     });
 
     it('defines confidence as number', () => {
       expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.confidence.type).toBe('number');
     });
 
-    it('includes secondary persona field (optional)', () => {
+    it('defines secondary as array of strings (multi-persona fan-out)', () => {
       expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.secondary).toBeDefined();
-      expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.secondary.type).toBe('string');
+      expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.secondary.type).toBe('array');
+      expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.secondary.items?.type).toBe('string');
     });
 
     it('includes has_event and event_hint fields', () => {
       expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.has_event.type).toBe('boolean');
       expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.event_hint.type).toBe('string');
+    });
+
+    it('includes attribution_corrections array', () => {
+      expect(PERSONA_CLASSIFY_RESPONSE_SCHEMA.properties.attribution_corrections?.type).toBe(
+        'array',
+      );
     });
 
     it('can be serialized to JSON for Gemini API', () => {
@@ -178,27 +204,29 @@ describe('Prompt Registry', () => {
   });
 
   describe('GUARD_SCAN', () => {
-    it('contains numbered_response placeholder', () => {
-      expect(GUARD_SCAN).toContain('{{numbered_response}}');
+    // Port to Python's PROMPT_GUARD_SCAN_SYSTEM shape (byte-identical).
+    // The scanner in `reasoning/guard_scanner.ts` reads the categories
+    // off `anti_her_sentences` / `unsolicited_sentences` / etc. — drift
+    // here breaks the post-process wiring.
+    it('contains {{prompt}} and {{numbered_content}} placeholders', () => {
+      expect(GUARD_SCAN).toContain('{{prompt}}');
+      expect(GUARD_SCAN).toContain('{{numbered_content}}');
     });
 
-    it('lists all 6 violation types', () => {
-      expect(GUARD_SCAN).toContain('Therapy simulation');
-      expect(GUARD_SCAN).toContain('Engagement hooks');
-      expect(GUARD_SCAN).toContain('Intimacy simulation');
-      expect(GUARD_SCAN).toContain('Unsolicited recommendations');
-      expect(GUARD_SCAN).toContain('Hallucinated trust');
-      expect(GUARD_SCAN).toContain('Consensus claims');
+    it('defines the four violation-category arrays', () => {
+      expect(GUARD_SCAN).toContain('"anti_her_sentences"');
+      expect(GUARD_SCAN).toContain('"unsolicited_sentences"');
+      expect(GUARD_SCAN).toContain('"fabricated_sentences"');
+      expect(GUARD_SCAN).toContain('"consensus_sentences"');
     });
 
-    it('instructs sentence-number indexing', () => {
-      expect(GUARD_SCAN).toContain('sentence_indices');
-      expect(GUARD_SCAN).toContain('0-based');
+    it('instructs integer-index sentence labelling', () => {
+      expect(GUARD_SCAN).toMatch(/only\s+integer\s+indices/i);
+      expect(GUARD_SCAN).toContain('[N]');
     });
 
-    it('includes nuanced rules', () => {
-      expect(GUARD_SCAN).toContain('NEVER unsolicited');
-      expect(GUARD_SCAN).toContain('venting');
+    it('includes the "never unsolicited" nuance', () => {
+      expect(GUARD_SCAN).toMatch(/NEVER unsolicited/i);
     });
   });
 

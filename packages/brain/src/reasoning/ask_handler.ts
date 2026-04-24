@@ -20,9 +20,11 @@
 
 import type { AskCommandHandler } from '../chat/orchestrator';
 import type { LLMProvider } from '../llm/adapters/provider';
+import { VAULT_CONTEXT } from '../llm/prompts';
 import { runAgenticTurn, type AgenticLoopOptions } from './agentic_loop';
 import type { ToolRegistry } from './tool_registry';
 import { IntentClassifier, type IntentClassification } from './intent_classifier';
+import type { GuardScanner } from './guard_scanner';
 
 export interface AgenticAskHandlerOptions {
   provider: LLMProvider;
@@ -43,6 +45,16 @@ export interface AgenticAskHandlerOptions {
    * then matches the pre-WM-BRAIN-04 handler exactly.
    */
   intentClassifier?: IntentClassifier;
+  /**
+   * Optional guard-scan post-processor (Law 4, Law 1). Runs after the
+   * reasoning loop lands, flags Anti-Her / unsolicited / fabricated /
+   * consensus sentences, strips them, and substitutes an anti-Her
+   * redirect when the response collapses to empty for that reason.
+   *
+   * Fail-open: any scanner error returns the raw response. When
+   * omitted the handler behaves exactly as before — no scanning.
+   */
+  guardScanner?: GuardScanner;
   /** Optional sink for diagnostics — last turn's trace, usage, etc. */
   onTurn?: (trace: {
     query: string;
@@ -53,17 +65,15 @@ export interface AgenticAskHandlerOptions {
   }) => void;
 }
 
-export const DEFAULT_ASK_SYSTEM_PROMPT = `You are Dina's helpful assistant.
-
-Behaviour rules (the specific tools available to you come through the provider's tool channel — read their descriptions to decide when each applies):
-
-1. Use a tool only when it helps answer the user's question. Conversational or general-knowledge questions should be answered directly, with no tool calls.
-
-2. If a tool's description indicates it dispatches asynchronous work (e.g. returns a task_id, a "pending" status, or otherwise signals that the real answer will arrive later), acknowledge the dispatch briefly ("Looking that up…", "Asking the provider…") and stop. Do NOT fabricate the result. The real answer is delivered separately by Dina's workflow-event pipeline when the remote side responds; the user will see it in the chat.
-
-3. Never fabricate tool results. If a tool errors, tell the user honestly what went wrong.
-
-4. Chain tools when later tools depend on earlier tool outputs. Respect the dependencies described in each tool's own description rather than following a fixed sequence.`;
+/**
+ * Default system prompt for the agentic `/ask` loop. Aliased to
+ * `VAULT_CONTEXT` from the prompts registry — the full Python-parity
+ * prompt with source-trust rules, tiered content loading, provider-
+ * services routing, and the /remember pointer. Preserved as a named
+ * export so existing tests + callers importing it keep working; any
+ * new code should prefer reading `VAULT_CONTEXT` directly.
+ */
+export const DEFAULT_ASK_SYSTEM_PROMPT = VAULT_CONTEXT;
 
 /**
  * Provider-services routing guidance appended to the hint block
@@ -230,7 +240,28 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     }
 
     // Handle empty answers (e.g. budget-exceeded with no final text).
-    const answer = result.answer !== '' ? result.answer : fallbackAnswer(result.finishReason);
+    let answer = result.answer !== '' ? result.answer : fallbackAnswer(result.finishReason);
+
+    // Guard-scan post-process (Laws 1 + 4). Strips Anti-Her sentences
+    // unconditionally; strips fabricated/consensus/unsolicited only
+    // when the reasoning loop didn't call a verified-trust tool
+    // (Trust Network data has already been vetted — over-redacting
+    // paints legit attestations as hallucinated). If every sentence
+    // gets stripped because of Anti-Her, the scanner substitutes the
+    // human-redirect message. Fail-open — any exception returns the
+    // raw answer.
+    if (options.guardScanner !== undefined && answer !== '' && result.finishReason === 'completed') {
+      try {
+        const decision = await options.guardScanner({
+          userPrompt: query,
+          response: answer,
+          toolsCalled: result.toolCalls.map((c) => c.name),
+        });
+        answer = decision.content;
+      } catch {
+        // Scanner outage. Keep the raw answer rather than block /ask.
+      }
+    }
 
     return { response: answer, sources };
   };

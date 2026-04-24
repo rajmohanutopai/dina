@@ -29,7 +29,7 @@
 import { configureRateLimiter } from '@dina/core/src/auth/middleware';
 import { createCoreRouter } from '@dina/core/src/server/core_server';
 import { createInProcessDispatch } from '@dina/core/src/server/in_process_dispatch';
-import { BrainCoreClient } from '@dina/brain/src/core_client/http';
+import { InProcessTransport } from '@dina/core/src/client/in-process-transport';
 import {
   InMemoryWorkflowRepository,
   SQLiteWorkflowRepository,
@@ -54,6 +54,7 @@ import type { DatabaseAdapter } from '@dina/core/src/storage/db_adapter';
 import type { WSFactory } from '@dina/core/src/relay/msgbox_ws';
 import type { CoreRouter } from '@dina/core/src/server/router';
 import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
+import type { AgenticAskHandlerOptions } from '@dina/brain/src/reasoning/ask_handler';
 import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
 import type { LocalCapabilityRunner } from '@dina/core/src/workflow/local_delegation_runner';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
@@ -118,8 +119,21 @@ export interface BootServiceInputs {
   /**
    * Real AppView client. When omitted /service queries return
    * `no_candidate` and a `discovery.stub` degradation is recorded.
+   *
+   * Surface covers every mobile tool that reaches AppView:
+   *   - `searchServices` — public discovery (`search_provider_services`
+   *     + `query_service` auto-fetch path)
+   *   - `isDiscoverable` — per-capability check (`find_preferred_provider`)
+   *   - `resolveTrust` + `searchTrust` — Trust Network peer data
+   *     (`search_trust_network`)
+   *
+   * Both `AppViewClient` (real) and `AppViewStub` (demo) implement
+   * all four so either can be passed.
    */
-  appViewClient?: Pick<AppViewClient, 'searchServices'>;
+  appViewClient?: Pick<
+    AppViewClient,
+    'searchServices' | 'isDiscoverable' | 'resolveTrust' | 'searchTrust'
+  >;
   /**
    * PDS publisher. Required for providers that want AppView
    * discoverability; ignored otherwise.
@@ -166,6 +180,14 @@ export interface BootServiceInputs {
   agenticAsk?: {
     provider: LLMProvider;
     tools: ToolRegistry;
+    /**
+     * Optional behaviour hooks forwarded verbatim to
+     * `makeAgenticAskHandler` — intent classifier, loop budgets,
+     * custom system prompt, onTurn telemetry sink. Kept permissive
+     * (`Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>`) so
+     * new handler options flow through without plumbing churn here.
+     */
+    options?: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
   };
 
   // --- Execution plane (issue #9) --------------------------------------
@@ -277,12 +299,20 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     return { status: resp.status, body: resp.body, headers: resp.headers };
   };
 
-  const coreClient = new BrainCoreClient({
-    coreURL: 'in-process',
-    privateKey: inputs.signingKeypair.privateKey,
-    did: inputs.did,
-    signedDispatch,
-  });
+  // Single transport-agnostic client — every brain subsystem + every
+  // mobile hook now takes `CoreClient`. Mobile wires the in-process
+  // dispatch variant (no HTTP hop; Brain + Core share the RN JS VM);
+  // home-node-lite brain-server will wire `HttpCoreTransport` against
+  // the same router state when that build target lands.
+  //
+  // Earlier iterations had a transitional `BrainCoreClient` alongside
+  // the transport (task 1.14.7 dual-wiring); the A+ cleanup migrated
+  // all 4 mobile hooks + the 5 brain subsystems to CoreClient slices,
+  // then retired BrainCoreClient entirely. `signedDispatch` stays
+  // local because `bootstrap.ts` still forwards it into the MsgBox
+  // ingress adapter for the sender-side signed-response path.
+  const coreClient = new InProcessTransport(router);
+  void signedDispatch; // kept in scope for MsgBox / response-bridge wiring below
 
   // --- Persistence (issues #6, #7) --------------------------------------
   let workflowRepository: WorkflowRepository;
@@ -473,7 +503,11 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     resolveSender: inputs.resolveSender,
     agenticAsk:
       inputs.agenticAsk !== undefined
-        ? { provider: inputs.agenticAsk.provider, tools: inputs.agenticAsk.tools }
+        ? {
+            provider: inputs.agenticAsk.provider,
+            tools: inputs.agenticAsk.tools,
+            options: inputs.agenticAsk.options,
+          }
         : undefined,
     localDelegationRunner: inputs.localDelegationRunner,
     localDelegationAgentDID: inputs.localDelegationAgentDID,

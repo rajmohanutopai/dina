@@ -131,12 +131,32 @@ export class StagingDrainScheduler {
     if (this.tickInFlight !== null) {
       return this.tickInFlight;
     }
-    const tick = (async (): Promise<StagingDrainTickResult> => {
-      let result: StagingDrainTickResult = { claimed: 0, stored: 0, failed: 0, results: [] };
+    const tick = this.doTick();
+    this.tickInFlight = tick;
+    return tick;
+  }
+
+  /**
+   * The actual tick body. Kept separate so the cleanup (resetting
+   * `tickInFlight`) lives INSIDE the same async function that ran the
+   * work — previously this was a trailing `.finally(...)` on the
+   * returned promise, but Hermes (RN's JS engine) didn't always
+   * schedule that callback, which left `tickInFlight` stuck pointing at
+   * the first tick's promise and caused every subsequent `setInterval`
+   * tick to hit the early-return coalesce branch and never run.
+   */
+  private async doTick(): Promise<StagingDrainTickResult> {
+    let result: StagingDrainTickResult = { claimed: 0, stored: 0, failed: 0, results: [] };
+    try {
       try {
         result = await runStagingDrainTick(this.core, {
           ...this.drainOpts,
           logger: this.log,
+          // Forward the scheduler's injected timer pair so the drain's
+          // per-item lease heartbeat shares the same fake in tests
+          // (real boots default to Node globals on both sides).
+          setInterval: this.setIntervalFn,
+          clearInterval: this.clearIntervalFn,
         });
       } catch (err) {
         this.onError(err);
@@ -150,12 +170,14 @@ export class StagingDrainScheduler {
       } catch {
         /* observer errors never break the loop */
       }
-      return result;
-    })();
-    this.tickInFlight = tick;
-    tick.finally(() => {
-      if (this.tickInFlight === tick) this.tickInFlight = null;
-    });
-    return tick;
+    } finally {
+      // Drop our in-flight handle AFTER work completes so the next
+      // scheduled tick (or manual `flush`) is free to run. Inside the
+      // async body the microtask ordering is guaranteed — unlike the
+      // external `tick.finally(...)` pattern which Hermes occasionally
+      // dropped.
+      this.tickInFlight = null;
+    }
+    return result;
   }
 }

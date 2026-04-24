@@ -148,31 +148,28 @@ describe('makeAgenticAskHandler', () => {
     });
   });
 
-  // Architectural invariant: the default system prompt carries BEHAVIOUR
-  // rules only. Tool names + parameters come through the provider's tool
-  // channel (ToolRegistry → runAgenticTurn → provider.chat({tools})).
-  // Baking tool names into the prompt would recreate the coupling this
-  // refactor just removed — adding a new capability should be a registry
-  // insertion, not a prose edit.
-  it('default system prompt enumerates NO specific tool names', () => {
-    const forbidden = [
-      'geocode(',
-      'search_provider_services(',
-      'query_service(',
-      'eta_query',
-      'Bus 42',
-    ];
-    for (const needle of forbidden) {
-      expect(DEFAULT_ASK_SYSTEM_PROMPT).not.toContain(needle);
-    }
-  });
-
-  it('default system prompt carries the core behaviour rules', () => {
-    // Keywords that MUST be present — these are the contract with the LLM.
-    // If any of these disappear, the agent loses a safety property.
+  // Python-parity port: `DEFAULT_ASK_SYSTEM_PROMPT` is now
+  // `VAULT_CONTEXT` — the full Python PROMPT_VAULT_CONTEXT_SYSTEM.
+  // That prompt enumerates tool names (vault_search,
+  // find_preferred_provider, etc.), source-trust rules, tiered content
+  // loading, and the /remember pointer. The old "tool-agnostic,
+  // behaviour-rules-only" invariant is intentionally superseded —
+  // Python doesn't do tool-agnostic and prescriptive routing out-
+  // performed tool-agnostic on the 110-scenario classifier run.
+  it('default system prompt carries the Python-parity contract', () => {
+    // Required safety keywords — if any of these disappear the agent
+    // loses a safety property.
     expect(DEFAULT_ASK_SYSTEM_PROMPT).toMatch(/never fabricate/i);
-    expect(DEFAULT_ASK_SYSTEM_PROMPT).toMatch(/acknowledge/i);
-    expect(DEFAULT_ASK_SYSTEM_PROMPT).toMatch(/asynchronous/i);
+    // Source-trust provenance rules (ported from Python verbatim).
+    expect(DEFAULT_ASK_SYSTEM_PROMPT).toContain('sender_trust');
+    expect(DEFAULT_ASK_SYSTEM_PROMPT).toContain('contact_ring1');
+    // Tiered content loading (content_l0 / content_l1).
+    expect(DEFAULT_ASK_SYSTEM_PROMPT).toContain('content_l0');
+    expect(DEFAULT_ASK_SYSTEM_PROMPT).toContain('content_l1');
+    // Routing-hint awareness — classifier output gets read first.
+    expect(DEFAULT_ASK_SYSTEM_PROMPT).toContain('Routing hint from the intent classifier');
+    // /remember pointer (read-only-ness handled gracefully).
+    expect(DEFAULT_ASK_SYSTEM_PROMPT).toContain('/remember');
   });
 
   // -------------------------------------------------------------------
@@ -224,7 +221,12 @@ describe('makeAgenticAskHandler', () => {
     const handler = makeAgenticAskHandler({ provider, tools: new ToolRegistry() });
     await handler('hello');
     expect(captured.systemPrompt).toBe(DEFAULT_ASK_SYSTEM_PROMPT);
-    expect(captured.systemPrompt).not.toContain('Routing hint');
+    // The prompt body itself REFERENCES the "Routing hint" block
+    // (Python-parity instruction: read the hint first). The dynamic
+    // hint suffix `formatIntentHintBlock` appends uses bullet lines
+    // like `- sources: [...]` — that's the discriminator for "a real
+    // hint block was appended" vs "the prompt just talks about them".
+    expect(captured.systemPrompt).not.toMatch(/- sources: \[/);
   });
 
   it('appends a Routing hint block when the classifier returns a non-default hint', async () => {
@@ -316,10 +318,15 @@ describe('makeAgenticAskHandler', () => {
     const sys = captured.systemPrompt ?? '';
     // Base hint block still renders (non-default hint → non-empty block).
     expect(sys).toContain('Routing hint from the intent classifier');
-    // Routing block absent.
+    // PROVIDER_SERVICES_ROUTING_BLOCK absent (the Path 1 / Path 2 block
+    // is only appended when `sources` includes provider_services — see
+    // `formatIntentHintBlock` in ask_handler.ts).
     expect(sys).not.toContain('Path 1:');
     expect(sys).not.toContain('Path 2:');
-    expect(sys).not.toContain('find_preferred_provider');
+    // `find_preferred_provider` is in the Python-parity base prompt's
+    // tool enumeration now, so we can't assert its absence here —
+    // absence of `Path 1:` / `Path 2:` is the proper signal that the
+    // provider-services ROUTING BLOCK wasn't appended.
   });
 
   it('falls back to the plain system prompt when the classifier throws (fail-open)', async () => {

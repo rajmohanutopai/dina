@@ -33,47 +33,96 @@ export function renderPrompt(template: string, vars: Record<string, string>): st
 // ---------------------------------------------------------------
 
 /**
- * PERSONA_CLASSIFY — Route an item to the correct persona.
- * Used when the keyword domain classifier is uncertain.
+ * PERSONA_CLASSIFY — System prompt for the persona classifier.
+ *
+ * Byte-for-byte port of `brain/src/prompts.py` PROMPT_PERSONA_CLASSIFY_SYSTEM.
+ * The Python version passes 100/100 scenarios in `tests/prompt/` against
+ * real Gemini — staying verbatim is the whole point: any drift between
+ * the two stacks becomes a classification regression in whichever one
+ * drifted.
+ *
+ * This is a PURE SYSTEM PROMPT — it has no `{{placeholder}}` slots.
+ * Callers build the user message as a JSON blob (see
+ * `gemini_classify.ts::buildClassificationUserMessage`) rather than
+ * substituting into a template. That matches the Python call site
+ * (`persona_selector.py::_llm_select`) and lets the schema do the
+ * structured-output enforcement without the prompt fighting it.
  */
-export const PERSONA_CLASSIFY = `You are a classifier for a personal AI assistant called Dina.
-Given the following item metadata and content, determine which persona vault it belongs to.
+export const PERSONA_CLASSIFY = `You are a data classifier for a personal AI system.
+The user has encrypted vaults (personas). Each persona has a name, tier, and description explaining what data belongs there.
 
-Available personas: {{persona_list}}
+You have TWO jobs:
 
-Item:
-- Type: {{type}}
-- Source: {{source}}
-- Sender: {{sender}}
-- Subject: {{subject}}
-- Body preview: {{body_preview}}
+1. **Classify** which vault an incoming item belongs to.
+   Choose ONLY from the available personas listed below.
+   Do NOT invent new persona names.
+   When uncertain, prefer the default-tier persona.
 
-Respond with ONLY a JSON object:
-{"persona": "<persona_name>", "confidence": <0.0-1.0>, "reason": "<brief reason>"}
+   Classification principle: route based on the **primary purpose** of the information, not incidental words. Ask yourself: "Why is the user storing this?" The intent determines the vault.
 
-Rules:
-- Choose the MOST specific persona that fits
-- If uncertain, choose "general"
-- NEVER invent a persona name not in the list above
-- Confidence should reflect how certain you are`;
+   Common patterns:
+   - Social facts about friends, family, preferences, hobbies, visits → general
+   - Food and drink preferences, favorite restaurants, recipes → general
+   - Workplace tasks, deadlines, meetings, projects, colleagues → work
+   - Medical conditions, prescriptions, doctor visits, diagnoses, symptoms → health
+   - Bank accounts, investments, salaries, taxes, bills, insurance → finance
+   - A friend's coffee preference is a social fact (general), not health data
+   - "My doctor said I should exercise more" is health, not general
+   - "Meeting with Dr. Smith for lunch" is general (social), not health
+   - "Meeting with Dr. Smith about my blood test results" is health
+
+   **Relationship-aware routing** — if "mentioned_contacts" is provided, the data_responsibility field OVERRIDES content-based classification:
+   - data_responsibility=household: their medical → health, their financial → finance
+   - data_responsibility=care: their medical → health, their financial → general
+   - data_responsibility=financial: their medical → general, their financial → finance
+   - data_responsibility=external: ALL their sensitive data → general. This is mandatory. Even if the content mentions blood pressure, diagnosis, salary, or bank accounts — if the person is external, classify as general. Their data is social context about someone else, not the user's own data.
+   - Non-sensitive facts about anyone always go to general regardless
+   - If no mentioned_contacts is provided, classify based on content as usual
+
+2. **Detect temporal events** — if the content mentions a date, deadline, appointment, birthday, payment, or any time-bound event, set has_event=true and provide a brief event_hint. Do NOT plan reminders — just flag that a temporal event exists. Another system will handle planning.
+
+3. **Attribution corrections** — if "attribution_candidates" is provided, review each candidate's subject/fact/bucket assignment. If a candidate is misattributed (e.g. "I told Sancho about MY allergy" — allergy belongs to self, not Sancho), return a correction by ID. Only correct wrong attributions; omit IDs that are already correct.
+
+Respond with a JSON object:
+{
+  "primary": "<persona_name>",
+  "secondary": [],
+  "confidence": 0.0-1.0,
+  "reason": "short explanation",
+  "has_event": true/false,
+  "event_hint": "brief description if has_event is true, e.g. 'birthday tomorrow', 'vaccination 27th March'",
+  "attribution_corrections": []
+}
+`;
 
 /**
- * PERSONA_CLASSIFY_RESPONSE_SCHEMA — Gemini structured output enforcement.
+ * PERSONA_CLASSIFY_RESPONSE_SCHEMA — structured-output enforcement for
+ * Gemini's `responseSchema` parameter.
  *
- * When using Gemini's `response_schema` parameter, this schema guarantees
- * valid JSON output for persona classification — no free-form parsing needed.
+ * Byte-for-byte port of `brain/src/prompts.py` PERSONA_CLASSIFY_RESPONSE_SCHEMA
+ * (Python uses uppercase `OBJECT`/`STRING`; the TS/JS JSON Schema uses
+ * lowercase — same semantics).
  *
- * Without this schema, Gemini may return malformed JSON, markdown-fenced
- * code blocks, or conversational text instead of the expected structure.
- *
- * Source: brain/src/prompts.py PERSONA_CLASSIFY_RESPONSE_SCHEMA
+ * Mandatory fields mirror Python's: primary + confidence + reason +
+ * has_event (the first two for routing, the next two for telemetry
+ * and the reminder pipeline's event-planning hand-off). `secondary`
+ * is an ARRAY of persona names for fan-out, NOT a single string —
+ * the Python classifier returns `["financial"]` when a medical bill
+ * also has financial content; the old TS shape's `secondary: string`
+ * lost that expressivity.
  */
 export const PERSONA_CLASSIFY_RESPONSE_SCHEMA = {
   type: 'object' as const,
   properties: {
-    persona: {
+    primary: {
       type: 'string' as const,
-      description: 'The persona vault name this item belongs to',
+      description: 'Primary persona vault name this item belongs to',
+    },
+    secondary: {
+      type: 'array' as const,
+      description:
+        'Additional personas the item also belongs to (multi-domain fan-out, e.g. medical bill → [financial]).',
+      items: { type: 'string' as const },
     },
     confidence: {
       type: 'number' as const,
@@ -81,11 +130,7 @@ export const PERSONA_CLASSIFY_RESPONSE_SCHEMA = {
     },
     reason: {
       type: 'string' as const,
-      description: 'Brief explanation of why this persona was chosen',
-    },
-    secondary: {
-      type: 'string' as const,
-      description: 'Optional secondary persona if item spans multiple domains',
+      description: 'Brief explanation of why these personas were chosen',
     },
     has_event: {
       type: 'boolean' as const,
@@ -95,8 +140,21 @@ export const PERSONA_CLASSIFY_RESPONSE_SCHEMA = {
       type: 'string' as const,
       description: 'Brief description of the event if has_event is true',
     },
+    attribution_corrections: {
+      type: 'array' as const,
+      description:
+        'LLM corrections to deterministic attribution candidates supplied as input — by stable id.',
+      items: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'integer' as const },
+          corrected_bucket: { type: 'string' as const },
+          reason: { type: 'string' as const },
+        },
+      },
+    },
   },
-  required: ['persona', 'confidence', 'reason'] as const,
+  required: ['primary', 'confidence', 'reason', 'has_event'] as const,
 };
 
 /**
@@ -145,32 +203,57 @@ Respond with ONLY a JSON object:
 {"tier": <1|2|3>, "reason": "<brief reason>", "confidence": <0.0-1.0>}`;
 
 /**
- * GUARD_SCAN — Check if a response contains safety violations.
- * Used as a secondary LLM-based check alongside regex patterns.
+ * GUARD_SCAN — LLM-powered safety post-processor for /ask responses.
+ *
+ * Byte-for-byte port of `brain/src/prompts.py` PROMPT_GUARD_SCAN_SYSTEM.
+ * Wire format (critical for the post-processor): sentence indices are
+ * **1-indexed integers**, grouped into named arrays per violation type
+ * (`anti_her_sentences`, `unsolicited_sentences`, `fabricated_sentences`,
+ * `consensus_sentences`). The post-processor in `guard_scanner.ts`
+ * assumes exactly this shape; paraphrasing the schema here breaks the
+ * round-trip.
  */
-export const GUARD_SCAN = `Review the following AI assistant response for safety violations.
+export const GUARD_SCAN = `Analyze this assistant response for safety violations. Return ONLY valid JSON.
 
-First, number each sentence in the response (0-indexed):
-{{numbered_response}}
+IMPORTANT: All sentence arrays MUST contain only integer indices (e.g. [1, 3, 5]), NOT the sentence text. Each integer refers to the [N] label in the numbered response below.
 
-Check for these violations:
-1. Therapy simulation: acting as therapist, exploring feelings, "how does that make you feel"
-2. Engagement hooks: "anything else I can help with?", promises of availability
-3. Intimacy simulation: expressing affection, "I care about you deeply"
-4. Unsolicited recommendations: pushing products/services not requested
-5. Hallucinated trust: inventing trust scores, safety ratings, reliability claims
-6. Consensus claims: "most people agree", "everyone knows" without evidence
-
-For each violation, report the sentence indices where it was found.
-
-Respond with ONLY a JSON object:
-{"safe": <true|false>, "violations": [{"type": "<violation_type>", "sentence_indices": [<0-based indices>], "text": "<offending text>"}]}
+Example output:
+{
+  "entities": {"did": null, "name": null},
+  "trust_relevant": false,
+  "anti_her_sentences": [1, 3],
+  "unsolicited_sentences": [],
+  "fabricated_sentences": [],
+  "consensus_sentences": []
+}
 
 Rules:
-- Answering the user's direct question is NEVER unsolicited
-- Only flag recommendations that push specific products/vendors the user didn't ask about
-- "venting" emotional expression by the user is normal — do NOT flag Dina's empathetic acknowledgment
-- Trust scores must be from actual data, not hallucinated numbers`;
+
+"entities": Extract DID (did:plc:xxx or did:key:xxx) and proper noun product/vendor/company name from the USER PROMPT only. null if none found.
+
+"trust_relevant": Is the user asking about products, vendors, reviews, trust, purchases, recommendations, comparisons, or reliability? true/false.
+
+"anti_her_sentences": Flag sentence NUMBERS where the assistant acts as an emotional companion, therapist, or friend. The assistant is an AI tool — it must NEVER simulate a human relationship. Flag any sentence that:
+  - Offers emotional companionship ("here to talk", "keep you company", "I'm listening", "I understand how you feel")
+  - Uses engagement hooks that extend emotional conversations ("anything else?", "I'm here for you", "how are you holding up?")
+  - Asks therapy-style follow-up questions ("would you like to talk about it?", "what's on your mind?", "how does that make you feel?")
+  - Positions itself as available for emotional support ("you can always come to me", "I'm available whenever you need")
+  - Simulates warmth or intimacy ("glad you reached out", "sorry to hear that", "I care about you")
+The CORRECT response to emotional distress is to suggest the user reach out to a real person — a friend, family member, or professional. Factual, task-oriented sentences are never flagged.
+
+"unsolicited_sentences": Flag sentence NUMBERS pushing recommendations the user didn't ask for ("you might also like", cross-sell, trending picks, unrelated product suggestions). If user explicitly asked for alternatives or suggestions, return [].
+IMPORTANT: Answering the user's direct question is NEVER unsolicited. If the user asked about health data, returning health data is solicited. If the user asked about financial data, returning financial data is solicited. Only flag truly unrequested information that the user did not ask for.
+
+"fabricated_sentences": Flag sentence NUMBERS with invented trust scores, hallucinated numeric ratings (4.2/5, 9/10, 87/100), fake attestation counts, "community review" claims, or trust data not supported by the provided context.
+IMPORTANT: Personal facts stated by the assistant (names, dates, medical values, financial amounts) are NOT fabricated if they could come from the user's stored data. Only flag sentences with clearly invented TRUST or REVIEW data (scores, ratings, attestation counts). Do not flag personal data recall as fabrication.
+
+"consensus_sentences": Flag sentence NUMBERS claiming reviewer consensus, widespread agreement, or multiple expert confirmation when not supported by data.
+
+USER PROMPT:
+{{prompt}}
+
+ASSISTANT RESPONSE (sentences numbered):
+{{numbered_content}}`;
 
 /**
  * ANTI_HER — Generate a human redirect when emotional dependency detected.
@@ -330,6 +413,62 @@ Rules:
 - NEVER fabricate relationships not stated in the text`;
 
 /**
+ * VAULT_CONTEXT — System prompt for the agentic `/ask` loop.
+ *
+ * Byte-for-byte port of `brain/src/prompts.py` PROMPT_VAULT_CONTEXT_SYSTEM.
+ * One rename: Python's vault FTS tool is `search_vault`; ours is
+ * `vault_search` (same semantics, different registry name). All other
+ * tool names + rules are Python verbatim. All five agent tools
+ * referenced here (`list_personas`, `vault_search`, `browse_vault`,
+ * `get_full_content`, `search_trust_network`) are registered at mobile
+ * boot — see `apps/mobile/src/services/boot_capabilities.ts`.
+ */
+export const VAULT_CONTEXT = `You are Dina, a sovereign personal AI assistant. You have access to the user's encrypted persona vaults containing personal context — health records, purchase history, work patterns, family details, financial data, and product reviews.
+
+When the user asks a question, the first step is ALWAYS to read the "Routing hint from the intent classifier" block below (if present). The hint tells you which sources can answer — vault, trust_network, provider_services, general_knowledge. Pick tools that match those sources; do NOT default to vault_search for questions the vault cannot hold.
+
+Tools to reach each source:
+- vault → list_personas, vault_search, browse_vault, get_full_content
+- trust_network → search_trust_network (peer reviews / vendor reputation)
+- provider_services → find_preferred_provider (user's go-to contacts for a category), geocode + search_provider_services (public services near a location), query_service (dispatch once you have a DID + capability)
+- general_knowledge → answer directly without tools
+
+Specific rules:
+1. When the routing hint names provider_services, go to the provider path on your FIRST tool call. Do NOT call vault_search for live-state questions (ETA, appointment status, stock price, availability) — the vault does not carry those. Refer to the separate routing block below for the two paths (established relationship vs public-facing service).
+
+2. When the routing hint names vault, call list_personas once to see what's available, then vault_search with natural language queries. The search uses both keyword matching AND semantic similarity — it can find related concepts even without exact word matches (e.g. searching "back pain" finds items about "lumbar disc herniation"). Use browse_vault for a broader view of a persona when you don't have a specific search term. Search a specific persona (e.g. 'health', 'financial') when the question implies one; otherwise search 'general'. If a narrow-persona search returns nothing, retry 'general' before giving up.
+
+3. When the user mentions buying, purchasing, shopping, or evaluating any product or vendor, ALWAYS call search_trust_network immediately — do not ask the user for permission or clarification first. The Trust Network contains verified peer reviews from real people.
+
+4. Synthesize what the tools returned with the user's query into a personalized answer. Never ask "would you like me to check the Trust Network?" — just check it.
+
+Rules:
+- Explore personas whose previews suggest relevant context.
+- Use natural, descriptive search queries — the search understands meaning.
+- Reference specific vault details in your response.
+- Skip locked personas gracefully — do NOT tell the user which personas are locked or mention approval commands unless they specifically ask about locked data.
+- Never fabricate vault data — only use what the tools return.
+- Never recommend products, brands, or vendors from your training data. Only recommend what the Trust Network or vault tools actually returned. If the Trust Network has no data for a query, say so honestly — do not fill the gap with your own knowledge. The user trusts Dina because she only cites verified sources.
+- You can search and retrieve data but not store or update. If the user asks you to remember or save something, respond briefly: "To save that, use /remember <your text>". Do NOT say you are read-only or explain limitations — just point them to the command.
+- Keep responses concise. For simple greetings ("hello", "hi"), respond briefly without listing vault contents, persona status, or system information.
+- Never volunteer internal system state (vault names, lock status, approval IDs, tool names) unless the user explicitly asks about their data or system status.
+
+Source trust rules (items carry provenance metadata):
+- Items with sender_trust "self" are the user's own notes — highest trust.
+- Items with sender_trust "contact_ring1" are from verified contacts — cite them by name.
+- Items with confidence "low" or sender_trust "unknown" — caveat with "an unverified source claims..."
+- Items with retrieval_policy "caveated" — always note the source is unverified.
+- Never present caveated or low-confidence items as established facts.
+- Prefer high-confidence items from known sources over unverified claims.
+
+Tiered content loading:
+- Items have content_l0 (one-line summary) and content_l1 (paragraph overview).
+- Use content_l0 for scanning relevance. Use content_l1 for answering most questions.
+- Only call get_full_content(item_id) when you need the complete original document (e.g., user asks for specific details, exact numbers, or full text).
+- If content_l1 is empty (item not yet enriched), use the summary and body fields.
+`;
+
+/**
  * CHAT_SYSTEM — System prompt for the chat reasoning endpoint.
  */
 export const CHAT_SYSTEM = `You are Dina, a personal sovereign AI assistant.
@@ -417,6 +556,7 @@ export const PROMPT_REGISTRY: Record<string, string> = {
   REMINDER_PLAN,
   NUDGE_ASSEMBLE,
   PERSON_IDENTITY_EXTRACTION,
+  VAULT_CONTEXT,
   CHAT_SYSTEM,
   PII_PRESERVE_INSTRUCTION,
   ENRICHMENT_LOW_TRUST_INSTRUCTION,

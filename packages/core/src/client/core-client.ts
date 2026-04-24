@@ -144,6 +144,14 @@ export interface CoreClient {
   serviceConfig(): Promise<ServiceConfig | null>;
 
   /**
+   * Upsert the local service configuration. Core validates the full
+   * payload server-side + notifies subscribers via the
+   * `config_changed` event channel on success. Throws on validation
+   * failure so the UI can surface the exact error string.
+   */
+  putServiceConfig(config: ServiceConfig): Promise<void>;
+
+  /**
    * Initiate a typed service query to a remote Dina. Creates a
    * workflow task, signs + sends the D2D envelope, returns the task
    * handle so Brain can correlate the response later.
@@ -151,8 +159,13 @@ export interface CoreClient {
    * Idempotent by `(to_did, capability, canonical(params), schema_hash)` —
    * an in-flight duplicate returns `{deduped: true}` with the existing
    * task id instead of minting a new one.
+   *
+   * Pairs symmetrically with `sendServiceRespond(taskId, body)` — the
+   * provider-side completion of the same workflow. Both names share
+   * the `send…` prefix so the request/response pair reads naturally
+   * at the callsite.
    */
-  serviceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult>;
+  sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult>;
 
   // ─── Working-memory ToC (task 1.29g) ──────────────────────────────────
 
@@ -167,6 +180,251 @@ export interface CoreClient {
    * `limit` is clamped server-side at 200.
    */
   memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult>;
+
+  // ─── Staging inbox (task 1.29h / 1.32 preamble) ──────────────────────
+  //
+  // Brain's drain loop moves items received/classifying/stored through
+  // Core's persistent inbox. These four methods are the wire between
+  // the drain scheduler and Core's staging service. Legacy callers
+  // (`BrainCoreClient.claim/resolve/fail/extendStagingLease`) migrate
+  // to these during the task 1.32 refactor.
+
+  /**
+   * Atomically move up to `limit` `received` items to `classifying`
+   * with a fresh lease. Returns the claimed payload envelope so Brain
+   * can enrich + resolve without a second read round-trip.
+   *
+   * Re-claim of the SAME item before lease expiry is impossible by
+   * design — the server skips leased rows.
+   */
+  stagingClaim(limit: number): Promise<StagingClaimResult>;
+
+  /**
+   * Store a staging item under one persona (legacy single-target path)
+   * or fan out to every persona whose classifier score crossed the
+   * threshold (GAP-MULTI-01: pass an array). On multi-target, Core
+   * writes one vault row per persona; on single-target, one row.
+   *
+   * `personaOpen: false` routes the item to `pending_unlock` instead —
+   * Brain uses this when a sensitive persona hasn't been unlocked yet.
+   */
+  stagingResolve(req: StagingResolveRequest): Promise<StagingResolveResult>;
+
+  /**
+   * Record a per-item processing failure. Increments retry counter;
+   * Core decides whether to requeue or expire based on retry policy.
+   * `reason` is free-form (logged for ops triage).
+   */
+  stagingFail(itemId: string, reason: string): Promise<StagingFailResult>;
+
+  /**
+   * Push the lease expiry out by `seconds` so a long-running classifier
+   * doesn't lose its claim mid-enrichment. Idempotent — callers call
+   * this on a timer.
+   */
+  stagingExtendLease(itemId: string, seconds: number): Promise<StagingExtendLeaseResult>;
+
+  // ─── D2D messaging (task 1.29h / 1.32 preamble) ──────────────────────
+
+  /**
+   * Send a raw D2D (`Dina-to-Dina`) message through Core. Thin
+   * authenticated wrapper over the shared `sendD2D` path used by the
+   * Response Bridge — one signed egress path for every outbound
+   * envelope. Low-level callers only; typed service queries go through
+   * `serviceQuery()` instead.
+   *
+   * Core returns 503 when no sender is wired at startup (e.g. test
+   * nodes without a relay); the transport surfaces that as a thrown
+   * error so callers fail loudly rather than queueing into the void.
+   */
+  msgSend(req: MsgSendRequest): Promise<MsgSendResult>;
+
+  // ─── Scratchpad (task 1.32 preamble) ──────────────────────────────────
+  //
+  // Multi-step reasoning checkpoints — Brain writes progress after
+  // each LLM tool call so a crashed/backgrounded process can resume
+  // without replaying work. Core persists the rows with TTL-driven
+  // cleanup (24h stale window in-service). `step=0` is the delete
+  // sentinel for Python parity.
+
+  /**
+   * Upsert a checkpoint for `taskId` at the given `step`. Overwrites
+   * any prior row; preserves `createdAt` on update. `step=0` with a
+   * sentinel `{__deleted:true}` context triggers a delete (legacy
+   * Python compatibility — modern callers prefer `scratchpadClear`).
+   */
+  scratchpadCheckpoint(
+    taskId: string,
+    step: number,
+    context: Record<string, unknown>,
+  ): Promise<ScratchpadCheckpointResult>;
+
+  /**
+   * Read the latest checkpoint for `taskId`, or `null` on missing /
+   * stale / TTL-expired row. The read is lazy-evictive: a stale row
+   * is returned as `null` AND deleted from the store in one hop.
+   */
+  scratchpadResume(taskId: string): Promise<ScratchpadEntry | null>;
+
+  /**
+   * Delete the checkpoint row for `taskId`. Idempotent — deleting an
+   * unknown or already-deleted row is a no-op that still returns 2xx.
+   */
+  scratchpadClear(taskId: string): Promise<ScratchpadClearResult>;
+
+  // ─── Service respond (task 1.32 slice A) ──────────────────────────────
+  //
+  // Requester side uses `serviceQuery()` above to kick off a D2D query.
+  // Provider side uses `sendServiceRespond()` to tell Core: "an approval
+  // task is done — atomically claim it, send the service.response D2D,
+  // and mark the task complete in one round-trip." The provider Brain
+  // never touches the workflow repo directly on this path — Core owns
+  // the claim/rollback dance so concurrent dispatches don't double-send.
+  //
+  // Returns `alreadyProcessed: true` when the task was already
+  // terminated on a retry (post-crash resume) so callers can skip UI
+  // updates without inspecting HTTP status codes.
+  sendServiceRespond(
+    taskId: string,
+    responseBody: ServiceRespondRequestBody,
+  ): Promise<ServiceRespondResult>;
+
+  // ─── Workflow events (task 1.32 slice B) ──────────────────────────────
+  //
+  // `WorkflowEventConsumer` in Brain polls `listWorkflowEvents(needsDeliveryOnly: true)`
+  // on a cadence to fan completed workflow tasks into chat threads.
+  // On successful delivery: `acknowledgeWorkflowEvent(id)`.
+  // On failed delivery (e.g. UI thread unavailable): `failWorkflowEventDelivery(id)`
+  // which pushes `next_delivery_at` forward so the consumer doesn't
+  // hot-loop on the same failing event.
+
+  /**
+   * Read workflow events the delivery scheduler hasn't retired yet.
+   * `needsDeliveryOnly: true` is the consumer's hot path — hides
+   * acknowledged + not-yet-due events. `limit` is clamped server-side.
+   * `since` filters by event id (strictly greater than).
+   */
+  listWorkflowEvents(opts?: ListWorkflowEventsOptions): Promise<WorkflowEvent[]>;
+
+  /**
+   * Mark an event as acknowledged so the delivery scheduler retires
+   * it. Returns `true` on 200 success, `false` on 404 (unknown / already
+   * acked) — non-exceptional so callers can retry idempotently without
+   * try/catch noise.
+   */
+  acknowledgeWorkflowEvent(eventId: number): Promise<boolean>;
+
+  /**
+   * Consumer negative-ack — delivery attempt failed (UI unavailable,
+   * thread-resolver rejected, etc). Core pushes `next_delivery_at` out
+   * so subsequent `needs_delivery=true` reads honour backoff. Returns
+   * `true` on 200, `false` on 404 (unknown event).
+   */
+  failWorkflowEventDelivery(
+    eventId: number,
+    opts?: FailWorkflowEventOptions,
+  ): Promise<boolean>;
+
+  // ─── Workflow tasks — reads + create (task 1.32 slice C) ──────────────
+
+  /**
+   * List workflow tasks filtered by kind + state. Both are required
+   * (route rejects empty). `limit` defaults server-side to 100, caps
+   * at 500. Returns `[]` for an empty match set rather than throwing.
+   */
+  listWorkflowTasks(filter: ListWorkflowTasksFilter): Promise<WorkflowTask[]>;
+
+  /**
+   * Fetch a single workflow task by id. Returns `null` on 404 (unknown
+   * id) rather than throwing — matches the `serviceConfig` /
+   * `scratchpadResume` / `acknowledgeWorkflowEvent` non-exceptional
+   * null/false convention for "not found".
+   */
+  getWorkflowTask(id: string): Promise<WorkflowTask | null>;
+
+  /**
+   * Create a workflow task of any kind. On 201 returns the fresh task
+   * with `deduped: false`; on 200 with a matching `idempotency_key`
+   * returns the existing active task with `deduped: true`.
+   *
+   * On 409 (duplicate task id OR duplicate idempotency-key without an
+   * active match) throws a typed `WorkflowConflictError` so callers
+   * can pattern-match on `.code` without parsing the error string.
+   */
+  createWorkflowTask(input: CreateWorkflowTaskInput): Promise<CreateWorkflowTaskResult>;
+
+  // ─── Workflow task state transitions (task 1.32 slice D) ──────────────
+
+  /** POST /v1/workflow/tasks/:id/approve — pending_approval → queued. */
+  approveWorkflowTask(id: string): Promise<WorkflowTask>;
+
+  /** POST /v1/workflow/tasks/:id/cancel — any active state → cancelled. */
+  cancelWorkflowTask(id: string, reason?: string): Promise<WorkflowTask>;
+
+  /**
+   * POST /v1/workflow/tasks/:id/complete — running → completed, stores
+   * `result` JSON (the Response Bridge reads this to build service.response)
+   * + `result_summary` for UI rendering.
+   */
+  completeWorkflowTask(
+    id: string,
+    result: string,
+    resultSummary: string,
+    agentDID?: string,
+  ): Promise<WorkflowTask>;
+
+  /** POST /v1/workflow/tasks/:id/fail — any state → failed with error message. */
+  failWorkflowTask(id: string, errorMsg: string, agentDID?: string): Promise<WorkflowTask>;
+
+  // ─── Working-memory + contacts (task 1.32 slice E) ────────────────────
+  //
+  // `memoryTouch` is WM-BRAIN-08's write-path — staging enrichment calls
+  // it per extracted topic so the ToC salience formulas accumulate.
+  // `updateContact` is PC-BRAIN-13's preference-binding write-path —
+  // when the topic extractor surfaces a role hint like "my dentist
+  // Dr Carl", the staging enrichment stamps `preferred_for: ['dental']`
+  // on Dr Carl's contact row. Both are the last Brain-owned mutations
+  // that still lived on `BrainCoreClient`; moving them onto `CoreClient`
+  // closes the ingest-side Core surface for task 1.32.
+
+  /**
+   * Touch a topic in persona's working-memory Table of Contents.
+   * Accumulates salience + records sample items so the ToC reflects
+   * what the user has been thinking about. `sampleItemId` is optional —
+   * omit to touch without linking a specific vault row.
+   *
+   * Returns `{status, canonical?, reason?}` — `status === 'skipped'`
+   * when the persona is locked (server silently drops + reports the
+   * reason); `status === 'ok'` on a successful touch. `canonical`
+   * echoes the normalised topic name for cross-reference in logs.
+   */
+  memoryTouch(params: MemoryTouchParams): Promise<MemoryTouchResult>;
+
+  /**
+   * Mutate a contact's metadata. Currently exposes `preferredFor` only
+   * — the preference list the resolver uses to match roles ("my dentist",
+   * "my lawyer") to known contacts. Tri-state on the wire:
+   *   - `undefined` → field omitted from body → server leaves it alone.
+   *   - `[]` → field sent as `[]` → server clears it.
+   *   - non-empty array → field sent verbatim → server normalises +
+   *     writes.
+   *
+   * Throws on 404 (unknown contact) — callers that want non-exceptional
+   * behaviour should pre-check with the contact directory.
+   */
+  updateContact(did: string, updates: UpdateContactParams): Promise<void>;
+
+  /**
+   * List contacts whose `preferred_for` list contains `category`.
+   * Drives the `find_preferred_provider` tool + chat-thread resolver
+   * for role mentions ("my dentist", "my lawyer"). Server normalises
+   * category (trim + lowercase) so callers can pass raw user input.
+   *
+   * Returns `[]` on: empty / whitespace-only `category` (client-side
+   * short-circuit), no match, transport failure (fail-soft so the
+   * reasoning agent falls back to `search_provider_services`).
+   */
+  findContactsByPreference(category: string): Promise<Contact[]>;
 }
 
 /** Minimal identity snapshot Core reveals to a live-probe caller. */
@@ -422,4 +680,250 @@ export interface MemoryToCResult {
   entries: TocEntry[];
   /** Echoes the effective server-side limit after clamping. */
   limit: number;
+}
+
+// ─── Staging method types (task 1.29h / 1.32 preamble) ───────────────────
+//
+// Item payloads stay `unknown[]` rather than re-exporting the full
+// `StagingItem` shape. Drain callers already narrow each row at runtime
+// (pulling fields out of `item.data` via `pickString`); widening the
+// client contract later is cheaper than tightening it.
+
+export interface StagingClaimResult {
+  /** Claimed item envelopes — opaque rows; callers narrow per row. */
+  items: unknown[];
+  /** Mirrors `items.length` — server emits both for UX. */
+  count: number;
+}
+
+export interface StagingResolveRequest {
+  /** Staging inbox row id (Core's `id` field on the envelope). */
+  itemId: string;
+  /**
+   * Target persona(s). A string is the legacy single-persona resolve
+   * path; an array opts into GAP-MULTI-01 fan-out (Core writes one
+   * vault row per persona). Empty array or empty string triggers Core's
+   * 400 — callers must pre-filter.
+   */
+  persona: string | string[];
+  /** Vault row payload to persist (usually the enriched item). */
+  data: Record<string, unknown>;
+  /**
+   * Whether the target persona(s) are unlocked. Defaults `true` on the
+   * wire; pass `false` to route the item to `pending_unlock`.
+   */
+  personaOpen?: boolean;
+}
+
+export interface StagingResolveResult {
+  /** Echoes the resolved item id. */
+  itemId: string;
+  /** New staging status (`stored`, `pending_unlock`, etc). */
+  status: string;
+  /**
+   * Populated when resolve fanned out. Omitted on legacy single-persona
+   * resolve so callers can distinguish the two paths without re-sending
+   * their input.
+   */
+  personas?: string[];
+}
+
+export interface StagingFailResult {
+  /** Echoes the failed item id. */
+  itemId: string;
+  /** New retry counter — callers compare to policy to log exhaustion. */
+  retryCount: number;
+}
+
+export interface StagingExtendLeaseResult {
+  /** Echoes the item id whose lease was extended. */
+  itemId: string;
+  /** Seconds the lease was pushed forward (echoes the request). */
+  extendedBySeconds: number;
+}
+
+// ─── D2D messaging types (task 1.29h / 1.32 preamble) ───────────────────
+
+export interface MsgSendRequest {
+  /** Recipient Dina DID (`did:plc:…` / `did:key:…`). */
+  recipientDID: string;
+  /**
+   * Dina message type string (`service.query`, `service.response`,
+   * plain `text`, …). Caller-defined; Core doesn't interpret.
+   */
+  messageType: string;
+  /** JSON payload — Core signs + seals, never peeks inside. */
+  body: Record<string, unknown>;
+}
+
+export interface MsgSendResult {
+  /** Always `true` on a 2xx (success is binary here — throw on failure). */
+  ok: true;
+}
+
+// ─── Scratchpad types (task 1.32 preamble) ──────────────────────────────
+
+/**
+ * A single checkpoint row persisted under `taskId`. Matches Python's
+ * scratchpad semantics: `step=0` on write deletes; read never returns
+ * `step=0` (would be a non-existent delete sentinel).
+ */
+export interface ScratchpadEntry {
+  taskId: string;
+  /** Logical step number — monotonic per task, caller-defined. */
+  step: number;
+  /** Caller-defined JSON context — Core stores opaquely. */
+  context: Record<string, unknown>;
+  /** Unix milliseconds the row was first written. Stable across updates. */
+  createdAt: number;
+  /** Unix milliseconds the row was most-recently written. */
+  updatedAt: number;
+}
+
+export interface ScratchpadCheckpointResult {
+  /** Echoes the taskId so callers confirm what was persisted. */
+  taskId: string;
+  /** Echoes the step. `0` indicates the delete-sentinel path fired. */
+  step: number;
+}
+
+export interface ScratchpadClearResult {
+  /** Echoes the cleared taskId — confirmation the clear reached Core. */
+  taskId: string;
+}
+
+// ─── Service-respond types (task 1.32 slice A) ─────────────────────────
+
+/** Response-body wire shape — matches the `/v1/service/respond` route
+ *  validator in `server/routes/service_respond.ts`. */
+export interface ServiceRespondRequestBody {
+  status: 'success' | 'unavailable' | 'error';
+  /** Populated on `status === 'success'`. Opaque JSON — Core forwards. */
+  result?: unknown;
+  /** Populated on non-success to explain the failure. */
+  error?: string;
+}
+
+export interface ServiceRespondResult {
+  /** `'sent'` on fresh send; `current.status` when the task had already
+   *  terminated (e.g. `completed`, `failed`, `'recovered'` on the
+   *  post-crash bridge-pending path). */
+  status: string;
+  /** Echoes the taskId so callers confirm what was responded. */
+  taskId: string;
+  /** `true` when Core detected a retry against an already-terminal task.
+   *  Callers use this to skip UI "sent!" toasts on the retry. */
+  alreadyProcessed: boolean;
+}
+
+// ─── Workflow-event types (task 1.32 slice B) ──────────────────────────
+
+/** Re-export from core's workflow domain — the event shape is already
+ *  authoritative there; Brain consumers just need the type name. */
+import type { WorkflowEvent } from '../workflow/domain';
+export type { WorkflowEvent };
+
+export interface ListWorkflowEventsOptions {
+  /** Filter: return only events with id strictly greater than this. */
+  since?: number;
+  /** Cap on row count; server clamps. */
+  limit?: number;
+  /**
+   * When `true`, restrict to events the consumer hasn't acked and that
+   * are past their `next_delivery_at` backoff. Default `false` returns
+   * the full audit/diagnostics stream.
+   */
+  needsDeliveryOnly?: boolean;
+}
+
+export interface FailWorkflowEventOptions {
+  /**
+   * Floor for the next delivery attempt, Unix ms. Core default is
+   * `now + 30s` when omitted; passing a larger value lets the consumer
+   * suggest a longer back-off (e.g. for a terminally-failing thread).
+   */
+  nextDeliveryAt?: number;
+  /** Optional human-readable reason — logged for operator triage. */
+  error?: string;
+}
+
+// ─── Workflow-task types (task 1.32 slices C + D) ──────────────────────
+
+/** Re-export the workflow domain types + typed errors so Brain consumers
+ *  can keep all their CoreClient-adjacent imports on `@dina/core` without
+ *  deep-importing into `workflow/service` or `workflow/repository`. */
+import type { WorkflowTask } from '../workflow/domain';
+import type { CreateWorkflowTaskInput } from '../workflow/service';
+import {
+  WorkflowConflictError,
+  WorkflowValidationError,
+  WorkflowTransitionError,
+} from '../workflow/service';
+export type { WorkflowTask, CreateWorkflowTaskInput };
+export { WorkflowConflictError, WorkflowValidationError, WorkflowTransitionError };
+
+export interface ListWorkflowTasksFilter {
+  /** Required — one of the `WorkflowTaskKind` values (e.g. `service_query`). */
+  kind: string;
+  /** Required — one of the `WorkflowTaskState` values (e.g. `pending_approval`). */
+  state: string;
+  /** Row cap; server defaults 100 / clamps 500. */
+  limit?: number;
+}
+
+export interface CreateWorkflowTaskResult {
+  /** The stored task — authoritative shape comes back from the server. */
+  task: WorkflowTask;
+  /**
+   * `true` when the server returned an existing task matching the
+   * caller's `idempotency_key`. `false` on a freshly-created row.
+   * Callers use this to suppress duplicate "created!" toasts on retry.
+   */
+  deduped: boolean;
+}
+
+// ─── Memory + contact types (task 1.32 slice E) ─────────────────────────
+
+/** Re-export TopicKind so Brain consumers import memory-touch params
+ *  from `@dina/core` without a second deep-import. */
+import type { TopicKind } from '../memory/domain';
+export type { TopicKind };
+
+export interface MemoryTouchParams {
+  /** Persona whose ToC we're mutating. Locked persona → server skips. */
+  persona: string;
+  /** Topic label — server canonicalises (lowercased, trimmed, alias-merged). */
+  topic: string;
+  /** `entity` (named thing) or `theme` (abstract subject). */
+  kind: TopicKind;
+  /** Optional vault item id to link as a sample. Omit to touch without
+   *  attaching a sample (WM-BRAIN-08 acceptance path for bulk topic
+   *  extraction that doesn't pin specific rows). */
+  sampleItemId?: string;
+}
+
+export interface MemoryTouchResult {
+  /** `'ok'` on a successful touch; `'skipped'` when the persona is
+   *  locked (server drops silently + emits the reason). */
+  status: 'ok' | 'skipped';
+  /** Server's canonicalised topic name — useful for cross-referencing
+   *  in ingest audit logs. */
+  canonical?: string;
+  /** Diagnostic reason populated when `status === 'skipped'`. */
+  reason?: string;
+}
+
+/** Re-export `Contact` so consumers find it on `@dina/core`'s public
+ *  barrel without deep-importing from `contacts/directory`. */
+import type { Contact } from '../contacts/directory';
+export type { Contact };
+
+export interface UpdateContactParams {
+  /**
+   * Preferred-for categories (the contact resolver uses these to match
+   * role mentions). Tri-state: `undefined` = no-op on server, `[]` =
+   * clear, non-empty array = replace. Server normalises (lowercased +
+   * trimmed + deduped) so callers can pass raw strings.
+   */
+  preferredFor?: string[];
 }

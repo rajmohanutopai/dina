@@ -56,7 +56,10 @@ import {
 import { setServiceQuerySender } from '@dina/core/src/server/routes/service_query';
 import { setServiceRespondSender } from '@dina/core/src/server/routes/service_respond';
 import { isAuthenticated as isMsgBoxAuthenticated } from '@dina/core/src/relay/msgbox_ws';
-import type { ServiceQueryBody } from '@dina/core/src/d2d/service_bodies';
+import type {
+  ServiceQueryBody,
+  ServiceResponseBody,
+} from '@dina/core/src/d2d/service_bodies';
 import { disconnect as disconnectMsgBox, type WSFactory } from '@dina/core/src/relay/msgbox_ws';
 import { setWSDeliverFn } from '@dina/core/src/transport/delivery';
 import { makeServiceResponseBridgeSender } from '@dina/core/src/workflow/response_bridge_sender';
@@ -86,7 +89,7 @@ export type AppD2DSender = (
   body: Record<string, unknown>,
 ) => Promise<void>;
 import { validateAgainstSchema } from '@dina/brain/src/service/capabilities/schema_validator';
-import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
+import type { CoreClient } from '@dina/core/src/client/core-client';
 import type { AppViewClient } from '@dina/brain/src/appview_client/http';
 import type { PDSPublisher } from '@dina/brain/src/pds/publisher';
 import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
@@ -176,7 +179,18 @@ export interface CreateNodeOptions {
   coreRouter?: CoreRouter;
 
   // --- Clients + stores the caller provides -------------------------------
-  coreClient: BrainCoreClient;
+  /**
+   * Transport-agnostic `CoreClient` handle — every brain subsystem
+   * wires against this. Mobile boot passes `InProcessTransport(router)`;
+   * home-node-lite's brain-server passes `HttpCoreTransport`. Both
+   * implement the same `CoreClient` interface so bootstrap code never
+   * branches on runtime. (Earlier iterations had a transitional
+   * `coreClient: BrainCoreClient` + `coreTransport: CoreClient`
+   * dual-wiring; task 1.32 finished migrating every consumer onto
+   * CoreClient + the hooks onto `Pick<CoreClient, ...>` slices, so
+   * the two fields collapse to one.)
+   */
+  coreClient: CoreClient;
   appViewClient: Pick<AppViewClient, 'searchServices'>;
   pdsPublisher?: PDSPublisher;
   workflowRepository: WorkflowRepository;
@@ -320,7 +334,7 @@ export interface DinaNode {
    * Sharing) — a `requester`-only node shouldn't (review #16).
    */
   role: NodeRole;
-  coreClient: BrainCoreClient;
+  coreClient: CoreClient;
   workflowService: WorkflowService;
   orchestrator: ServiceQueryOrchestrator;
   handler: ServiceHandler;
@@ -416,7 +430,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     const serviceRespondSender = async (
       to: string,
       type: 'service.response',
-      body: import('../../../core/src/d2d/service_bodies').ServiceResponseBody,
+      body: ServiceResponseBody,
     ): Promise<void> => {
       await options.sendD2D(to, type, body as unknown as Record<string, unknown>);
     };
@@ -605,6 +619,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const stagingDrainEnabled = drainCfg !== false;
   const drainOptions: StagingDrainOptions =
     drainCfg === undefined || drainCfg === true || drainCfg === false ? {} : drainCfg;
+  // Drain consumes the transport-agnostic `CoreClient` surface directly.
+  // `options.coreClient` is an `InProcessTransport` on mobile and an
+  // `HttpCoreTransport` on the server — same interface, different wire.
   const stagingDrain = stagingDrainEnabled
     ? new StagingDrainScheduler({
         core: options.coreClient,

@@ -12,23 +12,35 @@
  */
 
 import type { LanguageModel } from 'ai';
-import { AISDKAdapter } from '../../src/ai/aisdk_adapter';
+import { AISDKAdapter } from '@dina/brain/src/llm/adapters/aisdk';
 
 function makeMock(opts: {
   onCall?: (prompt: unknown) => void;
   finishReason?: string;
-  toolCalls?: Array<{ toolCallId: string; toolName: string; input: Record<string, unknown> }>;
+  toolCalls?: Array<{
+    toolCallId: string;
+    toolName: string;
+    input: Record<string, unknown>;
+    /** Provider-specific metadata on the response tool call — Gemini
+     *  thinking models stamp `thoughtSignature` here; the adapter
+     *  preserves the field on the Brain-side ToolCall. */
+    providerMetadata?: Record<string, Record<string, unknown>>;
+  }>;
   text?: string;
 }): LanguageModel {
   const contentParts: Array<Record<string, unknown>> = [];
   if (opts.text !== undefined) contentParts.push({ type: 'text', text: opts.text });
   for (const tc of opts.toolCalls ?? []) {
-    contentParts.push({
+    const part: Record<string, unknown> = {
       type: 'tool-call',
       toolCallId: tc.toolCallId,
       toolName: tc.toolName,
       input: tc.input,
-    });
+    };
+    if (tc.providerMetadata !== undefined) {
+      part.providerMetadata = tc.providerMetadata;
+    }
+    contentParts.push(part);
   }
   return {
     specificationVersion: 'v2',
@@ -149,5 +161,96 @@ describe('AISDKAdapter — finish reason mapping', () => {
     });
     const res = await adapter.chat([{ role: 'user', content: 'hi' }]);
     expect(res.finishReason).toBe('end');
+  });
+});
+
+describe('AISDKAdapter — providerMetadata round-trip (Gemini thoughtSignature)', () => {
+  // Regression gate for the original honest-review item "fix AISDKAdapter
+  // providerMetadata threading". Without this preservation, Gemini 3.x
+  // thinking models reject the next generateContent with "Function call
+  // is missing a thought_signature in functionCall parts".
+
+  it('preserves providerMetadata on the returned ToolCall', async () => {
+    const adapter = new AISDKAdapter({
+      model: makeMock({
+        finishReason: 'stop',
+        toolCalls: [
+          {
+            toolCallId: 'c1',
+            toolName: 'geocode',
+            input: { address: 'SF' },
+            providerMetadata: {
+              google: { thoughtSignature: 'SIG_OPAQUE_BLOB' },
+            },
+          },
+        ],
+      }),
+      name: 'gemini',
+    });
+    const res = await adapter.chat([{ role: 'user', content: 'where?' }]);
+    expect(res.toolCalls).toHaveLength(1);
+    expect(res.toolCalls[0].providerMetadata).toEqual({
+      google: { thoughtSignature: 'SIG_OPAQUE_BLOB' },
+    });
+  });
+
+  it('omits providerMetadata when the underlying tool call has none', async () => {
+    const adapter = new AISDKAdapter({
+      model: makeMock({
+        finishReason: 'stop',
+        toolCalls: [{ toolCallId: 'c1', toolName: 'geocode', input: { address: 'SF' } }],
+      }),
+      name: 'openai',
+    });
+    const res = await adapter.chat([{ role: 'user', content: 'where?' }]);
+    expect(res.toolCalls[0].providerMetadata).toBeUndefined();
+  });
+
+  it('re-stamps providerMetadata as providerOptions on the next-turn request', async () => {
+    // Tool-call-with-metadata goes out on an assistant message; the
+    // adapter's toAISDKMessages must re-stamp it as `providerOptions`
+    // on the AI SDK ToolCallPart. Asserted by capturing the prompt
+    // the model received.
+    let capturedPrompt: unknown = null;
+    const adapter = new AISDKAdapter({
+      model: makeMock({
+        onCall: (p) => {
+          capturedPrompt = p;
+        },
+        finishReason: 'stop',
+        text: 'ok',
+      }),
+      name: 'gemini',
+    });
+    await adapter.chat([
+      { role: 'user', content: 'route 42?' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          {
+            id: 'c1',
+            name: 'geocode',
+            arguments: { address: 'SF' },
+            providerMetadata: {
+              google: { thoughtSignature: 'SIG_OPAQUE_BLOB' },
+            },
+          },
+        ],
+      },
+      { role: 'tool', content: '{"lat":37.7}', toolCallId: 'c1', toolName: 'geocode' },
+    ]);
+
+    // Locate the re-sent assistant tool-call part in the prompt the
+    // SDK forwarded to `doGenerate`.
+    const prompt = capturedPrompt as Array<{ role: string; content: unknown }>;
+    const assistantMsg = prompt.find((m) => m.role === 'assistant');
+    expect(assistantMsg).toBeDefined();
+    const parts = assistantMsg!.content as Array<Record<string, unknown>>;
+    const toolCallPart = parts.find((p) => p.type === 'tool-call');
+    expect(toolCallPart).toBeDefined();
+    expect(toolCallPart!.providerOptions).toEqual({
+      google: { thoughtSignature: 'SIG_OPAQUE_BLOB' },
+    });
   });
 });

@@ -38,7 +38,17 @@ function ensureVersionTable(db: DatabaseAdapter): void {
  */
 export function getCurrentVersion(db: DatabaseAdapter): number {
   ensureVersionTable(db);
-  const rows = db.query<{ version: number }>('SELECT MAX(version) as version FROM schema_version');
+  // `SELECT MAX(version) as version FROM schema_version` returns the column
+  // aliased on better-sqlite3 + in-memory, but op-sqlite (mobile) returns
+  // the row keyed as the raw aggregate expression (e.g. `MAX(version)`),
+  // so `rows[0]?.version` is undefined and we fall through to `?? 0` —
+  // even when migration 1 is already recorded. The next migration pass
+  // then re-runs v1 and hits `UNIQUE constraint failed: schema_version.version`.
+  // Use an ORDER BY + LIMIT so the result is a plain row — no aggregate
+  // aliasing to worry about — and the column key matches our table column.
+  const rows = db.query<{ version: number }>(
+    'SELECT version FROM schema_version ORDER BY version DESC LIMIT 1',
+  );
   return rows[0]?.version ?? 0;
 }
 

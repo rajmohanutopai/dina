@@ -34,6 +34,17 @@ export interface ToolCall {
   id?: string;
   name: string;
   arguments: Record<string, unknown>;
+  /**
+   * Opaque per-provider metadata the adapter needs to echo back verbatim
+   * on the next turn. Gemini 3.x thinking models stamp each `functionCall`
+   * with a `thoughtSignature` the client MUST replay — without it the
+   * next `generateContent` rejects with "Function call is missing a
+   * thought_signature in functionCall parts". Other providers ignore
+   * this field.
+   *
+   * Shape is adapter-private; nothing above `LLMProvider` reads it.
+   */
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface ChatResponse {

@@ -116,6 +116,30 @@ export class InMemoryDatabaseAdapter implements DatabaseAdapter {
       return [{ [alias]: max } as unknown as T];
     }
 
+    // SELECT ... FROM <table> ORDER BY <col> (ASC|DESC) LIMIT <n>
+    // — used by the migration runner to read the highest schema version
+    // in an op-sqlite-compatible way (aggregates return un-aliased
+    // column names on op-sqlite). Keep the in-memory adapter's parsing
+    // in sync so tests + runtime see the same behaviour.
+    const orderLimitMatch = sql.match(
+      /SELECT\s+.+\s+FROM\s+(\w+)\s+ORDER\s+BY\s+(\w+)\s+(ASC|DESC)\s+LIMIT\s+(\d+)/i,
+    );
+    if (orderLimitMatch) {
+      const [, tableName, col, direction, limitStr] = orderLimitMatch;
+      const limit = parseInt(limitStr, 10);
+      const rows = this._tables.get(tableName) ?? [];
+      const sorted = [...rows].sort((a, b) => {
+        const aVal = a[col] as number | string | null;
+        const bVal = b[col] as number | string | null;
+        if (aVal === bVal) return 0;
+        if (aVal === null) return 1;
+        if (bVal === null) return -1;
+        const cmp = aVal < bVal ? -1 : 1;
+        return direction.toUpperCase() === 'DESC' ? -cmp : cmp;
+      });
+      return sorted.slice(0, limit) as T[];
+    }
+
     // SELECT from table
     const selectMatch = sql.match(/SELECT\s+.+\s+FROM\s+(\w+)/i);
     if (selectMatch) {

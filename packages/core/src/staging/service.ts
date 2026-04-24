@@ -196,6 +196,10 @@ export function resolve(
   personaOpen: boolean,
   classifiedItem?: Record<string, unknown>,
 ): void {
+  // eslint-disable-next-line no-console
+  console.log(
+    `[staging/service] resolve id=${id} persona=${persona} open=${personaOpen} hasClassified=${classifiedItem !== undefined} summary="${(classifiedItem?.summary as string | undefined) ?? ''}"`,
+  );
   const item = inbox.get(id);
   if (!item) throw new Error(`staging: item "${id}" not found`);
   if (item.status !== 'classifying') {
@@ -264,17 +268,46 @@ export function resolveMulti(
   // Fix: Codex #4 — previously only stored targets[0].persona, losing locked secondaries.
   const lockedTargets: string[] = [];
 
+  // Track which personas actually got a vault row. A persona that
+  // fails to store (validation reject, adapter error) must not
+  // advance to the drain callback — otherwise post-publish hooks
+  // fire against a row that doesn't exist.
+  const storedPersonas: string[] = [];
+  const failures: Array<{ persona: string; reason: string }> = [];
+
   for (const target of targets) {
     if (target.personaOpen && classifiedItem) {
       try {
         storeItem(target.persona, classifiedItem);
-      } catch {
-        /* fail-safe */
+        storedPersonas.push(target.persona);
+        if (onDrainCallback) onDrainCallback(item, target.persona);
+      } catch (err) {
+        // Surface the reason so the drain / ops can see WHY the vault
+        // rejected the write (invalid type, missing required field,
+        // adapter failure). Previously this was a silent catch — the
+        // drain would report `stored: 1` even though no vault row
+        // existed, making `/remember` appear to work but `/ask` find
+        // nothing. The per-persona failure is still non-fatal: we
+        // continue the loop so other targets can still store.
+        const reason = err instanceof Error ? err.message : String(err);
+        failures.push({ persona: target.persona, reason });
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[staging/resolveMulti] vault store failed persona=${target.persona} reason=${reason}`,
+        );
       }
-      if (onDrainCallback) onDrainCallback(item, target.persona);
     } else if (!target.personaOpen) {
       lockedTargets.push(target.persona);
     }
+  }
+
+  // If NOTHING stored + nothing pending_unlock, the resolve is a
+  // total loss — re-throw the first failure so the drain can mark
+  // the staging item failed instead of silently moving on.
+  if (storedPersonas.length === 0 && lockedTargets.length === 0 && failures.length > 0) {
+    throw new Error(
+      `staging: resolveMulti wrote 0 vault rows (all ${failures.length} targets failed): ${failures[0]!.reason}`,
+    );
   }
 
   // Create separate pending_unlock records for each locked secondary persona

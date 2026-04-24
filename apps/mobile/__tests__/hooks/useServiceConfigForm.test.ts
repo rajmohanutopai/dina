@@ -33,7 +33,7 @@ function stubClient(init: {
 }): { client: ServiceConfigCoreClient; calls: { get: number; put: ServiceConfig[] } } {
   const calls = { get: 0, put: [] as ServiceConfig[] };
   const client: ServiceConfigCoreClient = {
-    async getServiceConfig() {
+    async serviceConfig() {
       calls.get++;
       if (init.getError) throw init.getError;
       return init.getResult ?? null;

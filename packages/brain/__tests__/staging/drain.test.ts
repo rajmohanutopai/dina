@@ -11,7 +11,8 @@ import { runStagingDrainTick, type StagingDrainCoreClient } from '../../src/stag
 
 interface ResolveCall {
   itemId: string;
-  persona: string;
+  /** Echoed back exactly as the drain passed it (string OR string[]). */
+  persona: string | string[];
   data: Record<string, unknown>;
 }
 
@@ -23,23 +24,32 @@ function makeCore(overrides: {
   failCalls?: Array<{ id: string; reason: string }>;
 }): StagingDrainCoreClient {
   return {
-    async claimStagingItems() {
+    async stagingClaim() {
       if (overrides.claimError) throw overrides.claimError;
-      return overrides.items ?? [];
+      const items = overrides.items ?? [];
+      return { items, count: items.length };
     },
-    async resolveStagingItem(itemId: string, persona: string, data: unknown) {
+    async stagingResolve(req) {
       if (overrides.resolveError) throw overrides.resolveError;
       overrides.resolveCalls?.push({
-        itemId,
-        persona,
-        data: data as Record<string, unknown>,
+        itemId: req.itemId,
+        persona: req.persona,
+        data: req.data,
       });
-      return { ok: true };
+      return { itemId: req.itemId, status: 'stored' };
     },
-    async failStagingItem(itemId: string, reason: string) {
+    async stagingFail(itemId: string, reason: string) {
       overrides.failCalls?.push({ id: itemId, reason });
+      return { itemId, retryCount: 1 };
     },
-  } as unknown as StagingDrainCoreClient;
+    async stagingExtendLease(itemId: string, seconds: number) {
+      // Unit-test stub — production wires this through the brain
+      // core client (`extendStagingLease`). The drain only calls this
+      // from its heartbeat timer which never fires in the synchronous
+      // `runStagingDrainTick` path these tests exercise.
+      return { itemId, extendedBySeconds: seconds };
+    },
+  } satisfies StagingDrainCoreClient;
 }
 
 describe('runStagingDrainTick', () => {
@@ -105,19 +115,27 @@ describe('runStagingDrainTick', () => {
     ];
     let call = 0;
     const core = {
-      async claimStagingItems() {
-        return items;
+      async stagingClaim() {
+        return { items, count: items.length };
       },
-      async resolveStagingItem(itemId: string, persona: string, data: unknown) {
+      async stagingResolve(req) {
         call++;
         if (call === 1) throw new Error('vault locked');
-        resolveCalls.push({ itemId, persona, data: data as Record<string, unknown> });
-        return { ok: true };
+        resolveCalls.push({
+          itemId: req.itemId,
+          persona: req.persona,
+          data: req.data,
+        });
+        return { itemId: req.itemId, status: 'stored' };
       },
-      async failStagingItem(itemId: string, reason: string) {
+      async stagingFail(itemId: string, reason: string) {
         failCalls.push({ id: itemId, reason });
+        return { itemId, retryCount: 1 };
       },
-    } as unknown as StagingDrainCoreClient;
+      async stagingExtendLease(itemId: string, seconds: number) {
+        return { itemId, extendedBySeconds: seconds };
+      },
+    } satisfies StagingDrainCoreClient;
 
     const tick = await runStagingDrainTick(core);
     expect(tick.claimed).toBe(2);

@@ -6,20 +6,27 @@ import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import type { StagingDrainCoreClient } from '../../src/staging/drain';
 
 function coreWith(items: unknown[]): StagingDrainCoreClient {
-  const resolves: Array<{ id: string; persona: string }> = [];
+  const resolves: Array<{ id: string; persona: string | string[] }> = [];
   return {
-    async claimStagingItems() {
-      return items;
+    async stagingClaim() {
+      return { items, count: items.length };
     },
-    async resolveStagingItem(id: string, persona: string, _data: unknown) {
-      resolves.push({ id, persona });
-      return { ok: true };
+    async stagingResolve(req) {
+      resolves.push({ id: req.itemId, persona: req.persona });
+      return { itemId: req.itemId, status: 'stored' };
     },
-    async failStagingItem() {
+    async stagingFail(itemId: string) {
       /* not called on happy path */
+      return { itemId, retryCount: 1 };
     },
+    async stagingExtendLease(itemId: string, seconds: number) {
+      return { itemId, extendedBySeconds: seconds };
+    },
+    // Test-only handle for assertions; excluded from the structural type.
     resolves,
-  } as unknown as StagingDrainCoreClient & { resolves: Array<{ id: string; persona: string }> };
+  } as StagingDrainCoreClient & {
+    resolves: Array<{ id: string; persona: string | string[] }>;
+  };
 }
 
 describe('StagingDrainScheduler', () => {
@@ -56,7 +63,13 @@ describe('StagingDrainScheduler', () => {
     scheduler.start();
     await scheduler.flush();
     expect(ticks).toEqual([{ claimed: 1, stored: 1 }]);
-    expect(timers).toHaveLength(1);
+    // Two timers registered via the injected setInterval:
+    //   - the scheduler's own tick cadence (intervalMs default, 10s)
+    //   - the drain's per-item lease heartbeat (LEASE_HEARTBEAT_INTERVAL_MS, 5min)
+    // Both flow through the same injected pair so tests can observe
+    // them deterministically (drain previously used global setInterval).
+    expect(timers).toHaveLength(2);
+    expect(timers.map((t) => t.ms).sort((a, b) => a - b)).toEqual([10_000, 300_000]);
   });
 
   it('start() is idempotent (second call does not register a second timer)', async () => {
@@ -113,11 +126,14 @@ describe('StagingDrainScheduler', () => {
   it('onError fires when runStagingDrainTick itself throws unexpectedly', async () => {
     const errors: unknown[] = [];
     const brokenCore = {
-      claimStagingItems: async () => {
+      stagingClaim: async () => {
         throw new Error('core offline');
       },
-      resolveStagingItem: async () => ({}),
-      failStagingItem: async () => {},
+      stagingResolve: async (req: { itemId: string }) => ({
+        itemId: req.itemId,
+        status: 'stored',
+      }),
+      stagingFail: async (id: string) => ({ itemId: id, retryCount: 1 }),
     } as unknown as StagingDrainCoreClient;
     const scheduler = new StagingDrainScheduler({
       core: brokenCore,
@@ -149,19 +165,19 @@ describe('StagingDrainScheduler', () => {
   });
 
   it('coalesces concurrent tick callers onto the same in-flight promise', async () => {
-    let resolveClaim: ((items: unknown[]) => void) | null = null;
+    let resolveClaim: ((r: { items: unknown[]; count: number }) => void) | null = null;
     const ticksFired: number[] = [];
     const core = {
-      async claimStagingItems() {
-        return new Promise<unknown[]>((r) => {
+      async stagingClaim() {
+        return new Promise<{ items: unknown[]; count: number }>((r) => {
           resolveClaim = r;
         });
       },
-      async resolveStagingItem() {
-        return {};
+      async stagingResolve(req: { itemId: string }) {
+        return { itemId: req.itemId, status: 'stored' };
       },
-      async failStagingItem() {
-        /* noop */
+      async stagingFail(itemId: string) {
+        return { itemId, retryCount: 1 };
       },
     } as unknown as StagingDrainCoreClient;
     const scheduler = new StagingDrainScheduler({
@@ -176,7 +192,7 @@ describe('StagingDrainScheduler', () => {
     });
     const p1 = scheduler.runTick();
     const p2 = scheduler.runTick();
-    resolveClaim!([]);
+    resolveClaim!({ items: [], count: 0 });
     await Promise.all([p1, p2]);
     // Two concurrent calls must yield exactly one observer fire.
     expect(ticksFired).toEqual([1]);

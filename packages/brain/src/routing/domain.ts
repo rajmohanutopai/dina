@@ -18,12 +18,57 @@
 
 import { resolveAlias } from '../persona/registry';
 
+/**
+ * Contact name + relationship + data_responsibility surfaced to the LLM
+ * classifier so relationship-aware routing kicks in. Matches the
+ * `mentioned_contacts` shape in Python's `persona_selector.py::_llm_select`.
+ *
+ * `data_responsibility` is what makes "Sancho (friend, external) has a
+ * peanut allergy" route to `general` while "Emma (child, household)
+ * has a peanut allergy" routes to `health`. Kept as a free string so
+ * the classifier input can carry values the contact directory doesn't
+ * yet recognise.
+ */
+export interface MentionedContact {
+  name: string;
+  relationship?: string;
+  data_responsibility?: 'household' | 'care' | 'financial' | 'external' | string;
+}
+
+/**
+ * Deterministic attribution candidate the LLM should review + possibly
+ * correct. Shape mirrors Python's `attribution_candidates` input —
+ * a prior pipeline step labels "subject=Sancho, fact=peanut allergy,
+ * bucket=friend" and the classifier may flip `bucket` to `self_explicit`
+ * if context proves the deterministic assignment wrong (e.g. "I told
+ * Sancho about MY allergy").
+ */
+export interface AttributionCandidate {
+  id: number;
+  subject?: string;
+  fact?: string;
+  bucket?: string;
+  [key: string]: unknown;
+}
+
 export interface ClassificationInput {
   type?: string;
   source?: string;
   sender?: string;
   subject?: string;
   body?: string;
+  /**
+   * Contacts named in the item text whose `data_responsibility` should
+   * override content-based routing (external contact's medical data →
+   * general, household contact's medical data → health, etc.).
+   */
+  mentionedContacts?: MentionedContact[];
+  /**
+   * Deterministic attribution candidates the LLM may correct. See
+   * `AttributionCandidate` for the shape and Python's
+   * `persona_selector.py` for the semantics.
+   */
+  attributionCandidates?: AttributionCandidate[];
 }
 
 export interface ClassificationResult {

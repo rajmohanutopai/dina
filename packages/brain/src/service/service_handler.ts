@@ -21,7 +21,8 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { WorkflowConflictError, type BrainCoreClient } from '../core_client/http';
+import { WorkflowConflictError } from '@dina/core';
+import type { CoreClient } from '@dina/core';
 import type {
   ServiceConfig,
   ServiceCapabilityConfig,
@@ -31,11 +32,29 @@ import { validateServiceQueryBody } from '@dina/protocol';
 import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
 
-/** Minimal subset of `BrainCoreClient` the handler needs. */
-export interface ServiceHandlerCoreClient extends Pick<
-  BrainCoreClient,
-  'createWorkflowTask' | 'cancelWorkflowTask' | 'sendServiceRespond'
-> {}
+/**
+ * The 2-method slice of `CoreClient` the handler needs:
+ *   - `createWorkflowTask` creates the approval task (review-policy) or
+ *     the delegation task (auto-policy) that Guardian's workflow-event
+ *     consumer later picks up.
+ *   - `cancelWorkflowTask` is called on the approval task once the
+ *     delegation has spun up — keeps the approval from sitting in
+ *     `pending_approval` after the downstream work already started.
+ *
+ * Task 1.32-H: used to be `Pick<BrainCoreClient, ...>` with a third
+ * `sendServiceRespond` method that was unused on `this.core` (the
+ * reject-responder path routes through the injected
+ * `rejectResponder` option instead, not through CoreClient — the
+ * responder builds the D2D envelope outside Core's service-respond
+ * route because `service_handler` rejects BEFORE creating a task,
+ * so there's no task-id yet for the Core bridge to attach the send
+ * to, issue #9). Migration narrows the Pick to what's actually used
+ * on the client — smaller contract, easier to satisfy in tests.
+ */
+export type ServiceHandlerCoreClient = Pick<
+  CoreClient,
+  'createWorkflowTask' | 'cancelWorkflowTask'
+>;
 
 /**
  * Frozen copy of a capability's published schema at task-creation time.

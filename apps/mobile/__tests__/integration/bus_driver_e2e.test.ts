@@ -23,7 +23,8 @@
 import { createNode, type DinaNode } from '../../src/services/bootstrap';
 import { createCoreRouter } from '../../../core/src/server/core_server';
 import { createInProcessDispatch } from '../../../core/src/server/in_process_dispatch';
-import { BrainCoreClient } from '../../../brain/src/core_client/http';
+import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+// BrainCoreClient retired — mobile now uses InProcessTransport exclusively.
 import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
 import { InMemoryServiceConfigRepository } from '../../../core/src/service/service_config_repository';
 import { getServiceConfig } from '../../../core/src/service/service_config';
@@ -109,12 +110,10 @@ async function composeNode(opts?: {
   const repo = new InMemoryWorkflowRepository();
   const configRepo = new InMemoryServiceConfigRepository();
 
-  const coreClient = new BrainCoreClient({
-    coreURL: 'in-process',
-    privateKey: PROVIDER_SEED,
-    did: PROVIDER_DID,
-    signedDispatch: dispatch,
-  });
+  // BrainCoreClient was retired — in-process Brain↔Core uses
+  // InProcessTransport (auth bypass via `trustedInProcess` flag).
+  void dispatch;
+  const coreClient = new InProcessTransport(router);
 
   // Egress spy via the production wiring path (issue #20). We pass a
   // real `sendD2D` into createNode and capture every call — the
@@ -194,7 +193,10 @@ describe('Bus Driver end-to-end runtime composition', () => {
       // Task id is `sq-${queryId}-${sha256(to_did|cap|queryId).slice(0,8)}`
       // (issue #20 — namespace-by-tuple to avoid queryId reuse collisions).
       expect(result.taskId).toMatch(/^sq-q-e2e-1-[0-9a-f]{8}$/);
-      expect(result.deduped).toBe(false);
+      // `CoreClient.sendServiceQuery` returns `deduped?: boolean` (undefined
+      // on fresh create); callers that need always-set collapse via
+      // `?? false`. Match the raw transport shape here.
+      expect(result.deduped).toBeFalsy();
 
       // Route actually dispatched the D2D sender — proves Core globals
       // are wired (no 503), auth round-tripped (no 401), and the

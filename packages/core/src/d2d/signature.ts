@@ -9,8 +9,12 @@
 
 import { sign, verify } from '../crypto/ed25519';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { buildMessage } from './envelope';
-import type { DinaMessage } from './envelope';
+// Import from the neutral `wire.ts` so there's no runtime edge back
+// into envelope.ts. Previously `./envelope` → `./signature` (for
+// signMessage) AND `./signature` → `./envelope` (for buildMessage +
+// DinaMessage), which Metro correctly flagged as a require cycle and
+// Hermes will eventually fault on during module init.
+import { buildMessage, type DinaMessage } from './wire';
 
 /** Sign a DinaMessage. Returns hex signature over the same JSON bytes
  *  the Go peer signs (and the receiver verifies against).

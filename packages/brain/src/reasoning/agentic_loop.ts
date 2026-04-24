@@ -104,7 +104,16 @@ export async function runAgenticTurn(args: {
         temperature: options.temperature,
         signal: options.signal,
       });
-    } catch {
+    } catch (err) {
+      // Surface the actual provider error so simulator / CI logs show
+      // WHY the agentic loop bailed (wrong model id, API-key scope,
+      // unsupported tool-use, network). Previously swallowed silently
+      // which made `Sorry — the reasoning service is unreachable right
+      // now` an uninvestigable dead-end.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[agentic_loop] provider.chat threw: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return done('provider_error');
     }
 

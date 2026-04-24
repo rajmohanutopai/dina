@@ -318,11 +318,21 @@ async function runLLMGuardScan(response: string): Promise<GuardViolation[]> {
   // emails, phone numbers, etc. from vault context that shouldn't leak.
   const { scrubbed: scrubbedResponse } = scrubPII(response);
 
-  // Number each sentence for the LLM to reference by index
+  // Number each sentence for the LLM to reference by index. The Python-
+  // parity GUARD_SCAN prompt is 1-indexed and uses `{{numbered_content}}`
+  // as its placeholder (not `{{numbered_response}}`). The legacy
+  // single-shot path doesn't have access to the user prompt here, so
+  // `{{prompt}}` gets an empty-string substitution — the LLM still
+  // flags violations, just without the "was this solicited?" context.
+  // The new `reasoning/guard_scanner.ts` path (agentic /ask) fills
+  // `{{prompt}}` properly.
   const sentences = splitSentences(scrubbedResponse);
-  const numbered = sentences.map((s, i) => `[${i}] ${s}`).join('\n');
+  const numbered = sentences.map((s, i) => `[${i + 1}] ${s}`).join('\n');
 
-  const prompt = GUARD_SCAN.replace('{{numbered_response}}', numbered);
+  const prompt = GUARD_SCAN.replace('{{prompt}}', '').replace(
+    '{{numbered_content}}',
+    numbered,
+  );
   const raw = await llmGuardFn(
     'You are a safety classifier for Dina, a personal AI assistant. Check responses for violations.',
     prompt,
@@ -336,11 +346,22 @@ async function runLLMGuardScan(response: string): Promise<GuardViolation[]> {
 /**
  * Parse the LLM guard scan JSON result.
  *
- * Prefers direct sentence_indices from the LLM (when available).
- * Falls back to text-based matching if indices are not provided.
+ * Handles two wire formats:
  *
- * Expected format:
- *   {"safe": false, "violations": [{"type": "therapy_style", "sentence_indices": [1, 3], "text": "..."}]}
+ *   - **Python-parity schema** (preferred, emitted by the current
+ *     `GUARD_SCAN` prompt): named arrays per category
+ *     `{anti_her_sentences: [1,3], unsolicited_sentences: [], …}` —
+ *     1-indexed sentence numbers aligned with the `[N]` labels we
+ *     emit when numbering the response.
+ *   - **Legacy TS schema**: `{safe: bool, violations: [{type, sentence_indices, text}]}`
+ *     with 0-indexed sentence numbers. Kept for any external callers
+ *     still on the pre-Python-port format.
+ *
+ * Returns violations in the TS internal shape (`GuardViolation[]`
+ * with 0-indexed `sentenceIndices`). Category mapping for the Python
+ * format: anti_her_sentences → 'anti_her', unsolicited_sentences →
+ * 'unsolicited_recommendation', fabricated_sentences / consensus_sentences
+ * → 'hallucinated_trust'.
  */
 export function parseLLMGuardResult(output: string, originalResponse: string): GuardViolation[] {
   if (!output) return [];
@@ -355,6 +376,44 @@ export function parseLLMGuardResult(output: string, originalResponse: string): G
 
   try {
     const parsed = JSON.parse(cleaned);
+
+    // ── Python-parity format detection ──
+    // Any of the named category arrays present → treat as the new
+    // shape. 1-indexed → convert to 0-indexed for the TS internal
+    // `GuardViolation.sentenceIndices`.
+    if (
+      Array.isArray(parsed.anti_her_sentences) ||
+      Array.isArray(parsed.unsolicited_sentences) ||
+      Array.isArray(parsed.fabricated_sentences) ||
+      Array.isArray(parsed.consensus_sentences)
+    ) {
+      const sentences = splitSentences(originalResponse);
+      const violations: GuardViolation[] = [];
+      const pushCategory = (
+        key: 'anti_her_sentences' | 'unsolicited_sentences' | 'fabricated_sentences' | 'consensus_sentences',
+        category: GuardViolation['category'],
+        severity: GuardViolation['severity'],
+      ): void => {
+        const raw = Array.isArray(parsed[key]) ? parsed[key] : [];
+        const indices: number[] = [];
+        for (const v of raw) {
+          if (typeof v !== 'number' || !Number.isInteger(v)) continue;
+          const zero = v - 1; // 1-indexed → 0-indexed
+          if (zero < 0 || zero >= sentences.length) continue;
+          indices.push(zero);
+        }
+        if (indices.length > 0) {
+          violations.push({ category, severity, detail: `LLM guard: ${key}`, sentenceIndices: indices });
+        }
+      };
+      pushCategory('anti_her_sentences', 'anti_her', 'block');
+      pushCategory('unsolicited_sentences', 'unsolicited_recommendation', 'warning');
+      pushCategory('fabricated_sentences', 'hallucinated_trust', 'warning');
+      pushCategory('consensus_sentences', 'hallucinated_trust', 'warning');
+      return violations;
+    }
+
+    // ── Legacy TS format ──
     if (parsed.safe === true) return [];
     if (!Array.isArray(parsed.violations)) return [];
 

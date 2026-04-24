@@ -91,6 +91,108 @@ export interface IsDiscoverableResult {
   capabilities: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Trust Network types (mirrors `appview/src/shared/types/api-types.ts`)
+// ---------------------------------------------------------------------------
+
+/** Aggregate attestation counts for a trust subject. */
+export interface TrustAttestationSummary {
+  total: number;
+  positive: number;
+  neutral: number;
+  negative: number;
+  averageDimensions: unknown;
+}
+
+/** Community-flagged concerns on a subject (scam / fake / deceptive / etc.). */
+export interface TrustFlag {
+  flagType: string;
+  severity: string;
+}
+
+/** Authenticity consensus block — present when reviewers have weighed in. */
+export interface TrustAuthenticity {
+  predominantAssessment: string;
+  confidence: number | null;
+}
+
+/** How the requester relates to the target in the trust graph. */
+export interface TrustGraphContext {
+  shortestPath: number | null;
+  mutualConnections: number | null;
+  trustedAttestors: string[];
+}
+
+/**
+ * `com.dina.trust.resolve` response — trust level + recommendation
+ * for a subject (DID / product / content / etc.). `subject` must be a
+ * JSON-stringified subject reference: `{"type":"did","did":"did:plc:..."}`
+ * or `{"type":"product","domain":"amazon.com","productId":"B0..."}`.
+ */
+export interface ResolveTrustResponse {
+  subjectType: string;
+  trustLevel: string;
+  confidence: number;
+  attestationSummary: TrustAttestationSummary | null;
+  flags: TrustFlag[];
+  authenticity: TrustAuthenticity | null;
+  graphContext: TrustGraphContext | null;
+  recommendation: string;
+  reasoning: string;
+}
+
+/** `com.dina.trust.resolve` params. `subject` is JSON-stringified. */
+export interface ResolveTrustParams {
+  subject: string;
+  requesterDid?: string;
+  domain?: string;
+  context?:
+    | 'before-transaction'
+    | 'before-interaction'
+    | 'content-verification'
+    | 'product-evaluation'
+    | 'general-lookup';
+}
+
+/** `com.dina.trust.search` result — raw attestation rows (AppView sends
+ *  them as `Attestation` records, not normalised further here). */
+export interface TrustAttestation {
+  uri?: string;
+  cid?: string;
+  authorDid?: string;
+  subjectId?: string;
+  category?: string;
+  domain?: string;
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  confidence?: 'speculative' | 'moderate' | 'high' | 'certain';
+  tags?: string[];
+  recordCreatedAt?: string;
+  [key: string]: unknown;
+}
+
+/** `com.dina.trust.search` response — attestation rows + pagination cursor. */
+export interface SearchTrustResponse {
+  results: TrustAttestation[];
+  cursor?: string;
+  totalEstimate: number | null;
+}
+
+/** `com.dina.trust.search` params (subset of AppView's surface — we
+ *  don't expose the full date / cursor / tag-array knobs to the agent
+ *  yet, just the fields a product-vendor query needs). */
+export interface SearchTrustParams {
+  q?: string;
+  category?: string;
+  domain?: string;
+  subjectType?: 'did' | 'content' | 'product' | 'dataset' | 'organization' | 'claim';
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  minConfidence?: 'speculative' | 'moderate' | 'high' | 'certain';
+  authorDid?: string;
+  tags?: string[];
+  sort?: 'recent' | 'relevant';
+  limit?: number;
+}
+
 /** Configuration for `AppViewClient`. */
 export interface AppViewClientOptions {
   /** Base URL of the AppView (trailing slash stripped). */
@@ -196,6 +298,70 @@ export class AppViewClient {
       capabilities: Array.isArray(r.capabilities)
         ? r.capabilities.filter((c): c is string => typeof c === 'string')
         : [],
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Trust Network — `com.dina.trust.*`
+  // -------------------------------------------------------------------------
+
+  /**
+   * Resolve the trust level of a subject (DID / product / content /
+   * etc.). Maps to AppView `com.dina.trust.resolve`. Returns
+   * `trustLevel` + `recommendation` + `attestationSummary` so the
+   * caller can decide whether to proceed / warn / block.
+   *
+   * `subject` is a JSON-stringified subject reference (verbatim to
+   * AppView's contract):
+   *   - `{"type":"did","did":"did:plc:..."}`
+   *   - `{"type":"product","domain":"amazon.com","productId":"B0..."}`
+   *   - `{"type":"content","uri":"at://..."}`
+   *   - `{"type":"organization","domain":"nytimes.com"}`
+   */
+  async resolveTrust(params: ResolveTrustParams): Promise<ResolveTrustResponse> {
+    if (!params.subject) {
+      throw new AppViewError(
+        'resolveTrust: subject is required',
+        null,
+        '/xrpc/com.dina.trust.resolve',
+      );
+    }
+    const query: Record<string, string> = { subject: params.subject };
+    if (params.requesterDid !== undefined) query.requesterDid = params.requesterDid;
+    if (params.domain !== undefined) query.domain = params.domain;
+    if (params.context !== undefined) query.context = params.context;
+
+    const body = await this.get('/xrpc/com.dina.trust.resolve', query);
+    return body as ResolveTrustResponse;
+  }
+
+  /**
+   * Free-text / faceted search over trust attestations. Maps to
+   * AppView `com.dina.trust.search`. Returns attestation rows (not
+   * subject aggregates — use `resolveTrust` for that). Pagination via
+   * the returned `cursor`.
+   */
+  async searchTrust(params: SearchTrustParams): Promise<SearchTrustResponse> {
+    const query: Record<string, string> = {};
+    if (params.q !== undefined) query.q = params.q;
+    if (params.category !== undefined) query.category = params.category;
+    if (params.domain !== undefined) query.domain = params.domain;
+    if (params.subjectType !== undefined) query.subjectType = params.subjectType;
+    if (params.sentiment !== undefined) query.sentiment = params.sentiment;
+    if (params.minConfidence !== undefined) query.minConfidence = params.minConfidence;
+    if (params.authorDid !== undefined) query.authorDid = params.authorDid;
+    if (params.tags !== undefined && params.tags.length > 0) {
+      query.tags = params.tags.join(',');
+    }
+    if (params.sort !== undefined) query.sort = params.sort;
+    if (params.limit !== undefined) query.limit = String(params.limit);
+
+    const body = await this.get('/xrpc/com.dina.trust.search', query);
+    const r = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+    return {
+      results: Array.isArray(r.results) ? (r.results as TrustAttestation[]) : [],
+      cursor: typeof r.cursor === 'string' ? r.cursor : undefined,
+      totalEstimate: typeof r.totalEstimate === 'number' ? r.totalEstimate : null,
     };
   }
 

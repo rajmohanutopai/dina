@@ -50,7 +50,31 @@ import type {
   ServiceQueryResult,
   MemoryToCOptions,
   MemoryToCResult,
+  StagingClaimResult,
+  StagingResolveRequest,
+  StagingResolveResult,
+  StagingFailResult,
+  StagingExtendLeaseResult,
+  MsgSendRequest,
+  MsgSendResult,
+  ScratchpadEntry,
+  ScratchpadCheckpointResult,
+  ScratchpadClearResult,
+  ServiceRespondRequestBody,
+  ServiceRespondResult,
+  ListWorkflowEventsOptions,
+  FailWorkflowEventOptions,
+  WorkflowEvent,
+  ListWorkflowTasksFilter,
+  CreateWorkflowTaskInput,
+  CreateWorkflowTaskResult,
+  WorkflowTask,
+  MemoryTouchParams,
+  MemoryTouchResult,
+  UpdateContactParams,
+  Contact,
 } from './core-client';
+import { WorkflowConflictError } from './core-client';
 
 // ---------------------------------------------------------------------------
 // DI abstractions — injected by the platform
@@ -250,13 +274,23 @@ export class HttpCoreTransport implements CoreClient {
     );
   }
 
+  async putServiceConfig(config: ServiceConfig): Promise<void> {
+    await this.call<unknown>(
+      'PUT',
+      '/v1/service/config',
+      undefined,
+      config,
+      'putServiceConfig',
+    );
+  }
+
   async serviceConfig(): Promise<ServiceConfig | null> {
     const res = await this.callRaw('GET', '/v1/service/config', undefined, undefined);
     if (res.status === 404) return null;
     return this.parseOk<ServiceConfig>(res, 'serviceConfig');
   }
 
-  async serviceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
+  async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
     // Route expects snake_case; camelCase→snake_case at the boundary
     // (same mapping as InProcessTransport — both transports speak the
     // identical wire format). Optional fields omitted when undefined.
@@ -276,7 +310,7 @@ export class HttpCoreTransport implements CoreClient {
       '/v1/service/query',
       undefined,
       body,
-      `serviceQuery(capability=${req.capability})`,
+      `sendServiceQuery(capability=${req.capability})`,
     );
     const out: ServiceQueryResult = { taskId: raw.task_id, queryId: raw.query_id };
     if (raw.deduped !== undefined) out.deduped = raw.deduped;
@@ -297,6 +331,402 @@ export class HttpCoreTransport implements CoreClient {
       Object.keys(query).length > 0 ? query : undefined,
       undefined,
       'memoryToC',
+    );
+  }
+
+  // ─── Staging inbox ────────────────────────────────────────────────────
+
+  async stagingClaim(limit: number): Promise<StagingClaimResult> {
+    return this.call<StagingClaimResult>(
+      'POST',
+      '/v1/staging/claim',
+      { limit: String(limit) },
+      undefined,
+      `stagingClaim(limit=${limit})`,
+    );
+  }
+
+  async stagingResolve(req: StagingResolveRequest): Promise<StagingResolveResult> {
+    const body: Record<string, unknown> = { id: req.itemId, data: req.data };
+    if (Array.isArray(req.persona)) {
+      body.personas = req.persona;
+    } else {
+      body.persona = req.persona;
+    }
+    if (req.personaOpen !== undefined) body.persona_open = req.personaOpen;
+
+    const raw = await this.call<{ id: string; status: string; personas?: string[] }>(
+      'POST',
+      '/v1/staging/resolve',
+      undefined,
+      body,
+      `stagingResolve(itemId=${req.itemId})`,
+    );
+    const out: StagingResolveResult = { itemId: raw.id, status: raw.status };
+    if (raw.personas !== undefined) out.personas = raw.personas;
+    return out;
+  }
+
+  async stagingFail(itemId: string, reason: string): Promise<StagingFailResult> {
+    const raw = await this.call<{ id: string; retry_count: number }>(
+      'POST',
+      '/v1/staging/fail',
+      undefined,
+      { id: itemId, reason },
+      `stagingFail(itemId=${itemId})`,
+    );
+    return { itemId: raw.id, retryCount: raw.retry_count };
+  }
+
+  async stagingExtendLease(itemId: string, seconds: number): Promise<StagingExtendLeaseResult> {
+    const raw = await this.call<{ id: string; extended_by: number }>(
+      'POST',
+      '/v1/staging/extend-lease',
+      undefined,
+      { id: itemId, seconds },
+      `stagingExtendLease(itemId=${itemId})`,
+    );
+    return { itemId: raw.id, extendedBySeconds: raw.extended_by };
+  }
+
+  // ─── D2D messaging ────────────────────────────────────────────────────
+
+  async msgSend(req: MsgSendRequest): Promise<MsgSendResult> {
+    await this.call<{ ok?: boolean }>(
+      'POST',
+      '/v1/msg/send',
+      undefined,
+      {
+        recipient_did: req.recipientDID,
+        type: req.messageType,
+        body: req.body,
+      },
+      `msgSend(to=${req.recipientDID})`,
+    );
+    return { ok: true };
+  }
+
+  // ─── Scratchpad ──────────────────────────────────────────────────────
+
+  async scratchpadCheckpoint(
+    taskId: string,
+    step: number,
+    context: Record<string, unknown>,
+  ): Promise<ScratchpadCheckpointResult> {
+    await this.call<{ status: string; taskId: string }>(
+      'POST',
+      '/v1/scratchpad',
+      undefined,
+      { taskId, step, context },
+      `scratchpadCheckpoint(task=${taskId})`,
+    );
+    return { taskId, step };
+  }
+
+  async scratchpadResume(taskId: string): Promise<ScratchpadEntry | null> {
+    // Route returns 200 with JSON `null` for missing/stale rows — parseOk
+    // passes that null through as the parsed value. The `| null` union in
+    // the generic lets callers branch without a cast. Non-2xx still throw.
+    return this.call<ScratchpadEntry | null>(
+      'GET',
+      `/v1/scratchpad/${encodeURIComponent(taskId)}`,
+      undefined,
+      undefined,
+      `scratchpadResume(task=${taskId})`,
+    );
+  }
+
+  async scratchpadClear(taskId: string): Promise<ScratchpadClearResult> {
+    await this.call<{ status: string }>(
+      'DELETE',
+      `/v1/scratchpad/${encodeURIComponent(taskId)}`,
+      undefined,
+      undefined,
+      `scratchpadClear(task=${taskId})`,
+    );
+    return { taskId };
+  }
+
+  // ─── Service respond ─────────────────────────────────────────────────
+
+  async sendServiceRespond(
+    taskId: string,
+    responseBody: ServiceRespondRequestBody,
+  ): Promise<ServiceRespondResult> {
+    const raw = await this.call<{
+      status?: string;
+      task_id?: string;
+      already_processed?: boolean;
+    }>(
+      'POST',
+      '/v1/service/respond',
+      undefined,
+      { task_id: taskId, response_body: responseBody },
+      `sendServiceRespond(task=${taskId})`,
+    );
+    return {
+      status: typeof raw.status === 'string' ? raw.status : '',
+      taskId: typeof raw.task_id === 'string' ? raw.task_id : taskId,
+      alreadyProcessed: raw.already_processed === true,
+    };
+  }
+
+  // ─── Workflow events ─────────────────────────────────────────────────
+
+  async listWorkflowEvents(opts: ListWorkflowEventsOptions = {}): Promise<WorkflowEvent[]> {
+    const query: Record<string, string> = {};
+    if (opts.since !== undefined) query.since = String(opts.since);
+    if (opts.limit !== undefined) query.limit = String(opts.limit);
+    if (opts.needsDeliveryOnly === true) query.needs_delivery = 'true';
+
+    const raw = await this.call<{ events?: WorkflowEvent[] }>(
+      'GET',
+      '/v1/workflow/events',
+      Object.keys(query).length > 0 ? query : undefined,
+      undefined,
+      'listWorkflowEvents',
+    );
+    return Array.isArray(raw.events) ? raw.events : [];
+  }
+
+  async acknowledgeWorkflowEvent(eventId: number): Promise<boolean> {
+    const res = await this.callRaw(
+      'POST',
+      `/v1/workflow/events/${encodeURIComponent(String(eventId))}/ack`,
+      undefined,
+      {},
+    );
+    if (res.status === 404) return false;
+    this.parseOk<{ ok: boolean }>(res, `acknowledgeWorkflowEvent(id=${eventId})`);
+    return true;
+  }
+
+  async failWorkflowEventDelivery(
+    eventId: number,
+    opts: FailWorkflowEventOptions = {},
+  ): Promise<boolean> {
+    const body: Record<string, unknown> = {};
+    if (opts.nextDeliveryAt !== undefined) body.next_delivery_at = opts.nextDeliveryAt;
+    if (opts.error !== undefined) body.error = opts.error;
+
+    const res = await this.callRaw(
+      'POST',
+      `/v1/workflow/events/${encodeURIComponent(String(eventId))}/fail`,
+      undefined,
+      body,
+    );
+    if (res.status === 404) return false;
+    this.parseOk<{ ok: boolean }>(res, `failWorkflowEventDelivery(id=${eventId})`);
+    return true;
+  }
+
+  // ─── Workflow tasks — reads + create ─────────────────────────────────
+
+  async listWorkflowTasks(filter: ListWorkflowTasksFilter): Promise<WorkflowTask[]> {
+    const query: Record<string, string> = {
+      kind: filter.kind,
+      state: filter.state,
+    };
+    if (filter.limit !== undefined) query.limit = String(filter.limit);
+
+    const raw = await this.call<{ tasks?: WorkflowTask[] }>(
+      'GET',
+      '/v1/workflow/tasks',
+      query,
+      undefined,
+      `listWorkflowTasks(kind=${filter.kind}, state=${filter.state})`,
+    );
+    return Array.isArray(raw.tasks) ? raw.tasks : [];
+  }
+
+  async getWorkflowTask(id: string): Promise<WorkflowTask | null> {
+    const res = await this.callRaw(
+      'GET',
+      `/v1/workflow/tasks/${encodeURIComponent(id)}`,
+      undefined,
+      undefined,
+    );
+    if (res.status === 404) return null;
+    const raw = this.parseOk<{ task?: WorkflowTask }>(res, `getWorkflowTask(id=${id})`);
+    return raw.task ?? null;
+  }
+
+  async createWorkflowTask(input: CreateWorkflowTaskInput): Promise<CreateWorkflowTaskResult> {
+    const body: Record<string, unknown> = {
+      id: input.id,
+      kind: input.kind,
+      description: input.description,
+      payload: input.payload,
+    };
+    if (input.expiresAtSec !== undefined) body.expires_at = input.expiresAtSec;
+    if (input.correlationId !== undefined) body.correlation_id = input.correlationId;
+    if (input.parentId !== undefined) body.parent_id = input.parentId;
+    if (input.proposalId !== undefined) body.proposal_id = input.proposalId;
+    if (input.priority !== undefined) body.priority = input.priority;
+    if (input.origin !== undefined) body.origin = input.origin;
+    if (input.sessionName !== undefined) body.session_name = input.sessionName;
+    if (input.idempotencyKey !== undefined) body.idempotency_key = input.idempotencyKey;
+    if (input.policy !== undefined) body.policy = input.policy;
+    if (input.initialState !== undefined) body.initial_state = input.initialState;
+
+    const res = await this.callRaw('POST', '/v1/workflow/tasks', undefined, body);
+    if (res.status === 409) {
+      // Body parses via parseOk's helper but parseOk throws on non-2xx
+      // — decode inline instead.
+      const text =
+        res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
+      let parsed: { error?: string; code?: string } = {};
+      if (text !== '') {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = {};
+        }
+      }
+      throw new WorkflowConflictError(
+        parsed.error ?? 'workflow conflict',
+        narrowConflictCode(parsed.code),
+      );
+    }
+    if (res.status !== 200 && res.status !== 201) {
+      // Lean on parseOk to produce the standard error message shape,
+      // then rethrow so `accept: [200,201]` semantics hold. parseOk
+      // throws unconditionally on non-2xx so this line NEVER returns.
+      this.parseOk<unknown>(res, `createWorkflowTask(id=${input.id})`);
+    }
+    const text =
+      res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
+    const raw = (text === '' ? {} : JSON.parse(text)) as {
+      task?: WorkflowTask;
+      deduped?: boolean;
+    };
+    if (raw.task === undefined) {
+      throw new Error(
+        `HttpCoreTransport: createWorkflowTask response missing task (status ${res.status})`,
+      );
+    }
+    return { task: raw.task, deduped: raw.deduped === true };
+  }
+
+  // ─── Workflow task state transitions ─────────────────────────────────
+
+  async approveWorkflowTask(id: string): Promise<WorkflowTask> {
+    return this.workflowAction(id, 'approve');
+  }
+
+  async cancelWorkflowTask(id: string, reason = ''): Promise<WorkflowTask> {
+    return this.workflowAction(
+      id,
+      'cancel',
+      reason !== '' ? { reason } : undefined,
+    );
+  }
+
+  async completeWorkflowTask(
+    id: string,
+    result: string,
+    resultSummary: string,
+    agentDID = '',
+  ): Promise<WorkflowTask> {
+    const body: Record<string, unknown> = { result, result_summary: resultSummary };
+    if (agentDID !== '') body.agent_did = agentDID;
+    return this.workflowAction(id, 'complete', body);
+  }
+
+  async failWorkflowTask(
+    id: string,
+    errorMsg: string,
+    agentDID = '',
+  ): Promise<WorkflowTask> {
+    const body: Record<string, unknown> = { error: errorMsg };
+    if (agentDID !== '') body.agent_did = agentDID;
+    return this.workflowAction(id, 'fail', body);
+  }
+
+  /** Shared signed-POST driver for approve / cancel / complete / fail. */
+  private async workflowAction(
+    id: string,
+    action: 'approve' | 'cancel' | 'complete' | 'fail',
+    body?: Record<string, unknown>,
+  ): Promise<WorkflowTask> {
+    const raw = await this.call<{ task?: WorkflowTask }>(
+      'POST',
+      `/v1/workflow/tasks/${encodeURIComponent(id)}/${action}`,
+      undefined,
+      body ?? {},
+      `${action}WorkflowTask(id=${id})`,
+    );
+    if (raw.task === undefined) {
+      throw new Error(
+        `HttpCoreTransport: ${action}WorkflowTask response missing task`,
+      );
+    }
+    return raw.task;
+  }
+
+  // ─── Working-memory + contacts ───────────────────────────────────────
+
+  async memoryTouch(params: MemoryTouchParams): Promise<MemoryTouchResult> {
+    const body: Record<string, unknown> = {
+      persona: params.persona,
+      topic: params.topic,
+      kind: params.kind,
+    };
+    if (params.sampleItemId !== undefined && params.sampleItemId !== '') {
+      body.sample_item_id = params.sampleItemId;
+    }
+    const raw = await this.call<{
+      status?: 'ok' | 'skipped';
+      canonical?: string;
+      reason?: string;
+    }>(
+      'POST',
+      '/v1/memory/topic/touch',
+      undefined,
+      body,
+      `memoryTouch(persona=${params.persona}, topic=${params.topic})`,
+    );
+    const out: MemoryTouchResult = { status: raw.status ?? 'ok' };
+    if (typeof raw.canonical === 'string') out.canonical = raw.canonical;
+    if (typeof raw.reason === 'string') out.reason = raw.reason;
+    return out;
+  }
+
+  async findContactsByPreference(category: string): Promise<Contact[]> {
+    const clean = typeof category === 'string' ? category.trim() : '';
+    if (clean === '') return [];
+    let raw: { contacts?: unknown };
+    try {
+      raw = await this.call<{ contacts?: unknown }>(
+        'GET',
+        '/v1/contacts/by-preference',
+        { category: clean },
+        undefined,
+        `findContactsByPreference(category=${clean})`,
+      );
+    } catch {
+      // Fail-soft: the reasoning agent's tool is documented to fall
+      // back to `search_provider_services` on an empty result, so
+      // silent no-op here keeps the LLM out of a defensive error branch.
+      return [];
+    }
+    return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
+  }
+
+  async updateContact(did: string, updates: UpdateContactParams): Promise<void> {
+    if (typeof did !== 'string' || did.trim() === '') {
+      throw new Error('updateContact: did is required');
+    }
+    const body: Record<string, unknown> = {};
+    if (updates.preferredFor !== undefined) {
+      body.preferred_for = [...updates.preferredFor];
+    }
+    await this.call<unknown>(
+      'PUT',
+      `/v1/contacts/${encodeURIComponent(did.trim())}`,
+      undefined,
+      body,
+      `updateContact(did=${did})`,
     );
   }
 
@@ -377,6 +807,23 @@ export class HttpCoreTransport implements CoreClient {
  * signer sees the same query string this function builds. No leading
  * `?`; caller prepends.
  */
+/**
+ * Narrow the wire's `code` string to the `WorkflowConflictError.code`
+ * union — unknown values collapse to `duplicate_id` (default).
+ */
+function narrowConflictCode(
+  raw: unknown,
+): 'duplicate_id' | 'duplicate_idempotency' | 'duplicate_correlation' {
+  if (
+    raw === 'duplicate_id' ||
+    raw === 'duplicate_idempotency' ||
+    raw === 'duplicate_correlation'
+  ) {
+    return raw;
+  }
+  return 'duplicate_id';
+}
+
 function buildQueryString(query: Record<string, string>): string {
   const keys = Object.keys(query).sort();
   return keys

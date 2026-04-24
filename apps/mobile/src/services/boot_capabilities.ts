@@ -37,17 +37,27 @@ import { AppViewStub, busDriverDemoProfile } from './appview_stub';
 import { getIdentityAdapter } from '../storage/init';
 import { getPublicKey } from '@dina/core/src/crypto/ed25519';
 import { deriveDIDKey } from '@dina/core/src/identity/did';
-import { AISDKAdapter } from '../ai/aisdk_adapter';
-import { createModel, getConfiguredProviders } from '../ai/provider';
+import { createLLMProvider, getConfiguredProviders } from '../ai/provider';
 import { loadActiveProvider } from '../ai/active_provider';
 import type { ProviderType } from '../ai/provider';
-import { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
-import {
-  createGeocodeTool,
-  createSearchProviderServicesTool,
+import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
+// Needed only as `typeof` sources for the lazy proxy type signatures
+// below. The runtime assembly lives in the Brain composition module.
+import type {
   createQueryServiceTool,
   createFindPreferredProviderTool,
 } from '@dina/brain/src/reasoning/bus_driver_tools';
+import { createGeminiClassifier } from '@dina/brain/src/routing/gemini_classify';
+import {
+  registerPersonaSelector,
+  resetPersonaSelector,
+} from '@dina/brain/src/routing/persona_selector';
+import {
+  LLMRouter,
+  RoutedLLMProvider,
+} from '@dina/brain/src/llm/router_dispatch';
+import type { ProviderName } from '@dina/brain/src/llm/router';
+import { buildAgenticAskPipeline } from '@dina/brain/src/composition/agentic_ask';
 import type { BootServiceInputs } from './boot_service';
 import type { NodeRole } from './bootstrap';
 import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
@@ -163,11 +173,38 @@ export async function buildBootInputs(
     options.appViewClient ?? (options.demoMode === true ? demoAppView() : undefined);
   const databaseAdapter = getIdentityAdapter() ?? undefined;
 
-  const agenticAsk = await tryBuildAgenticAsk({
+  const agenticAskBundle = await tryBuildAgenticAsk({
     activeProvider: options.activeProvider,
     appViewClient,
     logger: options.logger,
   });
+  const agenticAsk: BootServiceInputs['agenticAsk'] =
+    agenticAskBundle !== undefined
+      ? {
+          provider: agenticAskBundle.provider,
+          tools: agenticAskBundle.tools,
+          options: agenticAskBundle.handlerOptions,
+        }
+      : undefined;
+
+  // LLM-backed persona classifier — byte-parity with Python's staging
+  // pipeline. When a provider is configured, the drain routes
+  // `/remember` items through the SAME `LLMRouter` the agentic `/ask`
+  // handler uses — just bound to `taskType: 'classify'` so the router
+  // picks the `lite` tier per-call. That gives us: PII scrub → cloud
+  // consent gate → lite-tier model → `PERSONA_CLASSIFY` prompt → vault
+  // write, end-to-end. Without a provider we reset the selector so
+  // the drain falls back to keyword `classifyPersonas`.
+  if (agenticAskBundle !== undefined) {
+    const classifierProvider = new RoutedLLMProvider({
+      router: agenticAskBundle.router,
+      taskType: 'classify',
+      label: 'routed:classify',
+    });
+    registerPersonaSelector(createGeminiClassifier(classifierProvider));
+  } else {
+    resetPersonaSelector();
+  }
 
   // GAP-RT-02: wire the staging drain's topic-touch + preference
   // binder by default whenever we have an LLM provider in hand.
@@ -347,74 +384,91 @@ function demoAppView(): AppViewStub {
 // Agentic /ask (issue #5)
 // ---------------------------------------------------------------------------
 
+/**
+ * Bundle `tryBuildAgenticAsk` returns. `BootServiceInputs['agenticAsk']`
+ * carries `{provider, tools, options?}` — we extend that internally so
+ * the outer boot code can reuse the live `LLMRouter` to build the
+ * persona classifier's `RoutedLLMProvider` (bound to
+ * `taskType: 'classify'`). Keeping the router outside
+ * `BootServiceInputs` keeps the boot-service surface stable; nothing
+ * above this file needs it.
+ */
+interface AgenticAskBundle {
+  provider: RoutedLLMProvider;
+  tools: ToolRegistry;
+  router: LLMRouter;
+  /** Forwarded verbatim to `makeAgenticAskHandler` — carries the
+   *  intent classifier (and, as we port them, guard scan + anti-Her
+   *  hooks) so the production `/ask` path always gets the full
+   *  Python-parity pipeline. */
+  handlerOptions: Omit<
+    import('@dina/brain/src/reasoning/ask_handler').AgenticAskHandlerOptions,
+    'provider' | 'tools'
+  >;
+}
+
+/**
+ * Resolve mobile-specific dependencies, then delegate to the shared
+ * `buildAgenticAskPipeline`. This thin wrapper is the only difference
+ * between mobile's composition and home-node-lite brain-server's — the
+ * server version will resolve `provider` via env, `appViewClient` via
+ * configured URL, and `orchestratorHandle`/`coreClient` via direct HTTP
+ * references instead of the lazy module-globals mobile uses.
+ *
+ * Task cleanup #490 extracted everything Brain-owned into
+ * `packages/brain/src/composition/agentic_ask.ts`. What remains here is
+ * mobile-specific:
+ *   - `pickProvider()` reads the keychain (mobile-only).
+ *   - `createLLMProvider()` builds the AI-SDK language model using the
+ *     stored API key (mobile-only).
+ *   - `emptyAppView()` stub used when no AppView is wired (demo/dev).
+ *   - `lazyOrchestratorHandle()` / `lazyCoreClient()` proxy to
+ *     module-globals populated by `createNode` (mobile `bootstrap.ts`).
+ */
 async function tryBuildAgenticAsk(opts: {
   activeProvider: ProviderType | 'none' | undefined;
   appViewClient: BootServiceInputs['appViewClient'];
   /** Forwarded to `createQueryServiceTool` so WM-BRAIN-06d auto-fetch
    *  failures surface in production telemetry. */
   logger?: BootServiceInputs['logger'];
-}): Promise<BootServiceInputs['agenticAsk']> {
+}): Promise<AgenticAskBundle | undefined> {
   if (opts.activeProvider === 'none') return undefined;
 
   const provider = await pickProvider(opts.activeProvider);
   if (provider === null) return undefined;
 
-  const model = await createModel(provider);
-  if (model === null) return undefined;
+  const llm = await createLLMProvider(provider);
+  if (llm === null) return undefined;
 
-  const llm = new AISDKAdapter({ model, name: provider });
-
-  // Tool registry: geocode + search_provider_services + query_service.
-  // When there's no AppView client we still register
-  // `search_provider_services`, but backed by an empty stub that returns
-  // no candidates — so the LLM learns "no providers for that capability
-  // here" instead of blowing up at call time. The orchestrator handle
-  // for `query_service` is resolved via the lazy proxy below.
-  const tools = new ToolRegistry();
-  tools.register(createGeocodeTool());
+  // Resolve the shared AppView for all tools — explicit > empty stub.
+  // Mobile doesn't accept a separate AppView for the trust/search tools;
+  // `opts.appViewClient` is the same handle the demo AppView feeds.
   const searchClient = opts.appViewClient ?? emptyAppView();
-  tools.register(
-    createSearchProviderServicesTool({
-      appViewClient: searchClient as Parameters<
-        typeof createSearchProviderServicesTool
-      >[0]['appViewClient'],
-    }),
-  );
-  tools.register(
-    createQueryServiceTool({
-      orchestrator: lazyOrchestratorHandle(),
-      // WM-BRAIN-06d: reuse the same AppView client the search tool uses
-      // so `query_service` can auto-fetch `schema_hash` when the LLM
-      // dispatches via a SHORTCUT (intent-classifier live-capability
-      // path) without running `search_provider_services` first. The
-      // fetch is fail-soft (see bus_driver_tools.ts + the task doc).
-      appViewClient: searchClient as Parameters<typeof createQueryServiceTool>[0]['appViewClient'],
-      logger: opts.logger,
-    }),
-  );
 
-  // PC-BRAIN-11: register `find_preferred_provider` so the reasoning
-  // agent can resolve "my dentist" / "my lawyer" style queries to the
-  // user's designated contact, then go straight to `query_service`
-  // without an intervening `search_provider_services` turn. Routes
-  // through the same core client + AppView as the other tools.
-  // Cast via `unknown` because `searchClient` is typed as
-  // `Pick<AppViewClient, 'searchServices'>` but the concrete instance
-  // (real AppViewClient or AppViewStub) also implements
-  // `isDiscoverable`. Both concrete types satisfy the combined
-  // surface at runtime.
-  tools.register(
-    createFindPreferredProviderTool({
-      core: lazyCoreClient(),
-      appViewClient: searchClient as unknown as Parameters<
-        typeof createFindPreferredProviderTool
-      >[0]['appViewClient'],
-      logger: opts.logger,
-    }),
-  );
-
-  return { provider: llm, tools };
+  // Hand the shared builder fully-resolved handles. It assembles the
+  // router + routed providers + intent classifier + guard scanner +
+  // tool registry + registers post-publish LLM hooks — end-to-end
+  // Python parity. See `packages/brain/src/composition/agentic_ask.ts`.
+  // Both concrete AppView types (real `AppViewClient` + `AppViewStub`)
+  // implement `searchServices` + `isDiscoverable`, so the caller-
+  // supplied client satisfies the builder's typed surface directly —
+  // no runtime cast needed.
+  const pipeline = buildAgenticAskPipeline({
+    llm,
+    providerName: provider as ProviderName,
+    appViewClient: searchClient,
+    orchestratorHandle: lazyOrchestratorHandle(),
+    coreClient: lazyCoreClient(),
+    logger: opts.logger,
+  });
+  return pipeline;
 }
+
+// `buildLightweightLLMCall` + `buildIntentClassifier` moved to
+// `packages/brain/src/composition/agentic_ask.ts` during cleanup #490
+// so the home-node-lite brain-server reuses them instead of
+// duplicating. The legacy mobile versions that used to live here
+// are now internal details of `buildAgenticAskPipeline`.
 
 /** Empty AppView used by the agentic tools when no real client is
  *  supplied — lets the tool report "no candidates" rather than throw. */

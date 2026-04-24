@@ -54,10 +54,17 @@ describe('Contact Matcher', () => {
       expect(matches).toEqual([]);
     });
 
-    it('deduplicates same contact mentioned twice', () => {
+    it('returns every occurrence (Python parity — no dedup per contact)', () => {
+      // Python's `ContactMatcher.find_mentions` returns one
+      // `MatchedContact` per match. Callers that want per-contact
+      // uniqueness deduplicate themselves — the matcher's job is to
+      // report every span so highlighters get all of them.
       const matches = matchContacts('Alice likes Alice', contacts);
-      expect(matches.length).toBe(1);
+      expect(matches.length).toBe(2);
       expect(matches[0].contactName).toBe('Alice');
+      expect(matches[1].contactName).toBe('Alice');
+      // Spans are different — two distinct occurrences.
+      expect(matches[0].start).toBeLessThan(matches[1].start);
     });
 
     it('returns span positions (start, end)', () => {
@@ -66,10 +73,17 @@ describe('Contact Matcher', () => {
       expect(matches[0].end).toBe(8);
     });
 
-    it('minimum name length enforced (no 1-2 char names)', () => {
-      const shortContacts: ContactInfo[] = [{ name: 'Al' }];
-      const matches = matchContacts('Al went home', shortContacts);
-      expect(matches).toEqual([]);
+    it('minimum name length is 2 chars (Python parity)', () => {
+      // Python's MIN_NAME_LENGTH is 2 — enough to reject 1-char
+      // pathologies (`I`, `a`) without losing real nicknames (`Bo`,
+      // `Jo`, `Li`).
+      const oneChar: ContactInfo[] = [{ name: 'I' }];
+      expect(matchContacts('I went home', oneChar)).toEqual([]);
+
+      const twoChar: ContactInfo[] = [{ name: 'Jo' }];
+      const matches = matchContacts('Jo went home', twoChar);
+      expect(matches.length).toBe(1);
+      expect(matches[0].contactName).toBe('Jo');
     });
 
     it('handles empty contacts list', () => {
@@ -98,6 +112,49 @@ describe('Contact Matcher', () => {
       expect(matches[0].contactName).toBe('Bob');
       expect(matches[1].contactName).toBe('Alice');
     });
+
+    it('carries DID + relationship + data_responsibility on every match', () => {
+      // This is the Python-parity payload the persona classifier's
+      // `mentioned_contacts` needs — without it the LLM can't apply
+      // data_responsibility-based routing overrides.
+      const rich: ContactInfo[] = [
+        {
+          name: 'Emma',
+          did: 'did:plc:emma',
+          relationship: 'child',
+          data_responsibility: 'household',
+        },
+        {
+          name: 'Sancho',
+          did: 'did:plc:sancho',
+          relationship: 'friend',
+          data_responsibility: 'external',
+        },
+      ];
+      const matches = matchContacts('Emma and Sancho are allergic', rich);
+      expect(matches.length).toBe(2);
+      const byName = new Map(matches.map((m) => [m.contactName, m]));
+      expect(byName.get('Emma')).toMatchObject({
+        did: 'did:plc:emma',
+        relationship: 'child',
+        data_responsibility: 'household',
+      });
+      expect(byName.get('Sancho')).toMatchObject({
+        did: 'did:plc:sancho',
+        relationship: 'friend',
+        data_responsibility: 'external',
+      });
+    });
+
+    it('defaults relationship=unknown + data_responsibility=external when omitted', () => {
+      const bare: ContactInfo[] = [{ name: 'Ziggy' }];
+      const matches = matchContacts('Met Ziggy at the park', bare);
+      expect(matches[0]).toMatchObject({
+        did: '',
+        relationship: 'unknown',
+        data_responsibility: 'external',
+      });
+    });
   });
 
   describe('containsContact', () => {
@@ -118,8 +175,12 @@ describe('Contact Matcher', () => {
       expect(containsContact('Bobcat ran away', 'Bob')).toBe(false); // only "Bobcat"
     });
 
-    it('rejects names shorter than 3 chars', () => {
-      expect(containsContact('Al went home', 'Al')).toBe(false);
+    it('rejects names shorter than 2 chars', () => {
+      expect(containsContact('I went home', 'I')).toBe(false);
+    });
+
+    it('accepts 2-char names (Python parity)', () => {
+      expect(containsContact('Jo went home', 'Jo')).toBe(true);
     });
   });
 });

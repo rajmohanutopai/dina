@@ -25,11 +25,35 @@ import { PERSONA_SELECTOR_THRESHOLD } from '../constants';
 /** Confidence threshold — below this, LLM is consulted. */
 const LLM_THRESHOLD = PERSONA_SELECTOR_THRESHOLD;
 
+/**
+ * Rich classification envelope returned by the LLM-backed selector.
+ *
+ * `persona` is always populated (aliased to `primary`) so legacy
+ * call sites reading `.persona` keep working; new callers get the
+ * full Python-parity shape: primary + secondary[] for multi-persona
+ * fan-out, has_event + event_hint for the reminder pipeline, and
+ * attribution_corrections for deterministic-attribution review.
+ */
+export interface PersonaSelectorResult {
+  persona: string;
+  primary?: string;
+  secondary?: string[];
+  confidence: number;
+  reason: string;
+  has_event?: boolean;
+  event_hint?: string;
+  attribution_corrections?: Array<{
+    id: number;
+    corrected_bucket?: string;
+    reason?: string;
+  }>;
+}
+
 /** Injectable LLM persona selection provider. */
 export type PersonaSelectorProvider = (
   input: ClassificationInput,
   availablePersonas: string[],
-) => Promise<{ persona: string; confidence: number; reason: string }>;
+) => Promise<PersonaSelectorResult>;
 
 let selectorProvider: PersonaSelectorProvider | null = null;
 
@@ -57,6 +81,68 @@ export function getLLMThreshold(): number {
 /** Reset threshold to default (for testing). */
 export function resetThreshold(): void {
   threshold = LLM_THRESHOLD;
+}
+
+/**
+ * LLM-first rich classification — primary + secondary[] in one shot.
+ *
+ * Unlike `selectPersona`, this does NOT run the keyword classifier
+ * first. It's the entry point the staging drain uses when an LLM
+ * classifier is registered: Python's drain calls `PersonaSelector`
+ * directly and trusts the LLM to decide primary + secondary without
+ * a keyword pre-pass. Matching that shape in TS means the same 100
+ * persona-classification scenarios that pass in Python pass here.
+ *
+ * Returns `null` when:
+ *   - no LLM provider registered (caller should fall back to
+ *     `classifyPersonas` for the keyword path), or
+ *   - the LLM threw / returned an unknown primary (caller's retry
+ *     budget isn't this layer's concern — the drain's fail-soft
+ *     per-item catch handles it).
+ *
+ * The LLM already gets the installed-personas list from this layer,
+ * so the returned primary/secondary are guaranteed to be registry
+ * members — no validation layer needed above.
+ */
+export async function selectPersonaRich(
+  input: ClassificationInput,
+): Promise<PersonaSelectorResult | null> {
+  if (!selectorProvider) return null;
+
+  const availablePersonas = listPersonas().map((p) => p.name);
+  if (availablePersonas.length === 0) return null;
+
+  try {
+    const llmResult = await selectorProvider(input, availablePersonas);
+
+    // Defence-in-depth: confirm primary is actually installed.
+    // `createGeminiClassifier` already filters but a bespoke provider
+    // might not, so we revalidate at the integration layer.
+    const primary = llmResult.primary ?? llmResult.persona;
+    if (!primary || validatePersonaName(primary) === null) {
+      return null;
+    }
+
+    // Filter secondary against the registry too (same defence-in-depth).
+    const secondary: string[] = [];
+    const seen = new Set<string>([primary.toLowerCase()]);
+    for (const s of llmResult.secondary ?? []) {
+      const resolved = validatePersonaName(s);
+      if (resolved === null) continue;
+      if (seen.has(resolved)) continue;
+      secondary.push(resolved);
+      seen.add(resolved);
+    }
+
+    return {
+      ...llmResult,
+      persona: primary,
+      primary,
+      secondary,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

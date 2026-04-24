@@ -3,7 +3,7 @@
  */
 
 import { ApprovalReconciler } from '../../src/service/approval_reconciliation';
-import type { BrainCoreClient, WorkflowTask } from '../../src/core_client/http';
+import type { CoreClient, WorkflowTask } from '@dina/core';
 
 /** Deterministic interval scheduler. Tests advance time explicitly. */
 function fakeScheduler() {
@@ -50,7 +50,7 @@ interface StubClient {
   failError: Error | null;
 }
 
-function stubClient(init?: Partial<StubClient>): { client: BrainCoreClient; state: StubClient } {
+function stubClient(init?: Partial<StubClient>): { client: CoreClient; state: StubClient } {
   const state: StubClient = {
     listCalls: [],
     respondCalls: [],
@@ -80,7 +80,7 @@ function stubClient(init?: Partial<StubClient>): { client: BrainCoreClient; stat
       if (state.failError !== null) throw state.failError;
       return {} as WorkflowTask;
     },
-  } as unknown as BrainCoreClient;
+  } as unknown as CoreClient;
   return { client, state };
 }
 
@@ -108,7 +108,7 @@ function task(
 describe('ApprovalReconciler — construction', () => {
   it('rejects missing coreClient', () => {
     expect(
-      () => new ApprovalReconciler({ coreClient: undefined as unknown as BrainCoreClient }),
+      () => new ApprovalReconciler({ coreClient: undefined as unknown as CoreClient }),
     ).toThrow(/coreClient/);
   });
 

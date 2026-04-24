@@ -7,7 +7,11 @@
  * item fields. Without them, any arbitrary string is accepted.
  */
 
-/** Valid vault item types — 22 values matching Go's CHECK constraint. */
+/** Valid vault item types — 22 values matching Go's CHECK constraint,
+ *  plus `user_memory` for items the user types via /remember (the
+ *  staging pipeline uses this to tag direct user-authored memories
+ *  so they can be distinguished from ingested mail/events/etc. in
+ *  later retrieval + density analysis). */
 export const VALID_VAULT_ITEM_TYPES = new Set([
   'email',
   'message',
@@ -32,6 +36,7 @@ export const VALID_VAULT_ITEM_TYPES = new Set([
   'medical_record',
   'medical_note',
   'trust_attestation',
+  'user_memory',
 ]);
 
 /** Valid sender_trust values — 6 values from Go. */

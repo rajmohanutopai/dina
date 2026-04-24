@@ -1,23 +1,59 @@
 /**
- * Person identity linking — extraction, resolution, deduplication.
+ * Person identity linking — LLM extraction + surface-based resolution.
  *
- * PersonResolver: surface matching (name, email, alias), synonym expansion, dedup.
- * Parse validation: handle malformed LLM JSON output.
- * extractPersonLinks: LLM-based extraction via injectable provider.
+ * Port of `brain/src/service/person_link_extractor.py` +
+ * `brain/src/service/person_resolver.py`. Two concerns, one module:
  *
- * Source: brain/tests/test_person_linking.py
+ *   - **Extraction**: feed a stored note's text through the
+ *     `PERSON_IDENTITY_EXTRACTION` prompt; the LLM emits
+ *     `{identity_links: [{name, role_phrase, relationship,
+ *     confidence, evidence}]}`. Parser accepts that Python-parity
+ *     envelope plus the legacy `{links: [{name, role, confidence}]}`
+ *     shape for any caller still on the old output format.
+ *   - **Resolution**: given a block of query text + a list of known
+ *     people (each with confirmed surfaces), find which people are
+ *     mentioned. Longest-surface-first + span-claiming so "Alice
+ *     Cooper" doesn't double-count as "Alice". `expandSearchTermsFromText`
+ *     returns the set of confirmed surfaces NOT already in the query
+ *     (Python's recall-expansion heuristic for synonym-aware search).
+ *
+ * Source: brain/tests/test_person_linking.py + test_person_resolver.py.
  */
 
 export interface PersonLink {
+  /** Canonical person name as stated in the text. */
   name: string;
+  /**
+   * Python-parity `role_phrase` — the relationship phrase verbatim
+   * ("my daughter", "my colleague"). Kept alongside `role` for
+   * backward compat with callers written against the pre-port shape.
+   */
+  role_phrase?: string;
+  /** Legacy alias for `role_phrase`. Populated together when parsing
+   *  either wire shape so existing readers of `.role` still work. */
   role?: string;
+  /** Relationship type the LLM picked from the enum
+   *  (spouse/child/parent/sibling/friend/colleague/acquaintance/unknown/other). */
+  relationship?: string;
   confidence: 'high' | 'medium' | 'low';
+  /** Exact source phrase the LLM used to justify the link — 200 char
+   *  max per Python's `_parse_response`. */
+  evidence?: string;
 }
 
 export interface ResolvedPerson {
   personId: string;
+  /** Canonical display name (e.g. "Alice Johnson"). */
   name: string;
+  /** All confirmed-surface forms for this person (names + aliases +
+   *  role phrases), used as synonym expansion material. */
   surfaces: string[];
+  /** Linked contact DID when the person record carries one. Empty
+   *  string when no DID has been bound yet. Python-parity addition. */
+  contactDid?: string;
+  /** Relationship hint stamped on the person record (colleague,
+   *  friend, etc.). Empty string when unset. Python-parity addition. */
+  relationshipHint?: string;
 }
 
 export type PersonLinkProvider = (text: string) => Promise<string>;
@@ -38,22 +74,26 @@ export function resetPersonLinkProvider(): void {
 /**
  * Extract person links from text using the registered LLM provider.
  *
- * The provider is expected to return a JSON string with format:
- *   {"links": [{"name": "Alice", "role": "colleague", "confidence": "high"}]}
+ * Expects the provider to invoke the `PERSON_IDENTITY_EXTRACTION`
+ * prompt; response JSON should be shaped
+ * `{identity_links: [{name, role_phrase, relationship, confidence, evidence}]}`.
+ * Legacy `{links: [{name, role, confidence}]}` also parsed for
+ * back-compat.
  *
- * When no provider is registered, returns an empty array.
- * Malformed LLM output is handled gracefully via parseLLMOutput.
+ * Returns `[]` for empty input or when no provider registered.
+ * Malformed LLM output falls through `parseLLMOutput` → `[]`.
  */
 export async function extractPersonLinks(text: string): Promise<PersonLink[]> {
   if (!text || text.trim().length === 0) return [];
-
   if (!linkProvider) return [];
-
   const rawOutput = await linkProvider(text);
   return parseLLMOutput(rawOutput);
 }
 
-/** Resolve a person name against known people (name or surface match). */
+/**
+ * Find a person by a single surface lookup — exact name match OR any
+ * of their confirmed surfaces (both case-insensitive).
+ */
 export function resolvePerson(name: string, knownPeople: ResolvedPerson[]): ResolvedPerson | null {
   if (!name) return null;
   const lower = name.toLowerCase();
@@ -64,28 +104,93 @@ export function resolvePerson(name: string, knownPeople: ResolvedPerson[]): Reso
   return null;
 }
 
-/** Resolve multiple person references from text. */
+/**
+ * Resolve every person mentioned in `text`. Builds regex patterns
+ * from each person's (name + surfaces), sorts longest-first, and
+ * claims matched spans so "Alice Cooper" wins over "Alice" on
+ * overlapping text. Returns at most one `ResolvedPerson` per
+ * personId even when the same person appears under multiple
+ * surfaces (dedup matches Python's `matched_pids` dict).
+ *
+ * Empty text / empty people → `[]`.
+ */
 export function resolveMultiple(text: string, knownPeople: ResolvedPerson[]): ResolvedPerson[] {
-  if (!text) return [];
-  const found: ResolvedPerson[] = [];
-  const seen = new Set<string>();
+  if (!text || knownPeople.length === 0) return [];
+
+  interface Entry {
+    surface: string;
+    personId: string;
+  }
+  const entries: Entry[] = [];
+  const seenKeys = new Set<string>();
   for (const person of knownPeople) {
-    for (const term of [person.name, ...person.surfaces]) {
-      if (term.length < 2) continue;
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`\\b${escaped}\\b`, 'i').test(text) && !seen.has(person.personId)) {
-        found.push(person);
-        seen.add(person.personId);
-        break;
+    const push = (surface: string): void => {
+      const trimmed = surface.trim();
+      if (trimmed.length < 2) return;
+      const key = `${person.personId} ${trimmed.toLowerCase()}`;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      entries.push({ surface: trimmed, personId: person.personId });
+    };
+    push(person.name);
+    for (const s of person.surfaces) push(s);
+  }
+  entries.sort((a, b) => b.surface.length - a.surface.length);
+
+  const byId = new Map<string, ResolvedPerson>();
+  const claimed: Array<[number, number]> = [];
+
+  for (const entry of entries) {
+    const pattern = new RegExp(`\\b${escapeRegex(entry.surface)}\\b`, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = pattern.exec(text)) !== null) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (claimed.some(([s, e]) => start < e && end > s)) continue;
+      claimed.push([start, end]);
+      if (byId.has(entry.personId)) continue;
+      const found = knownPeople.find((p) => p.personId === entry.personId);
+      if (found) byId.set(entry.personId, found);
+    }
+  }
+
+  return [...byId.values()];
+}
+
+/**
+ * Expand a single person's synonym set — name + every confirmed
+ * surface, deduped, empty entries dropped. Unchanged from the
+ * original TS surface; kept for callers that already resolved the
+ * person and just need the synonym list.
+ */
+export function expandSearchTerms(person: ResolvedPerson): string[] {
+  return [...new Set([person.name, ...person.surfaces].filter((s) => s.length > 0))];
+}
+
+/**
+ * Python-parity recall expansion — given a query and a roster of
+ * known people, return the synonyms that are NOT already in the
+ * query text. The FTS layer can then OR these in to catch items
+ * stored under an alias the user didn't type ("My spouse" → also
+ * search "Sarah").
+ *
+ * Mirrors `person_resolver.py::expand_search_terms`.
+ */
+export function expandSearchTermsFromText(
+  text: string,
+  knownPeople: ResolvedPerson[],
+): string[] {
+  const resolved = resolveMultiple(text, knownPeople);
+  const lower = text.toLowerCase();
+  const out: string[] = [];
+  for (const person of resolved) {
+    for (const surface of person.surfaces) {
+      if (surface && !lower.includes(surface.toLowerCase())) {
+        out.push(surface);
       }
     }
   }
-  return found;
-}
-
-/** Expand search terms from a person's known surfaces. */
-export function expandSearchTerms(person: ResolvedPerson): string[] {
-  return [...new Set([person.name, ...person.surfaces].filter((s) => s.length > 0))];
+  return out;
 }
 
 /** Deduplicate person mentions by personId. */
@@ -98,7 +203,16 @@ export function deduplicatePersons(persons: ResolvedPerson[]): ResolvedPerson[] 
   });
 }
 
-/** Parse LLM JSON output for person links (handles malformed JSON). */
+/**
+ * Parse LLM JSON output for person links. Accepts two envelopes:
+ *
+ *   1. `{identity_links: [{name, role_phrase, relationship, confidence, evidence}]}` — Python parity, emitted by the `PERSON_IDENTITY_EXTRACTION` prompt.
+ *   2. `{links: [{name, role, confidence}]}` — legacy TS shape.
+ *
+ * Handles markdown code fences. Confidence is coerced to
+ * high/medium/low; unknown values → 'low'. Returns `[]` on any
+ * parse failure (fail-open: callers proceed with regex-only results).
+ */
 export function parseLLMOutput(output: string): PersonLink[] {
   if (!output) return [];
   let cleaned = output.trim();
@@ -109,18 +223,54 @@ export function parseLLMOutput(output: string): PersonLink[] {
       .trim();
   }
   try {
-    const parsed = JSON.parse(cleaned);
-    if (!parsed || !Array.isArray(parsed.links)) return [];
-    return parsed.links
-      .map((l: Record<string, unknown>) => ({
-        name: String(l.name ?? ''),
-        role: l.role ? String(l.role) : undefined,
-        confidence: (['high', 'medium', 'low'].includes(String(l.confidence))
-          ? String(l.confidence)
-          : 'low') as PersonLink['confidence'],
-      }))
-      .filter((l: PersonLink) => l.name.length > 0);
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+    // Python-parity envelope first (`identity_links`), fall back to
+    // legacy `links`. Both must be arrays; anything else → [].
+    const rawList = Array.isArray(parsed.identity_links)
+      ? (parsed.identity_links as unknown[])
+      : Array.isArray(parsed.links)
+        ? (parsed.links as unknown[])
+        : [];
+
+    const out: PersonLink[] = [];
+    for (const raw of rawList) {
+      if (raw === null || typeof raw !== 'object') continue;
+      const rec = raw as Record<string, unknown>;
+      const name = typeof rec.name === 'string' ? rec.name.trim() : '';
+      if (name === '') continue;
+      // Python ships `role_phrase`; legacy TS ships `role`. Map
+      // whichever is present onto BOTH fields so downstream callers
+      // can read either without `??` dance.
+      const rolePhraseRaw =
+        typeof rec.role_phrase === 'string'
+          ? rec.role_phrase
+          : typeof rec.role === 'string'
+            ? rec.role
+            : undefined;
+      const relationshipRaw =
+        typeof rec.relationship === 'string' ? rec.relationship : undefined;
+      const evidenceRaw =
+        typeof rec.evidence === 'string' ? rec.evidence.slice(0, 200) : undefined;
+      const confidenceRaw = String(rec.confidence ?? '').toLowerCase();
+      const confidence: PersonLink['confidence'] =
+        confidenceRaw === 'high' || confidenceRaw === 'medium' || confidenceRaw === 'low'
+          ? (confidenceRaw as PersonLink['confidence'])
+          : 'low';
+      out.push({
+        name,
+        ...(rolePhraseRaw !== undefined ? { role_phrase: rolePhraseRaw, role: rolePhraseRaw } : {}),
+        ...(relationshipRaw !== undefined ? { relationship: relationshipRaw } : {}),
+        ...(evidenceRaw !== undefined ? { evidence: evidenceRaw } : {}),
+        confidence,
+      });
+    }
+    return out;
   } catch {
     return [];
   }
+}
+
+/** Escape regex metacharacters in a literal string. */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

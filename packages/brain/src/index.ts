@@ -8,13 +8,11 @@ export * from './contact/attributor';
 export * from './enrichment/event_extractor';
 export * from './api/process';
 export * from './auth/service_key';
-export { BrainCoreClient, WorkflowConflictError, CoreHttpError } from './core_client/http';
-export type {
-  BrainCoreClientConfig,
-  SendServiceQueryResult,
-  SendServiceRespondResult,
-  WorkflowTask as CoreWorkflowTask,
-} from './core_client/http';
+export { CoreHttpError } from './errors';
+// `BrainCoreClient` was retired when every brain subsystem + every
+// mobile hook moved to `CoreClient` (task 1.32 + A+ cleanup). Callers
+// now import `CoreClient`, `WorkflowConflictError`, `WorkflowTask`,
+// and the request/result types directly from `@dina/core`.
 export { ApprovalReconciler } from './service/approval_reconciliation';
 export { WorkflowEventConsumer } from './service/workflow_event_consumer';
 export type {
@@ -89,7 +87,8 @@ export type {
   AntiHerLLMCallFn,
 } from './guardian/anti_her_classify';
 export * from './guardian/guard_scan';
-export { CircuitBreaker, CircuitBreakerOpenError } from './core_client/circuit_breaker';
+// `CircuitBreaker` / `CircuitBreakerOpenError` were internal to
+// `BrainCoreClient`'s HTTP retry path; retired alongside the class.
 export * from './routing/classify_factory';
 export * from './routing/gemini_classify';
 export * from './routing/persona_selector';
@@ -171,6 +170,35 @@ export { makeAgenticAskHandler, DEFAULT_ASK_SYSTEM_PROMPT } from './reasoning/as
 export type { AgenticAskHandlerOptions } from './reasoning/ask_handler';
 export { setAskCommandHandler, resetAskCommandHandler } from './chat/orchestrator';
 export type { AskCommandHandler } from './chat/orchestrator';
+
+// Typed chat-response surface — Python-parity port of
+// `brain/src/domain/response.py`. Mobile UI reads `ChatResponse.typed`
+// (discriminated by `kind`) to render native card components.
+export {
+  plainResponse,
+  richResponse,
+  errorResponse,
+  confirmResponse,
+  statusResponse,
+  contactListResponse,
+  trustScoreResponse,
+  sendResponse,
+} from './chat/response_types';
+export type {
+  BotResponse,
+  BotResponseBase,
+  PlainResponse,
+  RichResponse,
+  ConfirmResponse,
+  ConfirmOption,
+  StatusResponse,
+  ContactListResponse,
+  ContactListEntry,
+  TrustScoreResponse,
+  SendResponse,
+  ErrorResponse,
+  TextFormat,
+} from './chat/response_types';
 export {
   ServicePublisher,
   PublisherConfigError,

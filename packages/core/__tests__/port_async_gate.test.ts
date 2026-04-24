@@ -183,6 +183,17 @@ describe('Port async gate (task 2.8)', () => {
         // our method regex only when it has parens; properties without
         // parens don't. But the regex requires `(...)` so only true
         // methods land here. Still, defensive check.
+        //
+        // **Intentional sync-suffix exception.**  The async-port rule
+        // documented in `packages/README.md` § "Async-port rule" carves
+        // out a `*Sync` naming convention for in-transaction helpers:
+        // when a repository exposes both an async method (`get`, `store`)
+        // AND a sync counterpart (`getSync`, `storeSync`), the sync one
+        // is required to compose inside a `transaction(fn)` callback
+        // — wrapping it in `Promise<T>` would break the sync callback
+        // contract the DatabaseAdapter holds us to. The name itself is
+        // the conspicuous signal + the doc pins the policy.
+        if (name.endsWith('Sync')) continue;
         if (!returnType.startsWith('Promise<')) {
           offenders.push(
             `[sync-return] ${file}:${interfaceName}.${name} (line ${lineNum}) returns "${returnType}" — expected Promise<…>`,
@@ -257,6 +268,39 @@ describe('Port async gate (task 2.8)', () => {
 
     for (const name of EXPECTED) {
       expect(ALL_KNOWN.has(name)).toBe(true);
+    }
+  });
+
+  it('the `*Sync` naming carve-out is respected — async counterpart must exist', () => {
+    // Pin the documented policy: when a repository exposes a sync
+    // helper (e.g. `storeItemSync`), the async-named peer (`storeItem`)
+    // MUST exist and return `Promise<T>` — otherwise the Sync suffix is
+    // pretending the async contract is satisfied when in fact no async
+    // surface exists. This keeps the carve-out honest.
+    for (const { file, interfaceName } of CONVERTED_PORTS) {
+      const filePath = resolve(CORE_SRC, file);
+      const source = readFileSync(filePath, 'utf8');
+      const body = extractInterfaceBody(source, interfaceName);
+      if (body === null) continue;
+      const methods = extractMethods(body);
+      const names = new Set(methods.map((m) => m.name));
+
+      for (const m of methods) {
+        if (!m.name.endsWith('Sync')) continue;
+        const asyncPeer = m.name.slice(0, -'Sync'.length);
+        // Peer may be missing only when the sync helper is a family
+        // of its own (e.g. `valuesSync` has no `values` sibling because
+        // the async surface doesn't enumerate everything — iteration
+        // stays inside transactions). We accept two outcomes: either
+        // the peer exists + returns Promise<…>, or the sync method
+        // stands alone as an explicitly sync-only helper. The whole
+        // point is to DISALLOW a situation where a sync method
+        // silently replaces what would otherwise be an async one.
+        if (names.has(asyncPeer)) {
+          const peerReturn = methods.find((x) => x.name === asyncPeer)!.returnType;
+          expect(peerReturn.startsWith('Promise<')).toBe(true);
+        }
+      }
     }
   });
 

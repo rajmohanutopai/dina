@@ -236,6 +236,39 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         ON chat_messages(thread_id, timestamp ASC)
     `,
   },
+  {
+    // Scratchpad — cognitive checkpointing for multi-step reasoning
+    // tasks (nudge pipeline, agent-action approvals, crash-report
+    // staging). One row per task_id via UPSERT; Brain's
+    // `ScratchpadService` writes `checkpoint` / reads `resume` /
+    // deletes via `clear`. Stale rows auto-expire on read (24h TTL);
+    // optional sweeper drops them in bulk.
+    //
+    // Schema fields match Python's `brain/src/service/scratchpad.py`
+    // + `core/internal/adapter/sqlite/scratchpad.go` contract:
+    //   - task_id: stable id (correlates with dina_tasks.id; or a
+    //     pseudo id like "__proposals__" for long-lived maps).
+    //   - step: 1-based step number most-recently completed; step=0
+    //     is the delete marker the Python service writes on clear;
+    //     step=-1 is the crash-report stamp.
+    //   - context: JSON blob of accumulated reasoning state.
+    version: 4,
+    name: 'scratchpad',
+    sql: `
+      CREATE TABLE IF NOT EXISTS scratchpad (
+        task_id    TEXT    PRIMARY KEY,
+        step       INTEGER NOT NULL,
+        context    TEXT    NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      ) WITHOUT ROWID;
+
+      -- Sweeper index: find rows whose updated_at fell behind the
+      -- 24h TTL boundary. Partial-scan friendly.
+      CREATE INDEX IF NOT EXISTS idx_scratchpad_updated_at
+        ON scratchpad(updated_at ASC)
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

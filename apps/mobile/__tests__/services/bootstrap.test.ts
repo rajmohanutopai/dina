@@ -14,6 +14,7 @@
 
 import { createNode, type CreateNodeOptions } from '../../src/services/bootstrap';
 import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import { MockCoreClient } from '@dina/test-harness';
 import type { BrainCoreClient, WorkflowTask } from '../../../brain/src/core_client/http';
 import type { ServiceConfig } from '../../../core/src/service/service_config';
 import type { IdentityKeypair } from '../../../core/src/identity/keypair';
@@ -154,6 +155,7 @@ function baseOptions(overrides: Partial<CreateNodeOptions> = {}): CreateNodeOpti
       /* no-op */
     },
     coreClient: client,
+    coreTransport: new MockCoreClient(),
     appViewClient: { searchServices: async () => [] },
     workflowRepository: new InMemoryWorkflowRepository(),
     readConfig: () => null,

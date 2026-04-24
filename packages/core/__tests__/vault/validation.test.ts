@@ -18,12 +18,14 @@ import { storeItem, clearVaults } from '../../src/vault/crud';
 
 describe('Vault Domain Validation', () => {
   describe('validation sets', () => {
-    it('has 23 valid item types', () => {
-      expect(VALID_VAULT_ITEM_TYPES.size).toBe(23);
+    it('has 24 valid item types', () => {
+      // 23 Go-parity types + `user_memory` for /remember-authored items.
+      expect(VALID_VAULT_ITEM_TYPES.size).toBe(24);
       expect(VALID_VAULT_ITEM_TYPES.has('note')).toBe(true);
       expect(VALID_VAULT_ITEM_TYPES.has('email')).toBe(true);
       expect(VALID_VAULT_ITEM_TYPES.has('medical_record')).toBe(true);
       expect(VALID_VAULT_ITEM_TYPES.has('trust_attestation')).toBe(true);
+      expect(VALID_VAULT_ITEM_TYPES.has('user_memory')).toBe(true);
     });
 
     it('has valid sender_trust values including empty string', () => {

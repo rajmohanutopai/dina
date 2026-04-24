@@ -27,6 +27,7 @@ import {
 import { registerMemoryRoutes } from './routes/memory';
 import { registerContactsRoutes } from './routes/contacts';
 import { registerPairRoutes } from './routes/pair';
+import { registerScratchpadRoutes } from './routes/scratchpad';
 
 import { CORE_DEFAULT_PORT } from '../constants';
 export const DEFAULT_PORT = CORE_DEFAULT_PORT;
@@ -80,6 +81,14 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // so the docker openclaw + dina-cli flow has somewhere to pair
   // against. See `docker/openclaw/README.md`.
   registerPairRoutes(router);
+
+  // Scratchpad — checkpoint/resume/clear for multi-step reasoning
+  // tasks. Service auto-provisions an in-memory backend on first
+  // use; production boot can swap in SQLiteScratchpadRepository via
+  // `setScratchpadRepository(new SQLiteScratchpadRepository(db))`
+  // before the first request. Python parity:
+  // `brain/src/service/scratchpad.py` + Go's scratchpad adapter.
+  registerScratchpadRoutes(router);
 
   return router;
 }

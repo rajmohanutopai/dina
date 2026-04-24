@@ -25,6 +25,7 @@ import {
   personaExists,
   listPersonas,
 } from '@dina/core/src/persona/service';
+import { setAccessiblePersonas } from '@dina/brain/src/vault_context/assembly';
 import { loadPersistedDid } from '../services/identity_record';
 import { initializePersistence, openPersonaDB, isPersistenceReady } from '../storage/init';
 
@@ -173,6 +174,15 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
       }
     }
   }
+
+  // 5b. Wire the /ask-side accessiblePersonas list. Without this,
+  //     `assembleContext` defaults to searching only the `general`
+  //     vault, and every `/remember` that routes to a non-general
+  //     persona (health / family / professional / etc.) becomes
+  //     invisible to `/ask`. Keeping this in lockstep with the
+  //     unlocked-persona set is the critical wiring — latent bug
+  //     documented in the scenario-1+2 E2E test's docstring.
+  setAccessiblePersonas(opened);
 
   // 6. Complete
   state.step = 'complete';

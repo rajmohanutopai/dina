@@ -18,12 +18,23 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { MAX_SERVICE_TTL } from '@dina/protocol';
 import type { AppViewClient, SearchServicesParams } from '../appview_client/http';
-import type { BrainCoreClient, SendServiceQueryResult } from '../core_client/http';
+import type { CoreClient, ServiceQueryResult } from '@dina/core';
 import { pickTopCandidate, type Location, type RankOptions } from './candidate_ranker';
 import { getCapability, getTTL, computeSchemaHash } from './capabilities/registry';
 
-/** Minimal subset of `BrainCoreClient` the orchestrator needs. */
-export type OrchestratorCoreClient = Pick<BrainCoreClient, 'sendServiceQuery'>;
+/**
+ * Minimal slice of `CoreClient` the orchestrator needs — just
+ * `sendServiceQuery`. Task 1.32-J migration: used to be
+ * `Pick<BrainCoreClient, 'sendServiceQuery'>`; swapped to `CoreClient`
+ * alongside the `serviceQuery` → `sendServiceQuery` rename that
+ * symmetry-aligned the method with `sendServiceRespond`. Result shape
+ * (`ServiceQueryResult` from `@dina/core`) is structurally compatible
+ * with the legacy `SendServiceQueryResult` — same `{taskId, queryId,
+ * deduped?}`. The orchestrator's call sites never relied on deduped
+ * always being `boolean` (they only check `deduped === true`), so the
+ * optional-`deduped` shape on CoreClient is a strict widening.
+ */
+export type OrchestratorCoreClient = Pick<CoreClient, 'sendServiceQuery'>;
 
 /** Minimal subset of `AppViewClient` the orchestrator needs. */
 export type OrchestratorAppView = Pick<AppViewClient, 'searchServices'>;
@@ -225,12 +236,16 @@ export class ServiceQueryOrchestrator {
     // accept — defer to them in that case.
     validateParamsSenderSide(req.capability, req.params, schemaHash);
 
-    let sendResult: SendServiceQueryResult;
+    let sendResult: ServiceQueryResult;
     try {
       sendResult = await this.core.sendServiceQuery({
         toDID: top.profile.did,
         capability: req.capability,
-        params: req.params,
+        // CoreClient narrows to Record<string, unknown>; the orchestrator's
+        // caller API accepts `unknown` + defers to the capability validator
+        // above. The cast is safe — validateParamsSenderSide rejected
+        // non-objects before we reached here.
+        params: req.params as Record<string, unknown>,
         queryId,
         ttlSeconds,
         serviceName: top.profile.name,
@@ -249,7 +264,9 @@ export class ServiceQueryOrchestrator {
       taskId: sendResult.taskId,
       toDID: top.profile.did,
       serviceName: top.profile.name,
-      deduped: sendResult.deduped,
+      // CoreClient returns `deduped?` (optional); the orchestrator's
+      // IssueQueryResult exposes always-boolean. Collapse undefined → false.
+      deduped: sendResult.deduped ?? false,
     };
   }
 
@@ -289,12 +306,14 @@ export class ServiceQueryOrchestrator {
     const ttlSeconds = this.pickTtlRaw(req.ttlSeconds, req.capability);
     const queryId = this.generateQueryId();
 
-    let sendResult: SendServiceQueryResult;
+    let sendResult: ServiceQueryResult;
     try {
       sendResult = await this.core.sendServiceQuery({
         toDID: req.toDID,
         capability: req.capability,
-        params: req.params,
+        // Same narrowing as issueQuery — sender-side validator rejected
+        // non-objects already.
+        params: req.params as Record<string, unknown>,
         queryId,
         ttlSeconds,
         serviceName: req.serviceName ?? req.toDID,
@@ -314,7 +333,9 @@ export class ServiceQueryOrchestrator {
       taskId: sendResult.taskId,
       toDID: req.toDID,
       serviceName: req.serviceName ?? req.toDID,
-      deduped: sendResult.deduped,
+      // Same `?? false` collapse as issueQuery — CoreClient's deduped is
+      // optional; the orchestrator's result shape is always-boolean.
+      deduped: sendResult.deduped ?? false,
     };
   }
 

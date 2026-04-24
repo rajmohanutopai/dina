@@ -11,15 +11,21 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-010.
  */
 
-import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
+import type { CoreClient } from '@dina/core';
 import {
   validateServiceConfig,
   type ServiceConfig,
 } from '@dina/core/src/service/service_config';
 
+/**
+ * Subset of `CoreClient` the config form uses. `serviceConfig` returns
+ * `ServiceConfig | null` (null on 404 = "not published yet"), same
+ * semantic as the legacy `getServiceConfig`. `putServiceConfig` is the
+ * upsert.
+ */
 export type ServiceConfigCoreClient = Pick<
-  BrainCoreClient,
-  'getServiceConfig' | 'putServiceConfig'
+  CoreClient,
+  'serviceConfig' | 'putServiceConfig'
 >;
 
 let client: ServiceConfigCoreClient | null = null;
@@ -50,7 +56,7 @@ export class ServiceConfigValidationError extends Error {
  * Load the current service config. Returns `null` when none is set.
  */
 export async function loadServiceConfig(): Promise<ServiceConfig | null> {
-  return requireClient().getServiceConfig();
+  return requireClient().serviceConfig();
 }
 
 /**

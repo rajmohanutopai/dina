@@ -45,6 +45,21 @@ export interface StagingProcessResult {
    * pipeline swallowed (so the operator can see them in metrics).
    */
   topics?: { touched: number; failed: number };
+  /**
+   * Summary of the post-publish step (runs after a successful
+   * resolve) — reminder-planner output, identity-link count, contact
+   * last-interaction update, ambiguous-routing flag. Present only
+   * when the drain actually called `handlePostPublish`. Missing on
+   * failed items + on the legacy `processPendingItems` path.
+   */
+  postPublish?: {
+    remindersCreated: number;
+    identityLinksFound: number;
+    contactUpdated: boolean;
+    ambiguousRouting: boolean;
+    llmRefinedReminders: boolean;
+    errors: string[];
+  };
 }
 
 /**

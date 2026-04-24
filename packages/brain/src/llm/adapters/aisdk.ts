@@ -19,7 +19,7 @@
  * back (review finding #7).
  */
 
-import type { LanguageModel, ModelMessage, ToolSet } from 'ai';
+import type { LanguageModel, ModelMessage, ToolCallPart, ToolSet } from 'ai';
 import { generateText, tool as defineTool, jsonSchema } from 'ai';
 import type {
   LLMProvider,
@@ -31,7 +31,7 @@ import type {
   StreamChunk,
   EmbedOptions,
   EmbedResponse,
-} from '@dina/brain/src/llm/adapters/provider';
+} from './provider';
 
 export interface AISDKAdapterOptions {
   /** Model handle from `@ai-sdk/openai` or `@ai-sdk/google`. */
@@ -66,11 +66,25 @@ export class AISDKAdapter implements LLMProvider {
       abortSignal: options.signal,
     });
 
-    const toolCalls: ToolCall[] = result.toolCalls.map((tc) => ({
-      id: tc.toolCallId,
-      name: tc.toolName,
-      arguments: (tc.input ?? {}) as Record<string, unknown>,
-    }));
+    // Preserve `providerMetadata` on each tool call verbatim — opaque to
+    // Brain but load-bearing for some providers (Gemini 3.x thinking
+    // models stamp `thoughtSignature` here; the signature MUST be
+    // re-sent on the next turn or the API rejects with "Function call
+    // is missing a thought_signature in functionCall parts"). Dropping
+    // this field is what forced the earlier `@google/genai` swap for
+    // Gemini; the fix here lets future providers route through AISDKAdapter
+    // safely. See `LLMProvider.ToolCall.providerMetadata` contract.
+    const toolCalls: ToolCall[] = result.toolCalls.map((tc) => {
+      const call: ToolCall = {
+        id: tc.toolCallId,
+        name: tc.toolName,
+        arguments: (tc.input ?? {}) as Record<string, unknown>,
+      };
+      if (tc.providerMetadata !== undefined) {
+        call.providerMetadata = tc.providerMetadata as Record<string, unknown>;
+      }
+      return call;
+    });
 
     return {
       content: result.text,
@@ -144,12 +158,30 @@ function toAISDKMessages(
           role: 'assistant',
           content: [
             ...(m.content !== '' ? [{ type: 'text' as const, text: m.content }] : []),
-            ...m.toolCalls.map((tc) => ({
-              type: 'tool-call' as const,
-              toolCallId: tc.id ?? tc.name,
-              toolName: tc.name,
-              input: tc.arguments,
-            })),
+            ...m.toolCalls.map((tc): ToolCallPart => {
+              const part: ToolCallPart = {
+                type: 'tool-call',
+                toolCallId: tc.id ?? tc.name,
+                toolName: tc.name,
+                input: tc.arguments,
+              };
+              // Re-stamp the provider-specific metadata we preserved
+              // from the original response so it round-trips verbatim.
+              // The AI SDK surfaces metadata as `providerMetadata` on
+              // responses but expects it as `providerOptions` on
+              // requests (same payload, different field name — naming
+              // asymmetry in the SDK itself).
+              //
+              // The shape-assertion is safe: the payload was generated
+              // BY the SDK originally, so it's structurally a valid
+              // `ProviderOptions` (= `Record<string, JSONObject>`) —
+              // the round-trip is source-preserving.
+              if (tc.providerMetadata !== undefined) {
+                part.providerOptions =
+                  tc.providerMetadata as unknown as ToolCallPart['providerOptions'];
+              }
+              return part;
+            }),
           ],
         });
       } else {

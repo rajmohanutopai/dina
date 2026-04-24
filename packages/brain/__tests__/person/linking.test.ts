@@ -6,9 +6,10 @@
 
 import {
   extractPersonLinks,
+  expandSearchTerms,
+  expandSearchTermsFromText,
   resolvePerson,
   resolveMultiple,
-  expandSearchTerms,
   deduplicatePersons,
   parseLLMOutput,
   registerPersonLinkProvider,
@@ -191,6 +192,104 @@ describe('Person Identity Linking', () => {
 
     it('returns empty for empty input', () => {
       expect(parseLLMOutput('')).toEqual([]);
+    });
+
+    it('parses the Python-parity identity_links envelope', () => {
+      // Matches PROMPT_PERSON_IDENTITY_EXTRACTION — production LLM
+      // output uses `identity_links` + per-link `role_phrase`
+      // + `relationship` + `evidence`.
+      const output = JSON.stringify({
+        identity_links: [
+          {
+            name: 'Emma',
+            role_phrase: 'my daughter',
+            relationship: 'child',
+            confidence: 'high',
+            evidence: 'My daughter Emma loves dinosaurs',
+          },
+        ],
+      });
+      const links = parseLLMOutput(output);
+      expect(links).toHaveLength(1);
+      expect(links[0].name).toBe('Emma');
+      expect(links[0].role_phrase).toBe('my daughter');
+      // Legacy callers read `.role` — populated from role_phrase too.
+      expect(links[0].role).toBe('my daughter');
+      expect(links[0].relationship).toBe('child');
+      expect(links[0].evidence).toMatch(/daughter Emma/);
+      expect(links[0].confidence).toBe('high');
+    });
+
+    it('truncates evidence at 200 chars (Python parity)', () => {
+      const longEvidence = 'e'.repeat(500);
+      const output = JSON.stringify({
+        identity_links: [
+          { name: 'Ziggy', relationship: 'friend', confidence: 'low', evidence: longEvidence },
+        ],
+      });
+      expect(parseLLMOutput(output)[0].evidence?.length).toBe(200);
+    });
+  });
+
+  describe('resolveMultiple — longest-first span claiming', () => {
+    it('"Alice Cooper" claims the span before "Alice" gets a chance', () => {
+      const people: ResolvedPerson[] = [
+        { personId: 'p1', name: 'Alice', surfaces: [] },
+        { personId: 'p2', name: 'Alice Cooper', surfaces: [] },
+      ];
+      const result = resolveMultiple('We saw Alice Cooper at the show', people);
+      expect(result).toHaveLength(1);
+      expect(result[0].personId).toBe('p2');
+    });
+
+    it('matches both when they appear as separate mentions', () => {
+      const people: ResolvedPerson[] = [
+        { personId: 'p1', name: 'Alice', surfaces: [] },
+        { personId: 'p2', name: 'Alice Cooper', surfaces: [] },
+      ];
+      const result = resolveMultiple('Alice Cooper is different from Alice', people);
+      expect(result).toHaveLength(2);
+      expect(new Set(result.map((r) => r.personId))).toEqual(new Set(['p1', 'p2']));
+    });
+  });
+
+  describe('expandSearchTermsFromText (Python recall expansion)', () => {
+    it('returns surfaces NOT already in the query text', () => {
+      const people: ResolvedPerson[] = [
+        {
+          personId: 'p1',
+          name: 'Sarah Johnson',
+          surfaces: ['Sarah', 'spouse', 'sarah@home.com'],
+        },
+      ];
+      // Query uses "spouse" — "Sarah" + email should be the expansion terms.
+      const terms = expandSearchTermsFromText('what does my spouse like', people);
+      expect(terms).toEqual(expect.arrayContaining(['Sarah', 'sarah@home.com']));
+      expect(terms).not.toContain('spouse');
+    });
+
+    it('returns [] when no person mentioned', () => {
+      const people: ResolvedPerson[] = [
+        { personId: 'p1', name: 'Sarah', surfaces: ['spouse'] },
+      ];
+      expect(expandSearchTermsFromText('random unrelated query', people)).toEqual([]);
+    });
+  });
+
+  describe('ResolvedPerson carries contactDid + relationshipHint', () => {
+    it('round-trips contactDid + relationshipHint via resolveMultiple', () => {
+      const people: ResolvedPerson[] = [
+        {
+          personId: 'p1',
+          name: 'Alice',
+          surfaces: [],
+          contactDid: 'did:plc:alice',
+          relationshipHint: 'colleague',
+        },
+      ];
+      const result = resolveMultiple('Talked to Alice', people);
+      expect(result[0].contactDid).toBe('did:plc:alice');
+      expect(result[0].relationshipHint).toBe('colleague');
     });
   });
 });

@@ -19,7 +19,7 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md BRAIN-P2-W03 / MOBILE-009.
  */
 
-import type { BrainCoreClient, WorkflowEvent, WorkflowTask } from '../core_client/http';
+import type { CoreClient, WorkflowEvent, WorkflowTask } from '@dina/core';
 import { formatServiceQueryResult, type ServiceQueryEventDetails } from './result_formatter';
 import type { ServiceResponseBody } from '@dina/protocol';
 
@@ -65,13 +65,24 @@ export type ApprovalEventDispatcher = (args: {
   payload: ApprovedExecutionPayload;
 }) => void | Promise<void>;
 
-export interface WorkflowEventConsumerCoreClient extends Pick<
-  BrainCoreClient,
+/**
+ * The 4-method slice of `CoreClient` the consumer actually uses. Kept
+ * as a `Pick<CoreClient, ...>` so a future `CoreClient` method addition
+ * doesn't widen the consumer's contract (callers can still pass the
+ * full `InProcessTransport` / `HttpCoreTransport`, TS narrows at assign).
+ *
+ * Task 1.32-F: this used to be `Pick<BrainCoreClient, ...>`. The four
+ * methods have identical signatures on `CoreClient` (added in slice B),
+ * so the migration is purely a type swap + the import site updates
+ * below — no runtime behaviour change.
+ */
+export type WorkflowEventConsumerCoreClient = Pick<
+  CoreClient,
   | 'listWorkflowEvents'
   | 'acknowledgeWorkflowEvent'
   | 'getWorkflowTask'
   | 'failWorkflowEventDelivery'
-> {}
+>;
 
 export interface WorkflowEventConsumerOptions {
   coreClient: WorkflowEventConsumerCoreClient;

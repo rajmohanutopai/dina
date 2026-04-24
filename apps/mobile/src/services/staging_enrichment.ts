@@ -27,7 +27,7 @@
  * core-client + LLM provider already wired elsewhere.
  */
 
-import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
+import type { CoreClient } from '@dina/core';
 import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
 import {
   TopicExtractor,
@@ -42,12 +42,12 @@ import { resolveByName } from '@dina/core/src/contacts/directory';
 
 export interface BuildStagingEnrichmentOptions {
   /**
-   * Core HTTP client — used for `memoryTouch` (topic write) and
-   * `updateContact` (preference-binder write). Both are already on
-   * `BrainCoreClient`, so most callers just pass their existing
-   * client here.
+   * Core client — used for `memoryTouch` (topic write) and
+   * `updateContact` (preference-binder write). Mobile passes its
+   * `InProcessTransport` (same instance as `createNode` receives);
+   * home-node-lite brain-server will pass `HttpCoreTransport`.
    */
-  core: BrainCoreClient;
+  core: Pick<CoreClient, 'memoryTouch' | 'updateContact'>;
   /**
    * LLM provider for `TopicExtractor`. Typically the same instance
    * wired into `options.agenticAsk.provider` in `createNode`. Omit

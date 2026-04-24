@@ -10,7 +10,8 @@ import {
 } from '../../src/chat/orchestrator';
 import { resetThreads } from '../../src/chat/thread';
 import { makeServiceDenyHandler } from '../../src/service/approve_command';
-import { CoreHttpError, type BrainCoreClient } from '../../src/core_client/http';
+import { CoreHttpError } from '../../src/errors';
+import type { CoreClient } from '@dina/core';
 import type { WorkflowTask } from '../../../core/src/workflow/domain';
 
 describe('Chat orchestrator — /service_deny', () => {
@@ -108,7 +109,7 @@ describe('makeServiceDenyHandler (BRAIN-P2-W05)', () => {
     cancelError?: Error;
     respondCalls?: RespondCall[];
     cancelCalls?: CancelCall[];
-  }): Pick<BrainCoreClient, 'cancelWorkflowTask' | 'sendServiceRespond'> {
+  }): Pick<CoreClient, 'cancelWorkflowTask' | 'sendServiceRespond'> {
     return {
       async sendServiceRespond(taskId, body) {
         overrides?.respondCalls?.push({
@@ -138,7 +139,7 @@ describe('makeServiceDenyHandler (BRAIN-P2-W05)', () => {
   }
 
   it('rejects a missing coreClient at build time', () => {
-    expect(() => makeServiceDenyHandler(undefined as unknown as BrainCoreClient)).toThrow(
+    expect(() => makeServiceDenyHandler(undefined as unknown as CoreClient)).toThrow(
       /coreClient/,
     );
   });

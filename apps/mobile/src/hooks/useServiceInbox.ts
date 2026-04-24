@@ -12,7 +12,7 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-008.
  */
 
-import type { BrainCoreClient, WorkflowTask } from '@dina/brain/src/core_client/http';
+import type { CoreClient, WorkflowTask } from '@dina/core';
 
 export interface InboxEntry {
   id: string;
@@ -25,9 +25,9 @@ export interface InboxEntry {
   expiresAt?: number;
 }
 
-/** Subset of `BrainCoreClient` the inbox uses — easier to fake in tests. */
+/** Subset of `CoreClient` the inbox uses — easier to fake in tests. */
 export type InboxCoreClient = Pick<
-  BrainCoreClient,
+  CoreClient,
   | 'listWorkflowTasks'
   | 'approveWorkflowTask'
   | 'cancelWorkflowTask'

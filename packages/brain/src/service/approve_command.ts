@@ -20,14 +20,26 @@
  */
 
 import type { ServiceApproveCommandHandler, ServiceDenyCommandHandler } from '../chat/orchestrator';
-import type { BrainCoreClient } from '../core_client/http';
+import type { CoreClient } from '@dina/core';
 
-/** Minimal subset of `BrainCoreClient` the approve handler needs. */
-export type ServiceApproveCoreClient = Pick<BrainCoreClient, 'approveWorkflowTask'>;
+/**
+ * Minimal slice of `CoreClient` the approve handler needs. Task 1.32-G
+ * migration: used to be `Pick<BrainCoreClient, ...>` — swapped to
+ * `Pick<CoreClient, ...>` because the method signature is identical
+ * (slice D landed `approveWorkflowTask` on CoreClient with BCC-parity
+ * wire shape). No runtime change; the chat-orchestrator handler callers
+ * still inject whatever implements the 1-method subset.
+ */
+export type ServiceApproveCoreClient = Pick<CoreClient, 'approveWorkflowTask'>;
 
-/** Minimal subset of `BrainCoreClient` the deny handler needs. */
+/**
+ * Minimal slice of `CoreClient` the deny handler needs. 2 methods:
+ * `sendServiceRespond` (slice A) sends the `unavailable` D2D so the
+ * requester's TTL doesn't elapse silently; `cancelWorkflowTask`
+ * (slice D) is the fallback when respond fails.
+ */
 export type ServiceDenyCoreClient = Pick<
-  BrainCoreClient,
+  CoreClient,
   'cancelWorkflowTask' | 'sendServiceRespond'
 >;
 

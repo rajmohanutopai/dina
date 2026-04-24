@@ -18,11 +18,11 @@
  */
 
 import { WorkflowService } from '../../../core/src/workflow/service';
-import {
-  InMemoryWorkflowRepository,
-  WorkflowConflictError as RepoWorkflowConflictError,
-} from '../../../core/src/workflow/repository';
-import { WorkflowConflictError as ClientWorkflowConflictError } from '../../src/core_client/http';
+import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+// ServiceHandler now catches `WorkflowConflictError` from `@dina/core`
+// (task 1.32-H). Core's export IS the repository's class, so the test's
+// previous repo→client-error translation is redundant — the repository
+// error propagates unchanged and satisfies the handler's `instanceof`.
 import type { WorkflowTask, WorkflowTaskState } from '../../../core/src/workflow/domain';
 import { ServiceHandler } from '../../src/service/service_handler';
 import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
@@ -53,36 +53,25 @@ const BUS_CONFIG: ServiceConfig = {
 function handlerAdapter(service: WorkflowService): ServiceHandlerCoreClient {
   return {
     async createWorkflowTask(input) {
-      try {
-        const task = service.create({
-          id: input.id,
-          kind: input.kind as WorkflowTask['kind'],
-          payload: input.payload,
-          description: input.description ?? '',
-          policy: input.policy,
-          correlationId: input.correlationId,
-          origin: input.origin,
-          initialState: input.initialState as WorkflowTaskState | undefined,
-          expiresAtSec: input.expiresAtSec,
-          priority: input.priority as WorkflowTask['priority'] | undefined,
-        });
-        return { task, deduped: false };
-      } catch (e) {
-        // Translate the repository's conflict error into the brain-client's
-        // class so consumers catching via `instanceof ClientWorkflowConflictError`
-        // (e.g. ServiceHandler.executeAndRespond) get the expected type.
-        if (e instanceof RepoWorkflowConflictError) {
-          throw new ClientWorkflowConflictError(e.message, e.code);
-        }
-        throw e;
-      }
+      // `WorkflowConflictError` from the repository IS the same class
+      // `@dina/core` re-exports and ServiceHandler catches via
+      // `instanceof`, so the repo error propagates unchanged.
+      const task = service.create({
+        id: input.id,
+        kind: input.kind as WorkflowTask['kind'],
+        payload: input.payload,
+        description: input.description ?? '',
+        policy: input.policy,
+        correlationId: input.correlationId,
+        origin: input.origin,
+        initialState: input.initialState as WorkflowTaskState | undefined,
+        expiresAtSec: input.expiresAtSec,
+        priority: input.priority as WorkflowTask['priority'] | undefined,
+      });
+      return { task, deduped: false };
     },
     async cancelWorkflowTask(id, reason) {
       return service.cancel(id, reason ?? '');
-    },
-    async sendServiceRespond() {
-      // No real transport — the test only cares about task/event state.
-      return { status: 'sent', taskId: '', alreadyProcessed: false };
     },
   };
 }

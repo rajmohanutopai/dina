@@ -40,6 +40,7 @@
     "ws": "^8.20.0"
   },
   "dependencies": {
+    "@google/genai": "^1.50.1",
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
     "@noble/ed25519": "^3.1.0",

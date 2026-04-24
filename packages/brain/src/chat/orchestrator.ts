@@ -18,13 +18,34 @@ import { addUserMessage, addDinaResponse, addSystemMessage } from './thread';
 import { reason } from '../pipeline/chat_reasoning';
 import { executeToolSearch } from '../vault_context/assembly';
 import { ingest } from '../../../core/src/staging/service';
-import { CoreHttpError } from '../core_client/http';
+import { CoreHttpError } from '../errors';
+import {
+  plainResponse,
+  richResponse,
+  errorResponse,
+  type BotResponse,
+} from './response_types';
 
 export interface ChatResponse {
   intent: ChatIntent;
+  /**
+   * Plain-language rendering of the response. Every channel gets this
+   * — text-only transports (CLI, legacy chat UIs) display it verbatim.
+   * For typed kinds, `response` is the same as `typed.text`.
+   */
   response: string;
   sources: string[];
   messageId: string;
+  /**
+   * Structured envelope carrying the `kind` discriminator + per-kind
+   * payload (trust score, contact list, confirmation dialog, etc.).
+   * Mobile UI reads this to render native card components; legacy
+   * readers that only know the plain string ignore it.
+   *
+   * Always populated — at minimum it carries `kind: 'plain'` with the
+   * same `text` as `response`. Port of Python's `domain/response.py`.
+   */
+  typed: BotResponse;
 }
 
 /** Default thread ID for the main chat. */
@@ -65,43 +86,48 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
   // Store user message
   addUserMessage(thread, text);
 
-  let response: string;
+  let typed: BotResponse;
   let sources: string[] = [];
 
   switch (parsed.intent) {
     case 'remember':
-      response = await handleRemember(parsed.payload);
+      typed = await handleRemember(parsed.payload);
       break;
 
     case 'ask':
-      ({ response, sources } = await handleAsk(parsed.payload));
+      ({ typed, sources } = await handleAsk(parsed.payload));
       break;
 
     case 'search':
-      ({ response, sources } = await handleSearch(parsed.payload));
+      ({ typed, sources } = await handleSearch(parsed.payload));
       break;
 
     case 'service':
-      response = await handleService(parsed.capability ?? '', parsed.payload);
+      typed = await handleService(parsed.capability ?? '', parsed.payload);
       break;
 
     case 'service_approve':
-      response = await handleServiceApprove(parsed.taskId ?? '');
+      typed = await handleServiceApprove(parsed.taskId ?? '');
       break;
 
     case 'service_deny':
-      response = await handleServiceDeny(parsed.taskId ?? '', parsed.payload);
+      typed = await handleServiceDeny(parsed.taskId ?? '', parsed.payload);
       break;
 
     case 'help':
-      response = handleHelp();
+      typed = handleHelp();
       break;
 
     case 'chat':
     default:
-      ({ response, sources } = await handleAsk(parsed.payload));
+      ({ typed, sources } = await handleAsk(parsed.payload));
       break;
   }
+
+  // The string body is always `typed.text` — every kind carries a
+  // plain-language fallback so text-only channels don't have to know
+  // the discriminator.
+  const response = typed.text;
 
   // Store response
   const msg = addDinaResponse(thread, response, sources.length > 0 ? sources : undefined);
@@ -111,12 +137,13 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
     response,
     sources,
     messageId: msg.id,
+    typed,
   };
 }
 
 /** Handle /remember: store text via staging ingest. */
-async function handleRemember(text: string): Promise<string> {
-  if (!text) return 'What would you like me to remember?';
+async function handleRemember(text: string): Promise<BotResponse> {
+  if (!text) return plainResponse('What would you like me to remember?');
 
   const { id, duplicate } = ingest({
     source: 'user_remember',
@@ -124,13 +151,15 @@ async function handleRemember(text: string): Promise<string> {
     data: { summary: text, type: 'user_memory', body: text },
   });
 
-  if (duplicate) return 'I already have that stored.';
-  return `Got it — I'll remember that. (${id})`;
+  if (duplicate) return plainResponse('I already have that stored.');
+  return plainResponse(`Got it — I'll remember that. (${id})`);
 }
 
 /** Handle /ask or detected question: reason pipeline. */
-async function handleAsk(query: string): Promise<{ response: string; sources: string[] }> {
-  if (!query) return { response: 'What would you like to know?', sources: [] };
+async function handleAsk(query: string): Promise<{ typed: BotResponse; sources: string[] }> {
+  if (!query) {
+    return { typed: plainResponse('What would you like to know?'), sources: [] };
+  }
 
   // When an agentic handler is installed (via bootstrap's globalWiring),
   // route `/ask` through it — the handler runs the multi-turn tool-use
@@ -138,7 +167,12 @@ async function handleAsk(query: string): Promise<{ response: string; sources: st
   // When absent, fall back to the single-shot `reason()` pipeline so
   // `/ask` still works in test / early-boot paths.
   if (askHandler !== null) {
-    return askHandler(query);
+    const r = await askHandler(query);
+    // Agentic answers are plain prose today. When a future handler
+    // produces a structured kind (e.g. a trust-flagged purchase
+    // dialog), upgrade this branch to read a richer shape from the
+    // handler result.
+    return { typed: plainResponse(r.response), sources: r.sources };
   }
 
   const result = await reason({
@@ -146,8 +180,7 @@ async function handleAsk(query: string): Promise<{ response: string; sources: st
     persona: defaultPersona,
     provider: defaultProvider,
   });
-
-  return { response: result.answer, sources: result.sources };
+  return { typed: plainResponse(result.answer), sources: result.sources };
 }
 
 // ---------------------------------------------------------------------------
@@ -169,26 +202,29 @@ export function resetAskCommandHandler(): void {
 }
 
 /** Handle /search: vault FTS only, no LLM. */
-async function handleSearch(query: string): Promise<{ response: string; sources: string[] }> {
-  if (!query) return { response: 'What would you like to search for?', sources: [] };
+async function handleSearch(query: string): Promise<{ typed: BotResponse; sources: string[] }> {
+  if (!query) {
+    return { typed: plainResponse('What would you like to search for?'), sources: [] };
+  }
 
   const items = await executeToolSearch(defaultPersona, query, 10);
 
   if (items.length === 0) {
-    return { response: 'No results found.', sources: [] };
+    return { typed: plainResponse('No results found.'), sources: [] };
   }
 
   const lines = items.map((item, i) => `${i + 1}. ${item.content_l0}`);
   return {
-    response: `Found ${items.length} result(s):\n${lines.join('\n')}`,
+    typed: plainResponse(`Found ${items.length} result(s):\n${lines.join('\n')}`),
     sources: items.map((i) => i.id),
   };
 }
 
-/** Handle /help: return available commands. */
-function handleHelp(): string {
+/** Handle /help: return available commands as a rich-text listing so
+ *  channels that render markdown get the nicer layout. */
+function handleHelp(): BotResponse {
   const commands = getAvailableCommands();
-  return commands.map((c) => `${c.command} — ${c.description}`).join('\n');
+  return richResponse(commands.map((c) => `${c.command} — ${c.description}`).join('\n'));
 }
 
 // ---------------------------------------------------------------------------
@@ -223,20 +259,22 @@ export function resetServiceCommandHandler(): void {
   serviceHandler = null;
 }
 
-async function handleService(capability: string, payload: string): Promise<string> {
+async function handleService(capability: string, payload: string): Promise<BotResponse> {
   if (!capability) {
-    return 'Which service? Usage: /service <capability> <question>';
+    return errorResponse('Which service? Usage: /service <capability> <question>');
   }
   if (serviceHandler === null) {
     // Orchestrator not yet wired. Tell the user we heard them and
     // acknowledge the capability — the actual query flow lands in BRAIN-P1-Q.
-    return `Service lookup for "${capability}" isn't wired up yet. (Coming soon.)`;
+    return plainResponse(
+      `Service lookup for "${capability}" isn't wired up yet. (Coming soon.)`,
+    );
   }
   try {
     const { ack } = await serviceHandler(capability, payload);
-    return ack;
+    return plainResponse(ack);
   } catch (err) {
-    return `Couldn't start service query: ${(err as Error).message}`;
+    return errorResponse(`Couldn't start service query: ${(err as Error).message}`);
   }
 }
 
@@ -272,18 +310,18 @@ export function resetServiceApproveCommandHandler(): void {
   serviceApproveHandler = null;
 }
 
-async function handleServiceApprove(taskId: string): Promise<string> {
+async function handleServiceApprove(taskId: string): Promise<BotResponse> {
   if (!taskId) {
-    return 'Usage: /service_approve <taskId>';
+    return errorResponse('Usage: /service_approve <taskId>');
   }
   if (serviceApproveHandler === null) {
-    return `Approval for "${taskId}" isn't wired up yet. (Coming soon.)`;
+    return plainResponse(`Approval for "${taskId}" isn't wired up yet. (Coming soon.)`);
   }
   try {
     const { ack } = await serviceApproveHandler(taskId);
-    return ack;
+    return plainResponse(ack);
   } catch (err) {
-    return formatApprovalError(taskId, err as Error);
+    return errorResponse(formatApprovalError(taskId, err as Error));
   }
 }
 
@@ -338,17 +376,17 @@ export function resetServiceDenyCommandHandler(): void {
   serviceDenyHandler = null;
 }
 
-async function handleServiceDeny(taskId: string, reason: string): Promise<string> {
+async function handleServiceDeny(taskId: string, reason: string): Promise<BotResponse> {
   if (!taskId) {
-    return 'Usage: /service_deny <taskId> [reason]';
+    return errorResponse('Usage: /service_deny <taskId> [reason]');
   }
   if (serviceDenyHandler === null) {
-    return `Denial for "${taskId}" isn't wired up yet. (Coming soon.)`;
+    return plainResponse(`Denial for "${taskId}" isn't wired up yet. (Coming soon.)`);
   }
   try {
     const { ack } = await serviceDenyHandler(taskId, reason);
-    return ack;
+    return plainResponse(ack);
   } catch (err) {
-    return formatApprovalError(taskId, err as Error, 'deny');
+    return errorResponse(formatApprovalError(taskId, err as Error, 'deny'));
   }
 }

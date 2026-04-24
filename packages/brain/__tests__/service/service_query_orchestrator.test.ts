@@ -25,7 +25,7 @@ import type {
   ServiceProfile,
   SearchServicesParams,
 } from '../../src/appview_client/http';
-import type { BrainCoreClient, SendServiceQueryResult } from '../../src/core_client/http';
+import type { CoreClient, ServiceQueryResult as SendServiceQueryResult } from '@dina/core';
 
 function stubAppView(
   services: ServiceProfile[],
@@ -54,7 +54,7 @@ function stubCore(overrides?: {
   sendError?: Error;
   result?: SendServiceQueryResult;
   seen?: CoreSend[];
-}): Pick<BrainCoreClient, 'sendServiceQuery'> {
+}): Pick<CoreClient, 'sendServiceQuery'> {
   return {
     sendServiceQuery: async (req) => {
       overrides?.seen?.push(req as CoreSend);
@@ -94,7 +94,7 @@ describe('ServiceQueryOrchestrator — construction', () => {
       () =>
         new ServiceQueryOrchestrator({
           appViewClient: stubAppView([]),
-          coreClient: undefined as unknown as BrainCoreClient,
+          coreClient: undefined as unknown as CoreClient,
         }),
     ).toThrow(/coreClient/);
   });

@@ -13,7 +13,7 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-009.
  */
 
-import type { BrainCoreClient } from '@dina/brain/src/core_client/http';
+import type { CoreClient } from '@dina/core';
 import {
   WorkflowEventConsumer,
   type WorkflowEventDeliverer,
@@ -22,7 +22,7 @@ import {
 import { addDinaResponse, type ChatMessage } from '@dina/brain/src/chat/thread';
 
 export type DeliveryCoreClient = Pick<
-  BrainCoreClient,
+  CoreClient,
   | 'listWorkflowEvents'
   | 'acknowledgeWorkflowEvent'
   | 'getWorkflowTask'

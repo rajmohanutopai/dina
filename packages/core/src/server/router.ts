@@ -54,6 +54,23 @@ export interface CoreRequest {
    * the dispatcher right before the handler runs.
    */
   params: Record<string, string>;
+  /**
+   * **In-process trust marker.** When `true`, the router skips the
+   * Ed25519 auth pipeline AND the rate limiter — the request is being
+   * dispatched by code running in the same JS VM as Core, so:
+   *
+   *   - There's no network boundary to authenticate across. A
+   *     compromised Brain in the same process already has the keys it
+   *     would use to sign; signing gates nothing.
+   *   - The rate limiter is per-DID; in-process Brain shares Core's
+   *     DID, so limiting the owner against itself is meaningless.
+   *
+   * ONLY `InProcessTransport` sets this flag. The Fastify HTTP adapter
+   * in `apps/home-node-lite/core-server` explicitly strips it from
+   * every inbound request before handing to the router, so an attacker
+   * can't forge the marker over the wire.
+   */
+  trustedInProcess?: boolean;
 }
 
 export interface CoreResponse {
@@ -175,6 +192,18 @@ export class CoreRouter {
 
     // Found a public route — run it without touching auth.
     if (match !== null && match.route.auth === 'public') {
+      return this.runHandler(req, match.route, match.params);
+    }
+
+    // In-process dispatch bypass — `InProcessTransport` sets this flag
+    // on every request because there's no network boundary to
+    // authenticate across (see `CoreRequest.trustedInProcess`). The
+    // Fastify HTTP adapter strips this flag on inbound HTTP requests
+    // so external callers can't forge it.
+    if (req.trustedInProcess === true) {
+      if (match === null) {
+        return jsonResponse(404, { error: `no route for ${req.method} ${req.path}` });
+      }
       return this.runHandler(req, match.route, match.params);
     }
 

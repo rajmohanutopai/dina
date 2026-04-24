@@ -15,11 +15,23 @@
  * Source: brain/src/main.py (reconcile_approvals loop, commit 9c01611).
  */
 
-import type { BrainCoreClient, WorkflowTask } from '../core_client/http';
+import type { CoreClient, WorkflowTask } from '@dina/core';
+
+/**
+ * The 3-method slice of `CoreClient` the reconciler actually uses.
+ * Kept narrow so future CoreClient additions don't widen this contract.
+ * Task 1.32-G migration: used to be `BrainCoreClient` — swapped to
+ * `CoreClient` because all 3 methods have identical signatures
+ * (slices A, C, D landed them).
+ */
+export type ApprovalReconcilerCoreClient = Pick<
+  CoreClient,
+  'listWorkflowTasks' | 'sendServiceRespond' | 'failWorkflowTask'
+>;
 
 /** Options for `ApprovalReconciler`. */
 export interface ApprovalReconcilerOptions {
-  coreClient: BrainCoreClient;
+  coreClient: ApprovalReconcilerCoreClient;
   /**
    * How often the loop runs. Default `300_000` (5 minutes) — matches the
    * Python reference. Tests pass smaller values.
@@ -62,7 +74,7 @@ export interface ReconciliationTickResult {
 }
 
 export class ApprovalReconciler {
-  private readonly core: BrainCoreClient;
+  private readonly core: ApprovalReconcilerCoreClient;
   private readonly intervalMs: number;
   private readonly batchSize: number;
   private readonly nowMsFn: () => number;
