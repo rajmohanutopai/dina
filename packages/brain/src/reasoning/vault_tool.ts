@@ -27,13 +27,10 @@ import { getItem, listRecentItems } from '../../../core/src/vault/crud';
 import { listPersonas } from '../../../core/src/persona/service';
 
 export interface VaultSearchToolOptions {
-  /** Default persona when the LLM omits the `persona` arg. */
-  defaultPersona?: string;
   /** Upper limit on how many rows one call can return. */
   maxResults?: number;
 }
 
-const DEFAULT_PERSONA = 'general';
 const DEFAULT_MAX_RESULTS = 10;
 /** Preview length for `list_personas` + `browse_vault` — matches Python's
  *  `_BROWSE_LIMIT`. The LLM only needs a sniff of what's in a persona,
@@ -51,25 +48,24 @@ const BROWSE_FIELD_CHARS = 500;
  * parameters schema + execute).
  */
 export function createVaultSearchTool(options: VaultSearchToolOptions = {}): AgentTool {
-  const fallbackPersona = options.defaultPersona ?? DEFAULT_PERSONA;
   const cap = options.maxResults ?? DEFAULT_MAX_RESULTS;
 
   return {
     name: 'vault_search',
     description:
-      "Search the user's own memory (the vault) for items matching a free-text query. Use this ANY time the user asks about something personal, a prior fact, or an event they might have told you before — before answering from general knowledge. Scope by persona (e.g. 'health', 'financial', 'family', 'general') when the user's question implies one; otherwise search 'general'.",
+      "Search the user's own memory (the vault) for items matching a free-text query. Use this ANY time the user asks about something personal, a prior fact, or an event they might have told you before — before answering from general knowledge. By default, searches ALL unlocked personas (recommended) — the persona-routing pass at ingest may have placed an item in 'general' even when its topic looks like 'health' or 'financial'. Pass `persona` only when the user's question explicitly names one (e.g. \"in my health vault\", \"check my work notes\").",
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
           description:
-            'Free-text search query — e.g. "emma birthday", "dentist appointment", "passport number". Tokens are matched case-insensitively against summary/body/content_l0/content_l1 in the persona\'s vault.',
+            'Free-text search query — e.g. "emma birthday", "dentist appointment", "passport number". Tokens are matched case-insensitively against summary/body/content_l0/content_l1.',
         },
         persona: {
           type: 'string',
           description:
-            "Which persona's vault to search. Common values: 'general', 'personal', 'health', 'family', 'financial', 'professional'. Only unlocked personas are searchable — locked ones silently return []. Defaults to 'general'.",
+            "OPTIONAL. Restrict the search to a single persona vault (e.g. 'health', 'financial', 'family', 'general'). OMIT to fan out across every unlocked persona — almost always the right choice unless the user explicitly named a vault. Locked personas silently return [].",
         },
         limit: {
           type: 'number',
@@ -80,6 +76,7 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
     },
     async execute(args): Promise<{
       persona: string;
+      personas_searched: string[];
       query: string;
       accessible: boolean;
       results: Array<{
@@ -93,21 +90,57 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
     }> {
       const query = String(args.query ?? '');
       if (query === '') throw new Error('vault_search: query is required');
-      const persona =
-        typeof args.persona === 'string' && args.persona !== ''
-          ? args.persona
-          : fallbackPersona;
       const requestedLimit = typeof args.limit === 'number' ? args.limit : undefined;
       const limit = requestedLimit !== undefined ? Math.min(requestedLimit, cap) : cap;
 
-      const accessible = getAccessiblePersonas().includes(persona);
-      const rows = await executeToolSearch(persona, query, limit);
+      const namedPersona =
+        typeof args.persona === 'string' && args.persona.trim() !== ''
+          ? args.persona.trim()
+          : null;
+
+      // Single-persona path — LLM explicitly named one. Preserve the
+      // legacy "accessible:false on locked" signal so the LLM can tell
+      // the user that vault is locked.
+      if (namedPersona !== null) {
+        const accessible = getAccessiblePersonas().includes(namedPersona);
+        const rows = await executeToolSearch(namedPersona, query, limit);
+        return {
+          persona: namedPersona,
+          personas_searched: [namedPersona],
+          query,
+          accessible,
+          results: rows,
+        };
+      }
+
+      // Default — fan out across every unlocked persona, merge by score.
+      // Eliminates the over-scope class of bug where the LLM would pick
+      // 'health' for "what was my BP?" and miss items the drain routed
+      // to 'general'. Per-row persona stays in each result so the LLM
+      // can still cite the source vault.
+      const accessiblePersonas = getAccessiblePersonas();
+      const merged: Array<{
+        id: string;
+        content_l0: string;
+        content_l1?: string;
+        body?: string;
+        score: number;
+        persona: string;
+      }> = [];
+
+      for (const persona of accessiblePersonas) {
+        const rows = await executeToolSearch(persona, query, limit);
+        merged.push(...rows);
+      }
+      merged.sort((a, b) => b.score - a.score);
+      const trimmed = merged.slice(0, limit);
 
       return {
-        persona,
+        persona: 'all',
+        personas_searched: accessiblePersonas,
         query,
-        accessible,
-        results: rows,
+        accessible: accessiblePersonas.length > 0,
+        results: trimmed,
       };
     },
   };

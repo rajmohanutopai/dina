@@ -5,6 +5,18 @@
  * Handles camelCase ↔ snake_case mapping.
  *
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
+ *
+ * **Sync-by-design — exempt from the async-port rule.** This repository
+ * is a thin wrapper over the already-exempt sync `DatabaseAdapter`
+ * (op-sqlite via JSI / better-sqlite3 native — both expose synchronous
+ * native calls, no I/O wait). On top of that, the in-memory contact
+ * directory in `directory.ts` enforces GAP-PERSIST-01: SQL write
+ * MUST happen before in-memory mutation, so a failed write leaves
+ * memory consistent with disk. That contract requires sync semantics
+ * — promoting it to async would break the write-then-memory ordering
+ * (the in-memory state would have to either lag the resolved promise
+ * or commit before the disk write succeeds, neither of which is
+ * acceptable). Pinned in `__tests__/port_async_gate.test.ts` EXEMPTED list.
  */
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';

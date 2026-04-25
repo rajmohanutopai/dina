@@ -304,10 +304,20 @@ async function executeToolCall(call: ToolCall): Promise<unknown> {
       return executeListPersonas();
 
     case 'vault_search': {
-      const persona = String(call.args.persona ?? 'general');
       const query = String(call.args.query ?? '');
       const limit = Number(call.args.limit ?? 10);
-      return executeToolSearch(persona, query, limit);
+      const named =
+        typeof call.args.persona === 'string' && call.args.persona.trim() !== ''
+          ? call.args.persona.trim()
+          : null;
+      if (named !== null) return executeToolSearch(named, query, limit);
+      // Default — fan out across every accessible persona, merge by score.
+      const merged: ContextItem[] = [];
+      for (const persona of getAccessiblePersonas()) {
+        merged.push(...(await executeToolSearch(persona, query, limit)));
+      }
+      merged.sort((a, b) => b.score - a.score);
+      return merged.slice(0, limit);
     }
 
     case 'browse_vault': {

@@ -18,6 +18,7 @@ import { addUserMessage, addDinaResponse, addSystemMessage } from './thread';
 import { reason } from '../pipeline/chat_reasoning';
 import { executeToolSearch } from '../vault_context/assembly';
 import { ingest } from '../../../core/src/staging/service';
+import { listByPersona as listRemindersByPersona, type Reminder } from '../../../core/src/reminders/service';
 import { CoreHttpError } from '../errors';
 import {
   plainResponse,
@@ -141,6 +142,64 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
   };
 }
 
+/**
+ * Hook the bootstrap installs to drive the staging drain inline from
+ * `/remember`. Without this, /remember just acks "Got it" — the drain
+ * runs on its own ~10s cadence and the user never sees the resulting
+ * persona / reminders. With it, /remember becomes the user-facing
+ * round-trip: ingest → drain → confirm with persona + reminder list.
+ *
+ * Implementation lives in `apps/mobile/src/services/bootstrap.ts`
+ * (production) or test harnesses (unit tests). The bootstrap's job is
+ * to drive the drain until OUR staging row reaches `stored`; the
+ * orchestrator then reads reminders off the in-memory reminder store
+ * filtered by `source_item_id === stagingId` (the planner uses the
+ * staging row's id as the reminder source id, so no separate
+ * vault-item id lookup is needed).
+ */
+export interface RememberDrainResult {
+  /** Persona the staged item resolved into. `null` when the drain
+   *  didn't process the item (no scheduler wired) or it ended in
+   *  pending_unlock / failed. */
+  persona: string | null;
+}
+
+export type RememberDrainHook = (stagingId: string) => Promise<RememberDrainResult>;
+
+let rememberDrainHook: RememberDrainHook | null = null;
+
+/** Install the drain hook (called by bootstrap). Pass `null` to clear. */
+export function setRememberDrainHook(hook: RememberDrainHook | null): void {
+  rememberDrainHook = hook;
+}
+
+/** Reset for tests. */
+export function resetRememberDrainHook(): void {
+  rememberDrainHook = null;
+}
+
+const REMINDER_EMOJI: Record<string, string> = {
+  birthday: '🎂',
+  appointment: '📅',
+  payment_due: '💳',
+  deadline: '⏰',
+};
+
+function formatReminderTime(dueMs: number): string {
+  return new Date(dueMs).toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatReminder(r: Reminder): string {
+  const emoji = REMINDER_EMOJI[r.kind] ?? '🔔';
+  return `[${r.short_id}] ${emoji} ${formatReminderTime(r.due_at)} — ${r.message}`;
+}
+
 /** Handle /remember: store text via staging ingest. */
 async function handleRemember(text: string): Promise<BotResponse> {
   if (!text) return plainResponse('What would you like me to remember?');
@@ -152,7 +211,46 @@ async function handleRemember(text: string): Promise<BotResponse> {
   });
 
   if (duplicate) return plainResponse('I already have that stored.');
-  return plainResponse(`Got it — I'll remember that. (${id})`);
+
+  // Without a drain hook (test harnesses, early boot) keep the legacy
+  // ack — the drain still runs on its own cadence and reminders land
+  // a few seconds later.
+  if (rememberDrainHook === null) {
+    return plainResponse(`Got it — I'll remember that. (${id})`);
+  }
+
+  // Drive the drain inline so the user-facing reply mirrors Python's
+  // Telegram flow: "Stored in <persona> vault." + auto-generated
+  // reminder list (when the item carried a temporal event).
+  let drainResult: RememberDrainResult = { persona: null };
+  try {
+    drainResult = await rememberDrainHook(id);
+  } catch {
+    // Drain failures shouldn't break the user round-trip — fall back
+    // to the legacy ack so the user knows the item is staged.
+    return plainResponse(`Got it — I'll remember that. (${id})`);
+  }
+
+  const { persona } = drainResult;
+  if (persona === null) {
+    return plainResponse(`Got it — I'll remember that. (${id})`);
+  }
+
+  const lines: string[] = [`Stored in ${persona} vault.`];
+
+  // The reminder planner uses the staging row's id as the reminder's
+  // `source_item_id` (see `drain.ts` → `handlePostPublish` → `planReminders`),
+  // so we can filter by the staging id we already have — no need to
+  // dig the published vault-item id out of the tick result.
+  const reminders = listRemindersByPersona(persona)
+    .filter((r) => r.source_item_id === id)
+    .sort((a, b) => a.due_at - b.due_at);
+  if (reminders.length > 0) {
+    lines.push('');
+    lines.push('Reminders set:');
+    for (const r of reminders) lines.push(formatReminder(r));
+  }
+  return plainResponse(lines.join('\n'));
 }
 
 /** Handle /ask or detected question: reason pipeline. */

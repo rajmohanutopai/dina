@@ -124,8 +124,11 @@ describe('D2D Message Families', () => {
       expect(mapToVaultItemType('presence.signal')).toBeNull();
     });
 
-    it('returns original type for unmapped stored types', () => {
-      expect(mapToVaultItemType('coordination.request')).toBe('coordination.request');
+    it('coordination.request maps to "message" (vault-valid generic chat type)', () => {
+      // Free-form chat-style D2D payload → vault-allowed `message` so the
+      // staging drain can store it. Required for the D2D-to-reminder
+      // pipeline; without the mapping the vault validator rejects the row.
+      expect(mapToVaultItemType('coordination.request')).toBe('message');
     });
   });
 

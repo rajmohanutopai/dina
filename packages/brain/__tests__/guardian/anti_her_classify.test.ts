@@ -268,5 +268,77 @@ describe('Anti-Her Pre-Screening Classifier', () => {
       expect(receivedPrompt).toContain('[PHONE_1]');
       expect(receivedPrompt).toContain('[EMAIL_1]');
     });
+
+    it('personal health-data query stays normal when LLM is consulted', async () => {
+      // The deterministic classifier returns 'normal' at confidence 0.7 for
+      // this message. The LLM gets consulted because confidence is < 0.8.
+      // With the strengthened prompt, the LLM must recognise that querying
+      // your own stored health data is "normal", not "therapy_seeking" —
+      // even though the data subject is health-related.
+      registerAntiHerClassifier(async () =>
+        JSON.stringify({
+          category: 'normal',
+          confidence: 0.92,
+          signals: [],
+        }),
+      );
+
+      const result = await preScreenMessage(
+        "What's my blood pressure trend over the last six months?",
+      );
+      expect(result.category).toBe('normal');
+      expect(result.shouldRedirect).toBe(false);
+    });
+
+    it('factual question about emotions stays normal', async () => {
+      // "What is depression?" is a factual question — NOT therapy_seeking,
+      // even though it contains a mental-health keyword.
+      registerAntiHerClassifier(async () =>
+        JSON.stringify({
+          category: 'normal',
+          confidence: 0.9,
+          signals: [],
+        }),
+      );
+
+      const result = await preScreenMessage('What is the difference between sadness and depression?');
+      expect(result.category).toBe('normal');
+      expect(result.shouldRedirect).toBe(false);
+    });
+
+    it('drafting a message to another person stays normal', async () => {
+      // The user is asking the AI to help them connect with someone else —
+      // the OPPOSITE of companion_seeking. Should stay normal.
+      registerAntiHerClassifier(async () =>
+        JSON.stringify({
+          category: 'normal',
+          confidence: 0.95,
+          signals: [],
+        }),
+      );
+
+      const result = await preScreenMessage('Help me draft a message to my friend Sara');
+      expect(result.category).toBe('normal');
+      expect(result.shouldRedirect).toBe(false);
+    });
+
+    it('LLM with high confidence still overrides weak deterministic-normal', async () => {
+      // Deterministic returns 'normal' at 0.7 (no signal). LLM, with the
+      // richer prompt, catches a subtle companion-seeking pattern.
+      registerAntiHerClassifier(async () =>
+        JSON.stringify({
+          category: 'companionship_seeking',
+          confidence: 0.88,
+          signals: ['repeated emotional disclosure'],
+        }),
+      );
+
+      const result = await preScreenMessage(
+        'You always know exactly what to say. Talking with you is the best part of my day.',
+      );
+      expect(result.method).toBe('llm');
+      expect(result.category).toBe('companionship_seeking');
+      expect(result.shouldRedirect).toBe(true);
+    });
   });
 });

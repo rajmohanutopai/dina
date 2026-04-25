@@ -114,7 +114,10 @@ import {
   resetServiceDenyCommandHandler,
   setAskCommandHandler,
   resetAskCommandHandler,
+  setRememberDrainHook,
+  resetRememberDrainHook,
 } from '@dina/brain/src/chat/orchestrator';
+import { getItem as getStagingItem } from '@dina/core/src/staging/service';
 import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
 import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
 import {
@@ -687,6 +690,33 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         }),
       );
       globalDisposers.push(resetAskCommandHandler);
+    }
+
+    // /remember drain hook — when the staging scheduler is wired,
+    // route /remember through it so the user-facing reply mirrors
+    // Python's Telegram flow: "Stored in <persona> vault." + the
+    // auto-generated reminder list. Without this hook, the
+    // orchestrator falls back to the bare "Got it" ack.
+    if (stagingDrain !== null) {
+      setRememberDrainHook(async (stagingId) => {
+        // Drive the drain until OUR row reaches `stored`. The scheduler's
+        // in-flight-coalesce may return a tick that doesn't include our
+        // item (if a periodic tick was already running when /remember
+        // fired), so keep invoking runTick + checking the staging row
+        // up to a small retry budget. On mobile the drain is in-process
+        // so each tick is sub-second.
+        const MAX_ATTEMPTS = 5;
+        for (let i = 0; i < MAX_ATTEMPTS; i++) {
+          await stagingDrain.runTick();
+          const item = getStagingItem(stagingId);
+          if (item !== null && item.status === 'stored' && item.persona) {
+            return { persona: item.persona };
+          }
+          if (item === null || item.status === 'failed') break;
+        }
+        return { persona: null };
+      });
+      globalDisposers.push(resetRememberDrainHook);
     }
   };
 

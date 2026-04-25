@@ -19,6 +19,14 @@ export interface ReminderRepository {
   get(id: string): Promise<Reminder | null>;
   listPending(nowMs: number): Promise<Reminder[]>;
   listByPersona(persona: string): Promise<Reminder[]>;
+  /**
+   * Return every persisted row regardless of status / completion / due_at.
+   * Used by `hydrateRemindersFromRepo()` on boot to rebuild the in-memory
+   * Map from SQL — without this, the Map starts empty after every cold
+   * start and reminders persisted in prior sessions are invisible to the
+   * UI even though SQL still has them.
+   */
+  listAll(): Promise<Reminder[]>;
   update(id: string, updates: Partial<Reminder>): Promise<void>;
   remove(id: string): Promise<boolean>;
 }
@@ -71,6 +79,11 @@ export class SQLiteReminderRepository implements ReminderRepository {
 
   async listByPersona(persona: string): Promise<Reminder[]> {
     const rows = this.db.query('SELECT * FROM reminders WHERE persona = ?', [persona]);
+    return rows.map(rowToReminder);
+  }
+
+  async listAll(): Promise<Reminder[]> {
+    const rows = this.db.query('SELECT * FROM reminders ORDER BY due_at ASC');
     return rows.map(rowToReminder);
   }
 

@@ -8,20 +8,46 @@
  */
 
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Platform, Alert } from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
-import { listContacts, type Contact } from '@dina/core/src/contacts/directory';
+import { listContacts, deleteContact, type Contact } from '@dina/core/src/contacts/directory';
 import { colors, spacing, radius, shadows } from '../src/theme';
 
 export default function PeopleScreen() {
   const [contacts, setContacts] = useState<Contact[]>([]);
 
+  const refresh = useCallback(() => {
+    setContacts(listContacts());
+  }, []);
+
   // Refresh on screen focus. Cheap: listContacts reads the in-memory
   // map and returns a snapshot array.
   useFocusEffect(
     useCallback(() => {
-      setContacts(listContacts());
-    }, []),
+      refresh();
+    }, [refresh]),
+  );
+
+  const onLongPress = useCallback(
+    (contact: Contact) => {
+      Alert.alert(
+        `Remove ${contact.displayName || 'contact'}?`,
+        'You’ll need to add them again to send or receive D2D messages. Their DID stays on PLC; this only removes them from your local contact list.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => {
+              deleteContact(contact.did);
+              refresh();
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [refresh],
   );
 
   return (
@@ -51,19 +77,27 @@ export default function PeopleScreen() {
           data={contacts}
           keyExtractor={(c) => c.did}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
-          renderItem={({ item }) => <ContactRow contact={item} />}
+          renderItem={({ item }) => <ContactRow contact={item} onLongPress={onLongPress} />}
         />
       )}
     </View>
   );
 }
 
-function ContactRow({ contact }: { contact: Contact }) {
+function ContactRow({
+  contact,
+  onLongPress,
+}: {
+  contact: Contact;
+  onLongPress: (contact: Contact) => void;
+}) {
   return (
     <Link href={{ pathname: '/chat/[did]', params: { did: contact.did } }} asChild>
       <Pressable
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-        accessibilityLabel={`Open chat with ${contact.displayName}`}
+        accessibilityLabel={`Open chat with ${contact.displayName}. Long-press to remove.`}
+        onLongPress={() => onLongPress(contact)}
+        delayLongPress={400}
       >
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>

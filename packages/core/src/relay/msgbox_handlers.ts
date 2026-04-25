@@ -109,6 +109,19 @@ export async function handleInboundD2D(
   env: MsgBoxEnvelope,
   resolveSender: (did: string) => Promise<{ keys: Uint8Array[]; trust: string }>,
 ): Promise<D2DInboundResult> {
+  // TEMP DIAGNOSTIC LOG — confirms MsgBox is delivering D2D envelopes
+  // to the receive pipeline. Pairs with the stageMessage log to
+  // distinguish "transport broken" from "transport OK, my code bypassed".
+  console.log(
+    '[d2d:handleInboundD2D]',
+    JSON.stringify({
+      from: env.from_did,
+      to: env.to_did,
+      id: env.id,
+      hasCiphertext: typeof env.ciphertext === 'string' && env.ciphertext.length > 0,
+    }),
+  );
+
   const { did: myDID, privateKey } = (() => {
     try {
       return identity();

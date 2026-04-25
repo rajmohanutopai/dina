@@ -11,6 +11,17 @@
  * hooks in the SQLite-backed `SQLiteWorkflowRepository` at startup; tests
  * may inject `InMemoryWorkflowRepository` instead. When nothing is wired,
  * getters return `null` and business logic runs in a pure in-memory mode.
+ *
+ * **Sync-by-design — exempt from the async-port rule.** Atomic state
+ * transitions (`transition`, `claimDelegationTask`, `claimApprovalForExecution`,
+ * `heartbeatTask`, `completeWithEvent`) compose multiple statements
+ * inside `db.transaction(fn)`; the callback contract requires the body
+ * to run to completion synchronously before COMMIT. Wrapping these in
+ * `Promise<T>` would force the transaction to either resolve before
+ * COMMIT (breaking atomicity) or block the JS event loop on the inner
+ * promise (which the sync DB doesn't support). The underlying
+ * `DatabaseAdapter` is already EXEMPT for the same reason. Pinned in
+ * `__tests__/port_async_gate.test.ts` EXEMPTED list.
  */
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';

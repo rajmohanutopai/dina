@@ -281,13 +281,21 @@ export function resetBatchingState(): void {
 /**
  * Refine a deterministic classification result with LLM when:
  *   1. LLM provider is registered
- *   2. Deterministic confidence is below 0.85 (ambiguous cases)
+ *   2. Deterministic confidence is below the per-tier skip threshold
  *   3. Marketing phishing guard doesn't apply (never trust LLM to override safety guard)
  *
  * The LLM result is bounded by safety rules:
- *   - Cannot LOWER a fiduciary (Tier 1) result — Law 1 override
- *   - Cannot RAISE marketing source content to fiduciary — phishing guard
- *   - Confidence must be above 0.5 to be accepted
+ *   - Cannot DOWNGRADE a SOURCE-matched fiduciary result (confidence ≥ 0.95) —
+ *     Law 1 override. Bank/security/emergency/health_system sources are
+ *     authoritative; the LLM never sees them.
+ *   - CAN refine KEYWORD-elevated Tier-1 (confidence 0.85) and health-elevation
+ *     Tier-1 (confidence 0.80) — both are pattern matches that false-positive on
+ *     benign content ("you can cancel anytime", "blood-pressure cuff sale"), and
+ *     the LLM has stronger semantic context to disambiguate. The deterministic
+ *     classifier was the gatekeeper; with the LLM available it becomes a
+ *     fast-path heuristic and the LLM decides for ambiguous matches.
+ *   - Cannot RAISE marketing-source content to fiduciary — phishing guard
+ *   - LLM confidence must be above 0.5 to be accepted
  */
 async function refineSilenceWithLLM(
   event: Record<string, unknown>,
@@ -296,11 +304,13 @@ async function refineSilenceWithLLM(
   // Skip LLM if not registered
   if (!llmCallFn) return deterministicResult;
 
-  // Skip if deterministic result is already high-confidence
-  if (deterministicResult.confidence >= 0.85) return deterministicResult;
-
-  // Never let LLM override a deterministic fiduciary classification
-  if (deterministicResult.tier === 1) return deterministicResult;
+  // Per-tier skip threshold. Tier-1 needs a higher bar (only source-matched
+  // classifications, which are at confidence 0.95) to suppress LLM verification;
+  // keyword/elevation-matched Tier-1 sits at 0.85/0.80 and falls through to the
+  // LLM. Non-Tier-1 results stay at the original 0.85 cutoff so high-confidence
+  // solicited/engagement classifications skip the LLM round-trip.
+  const skipThreshold = deterministicResult.tier === 1 ? 0.95 : 0.85;
+  if (deterministicResult.confidence >= skipThreshold) return deterministicResult;
 
   const source = String(event.source || '');
   const subject = String(event.subject || '');

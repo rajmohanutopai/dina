@@ -186,7 +186,13 @@ describe('Reminder Planner', () => {
       expect(receivedPrompt).toContain('America/New_York');
     });
 
-    it('defaults timezone to UTC when not provided', async () => {
+    it('defaults timezone to the runtime IANA zone (not UTC) when not provided', async () => {
+      // Why this matters: the prompt instructs the LLM to compute due_at
+      // in the supplied tz, falling back to UTC. Hard-coding 'UTC' as
+      // the default left a phone in IST silently telling the LLM "user
+      // is in UTC" → due_at came back in UTC → mobile UI rendered it in
+      // local tz with a 5.5h drift. This test pins the new default:
+      // whatever Intl resolves to on this runtime is what the LLM sees.
       let receivedPrompt = '';
       registerReminderLLM(async (_system, prompt) => {
         receivedPrompt = prompt;
@@ -202,7 +208,30 @@ describe('Reminder Planner', () => {
         persona: 'work',
       });
 
-      expect(receivedPrompt).toContain('UTC');
+      const expected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      expect(receivedPrompt).toContain(`Current timezone: ${expected}`);
+    });
+
+    it('caller-provided timezone overrides the runtime default', async () => {
+      let receivedPrompt = '';
+      registerReminderLLM(async (_system, prompt) => {
+        receivedPrompt = prompt;
+        return '{"reminders":[]}';
+      });
+
+      await planReminders({
+        itemId: 'item-010b',
+        type: 'note',
+        summary: 'Meeting',
+        body: 'text',
+        timestamp: Date.now(),
+        persona: 'work',
+        timezone: 'Asia/Kolkata',
+      });
+
+      expect(receivedPrompt).toContain('Current timezone: Asia/Kolkata');
+      // No leakage of the runtime fallback when caller is explicit.
+      expect(receivedPrompt).not.toContain('Current timezone: UTC');
     });
 
     it('LLM prompt contains persona and instructions from template', async () => {

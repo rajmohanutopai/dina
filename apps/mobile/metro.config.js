@@ -55,4 +55,18 @@ config.resolver.unstable_enablePackageExports = true;
 //    `.ts`/`.tsx` extensions during resolution.
 config.resolver.sourceExts = [...(config.resolver.sourceExts || []), 'ts', 'tsx'];
 
+// 6. Node-builtin shims. `@dina/core`'s barrel re-exports node-only modules
+//    (`identity/keypair`, `schema/{identity,persona}`, `storage/{seed_file,spool}`,
+//    `testing/vector_validator`) that statically `import * as fs from 'fs'` +
+//    `import * as path from 'path'`. Mobile boots through `@dina/storage-expo`
+//    + op-sqlite and never invokes those code paths at runtime, but Metro
+//    still has to resolve the static import sites or the whole bundle fails.
+//    Map both to an empty shim — runtime calls into a stubbed function would
+//    throw immediately, surfacing any accidental regression loudly.
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules ?? {}),
+  fs: path.resolve(projectRoot, 'src/shims/empty.js'),
+  path: path.resolve(projectRoot, 'src/shims/empty.js'),
+};
+
 module.exports = config;

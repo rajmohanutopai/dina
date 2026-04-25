@@ -16,7 +16,11 @@ import {
   snoozeReminder,
   deleteReminder,
   resetReminderState,
+  hydrateRemindersFromRepo,
 } from '../../src/reminders/service';
+import type { ReminderRepository } from '../../src/reminders/repository';
+import { setReminderRepository } from '../../src/reminders/repository';
+import type { Reminder } from '../../src/reminders/service';
 
 describe('Reminder Service', () => {
   beforeEach(() => resetReminderState());
@@ -379,6 +383,133 @@ describe('Reminder Service', () => {
       const first = r.short_id;
       const fetched = getReminder(r.id);
       expect(fetched!.short_id).toBe(first);
+    });
+  });
+
+  describe('hydrateRemindersFromRepo (cold-start hydration)', () => {
+    /**
+     * Stand-in repository that holds rows in a plain array. Mirrors
+     * `SQLiteReminderRepository`'s observable surface — `listAll` is
+     * the only method `hydrateRemindersFromRepo` calls. The real
+     * SQLite-backed test would also stress the row-mapping; this test
+     * isolates the hydration behaviour so a regression is unambiguous.
+     */
+    function inMemoryRepo(rows: Reminder[]): ReminderRepository {
+      return {
+        async create() {
+          /* not used by hydrate */
+        },
+        async get(id) {
+          return rows.find((r) => r.id === id) ?? null;
+        },
+        async listPending() {
+          return rows;
+        },
+        async listByPersona(p) {
+          return rows.filter((r) => r.persona === p);
+        },
+        async listAll() {
+          return rows;
+        },
+        async update() {
+          /* not used by hydrate */
+        },
+        async remove() {
+          return false;
+        },
+      };
+    }
+
+    afterEach(() => setReminderRepository(null));
+
+    it('rebuilds in-memory Map from SQL rows so listPending/listByPersona find them', async () => {
+      const persisted: Reminder[] = [
+        {
+          id: 'rem-' + 'a'.repeat(32),
+          short_id: 'a1b2',
+          message: "Maya's birthday",
+          due_at: Date.now() + 30 * 24 * 60 * 60 * 1000,
+          recurring: '',
+          completed: 0,
+          created_at: Date.now() - 1_000_000,
+          source_item_id: 'staging-1',
+          source: 'reminder_planner',
+          persona: 'general',
+          timezone: 'America/Los_Angeles',
+          kind: 'birthday',
+          status: 'pending',
+        },
+        {
+          id: 'rem-' + 'b'.repeat(32),
+          short_id: 'b3c4',
+          message: 'Office party',
+          due_at: Date.now() + 60 * 24 * 60 * 60 * 1000,
+          recurring: '',
+          completed: 0,
+          created_at: Date.now() - 500_000,
+          source_item_id: 'staging-2',
+          source: 'reminder_planner',
+          persona: 'work',
+          timezone: 'America/Los_Angeles',
+          kind: 'appointment',
+          status: 'pending',
+        },
+      ];
+
+      // Pre-condition: Map empty (cold start), SQL has the rows.
+      expect(listPending(Date.now() + 365 * 24 * 60 * 60 * 1000)).toEqual([]);
+      setReminderRepository(inMemoryRepo(persisted));
+
+      const loaded = await hydrateRemindersFromRepo();
+      expect(loaded).toBe(2);
+
+      // Post-condition: every read path the UI uses now sees the rows.
+      const pending = listPending(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      expect(pending).toHaveLength(2);
+      expect(pending.map((r) => r.id).sort()).toEqual(persisted.map((r) => r.id).sort());
+
+      // Persona filter still works post-hydration.
+      expect(listByPersona('general')).toHaveLength(1);
+      expect(listByPersona('work')).toHaveLength(1);
+
+      // Short-ID lookup index was repopulated — `getByShortId` is what
+      // CLI/admin commands like `snooze a1b2` use; without rebuilding
+      // it during hydration, those commands silently fail to find
+      // persisted reminders.
+      expect(getByShortId('a1b2')?.id).toBe(persisted[0].id);
+    });
+
+    it('is idempotent — re-hydrating skips already-loaded rows', async () => {
+      const persisted: Reminder[] = [
+        {
+          id: 'rem-' + 'c'.repeat(32),
+          short_id: 'c5d6',
+          message: 'Idempotency check',
+          due_at: Date.now() + 24 * 60 * 60 * 1000,
+          recurring: '',
+          completed: 0,
+          created_at: Date.now(),
+          source_item_id: 'staging-3',
+          source: 'reminder_planner',
+          persona: 'general',
+          timezone: 'UTC',
+          kind: 'manual',
+          status: 'pending',
+        },
+      ];
+      setReminderRepository(inMemoryRepo(persisted));
+
+      expect(await hydrateRemindersFromRepo()).toBe(1);
+      // Second call must not double-insert or throw on dedup-index
+      // collision — ensures the boot path is safe to call after a
+      // hot-reload that re-runs init without clearing the Map.
+      expect(await hydrateRemindersFromRepo()).toBe(0);
+      expect(listByPersona('general')).toHaveLength(1);
+    });
+
+    it('returns 0 when no SQL repository is wired (test harness, pre-unlock)', async () => {
+      setReminderRepository(null);
+      expect(await hydrateRemindersFromRepo()).toBe(0);
     });
   });
 });

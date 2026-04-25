@@ -67,6 +67,16 @@ export function resetReminderLLM(): void {
  * 5. Filter past dates, validate, create reminders
  */
 export async function planReminders(input: PlannerInput): Promise<PlannerResult> {
+  // Resolve the user's timezone once. If the caller passes one, honor it.
+  // Otherwise fall back to the device/runtime IANA zone — both Node and
+  // Hermes ship Intl. We previously hard-coded `'UTC'` here, which told
+  // the LLM "the user is in UTC" even on a phone in IST → due_at came
+  // back in UTC, the UI rendered it in local tz, and reminders drifted
+  // by the local UTC offset (e.g. May 5 3pm IST → stored as 3pm UTC →
+  // shown as May 5 8:30 PM IST).
+  const resolvedTimezone =
+    input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+
   const extractionInput: ExtractionInput = {
     item_id: input.itemId,
     type: input.type,
@@ -91,7 +101,7 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
 
       // PII scrub before sending to cloud LLM — vault context and item body
       // may contain emails, phone numbers, etc. Names pass through (by design).
-      const prompt = renderReminderPrompt(input, vaultContext);
+      const prompt = renderReminderPrompt(input, vaultContext, resolvedTimezone);
       const { scrubbed: scrubbedPrompt, entities: piiEntities } = scrubPII(prompt);
 
       const rawOutput = await llmProvider('', scrubbedPrompt);
@@ -101,16 +111,34 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
       const llmPlan = parseReminderPlan(rehydrated);
 
       for (const llmReminder of llmPlan.reminders) {
+        // Safety net: some LLMs ignore the "use next occurrence" prompt
+        // rule and commit past dates for recurring events. Bump the year
+        // forward until the timestamp is in the future. Applies ONLY to
+        // recurring kinds (birthday / anniversary) where shifting year
+        // is semantically correct — one-off events (appointment /
+        // payment_due / deadline) that landed in the past stay past and
+        // get dropped by the filter at step 5 (correct: don't fabricate
+        // a future appointment that wasn't scheduled).
+        let dueAt = llmReminder.due_at;
+        const kind = String(llmReminder.kind ?? '');
+        if ((kind === 'birthday' || kind === 'anniversary') && dueAt <= Date.now()) {
+          const d = new Date(dueAt);
+          while (d.getTime() <= Date.now()) {
+            d.setUTCFullYear(d.getUTCFullYear() + 1);
+          }
+          dueAt = d.getTime();
+        }
+
         // Dedup: don't duplicate events already found by regex (within 1 day, same kind)
         const isDuplicate = allEvents.some(
           (e) =>
-            Math.abs(new Date(e.fire_at).getTime() - llmReminder.due_at) < 86_400_000 &&
+            Math.abs(new Date(e.fire_at).getTime() - dueAt) < 86_400_000 &&
             e.kind === llmReminder.kind,
         );
 
         if (!isDuplicate) {
           allEvents.push({
-            fire_at: new Date(llmReminder.due_at).toISOString(),
+            fire_at: new Date(dueAt).toISOString(),
             message: llmReminder.message,
             kind: llmReminder.kind as ExtractedEvent['kind'],
             source_item_id: input.itemId,
@@ -146,7 +174,7 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
         kind: event.kind,
         source_item_id: event.source_item_id,
         source: 'reminder_planner',
-        timezone: input.timezone,
+        timezone: resolvedTimezone,
       });
       created.push(reminder);
     } catch {
@@ -243,15 +271,24 @@ function extractKeywords(summary: string, body: string): string[] {
 
 /**
  * Render the REMINDER_PLAN prompt template with all variables.
+ *
+ * Python parity (`PROMPT_REMINDER_PLANNER_SYSTEM`, `brain/src/prompts.py:141`):
+ * the LLM receives `{{today}}` (current date/time) so it can infer
+ * next-occurrence for recurring events stated without a year (birthdays,
+ * anniversaries). TS previously passed `{{event_date}}` (the ingest
+ * timestamp), which didn't tell the LLM what "now" was and let year-less
+ * dates silently default to the current year — blocking "/remember
+ * Emma's birthday is March 15th" any time we're past March 15.
  */
-function renderReminderPrompt(input: PlannerInput, vaultContext: string): string {
+function renderReminderPrompt(
+  input: PlannerInput,
+  vaultContext: string,
+  resolvedTimezone: string,
+): string {
   return REMINDER_PLAN.replace('{{subject}}', input.summary)
     .replace('{{body}}', input.body.slice(0, 4000))
-    .replace(
-      '{{event_date}}',
-      input.timestamp ? new Date(input.timestamp).toISOString() : 'unknown',
-    )
-    .replace('{{timezone}}', input.timezone ?? 'UTC')
+    .replace('{{today}}', new Date().toISOString())
+    .replace('{{timezone}}', resolvedTimezone)
     .replace('{{vault_context}}', vaultContext);
 }
 

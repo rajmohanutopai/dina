@@ -298,3 +298,37 @@ export function resetReminderState(): void {
   dedupIndex.clear();
   shortIdIndex.clear();
 }
+
+/**
+ * Hydrate the in-memory reminder Map from the SQL repository.
+ *
+ * The service writes through to SQL (see `createReminder`) but reads
+ * exclusively from the in-memory `reminders` Map. After every cold
+ * start the Map is fresh-empty, so reminders persisted in prior
+ * sessions are invisible to the UI even though SQL still has them —
+ * `useReminders` returns 0 rows, the chat reply that just created a
+ * reminder shows it (because `createReminder` populated the Map this
+ * session), but the next session is amnesiac.
+ *
+ * Same shape as `hydrateContactDirectory`. Idempotent — re-hydrating
+ * over an existing Map skips duplicates rather than throwing on the
+ * dedup index.
+ *
+ * Returns the number of newly loaded rows.
+ */
+export async function hydrateRemindersFromRepo(): Promise<number> {
+  const sqlRepo = getReminderRepository();
+  if (sqlRepo === null) return 0;
+
+  const rows = await sqlRepo.listAll();
+  let loaded = 0;
+  for (const r of rows) {
+    if (reminders.has(r.id)) continue;
+    reminders.set(r.id, r);
+    shortIdIndex.set(r.short_id, r.id);
+    const dk = dedupKey(r.source_item_id, r.kind, r.due_at, r.persona);
+    if (!dedupIndex.has(dk)) dedupIndex.set(dk, r.id);
+    loaded++;
+  }
+  return loaded;
+}

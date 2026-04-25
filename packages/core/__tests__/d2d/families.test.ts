@@ -70,8 +70,19 @@ describe('D2D V1 Message Families', () => {
       });
     }
 
-    it('unmapped types return the original type', () => {
-      expect(mapToVaultItemType('coordination.request')).toBe('coordination.request');
+    it('coordination + trust.vouch.request map to "message"', () => {
+      // Free-form chat-style D2D payloads land in the vault under the
+      // generic "message" type so they pass `validateVaultItem`. Without
+      // this mapping the staged row gets dropped at the drain because
+      // "coordination.request" isn't in VALID_VAULT_ITEM_TYPES.
+      expect(mapToVaultItemType('coordination.request')).toBe('message');
+      expect(mapToVaultItemType('coordination.response')).toBe('message');
+      expect(mapToVaultItemType('trust.vouch.request')).toBe('message');
+    });
+
+    it('truly-unmapped types fall back to the original type', () => {
+      // safety.alert is in the always-pass set but has no vault-type
+      // override; it should round-trip its own name to the vault.
       expect(mapToVaultItemType('safety.alert')).toBe('safety.alert');
     });
   });

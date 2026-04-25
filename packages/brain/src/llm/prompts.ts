@@ -183,6 +183,17 @@ Rules:
 
 /**
  * SILENCE_CLASSIFY — Refine priority tier with LLM confidence.
+ *
+ * Python parity: `brain/src/prompts.py` PROMPT_SILENCE_CLASSIFY_SYSTEM. Tier
+ * names are mapped at the call site (Python: "fiduciary|solicited|engagement"
+ * decision string ↔ TS: 1|2|3 integer tier) — the LLM emits integers here.
+ *
+ * The guard against marketing-urgency phishing escalation lives in BOTH the
+ * deterministic path (`isMarketingSource()` in silence.ts) and this prompt,
+ * because the LLM is an independent classifier — without explicit guidance it
+ * will treat "URGENT", "act now", "account suspended" as Tier-1 signals on
+ * any source. The deterministic guard only covers known marketing source
+ * names; the LLM has to recognise the content pattern for unknown sources.
  */
 export const SILENCE_CLASSIFY = `You are classifying the urgency of an incoming notification for Dina.
 
@@ -192,12 +203,13 @@ Event:
 - Subject: {{subject}}
 - Body preview: {{body_preview}}
 
-Classify into one of three priority tiers:
-1 = Fiduciary (urgent: security alert, health critical, payment due) — MUST interrupt
-2 = Solicited (user-requested: reminder, search result) — notify
-3 = Engagement (nice-to-know: social, promo, RSS) — queue for briefing
+Classify into one of three priority tiers (Law 1 — Silence First):
 
-Default to tier 3 when uncertain (Silence First principle).
+1 = Fiduciary — silence would cause HARM. The user MUST know NOW or they will suffer a consequence. Examples: medical emergency, safety threat, time-critical deadline, financial risk, security breach, a loved one in danger or distress.
+2 = Solicited — the user explicitly ASKED for this information. Examples: search results, price-watch alerts, package tracking the user requested, answers to questions they posed.
+3 = Engagement — everything else. Newsletters, social updates, casual messages, interesting-but-not-urgent information. DEFAULT to this when uncertain. Over-interruption is WORSE than delayed delivery.
+
+CRITICAL: When uncertain, ALWAYS choose tier 3. Never escalate to tier 1 unless you are confident silence causes harm. Spam and phishing routinely use urgent language — urgency alone is NOT sufficient for tier 1. Marketing emails with words like "URGENT", "act now", "last chance", "account suspended", "verify your account", "click here immediately" are tier 3, not tier 1, regardless of how urgent the wording sounds.
 
 Respond with ONLY a JSON object:
 {"tier": <1|2|3>, "reason": "<brief reason>", "confidence": <0.0-1.0>}`;
@@ -301,6 +313,15 @@ Classify into one of these categories:
 4. "therapy_seeking" — User is seeking mental health support the AI cannot provide.
    Signals: "I'm depressed", "I can't cope", "should I see a therapist?", crisis language.
 
+The category is "normal" — NOT companionship/therapy_seeking — when the user is:
+- Asking a factual question (even about emotions: "what is depression?")
+- Requesting task help ("help me write a message to my friend")
+- Asking about their own data ("what did Dr. Sharma say at my last visit?")
+- Querying their own stored memories ("do I have any chronic conditions?", "what are my medications?", "show me my health records", "what's my blood pressure trend?")
+- Asking about their personal information, health, finances, or schedule
+- Making small talk as a greeting before a task ("hello, how are you?")
+- Asking the AI to help them connect with someone else ("draft a message to mom", "remind me to call Sara")
+
 Respond with ONLY a JSON object:
 {"category": "<normal|venting|companionship_seeking|therapy_seeking>", "confidence": <0.0-1.0>, "signals": ["<detected signal phrases>"]}
 
@@ -310,6 +331,7 @@ Rules:
 - Only classify as "companionship_seeking" when the user explicitly treats the AI as a relationship
 - Only classify as "therapy_seeking" when the user explicitly seeks mental health guidance
 - A user saying "I'm sad" is likely "venting", NOT "therapy_seeking"
+- Querying personal data is ALWAYS "normal" — even if the data itself is health- or emotion-related
 - Never penalize emotional expression — only flag AI-as-companion patterns`;
 
 /**
@@ -320,8 +342,17 @@ export const REMINDER_PLAN = `You are Dina, a personal AI assistant planning rem
 Item with event:
 - Subject: {{subject}}
 - Body: {{body}}
-- Event date: {{event_date}}
-- Current timezone: {{timezone}}
+
+TODAY IS: {{today}}
+Current timezone: {{timezone}}
+
+⚠️ CRITICAL DATE RULE: every due_at you emit MUST be strictly AFTER {{today}}. Before you commit a due_at, check: is this timestamp greater than TODAY? If not, fix it.
+
+For recurring events (birthdays, anniversaries) stated without a year — and ALL birthdays without a year ARE recurring:
+  1. Compare the stated month+day against TODAY.
+  2. If the month+day this year is already in the past OR is today, use NEXT year.
+  3. Example: TODAY=2026-04-25 and the user says "Emma's birthday is March 15". March 15, 2026 has passed → use March 15, 2027.
+  4. Example: TODAY=2026-04-25 and the user says "Sam's birthday is November 7". November 7, 2026 is still ahead → use 2026.
 
 Related vault context (for enriching reminder messages):
 {{vault_context}}
@@ -345,6 +376,7 @@ Rules:
 - NEVER fabricate events, dates, or details not mentioned in the item or vault context
 - NEVER invent preferences, relationships, or facts — only use what is explicitly stated
 - If timezone is provided, compute due_at in that timezone. Otherwise use UTC.
+- Never create a reminder with due_at ≤ TODAY. If the only candidate date is past and the event is not recurring, return {"reminders": []}.
 
 Tone examples:
 - "Emma's birthday is tomorrow. She mentioned liking watercolors last month — maybe pick up a set?"
@@ -436,7 +468,7 @@ Tools to reach each source:
 Specific rules:
 1. When the routing hint names provider_services, go to the provider path on your FIRST tool call. Do NOT call vault_search for live-state questions (ETA, appointment status, stock price, availability) — the vault does not carry those. Refer to the separate routing block below for the two paths (established relationship vs public-facing service).
 
-2. When the routing hint names vault, call list_personas once to see what's available, then vault_search with natural language queries. The search uses both keyword matching AND semantic similarity — it can find related concepts even without exact word matches (e.g. searching "back pain" finds items about "lumbar disc herniation"). Use browse_vault for a broader view of a persona when you don't have a specific search term. Search a specific persona (e.g. 'health', 'financial') when the question implies one; otherwise search 'general'. If a narrow-persona search returns nothing, retry 'general' before giving up.
+2. When the routing hint names vault, call list_personas once to see what's available, then vault_search with natural language queries. The search uses both keyword matching AND semantic similarity — it can find related concepts even without exact word matches (e.g. searching "back pain" finds items about "lumbar disc herniation"). Use browse_vault for a broader view of a persona when you don't have a specific search term. By default, OMIT the persona arg on vault_search — it fans out across every unlocked persona, which is what you want: items routed to 'general' at ingest may still be the answer to a "health" question. Pass the persona arg only when the user explicitly named a vault (e.g. "in my health vault", "my financial notes").
 
 3. When the user mentions buying, purchasing, shopping, or evaluating any product or vendor, ALWAYS call search_trust_network immediately — do not ask the user for permission or clarification first. The Trust Network contains verified peer reviews from real people.
 

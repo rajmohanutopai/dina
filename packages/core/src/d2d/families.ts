@@ -60,10 +60,21 @@ const V1_TYPES = new Set<string>([
  * Mapping from D2D message type to vault item type.
  * Types not in this map are stored with their original message type as the item type.
  * Ephemeral types (presence.signal, service.query, service.response) are never stored.
+ *
+ * `coordination.request` / `coordination.response` and `trust.vouch.request`
+ * are free-form chat-style payloads between contacts; they map to the
+ * generic `message` vault type, which is one of the allowed types in
+ * `vault/validation.ts:VALID_VAULT_ITEM_TYPES`. Without these mappings the
+ * default branch (`messageType` itself) flows into the vault validator and
+ * is rejected — the staging row gets claimed, fails to store, and the
+ * D2D-to-reminder pipeline silently halts at the drain.
  */
 const VAULT_TYPE_MAP: Record<string, string> = {
   [MsgTypeSocialUpdate]: 'relationship_note',
   [MsgTypeTrustVouchResponse]: 'trust_attestation',
+  [MsgTypeCoordinationRequest]: 'message',
+  [MsgTypeCoordinationResponse]: 'message',
+  [MsgTypeTrustVouchRequest]: 'message',
 };
 
 /** Types that are never stored (ephemeral). */

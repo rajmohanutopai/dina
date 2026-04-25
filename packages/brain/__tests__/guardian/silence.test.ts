@@ -506,5 +506,95 @@ describe('Guardian Silence Classification', () => {
       expect(receivedPrompt).toContain('gmail');
       expect(receivedPrompt).toContain('email');
     });
+
+    it('LLM verifies KEYWORD-elevated Tier-1 and can demote false positives', async () => {
+      // "you can cancel anytime" is a benign subscription reassurance — the
+      // regex matches "cancel" and elevates to Tier 1, but the LLM has
+      // semantic context to recognise it as engagement.
+      const mockLLM = jest.fn(async () =>
+        JSON.stringify({
+          tier: 3,
+          reason: 'Subscription cancellation reassurance — not urgent',
+          confidence: 0.9,
+        }),
+      );
+      registerSilenceClassifier(mockLLM);
+
+      const result = await classifyPriority(
+        makeEvent({
+          source: 'gmail',
+          subject: 'Welcome — you can cancel anytime',
+          body: 'Thanks for signing up.',
+          timestamp: Date.now(),
+        }),
+      );
+
+      // Deterministic confidence is 0.85 (keyword-matched), now BELOW the new
+      // 0.95 Tier-1 skip threshold → LLM gets called and demotes.
+      expect(mockLLM).toHaveBeenCalled();
+      expect(result.method).toBe('llm');
+      expect(result.tier).toBe(3);
+    });
+
+    it('LLM-verified KEYWORD-elevated Tier-1 stays Tier-1 when LLM agrees', async () => {
+      // Same regex match as above ("cancel"), but here the LLM agrees it's a
+      // genuine cancellation notice the user needs to know about.
+      registerSilenceClassifier(async () =>
+        JSON.stringify({
+          tier: 1,
+          reason: 'Genuine account cancellation notice',
+          confidence: 0.92,
+        }),
+      );
+
+      const result = await classifyPriority(
+        makeEvent({
+          source: 'gmail',
+          subject: 'Your account has been cancelled',
+          body: 'Your subscription was terminated due to a billing issue.',
+          timestamp: Date.now(),
+        }),
+      );
+
+      expect(result.tier).toBe(1);
+      expect(result.method).toBe('llm');
+    });
+
+    it('SOURCE-matched fiduciary (confidence 0.95) STILL skips LLM after threshold change', async () => {
+      const mockLLM = jest.fn(async () =>
+        JSON.stringify({ tier: 3, reason: 'should not be called', confidence: 0.99 }),
+      );
+      registerSilenceClassifier(mockLLM);
+
+      // bank/security/emergency/health_system source → confidence 0.95 →
+      // at the new Tier-1 skip threshold (>= 0.95) → LLM never called.
+      const result = await classifyPriority(makeEvent({ source: 'bank' }));
+
+      expect(mockLLM).not.toHaveBeenCalled();
+      expect(result.tier).toBe(1);
+      expect(result.method).toBe('deterministic');
+    });
+
+    it('LLM is consulted but cannot ELEVATE keyword match to Tier-1 from marketing source', async () => {
+      // "cancel" + promo source: deterministic returns Tier-3 (marketing
+      // phishing guard suppresses the keyword). Confidence is 0.5 (default)
+      // → LLM is called. LLM tries to elevate to Tier-1, but the
+      // post-LLM marketing-source guard blocks it.
+      registerSilenceClassifier(async () =>
+        JSON.stringify({ tier: 1, reason: 'Sounds urgent', confidence: 0.95 }),
+      );
+
+      const result = await classifyPriority(
+        makeEvent({
+          source: 'promo',
+          subject: 'URGENT: cancel within 24 hours or lose access',
+          body: 'Click here immediately.',
+          timestamp: Date.now(),
+        }),
+      );
+
+      // Marketing-source guard pins the result to deterministic Tier-3.
+      expect(result.tier).not.toBe(1);
+    });
   });
 });

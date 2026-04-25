@@ -96,6 +96,53 @@ function stageMessage(
 ): ReceiveResult {
   const vaultItemType = mapToVaultItemType(messageType) ?? messageType;
 
+  // The drain reads `data.ingress_channel` + `data.origin_did` to drive
+  // its D2D-aware branches: the contact_did wire onto the vault row,
+  // the sender_did into post_publish (which feeds reminder planning +
+  // contact last-seen), and the d2d_received nudge chain. Without these
+  // keys the row looks like a generic inbox item and the D2D paths
+  // silently no-op even though the bytes were sealed and verified.
+  // Python parity: `staging_processor.py` checks `ingress_channel ==
+  // "d2d"` and `origin_did` for the same routing.
+  //
+  // `summary` carries plain text the regex classifier + reminder-planner
+  // event extractor can scan. The wire body is JSON-wrapped per the
+  // message family schema (e.g. social.update → `{"text": "..."}`),
+  // and feeding the raw JSON into the planner produced reminders with
+  // generic messages because the extractor couldn't find the subject
+  // outside of quotes. Pull `text` out when present and otherwise leave
+  // summary empty — downstream consumers that need the structured body
+  // still read `body`.
+  let summary = '';
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'text' in parsed &&
+      typeof (parsed as { text: unknown }).text === 'string'
+    ) {
+      summary = (parsed as { text: string }).text;
+    }
+  } catch {
+    /* opaque non-JSON body — leave summary empty */
+  }
+
+  // TEMP DIAGNOSTIC LOG — confirms stageMessage runs on-device with the
+  // new D2D-routing keys (ingress_channel/origin_did/summary). Remove
+  // once Bug #1 is validated end-to-end on the simulator.
+  console.log(
+    '[d2d:stageMessage]',
+    JSON.stringify({
+      messageType,
+      vaultItemType,
+      senderDID,
+      messageId,
+      bodyPreview: body.slice(0, 80),
+      summary,
+    }),
+  );
+
   const { id } = ingest({
     source: 'd2d',
     source_id: messageId,
@@ -104,6 +151,9 @@ function stageMessage(
       type: vaultItemType,
       message_type: messageType,
       sender_did: senderDID,
+      ingress_channel: 'd2d',
+      origin_did: senderDID,
+      summary,
       body,
     },
   });

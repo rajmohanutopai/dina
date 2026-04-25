@@ -45,6 +45,23 @@ export default function ChatScreen() {
   const onSubmit = useCallback(async (): Promise<void> => {
     const text = draft.trim();
     if (text === '' || busy) return;
+
+    // Slash commands (/remember, /ask, /search, /help, /trust, \u2026) are
+    // addressed to the local Dina, not to the peer. Sending them
+    // literally over D2D is almost never what the user wants \u2014 it
+    // surfaces as a confusing peer message and the command never runs.
+    // Block + redirect rather than silently re-route, so the user keeps
+    // control of which surface they're talking to.
+    if (text.startsWith('/')) {
+      Alert.alert(
+        'Slash commands talk to Dina, not your contact',
+        'Switch to the Chat tab to use commands like /remember or /ask. Or remove the leading "/" if you really meant to send this as a message.',
+        [{ text: 'OK', style: 'default' }],
+        { cancelable: true },
+      );
+      return;
+    }
+
     setBusy(true);
     setDraft('');
     try {

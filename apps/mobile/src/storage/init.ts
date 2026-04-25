@@ -28,6 +28,7 @@ import {
   setReminderRepository,
   SQLiteReminderRepository,
 } from '@dina/core/src/reminders/repository';
+import { hydrateRemindersFromRepo } from '@dina/core/src/reminders/service';
 import { setAuditRepository, SQLiteAuditRepository } from '@dina/core/src/audit/repository';
 import { setDeviceRepository, SQLiteDeviceRepository } from '@dina/core/src/devices/repository';
 import {
@@ -112,6 +113,16 @@ export async function initializePersistence(
   // routes before any request comes in. Without this, a restart
   // silently drops every contact the user has stored.
   hydrateContactDirectory();
+
+  // Same gap, applied to reminders. `createReminder` write-throughs to
+  // SQL but reads (`listPending`, `listByPersona`) only check the
+  // in-memory Map — without this hydrate, the Reminders tab is empty
+  // after every cold start and a /remember from yesterday vanishes
+  // even though the row is still in identity.sqlite. Caught on the
+  // simulator: a /remember reminder showed up in the chat reply
+  // immediately, but switching to the Reminders tab after the JS
+  // engine reloaded showed "No reminders yet".
+  await hydrateRemindersFromRepo();
 }
 
 /**

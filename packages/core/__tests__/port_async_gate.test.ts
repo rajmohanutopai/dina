@@ -42,18 +42,7 @@ const CONVERTED_PORTS: readonly { file: string; interfaceName: string }[] = [
 /** Ports still pending conversion. Documented explicitly so the
  *  gate + the task doc stay in sync. Move entries to CONVERTED_PORTS
  *  as each converts. */
-const PENDING_PORTS: readonly { file: string; interfaceName: string; reason: string }[] = [
-  {
-    file: 'contacts/repository.ts',
-    interfaceName: 'ContactRepository',
-    reason: '167 test call-sites; GAP-PERSIST-01 requires synchronous write-then-memory semantics',
-  },
-  {
-    file: 'workflow/repository.ts',
-    interfaceName: 'WorkflowRepository',
-    reason: '~15 methods, 7 caller files, service-layer transactions + state machine',
-  },
-];
+const PENDING_PORTS: readonly { file: string; interfaceName: string; reason: string }[] = [];
 
 /**
  * Ports intentionally exempted from the async-only rule. An exempt
@@ -78,6 +67,18 @@ const EXEMPTED_PORTS: readonly { file: string; interfaceName: string; reason: st
     interfaceName: 'DatabaseAdapter',
     reason:
       'CPU-bound SQLite binding — both better-sqlite3-multiple-ciphers (Node) and op-sqlite via JSI (RN) expose synchronous native calls. Async wrap would add microtask overhead, break sync-throw semantics, and complicate the transaction(fn) callback where the body must run to completion before COMMIT. Pinned as the canonical async-only-rule counter-example per task 3.4.',
+  },
+  {
+    file: 'contacts/repository.ts',
+    interfaceName: 'ContactRepository',
+    reason:
+      'Thin wrapper over the EXEMPT sync DatabaseAdapter. The in-memory contact directory enforces GAP-PERSIST-01 — SQL write MUST happen before in-memory mutation so a failed write leaves memory consistent with disk. That ordering contract requires sync semantics: an async repo would force in-memory state to either lag the resolved promise (stale reads) or commit before the disk write succeeds (split-brain on failure). 167 call-sites read from the directory synchronously; converting would propagate awaits with zero I/O benefit. Source comment in repository.ts pins the rationale.',
+  },
+  {
+    file: 'workflow/repository.ts',
+    interfaceName: 'WorkflowRepository',
+    reason:
+      'Thin wrapper over the EXEMPT sync DatabaseAdapter. Atomic state transitions (transition, claimDelegationTask, claimApprovalForExecution, heartbeatTask, completeWithEvent) compose multiple statements inside db.transaction(fn) where the callback body must run to completion synchronously before COMMIT. Wrapping in Promise<T> would force the transaction to resolve before COMMIT (breaking atomicity) or block on an inner promise the sync DB does not support. Source comment in repository.ts pins the rationale.',
   },
 ];
 

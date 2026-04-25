@@ -42,9 +42,11 @@ describe('createVaultSearchTool', () => {
       results: Array<{ id: string; content_l0: string; score: number; persona: string }>;
     };
 
-    expect(result.persona).toBe('general');
+    // Default (no persona arg) is fan-out across all unlocked personas.
+    expect(result.persona).toBe('all');
     expect(result.accessible).toBe(true);
     expect(result.results.length).toBeGreaterThanOrEqual(1);
+    // Per-row persona still names the source vault.
     expect(result.results[0]!.persona).toBe('general');
     // content_l0 falls back to summary when content_l0 is empty
     expect(result.results[0]!.content_l0).toMatch(/Emma/i);
@@ -116,19 +118,78 @@ describe('createVaultSearchTool', () => {
     expect(result.results.length).toBeLessThanOrEqual(3);
   });
 
-  it('defaults persona to "general" when not specified', async () => {
+  it('fans out across every unlocked persona when persona arg is omitted', async () => {
+    // Drain may have routed items to 'general' even when the user's
+    // question phrases them as a 'health' or 'financial' topic. The
+    // default search must NOT under-scope to a single persona.
     storeItem('general', {
       type: 'user_memory',
-      summary: 'hello world',
-      body: 'hello world',
+      summary: 'hypertension reading 145/92',
+      body: 'hypertension reading 145/92',
+    });
+    storeItem('health', {
+      type: 'medical_note',
+      summary: 'doctor visit notes',
+      body: 'doctor visit notes about hypertension',
     });
     const tool = createVaultSearchTool();
-    const result = (await tool.execute({ query: 'hello' })) as {
+    const result = (await tool.execute({ query: 'hypertension' })) as {
       persona: string;
+      personas_searched: string[];
+      accessible: boolean;
+      results: Array<{ id: string; persona: string }>;
+    };
+
+    expect(result.persona).toBe('all');
+    expect(result.personas_searched.sort()).toEqual(['general', 'health']);
+    expect(result.accessible).toBe(true);
+    // Both vaults contributed — the LLM gets both rows back even though
+    // it didn't name a persona.
+    const personasFound = new Set(result.results.map((r) => r.persona));
+    expect(personasFound.has('general')).toBe(true);
+    expect(personasFound.has('health')).toBe(true);
+  });
+
+  it('respects an explicit persona arg — single-persona scoping still works', async () => {
+    storeItem('general', {
+      type: 'user_memory',
+      summary: 'hypertension reading 145/92',
+      body: 'hypertension reading 145/92',
+    });
+    storeItem('health', {
+      type: 'medical_note',
+      summary: 'doctor visit notes',
+      body: 'doctor visit notes about hypertension',
+    });
+    const tool = createVaultSearchTool();
+    const result = (await tool.execute({
+      query: 'hypertension',
+      persona: 'health',
+    })) as {
+      persona: string;
+      personas_searched: string[];
+      results: Array<{ persona: string }>;
+    };
+    expect(result.persona).toBe('health');
+    expect(result.personas_searched).toEqual(['health']);
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
+    // Only health rows — caller asked for narrow scope, they get it.
+    expect(result.results.every((r) => r.persona === 'health')).toBe(true);
+  });
+
+  it('returns accessible:false when fan-out has no unlocked personas', async () => {
+    setAccessiblePersonas([]);
+    const tool = createVaultSearchTool();
+    const result = (await tool.execute({ query: 'anything' })) as {
+      persona: string;
+      personas_searched: string[];
+      accessible: boolean;
       results: unknown[];
     };
-    expect(result.persona).toBe('general');
-    expect(result.results.length).toBe(1);
+    expect(result.persona).toBe('all');
+    expect(result.personas_searched).toEqual([]);
+    expect(result.accessible).toBe(false);
+    expect(result.results).toEqual([]);
   });
 });
 
