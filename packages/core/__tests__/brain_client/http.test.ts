@@ -87,6 +87,35 @@ describe('Brain→Core HTTP Client', () => {
       expect(headers['X-Request-ID']).toMatch(/^req-/);
     });
 
+    // CONTRACT: each request() call mints a fresh X-Request-ID — even
+    // when reusing one CoreHTTPClient instance. Long-lived clients
+    // (Brain holds one) make many calls; if every call carried the
+    // same id, log correlation would fuse unrelated requests AND any
+    // server-side dedup keyed on the id would falsely short-circuit.
+    //
+    // The Python CLI shipped with the latter bug: `DinaClient.__init__`
+    // set `self._req_id = uuid.uuid4().hex[:12]` once and threaded it
+    // into every MsgBoxTransport call, hitting Core's idempotency
+    // cache. The agent-daemon's claim/mark_running/progress/complete
+    // chain returned the cached first response forever. This test
+    // pins the equivalent invariant on the TS side.
+    it('mints a fresh X-Request-ID on every call from the same client', async () => {
+      const fetch = mockFetch(
+        { status: 200, body: { ok: true } },
+        { status: 200, body: { ok: true } },
+        { status: 200, body: { ok: true } },
+      );
+      const client = new CoreHTTPClient({ ...baseConfig, fetch });
+      await client.request('GET', '/a');
+      await client.request('GET', '/b');
+      await client.request('GET', '/c');
+      const ids = fetch.mock.calls.map(
+        (call) => (call[1] as RequestInit).headers as Record<string, string>,
+      ).map((h) => h['X-Request-ID']);
+      expect(new Set(ids).size).toBe(3);
+      ids.forEach((id) => expect(id).toMatch(/^req-/));
+    });
+
     it('retries on 5xx response', async () => {
       const fetch = mockFetch(
         { status: 500 },

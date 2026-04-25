@@ -38,6 +38,28 @@ describe('Core RPC Request Envelope', () => {
       expect(r1.request_id).not.toBe(r2.request_id);
     });
 
+    // CONTRACT: every call mints a fresh request_id, no matter how often
+    // the wrapper is invoked. Core's idempotency cache (rpc_idempotency.go
+    // / packages/core/src/relay/idempotency.ts) keys on
+    // (from_did, request_id) — a stable id across calls makes the cache
+    // return the first response forever.
+    //
+    // The Python CLI shipped with exactly this bug: `DinaClient.__init__`
+    // set `self._req_id = uuid.uuid4().hex[:12]` once and threaded it
+    // into every MsgBoxTransport call, so any long-lived client (the
+    // agent-daemon) got cached responses on every claim/mark_running/
+    // progress/complete. The fix was per-call generation; this test
+    // pins the equivalent invariant on the TS side so the same shape
+    // can't regress here.
+    it('mints distinct request_ids across many calls (idempotency safety)', () => {
+      const ids = new Set<string>();
+      const N = 1000;
+      for (let i = 0; i < N; i++) {
+        ids.add(buildRPCRequest('GET', '/', '', '', {}, senderDID).request_id);
+      }
+      expect(ids.size).toBe(N);
+    });
+
     it('preserves method, path, query, body, headers', () => {
       const req = buildRPCRequest(
         'POST',
