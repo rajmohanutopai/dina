@@ -15,6 +15,8 @@
  */
 
 import { handlePostPublish, type PostPublishResult } from './post_publish';
+import { isVaultItemType } from '../../../core/src/vault/validation';
+import type { VaultItemType } from '../../../core/src/vault/validation';
 import {
   classifyDeterministic,
   type ClassificationResult as SilenceResult,
@@ -156,9 +158,11 @@ async function handlePostPublishEvent(input: EventInput): Promise<EventResult> {
     return { event: 'post_publish', handled: false, error: 'id and summary are required' };
   }
 
+  const rawType = String(type ?? 'note');
+  const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
   const result: PostPublishResult = await handlePostPublish({
     id: String(id),
-    type: String(type ?? 'note'),
+    type: itemType,
     summary: String(summary),
     body: String(body ?? ''),
     timestamp: Number(timestamp ?? Date.now()),

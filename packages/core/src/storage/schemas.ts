@@ -175,7 +175,7 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         run_id TEXT,
         progress_note TEXT,
         lease_expires_at INTEGER,
-        origin TEXT CHECK (origin IN ('','telegram','api','d2d','admin','system','cli')),
+        origin TEXT CHECK (origin IN ('','telegram','api','d2d','admin','system','cli','dinamobile')),
         session_name TEXT,
         idempotency_key TEXT,
         expires_at INTEGER,

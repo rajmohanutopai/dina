@@ -25,6 +25,8 @@ import { selectPersonaRich } from '../routing/persona_selector';
 import { generateL0 } from '../enrichment/l0_deterministic';
 import { scoreSender } from '../trust/scorer';
 import { listContacts, getContact } from '../../../core/src/contacts/directory';
+import { isVaultItemType } from '../../../core/src/vault/validation';
+import type { VaultItemType } from '../../../core/src/vault/validation';
 import { handlePostPublish } from '../pipeline/post_publish';
 import { processEvent } from '../pipeline/event_processor';
 import {
@@ -455,9 +457,16 @@ export async function runStagingDrainTick(
       // `result.postPublish.errors` for telemetry.
       try {
         const primaryPersona = personas[0] ?? 'general';
+        // The vault validator already accepted the row on store
+        // (validateVaultItem rejects unknown types), so a SQL value that
+        // reaches us here must be a real VaultItemType. Narrow at the
+        // boundary instead of casting blindly — if someone bypasses the
+        // validator, post-publish gets 'note' rather than crashing.
+        const rawType = pickString('type');
+        const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
         const postResult = await handlePostPublish({
           id: itemId,
-          type: pickString('type'),
+          type: itemType,
           summary: pickString('summary'),
           body: pickString('body'),
           timestamp: originalTimestamp > 0 ? originalTimestamp : Date.now(),

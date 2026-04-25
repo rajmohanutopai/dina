@@ -48,7 +48,11 @@ describe('Post-Publish Handler', () => {
       // Create an item with a deadline that event_extractor can detect
       await handlePostPublish({
         id: 'item-003',
-        type: 'invoice',
+        // 'invoice' isn't a real vault item type — invoices ingest as
+        // 'email' rows whose body mentions the invoice. The test was
+        // using a fake value that the vault validator would have
+        // rejected; tightening the type caught it.
+        type: 'email',
         summary: 'Invoice due January 15',
         body: 'Payment due by January 15, 2027',
         timestamp: Date.now(),
@@ -163,10 +167,13 @@ describe('Post-Publish Handler', () => {
 
   describe('error resilience', () => {
     it('never throws — catches all internal errors', async () => {
-      // Even with bad data, should not throw
+      // Even with bad data, should not throw. We still pass a valid
+      // VaultItemType because the strict type forbids ''; the
+      // resilience this test checks is the post-publish branch on
+      // empty id/summary/body, not invalid type.
       const result = await handlePostPublish({
         id: '',
-        type: '',
+        type: 'note',
         summary: '',
         body: '',
         timestamp: 0,

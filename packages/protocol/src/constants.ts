@@ -99,6 +99,48 @@ export type D2DMessageType =
   | typeof MSG_TYPE_SERVICE_QUERY
   | typeof MSG_TYPE_SERVICE_RESPONSE;
 
+/**
+ * Types that the protocol guarantees are NEVER stored in the vault
+ * (request/response transports + presence beacons). The set is part of
+ * the wire contract — receivers MUST drop these from staging.
+ */
+export type EphemeralD2DType =
+  | typeof MSG_TYPE_PRESENCE_SIGNAL
+  | typeof MSG_TYPE_SERVICE_QUERY
+  | typeof MSG_TYPE_SERVICE_RESPONSE;
+
+/**
+ * Types that DO persist into the vault. Computed from `D2DMessageType`
+ * minus `EphemeralD2DType` so adding a new V1 type forces a compile-time
+ * decision — either list it as ephemeral, or register a vault mapping
+ * for it. No silent fall-through.
+ */
+export type StorableD2DType = Exclude<D2DMessageType, EphemeralD2DType>;
+
+// ─── D2D scenarios (sharing-policy buckets) ──────────────────────────────
+//
+// Every V1 message type belongs to exactly one scenario. Sharing policies
+// are stored per-(contact, scenario) — adding a new scenario is a wire
+// concern because partner Home Nodes must agree on what the user has
+// granted. Each language port (Go: `domain/message.go`, Rust/Swift/...)
+// must mirror this list and the message-type → scenario mapping.
+
+/**
+ * The full set of D2D scenario names. Frozen as a const tuple so
+ * {@link D2DScenario} stays a strict literal union.
+ */
+export const D2D_SCENARIOS = [
+  'presence',
+  'coordination',
+  'social',
+  'safety',
+  'trust',
+  'service',
+] as const;
+
+/** Strict union type for D2D scenario names. */
+export type D2DScenario = (typeof D2D_SCENARIOS)[number];
+
 // ─── D2D size + TTL limits ───────────────────────────────────────────────
 
 /** Maximum D2D message body size in bytes (256 KiB). Core enforces on ingress. */

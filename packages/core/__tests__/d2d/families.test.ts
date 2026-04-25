@@ -13,6 +13,7 @@ import {
   shouldStore,
   alwaysPasses,
 } from '../../src/d2d/families';
+import { VALID_VAULT_ITEM_TYPES } from '../../src/vault/validation';
 import {
   D2D_V1_MESSAGE_TYPES,
   D2D_MEMORY_TYPE_MAP,
@@ -80,10 +81,51 @@ describe('D2D V1 Message Families', () => {
       expect(mapToVaultItemType('trust.vouch.request')).toBe('message');
     });
 
-    it('truly-unmapped types fall back to the original type', () => {
-      // safety.alert is in the always-pass set but has no vault-type
-      // override; it should round-trip its own name to the vault.
-      expect(mapToVaultItemType('safety.alert')).toBe('safety.alert');
+    it('safety.alert maps to the generic "message" vault type', () => {
+      // Caught by the contract test below: safety.alert is storable but
+      // has no dedicated vault item type. Pin to 'message' so the drain
+      // can persist it. The original D2D type is preserved in staging
+      // metadata for audit / classification.
+      expect(mapToVaultItemType('safety.alert')).toBe('message');
+    });
+  });
+
+  /**
+   * Contract: every storable D2D type lands in a valid vault item type.
+   *
+   * This catches Bug #1 ("D2D-to-reminder pipeline silently halted at
+   * drain because coordination.request isn't in VALID_VAULT_ITEM_TYPES")
+   * for the WHOLE class of failure rather than the one type we knew
+   * about. Add a new V1 message type without registering its vault
+   * mapping → this test fails immediately, not in a simulator weeks
+   * later.
+   *
+   * Why a contract test: scenario tests cover the cases the engineer
+   * happened to think of. Bug #1 lived in the gap between two parallel
+   * data structures (`V1_TYPES` and `VAULT_TYPE_MAP`); no scenario test
+   * was going to find it. Iterating the enum is cheap and exhaustive.
+   */
+  describe('contract: V1 storable types ⊆ VALID_VAULT_ITEM_TYPES', () => {
+    const ephemeral = new Set<string>(D2D_EPHEMERAL_MESSAGE_TYPES);
+    const storable = D2D_V1_MESSAGE_TYPES.filter((t) => !ephemeral.has(t));
+
+    for (const msgType of storable) {
+      it(`mapToVaultItemType("${msgType}") returns a vault-valid type`, () => {
+        const vaultType = mapToVaultItemType(msgType);
+        expect(vaultType).not.toBeNull();
+        expect(VALID_VAULT_ITEM_TYPES.has(vaultType!)).toBe(true);
+      });
+    }
+
+    it('shouldStore() and mapToVaultItemType() agree about which types persist', () => {
+      // Drift detector: if a type says shouldStore=true but the vault
+      // mapping returns null (or vice versa) the drain will either
+      // claim-then-fail or silently drop messages. Lock them together.
+      for (const msgType of D2D_V1_MESSAGE_TYPES) {
+        const stores = shouldStore(msgType);
+        const vaultType = mapToVaultItemType(msgType);
+        expect(vaultType !== null).toBe(stores);
+      }
     });
   });
 

@@ -253,6 +253,35 @@ Default port numbers (`DEFAULT_CORE_PORT = 8100`,
 defaults only; operators may override via env vars. Your port must
 default to the same values so unconfigured peers find each other.
 
+### 9.1 D2D scenarios (L1 requirement)
+
+`D2D_SCENARIOS` declares the six policy buckets every D2D message
+type belongs to:
+
+```
+['presence', 'coordination', 'social', 'safety', 'trust', 'service']
+```
+
+Sharing policies are stored per-(contact, scenario), so partner
+Home Nodes MUST agree on the namespace. Each language port mirrors
+the list and the message-type → scenario mapping (Go:
+`domain/message.go::MsgTypeToScenario`). Adding a scenario is a
+wire break — bump the protocol minor and update §15.
+
+Mapping (frozen):
+
+| Message type            | Scenario       |
+|-------------------------|----------------|
+| `presence.signal`       | `presence`     |
+| `coordination.request`  | `coordination` |
+| `coordination.response` | `coordination` |
+| `social.update`         | `social`       |
+| `safety.alert`          | `safety`       |
+| `trust.vouch.request`   | `trust`        |
+| `trust.vouch.response`  | `trust`        |
+| `service.query`         | `service`      |
+| `service.response`      | `service`      |
+
 ## 10. Validators (L2 requirement)
 
 `validators.ts` exports the three structural validators:

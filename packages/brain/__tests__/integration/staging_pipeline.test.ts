@@ -203,7 +203,7 @@ describe('Staging Pipeline End-to-End Integration', () => {
     it('item with event signal triggers post-publish handler', async () => {
       const itemData = {
         id: 'item-birthday',
-        type: 'email',
+        type: 'email' as const,
         summary: 'Birthday party on December 25',
         body: 'Join us for the celebration',
         timestamp: Date.now(),

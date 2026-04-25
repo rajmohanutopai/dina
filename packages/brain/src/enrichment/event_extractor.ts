@@ -21,12 +21,54 @@
  * Source: brain/tests/test_event_extractor.py
  */
 
+/**
+ * The set of `kind` values the extractor + planner know how to handle.
+ *
+ * Promoted to a `const` tuple so we have a single source of truth for
+ * both the type-level union ({@link ExtractedEventKind}) and the
+ * runtime guard ({@link isExtractedEventKind}). Any code path that
+ * receives a `kind` from outside (LLM output, persisted reminder row)
+ * MUST validate against this guard before propagating — without it,
+ * an unknown kind silently flows through `prioritizeKind` /
+ * `consolidateReminders` / UI renderers and produces undefined
+ * behavior.
+ */
+export const EXTRACTED_EVENT_KINDS = [
+  'payment_due',
+  'appointment',
+  'birthday',
+  'deadline',
+  'arrival',
+  'custom',
+] as const;
+
+/** Strict union of all kinds the extractor + planner emit. */
+export type ExtractedEventKind = (typeof EXTRACTED_EVENT_KINDS)[number];
+
+const EXTRACTED_EVENT_KIND_SET = new Set<string>(EXTRACTED_EVENT_KINDS);
+
+/**
+ * Runtime guard for arbitrary string → {@link ExtractedEventKind}.
+ * Use at trust boundaries (LLM output, network, persistence) — the
+ * type cast on its own gives you no actual safety.
+ */
+export function isExtractedEventKind(value: unknown): value is ExtractedEventKind {
+  return typeof value === 'string' && EXTRACTED_EVENT_KIND_SET.has(value);
+}
+
 export interface ExtractedEvent {
   fire_at: string; // ISO 8601 timestamp for reminder
   message: string; // Human-readable reminder text
-  kind: 'payment_due' | 'appointment' | 'birthday' | 'deadline' | 'custom';
+  kind: ExtractedEventKind;
   source_item_id: string;
 }
+
+/** Lead time before arrival when the reminder fires (e.g. arrive 19:30 → notify 19:25). */
+export const ARRIVAL_LEAD_MS = 5 * 60 * 1000;
+/** Floor — never schedule a reminder less than 60s out, even for imminent arrivals. */
+const ARRIVAL_MIN_FUTURE_MS = 60 * 1000;
+/** Sanity ceiling on relative time so "in 9999 minutes" doesn't poison reminders. */
+const RELATIVE_TIME_MAX_MINUTES = 24 * 60;
 
 export interface ExtractionInput {
   item_id: string;
@@ -99,6 +141,27 @@ const DUE_DATE_PATTERN = /\bdue\s+(?:by\s+|date\s*:\s*)?(\w+\s+\d{1,2}(?:\s*,?\s
 const TIME_PATTERN = /\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i;
 
 /**
+ * Matches arrival language: "coming", "arriving", "on my way", "be there",
+ * "reaching", "I'll be there", "on the way".
+ *
+ * Used by the relative-time arrival path — paired with RELATIVE_TIME_PATTERN
+ * to detect "I am coming in 15 min" without a calendar date.
+ */
+const ARRIVAL_PATTERN =
+  /\b(?:coming|arriving|arrive|on\s+(?:my|the)\s+way|be\s+there|reach(?:ing)?|i'?ll\s+be\s+there|i\s+am\s+coming|i'?m\s+coming)\b/i;
+
+/**
+ * Matches relative-time expressions for arrival:
+ *   "in 15 minutes", "in 1 hour", "10 min away", "30 mins away".
+ *
+ * Captures: [1] number, [2] unit. Hours convert to minutes downstream.
+ */
+const RELATIVE_TIME_IN_PATTERN =
+  /\bin\s+(\d{1,4})\s*(min|mins|minute|minutes|hr|hrs|hour|hours)\b/i;
+const RELATIVE_TIME_AWAY_PATTERN =
+  /\b(\d{1,4})\s*(min|mins|minute|minutes|hr|hrs|hour|hours)\s+away\b/i;
+
+/**
  * Combined keyword gate — must match at least one for extraction to proceed.
  * This is the first gate in the dual-gate logic.
  */
@@ -153,9 +216,17 @@ const MONTH_ORDINAL_PATTERN = new RegExp(
  *
  * Dual-gate logic: requires BOTH an event keyword AND a parseable date.
  * Returns empty array if either gate fails.
+ *
+ * Special path: arrival events ("I am coming in 15 minutes") use relative
+ * time instead of a calendar date — they bypass the date-keyword gate and
+ * are extracted via {@link extractArrivalEvent} before the date logic runs.
  */
 export function extractEvents(input: ExtractionInput): ExtractedEvent[] {
   const text = `${input.summary} ${input.body}`;
+
+  // Path A: arrival events (relative-time, no calendar date required)
+  const arrival = extractArrivalEvent(input, text);
+  if (arrival) return [arrival];
 
   // Gate 1: Must have at least one event keyword
   if (!hasEventKeyword(text)) return [];
@@ -217,6 +288,69 @@ export function extractBirthdayDate(text: string): string | null {
 
   // Return just the date portion (YYYY-MM-DD)
   return dates[0].isoDate.split('T')[0];
+}
+
+/**
+ * Parse a relative-time expression ("in 15 min", "20 mins away") to minutes.
+ *
+ * @returns total minutes (hours expanded), or null when no match.
+ */
+export function parseRelativeMinutes(text: string): number | null {
+  const match =
+    RELATIVE_TIME_IN_PATTERN.exec(text) ?? RELATIVE_TIME_AWAY_PATTERN.exec(text);
+  if (!match) return null;
+
+  const n = parseInt(match[1], 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+
+  const unit = match[2].toLowerCase();
+  const minutes = unit.startsWith('h') ? n * 60 : n;
+  if (minutes > RELATIVE_TIME_MAX_MINUTES) return null;
+  return minutes;
+}
+
+/**
+ * Extract an arrival event from text + arrive-language + relative time.
+ *
+ * Examples that trigger:
+ *   "I am coming in 15 minutes"
+ *   "On my way — be there in 30 mins"
+ *   "Arriving in 1 hour"
+ *   "10 mins away"
+ *
+ * Reminder semantics:
+ *   - arrival_at = now + relative_minutes
+ *   - fire_at    = max(now + 1min, arrival_at - 5min)
+ *
+ * Why `now` and not `input.timestamp`: the message body says "in 15
+ * minutes" relative to the moment it was sent. The pipeline runs within
+ * seconds of receive, so wall-clock now is the right reference. Using
+ * the staging timestamp would slip the reminder by however long the
+ * drain queue was backed up.
+ */
+function extractArrivalEvent(
+  input: ExtractionInput,
+  text: string,
+): ExtractedEvent | null {
+  if (!ARRIVAL_PATTERN.test(text)) return null;
+  const minutes = parseRelativeMinutes(text);
+  if (minutes === null) return null;
+
+  const now = Date.now();
+  const arrivalMs = now + minutes * 60 * 1000;
+  const targetMs = arrivalMs - ARRIVAL_LEAD_MS;
+  // Floor to "now + 1 min" so very-imminent arrivals still produce a
+  // reminder instead of being dropped by the past-date filter in the
+  // planner. The user is more useful with a slightly-late notification
+  // than with no notification at all.
+  const dueMs = Math.max(targetMs, now + ARRIVAL_MIN_FUTURE_MS);
+
+  return {
+    fire_at: new Date(dueMs).toISOString(),
+    message: input.summary?.trim() || `Arrival in about ${minutes} min`,
+    kind: 'arrival',
+    source_item_id: input.item_id,
+  };
 }
 
 // ---------------------------------------------------------------

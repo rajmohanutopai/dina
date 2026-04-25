@@ -360,7 +360,7 @@ Related vault context (for enriching reminder messages):
 Create reminders for this event. For each reminder, specify:
 - due_at: Unix timestamp in milliseconds for when the reminder should fire
 - message: What to remind about — enrich with vault context when available
-- kind: One of: birthday, appointment, payment_due, deadline, reminder
+- kind: One of: birthday, appointment, payment_due, deadline, arrival, reminder
 
 Respond with ONLY a JSON object:
 {"reminders": [{"due_at": <unix_ms>, "message": "<reminder text>", "kind": "<kind>"}]}

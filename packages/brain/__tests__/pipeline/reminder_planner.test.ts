@@ -84,6 +84,39 @@ describe('Reminder Planner', () => {
       expect(result.llmRefined).toBe(false);
       expect(result.vaultContextUsed).toBe(0);
     });
+
+    it('"I am coming in 15 minutes" → arrival reminder fires ~10 min from now', async () => {
+      // Scenario: Alonso D2Ds Sancho saying he's arriving. Sancho's
+      // post-publish pipeline should auto-plan a reminder 5 minutes
+      // before the stated arrival time so Sancho has a beat to
+      // prepare. This is the deterministic-only path (no LLM).
+      const before = Date.now();
+      const result = await planReminders({
+        itemId: 'item-arrive',
+        type: 'message',
+        summary: 'I am coming in 15 minutes',
+        body: '',
+        timestamp: before,
+        persona: 'general',
+      });
+      const after = Date.now();
+
+      expect(result.eventsDetected).toBe(1);
+      expect(result.remindersCreated).toBe(1);
+      expect(result.reminders).toHaveLength(1);
+
+      const reminder = result.reminders[0];
+      expect(reminder.kind).toBe('arrival');
+      expect(reminder.message).toBe('I am coming in 15 minutes');
+      expect(reminder.persona).toBe('general');
+      expect(reminder.source_item_id).toBe('item-arrive');
+
+      // due_at ≈ now + 10 min (15 min arrival - 5 min lead).
+      const expectedMin = before + 10 * 60 * 1000 - 1000;
+      const expectedMax = after + 10 * 60 * 1000 + 1000;
+      expect(reminder.due_at).toBeGreaterThanOrEqual(expectedMin);
+      expect(reminder.due_at).toBeLessThanOrEqual(expectedMax);
+    });
   });
 
   describe('planReminders — LLM-assisted', () => {
@@ -117,6 +150,35 @@ describe('Reminder Planner', () => {
         persona: 'general',
       });
       expect(result.llmRefined).toBe(false);
+    });
+
+    it('unknown LLM kind folds to "custom" — does not poison downstream consumers', async () => {
+      // Contract: the LLM is the trust boundary. Anything outside
+      // EXTRACTED_EVENT_KINDS (e.g. an LLM hallucinating "follow_up",
+      // "task", "ping") MUST be normalized before it reaches the
+      // reminder service. Otherwise prioritizeKind / consolidateReminders
+      // / UI rendering all branch on `kind` and would behave undefined.
+      // Folding to 'custom' preserves the user-visible reminder while
+      // taking no behavioral risk.
+      registerReminderLLM(
+        async () =>
+          '{"reminders":[{"message":"odd kind reminder","due_at":' +
+          (Date.now() + 86_400_000) +
+          ',"kind":"follow_up"}]}',
+      );
+      const result = await planReminders({
+        itemId: 'item-kind-guard',
+        type: 'note',
+        summary: 'something',
+        body: '',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+
+      expect(result.remindersCreated).toBeGreaterThanOrEqual(1);
+      const odd = result.reminders.find((r) => r.message === 'odd kind reminder');
+      expect(odd).toBeDefined();
+      expect(odd!.kind).toBe('custom');
     });
 
     it('LLM duplicates are skipped', async () => {

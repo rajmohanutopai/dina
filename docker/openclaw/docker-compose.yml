@@ -63,6 +63,7 @@ services:
       DINA_MSGBOX_URL:         ${DINA_MSGBOX_URL:-}
       DINA_HOMENODE_DID:       ${DINA_HOMENODE_DID:-}
       DINA_TRANSPORT:          ${DINA_TRANSPORT:-auto}
+      DINA_MSGBOX_TRACE:       ${DINA_MSGBOX_TRACE:-}
     # Optional: uncomment to mount gog (Gmail) auth store.
     # volumes:
     #   - ${GOG_AUTH_PATH:-./gog-auth}:/root/.config/gogcli

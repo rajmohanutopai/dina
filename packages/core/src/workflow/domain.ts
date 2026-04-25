@@ -77,6 +77,21 @@ export const WorkflowTaskPriority = Object.freeze({
  * Allowed values for the `origin` field — the `origin` column carries a
  * CHECK constraint in SQL that matches this list. Include the empty string
  * for legacy rows that predate the constraint.
+ *
+ * Channel meanings:
+ *   ''           — legacy / unset (kept for back-compat on old rows)
+ *   'telegram'   — bot input (legacy Python brain only — not used by HNL)
+ *   'api'        — generic third-party HTTP caller, no specific UX channel
+ *   'd2d'        — task originated from another Dina node's D2D message
+ *   'admin'      — `dina-admin` CLI on the Home Node host
+ *   'system'     — internal scheduler / housekeeping
+ *   'cli'        — paired remote CLI device
+ *   'dinamobile' — the mobile app (iOS / Android Expo client) — the
+ *                  primary mobile-Home-Node UX channel. Distinct from
+ *                  'api' so audit + future routing can attribute tasks
+ *                  to the mobile UX (mobile has no public IP, so the
+ *                  task hops through msgbox to the agent runner —
+ *                  origin lets us log that path explicitly).
  */
 export const AllowedOrigins: readonly string[] = Object.freeze([
   '',
@@ -86,6 +101,7 @@ export const AllowedOrigins: readonly string[] = Object.freeze([
   'admin',
   'system',
   'cli',
+  'dinamobile',
 ]);
 
 // ---------------------------------------------------------------------------

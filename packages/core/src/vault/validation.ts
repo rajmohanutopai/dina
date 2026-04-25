@@ -7,12 +7,20 @@
  * item fields. Without them, any arbitrary string is accepted.
  */
 
-/** Valid vault item types — 22 values matching Go's CHECK constraint,
- *  plus `user_memory` for items the user types via /remember (the
- *  staging pipeline uses this to tag direct user-authored memories
- *  so they can be distinguished from ingested mail/events/etc. in
- *  later retrieval + density analysis). */
-export const VALID_VAULT_ITEM_TYPES = new Set([
+/**
+ * Valid vault item types — 22 values matching Go's CHECK constraint,
+ * plus `user_memory` for items the user types via /remember (the
+ * staging pipeline uses this to tag direct user-authored memories
+ * so they can be distinguished from ingested mail/events/etc. in
+ * later retrieval + density analysis).
+ *
+ * Declared as a `const` tuple so {@link VaultItemType} is a strict
+ * union of literals — callers building a vault row, or registering
+ * a D2D-type → vault-type mapping, get a compile-time error for any
+ * value not in this list. The runtime Set is derived from the same
+ * tuple so the two cannot drift.
+ */
+export const VAULT_ITEM_TYPES = [
   'email',
   'message',
   'event',
@@ -37,10 +45,39 @@ export const VALID_VAULT_ITEM_TYPES = new Set([
   'medical_note',
   'trust_attestation',
   'user_memory',
-]);
+] as const;
 
-/** Valid sender_trust values — 6 values from Go. */
-export const VALID_SENDER_TRUST = new Set([
+/** Strict union type for vault item type values. */
+export type VaultItemType = (typeof VAULT_ITEM_TYPES)[number];
+
+/**
+ * Runtime-checkable Set of valid vault item types.
+ *
+ * Typed `Set<string>` so the validator can call `.has(unknownString)`
+ * on untrusted input from the wire. The single source of truth for the
+ * *allowed values* is the {@link VAULT_ITEM_TYPES} tuple — `Set<string>`
+ * just makes the query side ergonomic.
+ */
+export const VALID_VAULT_ITEM_TYPES = new Set<string>(VAULT_ITEM_TYPES);
+
+/**
+ * Runtime guard for arbitrary value → {@link VaultItemType}.
+ *
+ * Use at row→domain boundaries (SQL rows come back as `string`, but
+ * the validator already accepted them on write — this is the narrowing
+ * point that lets downstream code use the strict union without an
+ * unchecked cast).
+ */
+export function isVaultItemType(value: unknown): value is VaultItemType {
+  return typeof value === 'string' && VALID_VAULT_ITEM_TYPES.has(value);
+}
+
+// ─── Vault enum tuples → union types ──────────────────────────────────
+// All vault validation enums follow the same pattern as VAULT_ITEM_TYPES:
+// const tuple is the source of truth → union type for builders →
+// runtime Set<string> for validators that take untrusted input.
+
+export const SENDER_TRUST_VALUES = [
   'self',
   'contact_ring1',
   'contact_ring2',
@@ -48,42 +85,57 @@ export const VALID_SENDER_TRUST = new Set([
   'unknown',
   'marketing',
   '',
-]);
+] as const;
+export type SenderTrust = (typeof SENDER_TRUST_VALUES)[number];
+/** Valid sender_trust values — 7 values from Go. */
+export const VALID_SENDER_TRUST = new Set<string>(SENDER_TRUST_VALUES);
 
-/** Valid source_type values — 6 values from Go. */
-export const VALID_SOURCE_TYPE = new Set([
+export const SOURCE_TYPE_VALUES = [
   'self',
   'contact',
   'service',
   'unknown',
   'marketing',
   '',
-]);
+] as const;
+export type SourceType = (typeof SOURCE_TYPE_VALUES)[number];
+/** Valid source_type values — 6 values from Go. */
+export const VALID_SOURCE_TYPE = new Set<string>(SOURCE_TYPE_VALUES);
 
+export const CONFIDENCE_VALUES = ['high', 'medium', 'low', 'unverified', ''] as const;
+export type Confidence = (typeof CONFIDENCE_VALUES)[number];
 /** Valid confidence levels — 5 values from Go. */
-export const VALID_CONFIDENCE = new Set(['high', 'medium', 'low', 'unverified', '']);
+export const VALID_CONFIDENCE = new Set<string>(CONFIDENCE_VALUES);
 
-/** Valid retrieval policies — 5 values from Go. */
-export const VALID_RETRIEVAL_POLICY = new Set([
+export const RETRIEVAL_POLICY_VALUES = [
   'normal',
   'caveated',
   'quarantine',
   'briefing_only',
   '',
-]);
+] as const;
+export type RetrievalPolicy = (typeof RETRIEVAL_POLICY_VALUES)[number];
+/** Valid retrieval policies — 5 values from Go. */
+export const VALID_RETRIEVAL_POLICY = new Set<string>(RETRIEVAL_POLICY_VALUES);
 
-/** Valid enrichment statuses — matching Go + mobile enrichment pipeline. */
-export const VALID_ENRICHMENT_STATUS = new Set([
+export const ENRICHMENT_STATUS_VALUES = [
   'pending',
   'processing',
   'l0_complete',
   'ready',
   'failed',
   '',
-]);
+] as const;
+export type EnrichmentStatus = (typeof ENRICHMENT_STATUS_VALUES)[number];
+/** Valid enrichment statuses — matching Go + mobile enrichment pipeline. */
+export const VALID_ENRICHMENT_STATUS = new Set<string>(ENRICHMENT_STATUS_VALUES);
 
 /** Retrieval policies included in default search results. */
-export const SEARCHABLE_RETRIEVAL_POLICIES = new Set(['normal', 'caveated', '']);
+export const SEARCHABLE_RETRIEVAL_POLICIES = new Set<string>([
+  'normal',
+  'caveated',
+  '',
+]);
 
 /** Maximum vault item body size in bytes (10 MiB). */
 export const MAX_VAULT_ITEM_SIZE = 10 * 1024 * 1024;

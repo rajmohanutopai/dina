@@ -15,6 +15,7 @@
 import { planReminders } from './reminder_planner';
 import { getContact, updateContact } from '../../../core/src/contacts/directory';
 import { extractIdentityLinks, type IdentityLink } from './identity_extraction';
+import type { VaultItemType } from '../../../core/src/vault/validation';
 
 export interface PostPublishResult {
   remindersCreated: number;
@@ -32,7 +33,7 @@ export interface PostPublishResult {
  */
 export async function handlePostPublish(item: {
   id: string;
-  type: string;
+  type: VaultItemType;
   summary: string;
   body: string;
   timestamp: number;

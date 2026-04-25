@@ -175,6 +175,9 @@ class DinaClient:
         headers["X-Timestamp"] = ts
         headers["X-Nonce"] = nonce
         headers["X-Signature"] = sig
+        # X-Request-ID is the per-client trace correlation header — same
+        # for every call this client makes, so logs can be grouped to one
+        # CLI invocation. Distinct from the per-call RPC envelope ID below.
         headers["X-Request-ID"] = self._req_id
 
         if self._verbose:
@@ -188,9 +191,17 @@ class DinaClient:
         full_path = f"{path}?{query}" if query else path
         body_str = body_bytes.decode("utf-8") if body_bytes else None
 
+        # NOTE: do NOT pass request_id=self._req_id here. MsgBoxTransport uses
+        # its `request_id` argument as both the RPC envelope ID and the
+        # idempotency cache key on Core (rpc_idempotency.go keyed on
+        # from_did + request_id). Passing the per-client ID would make the
+        # first response stick — every subsequent claim/mark_running/progress
+        # call would get the cached first response back, never executing.
+        # Symptom: agent-daemon "claims" forever, real ops never land.
+        # Let MsgBoxTransport.request generate a fresh UUID per call.
         try:
             tr = self._transport.request(
-                method, full_path, headers, body=body_str, request_id=self._req_id,
+                method, full_path, headers, body=body_str,
             )
         except TransportError as exc:
             raise DinaClientError(

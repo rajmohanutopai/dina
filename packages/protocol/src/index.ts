@@ -64,8 +64,16 @@ export {
   NOTIFY_PRIORITY_FIDUCIARY,
   NOTIFY_PRIORITY_SOLICITED,
   NOTIFY_PRIORITY_ENGAGEMENT,
+  D2D_SCENARIOS,
 } from './constants';
-export type { DinaServiceType, D2DMessageType, NotifyPriority } from './constants';
+export type {
+  DinaServiceType,
+  D2DMessageType,
+  EphemeralD2DType,
+  StorableD2DType,
+  D2DScenario,
+  NotifyPriority,
+} from './constants';
 
 // Canonical signing helper (pure — no crypto backend).
 export { buildCanonicalPayload } from './canonical_sign';

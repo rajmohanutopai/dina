@@ -409,6 +409,8 @@ func (c *MsgBoxClient) sendRPCResponse(env *rpcEnvelopeIn, resp *RPCInnerRespons
 	conn := c.conn
 	c.mu.Unlock()
 	if conn == nil {
+		slog.Warn("msgbox_client.send_response_no_conn",
+			"id", env.ID, "to", env.FromDID, "size", len(data))
 		return
 	}
 	parentCtx := c.ctx
@@ -418,7 +420,8 @@ func (c *MsgBoxClient) sendRPCResponse(env *rpcEnvelopeIn, resp *RPCInnerRespons
 	ctx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
 	defer cancel()
 	if err := conn.Write(ctx, websocket.MessageBinary, data); err != nil {
-		slog.Warn("msgbox_client.send_response_failed", "error", err)
+		slog.Warn("msgbox_client.send_response_failed",
+			"id", env.ID, "to", env.FromDID, "size", len(data), "error", err)
 	}
 }
 
@@ -441,10 +444,29 @@ func (c *MsgBoxClient) StartRPCWorkers(ctx context.Context) {
 	c.rpcPool.Start(ctx, func(task *RPCTask) *RPCInnerResponse {
 		env := &rpcEnvelopeIn{ID: task.RequestID, FromDID: task.FromDID}
 
+		// Peek inner method+path for diagnostic logging — silent failures
+		// in the bridge / response-send leg used to be impossible to trace
+		// without re-instrumenting per incident. Log once per task with
+		// (id, from, method, path, bridge_ms, send_ms, status).
+		var innerMethod, innerPath string
+		{
+			var peek struct {
+				Method string `json:"method"`
+				Path   string `json:"path"`
+			}
+			_ = json.Unmarshal(task.InnerJSON, &peek)
+			innerMethod, innerPath = peek.Method, peek.Path
+		}
+		t0 := time.Now()
+
 		// Execute through the bridge (same as direct HTTP).
 		resp, err := c.rpcBridge.HandleInnerRequest(task.InnerJSON, task.Ctx)
+		bridgeMs := time.Since(t0).Milliseconds()
 		if err != nil {
-			slog.Warn("msgbox_client.rpc_bridge_error", "id", task.RequestID, "error", err)
+			slog.Warn("msgbox_client.rpc_bridge_error",
+				"id", task.RequestID, "from", task.FromDID,
+				"method", innerMethod, "path", innerPath,
+				"bridge_ms", bridgeMs, "error", err)
 			// Must send the error response — the pool discards our return value,
 			// so returning without sending leaves the CLI hanging forever.
 			c.sendRPCError(env, 400, err.Error())
@@ -458,7 +480,17 @@ func (c *MsgBoxClient) StartRPCWorkers(ctx context.Context) {
 		}
 
 		// Send response back to CLI.
+		t1 := time.Now()
 		c.sendRPCResponse(env, resp)
+		sendMs := time.Since(t1).Milliseconds()
+
+		// Always log a one-liner per RPC so slow paths or stalled responses
+		// stand out. Existing logs only fire on errors.
+		slog.Info("msgbox_client.rpc_handled",
+			"id", task.RequestID, "from", task.FromDID,
+			"method", innerMethod, "path", innerPath,
+			"status", resp.Status,
+			"bridge_ms", bridgeMs, "send_ms", sendMs)
 
 		return resp
 	})

@@ -14,6 +14,8 @@ import { classifyPriority } from '../guardian/silence';
 import { handlePostPublish } from '../pipeline/post_publish';
 import { reason } from '../pipeline/chat_reasoning';
 import { drainForPersona } from '../../../core/src/staging/service';
+import { isVaultItemType } from '../../../core/src/vault/validation';
+import type { VaultItemType } from '../../../core/src/vault/validation';
 
 export interface ProcessEvent {
   type: string;
@@ -81,9 +83,15 @@ export async function processEvent(event: ProcessEvent): Promise<ProcessResult> 
 
     case 'post_publish': {
       const item = event.payload;
+      // Same row→domain narrowing as the staging drain: post_publish
+      // takes a strict VaultItemType. Unknown types fall back to 'note'
+      // (event records that survive even when the upstream classifier
+      // emits something off-list).
+      const rawType = String(item.type ?? '');
+      const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
       const result = await handlePostPublish({
         id: String(item.id ?? ''),
-        type: String(item.type ?? ''),
+        type: itemType,
         summary: String(item.summary ?? ''),
         body: String(item.body ?? ''),
         timestamp: Number(item.timestamp ?? Date.now()),

@@ -221,6 +221,13 @@ export function updateContact(
 
   contact.updatedAt = Date.now();
 
+  // GAP-PERSIST-01 write-through (same contract as add/delete): the
+  // mutated row must reach SQL, otherwise renames + trust changes
+  // disappear on next boot. Bug #2-class — caught by the cache↔SQL
+  // parity contract test in `__tests__/contacts/directory.test.ts`.
+  const sqlRepo = getContactRepository();
+  if (sqlRepo) sqlRepo.update(did, updates);
+
   return contact;
 }
 
@@ -235,6 +242,16 @@ export function deleteContact(did: string): boolean {
   }
 
   contacts.delete(did);
+
+  // Mirror of the addContact write-through (line 124): the in-memory
+  // delete is not enough — without removing the SQL row, a subsequent
+  // re-add of the same DID hits "UNIQUE constraint failed: contacts.did"
+  // because hydrateContactDirectory replays the row on next boot too.
+  // Caught on the simulator: removed contacts came back after reload,
+  // and re-adding the same DID failed with the unique-constraint error.
+  const sqlRepo = getContactRepository();
+  if (sqlRepo) sqlRepo.remove(did);
+
   return true;
 }
 
@@ -262,6 +279,12 @@ export function addAlias(did: string, alias: string): void {
   aliasIndex.set(normalized, did);
   contact.aliases.push(alias.trim());
   contact.updatedAt = Date.now();
+
+  // GAP-PERSIST-01 write-through: aliases live in their own SQL table
+  // (`contact_aliases`) — without this call the alias survives the
+  // current process but vanishes on hydration after restart.
+  const sqlRepo = getContactRepository();
+  if (sqlRepo) sqlRepo.addAlias(did, normalized);
 }
 
 /** Remove an alias from a contact. */
@@ -273,6 +296,11 @@ export function removeAlias(did: string, alias: string): void {
   aliasIndex.delete(normalized);
   contact.aliases = contact.aliases.filter((a) => a.toLowerCase() !== normalized);
   contact.updatedAt = Date.now();
+
+  // GAP-PERSIST-01 write-through: same risk as addAlias — without the
+  // SQL delete, removed aliases reappear on next boot via hydration.
+  const sqlRepo = getContactRepository();
+  if (sqlRepo) sqlRepo.removeAlias(normalized);
 }
 
 /** Resolve a DID from an alias. Returns null if not found. */

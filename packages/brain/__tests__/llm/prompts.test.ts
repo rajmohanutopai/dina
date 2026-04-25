@@ -245,8 +245,10 @@ describe('Prompt Registry', () => {
   });
 
   describe('REMINDER_PLAN', () => {
-    it('contains event_date placeholder', () => {
-      expect(REMINDER_PLAN).toContain('{{event_date}}');
+    it('contains today placeholder', () => {
+      // Renamed from {{event_date}} → {{today}} when the prompt switched
+      // to "what is now" semantics (year-bump for past birthdays).
+      expect(REMINDER_PLAN).toContain('{{today}}');
     });
 
     it('defines reminder JSON output', () => {
@@ -268,6 +270,14 @@ describe('Prompt Registry', () => {
 
     it('includes consolidation rule', () => {
       expect(REMINDER_PLAN).toContain('Consolidation');
+    });
+
+    it('exposes arrival as a valid kind for the LLM to choose', () => {
+      // No per-scenario rule for lead time — we trust the reasoning
+      // model to pick a sensible fire time from the event content +
+      // vault context. Just expose the kind so the type system stays
+      // honest with what the deterministic extractor produces.
+      expect(REMINDER_PLAN).toContain('arrival');
     });
   });
 

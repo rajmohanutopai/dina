@@ -14,6 +14,10 @@ import {
   isValidReminderPayload,
   extractBirthdayDate,
   extractTime,
+  parseRelativeMinutes,
+  ARRIVAL_LEAD_MS,
+  isExtractedEventKind,
+  EXTRACTED_EVENT_KINDS,
 } from '../../src/enrichment/event_extractor';
 import type { ExtractionInput } from '../../src/enrichment/event_extractor';
 
@@ -515,5 +519,272 @@ describe('Event Extractor', () => {
       expect(events.length).toBeGreaterThanOrEqual(1);
       expect(events[0].fire_at).toContain('T09:00:00Z');
     });
+  });
+
+  describe('arrival events (relative time)', () => {
+    it('parses "in 15 minutes" → 15', () => {
+      expect(parseRelativeMinutes('I am coming in 15 minutes')).toBe(15);
+    });
+
+    it('parses "in 1 hour" → 60', () => {
+      expect(parseRelativeMinutes('be there in 1 hour')).toBe(60);
+    });
+
+    it('parses "in 2 hours" → 120', () => {
+      expect(parseRelativeMinutes('arriving in 2 hours')).toBe(120);
+    });
+
+    it('parses "10 mins away" → 10', () => {
+      expect(parseRelativeMinutes("I'm 10 mins away")).toBe(10);
+    });
+
+    it('parses "in 5 min" (short unit) → 5', () => {
+      expect(parseRelativeMinutes('on my way, in 5 min')).toBe(5);
+    });
+
+    it('rejects relative time over 24h sanity ceiling', () => {
+      // 25h = 1500 min — over the RELATIVE_TIME_MAX_MINUTES guard.
+      expect(parseRelativeMinutes('arriving in 25 hours')).toBeNull();
+    });
+
+    it('rejects zero / negative minutes', () => {
+      expect(parseRelativeMinutes('arriving in 0 minutes')).toBeNull();
+    });
+
+    it('returns null when no relative-time phrase', () => {
+      expect(parseRelativeMinutes('see you next week')).toBeNull();
+    });
+
+    it('"I am coming in 15 minutes" → arrival event with 5-min lead', () => {
+      const before = Date.now();
+      const input: ExtractionInput = {
+        item_id: 'arrive-001',
+        type: 'message',
+        timestamp: Math.floor(before / 1000),
+        summary: 'I am coming in 15 minutes',
+        body: '',
+      };
+      const events = extractEvents(input);
+      const after = Date.now();
+
+      expect(events).toHaveLength(1);
+      expect(events[0].kind).toBe('arrival');
+      expect(events[0].source_item_id).toBe('arrive-001');
+
+      // fire_at should be ~ now + 10min (15min arrival - 5min lead).
+      const fireAt = new Date(events[0].fire_at).getTime();
+      const expectedMin = before + 10 * 60 * 1000 - 1000; // -1s for fudge
+      const expectedMax = after + 10 * 60 * 1000 + 1000; //  +1s for fudge
+      expect(fireAt).toBeGreaterThanOrEqual(expectedMin);
+      expect(fireAt).toBeLessThanOrEqual(expectedMax);
+    });
+
+    it('"on my way, be there in 30 minutes" → 30 - 5 lead', () => {
+      const before = Date.now();
+      const events = extractEvents({
+        item_id: 'arrive-002',
+        type: 'message',
+        timestamp: Math.floor(before / 1000),
+        summary: 'on my way, be there in 30 minutes',
+        body: '',
+      });
+      const after = Date.now();
+
+      expect(events).toHaveLength(1);
+      expect(events[0].kind).toBe('arrival');
+      const fireAt = new Date(events[0].fire_at).getTime();
+      expect(fireAt).toBeGreaterThanOrEqual(before + 25 * 60 * 1000 - 1000);
+      expect(fireAt).toBeLessThanOrEqual(after + 25 * 60 * 1000 + 1000);
+    });
+
+    it('"arriving in 1 hour" → 60 - 5 = 55 minutes from now', () => {
+      const before = Date.now();
+      const events = extractEvents({
+        item_id: 'arrive-003',
+        type: 'message',
+        timestamp: Math.floor(before / 1000),
+        summary: 'arriving in 1 hour',
+        body: '',
+      });
+      const after = Date.now();
+
+      expect(events).toHaveLength(1);
+      const fireAt = new Date(events[0].fire_at).getTime();
+      expect(fireAt).toBeGreaterThanOrEqual(before + 55 * 60 * 1000 - 1000);
+      expect(fireAt).toBeLessThanOrEqual(after + 55 * 60 * 1000 + 1000);
+    });
+
+    it('imminent arrival ("in 2 minutes") clamps to now + 1 min floor', () => {
+      const before = Date.now();
+      const events = extractEvents({
+        item_id: 'arrive-004',
+        type: 'message',
+        timestamp: Math.floor(before / 1000),
+        summary: 'on my way, be there in 2 minutes',
+        body: '',
+      });
+
+      expect(events).toHaveLength(1);
+      const fireAt = new Date(events[0].fire_at).getTime();
+      // Lead time would put fire_at in the past; min-future floor (~+1min)
+      // saves us from the planner's past-event filter.
+      expect(fireAt).toBeGreaterThan(before);
+      expect(fireAt).toBeGreaterThanOrEqual(before + 60 * 1000 - 1000);
+    });
+
+    it('arrival language without relative time → no event', () => {
+      // "on my way" alone → ambiguous, don't fabricate a time.
+      const events = extractEvents({
+        item_id: 'arrive-005',
+        type: 'message',
+        timestamp: Math.floor(Date.now() / 1000),
+        summary: 'on my way',
+        body: '',
+      });
+      expect(events).toEqual([]);
+    });
+
+    it('relative time without arrival language → no arrival event', () => {
+      // "in 15 minutes" alone (no arrive verb) shouldn't be claimed by
+      // the arrival path — it's just a standalone time-of-day reference.
+      const events = extractEvents({
+        item_id: 'arrive-006',
+        type: 'note',
+        timestamp: Math.floor(Date.now() / 1000),
+        summary: 'in 15 minutes',
+        body: '',
+      });
+      expect(events).toEqual([]);
+    });
+
+    it('arrival path takes priority over date-keyword path when both match', () => {
+      // Body has both arrival language AND a calendar date. Arrival is
+      // more time-critical → it wins (single event, kind=arrival).
+      const events = extractEvents({
+        item_id: 'arrive-007',
+        type: 'message',
+        timestamp: Math.floor(Date.now() / 1000),
+        summary: "I'm coming in 10 minutes — also Emma's birthday March 15",
+        body: '',
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0].kind).toBe('arrival');
+    });
+
+    it('uses the message text as the reminder message', () => {
+      const events = extractEvents({
+        item_id: 'arrive-008',
+        type: 'message',
+        timestamp: Math.floor(Date.now() / 1000),
+        summary: 'I am coming in 15 minutes',
+        body: '',
+      });
+      expect(events[0].message).toBe('I am coming in 15 minutes');
+    });
+
+    it('exposes ARRIVAL_LEAD_MS as the documented 5 minutes', () => {
+      // Pin the public contract so any future change is intentional —
+      // the prompt + tests both reference this 5-min figure.
+      expect(ARRIVAL_LEAD_MS).toBe(5 * 60 * 1000);
+    });
+  });
+
+  describe('isExtractedEventKind (LLM trust boundary)', () => {
+    it('accepts every canonical kind', () => {
+      for (const kind of EXTRACTED_EVENT_KINDS) {
+        expect(isExtractedEventKind(kind)).toBe(true);
+      }
+    });
+
+    it('rejects unknown strings (the bug class this guard closes)', () => {
+      expect(isExtractedEventKind('follow_up')).toBe(false);
+      expect(isExtractedEventKind('task')).toBe(false);
+      expect(isExtractedEventKind('anniversary')).toBe(false);
+      expect(isExtractedEventKind('')).toBe(false);
+    });
+
+    it('rejects non-string input', () => {
+      expect(isExtractedEventKind(undefined)).toBe(false);
+      expect(isExtractedEventKind(null)).toBe(false);
+      expect(isExtractedEventKind(42)).toBe(false);
+      expect(isExtractedEventKind({ kind: 'birthday' })).toBe(false);
+    });
+  });
+
+  describe('contract: every kind the extractor emits is in EXTRACTED_EVENT_KINDS', () => {
+    // Drift detector for the deterministic path. If a future change
+    // adds a new internal kind to extractEvents() / classifyEventKind()
+    // / extractArrivalEvent() without listing it in
+    // EXTRACTED_EVENT_KINDS, the guard at the LLM boundary would also
+    // reject it, downstream consolidation logic would treat it as
+    // 'reminder' priority 0, and the UI would render the wrong icon.
+    // Lock them together via this iteration test — anchored against
+    // a representative input per kind.
+    const samples: Array<{ name: string; input: ExtractionInput; expectedKind: string }> = [
+      {
+        name: 'birthday',
+        input: {
+          item_id: 'k-birthday',
+          type: 'note',
+          timestamp: 1700000000,
+          summary: 'Emma birthday March 15, 2099',
+          body: '',
+        },
+        expectedKind: 'birthday',
+      },
+      {
+        name: 'payment_due',
+        input: {
+          item_id: 'k-payment',
+          type: 'email',
+          timestamp: 1700000000,
+          summary: 'Invoice #1 due March 20, 2099',
+          body: '',
+        },
+        expectedKind: 'payment_due',
+      },
+      {
+        name: 'appointment',
+        input: {
+          item_id: 'k-appt',
+          type: 'note',
+          timestamp: 1700000000,
+          summary: 'Dentist appointment March 21, 2099',
+          body: '',
+        },
+        expectedKind: 'appointment',
+      },
+      {
+        name: 'deadline',
+        input: {
+          item_id: 'k-deadline',
+          type: 'note',
+          timestamp: 1700000000,
+          summary: 'Project deadline March 22, 2099',
+          body: '',
+        },
+        expectedKind: 'deadline',
+      },
+      {
+        name: 'arrival',
+        input: {
+          item_id: 'k-arrival',
+          type: 'message',
+          timestamp: Math.floor(Date.now() / 1000),
+          summary: 'I am coming in 15 minutes',
+          body: '',
+        },
+        expectedKind: 'arrival',
+      },
+    ];
+
+    for (const sample of samples) {
+      it(`extractor emits canonical kind for ${sample.name}`, () => {
+        const events = extractEvents(sample.input);
+        expect(events.length).toBeGreaterThanOrEqual(1);
+        expect(events[0].kind).toBe(sample.expectedKind);
+        expect(isExtractedEventKind(events[0].kind)).toBe(true);
+      });
+    }
   });
 });

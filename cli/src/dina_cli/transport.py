@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import secrets
+import sys
 import time
 import uuid
 from dataclasses import dataclass
@@ -27,6 +29,25 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from .signing import CLIIdentity
+
+
+# Trace mode — set DINA_MSGBOX_TRACE=1 to emit per-step structured logs to
+# stderr. The msgbox path is opaque when calls fail mid-flight (vague error
+# messages like "MsgBox unreachable: timed out" don't say where it stalled);
+# trace mode prints {rid, step, ms, ...} so you can identify the failing leg.
+_TRACE = os.environ.get("DINA_MSGBOX_TRACE", "").lower() in ("1", "true", "yes")
+
+
+def _trace(rid: str, step: str, **fields: object) -> None:
+    """Emit a single structured trace line to stderr if trace mode is on.
+
+    Prefixed `[msgbox]` so it sorts alongside `[agent-daemon]` lines. The
+    line is single-line JSON-tail so a future grep+jq can crunch it.
+    """
+    if not _TRACE:
+        return
+    parts = " ".join(f"{k}={v}" for k, v in fields.items())
+    print(f"[msgbox] rid={rid[:8]} step={step} {parts}", file=sys.stderr, flush=True)
 
 
 class TransportError(Exception):
@@ -218,13 +239,20 @@ class MsgBoxTransport:
         body: str | None = None, request_id: str | None = None,
     ) -> TransportResponse:
         rid = request_id or uuid.uuid4().hex
+        t_start = time.monotonic()
+        _trace(rid, "request_begin", method=method, path=path, body_len=(len(body) if body else 0))
 
         # 1. Connect + authenticate.
-        ws = self._connect_and_auth()
+        try:
+            ws = self._connect_and_auth(rid)
+        except TransportError as e:
+            ms = int((time.monotonic() - t_start) * 1000)
+            _trace(rid, "request_failed", leg="connect_auth", ms=ms, err=str(e))
+            raise
 
         try:
             # 2. Drain buffered responses.
-            self._drain_buffered(ws)
+            self._drain_buffered(ws, rid=rid)
 
             # 3. Check if we already have the response (from drain).
             if rid in self._pending:
@@ -276,7 +304,11 @@ class MsgBoxTransport:
             })
 
             # 5. Encrypt inner JSON (NaCl sealed-box).
+            t_enc = time.monotonic()
             ciphertext = self._encrypt(inner.encode())
+            _trace(rid, "encrypted",
+                   inner_len=len(inner), cipher_len=len(ciphertext),
+                   ms=int((time.monotonic() - t_enc) * 1000))
 
             # 6. Build outer RPC envelope.
             env_data: dict = {
@@ -295,49 +327,79 @@ class MsgBoxTransport:
             envelope = json.dumps(env_data).encode()
 
             # 7. Send as binary frame.
+            t_send = time.monotonic()
             try:
                 ws.send(envelope)
             except Exception as e:
+                _trace(rid, "send_failed", err_type=type(e).__name__, err=str(e),
+                       envelope_len=len(envelope))
                 raise TransportError(
-                    f"MsgBox connection lost (possible auth rejection): {e}"
+                    f"MsgBox send failed after {int((time.monotonic()-t_start)*1000)}ms "
+                    f"(envelope={len(envelope)}B): {type(e).__name__}: {e}"
                 ) from e
+            _trace(rid, "sent", envelope_len=len(envelope),
+                   ms=int((time.monotonic() - t_send) * 1000))
 
             # 8. Wait for response with matching id.
             deadline = time.time() + self._timeout
+            frames_seen = 0
+            unmatched_ids: list[str] = []
+            recv_err: Exception | None = None
             while time.time() < deadline:
                 try:
                     remaining = max(deadline - time.time(), 0.01)
                     ws.socket.settimeout(remaining)
                     data = ws.recv()
-                except Exception:
+                except Exception as e:
+                    recv_err = e
                     break
+                frames_seen += 1
                 if isinstance(data, (bytes, bytearray)):
                     data = data.decode("utf-8", errors="replace")
                 try:
                     env = json.loads(data)
                 except (json.JSONDecodeError, TypeError):
+                    _trace(rid, "frame_unparseable", frame_no=frames_seen,
+                           preview=str(data)[:80])
                     continue
-                if (env.get("type") == "rpc"
-                        and env.get("direction") == "response"
-                        and env.get("id") == rid
-                        and env.get("from_did") == self._homenode_did
+                env_id = env.get("id", "")
+                env_type = env.get("type", "")
+                env_dir = env.get("direction", "")
+                env_from = env.get("from_did", "")
+                if (env_type == "rpc" and env_dir == "response"
+                        and env_id == rid
+                        and env_from == self._homenode_did
                         and env.get("to_did") == did):
+                    _trace(rid, "matched", frame_no=frames_seen,
+                           total_ms=int((time.monotonic() - t_start) * 1000))
                     return self._parse_response(env)
                 # Not our response — cache for later (with DID validation).
-                if (env.get("type") == "rpc"
-                        and env.get("direction") == "response"
-                        and env.get("from_did") == self._homenode_did
+                if (env_type == "rpc" and env_dir == "response"
+                        and env_from == self._homenode_did
                         and env.get("to_did") == did):
-                    self._pending[env["id"]] = env
+                    self._pending[env_id] = env
+                    unmatched_ids.append(env_id[:8])
+                else:
+                    unmatched_ids.append(f"{env_type}:{env_id[:8]}")
 
             # 9. Timeout — send best-effort cancel so Core can abort in-progress work.
+            total_ms = int((time.monotonic() - t_start) * 1000)
+            _trace(rid, "timeout", frames_seen=frames_seen,
+                   unmatched=",".join(unmatched_ids[:5]),
+                   recv_err=type(recv_err).__name__ if recv_err else "",
+                   total_ms=total_ms)
             self._send_cancel(ws, rid, did)
-            raise TransportError("Home Node did not respond. It may be offline.")
+            raise TransportError(
+                f"Home Node did not respond after {total_ms}ms "
+                f"(frames_seen={frames_seen}, unmatched_ids={unmatched_ids[:3]}, "
+                f"recv_err={type(recv_err).__name__ if recv_err else 'none'})"
+            )
         finally:
             ws.close()
 
-    def _connect_and_auth(self) -> websockets.sync.client.ClientConnection:
+    def _connect_and_auth(self, rid: str = "") -> websockets.sync.client.ClientConnection:
         """Connect to MsgBox and perform Ed25519 challenge-response auth."""
+        t_connect = time.monotonic()
         try:
             # compression=None disables permessage-deflate. The MsgBox server
             # (Go coder/websocket) rejects compressed frames with RSV1 set as
@@ -349,14 +411,26 @@ class MsgBoxTransport:
                 compression=None,
             )
         except Exception as e:
-            raise TransportError(f"MsgBox unreachable at {self._msgbox_url}: {e}") from e
+            ms = int((time.monotonic() - t_connect) * 1000)
+            _trace(rid, "ws_connect_failed", err_type=type(e).__name__, ms=ms)
+            raise TransportError(
+                f"MsgBox unreachable at {self._msgbox_url} (after {ms}ms): "
+                f"{type(e).__name__}: {e}"
+            ) from e
+        _trace(rid, "ws_connected", ms=int((time.monotonic() - t_connect) * 1000))
 
         # Read challenge.
+        t_chal = time.monotonic()
         try:
             chal_raw = ws.recv(timeout=5)
         except Exception as e:
             ws.close()
-            raise TransportError(f"MsgBox auth challenge timeout: {e}") from e
+            ms = int((time.monotonic() - t_chal) * 1000)
+            _trace(rid, "auth_challenge_failed", err_type=type(e).__name__, ms=ms)
+            raise TransportError(
+                f"MsgBox auth challenge timeout after {ms}ms: "
+                f"{type(e).__name__}: {e}"
+            ) from e
 
         chal = json.loads(chal_raw)
         if chal.get("type") != "auth_challenge":
@@ -384,11 +458,17 @@ class MsgBoxTransport:
         # while the client was already writing, producing a spurious
         # "connection lost" error instead of a clean auth failure. The relay
         # is greenfield so there's no legacy server to be lenient with.
+        t_ack = time.monotonic()
         try:
             ack_raw = ws.recv(timeout=5)
         except Exception as e:
             ws.close()
-            raise TransportError(f"MsgBox auth_success timeout: {e}") from e
+            ms = int((time.monotonic() - t_ack) * 1000)
+            _trace(rid, "auth_success_timeout", err_type=type(e).__name__, ms=ms)
+            raise TransportError(
+                f"MsgBox auth_success timeout after {ms}ms: "
+                f"{type(e).__name__}: {e}"
+            ) from e
         try:
             ack = json.loads(ack_raw)
         except (json.JSONDecodeError, TypeError) as e:
@@ -398,6 +478,8 @@ class MsgBoxTransport:
             ws.close()
             raise TransportError(f"MsgBox auth rejected (got frame {ack.get('type')!r})")
 
+        _trace(rid, "auth_done",
+               total_ms=int((time.monotonic() - t_connect) * 1000))
         return ws
 
     def _send_cancel(self, ws, request_id: str, from_did: str) -> None:
@@ -413,9 +495,10 @@ class MsgBoxTransport:
         except Exception:
             pass  # best-effort — connection may already be closed
 
-    def _drain_buffered(self, ws) -> None:
+    def _drain_buffered(self, ws, rid: str = "") -> None:
         """Consume any buffered envelopes sent immediately on connect."""
         import select
+        drained = 0
         while True:
             # Non-blocking check for available data.
             ready = select.select([ws.socket], [], [], 0.1)
@@ -436,6 +519,9 @@ class MsgBoxTransport:
                     and env.get("from_did") == self._homenode_did
                     and env.get("to_did") == self._identity.did()):
                 self._pending[env["id"]] = env
+                drained += 1
+        if drained > 0:
+            _trace(rid, "drained", count=drained, pending_total=len(self._pending))
 
     def _encrypt(self, plaintext: bytes) -> bytes:
         """Encrypt with Home Node's X25519 public key (NaCl sealed-box)."""

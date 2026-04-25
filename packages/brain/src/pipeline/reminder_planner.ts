@@ -12,8 +12,16 @@
  * Source: ARCHITECTURE.md Task 3.28, brain/src/service/reminder_planner.py
  */
 
-import { extractEvents, isValidReminderPayload } from '../enrichment/event_extractor';
-import type { ExtractionInput, ExtractedEvent } from '../enrichment/event_extractor';
+import {
+  extractEvents,
+  isValidReminderPayload,
+  isExtractedEventKind,
+} from '../enrichment/event_extractor';
+import type {
+  ExtractionInput,
+  ExtractedEvent,
+  ExtractedEventKind,
+} from '../enrichment/event_extractor';
 import { createReminder, type Reminder } from '../../../core/src/reminders/service';
 import { parseReminderPlan } from '../llm/output_parser';
 import { REMINDER_PLAN } from '../llm/prompts';
@@ -111,6 +119,18 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
       const llmPlan = parseReminderPlan(rehydrated);
 
       for (const llmReminder of llmPlan.reminders) {
+        // Validate kind at the LLM trust boundary. The output parser
+        // accepts arbitrary `kind: string` (parser is intentionally
+        // tolerant); this is the *consumer* side, where unknown kinds
+        // would silently flow into prioritizeKind / consolidateReminders
+        // / UI rendering and produce undefined behavior. Anything not
+        // in the canonical set folds back to 'custom' so we keep the
+        // reminder rather than dropping it — reminders are user-visible,
+        // dropping silently is worse than rendering as the generic
+        // bucket.
+        const rawKind = llmReminder.kind;
+        const kind: ExtractedEventKind = isExtractedEventKind(rawKind) ? rawKind : 'custom';
+
         // Safety net: some LLMs ignore the "use next occurrence" prompt
         // rule and commit past dates for recurring events. Bump the year
         // forward until the timestamp is in the future. Applies ONLY to
@@ -120,8 +140,7 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
         // get dropped by the filter at step 5 (correct: don't fabricate
         // a future appointment that wasn't scheduled).
         let dueAt = llmReminder.due_at;
-        const kind = String(llmReminder.kind ?? '');
-        if ((kind === 'birthday' || kind === 'anniversary') && dueAt <= Date.now()) {
+        if (kind === 'birthday' && dueAt <= Date.now()) {
           const d = new Date(dueAt);
           while (d.getTime() <= Date.now()) {
             d.setUTCFullYear(d.getUTCFullYear() + 1);
@@ -132,15 +151,14 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
         // Dedup: don't duplicate events already found by regex (within 1 day, same kind)
         const isDuplicate = allEvents.some(
           (e) =>
-            Math.abs(new Date(e.fire_at).getTime() - dueAt) < 86_400_000 &&
-            e.kind === llmReminder.kind,
+            Math.abs(new Date(e.fire_at).getTime() - dueAt) < 86_400_000 && e.kind === kind,
         );
 
         if (!isDuplicate) {
           allEvents.push({
             fire_at: new Date(dueAt).toISOString(),
             message: llmReminder.message,
-            kind: llmReminder.kind as ExtractedEvent['kind'],
+            kind,
             source_item_id: input.itemId,
           });
         }
@@ -349,6 +367,7 @@ export function consolidateReminders(events: ExtractedEvent[]): ExtractedEvent[]
 /** Pick the higher-priority kind when merging. */
 function prioritizeKind(a: string, b: string): ExtractedEvent['kind'] {
   const priority: Record<string, number> = {
+    arrival: 5,
     appointment: 4,
     payment_due: 3,
     deadline: 2,

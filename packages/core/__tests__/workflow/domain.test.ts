@@ -65,8 +65,17 @@ describe('WorkflowTaskPriority enum values', () => {
 });
 
 describe('AllowedOrigins', () => {
-  it('contains the empty-string legacy allowance plus the 6 concrete origins', () => {
-    expect(AllowedOrigins).toEqual(['', 'telegram', 'api', 'd2d', 'admin', 'system', 'cli']);
+  it('contains the empty-string legacy allowance plus the 7 concrete origins', () => {
+    expect(AllowedOrigins).toEqual([
+      '',
+      'telegram',
+      'api',
+      'd2d',
+      'admin',
+      'system',
+      'cli',
+      'dinamobile',
+    ]);
   });
 
   it('is frozen / immutable at runtime', () => {
@@ -77,8 +86,34 @@ describe('AllowedOrigins', () => {
     expect(isAllowedOrigin('')).toBe(true);
     expect(isAllowedOrigin('telegram')).toBe(true);
     expect(isAllowedOrigin('cli')).toBe(true);
+    expect(isAllowedOrigin('dinamobile')).toBe(true);
     expect(isAllowedOrigin('webhook')).toBe(false);
     expect(isAllowedOrigin('TELEGRAM')).toBe(false); // case-sensitive
+    expect(isAllowedOrigin('mobile')).toBe(false); // bare 'mobile' not allowed
+  });
+
+  it('SQL CHECK constraint in storage/schemas.ts mirrors AllowedOrigins', () => {
+    // Drift detector: the CREATE TABLE statement carries a CHECK
+    // constraint listing the same origins. If they fall out of sync,
+    // a brand-new install rejects valid origins (or worse — accepts
+    // values the domain layer rejects). Lock them together at the
+    // string level so a future origin addition can't slip past.
+    //
+    // We don't import the schema string (it's in storage/schemas.ts);
+    // we use the file's text via fs to keep this test cheap.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path');
+    const schemasPath = path.join(__dirname, '../../src/storage/schemas.ts');
+    const schemasSrc = fs.readFileSync(schemasPath, 'utf8');
+    const checkLine = schemasSrc
+      .split('\n')
+      .find((l: string) => l.includes('origin TEXT CHECK'));
+    expect(checkLine).toBeDefined();
+    for (const origin of AllowedOrigins) {
+      expect(checkLine!).toContain(`'${origin}'`);
+    }
   });
 });
 

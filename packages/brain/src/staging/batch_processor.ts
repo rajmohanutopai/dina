@@ -18,6 +18,8 @@ import { resolve, fail, type StagingItem } from '../../../core/src/staging/servi
 import { selectPersona } from '../routing/persona_selector';
 import { enrichItem, applyTrustScoring } from './processor';
 import { handlePostPublish } from '../pipeline/post_publish';
+import { isVaultItemType } from '../../../core/src/vault/validation';
+import type { VaultItemType } from '../../../core/src/vault/validation';
 import { isPersonaOpen } from '../../../core/src/persona/service';
 import { beatOnce } from '../../../core/src/staging/heartbeat';
 
@@ -110,9 +112,11 @@ async function processOneItem(item: StagingItem): Promise<BatchItemResult> {
     // 5. Post-publish (only for stored items)
     let postPublishResult;
     if (status === 'stored') {
+      const rawType = String(enriched.type ?? '');
+      const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
       const ppResult = await handlePostPublish({
         id: item.id,
-        type: String(enriched.type ?? ''),
+        type: itemType,
         summary: String(enriched.content_l0 ?? enriched.summary ?? ''),
         body: String(enriched.body ?? ''),
         timestamp: Number(data.timestamp ?? Date.now()),

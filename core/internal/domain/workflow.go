@@ -132,4 +132,8 @@ func IsTerminal(state WorkflowTaskState) bool {
 }
 
 // AllowedOrigins for the origin CHECK constraint.
-var AllowedOrigins = []string{"", "telegram", "api", "d2d", "admin", "system", "cli"}
+//
+// 'dinamobile' is the mobile app channel — the human typing into iOS/Android
+// reaches Core through msgbox (no public IP). It carries the same user-driven
+// privilege as 'telegram' / 'admin' — see handler.validUserOrigins.
+var AllowedOrigins = []string{"", "telegram", "api", "d2d", "admin", "system", "cli", "dinamobile"}

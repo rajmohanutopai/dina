@@ -789,7 +789,7 @@ func migrateIdentity(db *sql.DB) error {
 				run_id           TEXT NOT NULL DEFAULT '',
 				progress_note    TEXT NOT NULL DEFAULT '',
 				lease_expires_at INTEGER,
-				origin           TEXT NOT NULL DEFAULT '' CHECK (origin IN ('','telegram','api','d2d','admin','system','cli')),
+				origin           TEXT NOT NULL DEFAULT '' CHECK (origin IN ('','telegram','api','d2d','admin','system','cli','dinamobile')),
 				session_name     TEXT NOT NULL DEFAULT '',
 				idempotency_key  TEXT,
 				expires_at       INTEGER,
@@ -877,7 +877,172 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v15 complete")
 	}
 
+	// --- Identity migration v16: workflow_tasks.origin += 'dinamobile' ---
+	// SQLite CHECK constraints are baked in at CREATE TABLE time and can't be
+	// altered in place. Detect the old constraint by attempting a probe insert
+	// of an 'dinamobile' origin into a sentinel temp row; if it fails, rebuild.
+	//
+	// 'dinamobile' joins 'telegram' and 'admin' as a user-driven channel
+	// (validUserOrigins in handler/vault.go) — see domain/workflow.go.
+	if hasTable(db, "workflow_tasks") && !workflowTasksAllowsDinamobile(ctx, db) {
+		slog.Info("sqlite: applying identity migration v16 (workflow_tasks.origin += dinamobile)")
+		if err := rebuildWorkflowTasksWithNewOriginCheck(ctx, db); err != nil {
+			return fmt.Errorf("identity v16: %w", err)
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (16, 'workflow_tasks.origin += dinamobile')`)
+		slog.Info("sqlite: identity migration v16 complete")
+	}
+
 	return nil
+}
+
+// workflowTasksAllowsDinamobile probes the existing CHECK constraint by
+// attempting a no-op INSERT inside a savepoint. If the CHECK rejects the
+// 'dinamobile' value, the savepoint rolls back and we know the table needs
+// a rebuild.
+func workflowTasksAllowsDinamobile(ctx context.Context, db *sql.DB) bool {
+	if _, err := db.ExecContext(ctx, `SAVEPOINT origin_probe`); err != nil {
+		return true // savepoint failure — assume up-to-date, don't migrate blindly
+	}
+	defer db.ExecContext(ctx, `ROLLBACK TO origin_probe; RELEASE origin_probe`)
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO workflow_tasks (id, kind, state, status, priority, description,
+			payload, result_summary, policy, error, requested_runner, assigned_runner,
+			agent_did, run_id, progress_note, origin, session_name, idempotency_key,
+			created_at, updated_at)
+		VALUES ('__origin_probe__', 'generic', 'created', 'created', 'normal', '',
+			'{}', '', '{}', '', '', '', '', '', '', 'dinamobile', '', '__origin_probe__', 0, 0)`)
+	return err == nil
+}
+
+// rebuildWorkflowTasksWithNewOriginCheck recreates the workflow_tasks table
+// with the updated CHECK constraint, copying all existing rows. SQLite has no
+// ALTER ... DROP CONSTRAINT, so the standard table-rebuild dance is required.
+//
+// FK contract: foreign_keys must be OFF before BEGIN — the defer pragma alone
+// won't allow DROP TABLE of a referenced parent. The pragma is restored after
+// COMMIT and a foreign_key_check verifies nothing was orphaned.
+func rebuildWorkflowTasksWithNewOriginCheck(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
+		return fmt.Errorf("disable fkeys: %w", err)
+	}
+	defer db.ExecContext(ctx, `PRAGMA foreign_keys=ON`)
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Discover the live column list — older rows may have been written before
+	// later additive migrations (e.g. payload_type from v14). Copying with an
+	// explicit column list keeps the migration robust to that drift.
+	cols, err := tableColumns(ctx, tx, "workflow_tasks")
+	if err != nil {
+		return fmt.Errorf("read columns: %w", err)
+	}
+	colList := strings.Join(cols, ", ")
+
+	// Mirrors the live schema in this file (lines ~770-805) but with the new
+	// CHECK. Keep this list in sync with the canonical CREATE TABLE.
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE workflow_tasks_new (
+		id               TEXT PRIMARY KEY,
+		kind             TEXT NOT NULL,
+		state            TEXT NOT NULL DEFAULT 'created',
+		status           TEXT NOT NULL DEFAULT 'created',
+		correlation_id   TEXT NOT NULL DEFAULT '',
+		parent_id        TEXT NOT NULL DEFAULT '',
+		proposal_id      TEXT NOT NULL DEFAULT '',
+		priority         TEXT NOT NULL DEFAULT 'normal',
+		description      TEXT NOT NULL,
+		payload          TEXT NOT NULL DEFAULT '{}',
+		payload_type     TEXT NOT NULL DEFAULT '',
+		result           TEXT,
+		result_summary   TEXT NOT NULL DEFAULT '',
+		policy           TEXT NOT NULL DEFAULT '{}',
+		error            TEXT NOT NULL DEFAULT '',
+		requested_runner TEXT NOT NULL DEFAULT '',
+		assigned_runner  TEXT NOT NULL DEFAULT '',
+		agent_did        TEXT NOT NULL DEFAULT '',
+		run_id           TEXT NOT NULL DEFAULT '',
+		progress_note    TEXT NOT NULL DEFAULT '',
+		lease_expires_at INTEGER,
+		origin           TEXT NOT NULL DEFAULT '' CHECK (origin IN ('','telegram','api','d2d','admin','system','cli','dinamobile')),
+		session_name     TEXT NOT NULL DEFAULT '',
+		idempotency_key  TEXT,
+		expires_at       INTEGER,
+		next_run_at      INTEGER,
+		recurrence       TEXT,
+		internal_stash   TEXT,
+		created_at       INTEGER NOT NULL,
+		updated_at       INTEGER NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("create new: %w", err)
+	}
+
+	// Validated against the migration whitelist; cols comes from PRAGMA which
+	// only returns columns of the named table. No injection surface.
+	copySQL := fmt.Sprintf(`INSERT INTO workflow_tasks_new (%s) SELECT %s FROM workflow_tasks`, colList, colList)
+	if _, err := tx.ExecContext(ctx, copySQL); err != nil {
+		return fmt.Errorf("copy rows: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE workflow_tasks`); err != nil {
+		return fmt.Errorf("drop old: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE workflow_tasks_new RENAME TO workflow_tasks`); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+	// Recreate indexes that lived on the old table.
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_wf_state ON workflow_tasks(state, next_run_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_wf_kind ON workflow_tasks(kind)`,
+		`CREATE INDEX IF NOT EXISTS idx_wf_payload_type ON workflow_tasks(payload_type) WHERE payload_type != ''`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("recreate index: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	// Verify that no rows in dependent tables (workflow_events) were orphaned
+	// by the table swap. foreign_key_check returns one row per violation.
+	rows, err := db.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		return fmt.Errorf("fk check: %w", err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		return fmt.Errorf("fk check: orphaned rows after rebuild")
+	}
+	return nil
+}
+
+// tableColumns returns the ordered column names for a table via PRAGMA. Used
+// by rebuild migrations to copy rows column-by-column instead of relying on
+// SELECT * (which depends on table order matching, fragile across versions).
+func tableColumns(ctx context.Context, tx *sql.Tx, table string) ([]string, error) {
+	if !validMigrationTables[table] {
+		return nil, fmt.Errorf("table not in migration whitelist: %q", table)
+	}
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols = append(cols, name)
+	}
+	return cols, rows.Err()
 }
 
 // isAlterColumnExists checks if the error is a "duplicate column" error from ALTER TABLE.

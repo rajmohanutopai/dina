@@ -10,7 +10,9 @@ import {
   msgTypeToScenario,
   validateMessageBody,
   MAX_MESSAGE_BODY_SIZE,
+  D2D_SCENARIOS,
 } from '../../src/d2d/families';
+import { D2D_V1_MESSAGE_TYPES } from '@dina/test-harness';
 
 describe('D2D Message Families', () => {
   describe('V1 type validation', () => {
@@ -78,6 +80,29 @@ describe('D2D Message Families', () => {
     it('returns empty string for unknown types', () => {
       expect(msgTypeToScenario('unknown.type')).toBe('');
       expect(msgTypeToScenario('')).toBe('');
+    });
+
+    /**
+     * Contract: every V1 message type maps to a known scenario.
+     *
+     * The Go side (`domain/message.go::MsgTypeToScenario`) returns a
+     * non-empty scenario for every V1 type — gates rely on it. If a
+     * new TS V1 type is added without a scenario entry, the egress
+     * gate falls through to `''` and silently bypasses scenario
+     * policy. The compile-time `Record<D2DMessageType, D2DScenario>`
+     * already prevents this, but locking it at runtime too means
+     * cross-runtime drift (Go ↔ TS) surfaces in CI rather than at
+     * a partner Home Node a week later.
+     */
+    describe('contract: every V1 type → known scenario', () => {
+      const knownScenarios = new Set<string>(D2D_SCENARIOS);
+      for (const msgType of D2D_V1_MESSAGE_TYPES) {
+        it(`${msgType} → real scenario`, () => {
+          const scenario = msgTypeToScenario(msgType);
+          expect(scenario).not.toBe('');
+          expect(knownScenarios.has(scenario)).toBe(true);
+        });
+      }
     });
   });
 

@@ -15,7 +15,7 @@ import (
 
 // TRACE: {"suite": "CORE", "case": "2132", "section": "04", "sectionName": "Vault (SQLCipher)", "subsection": "01", "scenario": "01", "title": "InjectUserOrigin_AllowlistedValues"}
 func TestInjectUserOrigin_AllowlistedValues(t *testing.T) {
-	for _, origin := range []string{"telegram", "admin"} {
+	for _, origin := range []string{"telegram", "admin", "dinamobile"} {
 		r := httptest.NewRequest("POST", "/v1/vault/query", nil)
 		ctx := context.WithValue(r.Context(), middleware.CallerTypeKey, "brain")
 		r = r.WithContext(ctx)

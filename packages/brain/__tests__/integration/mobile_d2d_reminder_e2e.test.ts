@@ -211,6 +211,71 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     expect(birthday!.source_item_id).toBeTruthy();
   });
 
+  it("'I am coming in 15 minutes' D2D → arrival reminder ~10 min from now", async () => {
+    // Real scenario: Alonso messages Sancho "I am coming in 15 minutes"
+    // over D2D. Sancho's drain runs the post-publish hook which calls
+    // planReminders → extractEvents detects the arrival pattern + relative
+    // time, and produces a reminder fire_at = arrival_time - 5min lead.
+    //
+    // This is the seam Bug #1 ("D2D-to-reminder pipeline silently halted")
+    // protects: the message type (coordination.request) maps to vault
+    // type 'message', drain stores it, post-publish runs, planner sees
+    // a reminder-worthy text. Anything broken in that chain → 0 reminders.
+    addContact(aliceDID);
+    addDirectoryContact(aliceDID, 'Alonso', 'verified');
+
+    const before = Date.now();
+    const arrivalText = 'I am coming in 15 minutes';
+    const message = makeDinaMessage({
+      from: aliceDID,
+      to: 'did:plc:bob-d2d-reminder',
+      type: MSG_TYPE_SOCIAL_UPDATE,
+      body: JSON.stringify({ text: arrivalText }),
+    });
+    const sealed = sealMessage(message, aliceSeed, bobPub);
+
+    const receiveResult = receiveD2D(
+      sealed,
+      bobPub,
+      bobSeed,
+      [alicePub],
+      'contact_ring1',
+    );
+    expect(receiveResult.action).toBe('staged');
+
+    const stagedRow = getStagingItem(receiveResult.stagingId!)!;
+    expect(stagedRow.data.summary).toContain('coming in 15 minutes');
+
+    const core = buildCoreClient();
+    scheduler = new StagingDrainScheduler({
+      core,
+      intervalMs: 10_000,
+      setInterval: () => 1,
+      clearInterval: () => {
+        /* noop */
+      },
+    });
+    const tick = await scheduler.runTick();
+    const after = Date.now();
+
+    expect(tick.failed).toBe(0);
+    expect(tick.stored).toBe(1);
+
+    const result = tick.results[0]!;
+    expect(result.postPublish).toBeDefined();
+    expect(result.postPublish!.errors).toEqual([]);
+    expect(result.postPublish!.remindersCreated).toBeGreaterThanOrEqual(1);
+
+    const reminders = COVERED_PERSONAS.flatMap((p) => listRemindersByPersona(p));
+    const arrival = reminders.find((r) => r.kind === 'arrival');
+    expect(arrival).toBeDefined();
+
+    // 5-min-before-arrival contract: due_at ≈ now + 10 min.
+    expect(arrival!.due_at).toBeGreaterThanOrEqual(before + 10 * 60 * 1000 - 2000);
+    expect(arrival!.due_at).toBeLessThanOrEqual(after + 10 * 60 * 1000 + 2000);
+    expect(arrival!.message.toLowerCase()).toContain('coming');
+  });
+
   it('D2D message with no temporal event → 0 reminders (no false-positives)', async () => {
     addContact(aliceDID);
     addDirectoryContact(aliceDID, 'Alice', 'verified');

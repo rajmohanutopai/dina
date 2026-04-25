@@ -152,6 +152,50 @@ describe('Contact Directory', () => {
       deleteContact('did:plc:alice');
       expect(resolveAlias('Ali')).toBeNull();
     });
+
+    it('write-throughs to the SQL repository when one is wired', () => {
+      // Mirrors the addContact write-through (see line 124 of directory.ts).
+      // Without the SQL delete, on-device the row stays in `contacts.did`
+      // and a re-add of the same DID hits the UNIQUE constraint —
+      // observed live on the simulator before this fix landed.
+      const removed: string[] = [];
+      const repo = {
+        list: () => [],
+        add: () => {
+          /* unused */
+        },
+        get: () => null,
+        update: () => {
+          /* unused */
+        },
+        remove: (did: string) => {
+          removed.push(did);
+          return true;
+        },
+        addAlias: () => {
+          /* unused */
+        },
+        removeAlias: () => {
+          /* unused */
+        },
+        resolveAlias: () => null,
+        getAliases: () => [],
+        setPreferredFor: () => {
+          /* unused */
+        },
+        getPreferredFor: () => [],
+        findByPreferredFor: () => [],
+      } as unknown as ContactRepository;
+
+      setContactRepository(repo);
+      try {
+        addContact('did:plc:alice', 'Alice');
+        deleteContact('did:plc:alice');
+        expect(removed).toEqual(['did:plc:alice']);
+      } finally {
+        setContactRepository(null);
+      }
+    });
   });
 
   describe('alias management', () => {
@@ -611,6 +655,168 @@ describe('Contact Directory', () => {
       expect(() => setPreferredFor('did:plc:x', ['dental'])).toThrow(/disk full/);
       // In-memory preferredFor didn't move either — no divergence.
       expect(getContact('did:plc:x')?.preferredFor).toBeUndefined();
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // Contract: cache ↔ SQL parity for every mutation.
+  // ----------------------------------------------------------------
+  //
+  // The directory keeps an in-memory Map fronting a SQL repo
+  // (op-sqlite via JSI — sync, microseconds). The Map is a read
+  // cache; SQL is the durable store. Bug #2 (`deleteContact` skipped
+  // the SQL write) lived in the gap between these two structures.
+  //
+  // This block enumerates every mutating operation on the directory
+  // and asserts each one calls through to the repo. Adding a NEW
+  // mutation without a corresponding write-through will fail this
+  // contract — closing the bug class, not just the deleteContact
+  // instance.
+  describe('contract: every mutation writes through to SQL repo', () => {
+    interface RepoSpy {
+      add: string[]; // dids added
+      update: string[]; // dids updated
+      remove: string[]; // dids removed
+      addAlias: Array<{ did: string; alias: string }>;
+      removeAlias: string[]; // aliases removed
+      setPreferredFor: Array<{ did: string; categories: readonly string[] }>;
+    }
+
+    function makeSpyRepo(): { repo: ContactRepository; spy: RepoSpy } {
+      const spy: RepoSpy = {
+        add: [],
+        update: [],
+        remove: [],
+        addAlias: [],
+        removeAlias: [],
+        setPreferredFor: [],
+      };
+      const repo: ContactRepository = {
+        list: () => [],
+        add: (c) => {
+          spy.add.push(c.did);
+        },
+        get: () => null,
+        update: (did) => {
+          spy.update.push(did);
+        },
+        remove: (did) => {
+          spy.remove.push(did);
+          return true;
+        },
+        addAlias: (did, alias) => {
+          spy.addAlias.push({ did, alias });
+        },
+        removeAlias: (alias) => {
+          spy.removeAlias.push(alias);
+        },
+        resolveAlias: () => null,
+        getAliases: () => [],
+        setPreferredFor: (did, categories) => {
+          spy.setPreferredFor.push({ did, categories });
+        },
+        getPreferredFor: () => [],
+        findByPreferredFor: () => [],
+      };
+      return { repo, spy };
+    }
+
+    afterEach(() => {
+      setContactRepository(null);
+      resetContactDirectory();
+    });
+
+    it('addContact → repo.add', () => {
+      const { repo, spy } = makeSpyRepo();
+      setContactRepository(repo);
+      addContact('did:plc:alice', 'Alice');
+      expect(spy.add).toEqual(['did:plc:alice']);
+    });
+
+    it('addContactIfNotExists (new) → repo.add', () => {
+      const { repo, spy } = makeSpyRepo();
+      setContactRepository(repo);
+      addContactIfNotExists('did:plc:bob', 'Bob');
+      expect(spy.add).toEqual(['did:plc:bob']);
+    });
+
+    it('updateContact → repo.update', () => {
+      const { repo, spy } = makeSpyRepo();
+      setContactRepository(repo);
+      addContact('did:plc:alice', 'Alice');
+      updateContact('did:plc:alice', { displayName: 'Alice 2' });
+      expect(spy.update).toContain('did:plc:alice');
+    });
+
+    it('deleteContact → repo.remove (Bug #2 contract)', () => {
+      const { repo, spy } = makeSpyRepo();
+      setContactRepository(repo);
+      addContact('did:plc:alice', 'Alice');
+      deleteContact('did:plc:alice');
+      expect(spy.remove).toEqual(['did:plc:alice']);
+    });
+
+    it('addAlias → repo.addAlias', () => {
+      const { repo, spy } = makeSpyRepo();
+      setContactRepository(repo);
+      addContact('did:plc:alice', 'Alice');
+      addAlias('did:plc:alice', 'Ali');
+      expect(spy.addAlias).toContainEqual({ did: 'did:plc:alice', alias: 'ali' });
+    });
+
+    it('removeAlias → repo.removeAlias', () => {
+      const { repo, spy } = makeSpyRepo();
+      setContactRepository(repo);
+      addContact('did:plc:alice', 'Alice');
+      addAlias('did:plc:alice', 'Ali');
+      removeAlias('did:plc:alice', 'Ali');
+      expect(spy.removeAlias).toContain('ali');
+    });
+
+    it('setPreferredFor → repo.setPreferredFor', () => {
+      const { repo, spy } = makeSpyRepo();
+      setContactRepository(repo);
+      addContact('did:plc:alice', 'Alice');
+      setPreferredFor('did:plc:alice', ['dentist']);
+      expect(spy.setPreferredFor).toContainEqual({
+        did: 'did:plc:alice',
+        categories: ['dentist'],
+      });
+    });
+
+    it('repo failure surfaces — memory does not silently diverge', () => {
+      // GAP-PERSIST-01 contract: SQL write happens FIRST. If it
+      // throws, the in-memory Map must NOT have been mutated. Without
+      // this ordering, a transient SQL failure (full disk, locked DB)
+      // would leave stale state in memory until the next app boot.
+      const repo: ContactRepository = {
+        list: () => [],
+        add: () => {
+          throw new Error('disk full');
+        },
+        get: () => null,
+        update: () => {
+          /* unused */
+        },
+        remove: () => true,
+        addAlias: () => {
+          /* unused */
+        },
+        removeAlias: () => {
+          /* unused */
+        },
+        resolveAlias: () => null,
+        getAliases: () => [],
+        setPreferredFor: () => {
+          /* unused */
+        },
+        getPreferredFor: () => [],
+        findByPreferredFor: () => [],
+      };
+      setContactRepository(repo);
+      expect(() => addContact('did:plc:alice', 'Alice')).toThrow('disk full');
+      // Memory MUST NOT have the contact — write-through ordering.
+      expect(getContact('did:plc:alice')).toBeNull();
     });
   });
 });

@@ -23,13 +23,24 @@
  * Source: brain/src/service/trust_scorer.py
  */
 
+// SenderTrust + SourceType here are intentionally narrower than core's
+// vault unions — they describe the *output* of this scorer (which never
+// emits 'contact_ring2' or ''). The vault validator accepts a wider
+// universe; the scorer is one producer among several.
+//
+// `Confidence` and `RetrievalPolicy` are reused verbatim from
+// `@dina/core/vault/validation` because this scorer's outputs flow
+// directly onto the wire of a vault row — they MUST match the
+// validator's accepted set or `validateVaultItem` rejects the write.
+import type { Confidence, RetrievalPolicy } from '@dina/core/src/vault/validation';
+
 export type SenderTrust = 'self' | 'contact_ring1' | 'service' | 'unknown' | 'marketing';
 export type SourceType = 'self' | 'service' | 'contact' | 'unknown' | 'marketing';
 
 export interface TrustScore {
   sender_trust: SenderTrust;
-  confidence: string;
-  retrieval_policy: string;
+  confidence: Confidence;
+  retrieval_policy: RetrievalPolicy;
   source_type: SourceType;
 }
 

@@ -61,9 +61,16 @@ func agentDID(r *http.Request) string {
 // validUserOrigins is the Core-enforced allowlist of user_origin values
 // that elevate Brain requests to user-equivalent access. Brain convention
 // alone is not sufficient — Core validates the exact set.
+//
+// All three values represent the human acting in person:
+//   telegram   — bot-channel typing
+//   admin      — admin web UI session
+//   dinamobile — iOS/Android app (NAT'd, reaches Core via msgbox).
+//                Same privilege tier — locked-vault access, full agency.
 var validUserOrigins = map[string]bool{
-	"telegram": true,
-	"admin":    true,
+	"telegram":   true,
+	"admin":      true,
+	"dinamobile": true,
 }
 
 // injectUserOrigin sets UserOriginatedKey in the request context when the
