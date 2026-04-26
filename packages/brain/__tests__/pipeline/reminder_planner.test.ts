@@ -1,5 +1,11 @@
 /**
- * T3.28 — Reminder planner: extract events → vault context → LLM → plan reminders.
+ * T3.28 — Reminder planner: vault context → LLM → plan reminders.
+ *
+ * The planner is LLM-only as of April 2026 (the prior regex
+ * `extractEvents` gate dropped real-world phrasings like "tomorrow at
+ * 5 pm"). These tests pin both the new contract — no LLM means no
+ * reminders, and the failure must be surfaced via the logger — and
+ * the LLM-assisted paths that remain.
  *
  * Source: ARCHITECTURE.md Task 3.28, brain/src/service/reminder_planner.py
  */
@@ -10,6 +16,8 @@ import {
   consolidateReminders,
   registerReminderLLM,
   resetReminderLLM,
+  registerReminderLogger,
+  resetReminderLogger,
 } from '../../src/pipeline/reminder_planner';
 import { resetReminderState, listByPersona } from '../../../core/src/reminders/service';
 import { storeItem, clearVaults } from '../../../core/src/vault/crud';
@@ -17,6 +25,8 @@ import { createPersona, resetPersonaState, openPersona } from '../../../core/src
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Reminder Planner', () => {
+  let loggedWarnings: Record<string, unknown>[];
+
   beforeEach(() => {
     resetReminderState();
     resetReminderLLM();
@@ -29,93 +39,66 @@ describe('Reminder Planner', () => {
     openPersona('general');
     openPersona('work');
     openPersona('financial');
+
+    // Capture logger output so we can assert on warnings without
+    // letting the default console.warn pollute test output.
+    loggedWarnings = [];
+    registerReminderLogger({
+      warn: (record) => {
+        loggedWarnings.push(record);
+      },
+    });
   });
 
-  describe('planReminders — deterministic', () => {
-    it('extracts birthday event from text', async () => {
+  afterEach(() => {
+    resetReminderLogger();
+  });
+
+  describe('planReminders — without LLM (gate behaviour)', () => {
+    it('returns an empty result and logs a warning when no LLM is registered', async () => {
+      // No `registerReminderLLM` call in this test — the planner
+      // should refuse to fabricate events, return empty, and log
+      // loudly so a misconfigured boot is visible in the first
+      // /remember rather than silently swallowing reminders.
       const result = await planReminders({
-        itemId: 'item-001',
+        itemId: 'item-no-llm',
         type: 'email',
-        summary: 'Emma birthday March 15',
-        body: "Don't forget Emma's birthday on March 15",
+        summary: 'Birthday March 15',
+        body: 'text',
         timestamp: Date.now(),
         persona: 'general',
       });
-      expect(result.eventsDetected).toBeGreaterThanOrEqual(0);
-      expect(result.llmRefined).toBe(false);
-    });
 
-    it('no events → no reminders', async () => {
-      const result = await planReminders({
-        itemId: 'item-002',
-        type: 'email',
-        summary: 'Weekly team update',
-        body: 'Here are the highlights',
-        timestamp: Date.now(),
-        persona: 'work',
+      expect(result).toEqual({
+        eventsDetected: 0,
+        remindersCreated: 0,
+        reminders: [],
+        llmRefined: false,
+        vaultContextUsed: 0,
       });
-      expect(result.eventsDetected).toBe(0);
-      expect(result.remindersCreated).toBe(0);
-    });
-
-    it('reminders stored in correct persona', async () => {
-      const result = await planReminders({
-        itemId: 'item-003',
-        type: 'invoice',
-        summary: 'Invoice due January 15',
-        body: 'Payment due by January 15, 2027',
-        timestamp: Date.now(),
-        persona: 'financial',
+      expect(loggedWarnings).toHaveLength(1);
+      expect(loggedWarnings[0]).toMatchObject({
+        event: 'reminder_planner.no_llm_provider',
+        itemId: 'item-no-llm',
       });
-      for (const r of result.reminders) {
-        expect(r.persona).toBe('financial');
-      }
     });
 
-    it('returns llmRefined: false without LLM', async () => {
+    it('returns no reminders for arbitrary text (no regex fallback)', async () => {
+      // Phrases the old regex extractor used to catch — "in 15 minutes",
+      // birthday-bare-text, etc. — should now produce zero reminders
+      // when the LLM isn't wired. This pins the no-regex contract
+      // explicitly so a future "let's add a small fallback for
+      // arrivals" PR shows up in code review as a behaviour change.
       const result = await planReminders({
-        itemId: 'item-004',
-        type: 'email',
-        summary: 'Meeting tomorrow',
-        body: 'text',
-        timestamp: Date.now(),
-        persona: 'work',
-      });
-      expect(result.llmRefined).toBe(false);
-      expect(result.vaultContextUsed).toBe(0);
-    });
-
-    it('"I am coming in 15 minutes" → arrival reminder fires ~10 min from now', async () => {
-      // Scenario: Alonso D2Ds Sancho saying he's arriving. Sancho's
-      // post-publish pipeline should auto-plan a reminder 5 minutes
-      // before the stated arrival time so Sancho has a beat to
-      // prepare. This is the deterministic-only path (no LLM).
-      const before = Date.now();
-      const result = await planReminders({
-        itemId: 'item-arrive',
+        itemId: 'item-arrival-no-regex',
         type: 'message',
         summary: 'I am coming in 15 minutes',
         body: '',
-        timestamp: before,
+        timestamp: Date.now(),
         persona: 'general',
       });
-      const after = Date.now();
-
-      expect(result.eventsDetected).toBe(1);
-      expect(result.remindersCreated).toBe(1);
-      expect(result.reminders).toHaveLength(1);
-
-      const reminder = result.reminders[0];
-      expect(reminder.kind).toBe('arrival');
-      expect(reminder.message).toBe('I am coming in 15 minutes');
-      expect(reminder.persona).toBe('general');
-      expect(reminder.source_item_id).toBe('item-arrive');
-
-      // due_at ≈ now + 10 min (15 min arrival - 5 min lead).
-      const expectedMin = before + 10 * 60 * 1000 - 1000;
-      const expectedMax = after + 10 * 60 * 1000 + 1000;
-      expect(reminder.due_at).toBeGreaterThanOrEqual(expectedMin);
-      expect(reminder.due_at).toBeLessThanOrEqual(expectedMax);
+      expect(result.remindersCreated).toBe(0);
+      expect(result.reminders).toHaveLength(0);
     });
   });
 
@@ -137,7 +120,12 @@ describe('Reminder Planner', () => {
       expect(result.remindersCreated).toBeGreaterThanOrEqual(1);
     });
 
-    it('LLM failure → falls back to deterministic only', async () => {
+    it('LLM failure → returns empty + logs reminder_planner.llm_error', async () => {
+      // The previous version silently swallowed LLM errors and looked
+      // identical to "no events found" — that hid a real production
+      // bug for an entire simulator validation. The new contract:
+      // surface every LLM failure through the logger so a quota /
+      // network / parse error is visible the instant it happens.
       registerReminderLLM(async () => {
         throw new Error('LLM down');
       });
@@ -149,7 +137,16 @@ describe('Reminder Planner', () => {
         timestamp: Date.now(),
         persona: 'general',
       });
+      expect(result.remindersCreated).toBe(0);
       expect(result.llmRefined).toBe(false);
+      const errorWarn = loggedWarnings.find(
+        (w) => w.event === 'reminder_planner.llm_error',
+      );
+      expect(errorWarn).toBeDefined();
+      expect(errorWarn).toMatchObject({
+        itemId: 'item-006',
+        error: 'LLM down',
+      });
     });
 
     it('unknown LLM kind folds to "custom" — does not poison downstream consumers', async () => {

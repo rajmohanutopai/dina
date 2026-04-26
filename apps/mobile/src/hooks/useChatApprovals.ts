@@ -18,6 +18,7 @@ import {
   type ApprovalRequest,
 } from '@dina/core/src/approval/manager';
 import { addMessage, type ChatMessage } from '@dina/brain/src/chat/thread';
+import { getAskApprovalGateway } from '@dina/brain/src/composition/ask_gateway_registry';
 
 export interface ApprovalCardData {
   id: string;
@@ -78,12 +79,40 @@ export function createApprovalCard(
  * Approve a pending request.
  *
  * @param scope — 'single' (one-time use) or 'session' (valid until session end)
+ *
+ * **Pattern A integration**: when a coordinator-bridge has installed
+ * an `AskApprovalGateway` (5.21-H), drive `gateway.approve(id)` first
+ * — that drives the source AND fires the registry's
+ * `resumeAfterApproval`, which the resumer picks up to resume the
+ * suspended agentic loop. Without this, an approve from the chat tab
+ * would flip the manager to `approved` but leave the registry stuck
+ * in `pending_approval` and the user would never get the late
+ * answer. Falls back to the bare manager call when no gateway is
+ * installed (legacy `agenticAsk` path or test harnesses).
  */
-export function approveCard(
+export async function approveCard(
   id: string,
   scope: 'single' | 'session',
   approverDID: string,
-): ApprovalCardData | null {
+): Promise<ApprovalCardData | null> {
+  const gateway = getAskApprovalGateway();
+  if (gateway !== null) {
+    const r = await gateway.approve(id);
+    // Gateway drives `approvalSource.approve` internally, but
+    // hardcodes scope to 'single'. When the caller asked for
+    // 'session', upgrade the scope on the manager side after the
+    // resume has been triggered. Idempotent — the manager state is
+    // already 'approved'; we just widen the scope.
+    if (r.ok && scope === 'session') {
+      try {
+        getApprovalManager().approveRequest(id, 'session', approverDID);
+      } catch {
+        /* already approved with single scope — that's fine. */
+      }
+    }
+    const req = getApprovalManager().getRequest(id);
+    return req ? toCardData(req) : null;
+  }
   try {
     getApprovalManager().approveRequest(id, scope, approverDID);
     return toCardData(getApprovalManager().getRequest(id)!);
@@ -93,9 +122,17 @@ export function approveCard(
 }
 
 /**
- * Deny a pending request.
+ * Deny a pending request. Same gateway-first strategy as
+ * `approveCard`: the gateway also drives the registry's failed
+ * transition so the bridge fires the late "/ask failed: …" note.
  */
-export function denyCard(id: string): ApprovalCardData | null {
+export async function denyCard(id: string): Promise<ApprovalCardData | null> {
+  const gateway = getAskApprovalGateway();
+  if (gateway !== null) {
+    await gateway.deny(id);
+    const req = getApprovalManager().getRequest(id);
+    return req ? toCardData(req) : null;
+  }
   try {
     getApprovalManager().denyRequest(id);
     return toCardData(getApprovalManager().getRequest(id)!);

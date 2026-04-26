@@ -1,27 +1,33 @@
 /**
- * Reminder planner — plan reminders from staging items with temporal events.
+ * Reminder planner — plan reminders from staging items.
  *
- * When a staging item has detected events (birthdays, deadlines, appointments):
- * 1. Extract events via event_extractor (deterministic regex)
- * 2. Optionally refine via LLM with vault context + timezone (adds context, multi-reminder)
- * 3. Create reminders via Core reminder service
+ * LLM-only by design (April 2026). Earlier versions ran a regex
+ * `extractEvents` gate first, but real-world phrasing — "pay rent
+ * tomorrow at 5 pm", "drop off the car next Tuesday" — never matched
+ * the narrow keyword set, so the gate dropped events the LLM would
+ * have caught. The directive was to stop hand-coding "if X do Y"
+ * rules and let the model reason from context (per
+ * `feedback_prompt_engineering.md` in user memory).
  *
- * The planner runs as part of the post-publish pipeline,
- * after classification and L0/L1 generation.
+ * Pipeline now:
+ * 1. Gather vault context (FTS5 search) for the LLM prompt
+ * 2. Render `REMINDER_PLAN` with subject/body/today/timezone/context
+ * 3. PII-scrub before send, rehydrate after
+ * 4. Parse LLM output, normalise kind, bump past birthdays forward
+ * 5. Consolidate same-day events into one reminder
+ * 6. Validate + create via Core reminder service
+ *
+ * Errors used to be swallowed in `catch{}` (line 168). They are now
+ * surfaced through the registered logger so a misconfigured LLM is
+ * loud, not silent. Default logger writes to `console.warn` so a
+ * test or production app that forgets to register one still gets
+ * the signal.
  *
  * Source: ARCHITECTURE.md Task 3.28, brain/src/service/reminder_planner.py
  */
 
-import {
-  extractEvents,
-  isValidReminderPayload,
-  isExtractedEventKind,
-} from '../enrichment/event_extractor';
-import type {
-  ExtractionInput,
-  ExtractedEvent,
-  ExtractedEventKind,
-} from '../enrichment/event_extractor';
+import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
+import type { ExtractedEvent, ExtractedEventKind } from '../enrichment/event_extractor';
 import { createReminder, type Reminder } from '../../../core/src/reminders/service';
 import { parseReminderPlan } from '../llm/output_parser';
 import { REMINDER_PLAN } from '../llm/prompts';
@@ -65,14 +71,48 @@ export function resetReminderLLM(): void {
 }
 
 /**
+ * Structured logger surface — only `warn` is exercised today, but the
+ * shape mirrors the rest of the codebase (`{event, ...}` records) so
+ * future callers can add `info` / `error` without breaking the contract.
+ */
+export interface ReminderLogger {
+  warn: (record: Record<string, unknown>) => void;
+}
+
+const defaultLogger: ReminderLogger = {
+  // Console.warn is the floor — so a planner running in a host that
+  // forgot to register a logger still surfaces failures rather than
+  // dropping reminders silently (the prior `catch{}` behaviour).
+  warn: (record) => {
+    // eslint-disable-next-line no-console
+    console.warn('[reminder_planner]', record);
+  },
+};
+
+let logger: ReminderLogger = defaultLogger;
+
+/** Register a logger for reminder-planner diagnostics. */
+export function registerReminderLogger(next: ReminderLogger): void {
+  logger = next;
+}
+
+/** Reset to the default console logger (for testing). */
+export function resetReminderLogger(): void {
+  logger = defaultLogger;
+}
+
+/**
  * Plan reminders for a staging item.
  *
- * Pipeline:
- * 1. Extract events (deterministic regex)
- * 2. Gather vault context for enrichment (search for related items)
- * 3. If LLM available → call with prompt template + vault context + timezone
- * 4. Merge LLM results with deterministic, dedup by (time, kind)
- * 5. Filter past dates, validate, create reminders
+ * Pipeline (LLM-only):
+ * 1. Bail loudly if no LLM is registered — the planner is useless without one
+ * 2. Gather vault context (FTS5 search) for the prompt
+ * 3. Render `REMINDER_PLAN`, PII-scrub, call LLM, rehydrate
+ * 4. Normalise kind, bump past recurring-kind dates forward
+ * 5. Consolidate same-day events
+ * 6. Validate + create via Core reminder service
+ *
+ * Every error path goes through `logger.warn` — never silenced.
  */
 export async function planReminders(input: PlannerInput): Promise<PlannerResult> {
   // Resolve the user's timezone once. If the caller passes one, honor it.
@@ -85,89 +125,106 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
   const resolvedTimezone =
     input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
 
-  const extractionInput: ExtractionInput = {
-    item_id: input.itemId,
-    type: input.type,
-    summary: input.summary,
-    body: input.body,
-    timestamp: input.timestamp,
-    metadata: input.metadata,
-  };
-
-  // 1. Deterministic extraction
-  const events = extractEvents(extractionInput);
-  let allEvents = [...events];
+  let allEvents: ExtractedEvent[] = [];
   let llmRefined = false;
   let vaultContextUsed = 0;
 
-  // 2 + 3. LLM refinement with vault context + timezone
-  if (llmProvider) {
-    try {
-      // Gather vault context: search for items related to the people/topics in this item
-      const { text: vaultContext, itemCount } = gatherVaultContext(input);
-      vaultContextUsed = itemCount;
+  // 1. LLM gate. Without a provider we have no way to find events —
+  //    return an empty result and log loudly so a misconfigured boot
+  //    surfaces during the first /remember rather than silently
+  //    swallowing reminders forever.
+  if (!llmProvider) {
+    logger.warn({
+      event: 'reminder_planner.no_llm_provider',
+      itemId: input.itemId,
+      reason:
+        'No LLM provider registered. Call registerReminderLLM() during boot — the planner is LLM-only and cannot create reminders without it.',
+    });
+    return {
+      eventsDetected: 0,
+      remindersCreated: 0,
+      reminders: [],
+      llmRefined: false,
+      vaultContextUsed: 0,
+    };
+  }
 
-      // PII scrub before sending to cloud LLM — vault context and item body
-      // may contain emails, phone numbers, etc. Names pass through (by design).
-      const prompt = renderReminderPrompt(input, vaultContext, resolvedTimezone);
-      const { scrubbed: scrubbedPrompt, entities: piiEntities } = scrubPII(prompt);
+  // 2 + 3. LLM call with vault context + PII scrub.
+  try {
+    const { text: vaultContext, itemCount } = gatherVaultContext(input);
+    vaultContextUsed = itemCount;
 
-      const rawOutput = await llmProvider('', scrubbedPrompt);
+    // PII scrub before sending to cloud LLM — vault context and item body
+    // may contain emails, phone numbers, etc. Names pass through (by design).
+    const prompt = renderReminderPrompt(input, vaultContext, resolvedTimezone);
+    const { scrubbed: scrubbedPrompt, entities: piiEntities } = scrubPII(prompt);
 
-      // Rehydrate PII tokens in the response so reminder messages contain original values
-      const rehydrated = piiEntities.length > 0 ? rehydratePII(rawOutput, piiEntities) : rawOutput;
-      const llmPlan = parseReminderPlan(rehydrated);
+    const rawOutput = await llmProvider('', scrubbedPrompt);
 
-      for (const llmReminder of llmPlan.reminders) {
-        // Validate kind at the LLM trust boundary. The output parser
-        // accepts arbitrary `kind: string` (parser is intentionally
-        // tolerant); this is the *consumer* side, where unknown kinds
-        // would silently flow into prioritizeKind / consolidateReminders
-        // / UI rendering and produce undefined behavior. Anything not
-        // in the canonical set folds back to 'custom' so we keep the
-        // reminder rather than dropping it — reminders are user-visible,
-        // dropping silently is worse than rendering as the generic
-        // bucket.
-        const rawKind = llmReminder.kind;
-        const kind: ExtractedEventKind = isExtractedEventKind(rawKind) ? rawKind : 'custom';
+    // Rehydrate PII tokens in the response so reminder messages contain original values
+    const rehydrated = piiEntities.length > 0 ? rehydratePII(rawOutput, piiEntities) : rawOutput;
+    const llmPlan = parseReminderPlan(rehydrated);
 
-        // Safety net: some LLMs ignore the "use next occurrence" prompt
-        // rule and commit past dates for recurring events. Bump the year
-        // forward until the timestamp is in the future. Applies ONLY to
-        // recurring kinds (birthday / anniversary) where shifting year
-        // is semantically correct — one-off events (appointment /
-        // payment_due / deadline) that landed in the past stay past and
-        // get dropped by the filter at step 5 (correct: don't fabricate
-        // a future appointment that wasn't scheduled).
-        let dueAt = llmReminder.due_at;
-        if (kind === 'birthday' && dueAt <= Date.now()) {
-          const d = new Date(dueAt);
-          while (d.getTime() <= Date.now()) {
-            d.setUTCFullYear(d.getUTCFullYear() + 1);
-          }
-          dueAt = d.getTime();
+    for (const llmReminder of llmPlan.reminders) {
+      // Validate kind at the LLM trust boundary. The output parser
+      // accepts arbitrary `kind: string` (parser is intentionally
+      // tolerant); this is the *consumer* side, where unknown kinds
+      // would silently flow into prioritizeKind / consolidateReminders
+      // / UI rendering and produce undefined behavior. Anything not
+      // in the canonical set folds back to 'custom' so we keep the
+      // reminder rather than dropping it — reminders are user-visible,
+      // dropping silently is worse than rendering as the generic
+      // bucket.
+      const rawKind = llmReminder.kind;
+      const kind: ExtractedEventKind = isExtractedEventKind(rawKind) ? rawKind : 'custom';
+
+      // Safety net: some LLMs ignore the "use next occurrence" prompt
+      // rule and commit past dates for recurring events. Bump the year
+      // forward until the timestamp is in the future. Applies ONLY to
+      // recurring kinds (birthday / anniversary) where shifting year
+      // is semantically correct — one-off events (appointment /
+      // payment_due / deadline) that landed in the past stay past and
+      // get dropped by the filter at step 5 (correct: don't fabricate
+      // a future appointment that wasn't scheduled).
+      let dueAt = llmReminder.due_at;
+      if (kind === 'birthday' && dueAt <= Date.now()) {
+        const d = new Date(dueAt);
+        while (d.getTime() <= Date.now()) {
+          d.setUTCFullYear(d.getUTCFullYear() + 1);
         }
-
-        // Dedup: don't duplicate events already found by regex (within 1 day, same kind)
-        const isDuplicate = allEvents.some(
-          (e) =>
-            Math.abs(new Date(e.fire_at).getTime() - dueAt) < 86_400_000 && e.kind === kind,
-        );
-
-        if (!isDuplicate) {
-          allEvents.push({
-            fire_at: new Date(dueAt).toISOString(),
-            message: llmReminder.message,
-            kind,
-            source_item_id: input.itemId,
-          });
-        }
+        dueAt = d.getTime();
       }
 
-      if (llmPlan.reminders.length > 0) llmRefined = true;
-    } catch {
-      // LLM failure — proceed with regex-only events
+      // Cross-emit dedup: if the LLM emits two reminders for the same
+      // kind within a day of each other, drop the duplicate. Keeps
+      // consolidation cheap and avoids "Pay rent" landing twice when
+      // the model echoes itself.
+      const isDuplicate = allEvents.some(
+        (e) => Math.abs(new Date(e.fire_at).getTime() - dueAt) < 86_400_000 && e.kind === kind,
+      );
+
+      if (!isDuplicate) {
+        allEvents.push({
+          fire_at: new Date(dueAt).toISOString(),
+          message: llmReminder.message,
+          kind,
+          source_item_id: input.itemId,
+        });
+      }
     }
+
+    if (llmPlan.reminders.length > 0) llmRefined = true;
+  } catch (err) {
+    // The previous version swallowed this entirely. Surface it — a
+    // bad LLM call (network, quota, malformed JSON) used to look
+    // identical to "no events found" and cost us a real bug on
+    // simulator validation.
+    logger.warn({
+      event: 'reminder_planner.llm_error',
+      itemId: input.itemId,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack?.slice(0, 500) : undefined,
+    });
   }
 
   // 4. Consolidate overlapping events (same day → merge into one reminder)
@@ -177,12 +234,42 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
   const created: Reminder[] = [];
 
   for (const event of allEvents) {
-    if (!isValidReminderPayload(event)) continue;
+    if (!isValidReminderPayload(event)) {
+      logger.warn({
+        event: 'reminder_planner.invalid_payload',
+        itemId: input.itemId,
+        eventKind: event.kind,
+        fire_at: event.fire_at,
+      });
+      continue;
+    }
 
     const dueAt = new Date(event.fire_at).getTime();
-    if (isNaN(dueAt) || dueAt <= 0) continue;
-    // Skip past events — don't create reminders for dates already passed
-    if (dueAt < Date.now()) continue;
+    if (isNaN(dueAt) || dueAt <= 0) {
+      logger.warn({
+        event: 'reminder_planner.invalid_due_at',
+        itemId: input.itemId,
+        fire_at: event.fire_at,
+      });
+      continue;
+    }
+    // Skip past events — don't create reminders for dates already
+    // passed. Common LLM failure: model says "today at 5pm" or
+    // miscomputes from `{{today}}` and emits a timestamp in the
+    // past. Surface this so a fix (better prompt, higher tier
+    // model, timezone hint) is visible rather than silently dropped.
+    if (dueAt < Date.now()) {
+      logger.warn({
+        event: 'reminder_planner.past_due_at',
+        itemId: input.itemId,
+        eventKind: event.kind,
+        message: event.message,
+        fire_at: event.fire_at,
+        due_at_ms: dueAt,
+        now_ms: Date.now(),
+      });
+      continue;
+    }
 
     try {
       const reminder = createReminder({
@@ -195,8 +282,13 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
         timezone: resolvedTimezone,
       });
       created.push(reminder);
-    } catch {
-      // Dedup rejection or other error — skip
+    } catch (err) {
+      logger.warn({
+        event: 'reminder_planner.create_error',
+        itemId: input.itemId,
+        eventKind: event.kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -249,8 +341,15 @@ function gatherVaultContext(input: PlannerInput): { text: string; itemCount: num
         }
       }
     }
-  } catch {
-    // Vault search failed — proceed without context
+  } catch (err) {
+    // Vault search failed — proceed without context, but log so a
+    // misconfigured vault (closed persona, missing FTS5) doesn't
+    // silently degrade the prompt quality.
+    logger.warn({
+      event: 'reminder_planner.vault_context_error',
+      itemId: input.itemId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   if (contextItems.length === 0) return { text: '(no related context found)', itemCount: 0 };

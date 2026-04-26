@@ -50,8 +50,8 @@ import {
   type PersonaGateOp,
   type PersonaGateRequired,
   checkPersonaGate,
-} from './persona_gate';
-import type { RateLimiter } from './rate_limiter';
+} from '@dina/brain/src/ask/persona_gate';
+import type { RateLimiter } from '@dina/core/src/util/rate_limiter';
 
 export type AgentRisk = 'read' | 'send' | 'pay' | 'share' | 'delete' | 'execute';
 
@@ -105,20 +105,11 @@ export type AgentGatewayOutcome =
       retryAfterMs?: number;
     };
 
-export type AgentReviewReason =
-  | 'risk_always_review'
-  | 'risk_over_grant';
+export type AgentReviewReason = 'risk_always_review' | 'risk_over_grant';
 
-export type AgentBlockReason =
-  | 'invalid_input'
-  | 'persona_denied'
-  | 'rate_limited';
+export type AgentBlockReason = 'invalid_input' | 'persona_denied' | 'rate_limited';
 
-export const DEFAULT_ALWAYS_REVIEW_RISKS: ReadonlyArray<AgentRisk> = [
-  'pay',
-  'delete',
-  'execute',
-];
+export const DEFAULT_ALWAYS_REVIEW_RISKS: ReadonlyArray<AgentRisk> = ['pay', 'delete', 'execute'];
 export const DEFAULT_GRANTED_RISKS: ReadonlyArray<AgentRisk> = ['read'];
 
 /**
@@ -132,12 +123,8 @@ export function createAgentGateway(
     throw new TypeError('createAgentGateway: rateLimiter required');
   }
   const rateLimiter = opts.rateLimiter;
-  const alwaysReview = new Set<AgentRisk>(
-    opts.alwaysReviewRisks ?? DEFAULT_ALWAYS_REVIEW_RISKS,
-  );
-  const granted = new Set<AgentRisk>(
-    opts.grantedRisks ?? DEFAULT_GRANTED_RISKS,
-  );
+  const alwaysReview = new Set<AgentRisk>(opts.alwaysReviewRisks ?? DEFAULT_ALWAYS_REVIEW_RISKS);
+  const granted = new Set<AgentRisk>(opts.grantedRisks ?? DEFAULT_GRANTED_RISKS);
 
   return function decide(intent: AgentIntent): AgentGatewayOutcome {
     // 1. Input validation.

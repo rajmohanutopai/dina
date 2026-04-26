@@ -75,6 +75,9 @@ function dedupKey(sourceItemId: string, kind: string, dueAt: number, persona: st
   return `${sourceItemId}|${kind}|${dueAt}|${persona}`;
 }
 
+/** Subscribers fan-out registered via `subscribeReminderCreated`. */
+const createListeners = new Set<(reminder: Reminder) => void>();
+
 /**
  * Create a reminder. Returns the reminder.
  *
@@ -139,7 +142,32 @@ export function createReminder(input: {
       /* fail-safe — sync-throw variant */
     }
   }
+
+  // Fan out to subscribers — typically the mobile-side OS-push bridge
+  // (`installReminderPushBridge`) listens here and calls
+  // `scheduleNotification` so a banner fires when the reminder is due
+  // even with the app backgrounded. Listeners get a frozen clone so a
+  // faulty observer can't mutate the canonical state. Errors are
+  // swallowed so a misbehaving bridge can't break reminder creation.
+  for (const listener of createListeners) {
+    try {
+      listener({ ...reminder });
+    } catch {
+      /* swallow */
+    }
+  }
+
   return reminder;
+}
+
+/** Subscribe to reminder-creation events. Returns a disposer. */
+export function subscribeReminderCreated(
+  listener: (reminder: Reminder) => void,
+): () => void {
+  createListeners.add(listener);
+  return () => {
+    createListeners.delete(listener);
+  };
 }
 
 /** Get a reminder by ID. */
@@ -161,13 +189,22 @@ export function getByShortId(shortId: string): Reminder | null {
 /**
  * List pending reminders (not completed, due_at <= now).
  * Sorted by due_at ascending (soonest first).
+ *
+ * Includes both `'pending'` (never fired) AND `'snoozed'` (fired, then
+ * pushed forward via {@link snoozeReminder}). Snooze semantically
+ * means "re-fire when the new due_at arrives" — without including
+ * `'snoozed'` here, snoozes silently disappear forever.
  */
 export function listPending(now?: number): Reminder[] {
   const currentTime = now ?? Date.now();
   const pending: Reminder[] = [];
 
   for (const r of reminders.values()) {
-    if (r.completed === 0 && r.status === 'pending' && r.due_at <= currentTime) {
+    if (
+      r.completed === 0 &&
+      (r.status === 'pending' || r.status === 'snoozed') &&
+      r.due_at <= currentTime
+    ) {
       pending.push(r);
     }
   }
@@ -258,11 +295,22 @@ export function completeReminder(id: string): Reminder | null {
   return null;
 }
 
-/** Snooze a reminder by pushing due_at forward. */
-export function snoozeReminder(id: string, snoozeMs: number): void {
+/**
+ * Snooze a reminder by `snoozeMs` from now (or from `due_at`, whichever
+ * is later). User intent for "snooze 1h" is "remind me in 1 hour from
+ * now" — without the `max`, snoozing a past-due reminder would still
+ * leave it past-due (e.g. due 2h ago, snooze 1h → still 1h past-due
+ * and the watcher re-fires immediately).
+ *
+ * Status flips to `'snoozed'`; {@link listPending} treats `'snoozed'`
+ * the same as `'pending'` so the new due_at correctly re-arms the
+ * fire-watcher.
+ */
+export function snoozeReminder(id: string, snoozeMs: number, now?: number): void {
   const reminder = reminders.get(id);
   if (!reminder) throw new Error(`reminders: "${id}" not found`);
-  reminder.due_at += snoozeMs;
+  const base = Math.max(reminder.due_at, now ?? Date.now());
+  reminder.due_at = base + snoozeMs;
   reminder.status = 'snoozed';
 }
 
@@ -297,6 +345,7 @@ export function resetReminderState(): void {
   reminders.clear();
   dedupIndex.clear();
   shortIdIndex.clear();
+  createListeners.clear();
 }
 
 /**

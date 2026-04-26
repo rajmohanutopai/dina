@@ -176,6 +176,11 @@ export interface BootServiceInputs {
   /**
    * When supplied, the /ask handler routes through the multi-turn
    * agentic tool-use loop instead of the single-shot fallback.
+   * Mutually exclusive with `askCoordinator` — when both are set,
+   * the coordinator wins (Pattern A subsumes the simpler tool-loop
+   * path). In practice production boots set `askCoordinator` and
+   * leave `agenticAsk` undefined; tests / minimal nodes that don't
+   * need approval gating still use this.
    */
   agenticAsk?: {
     provider: LLMProvider;
@@ -189,6 +194,17 @@ export interface BootServiceInputs {
      */
     options?: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
   };
+  /**
+   * Pattern A `/ask` chain (5.21-H). When supplied, installs the
+   * coordinator-bridge `AskCommandHandler` so `/ask` rides the full
+   * registry + approval gateway + resumer chain. Forwarded verbatim
+   * to `createNode` as `askCoordinator`.
+   *
+   * Built by `boot_capabilities.tryBuildAgenticAsk` when an LLM
+   * provider is wired AND the pipeline has `buildToolsForAsk`
+   * populated (i.e. `approvalManager` was passed).
+   */
+  askCoordinator?: CreateNodeOptions['askCoordinator'];
 
   // --- Execution plane (issue #9) --------------------------------------
   /**
@@ -413,10 +429,13 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   }
 
   // --- Agentic /ask (issue #5) ------------------------------------------
-  if (inputs.agenticAsk === undefined) {
+  // The coordinator path (Pattern A) supersedes the legacy agenticAsk
+  // tools-only path. Either is fine; only flag the degradation when
+  // BOTH are missing.
+  if (inputs.agenticAsk === undefined && inputs.askCoordinator === undefined) {
     addDegradation(
       'ask.single_shot_fallback',
-      'No agenticAsk tools supplied — /ask falls back to single-shot reason() instead of the multi-turn tool-use loop.',
+      'Neither askCoordinator nor agenticAsk supplied — /ask falls back to single-shot reason() instead of the multi-turn tool-use loop.',
     );
   }
 
@@ -509,6 +528,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
             options: inputs.agenticAsk.options,
           }
         : undefined,
+    askCoordinator: inputs.askCoordinator,
     localDelegationRunner: inputs.localDelegationRunner,
     localDelegationAgentDID: inputs.localDelegationAgentDID,
     stagingDrain: stagingDrainOption,

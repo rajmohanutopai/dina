@@ -3,7 +3,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/__tests__'],
-  testMatch: ['**/*.test.ts'],
+  testMatch: ['**/*.test.ts', '**/*.test.tsx'],
   moduleNameMapper: {
     // Donor tests were authored in `dina-mobile/packages/app/__tests__/`, where
     // `../../../core/src/…` resolved to `dina-mobile/packages/core/src/…`.
@@ -23,6 +23,7 @@ module.exports = {
     '^react-native$': '<rootDir>/__mocks__/react-native.ts',
     '^react-native-keychain$': '<rootDir>/__mocks__/react-native-keychain.ts',
     '^expo-file-system$': '<rootDir>/__mocks__/expo-file-system.ts',
+    '^expo-notifications$': '<rootDir>/__mocks__/expo-notifications.ts',
   },
   transform: {
     // `isolatedModules: true` tells ts-jest to transpile each file in
@@ -33,15 +34,27 @@ module.exports = {
     // redirects them at runtime. Trade-off: cross-file type errors in the
     // tests are silenced here — the separate `npm run typecheck` + the
     // per-package `tsc --noEmit` catch them at their proper layer.
+    //
+    // `module: 'commonjs'` + `jsx: 'react'` overrides the workspace
+    // tsconfig (which pins `module: 'preserve'` + `jsx: 'react-native'`
+    // for Metro). Jest's runtime is CommonJS and there's no Metro
+    // pipeline, so ts-jest needs to emit fully-transformed JSX as
+    // React.createElement calls.
     '^.+\\.tsx?$': [
       'ts-jest',
-      { tsconfig: '<rootDir>/tsconfig.json', isolatedModules: true },
+      {
+        tsconfig: { module: 'commonjs', jsx: 'react' },
+        isolatedModules: true,
+      },
     ],
     // Transform ESM-only @noble / @scure / ai / @ai-sdk packages so ts-jest
     // can consume their `.js` exports (otherwise Jest chokes on ESM syntax).
     '^.+\\.js$': [
       'ts-jest',
-      { tsconfig: '<rootDir>/tsconfig.json', isolatedModules: true },
+      {
+        tsconfig: { module: 'commonjs', jsx: 'react' },
+        isolatedModules: true,
+      },
     ],
   },
   transformIgnorePatterns: ['node_modules/(?!(@noble|@scure|ai|@ai-sdk)/)'],

@@ -15,11 +15,16 @@ import {
   resetNudges,
 } from '../../src/hooks/useChatNudges';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
+import {
+  listNotifications,
+  resetNotifications,
+} from '../../../brain/src/notifications/inbox';
 
 describe('Chat Nudge Cards Hook (4.12)', () => {
   beforeEach(() => {
     resetNudges();
     resetThreads();
+    resetNotifications();
   });
 
   describe('createNudge', () => {
@@ -76,6 +81,57 @@ describe('Chat Nudge Cards Hook (4.12)', () => {
       const nudgeMsg = messages.find((m) => m.type === 'nudge');
       expect(nudgeMsg).toBeDefined();
       expect(nudgeMsg!.content).toContain('Alice');
+    });
+
+    it('mirrors a delivered nudge into the unified notifications inbox (5.66)', () => {
+      const nudge = createNudge('reconnection', 'Alice', 'Miss you', 2, {
+        threadId: 'main',
+        contactDID: 'did:key:z6MkAlice',
+      });
+      const inbox = listNotifications();
+      expect(inbox).toHaveLength(1);
+      expect(inbox[0]).toMatchObject({
+        id: `nt-${nudge!.id}`,
+        kind: 'nudge',
+        title: 'Alice',
+        body: 'Miss you',
+        sourceId: nudge!.id,
+        deepLink: `dina://chat/main?focus=${nudge!.id}`,
+      });
+    });
+
+    it('suppressed Tier 3 nudge does NOT mirror to the inbox', () => {
+      const result = createNudge('general', 'Tip', 'Some engagement tip', 3);
+      expect(result).toBeNull();
+      expect(listNotifications()).toHaveLength(0);
+    });
+
+    it('writes structured metadata for the inline NudgeCard renderer (5.62)', () => {
+      const nudge = createNudge(
+        'reconnection',
+        'Alice',
+        "You haven't talked to Alice in 3 weeks",
+        2,
+        {
+          threadId: 'main',
+          contactDID: 'did:key:z6MkAlice',
+          contactName: 'Alice',
+        },
+      );
+      const messages = getThread('main');
+      const nudgeMsg = messages.find((m) => m.type === 'nudge');
+      expect(nudgeMsg).toBeDefined();
+      expect(nudgeMsg!.metadata).toMatchObject({
+        kind: 'nudge',
+        nudgeId: nudge!.id,
+        nudgeKind: 'reconnection',
+        title: 'Alice',
+        tier: 2,
+        actionLabel: 'Send message',
+        actionType: 'message',
+        contactDID: 'did:key:z6MkAlice',
+        contactName: 'Alice',
+      });
     });
 
     it('assigns default action labels per kind', () => {

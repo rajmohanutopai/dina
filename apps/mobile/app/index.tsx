@@ -24,15 +24,42 @@ import { StatusBar } from 'expo-status-bar';
 import { colors, spacing, radius, shadows } from '../src/theme';
 import { useLiveThread } from '../src/hooks/useChatThread';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
+import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
+import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
+import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
+import { InlineReminderCard } from '../src/components/InlineReminderCard';
+import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
+import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 
 // Render message shape used by the screen's bubble logic. The chat UI
-// treats Brain's MessageType union as three display buckets: user text,
-// Dina reply, everything-else-system (error/approval/nudge/briefing).
-type UiMessage = ChatMessage & { displayType: 'user' | 'dina' | 'system' };
+// treats Brain's MessageType union as eight display buckets: user
+// text, Dina reply, ask-approval card (5.21-H), service-approval
+// card (5.65), nudge card (5.62), reminder card (5.64), briefing
+// card (5.63), everything-else-system (error / unrecognised).
+type UiMessage = ChatMessage & {
+  displayType:
+    | 'user'
+    | 'dina'
+    | 'system'
+    | 'ask-approval'
+    | 'service-approval'
+    | 'nudge'
+    | 'reminder'
+    | 'briefing';
+};
 
-function toDisplayType(m: ChatMessage): 'user' | 'dina' | 'system' {
+function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   if (m.type === 'user') return 'user';
   if (m.type === 'dina') return 'dina';
+  if (m.type === 'approval' && m.metadata?.kind === 'ask_approval') {
+    return 'ask-approval';
+  }
+  if (m.type === 'approval' && m.metadata?.kind === 'service_approval') {
+    return 'service-approval';
+  }
+  if (m.type === 'nudge') return 'nudge';
+  if (m.type === 'reminder') return 'reminder';
+  if (m.type === 'briefing') return 'briefing';
   return 'system';
 }
 
@@ -61,6 +88,11 @@ export default function ChatScreen() {
   // - `messages` re-renders on every thread write, including async
   //   arrivals from `WorkflowEventConsumer.deliver` (Bus 42 replies).
   const { messages: threadMessages, send, sending } = useLiveThread('main');
+  // The reminder fire watcher used to mount here, but it now lives in
+  // `app/_layout.tsx` so it ticks across every tab. Keeping it Chat-only
+  // meant a reminder firing while the user was on Notifications /
+  // Reminders / Settings produced an OS push but no in-app fan-out
+  // until they wandered back. The root mount fixes that.
   const [inputText, setInputText] = useState('');
   const [activeAction, setActiveAction] = useState<(typeof ACTIONS)[number] | null>(null);
   const flatListRef = useRef<FlatList>(null);
@@ -127,6 +159,38 @@ export default function ChatScreen() {
   }, []);
 
   const renderMessage = useCallback(({ item }: { item: UiMessage }) => {
+    // Pattern A inline approval card — 5.21-H. The bridge writes
+    // `'approval'`-typed messages with `metadata.kind === 'ask_approval'`
+    // when the agentic loop bails on a sensitive persona; render an
+    // inline card with Approve / Deny buttons instead of a plain bubble.
+    if (item.displayType === 'ask-approval') {
+      const node = getBootedNode();
+      const approverDID = node?.did ?? '';
+      return <InlineApprovalCard message={item} approverDID={approverDID} />;
+    }
+    // Service-capability approval card — 5.65. `defaultApprovalNotifier`
+    // writes these when a peer's D2D `service.query` lands and the
+    // operator's review policy says "ask". Same dispatch shape, but
+    // routes Approve/Deny to the orchestrator's service handlers.
+    if (item.displayType === 'service-approval') {
+      return <InlineServiceApprovalCard message={item} />;
+    }
+    // Proactive nudge card — 5.62. Reconnection / reminder context /
+    // pending promise / health alert. Tier dot indicates urgency.
+    if (item.displayType === 'nudge') {
+      return <InlineNudgeCard message={item} />;
+    }
+    // Fired reminder — 5.64. Posted by `useReminderFireWatcher` when
+    // a pending reminder's due_at elapses. Mark done / Snooze 1h.
+    if (item.displayType === 'reminder') {
+      return <InlineReminderCard message={item} />;
+    }
+    // Daily briefing card — 5.63. Collapsible aggregate of recent
+    // activity; tap-through links route per-item via expo-router.
+    if (item.displayType === 'briefing') {
+      return <InlineBriefingCard message={item} />;
+    }
+
     const isUser = item.displayType === 'user';
     const isSystem = item.displayType === 'system';
 

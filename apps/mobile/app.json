@@ -7,16 +7,33 @@
     "scheme": "dina",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "icon": "./assets/branding/dina-icon.png",
+    "splash": {
+      "image": "./assets/branding/dina-splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F9F2EC"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dinakernel.mobile"
+      "bundleIdentifier": "com.dinakernel.mobile",
+      "icon": "./assets/branding/dina-icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/branding/dina-icon-foreground.png",
+        "backgroundColor": "#9D8877"
       },
       "package": "com.dinakernel.mobile"
     },
-    "plugins": ["expo-router"]
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "color": "#3b82f6",
+          "defaultChannel": "solicited"
+        }
+      ]
+    ]
   }
 }

@@ -125,6 +125,11 @@ import {
   type AgenticAskHandlerOptions,
 } from '@dina/brain/src/reasoning/ask_handler';
 import {
+  createCoordinatorAskHandler,
+  type CreateCoordinatorAskHandlerOptions,
+} from '@dina/brain/src/composition/coordinator_ask_handler';
+import type { AskCoordinator } from '@dina/brain/src/composition/ask_coordinator';
+import {
   makeServiceApproveHandler,
   makeServiceDenyHandler,
 } from '@dina/brain/src/service/approve_command';
@@ -265,6 +270,28 @@ export interface CreateNodeOptions {
     tools: ToolRegistry;
     options?: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
   };
+  /**
+   * Pattern A `/ask` chain (5.21-H). When supplied alongside
+   * `globalWiring=true`, installs the chat orchestrator's
+   * `AskCommandHandler` via the coordinator bridge — `/ask` then
+   * routes through the full Pattern A suspend/resume registry +
+   * approval gateway, with deferred answer delivery to the chat
+   * thread on operator approval / async completion.
+   *
+   * Mutually exclusive with `agenticAsk`: when both are set, the
+   * coordinator wins (Pattern A subsumes the simpler tool-loop path).
+   * Tests / minimal nodes that don't need approval-gated reads can
+   * keep using `agenticAsk`; production mobile + brain-server
+   * pass this once an `ApprovalManager` + pipeline are wired.
+   */
+  askCoordinator?: {
+    coordinator: AskCoordinator;
+    /** DID attributed as the requester for every `/ask` from this node. */
+    requesterDid: string;
+  } & Pick<
+    CreateCoordinatorAskHandlerOptions,
+    'defaultThreadId' | 'formatPendingMessage' | 'formatResumeHeader' | 'formatFailureMessage'
+  >;
   /** Optional approval-operator notifier. Defaults to chat-thread system msg. */
   approvalNotifier?: ApprovalNotifier;
   /**
@@ -681,7 +708,30 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     globalDisposers.push(resetInboxCoreClient);
     setServiceConfigCoreClient(options.coreClient);
     globalDisposers.push(resetServiceConfigCoreClient);
-    if (options.agenticAsk !== undefined) {
+    // Pattern A coordinator wins over the simpler agenticAsk path —
+    // coordinator subsumes the tool-loop and adds the suspend/resume
+    // chain. Tests / minimal nodes that don't need approval gating
+    // can still pass `agenticAsk` instead.
+    if (options.askCoordinator !== undefined) {
+      const cfg = options.askCoordinator;
+      const bridgeOpts: CreateCoordinatorAskHandlerOptions = {
+        coordinator: cfg.coordinator,
+        requesterDid: cfg.requesterDid,
+      };
+      if (cfg.defaultThreadId !== undefined) bridgeOpts.defaultThreadId = cfg.defaultThreadId;
+      if (cfg.formatPendingMessage !== undefined)
+        bridgeOpts.formatPendingMessage = cfg.formatPendingMessage;
+      if (cfg.formatResumeHeader !== undefined)
+        bridgeOpts.formatResumeHeader = cfg.formatResumeHeader;
+      if (cfg.formatFailureMessage !== undefined)
+        bridgeOpts.formatFailureMessage = cfg.formatFailureMessage;
+      const { handler, dispose } = createCoordinatorAskHandler(bridgeOpts);
+      setAskCommandHandler(handler);
+      globalDisposers.push(resetAskCommandHandler);
+      // Bridge subscribed to the coordinator's event stream — release
+      // that subscription on dispose so re-bootstrapping doesn't leak.
+      globalDisposers.push(dispose);
+    } else if (options.agenticAsk !== undefined) {
       setAskCommandHandler(
         makeAgenticAskHandler({
           provider: options.agenticAsk.provider,

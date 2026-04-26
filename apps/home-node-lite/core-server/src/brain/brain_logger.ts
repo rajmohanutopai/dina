@@ -42,7 +42,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 5g task 5.52.
  */
 
-import { currentTrace } from './trace_correlation';
+import { currentTrace } from '@dina/brain/src/diagnostics/trace_correlation';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 const LEVEL_ORDER: Record<LogLevel, number> = {

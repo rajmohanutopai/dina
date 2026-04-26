@@ -10,7 +10,7 @@ import {
   newRootTrace,
   withTrace,
   withChildTrace,
-} from '../src/brain/trace_correlation';
+} from '@dina/brain/src/diagnostics/trace_correlation';
 
 /** Sink that captures records for assertion. */
 function sink(): { records: LogRecord[]; emit: (r: LogRecord) => void } {

@@ -221,16 +221,61 @@ describe('Reminder Service', () => {
   });
 
   describe('snoozeReminder', () => {
-    it('pushes due_at forward', () => {
+    it('pushes due_at forward by snoozeMs from max(due_at, now)', () => {
       const dueAt = Date.now();
       const r = createReminder({ message: 'Snooze me', due_at: dueAt, persona: 'general' });
-      snoozeReminder(r.id, 600_000); // 10 min
+      // Pin `now` to dueAt so the assertion is deterministic. With
+      // dueAt >= now, base is dueAt and the new due_at is dueAt + ms.
+      snoozeReminder(r.id, 600_000, dueAt); // 10 min
       expect(getReminder(r.id)!.due_at).toBe(dueAt + 600_000);
       expect(getReminder(r.id)!.status).toBe('snoozed');
     });
 
+    it('snoozes from now when due_at is already past', () => {
+      const NOW = 1_700_000_000_000;
+      const r = createReminder({
+        message: 'Already late',
+        due_at: NOW - 2 * 60 * 60 * 1000, // 2h overdue
+        persona: 'general',
+      });
+      snoozeReminder(r.id, 60 * 60 * 1000, NOW); // snooze 1h from now
+      // Without max(due_at, now), the new due_at would be NOW - 1h
+      // (still past) and the watcher would re-fire immediately.
+      expect(getReminder(r.id)!.due_at).toBe(NOW + 60 * 60 * 1000);
+    });
+
     it('throws for unknown ID', () => {
       expect(() => snoozeReminder('rem-missing', 1000)).toThrow('not found');
+    });
+
+    it('re-fires after the new due_at elapses', () => {
+      // Pins the snooze → re-fire round-trip. Without this, snoozed
+      // reminders silently disappear forever (status flipped to
+      // 'snoozed', listPending only returned 'pending').
+      const NOW = 1_700_000_000_000;
+      const r = createReminder({
+        message: 'Snooze then fire',
+        due_at: NOW - 1000,
+        persona: 'general',
+      });
+      // Initial fire flips status to 'fired'.
+      const fired1 = fireMissedReminders(NOW);
+      expect(fired1).toHaveLength(1);
+
+      // User snoozes 1h from NOW. (Pinned `now` so the test is
+      // deterministic — the default `Date.now()` would be the real
+      // wall-clock and would push due_at far past the assertion
+      // bounds below.)
+      snoozeReminder(r.id, 60 * 60 * 1000, NOW);
+      expect(getReminder(r.id)!.status).toBe('snoozed');
+
+      // Tick before new due_at — must NOT fire.
+      expect(fireMissedReminders(NOW + 30 * 60 * 1000)).toHaveLength(0);
+
+      // Tick after new due_at — must fire again.
+      const fired2 = fireMissedReminders(NOW + 2 * 60 * 60 * 1000);
+      expect(fired2).toHaveLength(1);
+      expect(fired2[0]!.id).toBe(r.id);
     });
   });
 

@@ -8,11 +8,13 @@ import {
   createAgentGateway,
   type AgentIntent,
 } from '../src/brain/agent_gateway';
-import { RateLimiter } from '../src/brain/rate_limiter';
+import { RateLimiter } from '@dina/core/src/util/rate_limiter';
 
-function gateway(overrides: Parameters<typeof createAgentGateway>[0] = {
-  rateLimiter: new RateLimiter({ capacity: 10, refillPerSec: 1 }),
-}) {
+function gateway(
+  overrides: Parameters<typeof createAgentGateway>[0] = {
+    rateLimiter: new RateLimiter({ capacity: 10, refillPerSec: 1 }),
+  },
+) {
   return createAgentGateway(overrides);
 }
 
@@ -31,9 +33,7 @@ function intent(overrides: Partial<AgentIntent> = {}): AgentIntent {
 describe('createAgentGateway — construction', () => {
   it('throws without rateLimiter', () => {
     expect(() =>
-      createAgentGateway(
-        {} as unknown as Parameters<typeof createAgentGateway>[0],
-      ),
+      createAgentGateway({} as unknown as Parameters<typeof createAgentGateway>[0]),
     ).toThrow(/rateLimiter/);
   });
 
@@ -52,7 +52,10 @@ describe('decide — input validation', () => {
   it.each([
     ['null intent', null],
     ['non-DID agentDid', { ...intent(), agentDid: 'agent' }],
-    ['empty persona name', { ...intent(), persona: { name: '', tier: 'default' as const, open: true } }],
+    [
+      'empty persona name',
+      { ...intent(), persona: { name: '', tier: 'default' as const, open: true } },
+    ],
     ['bogus risk', { ...intent(), risk: 'bogus' as AgentIntent['risk'] }],
   ] as const)('%s → block invalid_input', (_l, bad) => {
     const decide = gateway();
@@ -234,8 +237,12 @@ describe('decide — rule ordering', () => {
     const limiter = new RateLimiter({ capacity: 1, refillPerSec: 1 });
     const decide = gateway({ rateLimiter: limiter });
     // First call exhausts the bucket.
-    decide(intent({ risk: 'pay', op: 'write', sessionGrant: { ops: ['write'], expiresAtSec: 9e9 } }));
-    const r = decide(intent({ risk: 'pay', op: 'write', sessionGrant: { ops: ['write'], expiresAtSec: 9e9 } }));
+    decide(
+      intent({ risk: 'pay', op: 'write', sessionGrant: { ops: ['write'], expiresAtSec: 9e9 } }),
+    );
+    const r = decide(
+      intent({ risk: 'pay', op: 'write', sessionGrant: { ops: ['write'], expiresAtSec: 9e9 } }),
+    );
     if (r.action !== 'block') throw new Error('expected block');
     expect(r.reason).toBe('rate_limited');
   });

@@ -87,6 +87,99 @@ describe('Approval Lifecycle', () => {
     });
   });
 
+  describe('subscribeRequests (5.66 inbox bridge hook)', () => {
+    it('fires the listener synchronously after a successful requestApproval', () => {
+      const seen: string[] = [];
+      manager.subscribeRequests((req) => seen.push(req.id));
+      manager.requestApproval({
+        id: 'sub-1',
+        action: 'a',
+        requester_did: 'd',
+        persona: 'p',
+        reason: 'r',
+        preview: '',
+        created_at: 0,
+      });
+      expect(seen).toEqual(['sub-1']);
+    });
+
+    it('does NOT fire the listener when requestApproval rejects (duplicate id)', () => {
+      manager.requestApproval({
+        id: 'dup',
+        action: 'a',
+        requester_did: 'd',
+        persona: 'p',
+        reason: 'r',
+        preview: '',
+        created_at: 0,
+      });
+      const seen: string[] = [];
+      manager.subscribeRequests((req) => seen.push(req.id));
+      expect(() =>
+        manager.requestApproval({
+          id: 'dup',
+          action: 'a',
+          requester_did: 'd',
+          persona: 'p',
+          reason: 'r',
+          preview: '',
+          created_at: 0,
+        }),
+      ).toThrow('already exists');
+      expect(seen).toEqual([]);
+    });
+
+    it('disposer detaches the listener', () => {
+      const seen: string[] = [];
+      const off = manager.subscribeRequests((req) => seen.push(req.id));
+      off();
+      manager.requestApproval({
+        id: 'after-off',
+        action: 'a',
+        requester_did: 'd',
+        persona: 'p',
+        reason: 'r',
+        preview: '',
+        created_at: 0,
+      });
+      expect(seen).toEqual([]);
+    });
+
+    it('fan-out: a faulty listener does not break other subscribers', () => {
+      const seen: string[] = [];
+      manager.subscribeRequests(() => {
+        throw new Error('boom');
+      });
+      manager.subscribeRequests((req) => seen.push(req.id));
+      manager.requestApproval({
+        id: 'fan',
+        action: 'a',
+        requester_did: 'd',
+        persona: 'p',
+        reason: 'r',
+        preview: '',
+        created_at: 0,
+      });
+      expect(seen).toEqual(['fan']);
+    });
+
+    it('listener receives a clone — mutations do not poison the canonical request', () => {
+      manager.subscribeRequests((req) => {
+        req.reason = 'overwritten';
+      });
+      manager.requestApproval({
+        id: 'mut',
+        action: 'a',
+        requester_did: 'd',
+        persona: 'p',
+        reason: 'original',
+        preview: '',
+        created_at: 0,
+      });
+      expect(manager.getRequest('mut')!.reason).toBe('original');
+    });
+  });
+
   describe('approveRequest', () => {
     it('changes status to approved', () => {
       manager.requestApproval({

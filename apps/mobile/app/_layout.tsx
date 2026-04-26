@@ -6,9 +6,12 @@
  */
 
 import '../src/polyfills';
-import React, { useSyncExternalStore } from 'react';
-import { Tabs } from 'expo-router';
-import { Platform, View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useSyncExternalStore } from 'react';
+import { Tabs, useRouter } from 'expo-router';
+import { Image, Platform, View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useFonts } from 'expo-font';
+import * as Notifications from 'expo-notifications';
 import { colors, fonts } from '../src/theme';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useIsUnlocked } from '../src/hooks/useUnlock';
@@ -19,6 +22,33 @@ import {
   type RuntimeWarning,
 } from '../src/services/runtime_warnings';
 import { UnlockGate } from '../src/components/unlock_gate';
+import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
+import {
+  ensureChannels,
+  rescheduleAllReminders,
+  requestPushPermission,
+} from '../src/notifications/local';
+import { markNotificationRead } from '@dina/brain/src/notifications/inbox';
+import { handleNotificationTap } from '../src/notifications/deep_link';
+import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
+import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
+
+// Horizontal Dina mark used in the Chat tab's header. Other tabs
+// keep their text title — using the wordmark on every screen would
+// dilute it. The asset is already at retina resolution (1672x941),
+// so we just constrain the height and let the width auto-scale.
+const dinaHeaderLogo = require('../assets/branding/dina-logo-horizontal.png');
+
+function DinaHeaderTitle() {
+  return (
+    <Image
+      source={dinaHeaderLogo}
+      resizeMode="contain"
+      style={{ height: 28, width: 96 }}
+      accessibilityLabel="Dina"
+    />
+  );
+}
 
 /**
  * Degradation codes that mean "this node cannot serve provider-role
@@ -42,29 +72,39 @@ const PROVIDER_BLOCKERS: ReadonlySet<string> = new Set([
   'transport.sendd2d.noop',
 ]);
 
-function TabIcon({ name, focused }: { name: string; focused: boolean }) {
-  const icons: Record<string, string> = {
-    Chat: '\u2726', // sparkle
-    Vault: '\u229E', // squared plus (vault)
-    People: '\u2603', // placeholder — will swap
-    Reminders: '\u25CB', // circle
-    Approvals: '\u2713', // check mark (pending review)
-    Settings: '\u2699', // gear
-  };
+type TabName =
+  | 'Chat'
+  | 'Vault'
+  | 'People'
+  | 'Reminders'
+  | 'Approvals'
+  | 'Notifications'
+  | 'Settings';
 
-  // Simple icon mapping using SF Symbols-like unicode
-  const iconMap: Record<string, string> = {
-    Chat: 'chat',
-    Vault: 'vault',
-    People: 'people',
-    Reminders: 'bell',
-    Approvals: 'approvals',
-    Settings: 'gear',
-  };
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
+// One outline + one filled glyph per tab. Filled is shown when the tab
+// is focused, outline otherwise — matches the iOS HIG convention.
+// Reminders uses the bell ("notifications") and the dedicated
+// Notifications tab uses the envelope ("mail") so the two stay
+// distinguishable in the tab bar.
+const TAB_GLYPHS: Record<TabName, { outline: IoniconName; filled: IoniconName }> = {
+  Chat: { outline: 'chatbubble-outline', filled: 'chatbubble' },
+  Vault: { outline: 'lock-closed-outline', filled: 'lock-closed' },
+  People: { outline: 'people-outline', filled: 'people' },
+  Reminders: { outline: 'notifications-outline', filled: 'notifications' },
+  Approvals: { outline: 'checkmark-circle-outline', filled: 'checkmark-circle' },
+  Notifications: { outline: 'mail-outline', filled: 'mail' },
+  Settings: { outline: 'settings-outline', filled: 'settings' },
+};
+
+function TabIcon({ name, focused }: { name: TabName; focused: boolean }) {
+  const glyph = TAB_GLYPHS[name];
+  const iconName = focused ? glyph.filled : glyph.outline;
+  const tint = focused ? colors.tabActive : colors.tabInactive;
   return (
     <View style={tabIconStyles.container}>
-      <View style={[tabIconStyles.dot, focused && tabIconStyles.dotActive]} />
+      <Ionicons name={iconName} size={22} color={tint} />
     </View>
   );
 }
@@ -75,19 +115,17 @@ const tabIconStyles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 2,
   },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'transparent',
-    marginBottom: 2,
-  },
-  dotActive: {
-    backgroundColor: colors.accent,
-  },
 });
 
 export default function RootLayout() {
+  // Load the Ionicons font at runtime (see `TAB_GLYPHS` above). The
+  // package is JS-only on the mobile workspace — the font's TTF asset
+  // is shipped via the JS bundle + registered with the OS by
+  // `expo-font` when this hook resolves. Without this, every
+  // `<Ionicons />` would render as empty whitespace because iOS has
+  // no font called "ionicons" registered.
+  const [iconsFontLoaded] = useFonts(Ionicons.font);
+
   // `useIsUnlocked` subscribes to the unlock module's transition events
   // so the boot hook re-runs when the user unlocks after first paint —
   // no longer gated on a navigation remount (issue #12). `enabled:
@@ -106,7 +144,7 @@ export default function RootLayout() {
   // Hide the tab tree when boot failed — rendering it anyway means every
   // screen tries to read Core globals that were never installed and
   // throws a fresh error per tab. Issue #15.
-  const showTabs = bootState.status !== 'error';
+  const showTabs = bootState.status !== 'error' && iconsFontLoaded;
 
   // Gate the provider-facing tabs (Approvals + Service Sharing) on
   // BOTH role AND blockers (review #16). A requester-only node is
@@ -117,6 +155,82 @@ export default function RootLayout() {
     (bootState.node.role === 'provider' || bootState.node.role === 'both');
   const providerBlocked = bootState.degradations.some((d) => PROVIDER_BLOCKERS.has(d.code));
   const showProviderTabs = runningAsProvider && !providerBlocked;
+
+  // Tab-bar badge counts from the unified inbox (5.69). These hooks
+  // subscribe to inbox events and re-render with the live unread
+  // count, capped to "9+" so a long string can't blow out the layout.
+  const reminderBadge = useUnreadBadge('reminder');
+  const approvalBadge = useUnreadBadge('approval');
+  // Aggregate unread (all kinds) for the Notifications tab itself.
+  const notificationsBadge = useUnreadBadge();
+
+  // Fire watcher mounted at the root so reminders post into the chat
+  // thread + inbox regardless of which tab is currently visible.
+  // Previously it lived inside `app/index.tsx` (Chat tab) — which meant
+  // a reminder whose `due_at` passed while the user was on Reminders /
+  // Notifications / Settings would silently miss the in-app fan-out
+  // (the OS push still delivered, but no inline card / inbox row appeared
+  // until the user wandered back to Chat). Mounting here means the 30 s
+  // tick runs as long as the app is unlocked. `enabled: unlocked` keeps
+  // the watcher off before the persona is open, since `fireMissedReminders`
+  // touches reminder state.
+  useReminderFireWatcher({ threadId: 'main', enabled: unlocked });
+
+  const router = useRouter();
+
+  // Notification system boot (5.59 / 5.61). Runs once after unlock —
+  // sets up Android channels, requests OS permission (idempotent —
+  // re-prompts only via explicit settings action), installs the
+  // reminder → OS-push bridge, and re-issues any pending schedule
+  // whose triggerAt is still in the future. All calls are tolerant
+  // of permission denial (the persisted answer short-circuits
+  // subsequent `requestPushPermission` calls).
+  useEffect(() => {
+    if (!unlocked) return;
+    let cancelled = false;
+    const disposeBridge = installReminderPushBridge();
+    void (async () => {
+      try {
+        await ensureChannels();
+        if (cancelled) return;
+        await requestPushPermission();
+        if (cancelled) return;
+        await rescheduleAllReminders();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[notifications] boot failed:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      disposeBridge();
+    };
+  }, [unlocked]);
+
+  // Push-tap deep link (5.68). Two paths:
+  //   (1) Foreground / background — `addNotificationResponseReceivedListener`
+  //   (2) Cold start (app was killed) — `getLastNotificationResponseAsync()`
+  // The handler is in `notifications/deep_link.ts` so it can be unit
+  // tested without React Testing Library. Both paths feed it the same
+  // `data` payload.
+  useEffect(() => {
+    if (!unlocked) return;
+    const deps = {
+      routerPush: (path: string) => router.push(path as never),
+      markRead: (id: string) => markNotificationRead(id),
+    };
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationTap(response.notification.request.content.data ?? {}, deps);
+    });
+    void Notifications.getLastNotificationResponseAsync().then((resp) => {
+      if (resp !== null && resp !== undefined) {
+        handleNotificationTap(resp.notification.request.content.data ?? {}, deps);
+      }
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [unlocked, router]);
 
   // Live-subscribe to runtime warnings so async ServicePublisher
   // failures surface in the banner without a remount (review #15).
@@ -199,6 +313,7 @@ export default function RootLayout() {
               name="index"
               options={{
                 title: 'Chat',
+                headerTitle: () => <DinaHeaderTitle />,
                 tabBarIcon: ({ focused }) => <TabIcon name="Chat" focused={focused} />,
               }}
             />
@@ -221,6 +336,9 @@ export default function RootLayout() {
               options={{
                 title: 'Reminders',
                 tabBarIcon: ({ focused }) => <TabIcon name="Reminders" focused={focused} />,
+                // Unread fired-reminder count from the unified inbox
+                // (5.66/5.69). Capped to "9+" via formatBadgeCount.
+                tabBarBadge: reminderBadge,
               }}
             />
             <Tabs.Screen
@@ -232,6 +350,15 @@ export default function RootLayout() {
                 // traffic yet (finding #12). `href: null` removes it from the
                 // tab bar without unmounting the route.
                 href: showProviderTabs ? undefined : null,
+                tabBarBadge: approvalBadge,
+              }}
+            />
+            <Tabs.Screen
+              name="notifications"
+              options={{
+                title: 'Notifications',
+                tabBarIcon: ({ focused }) => <TabIcon name="Notifications" focused={focused} />,
+                tabBarBadge: notificationsBadge,
               }}
             />
             <Tabs.Screen

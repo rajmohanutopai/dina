@@ -91,28 +91,28 @@ describe('Chat Approval Cards Hook (4.11)', () => {
       createApprovalCard('apr-1', 'unlock', BRAIN_DID, 'health', 'reason', 'preview');
     });
 
-    it('approves with single scope', () => {
-      const card = approveCard('apr-1', 'single', USER_DID);
+    it('approves with single scope', async () => {
+      const card = await approveCard('apr-1', 'single', USER_DID);
 
       expect(card).not.toBeNull();
       expect(card!.status).toBe('approved');
       expect(card!.scope).toBe('single');
     });
 
-    it('approves with session scope', () => {
-      const card = approveCard('apr-1', 'session', USER_DID);
+    it('approves with session scope', async () => {
+      const card = await approveCard('apr-1', 'session', USER_DID);
 
       expect(card!.status).toBe('approved');
       expect(card!.scope).toBe('session');
     });
 
-    it('returns null for nonexistent approval', () => {
-      expect(approveCard('nonexistent', 'single', USER_DID)).toBeNull();
+    it('returns null for nonexistent approval', async () => {
+      expect(await approveCard('nonexistent', 'single', USER_DID)).toBeNull();
     });
 
-    it('approved request is no longer in pending list', () => {
+    it('approved request is no longer in pending list', async () => {
       expect(getPendingCount()).toBe(1);
-      approveCard('apr-1', 'single', USER_DID);
+      await approveCard('apr-1', 'single', USER_DID);
       expect(getPendingCount()).toBe(0);
     });
   });
@@ -122,21 +122,21 @@ describe('Chat Approval Cards Hook (4.11)', () => {
       createApprovalCard('apr-1', 'share', BRAIN_DID, 'general', 'reason', 'preview');
     });
 
-    it('denies a pending request', () => {
-      const card = denyCard('apr-1');
+    it('denies a pending request', async () => {
+      const card = await denyCard('apr-1');
 
       expect(card).not.toBeNull();
       expect(card!.status).toBe('denied');
     });
 
-    it('removes from pending list', () => {
+    it('removes from pending list', async () => {
       expect(getPendingCount()).toBe(1);
-      denyCard('apr-1');
+      await denyCard('apr-1');
       expect(getPendingCount()).toBe(0);
     });
 
-    it('returns null for nonexistent', () => {
-      expect(denyCard('nonexistent')).toBeNull();
+    it('returns null for nonexistent', async () => {
+      expect(await denyCard('nonexistent')).toBeNull();
     });
   });
 
@@ -145,10 +145,10 @@ describe('Chat Approval Cards Hook (4.11)', () => {
       expect(getPendingCards()).toHaveLength(0);
     });
 
-    it('returns only pending cards', () => {
+    it('returns only pending cards', async () => {
       createApprovalCard('apr-1', 'a', BRAIN_DID, 'general', '', '');
       createApprovalCard('apr-2', 'b', BRAIN_DID, 'general', '', '');
-      approveCard('apr-1', 'single', USER_DID);
+      await approveCard('apr-1', 'single', USER_DID);
 
       const pending = getPendingCards();
       expect(pending).toHaveLength(1);
@@ -157,24 +157,24 @@ describe('Chat Approval Cards Hook (4.11)', () => {
   });
 
   describe('isApproved + consumeApproval', () => {
-    it('isApproved returns true after approval', () => {
+    it('isApproved returns true after approval', async () => {
       createApprovalCard('apr-1', 'a', BRAIN_DID, 'general', '', '');
-      approveCard('apr-1', 'single', USER_DID);
+      await approveCard('apr-1', 'single', USER_DID);
 
       expect(isApproved('apr-1')).toBe(true);
     });
 
-    it('consumeApproval removes single-use grant', () => {
+    it('consumeApproval removes single-use grant', async () => {
       createApprovalCard('apr-1', 'a', BRAIN_DID, 'general', '', '');
-      approveCard('apr-1', 'single', USER_DID);
+      await approveCard('apr-1', 'single', USER_DID);
 
       expect(consumeApproval('apr-1')).toBe(true);
       expect(isApproved('apr-1')).toBe(false);
     });
 
-    it('session-scoped grants survive consumption', () => {
+    it('session-scoped grants survive consumption', async () => {
       createApprovalCard('apr-1', 'a', BRAIN_DID, 'general', '', '');
-      approveCard('apr-1', 'session', USER_DID);
+      await approveCard('apr-1', 'session', USER_DID);
 
       expect(consumeApproval('apr-1')).toBe(false); // session grants don't consume
       expect(isApproved('apr-1')).toBe(true); // still valid
@@ -182,11 +182,11 @@ describe('Chat Approval Cards Hook (4.11)', () => {
   });
 
   describe('endSession', () => {
-    it('revokes all session-scoped approvals', () => {
+    it('revokes all session-scoped approvals', async () => {
       createApprovalCard('apr-1', 'a', BRAIN_DID, 'general', '', '');
       createApprovalCard('apr-2', 'b', BRAIN_DID, 'general', '', '');
-      approveCard('apr-1', 'session', USER_DID);
-      approveCard('apr-2', 'session', USER_DID);
+      await approveCard('apr-1', 'session', USER_DID);
+      await approveCard('apr-2', 'session', USER_DID);
 
       const revoked = endSession();
       expect(revoked).toBe(2);
@@ -194,9 +194,9 @@ describe('Chat Approval Cards Hook (4.11)', () => {
       expect(isApproved('apr-2')).toBe(false);
     });
 
-    it('does not revoke single-use grants (already consumed or still valid)', () => {
+    it('does not revoke single-use grants (already consumed or still valid)', async () => {
       createApprovalCard('apr-1', 'a', BRAIN_DID, 'general', '', '');
-      approveCard('apr-1', 'single', USER_DID);
+      await approveCard('apr-1', 'single', USER_DID);
 
       const revoked = endSession();
       expect(revoked).toBe(0);

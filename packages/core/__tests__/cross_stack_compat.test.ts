@@ -227,6 +227,7 @@ const KNOWN_860_GAPS: readonly string[] = [
 
 const KNOWN_861_GAPS: readonly string[] = [
   '/v1/scratchpad', // Lite Brain calls; Go Core doesn't expose — move to Brain-internal
+  '/v1/ws/notify', // Lite Core has WebSocket push (notify_route.ts); Go Core only has POST /v1/notify (one-shot). The WebSocket pattern is Lite-only by design — `notification_frame.ts` documents the wire shape consumers parse. Promoting Go Core to a WebSocket push channel is a separate (large) protocol decision.
 ];
 
 // ─── Tests ─────────────────────────────────────────────────────────────────

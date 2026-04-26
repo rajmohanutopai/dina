@@ -60,6 +60,10 @@ import { InProcessTransport } from '../../../core/src/client/in-process-transpor
 import { clearReplayCache } from '@dina/core/src/transport/adversarial';
 import { makeDinaMessage, resetFactoryCounters } from '@dina/test-harness';
 import { MSG_TYPE_SOCIAL_UPDATE } from '@dina/protocol';
+import {
+  registerReminderLLM,
+  resetReminderLLM,
+} from '../../src/pipeline/reminder_planner';
 
 import {
   openSQLiteVault,
@@ -89,6 +93,7 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     resetContactDirectory();
     resetReasoningProvider();
     resetReminderState();
+    resetReminderLLM();
     clearReplayCache();
     resetFactoryCounters();
     configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
@@ -96,6 +101,46 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
       openHandles.push(openSQLiteVault(persona));
     }
     setAccessiblePersonas(COVERED_PERSONAS);
+
+    // Stub the reminder-planner LLM. Real boots wire this through
+    // `agentic_ask.ts:registerReminderLLM(...)` against Gemini; the
+    // tests just need it to emit reminders that match each fixture.
+    // We scope the match to the rendered Subject/Body fields — the
+    // REMINDER_PLAN template embeds "Emma's birthday is March 15" as
+    // an in-prompt example, so a flat `prompt.includes` would
+    // false-match every test.
+    registerReminderLLM(async (_system, prompt) => {
+      const subject = (prompt.match(/^- Subject: (.*)$/m)?.[1] ?? '').toLowerCase();
+      const body = (prompt.match(/^- Body: (.*)$/m)?.[1] ?? '').toLowerCase();
+      const userContent = `${subject}\n${body}`;
+      if (userContent.includes('maya') && userContent.includes('birthday')) {
+        const nextNov7 = Date.UTC(new Date().getUTCFullYear() + 1, 10, 7, 9, 0, 0);
+        return JSON.stringify({
+          reminders: [
+            {
+              message: "Maya's birthday is on Nov 7th",
+              due_at: nextNov7,
+              kind: 'birthday',
+            },
+          ],
+        });
+      }
+      if (userContent.includes('coming in 15 minutes')) {
+        // Mirror the previous deterministic regex behaviour: arrival
+        // event with a 5-min lead → reminder fires 10 min from now.
+        const dueAt = Date.now() + 10 * 60 * 1000;
+        return JSON.stringify({
+          reminders: [
+            {
+              message: 'I am coming in 15 minutes',
+              due_at: dueAt,
+              kind: 'arrival',
+            },
+          ],
+        });
+      }
+      return '{"reminders":[]}';
+    });
   });
 
   afterEach(() => {
@@ -105,6 +150,7 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     }
     resetContactDirectory();
     resetReminderState();
+    resetReminderLLM();
     clearReplayCache();
   });
 

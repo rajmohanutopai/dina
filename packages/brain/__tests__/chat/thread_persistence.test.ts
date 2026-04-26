@@ -57,6 +57,10 @@ describe('thread persistence dual-write (#14)', () => {
     const row = (await repo.listByThread('main'))[0];
     expect(row.type).toBe('approval');
     expect(row.metadata).toMatchObject({
+      // 5.65: discriminator so the chat tab's renderer dispatches
+      // service-approval cards to <InlineServiceApprovalCard>, distinct
+      // from ask-approval cards (kind: 'ask_approval', 5.21-H-i).
+      kind: 'service_approval',
       taskId: 't-1',
       capability: 'eta_query',
       fromDID: 'did:plc:alice',

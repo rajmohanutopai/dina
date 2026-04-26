@@ -44,7 +44,7 @@ import {
   newRequestId,
   withTrace,
   type TraceContext,
-} from './trace_correlation';
+} from '@dina/brain/src/diagnostics/trace_correlation';
 
 export type ProcessDisposition =
   | 'notified' // NotifyFn accepted + user will see the notification

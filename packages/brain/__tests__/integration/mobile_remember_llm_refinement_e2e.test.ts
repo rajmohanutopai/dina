@@ -204,10 +204,13 @@ describe('mobile `/remember` — LLM refinement hooks fire on post-publish', () 
     expect(result.postPublish!.errors).toEqual([]);
   });
 
-  it('LLM failures are fail-open — deterministic reminders still created', async () => {
+  it('LLM reminder failure → 0 reminders, drain still succeeds', async () => {
     // Fake that always throws — simulates the router rejecting on
-    // consent / offline / rate-limit. `handlePostPublish` must still
-    // return without the drain marking the item failed.
+    // consent / offline / rate-limit. The contract changed in April
+    // 2026: there is no deterministic regex fallback, so an LLM
+    // failure means 0 reminders. The error must be surfaced through
+    // the planner's logger (verified in the unit test); the drain
+    // itself must still succeed so the vault item lands.
     registerReminderLLM(async () => {
       throw new Error('upstream 503');
     });
@@ -240,14 +243,14 @@ describe('mobile `/remember` — LLM refinement hooks fire on post-publish', () 
 
     const result = tick.results[0]!;
     expect(result.postPublish).toBeDefined();
-    // Deterministic extractor still ran → reminders land.
-    expect(result.postPublish!.remindersCreated).toBeGreaterThan(0);
-    // llmRefined is false because the LLM threw.
+    // No regex fallback — LLM failure means 0 reminders.
+    expect(result.postPublish!.remindersCreated).toBe(0);
     expect(result.postPublish!.llmRefinedReminders).toBe(false);
-    // Identity extraction is deeply fail-soft — `extractIdentityLinks`
-    // catches its own LLM errors internally and falls back to the
-    // deterministic pass, so `result.errors` stays empty. Key
-    // invariant: the drain did not fail the item.
+    // `errors` collects post-publish errors from upstream of the
+    // planner; the planner's own LLM failure is logged via the
+    // logger (asserted in `reminder_planner.test.ts`), not surfaced
+    // here, so the drain's `errors` stays empty.
+    expect(result.postPublish!.errors).toEqual([]);
     expect(tick.failed).toBe(0);
   });
 });

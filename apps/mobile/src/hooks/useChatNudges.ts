@@ -15,6 +15,7 @@
 
 import { respectsSilenceTier } from '@dina/brain/src/nudge/whisper';
 import { addMessage } from '@dina/brain/src/chat/thread';
+import { appendNotification } from '@dina/brain/src/notifications/inbox';
 
 export type NudgeKind =
   | 'reconnection'
@@ -86,10 +87,43 @@ export function createNudge(
 
   nudges.set(id, nudge);
 
-  // Add to chat thread as a nudge message
+  // Add to chat thread as a nudge message. Metadata carries the
+  // structured fields the inline `<InlineNudgeCard>` (5.62) needs to
+  // render an action chip + tier indicator instead of a plain bubble.
+  // Without `kind: 'nudge'` the chat tab's `toDisplayType` falls
+  // back to a generic system bubble.
   if (options?.threadId) {
-    addMessage(options.threadId, 'nudge', `${title}: ${body}`);
+    addMessage(options.threadId, 'nudge', `${title}: ${body}`, {
+      metadata: {
+        kind: 'nudge',
+        nudgeId: id,
+        nudgeKind: kind,
+        title,
+        body,
+        tier,
+        actionLabel: nudge.actionLabel ?? null,
+        actionType: nudge.actionType ?? null,
+        contactDID: nudge.contactDID ?? null,
+        contactName: nudge.contactName ?? null,
+      },
+    });
   }
+
+  // Mirror to the unified notifications inbox (5.66) so the user can
+  // catch up on nudges from the Notifications screen without scrolling
+  // the chat thread. The deep link routes back to the originating
+  // thread when one is set; otherwise omitted (no destination to land
+  // on if the producer didn't post to chat).
+  appendNotification({
+    id: `nt-${id}`,
+    kind: 'nudge',
+    title,
+    body,
+    sourceId: id,
+    ...(options?.threadId !== undefined && {
+      deepLink: `dina://chat/${options.threadId}?focus=${id}`,
+    }),
+  });
 
   return nudge;
 }

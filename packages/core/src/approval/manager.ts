@@ -23,8 +23,11 @@ export interface ApprovalRequest {
   created_at: number;
 }
 
+export type ApprovalRequestListener = (req: ApprovalRequest) => void;
+
 export class ApprovalManager {
   private readonly requests: Map<string, ApprovalRequest> = new Map();
+  private readonly listeners: Set<ApprovalRequestListener> = new Set();
 
   /**
    * Create a new approval request.
@@ -37,12 +40,37 @@ export class ApprovalManager {
       throw new Error(`approval: request "${req.id}" already exists`);
     }
 
-    this.requests.set(req.id, {
+    const stored: ApprovalRequest = {
       ...req,
       status: 'pending',
-    });
+    };
+    this.requests.set(req.id, stored);
+
+    // Fan out to subscribers — Brain's notifications-inbox bridge is
+    // the typical consumer. Each listener gets a fresh shallow clone
+    // so a faulty observer mutating the request can't poison the
+    // canonical state.
+    for (const fn of this.listeners) {
+      try {
+        fn({ ...stored });
+      } catch {
+        /* swallow — one faulty observer mustn't break the request flow */
+      }
+    }
 
     return req.id;
+  }
+
+  /**
+   * Subscribe to every newly-created approval request. Returns a
+   * disposer; call it on shutdown / test teardown to detach. Listeners
+   * fire synchronously after the request is recorded.
+   */
+  subscribeRequests(listener: ApprovalRequestListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   /**

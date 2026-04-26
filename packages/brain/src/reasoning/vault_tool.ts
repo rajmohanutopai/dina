@@ -21,14 +21,81 @@
  * (same guarantee the pre-assembly path gives).
  */
 
-import type { AgentTool } from './tool_registry';
+import { ApprovalRequiredError, type AgentTool } from './tool_registry';
 import { executeToolSearch, getAccessiblePersonas } from '../vault_context/assembly';
 import { getItem, listRecentItems } from '../../../core/src/vault/crud';
 import { listPersonas } from '../../../core/src/persona/service';
 
+/**
+ * Pluggable per-call gate for content-reading vault tools.
+ *
+ * Returns:
+ *   - `null` (or omitted) → persona is open / accessible, proceed.
+ *   - `string` (an approval id) → persona requires approval; the tool
+ *     throws `ApprovalRequiredError(approvalId, persona)` which the
+ *     `ToolRegistry` translates into an `approval_required` outcome
+ *     and the agentic loop turns into a Pattern A bail.
+ *
+ * The composition layer (mobile boot / brain-server boot) builds a
+ * guard that knows about the persona registry's tier, the
+ * `ApprovalManager` for minting/consuming approvals, and the
+ * surrounding ask context. This module deliberately doesn't reach for
+ * any of those — keeping the tool factories framework-free + unit
+ * testable with a plain function stub.
+ *
+ * `list_personas` does NOT use this guard. Returning a name+tier list
+ * is intentionally unauthenticated — the LLM needs to know the persona
+ * exists in order to ask for approval to read it. The guard fires only
+ * on content-reading tools (`vault_search` with a named persona,
+ * `browse_vault`, `get_full_content`).
+ */
+export type VaultPersonaGuard = (persona: string) => Promise<string | null> | string | null;
+
 export interface VaultSearchToolOptions {
   /** Upper limit on how many rows one call can return. */
   maxResults?: number;
+  /** Optional pluggable gate — see `VaultPersonaGuard` docstring. */
+  personaGuard?: VaultPersonaGuard;
+}
+
+export interface VaultBrowseToolOptions {
+  personaGuard?: VaultPersonaGuard;
+}
+
+export interface VaultGetFullContentToolOptions {
+  personaGuard?: VaultPersonaGuard;
+}
+
+/**
+ * Internal helper — runs the guard (if wired) and throws if approval required.
+ *
+ * Fail-closed contract:
+ *   - `null` / `undefined`     → allow (open persona).
+ *   - non-empty string         → throw `ApprovalRequiredError`.
+ *   - empty string             → throw a regular `Error` (fail-closed).
+ *     Returning '' indicates a guard misconfiguration (couldn't mint
+ *     an approval id). Letting the read proceed would silently bypass
+ *     the gate; surfacing a hard error makes the bug visible without
+ *     leaking vault contents.
+ */
+async function checkPersonaGuard(
+  guard: VaultPersonaGuard | undefined,
+  persona: string,
+): Promise<void> {
+  if (!guard) return;
+  const result = await guard(persona);
+  if (result === null || result === undefined) return;
+  if (typeof result !== 'string') {
+    throw new Error(
+      `personaGuard for "${persona}" returned non-string ${typeof result} — refusing read`,
+    );
+  }
+  if (result === '') {
+    throw new Error(
+      `personaGuard for "${persona}" returned empty approvalId — refusing read (fail-closed)`,
+    );
+  }
+  throw new ApprovalRequiredError(result, persona);
 }
 
 const DEFAULT_MAX_RESULTS = 10;
@@ -49,6 +116,7 @@ const BROWSE_FIELD_CHARS = 500;
  */
 export function createVaultSearchTool(options: VaultSearchToolOptions = {}): AgentTool {
   const cap = options.maxResults ?? DEFAULT_MAX_RESULTS;
+  const personaGuard = options.personaGuard;
 
   return {
     name: 'vault_search',
@@ -98,10 +166,14 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
           ? args.persona.trim()
           : null;
 
-      // Single-persona path — LLM explicitly named one. Preserve the
-      // legacy "accessible:false on locked" signal so the LLM can tell
-      // the user that vault is locked.
+      // Single-persona path — LLM explicitly named one. Run the
+      // pluggable guard FIRST so a sensitive/locked persona can bail
+      // the agentic loop with `ApprovalRequiredError` (Pattern A
+      // suspend/resume). When no guard is wired we fall back to the
+      // legacy "accessible:false on locked" signal so the LLM can
+      // tell the user the vault is locked.
       if (namedPersona !== null) {
+        await checkPersonaGuard(personaGuard, namedPersona);
         const accessible = getAccessiblePersonas().includes(namedPersona);
         const rows = await executeToolSearch(namedPersona, query, limit);
         return {
@@ -245,7 +317,8 @@ export function createListPersonasTool(): AgentTool {
  * return the most recent BROWSE_LIMIT items with their summary + body
  * + provenance fields capped at 500 chars each (matches Python).
  */
-export function createBrowseVaultTool(): AgentTool {
+export function createBrowseVaultTool(options: VaultBrowseToolOptions = {}): AgentTool {
+  const personaGuard = options.personaGuard;
   return {
     name: 'browse_vault',
     description:
@@ -268,6 +341,11 @@ export function createBrowseVaultTool(): AgentTool {
       const persona =
         typeof args.persona === 'string' && args.persona !== '' ? args.persona : '';
       if (persona === '') throw new Error('browse_vault: persona is required');
+
+      // Pluggable gate — sensitive/locked personas bail the loop with
+      // ApprovalRequiredError. Falls through to the legacy accessibility
+      // check when no guard is wired.
+      await checkPersonaGuard(personaGuard, persona);
 
       if (!getAccessiblePersonas().includes(persona)) {
         return {
@@ -319,7 +397,10 @@ export function createBrowseVaultTool(): AgentTool {
  * you need the complete original document") keeps this off the hot
  * path — it's a fetch-by-id, not a search.
  */
-export function createGetFullContentTool(): AgentTool {
+export function createGetFullContentTool(
+  options: VaultGetFullContentToolOptions = {},
+): AgentTool {
+  const personaGuard = options.personaGuard;
   return {
     name: 'get_full_content',
     description:
@@ -359,6 +440,10 @@ export function createGetFullContentTool(): AgentTool {
       if (persona === '' || itemId === '') {
         return { error: 'persona and item_id are required' };
       }
+      // Pluggable gate — sensitive/locked personas bail the loop with
+      // ApprovalRequiredError. Falls through to the legacy accessibility
+      // check when no guard is wired.
+      await checkPersonaGuard(personaGuard, persona);
       if (!getAccessiblePersonas().includes(persona)) {
         return { error: `Persona '${persona}' is locked` };
       }

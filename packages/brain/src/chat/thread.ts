@@ -20,7 +20,15 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { getChatMessageRepository } from '../../../core/src/chat/repository';
 
-export type MessageType = 'user' | 'dina' | 'approval' | 'nudge' | 'briefing' | 'system' | 'error';
+export type MessageType =
+  | 'user'
+  | 'dina'
+  | 'approval'
+  | 'nudge'
+  | 'briefing'
+  | 'reminder'
+  | 'system'
+  | 'error';
 
 export interface ChatMessage {
   id: string;
@@ -290,8 +298,11 @@ export function addApprovalMessage(
     approveCommand: string;
   },
 ): ChatMessage {
+  // `kind: 'service_approval'` discriminates this from the
+  // ask-coordinator's `'ask_approval'` cards (5.21-H-i) so the chat
+  // tab's renderer can dispatch to the right inline component.
   return addMessage(threadId, 'approval', content, {
-    metadata,
+    metadata: { ...metadata, kind: 'service_approval' },
     sources: [metadata.taskId, metadata.capability],
   });
 }

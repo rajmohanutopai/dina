@@ -44,7 +44,27 @@ export interface AgentTool {
 
 export type ToolExecutionOutcome =
   | { success: true; result: unknown }
-  | { success: false; error: string; code: 'unknown_tool' | 'invalid_args' | 'execution_failed' };
+  | { success: false; error: string; code: 'unknown_tool' | 'invalid_args' | 'execution_failed' }
+  /**
+   * Yield: the tool can't complete until an operator approves access.
+   * Distinct from a regular failure — the agentic loop catches this
+   * variant and parks the whole turn into `pending_approval` (Pattern A,
+   * full-state suspend). The same `approvalId` is what the operator
+   * approves via `AskApprovalGateway.approve(...)`. On resume the
+   * loop's `resumeAgenticTurn` re-issues this exact tool call; the
+   * tool then sees the consumed approval and returns real data.
+   *
+   * `persona` is informational — it lets the notification dispatcher
+   * say "approval needed for the financial vault" without the
+   * dispatcher reaching into ApprovalManager.
+   */
+  | {
+      success: false;
+      code: 'approval_required';
+      approvalId: string;
+      persona: string;
+      error: string;
+    };
 
 export class ToolRegistry {
   private readonly tools = new Map<string, AgentTool>();
@@ -89,6 +109,12 @@ export class ToolRegistry {
   /**
    * Execute a tool by name. Validates args, catches throws, returns a
    * structured outcome. Never throws.
+   *
+   * Approval flow: a tool body can throw `ApprovalRequiredError` to
+   * signal that the operator must authorise the action. The registry
+   * catches that specific class and emits an `approval_required`
+   * outcome — the agentic loop catches that variant and parks the
+   * whole turn (Pattern A suspend/resume).
    */
   async execute(name: string, args: Record<string, unknown>): Promise<ToolExecutionOutcome> {
     const tool = this.tools.get(name);
@@ -103,12 +129,48 @@ export class ToolRegistry {
       const result = await tool.execute(args);
       return { success: true, result };
     } catch (err) {
+      if (err instanceof ApprovalRequiredError) {
+        return {
+          success: false,
+          code: 'approval_required',
+          approvalId: err.approvalId,
+          persona: err.persona,
+          error: err.message,
+        };
+      }
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),
         code: 'execution_failed',
       };
     }
+  }
+}
+
+/**
+ * Thrown by a tool body when the action requires operator approval.
+ * Caught by `ToolRegistry.execute` which translates into the
+ * `approval_required` outcome variant. The agentic loop recognises
+ * the variant and parks the entire turn for resumption — see
+ * `agentic_loop.ts::runAgenticTurn` and `resumeAgenticTurn`.
+ *
+ * `approvalId` must be the id registered with `ApprovalManager`. The
+ * caller pattern is:
+ *
+ *     approvalManager.requestApproval({ id: approvalId, ... });
+ *     throw new ApprovalRequiredError(approvalId, persona);
+ *
+ * Re-throwing this from inside an async tool body is safe — the
+ * registry's `try/catch` will see it.
+ */
+export class ApprovalRequiredError extends Error {
+  readonly approvalId: string;
+  readonly persona: string;
+  constructor(approvalId: string, persona: string) {
+    super(`approval required for persona ${JSON.stringify(persona)} (approvalId=${approvalId})`);
+    this.name = 'ApprovalRequiredError';
+    this.approvalId = approvalId;
+    this.persona = persona;
   }
 }
 

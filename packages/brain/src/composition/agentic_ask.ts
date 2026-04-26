@@ -52,6 +52,7 @@ import {
   createListPersonasTool,
   createBrowseVaultTool,
   createGetFullContentTool,
+  type VaultPersonaGuard,
 } from '../reasoning/vault_tool';
 import { createSearchTrustNetworkTool } from '../reasoning/trust_tool';
 import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
@@ -64,6 +65,8 @@ import { registerIdentityExtractor } from '../pipeline/identity_extraction';
 import type { LLMProvider } from '../llm/adapters/provider';
 import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
 import type { TaskType } from '../llm/router';
+import type { ApprovalManager } from '@dina/core/src/approval/manager';
+import { createPersonaGuard } from './persona_guard';
 
 /**
  * Input: fully-resolved target-agnostic handles. The caller
@@ -99,6 +102,17 @@ export interface BuildAgenticAskPipelineInput {
    * (server operators consented by running the binary).
    */
   cloudConsentGranted?: boolean;
+  /**
+   * Optional `ApprovalManager` — when supplied, the pipeline exposes
+   * `buildToolsForAsk(askContext)` so the ask handler can construct a
+   * per-ask `ToolRegistry` with vault tools wired to a
+   * `personaGuard` that mints/consumes per-ask approvals (5.21-D /
+   * 5.21-E). Without this, `buildToolsForAsk` is undefined and the
+   * static `tools` registry continues to work as before — sensitive
+   * personas surface as `accessible:false` rather than bailing the
+   * agentic loop with `ApprovalRequiredError`.
+   */
+  approvalManager?: ApprovalManager;
 }
 
 /**
@@ -109,9 +123,42 @@ export interface BuildAgenticAskPipelineInput {
  * `handlerOptions` carries the intent classifier + guard scanner so
  * the production /ask path always runs the full Python-parity pipeline.
  */
+/**
+ * Per-ask context the handler hands to `buildToolsForAsk` when
+ * Pattern A is wired (5.21-E). Carries the registry's `askId` plus
+ * the original requester DID so the minted approval record names a
+ * real owner.
+ */
+export interface AskToolContext {
+  askId: string;
+  requesterDid: string;
+}
+
 export interface AgenticAskPipeline {
   provider: RoutedLLMProvider;
+  /**
+   * Static tool registry — wired without a `personaGuard`. Callers
+   * that don't have an `askId` (mobile chat orchestrator path today)
+   * keep using this. Sensitive personas surface as `accessible:false`
+   * rather than bailing the loop.
+   */
   tools: ToolRegistry;
+  /**
+   * Per-ask tool factory — present iff `approvalManager` was supplied.
+   * Builds a fresh `ToolRegistry` on each call with the three
+   * content-reading vault tools wired to a `personaGuard` bound to
+   * `(askContext.askId, askContext.requesterDid)`. The non-vault
+   * tools (geocode, trust network, query service, find preferred
+   * provider, list personas) share the static factories — they
+   * don't need ask context.
+   *
+   * The ask handler calls this once per inbound `/ask`:
+   * ```ts
+   * const tools = pipeline.buildToolsForAsk?.({askId, requesterDid}) ?? pipeline.tools;
+   * await runAgenticTurn({provider, tools, ...});
+   * ```
+   */
+  buildToolsForAsk?: (askContext: AskToolContext) => ToolRegistry;
   router: LLMRouter;
   handlerOptions: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
 }
@@ -165,47 +212,82 @@ export function buildAgenticAskPipeline(
   // `handlePostPublish` calls. Both take `(system, prompt) => string`
   // and are fail-open. Wired through the shared router so PII scrub +
   // consent gate + lite-tier selection apply.
-  registerReminderLLM(buildLightweightLLMCall(router, 'summarize'));
+  // Reminder planning is the only post-publish task that does real
+  // date math + structured JSON output (`due_at` epoch ms, kind enum,
+  // future/past filtering). The April 2026 simulator pass found the
+  // 'summarize' lite tier emitting 2025 dates — Gemini 1.5 Flash lite
+  // defaulting to its training-cutoff year despite `{{today}}` in the
+  // prompt. Bump to the primary tier ('reason' → tiers.primary in
+  // pickModel) so the planner gets the same model the /ask path
+  // already uses for date/time reasoning. Identity extraction is
+  // pure entity tagging, lightweight is fine.
+  registerReminderLLM(buildLightweightLLMCall(router, 'reason'));
   registerIdentityExtractor(buildLightweightLLMCall(router, 'classify'));
 
   // Tool registry — 9 tools matching the Python `VaultContextAssembler`
   // surface + bus-driver demo tools.
-  const tools = new ToolRegistry();
-  tools.register(createListPersonasTool());
-  tools.register(createVaultSearchTool());
-  tools.register(createBrowseVaultTool());
-  tools.register(createGetFullContentTool());
-  tools.register(createGeocodeTool());
-  tools.register(
-    createSearchTrustNetworkTool({
-      appViewClient: input.appViewClient,
-      logger: input.logger,
-    }),
-  );
-  tools.register(createSearchProviderServicesTool({ appViewClient: input.appViewClient }));
-  tools.register(
-    createQueryServiceTool({
-      orchestrator: input.orchestratorHandle,
-      // WM-BRAIN-06d: same AppView client so `query_service` can
-      // auto-fetch `schema_hash` on SHORTCUT dispatches. Fail-soft.
-      appViewClient: input.appViewClient,
-      logger: input.logger,
-    }),
-  );
-  tools.register(
-    createFindPreferredProviderTool({
-      core: input.coreClient,
-      appViewClient: input.appViewClient,
-      logger: input.logger,
-    }),
-  );
+  //
+  // The vault tools optionally take a `personaGuard`; when an
+  // `approvalManager` is wired we expose a per-ask factory that
+  // builds a fresh registry with the guard bound to the current
+  // (askId, requesterDid). Without an `approvalManager` the static
+  // registry has no guard — sensitive personas surface as
+  // `accessible:false` rather than bailing the loop.
+  const buildToolsWithGuard = (guard?: VaultPersonaGuard): ToolRegistry => {
+    const reg = new ToolRegistry();
+    reg.register(createListPersonasTool());
+    reg.register(createVaultSearchTool(guard ? { personaGuard: guard } : {}));
+    reg.register(createBrowseVaultTool(guard ? { personaGuard: guard } : {}));
+    reg.register(createGetFullContentTool(guard ? { personaGuard: guard } : {}));
+    reg.register(createGeocodeTool());
+    reg.register(
+      createSearchTrustNetworkTool({
+        appViewClient: input.appViewClient,
+        logger: input.logger,
+      }),
+    );
+    reg.register(createSearchProviderServicesTool({ appViewClient: input.appViewClient }));
+    reg.register(
+      createQueryServiceTool({
+        orchestrator: input.orchestratorHandle,
+        // WM-BRAIN-06d: same AppView client so `query_service` can
+        // auto-fetch `schema_hash` on SHORTCUT dispatches. Fail-soft.
+        appViewClient: input.appViewClient,
+        logger: input.logger,
+      }),
+    );
+    reg.register(
+      createFindPreferredProviderTool({
+        core: input.coreClient,
+        appViewClient: input.appViewClient,
+        logger: input.logger,
+      }),
+    );
+    return reg;
+  };
 
-  return {
+  const tools = buildToolsWithGuard();
+
+  const result: AgenticAskPipeline = {
     provider: routedForAsk,
     tools,
     router,
     handlerOptions: { intentClassifier, guardScanner },
   };
+
+  if (input.approvalManager !== undefined) {
+    const approvalManager = input.approvalManager;
+    result.buildToolsForAsk = (ctx: AskToolContext): ToolRegistry => {
+      const guard = createPersonaGuard({
+        approvalManager,
+        askId: ctx.askId,
+        requesterDid: ctx.requesterDid,
+      });
+      return buildToolsWithGuard(guard);
+    };
+  }
+
+  return result;
 }
 
 /**

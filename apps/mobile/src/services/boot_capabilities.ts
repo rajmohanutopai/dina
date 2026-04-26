@@ -58,6 +58,13 @@ import {
 } from '@dina/brain/src/llm/router_dispatch';
 import type { ProviderName } from '@dina/brain/src/llm/router';
 import { buildAgenticAskPipeline } from '@dina/brain/src/composition/agentic_ask';
+import {
+  buildAgenticExecuteFn,
+  createAskCoordinator,
+} from '@dina/brain/src/composition/ask_coordinator';
+import { DEFAULT_ASK_SYSTEM_PROMPT } from '@dina/brain/src/reasoning/ask_handler';
+import { getApprovalManager } from '@dina/core/src/approval/manager';
+import { installApprovalInboxBridge } from '@dina/brain/src/notifications/bridges';
 import type { BootServiceInputs } from './boot_service';
 import type { NodeRole } from './bootstrap';
 import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
@@ -178,12 +185,26 @@ export async function buildBootInputs(
     appViewClient,
     logger: options.logger,
   });
+
+  // Pattern A wins over the simpler agenticAsk path when we have a
+  // pipeline in hand: the pipeline already has `approvalManager` wired
+  // (via `tryBuildAgenticAsk` below), so we can construct an
+  // `AskCoordinator` and ride the full suspend/resume chain.
+  // `agenticAsk` is left undefined when `askCoordinator` is set —
+  // bootstrap.ts routes coordinator-first.
   const agenticAsk: BootServiceInputs['agenticAsk'] =
-    agenticAskBundle !== undefined
+    agenticAskBundle !== undefined && agenticAskBundle.askCoordinator === undefined
       ? {
           provider: agenticAskBundle.provider,
           tools: agenticAskBundle.tools,
           options: agenticAskBundle.handlerOptions,
+        }
+      : undefined;
+  const askCoordinator: BootServiceInputs['askCoordinator'] =
+    agenticAskBundle?.askCoordinator !== undefined
+      ? {
+          coordinator: agenticAskBundle.askCoordinator,
+          requesterDid: did,
         }
       : undefined;
 
@@ -324,6 +345,7 @@ export async function buildBootInputs(
     appViewClient,
     databaseAdapter,
     agenticAsk,
+    askCoordinator,
     stagingEnrichment,
     logger: options.logger,
     msgboxURL,
@@ -405,6 +427,14 @@ interface AgenticAskBundle {
     import('@dina/brain/src/reasoning/ask_handler').AgenticAskHandlerOptions,
     'provider' | 'tools'
   >;
+  /**
+   * Pattern A coordinator — produced when the pipeline was built with
+   * an `approvalManager` (which it always is in production today).
+   * Bootstrap routes through this when set, falling back to the
+   * `provider`+`tools` legacy `agenticAsk` path only when undefined
+   * (e.g. degraded boot where pipeline construction failed).
+   */
+  askCoordinator?: import('@dina/brain/src/composition/ask_coordinator').AskCoordinator;
 }
 
 /**
@@ -453,6 +483,22 @@ async function tryBuildAgenticAsk(opts: {
   // implement `searchServices` + `isDiscoverable`, so the caller-
   // supplied client satisfies the builder's typed surface directly —
   // no runtime cast needed.
+  //
+  // **Pattern A**: pass the singleton `ApprovalManager` so the
+  // pipeline exposes `buildToolsForAsk` and the coordinator can
+  // mint per-ask persona guards. The same singleton backs the
+  // mobile chat UI's approval cards (`useChatApprovals`), so an
+  // approval the LLM bails on shows up in the same operator surface.
+  const approvalManager = getApprovalManager();
+
+  // Mirror approval requests into the unified notifications inbox
+  // (5.66). The bridge listens for every `requestApproval` and posts
+  // an `'approval'`-kind item — the Notifications screen + tab badges
+  // (5.67 / 5.69) read from the same store. Disposer is intentionally
+  // unused: the approval-manager singleton outlives the boot scope and
+  // a re-boot replaces the listener via `resetApprovalManager`.
+  installApprovalInboxBridge(approvalManager);
+
   const pipeline = buildAgenticAskPipeline({
     llm,
     providerName: provider as ProviderName,
@@ -460,8 +506,25 @@ async function tryBuildAgenticAsk(opts: {
     orchestratorHandle: lazyOrchestratorHandle(),
     coreClient: lazyCoreClient(),
     logger: opts.logger,
+    approvalManager,
   });
-  return pipeline;
+
+  // Produce the AskCoordinator only when `buildToolsForAsk` is
+  // populated (i.e. approvalManager was wired). Defensive — an
+  // earlier construction failure in the pipeline shouldn't fault
+  // the legacy `agenticAsk` path; bootstrap can still install
+  // `makeAgenticAskHandler` with the static tools registry.
+  let askCoordinator: AgenticAskBundle['askCoordinator'];
+  if (pipeline.buildToolsForAsk !== undefined) {
+    askCoordinator = createAskCoordinator({
+      pipeline,
+      approvalManager,
+      executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: DEFAULT_ASK_SYSTEM_PROMPT }),
+      systemPrompt: DEFAULT_ASK_SYSTEM_PROMPT,
+    });
+  }
+
+  return { ...pipeline, askCoordinator };
 }
 
 // `buildLightweightLLMCall` + `buildIntentClassifier` moved to

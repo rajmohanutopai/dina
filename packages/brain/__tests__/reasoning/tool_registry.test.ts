@@ -2,7 +2,11 @@
  * ToolRegistry — declarative tool registration + execution.
  */
 
-import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
+import {
+  ApprovalRequiredError,
+  ToolRegistry,
+  type AgentTool,
+} from '../../src/reasoning/tool_registry';
 
 function makeTool(overrides: Partial<AgentTool> = {}): AgentTool {
   return {
@@ -135,5 +139,54 @@ describe('ToolRegistry — execute', () => {
     r.register(makeTool());
     const outcome = await r.execute('echo', { text: 'x', extra: 'ignored' });
     expect(outcome.success).toBe(true);
+  });
+});
+
+describe('ApprovalRequiredError handling', () => {
+  it('translates ApprovalRequiredError to an approval_required outcome', async () => {
+    const r = new ToolRegistry();
+    r.register(
+      makeTool({
+        execute: async () => {
+          throw new ApprovalRequiredError('appr-xyz', 'financial');
+        },
+      }),
+    );
+    const outcome = await r.execute('echo', { text: 'x' });
+    expect(outcome.success).toBe(false);
+    if (!outcome.success) {
+      expect(outcome.code).toBe('approval_required');
+      if (outcome.code === 'approval_required') {
+        expect(outcome.approvalId).toBe('appr-xyz');
+        expect(outcome.persona).toBe('financial');
+        expect(outcome.error).toContain('financial');
+        expect(outcome.error).toContain('appr-xyz');
+      }
+    }
+  });
+
+  it('preserves ApprovalRequiredError as a distinct class', () => {
+    const err = new ApprovalRequiredError('appr-1', 'health');
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(ApprovalRequiredError);
+    expect(err.name).toBe('ApprovalRequiredError');
+    expect(err.approvalId).toBe('appr-1');
+    expect(err.persona).toBe('health');
+  });
+
+  it('regular Error throws still classify as execution_failed (regression guard)', async () => {
+    const r = new ToolRegistry();
+    r.register(
+      makeTool({
+        execute: async () => {
+          throw new Error('regular boom');
+        },
+      }),
+    );
+    const outcome = await r.execute('echo', { text: 'x' });
+    expect(outcome.success).toBe(false);
+    if (!outcome.success) {
+      expect(outcome.code).toBe('execution_failed');
+    }
   });
 });

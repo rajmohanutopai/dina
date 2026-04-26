@@ -49,6 +49,11 @@ const ALLOWED_REPO_IMPORTERS: readonly { file: string; rationale: string }[] = [
     rationale:
       'Chat thread cache — in-memory threads Map is authoritative for reads; ChatMessageRepository provides restart durability. Write-through is fire-and-forget per task 2.3 fire-and-forget pattern.',
   },
+  {
+    file: 'notifications/inbox.ts',
+    rationale:
+      'Notifications inbox (task 5.66) — in-memory items array is authoritative for reads; NotificationLogRepository is an optional persistence backing. Same dual-write pattern as chat/thread.ts: hydrate on boot, fire-and-forget persist, swallow errors so a failing repo never breaks subscriber fan-out.',
+  },
 ];
 
 /**

@@ -7,16 +7,14 @@
  *     → stagingIngest (staging inbox)
  *     → StagingDrainScheduler.runTick
  *         → claim + classify + enrich + resolve → SQLite vault row
- *         → handlePostPublish  ← the piece we just wired
- *             → planReminders (deterministic date extractor)
+ *         → handlePostPublish
+ *             → planReminders (LLM-only — see reminder_planner.ts head)
  *             → core.createReminder rows appear in the identity DB
  *
- * Backed by a real SQLite vault per persona (via
- * `sqlite_vault_harness`). The assertion is intentionally strict:
- * `listByPersona` must surface reminders for the stored item + at
- * least one must carry `kind: 'birthday'` with a future `due_at`.
- * Without today's `handlePostPublish` wire, the reminder planner
- * never ran from the drain — this test would fail with 0 reminders.
+ * The reminder planner is LLM-only as of April 2026, so this test
+ * registers a stub `ReminderLLMProvider` that emits a birthday
+ * reminder for the test fixture text. Production wires the same hook
+ * via `agentic_ask.ts:registerReminderLLM(...)` during boot.
  */
 
 
@@ -37,6 +35,10 @@ import {
   listByPersona as listRemindersByPersona,
   resetReminderState,
 } from '@dina/core/src/reminders/service';
+import {
+  registerReminderLLM,
+  resetReminderLLM,
+} from '../../src/pipeline/reminder_planner';
 
 import {
   openSQLiteVault,
@@ -55,11 +57,37 @@ describe('mobile `/remember <birthday>` → auto-generated reminders (CAPABILITI
     clearVaults();
     resetReasoningProvider();
     resetReminderState();
+    resetReminderLLM();
     configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
     for (const persona of COVERED_PERSONAS) {
       openHandles.push(openSQLiteVault(persona));
     }
     setAccessiblePersonas(COVERED_PERSONAS);
+
+    // Stub the reminder-planner LLM. The real `agentic_ask.ts` boot
+    // wires this to a Gemini-backed router; the test only needs it to
+    // emit a birthday reminder for the fixture text. We match against
+    // the rendered Subject/Body fields specifically — `prompt.includes`
+    // alone is unsafe because the REMINDER_PLAN template ships with
+    // "Emma's birthday is March 15" as an in-prompt example.
+    registerReminderLLM(async (_system, prompt) => {
+      const subject = (prompt.match(/^- Subject: (.*)$/m)?.[1] ?? '').toLowerCase();
+      const body = (prompt.match(/^- Body: (.*)$/m)?.[1] ?? '').toLowerCase();
+      const userContent = `${subject}\n${body}`;
+      if (userContent.includes('emma') && userContent.includes('birthday')) {
+        const nextNov7 = Date.UTC(new Date().getUTCFullYear() + 1, 10, 7, 9, 0, 0);
+        return JSON.stringify({
+          reminders: [
+            {
+              message: "Emma's birthday is on Nov 7th",
+              due_at: nextNov7,
+              kind: 'birthday',
+            },
+          ],
+        });
+      }
+      return '{"reminders":[]}';
+    });
   });
 
   afterEach(() => {
@@ -68,6 +96,7 @@ describe('mobile `/remember <birthday>` → auto-generated reminders (CAPABILITI
       closeSQLiteVault(openHandles.pop()!);
     }
     resetReminderState();
+    resetReminderLLM();
   });
 
   function buildCoreClient(): InProcessTransport {

@@ -46,7 +46,7 @@ import {
   newRequestId,
   withTrace,
   type TraceContext,
-} from './trace_correlation';
+} from '@dina/brain/src/diagnostics/trace_correlation';
 
 export const REASON_DEFAULT_TIMEOUT_MS = 15_000;
 

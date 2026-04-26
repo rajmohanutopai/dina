@@ -357,3 +357,188 @@ describe('createGetFullContentTool', () => {
     expect(result.error).toMatch(/locked/);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// Pattern A — pluggable personaGuard throws ApprovalRequiredError
+// ──────────────────────────────────────────────────────────────────────
+describe('vault tools — personaGuard (Pattern A approval bail)', () => {
+  beforeEach(() => {
+    clearVaults();
+    resetReasoningProvider();
+    resetPersonaState();
+    setAccessiblePersonas(['general']);
+  });
+
+  it('vault_search throws ApprovalRequiredError when guard returns an approvalId for the named persona', async () => {
+    storeItem('financial', {
+      type: 'note',
+      summary: 'balance',
+      body: 'account balance',
+    });
+    const guardCalls: string[] = [];
+    const guard = async (persona: string): Promise<string | null> => {
+      guardCalls.push(persona);
+      return persona === 'financial' ? 'appr-abc' : null;
+    };
+    const tool = createVaultSearchTool({ personaGuard: guard });
+
+    await expect(tool.execute({ query: 'balance', persona: 'financial' })).rejects.toMatchObject({
+      name: 'ApprovalRequiredError',
+      approvalId: 'appr-abc',
+      persona: 'financial',
+    });
+    expect(guardCalls).toEqual(['financial']);
+  });
+
+  it('vault_search runs normally when guard returns null (open persona)', async () => {
+    storeItem('general', {
+      type: 'user_memory',
+      summary: 'birthday',
+      body: 'cake',
+    });
+    const guard = async (): Promise<string | null> => null;
+    const tool = createVaultSearchTool({ personaGuard: guard });
+
+    const result = (await tool.execute({ query: 'birthday', persona: 'general' })) as {
+      accessible: boolean;
+      results: unknown[];
+    };
+    expect(result.accessible).toBe(true);
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('vault_search fan-out path does NOT invoke the guard (pre-filtered to accessible personas)', async () => {
+    storeItem('general', { type: 'user_memory', summary: 'something', body: 'about cats' });
+    const guardCalls: string[] = [];
+    const guard = async (persona: string): Promise<string | null> => {
+      guardCalls.push(persona);
+      return null;
+    };
+    const tool = createVaultSearchTool({ personaGuard: guard });
+
+    // Omitting `persona` arg → fan-out across already-accessible personas only.
+    await tool.execute({ query: 'cats' });
+    expect(guardCalls).toEqual([]);
+  });
+
+  it('browse_vault throws ApprovalRequiredError for sensitive persona', async () => {
+    const guardCalls: string[] = [];
+    const guard = async (persona: string): Promise<string | null> => {
+      guardCalls.push(persona);
+      return 'appr-browse-1';
+    };
+    const tool = createBrowseVaultTool({ personaGuard: guard });
+
+    await expect(tool.execute({ persona: 'health' })).rejects.toMatchObject({
+      name: 'ApprovalRequiredError',
+      approvalId: 'appr-browse-1',
+      persona: 'health',
+    });
+    expect(guardCalls).toEqual(['health']);
+  });
+
+  it('browse_vault runs normally when guard returns null', async () => {
+    storeItem('general', { type: 'note', summary: 'rec', body: 'b' });
+    const tool = createBrowseVaultTool({
+      personaGuard: async () => null,
+    });
+    const result = (await tool.execute({ persona: 'general' })) as {
+      items: unknown[];
+    };
+    expect(result.items.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('get_full_content throws ApprovalRequiredError for sensitive persona', async () => {
+    const guard = async (): Promise<string | null> => 'appr-full-1';
+    const tool = createGetFullContentTool({ personaGuard: guard });
+
+    await expect(tool.execute({ persona: 'health', item_id: 'doesntmatter' })).rejects.toMatchObject({
+      name: 'ApprovalRequiredError',
+      approvalId: 'appr-full-1',
+      persona: 'health',
+    });
+  });
+
+  it('get_full_content runs normally when guard returns null', async () => {
+    const id = storeItem('general', { type: 'note', summary: 'x', body: 'y' });
+    const tool = createGetFullContentTool({
+      personaGuard: async () => null,
+    });
+    const result = (await tool.execute({ persona: 'general', item_id: id })) as {
+      id?: string;
+      error?: string;
+    };
+    expect(result.error).toBeUndefined();
+    expect(result.id).toBe(id);
+  });
+
+  it('synchronous guards are supported (returning string directly)', async () => {
+    // The signature accepts both Promise<string|null> and the bare value
+    // so callers can write minimal guards in tests / simple cases.
+    const tool = createBrowseVaultTool({
+      personaGuard: (persona: string) => (persona === 'health' ? 'appr-sync' : null),
+    });
+
+    await expect(tool.execute({ persona: 'health' })).rejects.toMatchObject({
+      approvalId: 'appr-sync',
+      persona: 'health',
+    });
+  });
+
+  it('an empty-string approvalId is fail-closed — surfaces as a hard error, NOT silent allow', async () => {
+    // A guard that returns '' indicates a misconfiguration (couldn't
+    // mint an approval id). Allowing the read in that state would
+    // silently bypass the gate; the contract is fail-closed.
+    storeItem('general', { type: 'note', summary: 's', body: 'b' });
+    const tool = createVaultSearchTool({
+      personaGuard: () => '',
+    });
+    await expect(tool.execute({ query: 'note', persona: 'general' })).rejects.toThrow(
+      /empty approvalId.*fail-closed/,
+    );
+  });
+
+  it('a non-string return from the guard is fail-closed', async () => {
+    // Defensive: TS lets you wire a guard that returns something
+    // weird (e.g. {}). Refuse rather than silently coerce.
+    const tool = createBrowseVaultTool({
+      // @ts-expect-error testing runtime fail-closed for non-string return
+      personaGuard: () => ({ approvalId: 'oops' }),
+    });
+    await expect(tool.execute({ persona: 'health' })).rejects.toThrow(/non-string/);
+  });
+
+  it('guard rejection (thrown error) propagates — not caught as approval', async () => {
+    // If the guard itself crashes (e.g. ApprovalManager unreachable),
+    // the tool should surface the error. The ToolRegistry catches it
+    // and reports `execution_failed`, not `approval_required`.
+    const tool = createBrowseVaultTool({
+      personaGuard: async () => {
+        throw new Error('approval manager offline');
+      },
+    });
+    await expect(tool.execute({ persona: 'health' })).rejects.toThrow('approval manager offline');
+  });
+
+  it('integrates with ToolRegistry — approval_required outcome flows through', async () => {
+    // End-to-end through the ToolRegistry: guard throws
+    // ApprovalRequiredError → registry returns
+    // {success:false, code:'approval_required', approvalId, persona}.
+    const { ToolRegistry } = await import('../../src/reasoning/tool_registry');
+    const registry = new ToolRegistry();
+    registry.register(
+      createBrowseVaultTool({
+        personaGuard: async () => 'appr-e2e',
+      }),
+    );
+
+    const outcome = await registry.execute('browse_vault', { persona: 'health' });
+    expect(outcome).toEqual({
+      success: false,
+      code: 'approval_required',
+      approvalId: 'appr-e2e',
+      persona: 'health',
+      error: expect.stringContaining('appr-e2e'),
+    });
+  });
+});

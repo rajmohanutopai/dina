@@ -96,7 +96,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       break;
 
     case 'ask':
-      ({ typed, sources } = await handleAsk(parsed.payload));
+      ({ typed, sources } = await handleAsk(parsed.payload, thread));
       break;
 
     case 'search':
@@ -121,7 +121,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
 
     case 'chat':
     default:
-      ({ typed, sources } = await handleAsk(parsed.payload));
+      ({ typed, sources } = await handleAsk(parsed.payload, thread));
       break;
   }
 
@@ -254,7 +254,10 @@ async function handleRemember(text: string): Promise<BotResponse> {
 }
 
 /** Handle /ask or detected question: reason pipeline. */
-async function handleAsk(query: string): Promise<{ typed: BotResponse; sources: string[] }> {
+async function handleAsk(
+  query: string,
+  threadId: string,
+): Promise<{ typed: BotResponse; sources: string[] }> {
   if (!query) {
     return { typed: plainResponse('What would you like to know?'), sources: [] };
   }
@@ -265,7 +268,7 @@ async function handleAsk(query: string): Promise<{ typed: BotResponse; sources: 
   // When absent, fall back to the single-shot `reason()` pipeline so
   // `/ask` still works in test / early-boot paths.
   if (askHandler !== null) {
-    const r = await askHandler(query);
+    const r = await askHandler(query, { threadId });
     // Agentic answers are plain prose today. When a future handler
     // produces a structured kind (e.g. a trust-flagged purchase
     // dialog), upgrade this branch to read a richer shape from the
@@ -287,7 +290,30 @@ async function handleAsk(query: string): Promise<{ typed: BotResponse; sources: 
 // fallback above.
 // ---------------------------------------------------------------------------
 
-export type AskCommandHandler = (query: string) => Promise<{ response: string; sources: string[] }>;
+/**
+ * Context the orchestrator passes through to an installed
+ * `AskCommandHandler` so the handler can route deferred / late-arriving
+ * answers back to the correct chat thread (multi-thread chat tabs,
+ * per-persona threads, Service Inbox, etc.). Optional for backward
+ * compatibility with handlers that ignore late delivery.
+ */
+export interface AskCommandContext {
+  /**
+   * The chat thread the user's `/ask` originated from. The handler
+   * MUST use this id when posting any late answers, system notes, or
+   * approval cards via `addDinaResponse` / `addSystemMessage` /
+   * `addApprovalMessage`. Returning the synchronous `{response,
+   * sources}` result still flows through `handleChat` and lands in
+   * the same thread; this argument is for *out-of-band* posts that
+   * happen after the handler returns.
+   */
+  threadId: string;
+}
+
+export type AskCommandHandler = (
+  query: string,
+  context?: AskCommandContext,
+) => Promise<{ response: string; sources: string[] }>;
 
 let askHandler: AskCommandHandler | null = null;
 
@@ -408,6 +434,17 @@ export function resetServiceApproveCommandHandler(): void {
   serviceApproveHandler = null;
 }
 
+/**
+ * Read the currently installed approve handler — used by inline
+ * approval-card UI (5.65) so a tap on "Approve" can invoke the same
+ * handler `/service_approve` would, without round-tripping a
+ * synthetic user message through `handleChat`. Returns null when no
+ * handler is wired (test harnesses, early-boot states).
+ */
+export function getServiceApproveCommandHandler(): ServiceApproveCommandHandler | null {
+  return serviceApproveHandler;
+}
+
 async function handleServiceApprove(taskId: string): Promise<BotResponse> {
   if (!taskId) {
     return errorResponse('Usage: /service_approve <taskId>');
@@ -472,6 +509,12 @@ export function setServiceDenyCommandHandler(handler: ServiceDenyCommandHandler 
 /** Reset handler (for tests). */
 export function resetServiceDenyCommandHandler(): void {
   serviceDenyHandler = null;
+}
+
+/** Read the currently installed deny handler — companion to
+ *  `getServiceApproveCommandHandler`; used by 5.65 inline cards. */
+export function getServiceDenyCommandHandler(): ServiceDenyCommandHandler | null {
+  return serviceDenyHandler;
 }
 
 async function handleServiceDeny(taskId: string, reason: string): Promise<BotResponse> {
