@@ -25,7 +25,7 @@ import {
   Alert,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { colors, spacing, radius, shadows } from '../src/theme';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import { generatePairingCode } from '@dina/core/src/pairing/ceremony';
 import { listDevices, type PairedDevice, type DeviceRole } from '@dina/core/src/devices/registry';
 
@@ -114,9 +114,39 @@ export default function PairedDevicesScreen() {
     <>
       <Stack.Screen options={{ title: 'Paired Devices' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Section title={`PAIRED (${devices.length})`}>
+          {devices.length === 0 ? (
+            <Text style={styles.empty}>No devices paired yet.</Text>
+          ) : (
+            devices.map((d) => (
+              <View key={d.deviceId} style={styles.deviceRow}>
+                <View style={styles.deviceRowMain}>
+                  <Text style={styles.deviceName}>{d.deviceName}</Text>
+                  <Text style={styles.deviceMeta}>{d.role}</Text>
+                </View>
+                <Text style={styles.deviceDID} numberOfLines={1} ellipsizeMode="middle">
+                  {d.did}
+                </Text>
+                <Text style={styles.deviceMeta}>
+                  Paired {new Date(d.createdAt).toLocaleDateString()}
+                  {d.lastSeen > 0 ? ` • active ${new Date(d.lastSeen).toLocaleDateString()}` : ''}
+                  {d.revoked ? ' • revoked' : ''}
+                </Text>
+              </View>
+            ))
+          )}
+          <Pressable
+            onPress={refreshDevices}
+            style={styles.refreshButton}
+            accessibilityRole="button"
+          >
+            <Text style={styles.refreshText}>Refresh</Text>
+          </Pressable>
+        </Section>
+
         <Section title="PAIR A NEW DEVICE">
           <Text style={styles.help}>
-            Generate a 6-digit code, then give it to the device you want to pair.{'\n'}• dina-agent
+            Generate an 8-character code, then give it to the device you want to pair.{'\n'}• dina-agent
             / openclaw: paste into <Text style={styles.mono}>USER_PAIRING_CODE</Text> in
             docker/.env.{'\n'}• dina-cli: run{' '}
             <Text style={styles.mono}>dina configure --pairing-code &lt;code&gt;</Text>.
@@ -179,36 +209,6 @@ export default function PairedDevicesScreen() {
             </Text>
           </Section>
         )}
-
-        <Section title={`PAIRED (${devices.length})`}>
-          {devices.length === 0 ? (
-            <Text style={styles.empty}>No devices paired yet.</Text>
-          ) : (
-            devices.map((d) => (
-              <View key={d.deviceId} style={styles.deviceRow}>
-                <View style={styles.deviceRowMain}>
-                  <Text style={styles.deviceName}>{d.deviceName}</Text>
-                  <Text style={styles.deviceMeta}>{d.role}</Text>
-                </View>
-                <Text style={styles.deviceDID} numberOfLines={1} ellipsizeMode="middle">
-                  {d.did}
-                </Text>
-                <Text style={styles.deviceMeta}>
-                  Paired {new Date(d.createdAt).toLocaleDateString()}
-                  {d.lastSeen > 0 ? ` • active ${new Date(d.lastSeen).toLocaleDateString()}` : ''}
-                  {d.revoked ? ' • revoked' : ''}
-                </Text>
-              </View>
-            ))
-          )}
-          <Pressable
-            onPress={refreshDevices}
-            style={styles.refreshButton}
-            accessibilityRole="button"
-          >
-            <Text style={styles.refreshText}>Refresh</Text>
-          </Pressable>
-        </Section>
       </ScrollView>
     </>
   );
@@ -228,9 +228,11 @@ function Section(props: { title: string; children: React.ReactNode }): React.Rea
 }
 
 function formatCode(code: string): string {
-  // 6-digit codes read easier split 3-3: `123 456`.
-  if (code.length !== 6) return code;
-  return `${code.slice(0, 3)} ${code.slice(3)}`;
+  // 8-character Crockford-Base32 codes read easier split 4-4:
+  // `ABCD EFGH`. Anything else falls through unchanged.
+  if (code.length === 8) return `${code.slice(0, 4)} ${code.slice(4)}`;
+  if (code.length === 6) return `${code.slice(0, 3)} ${code.slice(3)}`;
+  return code;
 }
 
 function formatDuration(seconds: number): string {
@@ -249,8 +251,8 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md, paddingBottom: spacing.xl },
   section: { marginBottom: spacing.lg },
   sectionTitle: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 12,
-    fontWeight: '600',
     color: colors.textSecondary,
     letterSpacing: 0.5,
     marginBottom: spacing.xs,
@@ -263,14 +265,15 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   help: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textSecondary,
     marginBottom: spacing.md,
     lineHeight: 18,
   },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 13,
-    fontWeight: '600',
     color: colors.textPrimary,
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
@@ -280,6 +283,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.sm,
     padding: spacing.sm,
+    fontFamily: fonts.sans,
     fontSize: 15,
     color: colors.textPrimary,
   },
@@ -295,9 +299,18 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     backgroundColor: colors.bgTertiary,
   },
-  roleLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  roleLabel: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
   roleLabelActive: { color: colors.accent },
-  roleHint: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  roleHint: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   primaryButton: {
     backgroundColor: colors.accent,
     borderRadius: radius.sm,
@@ -306,20 +319,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryButtonDisabled: { opacity: 0.6 },
-  primaryButtonText: { color: colors.white, fontSize: 15, fontWeight: '600' },
+  primaryButtonText: {
+    fontFamily: fonts.sansSemibold,
+    color: colors.white,
+    fontSize: 15,
+  },
   code: {
+    fontFamily: fonts.monoMedium,
     fontSize: 42,
-    fontWeight: '700',
     color: colors.accent,
     textAlign: 'center',
     letterSpacing: 8,
     fontVariant: ['tabular-nums'],
     marginVertical: spacing.sm,
   },
-  codeHint: { textAlign: 'center', fontSize: 12, color: colors.textSecondary },
-  codeMeta: { fontSize: 13, color: colors.textSecondary, marginTop: spacing.xs },
+  codeHint: {
+    fontFamily: fonts.sans,
+    textAlign: 'center',
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  codeMeta: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
   codeExpiring: { color: colors.error },
   empty: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
     fontStyle: 'italic',
@@ -332,10 +360,27 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   deviceRowMain: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  deviceName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
-  deviceMeta: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  deviceDID: { fontSize: 11, color: colors.textSecondary, fontFamily: 'Menlo' },
+  deviceName: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  deviceMeta: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  deviceDID: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
   refreshButton: { alignSelf: 'flex-end', padding: spacing.sm },
-  refreshText: { fontSize: 13, color: colors.accent },
-  mono: { fontFamily: 'Menlo', fontSize: 12 },
+  refreshText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.accent,
+  },
+  mono: { fontFamily: fonts.mono, fontSize: 12 },
 });

@@ -2,25 +2,19 @@
  * Notifications tab — unified inbox of every surface (5.67).
  *
  * Shows reminders + approvals + nudges + briefings + ask-approval
- * cards in one chronological feed. Source of truth is the brain-side
- * inbox store (5.66). Each row deep-links back to the originating
- * surface via the item's `deepLink` field; rows with no deep link
- * stay inert.
+ * cards in one chronological feed.  Source of truth is the
+ * brain-side inbox store (5.66).  Each row deep-links back to the
+ * originating surface via the item's `deepLink` field; rows with no
+ * deep link stay inert.
  *
- * Filter chips: All / Unread / Reminders / Approvals. The filter is
+ * Filter chips: All / Unread / Reminders / Approvals.  The filter is
  * applied in-memory against the live subscription so flipping is
  * instant.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Pressable,
-  RefreshControl,
-} from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
   getUnreadCount,
@@ -31,10 +25,7 @@ import {
   type NotificationItem,
   type NotificationKind,
 } from '@dina/brain/src/notifications/inbox';
-import {
-  applyNotificationFilter,
-  type FilterKey,
-} from '../src/notifications/screen_filter';
+import { applyNotificationFilter, type FilterKey } from '../src/notifications/screen_filter';
 import { colors, fonts, radius, spacing } from '../src/theme';
 
 const FILTERS: ReadonlyArray<{ key: FilterKey; label: string }> = [
@@ -44,12 +35,14 @@ const FILTERS: ReadonlyArray<{ key: FilterKey; label: string }> = [
   { key: 'approval', label: 'Approvals' },
 ];
 
-const KIND_ICON: Record<NotificationKind, string> = {
-  reminder: '\u{1F514}', // 🔔
-  approval: '\u{2705}', // ✅
-  nudge: '\u{1F4AC}', // 💬
-  briefing: '\u{1F4F0}', // 📰
-  ask_approval: '\u{2705}',
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const KIND_ICON: Record<NotificationKind, IoniconName> = {
+  reminder: 'notifications-outline',
+  approval: 'checkmark-circle-outline',
+  nudge: 'chatbubble-ellipses-outline',
+  briefing: 'newspaper-outline',
+  ask_approval: 'shield-checkmark-outline',
 };
 
 export default function NotificationsScreen(): React.JSX.Element {
@@ -58,7 +51,7 @@ export default function NotificationsScreen(): React.JSX.Element {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [refreshing, setRefreshing] = useState(false);
 
-  // Live subscription — re-pull on every event. Cheap (N typically <100).
+  // Live subscription — re-pull on every event.  Cheap (N typically <100).
   useEffect(() => {
     const off = subscribeNotifications(() => {
       setItems(listNotifications());
@@ -72,9 +65,9 @@ export default function NotificationsScreen(): React.JSX.Element {
   const onRefresh = async (): Promise<void> => {
     setRefreshing(true);
     try {
-      // Cold-replay from the persistent log if one is wired. Falls
-      // back to a no-op when no repo is installed; either way ends up
-      // re-listing the live store.
+      // Cold-replay from the persistent log if one is wired.  Falls
+      // back to a no-op when no repo is installed; either way ends
+      // up re-listing the live store.
       await hydrateNotifications({ force: true });
       setItems(listNotifications());
     } finally {
@@ -91,62 +84,79 @@ export default function NotificationsScreen(): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Notifications</Text>
-        {unreadCount > 0 && (
-          <Text style={styles.unreadBadge}>
-            {unreadCount} unread
-          </Text>
-        )}
-      </View>
       <View style={styles.filterRow}>
-        {FILTERS.map((f) => (
-          <Pressable
-            key={f.key}
-            testID={`filter-${f.key}`}
-            onPress={() => setFilter(f.key)}
-            style={[styles.chip, filter === f.key && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, filter === f.key && styles.chipTextActive]}>
-              {f.label}
-            </Text>
-          </Pressable>
-        ))}
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          const showCount = f.key === 'unread' && unreadCount > 0;
+          return (
+            <Pressable
+              key={f.key}
+              testID={`filter-${f.key}`}
+              onPress={() => setFilter(f.key)}
+              style={[styles.chip, active && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {f.label}
+                {showCount ? ` · ${unreadCount}` : ''}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           <View style={styles.empty}>
+            <Ionicons
+              name="checkmark-done-outline"
+              size={32}
+              color={colors.textMuted}
+              style={{ marginBottom: spacing.sm }}
+            />
             <Text style={styles.emptyText}>
-              {filter === 'unread' ? 'All caught up.' : 'No notifications. Pull down to refresh.'}
+              {filter === 'unread' ? 'All caught up' : 'No notifications yet'}
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable
-            testID={`notif-row-${item.id}`}
-            onPress={() => onPress(item)}
-            style={[styles.row, item.readAt === null && styles.rowUnread]}
-            disabled={item.deepLink === undefined && item.readAt !== null}
-          >
-            <Text style={styles.icon}>{KIND_ICON[item.kind]}</Text>
-            <View style={styles.rowBody}>
-              <Text style={styles.rowTitle} numberOfLines={1}>
-                {item.title}
-              </Text>
-              {item.body !== '' && (
-                <Text style={styles.rowSubtitle} numberOfLines={2}>
-                  {item.body}
+        renderItem={({ item }) => {
+          const isUnread = item.readAt === null;
+          return (
+            <Pressable
+              testID={`notif-row-${item.id}`}
+              onPress={() => onPress(item)}
+              style={({ pressed }) => [
+                styles.row,
+                isUnread && styles.rowUnread,
+                pressed && styles.rowPressed,
+              ]}
+              disabled={item.deepLink === undefined && !isUnread}
+            >
+              <View style={[styles.iconWrap, isUnread && styles.iconWrapUnread]}>
+                <Ionicons
+                  name={KIND_ICON[item.kind]}
+                  size={18}
+                  color={isUnread ? colors.accent : colors.textSecondary}
+                />
+              </View>
+              <View style={styles.rowBody}>
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                  {item.title}
                 </Text>
-              )}
-              <Text style={styles.rowMeta}>{formatRelative(item.firedAt)}</Text>
-            </View>
-            {item.readAt === null && <View style={styles.dot} />}
-          </Pressable>
-        )}
+                {item.body !== '' && (
+                  <Text style={styles.rowSubtitle} numberOfLines={2}>
+                    {item.body}
+                  </Text>
+                )}
+                <Text style={styles.rowMeta}>{formatRelative(item.firedAt)}</Text>
+              </View>
+              {isUnread && <View style={styles.dot} />}
+            </Pressable>
+          );
+        }}
       />
     </View>
   );
@@ -165,33 +175,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgPrimary,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xs,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    fontFamily: fonts.serif,
-  },
-  unreadBadge: {
-    fontSize: 13,
-    color: colors.textMuted,
-  },
   filterRow: {
     flexDirection: 'row',
     paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
   chip: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.xs + 2,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
@@ -202,16 +195,20 @@ const styles = StyleSheet.create({
     borderColor: colors.textPrimary,
   },
   chipText: {
+    fontFamily: fonts.sansMedium,
     fontSize: 13,
     color: colors.textPrimary,
-    fontWeight: '500',
   },
   chipTextActive: {
     color: colors.bgPrimary,
   },
   list: {
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xxl,
+  },
+  separator: {
+    height: spacing.xs,
   },
   row: {
     flexDirection: 'row',
@@ -219,52 +216,65 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSecondary,
     borderRadius: radius.md,
     padding: spacing.md,
-    marginBottom: spacing.xs,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   rowUnread: {
     backgroundColor: colors.bgSecondary,
-    borderColor: colors.accent,
+    borderColor: 'rgba(28,25,23,0.15)',
   },
-  icon: {
-    fontSize: 20,
-    marginRight: spacing.sm,
+  rowPressed: {
+    backgroundColor: colors.bgTertiary,
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.bgTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm + 2,
+  },
+  iconWrapUnread: {
+    backgroundColor: '#F0EAE0',
   },
   rowBody: {
     flex: 1,
+    paddingRight: spacing.sm,
   },
   rowTitle: {
+    fontFamily: fonts.heading,
     fontSize: 15,
-    fontWeight: '600',
     color: colors.textPrimary,
     marginBottom: 2,
   },
   rowSubtitle: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textSecondary,
     lineHeight: 18,
     marginBottom: 4,
   },
   rowMeta: {
+    fontFamily: fonts.sans,
     fontSize: 11,
     color: colors.textMuted,
+    letterSpacing: 0.2,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.accent,
-    marginTop: spacing.xs,
-    marginLeft: spacing.sm,
+    marginTop: 14,
   },
   empty: {
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing.xxl,
     alignItems: 'center',
   },
   emptyText: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textMuted,
-    fontStyle: 'italic',
   },
 });

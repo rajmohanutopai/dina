@@ -21,13 +21,12 @@ import { deriveRootSigningKey } from '@dina/core/src/crypto/slip0010';
 import { deriveDIDKey } from '@dina/core/src/identity/did';
 import {
   openBootPersonas,
-  createPersona,
-  personaExists,
   listPersonas,
 } from '@dina/core/src/persona/service';
 import { setAccessiblePersonas } from '@dina/brain/src/vault_context/assembly';
 import { loadPersistedDid } from '../services/identity_record';
 import { initializePersistence, openPersonaDB, isPersistenceReady } from '../storage/init';
+import { seedDefaultPersonas } from '../onboarding/default_personas';
 
 export type UnlockStep =
   | 'idle'
@@ -99,6 +98,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   state = createInitialState();
   state.step = 'validating';
   state.startedAt = Date.now();
+  notify();
 
   // 1. Basic validation
   if (!passphrase) {
@@ -110,9 +110,11 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
 
   // 2. Unwrap seed (Argon2id KDF + AES-256-GCM decrypt)
   state.step = 'deriving_kek';
+  notify();
   let masterSeed: Uint8Array;
   try {
     state.step = 'unwrapping';
+    notify();
     masterSeed = await unwrapSeed(passphrase, wrappedSeed);
   } catch {
     return fail('Wrong passphrase');
@@ -126,16 +128,18 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   //    Without this the unlock screen used to show a did:key while
   //    the runtime ran under the persisted did:plc.
   state.step = 'deriving_keys';
+  notify();
   const rootKey = deriveRootSigningKey(masterSeed, 0);
   const pubKey = getPublicKey(rootKey.privateKey);
   const persistedDid = await loadPersistedDid();
   const did = persistedDid ?? deriveDIDKey(pubKey);
   state.did = did;
 
-  // 4. Ensure general persona exists
-  if (!personaExists('general')) {
-    createPersona('general', 'default', 'Default persona');
-  }
+  // 4. Ensure the default persona set (general + work + health + finance)
+  //    exists. Mirrors main Dina's `core/cmd/dina-core/main.go:443-450`
+  //    bootstrap block so the LLM persona classifier sees the same
+  //    `{name, tier, description}` triples cross-stack.
+  seedDefaultPersonas();
 
   // 4a. Wire durable persistence (review #10) — without this the
   //     runtime boot falls back to in-memory workflow + service-config
@@ -158,6 +162,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
 
   // 5. Open boot personas (default + standard auto-open)
   state.step = 'opening_vaults';
+  notify();
   const opened = openBootPersonas();
   state.openedPersonas = opened;
 
@@ -290,4 +295,36 @@ export function useIsUnlocked(): boolean {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { useSyncExternalStore } = require('react') as typeof import('react');
   return useSyncExternalStore(subscribeToUnlockState, isUnlocked, isUnlocked);
+}
+
+/**
+ * React hook — returns the live full `UnlockState` so a UI can render the
+ * current step label ("Decrypting identity…", "Opening vaults…") instead
+ * of a generic spinner. Re-renders on every step transition.
+ *
+ * `useSyncExternalStore` requires a stable snapshot reference between
+ * notifications, so we cache the last returned state and only swap when a
+ * field actually differs — without this, `getUnlockState()` returns a
+ * fresh `{...state}` clone every call, React thinks the snapshot changed
+ * every render, and the component infinite-loops.
+ */
+let lastSnapshot: UnlockState = state;
+function getStableSnapshot(): UnlockState {
+  if (
+    state.step !== lastSnapshot.step ||
+    state.did !== lastSnapshot.did ||
+    state.error !== lastSnapshot.error ||
+    state.startedAt !== lastSnapshot.startedAt ||
+    state.completedAt !== lastSnapshot.completedAt ||
+    state.openedPersonas !== lastSnapshot.openedPersonas
+  ) {
+    lastSnapshot = { ...state };
+  }
+  return lastSnapshot;
+}
+
+export function useUnlockState(): UnlockState {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useSyncExternalStore } = require('react') as typeof import('react');
+  return useSyncExternalStore(subscribeToUnlockState, getStableSnapshot, getStableSnapshot);
 }

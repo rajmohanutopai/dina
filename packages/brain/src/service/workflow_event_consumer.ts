@@ -435,6 +435,26 @@ export class WorkflowEventConsumer {
     const dispatcher = this.onApproved;
     if (dispatcher === null) return;
 
+    // Approval tasks can carry a payload other than the bus-driver
+    // service_query_execution envelope — e.g. intent_validation
+    // approvals raised by POST v1/intent/validate. Those approvals
+    // settle when the agent polls v1/intent/:id/status; there's no
+    // service.query requester waiting on a D2D response, so the
+    // event-consumer's job is just to skip them cleanly. Without
+    // this the malformed-payload branch below would mark the event
+    // failed + back off, leaving a noisy redrive loop on every
+    // intent approval.
+    const payloadType = peekPayloadType(task.payload);
+    if (payloadType !== '' && payloadType !== 'service_query_execution') {
+      this.log({
+        event: 'workflow_event.approved_skipped_other_payload',
+        task_id: task.id,
+        payload_type: payloadType,
+      });
+      await this.ackAndTrack(event, 'skipped', result);
+      return;
+    }
+
     const payload = parseApprovedPayload(task.payload);
     if (payload === null) {
       result.failed++;
@@ -611,6 +631,25 @@ export class WorkflowEventConsumer {
       }
     }
     this.log({ event: `workflow_event.${outcome}`, event_id: event.event_id });
+  }
+}
+
+/**
+ * Read the `type` field from an approval task's JSON payload without
+ * validating the rest of the envelope. Returns `''` for malformed JSON
+ * or a missing/non-string `type`. Used to discriminate
+ * `service_query_execution` (bus-driver flow) from other approval
+ * payload kinds (e.g. `intent_validation`) that should be skipped by
+ * this consumer.
+ */
+function peekPayloadType(raw: string): string {
+  try {
+    const p = JSON.parse(raw);
+    if (p === null || typeof p !== 'object') return '';
+    const t = (p as Record<string, unknown>).type;
+    return typeof t === 'string' ? t : '';
+  } catch {
+    return '';
   }
 }
 

@@ -25,6 +25,7 @@ import {
   resetPersonaState,
 } from '../../../core/src/persona/service';
 import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
+import { DEFAULT_TEST_PERSONAS } from '../../../core/src/vault/crud';
 import { ingest, claim, resolve, resetStagingState } from '../../../core/src/staging/service';
 import { classifyItem, enrichItem } from '../../src/staging/processor';
 import { reason, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
@@ -47,7 +48,7 @@ import { makeEvent, TEST_PASSPHRASE, resetFactoryCounters } from '@dina/test-har
 describe('Boot-to-Chat Integration (Capstone)', () => {
   beforeEach(() => {
     resetPersonaState();
-    clearVaults();
+    clearVaults([...DEFAULT_TEST_PERSONAS, 'work']);
     resetStagingState();
     resetAuditState();
     resetRotationState();

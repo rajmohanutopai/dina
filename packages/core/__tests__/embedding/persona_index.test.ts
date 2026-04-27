@@ -14,7 +14,12 @@ import {
   indexSize,
   destroyAllIndexes,
 } from '../../src/embedding/persona_index';
-import { storeItem, queryVault, clearVaults } from '../../src/vault/crud';
+import {
+  storeItem,
+  queryVault,
+  clearVaults,
+  DEFAULT_TEST_PERSONAS,
+} from '../../src/vault/crud';
 
 /** Create a Float32Array embedding. */
 function embed(...values: number[]): Float32Array {
@@ -27,9 +32,11 @@ function embedBytes(...values: number[]): Uint8Array {
 }
 
 describe('Per-Persona HNSW Index (8.7)', () => {
+  beforeEach(() => {
+    clearVaults([...DEFAULT_TEST_PERSONAS, 'work']);
+  });
   afterEach(() => {
     destroyAllIndexes();
-    clearVaults();
   });
 
   describe('buildIndex', () => {

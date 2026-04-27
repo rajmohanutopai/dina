@@ -28,11 +28,28 @@ import type { DeviceRole } from '../../devices/registry';
 
 const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent']);
 
+/**
+ * Wire-aliases for `role` accepted from external callers that follow
+ * the Go production CLI's `user|agent` taxonomy. Lite's internal
+ * device registry uses the richer `rich|thin|cli|agent` set; `user`
+ * (a personal command-line interface) maps to Lite's `cli`. Without
+ * this, `dina configure --role user` against a Lite home node
+ * 400s — the CLI is correct against Go's wire and Lite must accept
+ * the same shape.
+ */
+const ROLE_ALIASES: Record<string, string> = {
+  user: 'cli',
+};
+
+function normaliseRole(raw: string): string {
+  return ROLE_ALIASES[raw] ?? raw;
+}
+
 export function registerPairRoutes(router: CoreRouter): void {
   router.post('/v1/pair/initiate', async (req) => {
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
     const deviceName = typeof body.device_name === 'string' ? body.device_name.trim() : '';
-    const role = typeof body.role === 'string' ? body.role : 'rich';
+    const role = normaliseRole(typeof body.role === 'string' ? body.role : 'rich');
 
     if (deviceName === '') {
       return { status: 400, body: { error: 'device_name is required' } };
@@ -95,7 +112,9 @@ export function registerPairRoutes(router: CoreRouter): void {
       const overrideName = typeof body.device_name === 'string' ? body.device_name.trim() : '';
       const overrideRole = typeof body.role === 'string' ? body.role : '';
       const deviceName = overrideName !== '' ? overrideName : (intent?.deviceName ?? '');
-      const roleRaw = overrideRole !== '' ? overrideRole : (intent?.role ?? 'rich');
+      const roleRaw = normaliseRole(
+        overrideRole !== '' ? overrideRole : (intent?.role ?? 'rich'),
+      );
 
       // If the intent exists but the admin didn't capture a device_name
       // AND the agent didn't supply one, reject BEFORE calling

@@ -14,13 +14,35 @@
 
 import type { CoreClient, WorkflowTask } from '@dina/core';
 
+/**
+ * Approval-task variants the inbox knows how to render.
+ *
+ * - `service_query` — bus-driver flow. Approval gates a `service.query`
+ *   D2D round-trip; deny → send `unavailable` to the requester.
+ * - `intent_validation` — `dina validate` flow from OpenClaw / sample
+ *   agents. Approval gates an agent action (send_email, transfer_money,
+ *   etc.); the agent polls `/v1/intent/:id/status`. Deny is a plain
+ *   workflow cancel — there is no service.query requester to notify.
+ * - `unknown` — payload doesn't match either shape; render with what
+ *   we can read and surface a generic deny.
+ */
+export type InboxEntryKind = 'service_query' | 'intent_validation' | 'unknown';
+
 export interface InboxEntry {
   id: string;
+  /** Discriminator the UI uses to pick a render template + deny path. */
+  kind: InboxEntryKind;
+  /** service_query: capability name. intent_validation: action name. */
   capability: string;
+  /** service_query: provider/service display name; intent_validation: ''. */
   serviceName: string;
   description: string;
+  /** service_query: requester DID. intent_validation: agent DID (when present). */
   requesterDID: string;
+  /** service_query: serialized params. intent_validation: target text. */
   paramsPreview: string;
+  /** intent_validation only — surfaces SAFE/MODERATE/HIGH/BLOCKED. */
+  riskLevel?: 'SAFE' | 'MODERATE' | 'HIGH' | 'BLOCKED';
   createdAt: number;
   expiresAt?: number;
 }
@@ -85,24 +107,45 @@ export async function approvePending(taskId: string): Promise<WorkflowTask> {
 }
 
 /**
- * Deny a pending task with an optional reason. Mirrors the chat
- * `/service_deny` handler: send an `unavailable` D2D first (so the
- * requester sees a real reason instead of timing out), then cancel
- * the approval task authoritatively. Issue #5.
+ * Deny a pending task with an optional reason.
  *
- * The send is best-effort — a failure there still proceeds to cancel;
- * the cancel is the state change we care about.
+ * Two flavours, discriminated on the approval task's payload kind:
+ *
+ *   - `service_query` (bus-driver flow): mirror the chat
+ *     `/service_deny` handler — send an `unavailable` D2D so the
+ *     requester sees a real reason instead of TTL-timing out, then
+ *     fall back to `cancelWorkflowTask` only if the respond failed
+ *     (review #1: respond already terminates the task; double-cancel
+ *     produces a spurious 409). Issue #5.
+ *
+ *   - `intent_validation` (`dina validate` flow): the requester is an
+ *     OpenClaw agent polling `/v1/intent/:id/status`; there is no
+ *     service.query waiting on a D2D response. Just cancel the task
+ *     — the agent's next poll sees `cancelled → status='denied'`.
+ *
+ *   - `unknown`: fall back to the service_query path. Worst case the
+ *     respond fails because the requester DID is missing/malformed
+ *     and we cancel anyway.
+ *
+ * Caller passes the entry's `kind` so we don't have to re-fetch the
+ * task to inspect the payload. When omitted (legacy callers / tests
+ * that pre-date this change) we default to `service_query` so the
+ * existing behaviour is preserved.
  */
 export async function denyPending(
   taskId: string,
   reason = 'denied_by_operator',
+  kind: InboxEntryKind = 'service_query',
 ): Promise<WorkflowTask> {
   const core = requireClient();
   const denyReason = reason.trim() === '' ? 'denied_by_operator' : reason.trim();
-  // Review #1: `/v1/service/respond` already completes the approval
-  // task. Only fall back to `cancelWorkflowTask` when the respond
-  // itself failed — otherwise we double-terminate and the second
-  // call can surface a false 409 to the operator.
+
+  if (kind === 'intent_validation') {
+    // Plain cancel — no service.respond peer to notify. The agent
+    // observes the new state via its `/v1/intent/:id/status` poll.
+    return core.cancelWorkflowTask(taskId, denyReason);
+  }
+
   try {
     await core.sendServiceRespond(taskId, {
       status: 'unavailable',
@@ -138,6 +181,30 @@ function requireClient(): InboxCoreClient {
 
 function toEntry(task: WorkflowTask): InboxEntry {
   const parsed = safeParse(task.payload);
+  const payloadType = typeof parsed.type === 'string' ? parsed.type : '';
+
+  if (payloadType === 'intent_validation') {
+    const action = typeof parsed.action === 'string' ? parsed.action : '';
+    const target = typeof parsed.target === 'string' ? parsed.target : '';
+    const agentDID = typeof parsed.agent_did === 'string' ? parsed.agent_did : '';
+    const riskLevel = normaliseRiskLevel(parsed.risk_level);
+    return {
+      id: task.id,
+      kind: 'intent_validation',
+      capability: action,
+      serviceName: '',
+      description: task.description ?? '',
+      requesterDID: agentDID,
+      paramsPreview: target,
+      ...(riskLevel !== undefined ? { riskLevel } : {}),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  // Default — service_query (bus-driver) flow. Falls through to
+  // 'unknown' when the payload is malformed enough that neither
+  // capability nor type could be read.
   const capability = typeof parsed.capability === 'string' ? parsed.capability : '';
   const serviceName = typeof parsed.service_name === 'string' ? parsed.service_name : '';
   const requesterDID =
@@ -147,16 +214,25 @@ function toEntry(task: WorkflowTask): InboxEntry {
         ? parsed.requester_did
         : '';
   const paramsPreview = summariseParams(parsed.params);
+  const isServiceQuery =
+    payloadType === 'service_query_execution' || (payloadType === '' && capability !== '');
   return {
     id: task.id,
+    kind: isServiceQuery ? 'service_query' : 'unknown',
     capability,
     serviceName,
     description: task.description ?? '',
     requesterDID,
     paramsPreview,
     createdAt: task.created_at,
-    expiresAt: task.expires_at,
+    ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
   };
+}
+
+function normaliseRiskLevel(raw: unknown): InboxEntry['riskLevel'] | undefined {
+  if (typeof raw !== 'string') return undefined;
+  if (raw === 'SAFE' || raw === 'MODERATE' || raw === 'HIGH' || raw === 'BLOCKED') return raw;
+  return undefined;
 }
 
 function safeParse(raw: string): Record<string, unknown> {

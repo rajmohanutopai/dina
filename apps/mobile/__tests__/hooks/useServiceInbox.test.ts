@@ -158,6 +158,62 @@ describe('useServiceInbox', () => {
     expect(entry.capability).toBe('');
     expect(entry.serviceName).toBe('');
     expect(entry.paramsPreview).toBe('');
+    // Malformed payloads can't be classified — surface as 'unknown'
+    // so the UI's render branch picks the lowest-info template.
+    expect(entry.kind).toBe('unknown');
+  });
+
+  it('classifies bus-driver service_query payloads with kind=service_query', async () => {
+    const { client } = stubClient({ list: [makeTask({ id: 'svc-1' })] });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    // Default makeTask payload uses the service_query shape (no
+    // explicit `type`, but `capability` is set).
+    expect(entry.kind).toBe('service_query');
+  });
+
+  it('classifies intent_validation approvals with kind=intent_validation', async () => {
+    // POST /v1/intent/validate raises an approval task with this
+    // payload shape: type='intent_validation', action, target,
+    // risk_level, agent_did. The UI renders action/target instead of
+    // capability/params; the deny flow skips sendServiceRespond.
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'prop-intent-1',
+          payload: JSON.stringify({
+            type: 'intent_validation',
+            action: 'send_email',
+            target: 'draft resignation letter to HR',
+            risk_level: 'MODERATE',
+            agent_did: 'did:plc:openclaw',
+            session_id: 'ses_abc',
+            reason: 'Action requires user approval',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.kind).toBe('intent_validation');
+    expect(entry.capability).toBe('send_email');
+    expect(entry.paramsPreview).toBe('draft resignation letter to HR');
+    expect(entry.requesterDID).toBe('did:plc:openclaw');
+    expect(entry.riskLevel).toBe('MODERATE');
+    expect(entry.serviceName).toBe('');
+  });
+
+  it('denyPending(intent_validation) cancels the task without service.respond', async () => {
+    // Agents poll /v1/intent/:id/status, not a D2D inbox — there is
+    // no requester to notify, so we skip sendServiceRespond entirely
+    // and just cancel.
+    const { client, calls } = stubClient({});
+    setInboxCoreClient(client);
+    await denyPending('prop-intent-1', 'denied_by_operator', 'intent_validation');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled).toEqual([
+      { id: 'prop-intent-1', reason: 'denied_by_operator' },
+    ]);
   });
 
   it('approvePending forwards to coreClient.approveWorkflowTask', async () => {

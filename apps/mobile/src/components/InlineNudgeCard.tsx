@@ -19,7 +19,8 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
 import { actOnNudge, dismissNudge, type NudgeKind } from '../hooks/useChatNudges';
-import { colors, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing } from '../theme';
+import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineNudgeCardProps {
   message: ChatMessage;
@@ -140,6 +141,7 @@ export function InlineNudgeCard({ message, onAct }: InlineNudgeCardProps): React
       )}
       {resolved === 'acted' && <Text style={styles.statusLine}>Done.</Text>}
       {resolved === 'dismissed' && <Text style={styles.statusLine}>Dismissed.</Text>}
+      <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );
 }
@@ -177,24 +179,26 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 1.5,
     color: colors.textMuted,
   },
   title: {
+    fontFamily: fonts.heading,
     fontSize: 15,
-    fontWeight: '600',
     color: colors.textPrimary,
     marginBottom: 2,
   },
   body: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: spacing.sm,
   },
   contactLine: {
+    fontFamily: fonts.sansMedium,
     fontSize: 12,
     color: colors.textMuted,
     marginBottom: spacing.sm,
@@ -215,9 +219,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   actionText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.bgPrimary,
     fontSize: 14,
-    fontWeight: '600',
   },
   dismiss: {
     backgroundColor: 'transparent',
@@ -225,11 +229,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   dismissText: {
+    fontFamily: fonts.sansMedium,
     color: colors.textPrimary,
     fontSize: 14,
-    fontWeight: '500',
   },
   statusLine: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textMuted,
     fontStyle: 'italic',

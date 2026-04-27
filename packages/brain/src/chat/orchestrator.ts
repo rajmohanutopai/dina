@@ -14,7 +14,13 @@
  */
 
 import { parseCommand, getAvailableCommands, type ChatIntent } from './command_parser';
-import { addUserMessage, addDinaResponse, addSystemMessage } from './thread';
+import {
+  addUserMessage,
+  addDinaResponse,
+  addSystemMessage,
+  addLifecycleMessage,
+} from './thread';
+import type { ServiceQueryDispatch } from '../reasoning/ask_handler';
 import { reason } from '../pipeline/chat_reasoning';
 import { executeToolSearch } from '../vault_context/assembly';
 import { ingest } from '../../../core/src/staging/service';
@@ -89,6 +95,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
 
   let typed: BotResponse;
   let sources: string[] = [];
+  let serviceQueries: ServiceQueryDispatch[] = [];
 
   switch (parsed.intent) {
     case 'remember':
@@ -96,7 +103,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       break;
 
     case 'ask':
-      ({ typed, sources } = await handleAsk(parsed.payload, thread));
+      ({ typed, sources, serviceQueries } = await handleAsk(parsed.payload, thread));
       break;
 
     case 'search':
@@ -104,7 +111,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       break;
 
     case 'service':
-      typed = await handleService(parsed.capability ?? '', parsed.payload);
+      ({ typed, serviceQueries } = await handleService(parsed.capability ?? '', parsed.payload));
       break;
 
     case 'service_approve':
@@ -121,7 +128,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
 
     case 'chat':
     default:
-      ({ typed, sources } = await handleAsk(parsed.payload, thread));
+      ({ typed, sources, serviceQueries } = await handleAsk(parsed.payload, thread));
       break;
   }
 
@@ -130,14 +137,39 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
   // the discriminator.
   const response = typed.text;
 
-  // Store response
-  const msg = addDinaResponse(thread, response, sources.length > 0 ? sources : undefined);
+  // When a service query was dispatched (LLM `query_service` tool OR
+  // `/service` slash command), post a single `'dina'` message tagged
+  // with `metadata.lifecycle = {kind: 'service_query', status: 'pending', …}`.
+  // The `WorkflowEventConsumer` patches the same message in place when
+  // the response lands — eliminating the race where the LLM narrative
+  // and the workflow-event push produced two messages for one query.
+  // Brain ships the LLM ack as initial content; mobile renders the card
+  // (inline component dispatches on `metadata.lifecycle.kind`).
+  let msgId: string;
+  if (serviceQueries.length > 0) {
+    let lastId = '';
+    for (const sq of serviceQueries) {
+      const msg = addLifecycleMessage(thread, response, {
+        kind: 'service_query',
+        status: 'pending',
+        taskId: sq.taskId,
+        queryId: sq.queryId,
+        capability: sq.capability,
+        serviceName: sq.serviceName,
+      });
+      lastId = msg.id;
+    }
+    msgId = lastId;
+  } else {
+    const msg = addDinaResponse(thread, response, sources.length > 0 ? sources : undefined);
+    msgId = msg.id;
+  }
 
   return {
     intent: parsed.intent,
     response,
     sources,
-    messageId: msg.id,
+    messageId: msgId,
     typed,
   };
 }
@@ -176,6 +208,29 @@ export function setRememberDrainHook(hook: RememberDrainHook | null): void {
 /** Reset for tests. */
 export function resetRememberDrainHook(): void {
   rememberDrainHook = null;
+}
+
+/**
+ * Format a persona name for user-facing reply text — capitalise +
+ * replace underscores with spaces. Internal storage stays lowercase
+ * `[a-z0-9_]+` (vault file names, classifier prompt list); chat
+ * replies surface the prettier form so "Stored in finance vault."
+ * reads as "Stored in Finance vault.".
+ *
+ *   formatPersonaDisplayName('general')        → 'General'
+ *   formatPersonaDisplayName('trip_planning')  → 'Trip Planning'
+ *
+ * Mirrors `apps/mobile/src/hooks/usePersonas.ts::formatPersonaDisplayName`
+ * so chat replies + Vault tab + persona detail header agree on the
+ * same display style.
+ */
+function formatPersonaDisplayName(name: string): string {
+  if (!name) return '';
+  return name
+    .split('_')
+    .filter((part) => part.length > 0)
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 const REMINDER_EMOJI: Record<string, string> = {
@@ -236,7 +291,7 @@ async function handleRemember(text: string): Promise<BotResponse> {
     return plainResponse(`Got it — I'll remember that. (${id})`);
   }
 
-  const lines: string[] = [`Stored in ${persona} vault.`];
+  const lines: string[] = [`Stored in ${formatPersonaDisplayName(persona)} vault.`];
 
   // The reminder planner uses the staging row's id as the reminder's
   // `source_item_id` (see `drain.ts` → `handlePostPublish` → `planReminders`),
@@ -257,9 +312,13 @@ async function handleRemember(text: string): Promise<BotResponse> {
 async function handleAsk(
   query: string,
   threadId: string,
-): Promise<{ typed: BotResponse; sources: string[] }> {
+): Promise<{ typed: BotResponse; sources: string[]; serviceQueries: ServiceQueryDispatch[] }> {
   if (!query) {
-    return { typed: plainResponse('What would you like to know?'), sources: [] };
+    return {
+      typed: plainResponse('What would you like to know?'),
+      sources: [],
+      serviceQueries: [],
+    };
   }
 
   // When an agentic handler is installed (via bootstrap's globalWiring),
@@ -269,11 +328,11 @@ async function handleAsk(
   // `/ask` still works in test / early-boot paths.
   if (askHandler !== null) {
     const r = await askHandler(query, { threadId });
-    // Agentic answers are plain prose today. When a future handler
-    // produces a structured kind (e.g. a trust-flagged purchase
-    // dialog), upgrade this branch to read a richer shape from the
-    // handler result.
-    return { typed: plainResponse(r.response), sources: r.sources };
+    return {
+      typed: plainResponse(r.response),
+      sources: r.sources,
+      serviceQueries: r.serviceQueries ?? [],
+    };
   }
 
   const result = await reason({
@@ -281,7 +340,7 @@ async function handleAsk(
     persona: defaultPersona,
     provider: defaultProvider,
   });
-  return { typed: plainResponse(result.answer), sources: result.sources };
+  return { typed: plainResponse(result.answer), sources: result.sources, serviceQueries: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +372,20 @@ export interface AskCommandContext {
 export type AskCommandHandler = (
   query: string,
   context?: AskCommandContext,
-) => Promise<{ response: string; sources: string[] }>;
+) => Promise<{
+  response: string;
+  sources: string[];
+  /**
+   * Service-query dispatches that ran during this turn. Each entry
+   * becomes a `service_query` chat card (status `pending`) that the
+   * `WorkflowEventConsumer` later patches in place when the response
+   * lands. Surfacing this here lets the orchestrator skip
+   * `addDinaResponse` for the LLM narrative — the card carries the
+   * message — eliminating the prior race where two messages described
+   * the same query.
+   */
+  serviceQueries?: ServiceQueryDispatch[];
+}>;
 
 let askHandler: AskCommandHandler | null = null;
 
@@ -358,7 +430,11 @@ function handleHelp(): BotResponse {
 /**
  * Handler invoked when a `/service <capability> <text>` command is parsed.
  * The result is delivered asynchronously via a workflow event — this handler
- * only returns the synchronous acknowledgement string shown to the user.
+ * returns a synchronous acknowledgement string AND, on a successful
+ * dispatch, the dispatch metadata so the orchestrator can post a
+ * lifecycle-tracked chat message that the WorkflowEventConsumer later
+ * patches in place. Without `dispatch`, the orchestrator falls back to a
+ * plain dina response (error / pre-send-failure path).
  *
  * `null` (the default) is swapped in by `setServiceCommandHandler` when
  * `ServiceQueryOrchestrator` is wired via `wireServiceOrchestrator`.
@@ -366,7 +442,7 @@ function handleHelp(): BotResponse {
 export type ServiceCommandHandler = (
   capability: string,
   payload: string,
-) => Promise<{ ack: string }>;
+) => Promise<{ ack: string; dispatch?: ServiceQueryDispatch }>;
 
 let serviceHandler: ServiceCommandHandler | null = null;
 
@@ -383,22 +459,33 @@ export function resetServiceCommandHandler(): void {
   serviceHandler = null;
 }
 
-async function handleService(capability: string, payload: string): Promise<BotResponse> {
+async function handleService(
+  capability: string,
+  payload: string,
+): Promise<{ typed: BotResponse; serviceQueries: ServiceQueryDispatch[] }> {
   if (!capability) {
-    return errorResponse('Which service? Usage: /service <capability> <question>');
+    return {
+      typed: errorResponse('Which service? Usage: /service <capability> <question>'),
+      serviceQueries: [],
+    };
   }
   if (serviceHandler === null) {
-    // Orchestrator not yet wired. Tell the user we heard them and
-    // acknowledge the capability — the actual query flow lands in BRAIN-P1-Q.
-    return plainResponse(
-      `Service lookup for "${capability}" isn't wired up yet. (Coming soon.)`,
-    );
+    return {
+      typed: plainResponse(`Service lookup for "${capability}" isn't wired up yet. (Coming soon.)`),
+      serviceQueries: [],
+    };
   }
   try {
-    const { ack } = await serviceHandler(capability, payload);
-    return plainResponse(ack);
+    const { ack, dispatch } = await serviceHandler(capability, payload);
+    return {
+      typed: plainResponse(ack),
+      serviceQueries: dispatch !== undefined ? [dispatch] : [],
+    };
   } catch (err) {
-    return errorResponse(`Couldn't start service query: ${(err as Error).message}`);
+    return {
+      typed: errorResponse(`Couldn't start service query: ${(err as Error).message}`),
+      serviceQueries: [],
+    };
   }
 }
 

@@ -198,16 +198,41 @@ function formatDueLabel(dueAt: number, now: number): string {
   return days === 1 ? 'Tomorrow' : `${days}d`;
 }
 
-/** Format day label from YYYY-MM-DD. */
+/**
+ * Format day label from YYYY-MM-DD.
+ *
+ * Today / Tomorrow / Yesterday read as words; everything else uses the
+ * locale-default short weekday + month + day (e.g. "Tue Apr 28") so the
+ * SectionList header doesn't dump a raw ISO date that reads as data.
+ */
 function formatDayLabel(dateStr: string): string {
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const toIsoDate = (d: Date): string =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+  const today = new Date();
+  const todayStr = toIsoDate(today);
   if (dateStr === todayStr) return 'Today';
 
   const tomorrow = new Date(today.getTime() + MS_DAY);
-  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-  if (dateStr === tomorrowStr) return 'Tomorrow';
+  if (dateStr === toIsoDate(tomorrow)) return 'Tomorrow';
 
-  return dateStr;
+  const yesterday = new Date(today.getTime() - MS_DAY);
+  if (dateStr === toIsoDate(yesterday)) return 'Yesterday';
+
+  // YYYY-MM-DD parsed as local midnight. Avoid `new Date(dateStr)`,
+  // which interprets a date-only ISO string as UTC and shifts the
+  // displayed weekday/day backwards in negative-offset time zones.
+  const [yearStr, monthStr, dayStr] = dateStr.split('-');
+  const y = Number.parseInt(yearStr ?? '', 10);
+  const m = Number.parseInt(monthStr ?? '', 10);
+  const d = Number.parseInt(dayStr ?? '', 10);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    return dateStr;
+  }
+  const local = new Date(y, m - 1, d);
+  return local.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
 }

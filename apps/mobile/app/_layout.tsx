@@ -8,9 +8,25 @@
 import '../src/polyfills';
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { Tabs, useRouter } from 'expo-router';
-import { Image, Platform, View, Text, StyleSheet } from 'react-native';
+import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
+import {
+  Figtree_400Regular,
+  Figtree_500Medium,
+  Figtree_600SemiBold,
+} from '@expo-google-fonts/figtree';
+import {
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
+import { CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
+import {
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+} from '@expo-google-fonts/jetbrains-mono';
 import * as Notifications from 'expo-notifications';
 import { colors, fonts } from '../src/theme';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
@@ -35,8 +51,9 @@ import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 
 // Horizontal Dina mark used in the Chat tab's header. Other tabs
 // keep their text title — using the wordmark on every screen would
-// dilute it. The asset is already at retina resolution (1672x941),
-// so we just constrain the height and let the width auto-scale.
+// dilute it. The asset is at retina resolution (1672×941, ratio
+// 1.78), so width is generous and `contain` lets the height drive
+// the rendered size without stretching.
 const dinaHeaderLogo = require('../assets/branding/dina-logo-horizontal.png');
 
 function DinaHeaderTitle() {
@@ -44,11 +61,117 @@ function DinaHeaderTitle() {
     <Image
       source={dinaHeaderLogo}
       resizeMode="contain"
-      style={{ height: 28, width: 96 }}
+      style={{ height: 40, width: 120 }}
       accessibilityLabel="Dina"
     />
   );
 }
+
+// Hamburger button + nav menu sheet rendered as `headerLeft` on
+// every top-level tab.  Opens a modal listing the secondary
+// destinations (Vault + Settings) that don't earn a permanent
+// bottom-tab slot.  Top-left placement is the standard drawer spot
+// on both iOS and Android and stays out of the way of a rightward
+// `headerRight` content slot.
+type NavMenuItem = {
+  label: string;
+  icon: IoniconName;
+  href: string;
+};
+
+const NAV_MENU_ITEMS: NavMenuItem[] = [
+  { label: 'Vault',    icon: 'lock-closed-outline',         href: '/vault'    },
+  { label: 'Settings', icon: 'settings-outline',            href: '/settings' },
+  { label: 'Help',     icon: 'help-circle-outline',         href: '/help'     },
+];
+
+function HeaderMenuButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Open menu"
+      style={{ paddingHorizontal: 12, paddingVertical: 6 }}
+    >
+      <Ionicons name="menu-outline" size={26} color={colors.tabInactive} />
+    </Pressable>
+  );
+}
+
+function NavMenuSheet({
+  visible,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (href: string) => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={navMenuStyles.backdrop} onPress={onClose}>
+        <Pressable style={navMenuStyles.sheet} onPress={() => undefined}>
+          {NAV_MENU_ITEMS.map((item) => (
+            <TouchableOpacity
+              key={item.href}
+              style={navMenuStyles.row}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
+              onPress={() => onSelect(item.href)}
+            >
+              <Ionicons
+                name={item.icon}
+                size={22}
+                color={colors.textPrimary}
+                style={{ marginRight: 14 }}
+              />
+              <Text style={navMenuStyles.rowText}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const navMenuStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    justifyContent: 'flex-start',
+  },
+  sheet: {
+    marginTop: Platform.OS === 'ios' ? 96 : 64,
+    marginLeft: 12,
+    backgroundColor: colors.bgPrimary,
+    borderRadius: 14,
+    paddingVertical: 6,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  rowText: {
+    fontFamily: fonts.sans,
+    fontSize: 16,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+});
 
 /**
  * Degradation codes that mean "this node cannot serve provider-role
@@ -124,7 +247,19 @@ export default function RootLayout() {
   // `expo-font` when this hook resolves. Without this, every
   // `<Ionicons />` would render as empty whitespace because iOS has
   // no font called "ionicons" registered.
-  const [iconsFontLoaded] = useFonts(Ionicons.font);
+  const [iconsFontLoaded] = useFonts({
+    ...Ionicons.font,
+    Figtree_400Regular,
+    Figtree_500Medium,
+    Figtree_600SemiBold,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
+    CormorantGaramond_600SemiBold_Italic,
+    JetBrainsMono_400Regular,
+    JetBrainsMono_500Medium,
+  });
 
   // `useIsUnlocked` subscribes to the unlock module's transition events
   // so the boot hook re-runs when the user unlocks after first paint —
@@ -177,6 +312,11 @@ export default function RootLayout() {
   useReminderFireWatcher({ threadId: 'main', enabled: unlocked });
 
   const router = useRouter();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const handleMenuSelect = (href: string) => {
+    setMenuOpen(false);
+    router.push(href as never);
+  };
 
   // Notification system boot (5.59 / 5.61). Runs once after unlock —
   // sets up Android channels, requests OS permission (idempotent —
@@ -285,12 +425,14 @@ export default function RootLayout() {
                 ...(Platform.OS === 'ios' ? { shadowOpacity: 0 } : { elevation: 0 }),
               },
               headerTitleStyle: {
+                fontFamily: fonts.heading,
                 fontWeight: '600',
                 fontSize: 17,
                 color: colors.textPrimary,
                 letterSpacing: 0.3,
               },
               headerShadowVisible: false,
+              headerLeft: () => <HeaderMenuButton onPress={() => setMenuOpen(true)} />,
               tabBarStyle: {
                 backgroundColor: colors.bgPrimary,
                 borderTopWidth: 1,
@@ -301,6 +443,7 @@ export default function RootLayout() {
               tabBarActiveTintColor: colors.tabActive,
               tabBarInactiveTintColor: colors.tabInactive,
               tabBarLabelStyle: {
+                fontFamily: fonts.sans,
                 fontSize: 11,
                 fontWeight: '500',
                 letterSpacing: 0.2,
@@ -318,10 +461,20 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
-              name="vault"
+              name="vault/index"
+              options={{
+                title: 'Vaults',
+                // Reached via the hamburger menu (HeaderMenuButton).
+                href: null,
+              }}
+            />
+            <Tabs.Screen
+              name="vault/[name]"
               options={{
                 title: 'Vault',
-                tabBarIcon: ({ focused }) => <TabIcon name="Vault" focused={focused} />,
+                // Drill-down from `/vault`. Without this entry expo-router
+                // would auto-register the dynamic route as a tab.
+                href: null,
               }}
             />
             <Tabs.Screen
@@ -365,7 +518,8 @@ export default function RootLayout() {
               name="settings"
               options={{
                 title: 'Settings',
-                tabBarIcon: ({ focused }) => <TabIcon name="Settings" focused={focused} />,
+                // Reached via the hamburger menu (HeaderMenuButton).
+                href: null,
               }}
             />
             <Tabs.Screen
@@ -384,6 +538,16 @@ export default function RootLayout() {
                 title: 'Paired Devices',
                 // Hidden from the tab bar — reached via drill-down from Settings.
                 // Admin surface for `dina-admin device pair`; no dedicated tab.
+                href: null,
+              }}
+            />
+            <Tabs.Screen
+              name="help"
+              options={{
+                title: 'Help',
+                // Reached via the hamburger menu — shouldn't have its own
+                // tab. Without this entry expo-router file-based routing
+                // would auto-register `app/help.tsx` as a bottom tab.
                 href: null,
               }}
             />
@@ -414,6 +578,11 @@ export default function RootLayout() {
           </Tabs>
         ) : null}
       </UnlockGate>
+      <NavMenuSheet
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onSelect={handleMenuSelect}
+      />
     </View>
   );
 }
@@ -429,17 +598,42 @@ function BootBanner({
    *  of actionable context (finding #13). */
   details: string[];
 }) {
+  // Collapse by default — the full warning list ate ~20% of every
+  // screen's vertical space.  Tap the strip to expand and read the
+  // codes; tap again to collapse.  `error` boots stay expanded so
+  // the operator sees the failure without an extra interaction.
+  const [expanded, setExpanded] = React.useState(kind === 'error');
   const bg = kind === 'error' ? '#FDE8E8' : kind === 'warning' ? '#FFF4DB' : '#EBF4FF';
   const border = kind === 'error' ? '#DC2626' : kind === 'warning' ? '#D97706' : '#2563EB';
+  const hasDetails = details.length > 0;
   return (
-    <View style={[bannerStyles.wrap, { backgroundColor: bg, borderBottomColor: border }]}>
-      <Text style={bannerStyles.primary}>{primary}</Text>
-      {details.map((line, i) => (
-        <Text key={i} style={bannerStyles.secondary}>
-          {line}
+    <Pressable
+      onPress={() => hasDetails && setExpanded((v) => !v)}
+      style={[bannerStyles.wrap, { backgroundColor: bg, borderBottomColor: border }]}
+      accessibilityRole={hasDetails ? 'button' : undefined}
+      accessibilityLabel={`${primary}${hasDetails ? ` (${details.length} item${details.length === 1 ? '' : 's'})` : ''}`}
+    >
+      <View style={bannerStyles.row}>
+        <Text style={bannerStyles.primary} numberOfLines={expanded ? undefined : 1}>
+          {primary}
+          {!expanded && hasDetails ? `  ·  ${details.length}` : ''}
         </Text>
-      ))}
-    </View>
+        {hasDetails && (
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color={colors.textSecondary}
+            style={{ marginLeft: 8 }}
+          />
+        )}
+      </View>
+      {expanded &&
+        details.map((line, i) => (
+          <Text key={i} style={bannerStyles.secondary}>
+            {line}
+          </Text>
+        ))}
+    </Pressable>
   );
 }
 
@@ -461,14 +655,22 @@ const bannerStyles = StyleSheet.create({
   wrap: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderBottomWidth: 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   primary: {
+    flex: 1,
+    fontFamily: fonts.heading,
     fontSize: 13,
     fontWeight: '600',
     color: colors.textPrimary,
   },
   secondary: {
+    fontFamily: fonts.sans,
     fontSize: 11,
     color: colors.textMuted,
     marginTop: 2,

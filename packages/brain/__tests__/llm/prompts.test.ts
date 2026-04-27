@@ -268,8 +268,19 @@ describe('Prompt Registry', () => {
       expect(REMINDER_PLAN).toContain('NEVER fabricate');
     });
 
-    it('includes consolidation rule', () => {
-      expect(REMINDER_PLAN).toContain('Consolidation');
+    it('includes consolidation rule for arrivals (Python parity)', () => {
+      // Python phrasing: "create ONE reminder that includes ALL relevant
+      // context about that person from the vault" — no "Consolidation"
+      // header keyword.
+      expect(REMINDER_PLAN).toContain('ONE reminder');
+      expect(REMINDER_PLAN).toContain('ALL relevant context');
+    });
+
+    it('carries the canonical Alonso arrival example (capabilities.md spec)', () => {
+      // Pinning the verbatim example so prompt edits that drop it
+      // surface in code review.
+      expect(REMINDER_PLAN).toContain('Alonso is arriving');
+      expect(REMINDER_PLAN).toContain('cold brew coffee');
     });
 
     it('exposes arrival as a valid kind for the LLM to choose', () => {
@@ -314,34 +325,50 @@ describe('Prompt Registry', () => {
   });
 
   describe('PERSON_IDENTITY_EXTRACTION', () => {
-    it('contains text placeholder', () => {
-      expect(PERSON_IDENTITY_EXTRACTION).toContain('{{text}}');
+    // Python parity port (April 2026): the Python prompt is the SOURCE
+    // OF TRUTH and is sent as a SYSTEM message with the user text as
+    // a separate USER message — there's no `{{text}}` placeholder.
+
+    it('does NOT use a {{text}} placeholder (Python two-message pattern)', () => {
+      expect(PERSON_IDENTITY_EXTRACTION).not.toContain('{{text}}');
     });
 
-    it('defines identity_links output format', () => {
+    it('defines identity_links output format including role_phrase', () => {
       expect(PERSON_IDENTITY_EXTRACTION).toContain('"identity_links"');
       expect(PERSON_IDENTITY_EXTRACTION).toContain('"name"');
+      // Python parity — `role_phrase` is the verbatim relationship
+      // string ("my brother") that drives the people-graph's
+      // role-phrase exclusivity invariant. Pinning it here so a
+      // prompt edit that drops the field shows up in code review.
+      expect(PERSON_IDENTITY_EXTRACTION).toContain('"role_phrase"');
       expect(PERSON_IDENTITY_EXTRACTION).toContain('"relationship"');
       expect(PERSON_IDENTITY_EXTRACTION).toContain('"evidence"');
     });
 
-    it('lists valid relationship types', () => {
-      expect(PERSON_IDENTITY_EXTRACTION).toContain('spouse');
+    it('lists valid relationship types from the Python enum', () => {
+      // Python: child|spouse|parent|sibling|friend|colleague|other
       expect(PERSON_IDENTITY_EXTRACTION).toContain('child');
+      expect(PERSON_IDENTITY_EXTRACTION).toContain('spouse');
       expect(PERSON_IDENTITY_EXTRACTION).toContain('parent');
+      expect(PERSON_IDENTITY_EXTRACTION).toContain('sibling');
+      expect(PERSON_IDENTITY_EXTRACTION).toContain('friend');
       expect(PERSON_IDENTITY_EXTRACTION).toContain('colleague');
+      expect(PERSON_IDENTITY_EXTRACTION).toContain('other');
     });
 
-    it('instructs to extract only explicit statements', () => {
-      expect(PERSON_IDENTITY_EXTRACTION).toMatch(/only\s+extract\s+explicit/i);
+    it('instructs to extract only IDENTITY statements (Python phrasing)', () => {
+      // Python: "Only extract IDENTITY statements: ..."
+      expect(PERSON_IDENTITY_EXTRACTION).toMatch(/only\s+extract\s+identity/i);
     });
 
-    it('includes "NEVER fabricate" guard rail', () => {
-      expect(PERSON_IDENTITY_EXTRACTION).toMatch(/never\s+fabricate/i);
+    it('blocks third-party relationship extraction (Python rule)', () => {
+      // Python explicitly excludes "Sancho's daughter Emma" — a
+      // relationship between two other people, not the user.
+      expect(PERSON_IDENTITY_EXTRACTION).toMatch(/between two other people/i);
     });
 
-    it('returns empty array when no relationships found', () => {
-      expect(PERSON_IDENTITY_EXTRACTION).toContain('empty array');
+    it('returns empty identity_links when no statements found', () => {
+      expect(PERSON_IDENTITY_EXTRACTION).toContain('"identity_links": []');
     });
   });
 

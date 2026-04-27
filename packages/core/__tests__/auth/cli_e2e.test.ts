@@ -41,9 +41,11 @@ describe('CLI Signing E2E (Suite 15)', () => {
       const multibase = publicKeyToMultibase(kp.publicKey);
       expect(multibase).toMatch(/^z/); // base58btc prefix
 
-      // 3. Core generates pairing code
+      // 3. Core generates pairing code (8-char Crockford-Base32,
+      // matching Go production — see `pairing/ceremony.test.ts` for
+      // the alphabet-parity gate.)
       const code = generatePairingCode();
-      expect(code.code).toMatch(/^\d{6}$/);
+      expect(code.code).toMatch(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
 
       // 4. CLI completes pairing with code + multibase public key
       const result = completePairing(code.code, 'dina-cli', multibase);
@@ -70,7 +72,7 @@ describe('CLI Signing E2E (Suite 15)', () => {
       // We can't easily test expiry without time mocking here,
       // but the pairing ceremony test suite covers this
       const code = generatePairingCode();
-      expect(code.code.length).toBe(6);
+      expect(code.code.length).toBe(8);
     });
   });
 

@@ -82,6 +82,17 @@ export function wireServiceOrchestrator(options: ServiceWiringOptions): ServiceW
           taskId: result.taskId,
           deduped: result.deduped,
         }),
+        // Surface the dispatch so the chat orchestrator can post a
+        // lifecycle-tracked dina message (status `pending`) keyed by
+        // taskId. The `WorkflowEventConsumer` patches the same message
+        // in place when the response arrives — same path the agentic
+        // `/ask` flow uses.
+        dispatch: {
+          taskId: result.taskId,
+          queryId: result.queryId,
+          capability,
+          serviceName: result.serviceName,
+        },
       };
     } catch (err) {
       return { ack: errorToAck(capability, err) };

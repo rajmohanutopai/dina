@@ -28,7 +28,8 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
-import { colors, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing } from '../theme';
+import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineBriefingCardProps {
   message: ChatMessage;
@@ -156,6 +157,7 @@ export function InlineBriefingCard({
           ))}
         </View>
       )}
+      <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );
 }
@@ -188,21 +190,23 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 1.5,
     color: colors.textMuted,
   },
   period: {
+    fontFamily: fonts.sans,
     fontSize: 12,
     color: colors.textMuted,
   },
   summary: {
+    fontFamily: fonts.sansMedium,
     fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: '500',
   },
   preview: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
     lineHeight: 20,
@@ -215,8 +219,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   sectionTitle: {
+    fontFamily: fonts.heading,
     fontSize: 13,
-    fontWeight: '600',
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
@@ -224,6 +228,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   itemText: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textPrimary,
     lineHeight: 20,
@@ -233,6 +238,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   empty: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textMuted,
     fontStyle: 'italic',

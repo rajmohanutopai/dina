@@ -205,14 +205,19 @@ async function getModel(): Promise<LanguageModel | null> {
 export async function processMessage(text: string): Promise<ChatResponse> {
   const trimmed = text.trim();
 
-  // /help
+  // /help \u2014 kept as a chat-level fallback for users typing the slash
+  // command. The primary help surface is `app/help.tsx`, reached via
+  // the "What can Dina do?" tap card on the empty-state chat screen.
   if (trimmed === '/help') {
     return {
       text: [
-        'Here\u2019s what I can do:\n',
-        '\u2726 Remember \u2014 Tell me something to remember, and I\u2019ll store it in your vault.',
-        '? Ask \u2014 Ask me anything, and I\u2019ll search your memories.',
-        '\u2328 Chat \u2014 Just talk to me naturally.\n',
+        'Tap "What can Dina do?" on the home screen for the full guide.',
+        '',
+        'Quick version:',
+        '\u2022 Type naturally \u2014 "Emma\u2019s birthday is March 15", "When is Emma\u2019s birthday?"',
+        '\u2022 Tap an action card to scope your message (Remember / Ask).',
+        '\u2022 Reminders fire as cards in this thread \u2014 tap Snooze or Mark done.',
+        '',
         `You have ${getMemoryCount()} memories stored.`,
       ].join('\n'),
       action: 'help',

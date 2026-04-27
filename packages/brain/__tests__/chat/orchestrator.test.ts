@@ -76,7 +76,7 @@ describe('Chat Orchestrator', () => {
 
       const result = await handleChat("/remember Emma's birthday is on Nov 7th");
       expect(result.intent).toBe('remember');
-      expect(result.response).toContain('Stored in general vault.');
+      expect(result.response).toContain('Stored in General vault.');
       expect(result.response).toContain('Reminders set:');
       expect(result.response).toContain('🎂');
       expect(result.response).toContain("Emma's birthday today");
@@ -86,7 +86,7 @@ describe('Chat Orchestrator', () => {
       setRememberDrainHook(async () => ({ persona: 'general' }));
 
       const result = await handleChat('/remember Alonso prefers cold brew');
-      expect(result.response).toContain('Stored in general vault.');
+      expect(result.response).toContain('Stored in General vault.');
       expect(result.response).not.toContain('Reminders set:');
     });
 

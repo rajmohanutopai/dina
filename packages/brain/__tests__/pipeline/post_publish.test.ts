@@ -4,18 +4,37 @@
  * Source: ARCHITECTURE.md Task 3.29
  */
 
-import { handlePostPublish } from '../../src/pipeline/post_publish';
-import { resetReminderState, listByPersona } from '../../../core/src/reminders/service';
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import {
+  applyMigrations,
+  IDENTITY_MIGRATIONS,
+  SQLitePeopleRepository,
+  setPeopleRepository,
+} from '@dina/core';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import {
   addContact,
   getContact,
   resetContactDirectory,
 } from '../../../core/src/contacts/directory';
+import { resetReminderState, listByPersona } from '../../../core/src/reminders/service';
+import {
+  registerPersonLinkProvider,
+  resetPersonLinkProvider,
+} from '../../src/person/linking';
+import { handlePostPublish } from '../../src/pipeline/post_publish';
 
 describe('Post-Publish Handler', () => {
   beforeEach(() => {
     resetReminderState();
     resetContactDirectory();
+    resetPersonLinkProvider();
+    setPeopleRepository(null);
   });
 
   describe('reminder extraction', () => {
@@ -69,7 +88,9 @@ describe('Post-Publish Handler', () => {
   describe('contact update', () => {
     it('updates last_interaction for known sender', async () => {
       addContact('did:plc:alice', 'Alice');
-      const beforeUpdate = getContact('did:plc:alice')!.updatedAt;
+      const before = getContact('did:plc:alice');
+      if (before === null) throw new Error('expected fixture contact to exist');
+      const beforeUpdate = before.updatedAt;
 
       await handlePostPublish({
         id: 'item-010',
@@ -81,8 +102,9 @@ describe('Post-Publish Handler', () => {
         sender_did: 'did:plc:alice',
       });
 
-      const afterUpdate = getContact('did:plc:alice')!.updatedAt;
-      expect(afterUpdate).toBeGreaterThanOrEqual(beforeUpdate);
+      const after = getContact('did:plc:alice');
+      if (after === null) throw new Error('expected fixture contact to remain');
+      expect(after.updatedAt).toBeGreaterThanOrEqual(beforeUpdate);
     });
 
     it('returns contactUpdated: true for known sender', async () => {
@@ -181,6 +203,144 @@ describe('Post-Publish Handler', () => {
       });
       expect(result).toBeDefined();
       expect(typeof result.remindersCreated).toBe('number');
+    });
+  });
+
+  describe('people-graph wiring (Phase E)', () => {
+    type Cleanup = () => void;
+    let cleanup: Cleanup | null = null;
+
+    function installPeopleRepo(): void {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-postpublish-people-'));
+      const dbPath = path.join(dir, 'identity.sqlite');
+      const passphraseHex = randomBytes(32).toString('hex');
+      const adapter = new NodeSQLiteAdapter({
+        path: dbPath,
+        passphraseHex,
+        journalMode: 'WAL',
+        synchronous: 'NORMAL',
+      });
+      applyMigrations(adapter, IDENTITY_MIGRATIONS);
+      const repo = new SQLitePeopleRepository(adapter);
+      setPeopleRepository(repo);
+      cleanup = () => {
+        setPeopleRepository(null);
+        try {
+          adapter.close();
+        } catch {
+          /* idempotent */
+        }
+        try {
+          fs.rmSync(dir, { recursive: true, force: true });
+        } catch {
+          /* best-effort */
+        }
+      };
+    }
+
+    afterEach(() => {
+      cleanup?.();
+      cleanup = null;
+    });
+
+    it('peopleGraph telemetry is null when no repo is registered', async () => {
+      registerPersonLinkProvider(
+        async () => JSON.stringify({ identity_links: [{ name: 'Sancho', confidence: 'high' }] }),
+      );
+      const result = await handlePostPublish({
+        id: 'item-pg-1',
+        type: 'note',
+        summary: 'Sancho is my brother',
+        body: '',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+      expect(result.peopleGraph).toBeNull();
+      expect(result.errors).toEqual([]);
+    });
+
+    it('writes a person to the repo and surfaces telemetry on a successful link', async () => {
+      installPeopleRepo();
+      registerPersonLinkProvider(
+        async () =>
+          JSON.stringify({
+            identity_links: [
+              {
+                name: 'Sancho',
+                role_phrase: 'my brother',
+                relationship: 'sibling',
+                confidence: 'high',
+                evidence: 'Sancho is my brother',
+              },
+            ],
+          }),
+      );
+      const result = await handlePostPublish({
+        id: 'item-pg-2',
+        type: 'note',
+        summary: 'Sancho is my brother',
+        body: 'visited yesterday',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+      expect(result.peopleGraph).not.toBeNull();
+      expect(result.peopleGraph?.applied).toBe(1);
+      expect(result.peopleGraph?.created).toBe(1);
+      expect(result.peopleGraph?.updated).toBe(0);
+      expect(result.peopleGraph?.conflicts).toBe(0);
+      expect(result.peopleGraph?.skipped).toBe(false);
+      expect(result.errors).toEqual([]);
+    });
+
+    it('records a people_graph error when the LLM provider throws', async () => {
+      installPeopleRepo();
+      registerPersonLinkProvider(async () => {
+        throw new Error('llm overloaded');
+      });
+      const result = await handlePostPublish({
+        id: 'item-pg-3',
+        type: 'note',
+        summary: 'Sancho is my brother',
+        body: '',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+      expect(result.peopleGraph).toBeNull();
+      expect(
+        result.errors.some(
+          (e) => e.includes('people_graph') && e.includes('extractor_failed'),
+        ),
+      ).toBe(true);
+    });
+
+    it('telemetry reports skipped: true on idempotent re-runs of the same item', async () => {
+      installPeopleRepo();
+      registerPersonLinkProvider(
+        async () =>
+          JSON.stringify({
+            identity_links: [{ name: 'Twice', confidence: 'high', evidence: 'twice' }],
+          }),
+      );
+      const first = await handlePostPublish({
+        id: 'item-pg-4',
+        type: 'note',
+        summary: 'Twice arrived',
+        body: '',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+      const second = await handlePostPublish({
+        id: 'item-pg-4',
+        type: 'note',
+        summary: 'Twice arrived',
+        body: '',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+      expect(first.peopleGraph?.created).toBe(1);
+      expect(first.peopleGraph?.skipped).toBe(false);
+      expect(second.peopleGraph?.skipped).toBe(true);
+      expect(second.peopleGraph?.created).toBe(0);
     });
   });
 });

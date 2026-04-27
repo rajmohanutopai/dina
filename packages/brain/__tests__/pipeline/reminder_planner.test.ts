@@ -10,19 +10,20 @@
  * Source: ARCHITECTURE.md Task 3.28, brain/src/service/reminder_planner.py
  */
 
+import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+
+import { createPersona, resetPersonaState, openPersona } from '../../../core/src/persona/service';
+import { resetReminderState } from '../../../core/src/reminders/service';
+import { storeItem, clearVaults } from '../../../core/src/vault/crud';
 import {
   planReminders,
-  hasEventSignals,
   consolidateReminders,
   registerReminderLLM,
   resetReminderLLM,
   registerReminderLogger,
   resetReminderLogger,
 } from '../../src/pipeline/reminder_planner';
-import { resetReminderState, listByPersona } from '../../../core/src/reminders/service';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
-import { createPersona, resetPersonaState, openPersona } from '../../../core/src/persona/service';
-import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+
 
 describe('Reminder Planner', () => {
   let loggedWarnings: Record<string, unknown>[];
@@ -174,8 +175,8 @@ describe('Reminder Planner', () => {
 
       expect(result.remindersCreated).toBeGreaterThanOrEqual(1);
       const odd = result.reminders.find((r) => r.message === 'odd kind reminder');
-      expect(odd).toBeDefined();
-      expect(odd!.kind).toBe('custom');
+      if (odd === undefined) throw new Error('expected the odd-kind reminder to be present');
+      expect(odd.kind).toBe('custom');
     });
 
     it('LLM duplicates are skipped', async () => {
@@ -309,8 +310,11 @@ describe('Reminder Planner', () => {
         persona: 'work',
       });
 
-      // Prompt template includes persona instruction
-      expect(receivedPrompt).toContain('Dina');
+      // Prompt template includes the planner persona instruction.
+      // Python parity: the prompt opens with "You are a personal
+      // reminder planner" — NOT a Dina-branded preamble (the Python
+      // source `PROMPT_REMINDER_PLANNER_SYSTEM` doesn't name Dina).
+      expect(receivedPrompt).toContain('personal reminder planner');
       // Anti-hallucination guard
       expect(receivedPrompt).toContain('NEVER fabricate');
       // JSON output format
@@ -369,6 +373,110 @@ describe('Reminder Planner', () => {
       }
     });
 
+    it('captures sentence-start proper nouns (Python parity)', async () => {
+      // The previous regex `(?<=\s)([A-Z][a-z]{2,})/g` required
+      // whitespace BEFORE the capital letter, so a sentence-start
+      // name was silently missed. Python splits on whitespace and
+      // checks the first character — every proper noun is captured
+      // regardless of position. This test pins the parity.
+      storeItem(
+        'general',
+        makeVaultItem({
+          summary: 'Sancho prefers pour-over coffee, no sugar',
+          content_l0: 'Sancho prefers pour-over coffee, no sugar',
+        }),
+      );
+
+      let receivedPrompt = '';
+      registerReminderLLM(async (_system, prompt) => {
+        receivedPrompt = prompt;
+        return '{"reminders":[]}';
+      });
+
+      // "Sancho" is at the start of summary AND body — a sentence
+      // boundary the old regex could not see past.
+      await planReminders({
+        itemId: 'item-sentence-start',
+        type: 'note',
+        summary: 'Sancho is arriving tomorrow',
+        body: 'Sancho will visit at noon',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+
+      expect(receivedPrompt).toContain('Sancho');
+      expect(receivedPrompt).toContain('pour-over');
+    });
+
+    it('queries the always-open `general` persona for vault context (Python parity)', async () => {
+      // Python `_gather_vault_context` hardcodes `"general"` because
+      // personal facts about people the user knows live in the
+      // default vault even when the reminder itself is for a
+      // different persona (work, health, financial). Searching
+      // `input.persona` would miss those facts whenever the reminder
+      // isn't itself in `general`.
+      storeItem(
+        'general',
+        makeVaultItem({
+          summary: 'Bridget loves cardamom tea',
+          content_l0: 'Bridget loves cardamom tea',
+        }),
+      );
+
+      let receivedPrompt = '';
+      registerReminderLLM(async (_system, prompt) => {
+        receivedPrompt = prompt;
+        return '{"reminders":[]}';
+      });
+
+      // Plan a reminder for the `work` persona. The fact about
+      // Bridget lives in `general` — only the cross-persona search
+      // path will pull it into the prompt.
+      await planReminders({
+        itemId: 'item-cross-persona',
+        type: 'note',
+        summary: 'Meeting with Bridget on Friday',
+        body: 'Quarterly review with Bridget',
+        timestamp: Date.now(),
+        persona: 'work',
+      });
+
+      expect(receivedPrompt).toContain('cardamom');
+    });
+
+    it('truncates each vault context item at 150 chars', async () => {
+      // A long stored summary must not blow the prompt budget on a
+      // single item. Cap is 150 chars per emitted vault context line.
+      const longSummary = 'Hercules '.repeat(40); // 360 chars
+      storeItem(
+        'general',
+        makeVaultItem({
+          summary: longSummary,
+          content_l0: longSummary,
+        }),
+      );
+
+      let receivedPrompt = '';
+      registerReminderLLM(async (_system, prompt) => {
+        receivedPrompt = prompt;
+        return '{"reminders":[]}';
+      });
+
+      await planReminders({
+        itemId: 'item-trunc',
+        type: 'note',
+        summary: 'Meeting Hercules tomorrow',
+        body: '',
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+
+      // The exact prefix appears in the prompt (under the truncation
+      // cap) but the full repeated string does NOT.
+      expect(receivedPrompt).toContain('Hercules ');
+      expect(receivedPrompt).not.toContain(longSummary);
+    });
+
     it('reports vaultContextUsed when context found', async () => {
       storeItem(
         'general',
@@ -390,28 +498,6 @@ describe('Reminder Planner', () => {
       });
 
       expect(result.vaultContextUsed).toBeGreaterThan(0);
-    });
-  });
-
-  describe('hasEventSignals', () => {
-    it('detects birthday keywords', () => {
-      expect(hasEventSignals('Birthday party', '')).toBe(true);
-    });
-
-    it('detects deadline keywords', () => {
-      expect(hasEventSignals('', 'The deadline is next Friday')).toBe(true);
-    });
-
-    it('detects month names', () => {
-      expect(hasEventSignals('Meeting on January 5', '')).toBe(true);
-    });
-
-    it('returns false for no signals', () => {
-      expect(hasEventSignals('Hello world', 'Nice weather')).toBe(false);
-    });
-
-    it('detects reminder keyword', () => {
-      expect(hasEventSignals('Remind me to call', '')).toBe(true);
     });
   });
 

@@ -12,12 +12,13 @@ import {
   resetNudgeFrequency,
 } from '../../src/nudge/assembler';
 import { storeItem, clearVaults } from '../../../core/src/vault/crud';
+import { DEFAULT_TEST_PERSONAS } from '../../../core/src/vault/crud';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Nudge Assembler', () => {
   beforeEach(() => {
     resetFactoryCounters();
-    clearVaults();
+    clearVaults([...DEFAULT_TEST_PERSONAS, 'work']);
     resetNudgeFrequency();
   });
 

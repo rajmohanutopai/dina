@@ -20,6 +20,9 @@
  * Source: brain/tests/test_person_linking.py + test_person_resolver.py.
  */
 
+import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
+import { PERSON_IDENTITY_EXTRACTION } from '../llm/prompts';
+
 export interface PersonLink {
   /** Canonical person name as stated in the text. */
   name: string;
@@ -56,7 +59,15 @@ export interface ResolvedPerson {
   relationshipHint?: string;
 }
 
-export type PersonLinkProvider = (text: string) => Promise<string>;
+/**
+ * LLM provider — `(system, prompt) => Promise<string>`. Mirrors the
+ * `IdentityLLMCallFn` shape in `pipeline/identity_extraction.ts` and
+ * Python's `person_link_extractor.py` two-message pattern: the
+ * `PERSON_IDENTITY_EXTRACTION` template rides as the SYSTEM message,
+ * the (PII-scrubbed) user text as the USER message. Wire production
+ * via `registerPersonLinkProvider(buildLightweightLLMCall(router, 'classify'))`.
+ */
+export type PersonLinkProvider = (system: string, prompt: string) => Promise<string>;
 
 /** Injectable LLM provider for person extraction. */
 let linkProvider: PersonLinkProvider | null = null;
@@ -74,20 +85,27 @@ export function resetPersonLinkProvider(): void {
 /**
  * Extract person links from text using the registered LLM provider.
  *
- * Expects the provider to invoke the `PERSON_IDENTITY_EXTRACTION`
- * prompt; response JSON should be shaped
- * `{identity_links: [{name, role_phrase, relationship, confidence, evidence}]}`.
- * Legacy `{links: [{name, role, confidence}]}` also parsed for
- * back-compat.
+ * Pipeline (Python parity):
+ *   1. Empty / no-provider → `[]`.
+ *   2. PII-scrub the text — vault content may contain emails / phone
+ *      numbers; names pass through (by design).
+ *   3. Send `(PERSON_IDENTITY_EXTRACTION, scrubbedText)` as a
+ *      two-message conversation.
+ *   4. Rehydrate any PII tokens in the response so names / evidence
+ *      come back with original values.
+ *   5. Parse `{identity_links: [{name, role_phrase, relationship,
+ *      confidence, evidence}]}` (Python envelope) — legacy
+ *      `{links: [{name, role, confidence}]}` also accepted.
  *
- * Returns `[]` for empty input or when no provider registered.
- * Malformed LLM output falls through `parseLLMOutput` → `[]`.
+ * Returns `[]` on parse failure (fail-open).
  */
 export async function extractPersonLinks(text: string): Promise<PersonLink[]> {
   if (!text || text.trim().length === 0) return [];
   if (!linkProvider) return [];
-  const rawOutput = await linkProvider(text);
-  return parseLLMOutput(rawOutput);
+  const { scrubbed, entities } = scrubPII(text);
+  const rawOutput = await linkProvider(PERSON_IDENTITY_EXTRACTION, scrubbed);
+  const rehydrated = entities.length > 0 ? rehydratePII(rawOutput, entities) : rawOutput;
+  return parseLLMOutput(rehydrated);
 }
 
 /**
@@ -138,7 +156,7 @@ export function resolveMultiple(text: string, knownPeople: ResolvedPerson[]): Re
   entries.sort((a, b) => b.surface.length - a.surface.length);
 
   const byId = new Map<string, ResolvedPerson>();
-  const claimed: Array<[number, number]> = [];
+  const claimed: [number, number][] = [];
 
   for (const entry of entries) {
     const pattern = new RegExp(`\\b${escapeRegex(entry.surface)}\\b`, 'gi');

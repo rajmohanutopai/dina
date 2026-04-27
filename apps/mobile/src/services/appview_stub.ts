@@ -14,6 +14,11 @@
  */
 
 import type { ServiceProfile, SearchServicesParams } from '@dina/brain/src/appview_client/http';
+import {
+  EtaQueryParamsSchema,
+  EtaQueryResultSchema,
+} from '@dina/brain/src/service/capabilities/eta_query';
+import { computeSchemaHash } from '@dina/brain/src/service/capabilities/registry';
 
 export interface AppViewStubOptions {
   /** Initial profiles to publish. Use `publish()` to add more at runtime. */
@@ -155,8 +160,17 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 /**
  * Convenience: build a Bus Driver demo profile for `eta_query`.
  * Keeps demo seeds consistent across bootstrap + tests.
+ *
+ * Publishes the same params/result schemas the brain's capability
+ * registry knows about so:
+ *   - `search_provider_services` returns a populated `params_schema`
+ *     for the LLM to fill from the user's natural language
+ *   - the local hash matches what `computeSchemaHash` on the registry
+ *     schemas would produce, so any version-pinning round-trip lines up
  */
 export function busDriverDemoProfile(overrides: Partial<ServiceProfile> = {}): ServiceProfile {
+  const paramsSchema = EtaQueryParamsSchema as unknown as Record<string, unknown>;
+  const resultSchema = EtaQueryResultSchema as unknown as Record<string, unknown>;
   return {
     did: 'did:plc:bus42demo',
     name: 'Bus 42',
@@ -164,6 +178,15 @@ export function busDriverDemoProfile(overrides: Partial<ServiceProfile> = {}): S
     capabilities: ['eta_query'],
     responsePolicy: { eta_query: 'auto' },
     isDiscoverable: true,
+    capabilitySchemas: {
+      eta_query: {
+        params: paramsSchema,
+        result: resultSchema,
+        schemaHash: computeSchemaHash({ params: paramsSchema, result: resultSchema }),
+        description: 'ETA to next stop on a given bus route',
+        defaultTtlSeconds: 60,
+      },
+    },
     ...overrides,
   };
 }

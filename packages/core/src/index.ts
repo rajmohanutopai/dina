@@ -423,6 +423,51 @@ export {
   listTopicRepositoryPersonas,
   resetTopicRepositories,
 } from './memory/repository';
+// People graph — the identity-DB layer that records who Dina knows
+// (humans, possibly bound to a contact DID, possibly with multiple
+// surface forms). The repository handles writes (extraction +
+// confirm/reject + GC); the resolver provides read-side lookups for
+// the reminder planner, D2D speaker naming, and recall expansion.
+export type {
+  Person,
+  PersonSurface,
+  PersonStatus,
+  SurfaceStatus,
+  SurfaceConfidence,
+  SurfaceType,
+  CreatedFrom,
+  ExtractionResult,
+  ExtractionPersonLink,
+  ExtractionSurfaceEntry,
+  ApplyExtractionResponse,
+} from './people/domain';
+export {
+  PERSON_STATUS_SUGGESTED,
+  PERSON_STATUS_CONFIRMED,
+  PERSON_STATUS_REJECTED,
+  SURFACE_STATUS_SUGGESTED,
+  SURFACE_STATUS_CONFIRMED,
+  SURFACE_STATUS_REJECTED,
+  VALID_SURFACE_TYPES,
+  VALID_SURFACE_CONFIDENCE,
+  VALID_CREATED_FROM,
+} from './people/domain';
+export type { PeopleRepository } from './people/repository';
+export {
+  SQLitePeopleRepository,
+  computeExtractionFingerprint,
+  setPeopleRepository,
+  getPeopleRepository,
+} from './people/repository';
+export type { PersonResolver, ResolvedPerson } from './people/resolver';
+export { RepositoryPersonResolver } from './people/resolver';
+// Parity contract — runnable Jest suite that pins the behaviors any
+// `PeopleRepository` implementation must honor to stay in lockstep
+// with main Dina's Go `SQLitePersonStore`. New implementations
+// (Go-import, future Rust/Swift ports) plug in their own factory
+// and re-run the same checks.
+export type { PersonStoreContractHarness } from './people/contract';
+export { runPersonStoreContract } from './people/contract';
 // `CoreRouter` is the server-side counterpart apps wire up to host the
 // Core HTTP surface in-process (used by `InProcessTransport`). Exporting
 // here keeps `apps/home-node-lite/*` from having to reach into

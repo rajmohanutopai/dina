@@ -43,22 +43,33 @@ import {
 const MAX_BATCH_SIZE = 100;
 
 /**
- * Resolve the vault repository for a persona. If none has been wired
- * (via `setVaultRepository`), auto-provisions an in-memory repo and
- * registers it — so the rest of the code always sees exactly one
- * authoritative store, and the Map-based code path never runs.
+ * Resolve the vault repository for a persona — strict.
+ *
+ * NO auto-provision, NO in-memory fallback. If no repo has been wired
+ * (via `setVaultRepository`), this throws. The fallback used to be a
+ * convenience for tests but was masking a real-world bug class:
+ * mobile boot only opens personas that exist at install time
+ * (`general` only), and the staging drain's LLM classifier could pick
+ * a persona that was never opened. The old fallback silently routed
+ * the write into a `Map` in RAM — vault row gone on app restart,
+ * `/ask` never sees it, dev simulator looks broken with no log line.
  *
  * Production callers (mobile's `storage/init.ts::openPersonaDB`) wire
- * a `SQLiteVaultRepository` backed by the persona's encrypted SQLite
- * DB before any CRUD call hits. Tests that don't wire explicitly hit
- * this auto-provision path and still exercise the real repository
- * interface.
+ * a `SQLiteVaultRepository` before any CRUD call. Tests must wire
+ * either a SQLite repo (via the `withSQLiteVault` harness) or
+ * explicit in-memory repos via the default set installed by
+ * `clearVaults()`.
  */
-function getOrAutoProvisionRepo(persona: string): VaultRepository {
-  let repo = getVaultRepository(persona);
+function requireRepo(persona: string): VaultRepository {
+  const repo = getVaultRepository(persona);
   if (!repo) {
-    repo = new InMemoryVaultRepository();
-    setVaultRepository(persona, repo);
+    throw new Error(
+      `vault: no repository registered for persona "${persona}". ` +
+        'Production: call openPersonaDB(persona) before any vault CRUD. ' +
+        'Tests: call clearVaults([...]) with the persona in the list, ' +
+        'or wire it explicitly via setVaultRepository(persona, new InMemoryVaultRepository()) ' +
+        'or via the openSQLiteVault test harness.',
+    );
   }
   return repo;
 }
@@ -106,16 +117,51 @@ function applyOffset<T>(results: T[], offset?: number): T[] {
 }
 
 /**
- * Clear every auto-provisioned / wired vault repository (test helper).
+ * Default in-memory test personas installed by `clearVaults()`.
  *
- * Delegates to `resetVaultRepositories()` in repository.ts — drops
- * every registered repo so the next `getOrAutoProvisionRepo()` call
- * creates a fresh one. Shim exists (rather than re-exporting the repo
- * reset directly) to avoid churning the existing ~300 test callsites
- * that still reference `clearVaults()` by name.
+ * Production never calls `clearVaults()` — only test code does — so
+ * pre-seeding these is safe for production while keeping ~300 legacy
+ * test callsites working without explicit `setVaultRepository()`
+ * calls. SQLite-backed harness tests (`openSQLiteVault`) override
+ * specific personas after `clearVaults()` runs, which is fine — the
+ * latest `setVaultRepository(p, …)` wins.
+ *
+ * This list mirrors the personas the keyword + LLM classifiers can
+ * pick. If a future test needs a persona outside this set, it must
+ * pass it to `clearVaults([...])` explicitly or wire it directly.
  */
-export function clearVaults(): void {
+export const DEFAULT_TEST_PERSONAS = [
+  'general',
+  'personal',
+  'health',
+  'family',
+  'financial',
+  'legal',
+  'professional',
+  'social',
+  'consumer',
+];
+
+/**
+ * Drop every wired vault repository and re-seed the default test
+ * persona set with fresh `InMemoryVaultRepository` instances.
+ *
+ * The strict `requireRepo()` resolver no longer auto-provisions on
+ * miss — production needs that strictness so a forgotten
+ * `openPersonaDB()` surfaces immediately instead of silently routing
+ * writes into volatile RAM. The previous `clearVaults()` left the
+ * registry empty and relied on auto-provision; that's gone, so this
+ * seeds the same in-memory repos eagerly to keep test ergonomics.
+ *
+ * Pass an explicit list to override the default seed:
+ *   `clearVaults(['general'])` for a faithful mobile-install scenario,
+ *   `clearVaults([])` for a strict-mode test that wires its own repos.
+ */
+export function clearVaults(personas: string[] = DEFAULT_TEST_PERSONAS): void {
   resetVaultRepositories();
+  for (const persona of personas) {
+    setVaultRepository(persona, new InMemoryVaultRepository());
+  }
 }
 
 /**
@@ -130,7 +176,7 @@ export function storeItem(persona: string, item: Partial<VaultItem>): string {
     throw new Error(`vault: ${validationError}`);
   }
 
-  const repo = getOrAutoProvisionRepo(persona);
+  const repo = requireRepo(persona);
   const id = item.id && item.id.length > 0 ? item.id : `vi-${bytesToHex(randomBytes(8))}`;
   const now = Date.now();
 
@@ -223,7 +269,7 @@ export function queryVault(persona: string, query: SearchQuery): VaultItem[] {
  *  interface). */
 function queryFTS(persona: string, query: SearchQuery): VaultItem[] {
   const limit = clampLimit(query.limit);
-  const repo = getOrAutoProvisionRepo(persona);
+  const repo = requireRepo(persona);
   // In-memory repo accepts free text; SQLite repo needs FTS5 MATCH
   // syntax (quoted tokens). Sanitise once — safe for both.
   const match = sanitizeFTSMatch(query.text);
@@ -267,7 +313,7 @@ function sanitizeFTSMatch(text: string): string {
  * Falls back to brute-force O(n) scan when HNSW is not built.
  */
 function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
-  const repo = getOrAutoProvisionRepo(persona);
+  const repo = requireRepo(persona);
   const limit = clampLimit(query.limit);
 
   if (!query.embedding || query.embedding.length === 0) return [];
@@ -312,7 +358,7 @@ function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
  * The combined score determines final ranking.
  */
 function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
-  const repo = getOrAutoProvisionRepo(persona);
+  const repo = requireRepo(persona);
   const limit = clampLimit(query.limit);
   const terms = query.text
     .toLowerCase()
@@ -486,7 +532,7 @@ function toFloat32(v: Float32Array | Uint8Array): Float32Array {
  * retrieval_policy, but getItem filters only by deleted flag.
  */
 export function getItem(persona: string, itemId: string): VaultItem | null {
-  return getOrAutoProvisionRepo(persona).getItemSync(itemId);
+  return requireRepo(persona).getItemSync(itemId);
 }
 
 /**
@@ -496,7 +542,7 @@ export function getItem(persona: string, itemId: string): VaultItem | null {
  * (e.g., undelete, audit, export).
  */
 export function getItemIncludeDeleted(persona: string, itemId: string): VaultItem | null {
-  return getOrAutoProvisionRepo(persona).getItemIncludeDeletedSync(itemId);
+  return requireRepo(persona).getItemIncludeDeletedSync(itemId);
 }
 
 /**
@@ -505,13 +551,13 @@ export function getItemIncludeDeleted(persona: string, itemId: string): VaultIte
  * Item remains in storage for audit/recovery. Excluded from query results.
  */
 export function deleteItem(persona: string, itemId: string): boolean {
-  return getOrAutoProvisionRepo(persona).deleteItemSync(itemId);
+  return requireRepo(persona).deleteItemSync(itemId);
 }
 
 /** Count non-deleted items in a persona vault. */
 export function vaultItemCount(persona: string): number {
   let count = 0;
-  for (const item of getOrAutoProvisionRepo(persona).valuesSync()) {
+  for (const item of requireRepo(persona).valuesSync()) {
     if (!item.deleted) count++;
   }
   return count;
@@ -529,7 +575,7 @@ export function vaultItemCount(persona: string): number {
  */
 export function listRecentItems(persona: string, limit: number): VaultItem[] {
   if (limit <= 0) return [];
-  const repo = getOrAutoProvisionRepo(persona);
+  const repo = requireRepo(persona);
   const all = repo.valuesSync().filter((item) => isSearchable(item));
   // `valuesSync` on SQLite returns repository-insertion order; make the
   // sort explicit so both backends agree on "most recent first".
@@ -550,7 +596,7 @@ export function queryByEnrichmentStatus(
   limit: number = 50,
 ): VaultItem[] {
   const results: VaultItem[] = [];
-  for (const item of getOrAutoProvisionRepo(persona).valuesSync()) {
+  for (const item of requireRepo(persona).valuesSync()) {
     if (item.deleted) continue;
     if (item.enrichment_status === status) results.push(item);
   }
@@ -576,7 +622,7 @@ export function updateEnrichment(
     confidence?: string;
   },
 ): boolean {
-  const repo = getOrAutoProvisionRepo(persona);
+  const repo = requireRepo(persona);
   // Read-merge-write via the repo — `storeItemSync` is INSERT OR REPLACE
   // on SQLite, so overwriting the whole row after merging is safe and
   // atomic per row. In-memory repo mutates in place inside storeItemSync
@@ -611,7 +657,7 @@ export function browseRecent(
 ): VaultItem[] {
   if (after > before) return [];
   const results: VaultItem[] = [];
-  for (const item of getOrAutoProvisionRepo(persona).valuesSync()) {
+  for (const item of requireRepo(persona).valuesSync()) {
     if (item.deleted) continue;
     if (item.created_at < after || item.created_at > before) continue;
     results.push(item);

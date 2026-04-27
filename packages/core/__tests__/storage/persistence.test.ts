@@ -154,7 +154,9 @@ describe('Schema definitions', () => {
   it('persona schema can be applied to in-memory adapter', () => {
     const db = new InMemoryDatabaseAdapter();
     const applied = applyMigrations(db, PERSONA_MIGRATIONS);
-    expect(applied).toBe(1);
+    // v1 = vault_items + topic_salience + topic_aliases.
+    // v2 = vault_items.contact_did index (people-graph companion).
+    expect(applied).toBe(PERSONA_MIGRATIONS.length);
     expect(db.hasTable('vault_items')).toBe(true);
     expect(db.hasTable('vault_items_fts')).toBe(true);
   });

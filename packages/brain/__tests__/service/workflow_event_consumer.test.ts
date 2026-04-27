@@ -667,6 +667,41 @@ describe('WorkflowEventConsumer.onApproved', () => {
     expect(result.skipped).toBe(1);
     expect(state.ackCalls).toEqual([100]);
   });
+
+  it('skips approved events whose payload.type is not service_query_execution (e.g. intent_validation)', async () => {
+    // `POST /v1/intent/validate` raises an approval task whose payload
+    // is `{type:'intent_validation', action, target, ...}`. The
+    // bus-driver consumer must ack-and-skip those — there's no
+    // service.query waiting on a D2D response.
+    const task = approvalTask('appr-intent-1', {
+      payload: JSON.stringify({
+        type: 'intent_validation',
+        action: 'send_email',
+        target: 'draft resignation letter to HR',
+        risk_level: 'MODERATE',
+      }),
+    });
+    const { client, state } = stubCore({
+      listResult: [approvedEvent({ task_id: 'appr-intent-1' })],
+      tasks: new Map([['appr-intent-1', task]]),
+    });
+    const invoked: string[] = [];
+    const errs: Error[] = [];
+    const c = new WorkflowEventConsumer({
+      coreClient: client,
+      deliver: noopDeliver,
+      onApproved: ({ task: t }) => {
+        invoked.push(t.id);
+      },
+      onError: (e) => errs.push(e instanceof Error ? e : new Error(String(e))),
+    });
+    const result = await c.runTick();
+    expect(invoked).toHaveLength(0);
+    expect(errs).toHaveLength(0); // not treated as malformed
+    expect(result.skipped).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(state.ackCalls).toEqual([100]);
+  });
 });
 
 // --- start / stop -----------------------------------------------------------

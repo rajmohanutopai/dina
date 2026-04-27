@@ -20,7 +20,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { colors, spacing, radius, shadows } from '../src/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import {
   listPendingApprovals,
   approvePending,
@@ -69,9 +70,17 @@ export default function ApprovalsScreen() {
 
   const confirmAndRun = useCallback(
     async (entry: InboxEntry, verb: 'Approve' | 'Deny', action: () => Promise<unknown>) => {
+      const headline =
+        entry.kind === 'intent_validation'
+          ? `${verb} "${entry.capability}"?`
+          : `${verb} "${entry.serviceName || entry.capability}"?`;
+      const subline =
+        entry.kind === 'intent_validation'
+          ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
+          : `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
       Alert.alert(
-        `${verb} "${entry.serviceName || entry.capability}"?`,
-        `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`,
+        headline,
+        subline,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -109,17 +118,34 @@ export default function ApprovalsScreen() {
         item.expiresAt !== undefined
           ? ` · expires in ${Math.max(0, item.expiresAt - Math.floor(Date.now() / 1000))}s`
           : '';
+      const isIntent = item.kind === 'intent_validation';
+      const headline = isIntent
+        ? 'Agent action approval'
+        : item.serviceName || 'Unnamed service';
+      const tagText = isIntent && item.riskLevel !== undefined ? item.riskLevel : item.capability;
+      const tagStyle =
+        isIntent && item.riskLevel === 'HIGH'
+          ? [styles.capability, styles.riskHigh]
+          : isIntent && item.riskLevel === 'MODERATE'
+            ? [styles.capability, styles.riskModerate]
+            : styles.capability;
+      const requesterPrefix = isIntent ? 'agent' : 'from';
       return (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.serviceName} numberOfLines={1}>
-              {item.serviceName || 'Unnamed service'}
+              {headline}
             </Text>
-            <Text style={styles.capability}>{item.capability}</Text>
+            <Text style={tagStyle}>{tagText}</Text>
           </View>
-          <Text style={styles.requester} numberOfLines={1}>
-            from {shortenDID(item.requesterDID)}
-          </Text>
+          {isIntent ? (
+            <Text style={styles.intentAction}>{item.capability}</Text>
+          ) : null}
+          {item.requesterDID !== '' ? (
+            <Text style={styles.requester} numberOfLines={1}>
+              {requesterPrefix} {shortenDID(item.requesterDID)}
+            </Text>
+          ) : null}
           {item.paramsPreview !== '' ? (
             <Text style={styles.paramsPreview} numberOfLines={3}>
               {item.paramsPreview}
@@ -138,7 +164,11 @@ export default function ApprovalsScreen() {
                 busy && styles.disabled,
               ]}
               disabled={busy}
-              onPress={() => confirmAndRun(item, 'Deny', () => denyPending(item.id))}
+              onPress={() =>
+                confirmAndRun(item, 'Deny', () =>
+                  denyPending(item.id, 'denied_by_operator', item.kind),
+                )
+              }
             >
               <Text style={styles.denyText}>Deny</Text>
             </Pressable>
@@ -183,7 +213,12 @@ export default function ApprovalsScreen() {
       {entries.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>{'\u2713'}</Text>
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={36}
+              color={colors.success}
+              style={{ marginBottom: spacing.md }}
+            />
             <Text style={styles.emptyTitle}>All caught up</Text>
             <Text style={styles.emptySubtitle}>
               No service queries are waiting for your approval right now.
@@ -230,8 +265,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   listHeader: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '600',
     letterSpacing: 1.2,
     color: colors.textMuted,
     marginTop: spacing.md,
@@ -254,13 +289,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   serviceName: {
+    fontFamily: fonts.heading,
     fontSize: 16,
-    fontWeight: '600',
     color: colors.textPrimary,
     flex: 1,
     marginRight: spacing.sm,
   },
   capability: {
+    fontFamily: fonts.mono,
     fontSize: 12,
     color: colors.textSecondary,
     backgroundColor: colors.bgTertiary,
@@ -269,19 +305,35 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     overflow: 'hidden',
   },
+  riskModerate: {
+    backgroundColor: '#FEF3C7',
+    color: '#92400E',
+  },
+  riskHigh: {
+    backgroundColor: '#FEE2E2',
+    color: '#991B1B',
+  },
+  intentAction: {
+    fontFamily: fonts.mono,
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
   requester: {
+    fontFamily: fonts.mono,
     fontSize: 13,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   paramsPreview: {
+    fontFamily: fonts.mono,
     fontSize: 12,
     color: colors.textMuted,
-    fontFamily: undefined,
     marginBottom: spacing.xs,
     lineHeight: 18,
   },
   meta: {
+    fontFamily: fonts.sans,
     fontSize: 11,
     color: colors.textMuted,
     letterSpacing: 0.2,
@@ -304,8 +356,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   approveText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.white,
-    fontWeight: '600',
     fontSize: 14,
   },
   denyButton: {
@@ -314,8 +366,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   denyText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.error,
-    fontWeight: '600',
     fontSize: 14,
   },
   pressed: { opacity: 0.7 },
@@ -334,18 +386,14 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.sm,
   },
-  emptyIcon: {
-    fontSize: 32,
-    color: colors.success,
-    marginBottom: spacing.md,
-  },
   emptyTitle: {
+    fontFamily: fonts.heading,
     fontSize: 22,
-    fontWeight: '600',
     color: colors.textPrimary,
     letterSpacing: 0.3,
   },
   emptySubtitle: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: spacing.xs,
@@ -362,6 +410,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   errorText: {
+    fontFamily: fonts.sans,
     color: colors.error,
     fontSize: 13,
     lineHeight: 18,

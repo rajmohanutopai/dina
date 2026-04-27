@@ -20,7 +20,8 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
 import { approveCard, denyCard } from '../hooks/useChatApprovals';
-import { colors, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing } from '../theme';
+import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineApprovalCardProps {
   /** The chat message carrying the approval metadata. */
@@ -115,6 +116,7 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
       )}
       {resolved === 'approved' && <Text style={styles.statusApproved}>Approved — fetching answer…</Text>}
       {resolved === 'denied' && <Text style={styles.statusDenied}>Denied.</Text>}
+      <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );
 }
@@ -130,13 +132,14 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
   },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 1.5,
     color: colors.textMuted,
     marginBottom: spacing.xs,
   },
   body: {
+    fontFamily: fonts.sansMedium,
     fontSize: 15,
     color: colors.textPrimary,
     lineHeight: 22,
@@ -161,9 +164,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   approveText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.bgPrimary,
     fontSize: 14,
-    fontWeight: '600',
   },
   deny: {
     backgroundColor: 'transparent',
@@ -171,16 +174,18 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   denyText: {
+    fontFamily: fonts.sansMedium,
     color: colors.textPrimary,
     fontSize: 14,
-    fontWeight: '500',
   },
   statusApproved: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textMuted,
     fontStyle: 'italic',
   },
   statusDenied: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textMuted,
     fontStyle: 'italic',

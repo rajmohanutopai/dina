@@ -44,10 +44,11 @@ describe('Notifications screen — render (5.67)', () => {
     expect(rows).toHaveLength(4);
   });
 
-  it('shows "N unread" header chip when there are unread items', () => {
+  it('shows unread count on the Unread filter chip when there are unread items', () => {
     appendNotification({ kind: 'reminder', title: 'unread', body: '', sourceId: '1' });
     const { getByText } = render(<NotificationsScreen />);
-    expect(getByText(/1 unread/)).toBeTruthy();
+    // Redesigned chip layout — "Unread · 1" instead of the old "1 unread" badge.
+    expect(getByText(/Unread · 1/)).toBeTruthy();
   });
 
   it('Unread filter hides read items', () => {

@@ -40,13 +40,21 @@
  * tryBuildAgenticAsk).
  */
 
-import { ToolRegistry } from '../reasoning/tool_registry';
+import { getMemoryService } from '../../../core/src/memory/service';
+import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
+import { registerPersonLinkProvider } from '../person/linking';
+import { registerIdentityExtractor } from '../pipeline/identity_extraction';
+import { registerReminderLLM } from '../pipeline/reminder_planner';
 import {
   createGeocodeTool,
   createSearchProviderServicesTool,
   createQueryServiceTool,
   createFindPreferredProviderTool,
 } from '../reasoning/bus_driver_tools';
+import { createGuardScanner } from '../reasoning/guard_scanner';
+import { IntentClassifier } from '../reasoning/intent_classifier';
+import { ToolRegistry } from '../reasoning/tool_registry';
+import { createSearchTrustNetworkTool } from '../reasoning/trust_tool';
 import {
   createVaultSearchTool,
   createListPersonasTool,
@@ -54,19 +62,14 @@ import {
   createGetFullContentTool,
   type VaultPersonaGuard,
 } from '../reasoning/vault_tool';
-import { createSearchTrustNetworkTool } from '../reasoning/trust_tool';
-import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
-import type { ProviderName } from '../llm/router';
-import { IntentClassifier } from '../reasoning/intent_classifier';
-import { createGuardScanner } from '../reasoning/guard_scanner';
-import { getMemoryService } from '../../../core/src/memory/service';
-import { registerReminderLLM } from '../pipeline/reminder_planner';
-import { registerIdentityExtractor } from '../pipeline/identity_extraction';
-import type { LLMProvider } from '../llm/adapters/provider';
-import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
-import type { TaskType } from '../llm/router';
-import type { ApprovalManager } from '@dina/core/src/approval/manager';
+
 import { createPersonaGuard } from './persona_guard';
+
+import type { LLMProvider } from '../llm/adapters/provider';
+import type { ProviderName , TaskType } from '../llm/router';
+import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
+import type { ApprovalManager } from '@dina/core/src/approval/manager';
+
 
 /**
  * Input: fully-resolved target-agnostic handles. The caller
@@ -223,6 +226,14 @@ export function buildAgenticAskPipeline(
   // pure entity tagging, lightweight is fine.
   registerReminderLLM(buildLightweightLLMCall(router, 'reason'));
   registerIdentityExtractor(buildLightweightLLMCall(router, 'classify'));
+  // People-graph extractor — Phase E pipeline. Same lite tier as the
+  // legacy `IdentityExtractor` (entity tagging, no date math). The
+  // post-publish step calls `applyPeopleGraphExtraction`, which routes
+  // through `extractPersonLinks` → this provider, builds a typed
+  // `ExtractionResult`, and applies it to the people-graph repo. The
+  // legacy identity extractor still runs in parallel for telemetry on
+  // the existing `identityLinksFound` field.
+  registerPersonLinkProvider(buildLightweightLLMCall(router, 'classify'));
 
   // Tool registry — 9 tools matching the Python `VaultContextAssembler`
   // surface + bus-driver demo tools.

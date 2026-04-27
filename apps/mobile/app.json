@@ -20,8 +20,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/branding/dina-icon-foreground.png",
-        "backgroundColor": "#9D8877"
+        "foregroundImage": "./assets/branding/dina-icon.png",
+        "backgroundColor": "#E5DDD0"
       },
       "package": "com.dinakernel.mobile"
     },

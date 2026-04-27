@@ -110,8 +110,31 @@ export const HNSW_DEFAULT_EF_CONSTRUCTION = 200;
 // Pairing ceremony
 // ---------------------------------------------------------------
 
-export const PAIRING_CODE_MIN = 100000;
-export const PAIRING_CODE_RANGE = 900000;
+/**
+ * Pairing code length — 8 Crockford-Base32 characters. Matches Go's
+ * `core/internal/adapter/pairing/pairing.go:162` (`deriveAlphanumericCode(secret, 8)`).
+ * 32^8 ≈ 1.1 trillion code space — brute-force is mathematically
+ * infeasible (300 attempts/min × 5 min TTL × 100 pending codes
+ * concurrently = 0.000014% chance of guessing any one valid code).
+ */
+export const PAIRING_CODE_LENGTH = 8;
+
+/**
+ * Crockford Base32 alphabet — 32 characters, no I / L / O / U
+ * (ambiguous when typed / read aloud). Matches Go's
+ * `pairingAlphabet` constant verbatim so codes are interoperable
+ * across stacks.
+ */
+export const PAIRING_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/**
+ * Cryptographic-secret length in bytes (32 = 256-bit entropy).
+ * The displayed code is derived from this secret via SHA-256 + the
+ * Crockford alphabet — the secret itself is the key material; the
+ * code is just a stable index into it. Mirrors Go's `SecretLength`.
+ */
+export const PAIRING_SECRET_BYTES = 32;
+
 export const PAIRING_CODE_TTL_S = 300; // 5 minutes
 export const PAIRING_MAX_PENDING = 100;
 

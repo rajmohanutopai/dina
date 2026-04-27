@@ -235,7 +235,7 @@ describe('agent bootstrap: pair → claim over MsgBox', () => {
     );
     expect(initResp.status).toBe(201);
     const code = (initResp.body as { code: string }).code;
-    expect(code).toMatch(/^\d{6}$/);
+    expect(code).toMatch(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
 
     // ------- Step 2: agent pairs over MsgBox (pair-path) -------
     const agent = makeActor();

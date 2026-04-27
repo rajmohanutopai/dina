@@ -4,6 +4,7 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/__tests__'],
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
+  setupFilesAfterEnv: ['<rootDir>/__tests__/setup.ts'],
   moduleNameMapper: {
     // Donor tests were authored in `dina-mobile/packages/app/__tests__/`, where
     // `../../../core/src/…` resolved to `dina-mobile/packages/core/src/…`.
@@ -24,6 +25,7 @@ module.exports = {
     '^react-native-keychain$': '<rootDir>/__mocks__/react-native-keychain.ts',
     '^expo-file-system$': '<rootDir>/__mocks__/expo-file-system.ts',
     '^expo-notifications$': '<rootDir>/__mocks__/expo-notifications.ts',
+    '^@expo/vector-icons$': '<rootDir>/__mocks__/expo-vector-icons.ts',
   },
   transform: {
     // `isolatedModules: true` tells ts-jest to transpile each file in

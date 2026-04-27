@@ -1,4 +1,8 @@
 import { installUnhandledRejectionGuard } from '@dina/test-harness';
+import {
+  clearVaults,
+  DEFAULT_TEST_PERSONAS,
+} from '../../core/src/vault/crud';
 
 // Mirrors `packages/core/__tests__/setup.ts`. Brain has its own
 // fire-and-forget async path (e.g. `void repo.deleteThread(id).catch(...)`
@@ -10,3 +14,23 @@ import { installUnhandledRejectionGuard } from '@dina/test-harness';
 // deep review — Core installed the guard at task 11.8 but Brain's
 // jest.config.js never pointed to a setup file.
 installUnhandledRejectionGuard();
+
+/**
+ * Pre-wire in-memory vaults for the default test persona set before
+ * each brain test. The strict `requireRepo()` resolver no longer
+ * auto-provisions on miss — production needs that strictness to
+ * surface forgotten `openPersonaDB()` calls — but most brain tests
+ * exercise chat / vault-context code that immediately queries
+ * `general` (and friends) with no explicit vault setup. Eagerly
+ * seeding the default set keeps those tests one-line clean while
+ * still letting tests opt into a tighter list (e.g. only `general`)
+ * by calling `clearVaults(['general'])` inside their own
+ * `beforeEach` AFTER this hook runs.
+ *
+ * Tests that need a non-default persona (`work`, `finance`, etc.)
+ * can extend the seed: `clearVaults([...DEFAULT_TEST_PERSONAS, 'work'])`
+ * — the latest call wins.
+ */
+beforeEach(() => {
+  clearVaults(DEFAULT_TEST_PERSONAS);
+});

@@ -19,21 +19,22 @@
  * which talk to Core instead of the in-memory queue.
  */
 
-import type { CoreClient } from '@dina/core';
-import { classifyDomain, classifyPersonas } from '../routing/domain';
-import { selectPersonaRich } from '../routing/persona_selector';
-import { generateL0 } from '../enrichment/l0_deterministic';
-import { scoreSender } from '../trust/scorer';
 import { listContacts, getContact } from '../../../core/src/contacts/directory';
 import { isVaultItemType } from '../../../core/src/vault/validation';
-import type { VaultItemType } from '../../../core/src/vault/validation';
-import { handlePostPublish } from '../pipeline/post_publish';
-import { processEvent } from '../pipeline/event_processor';
+import { generateL0 } from '../enrichment/l0_deterministic';
 import {
   touchTopicsForItem,
   type TopicTouchPipelineOptions,
 } from '../enrichment/topic_touch_pipeline';
+import { processEvent } from '../pipeline/event_processor';
+import { handlePostPublish } from '../pipeline/post_publish';
+import { classifyDomain, classifyPersonas } from '../routing/domain';
+import { selectPersonaRich } from '../routing/persona_selector';
+import { scoreSender } from '../trust/scorer';
+
 import type { StagingProcessResult } from './processor';
+import type { VaultItemType } from '../../../core/src/vault/validation';
+import type { CoreClient } from '@dina/core';
 
 /**
  * Minimal subset of `CoreClient` the drain needs.
@@ -282,6 +283,13 @@ export async function runStagingDrainTick(
       } else {
         personas = classifyPersonas(classifyInput);
       }
+      log({
+        event: 'staging.drain.classified',
+        item_id: itemId,
+        personas,
+        method: rich !== null ? 'llm' : 'keyword',
+        confidence: rich?.confidence ?? classification.confidence,
+      });
 
       // Trust scoring — stamp provenance onto the vault row BEFORE
       // resolve so VAULT_CONTEXT's source-trust rules ("items with
@@ -415,6 +423,11 @@ export async function runStagingDrainTick(
         data: enriched,
       });
       stored++;
+      log({
+        event: 'staging.drain.resolved',
+        item_id: itemId,
+        personas,
+      });
 
       const result: StagingProcessResult = {
         itemId,
@@ -481,6 +494,7 @@ export async function runStagingDrainTick(
           contactUpdated: postResult.contactUpdated,
           ambiguousRouting: postResult.ambiguousRouting,
           llmRefinedReminders: postResult.llmRefinedReminders,
+          peopleGraph: postResult.peopleGraph,
           errors: postResult.errors,
         };
       } catch (err) {
@@ -499,6 +513,7 @@ export async function runStagingDrainTick(
           contactUpdated: false,
           ambiguousRouting: false,
           llmRefinedReminders: false,
+          peopleGraph: null,
           errors: [`post_publish threw: ${reason}`],
         };
       }

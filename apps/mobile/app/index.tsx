@@ -29,6 +29,7 @@ import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprov
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
+import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 
 // Render message shape used by the screen's bubble logic. The chat UI
@@ -43,6 +44,7 @@ type UiMessage = ChatMessage & {
     | 'system'
     | 'ask-approval'
     | 'service-approval'
+    | 'service-query'
     | 'nudge'
     | 'reminder'
     | 'briefing';
@@ -50,13 +52,21 @@ type UiMessage = ChatMessage & {
 
 function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   if (m.type === 'user') return 'user';
-  if (m.type === 'dina') return 'dina';
   if (m.type === 'approval' && m.metadata?.kind === 'ask_approval') {
     return 'ask-approval';
   }
   if (m.type === 'approval' && m.metadata?.kind === 'service_approval') {
     return 'service-approval';
   }
+  // Lifecycle-tracked dina message — same MessageType as a plain dina
+  // reply, dispatched here on the metadata block. Mirrors the
+  // approval-card pattern (kind discriminator on metadata, no new
+  // MessageType).
+  const lifecycle = m.metadata?.lifecycle as { kind?: unknown } | undefined;
+  if (m.type === 'dina' && lifecycle?.kind === 'service_query') {
+    return 'service-query';
+  }
+  if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
   if (m.type === 'reminder') return 'reminder';
   if (m.type === 'briefing') return 'briefing';
@@ -175,6 +185,15 @@ export default function ChatScreen() {
     if (item.displayType === 'service-approval') {
       return <InlineServiceApprovalCard message={item} />;
     }
+    // Lifecycle-tracked service-query message. Posted as a regular
+    // 'dina' message tagged with `metadata.lifecycle.kind ===
+    // 'service_query'` at dispatch time (`/ask` agentic OR `/service`),
+    // patched in place by the WorkflowEventConsumer when the response
+    // lands. One message for the whole lifecycle replaces the prior
+    // LLM-narrative + workflow-event-push double message.
+    if (item.displayType === 'service-query') {
+      return <InlineServiceQueryCard message={item} />;
+    }
     // Proactive nudge card — 5.62. Reconnection / reminder context /
     // pending promise / health alert. Tier dot indicates urgency.
     if (item.displayType === 'nudge') {
@@ -248,8 +267,8 @@ export default function ChatScreen() {
           contentContainerStyle={styles.emptyState}
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero */}
-          <Text style={styles.brandLabel}>DINA</Text>
+          {/* Hero — header already shows the Dina wordmark, so no
+              redundant DINA label here. */}
           <Text style={styles.heroTitle}>Your sovereign{'\n'}personal AI</Text>
           <Text style={styles.heroSubtitle}>
             Everything stays on your device.{'\n'}Your data, your rules.
@@ -299,14 +318,6 @@ export default function ChatScreen() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionCardMini}
-              onPress={() => sendMessage('/help')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.miniLabel}>View all commands</Text>
-              <Text style={styles.miniArrow}>{'\u2192'}</Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
       ) : (
@@ -448,13 +459,6 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: spacing.xl,
   },
-  brandLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 3,
-    color: colors.textMuted,
-    marginBottom: spacing.md,
-  },
   heroTitle: {
     fontSize: 32,
     fontWeight: '300',
@@ -545,24 +549,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontStyle: 'italic',
   },
-  actionCardMini: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    marginTop: 4,
-  },
-  miniLabel: {
-    fontSize: 14,
-    color: colors.textMuted,
-    fontWeight: '500',
-  },
-  miniArrow: {
-    fontSize: 14,
-    color: colors.textMuted,
-    marginLeft: 6,
-  },
-
   // Message list
   messageList: {
     flex: 1,

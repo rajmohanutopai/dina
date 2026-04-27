@@ -26,12 +26,12 @@
  */
 
 import { classifySourceTrust } from '../../../core/src/trust/source_trust';
-import { classifyDomain, classifyPersonas } from '../routing/domain';
 import { generateL0 } from '../enrichment/l0_deterministic';
 import {
   touchTopicsForItem,
   type TopicTouchPipelineOptions,
 } from '../enrichment/topic_touch_pipeline';
+import { classifyDomain, classifyPersonas } from '../routing/domain';
 
 export interface StagingProcessResult {
   itemId: string;
@@ -58,6 +58,19 @@ export interface StagingProcessResult {
     contactUpdated: boolean;
     ambiguousRouting: boolean;
     llmRefinedReminders: boolean;
+    /**
+     * Outcome of the people-graph apply step. Null when the
+     * extractor produced no links or when no people repository
+     * is registered (e.g. mobile bootstrap that hasn't wired one
+     * yet — fail-soft so the rest of the drain still completes).
+     */
+    peopleGraph: {
+      applied: number;
+      created: number;
+      updated: number;
+      conflicts: number;
+      skipped: boolean;
+    } | null;
     errors: string[];
   };
 }
@@ -70,7 +83,7 @@ export interface StagingProcessResult {
  * array only exists to let unit tests exercise the helpers below
  * without setting up a Core repo. It's not a fallback ingress path.
  */
-const pendingItems: Array<Record<string, unknown>> = [];
+const pendingItems: Record<string, unknown>[] = [];
 
 /** Clear pending items — TEST HARNESS ONLY. */
 export function clearPendingItems(): void {

@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, SectionList, Pressable, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import {
   getUpcomingReminders,
@@ -8,7 +9,7 @@ import {
   type ReminderUIItem,
   type ReminderGroup,
 } from '../src/hooks/useReminders';
-import { colors, spacing, radius, shadows } from '../src/theme';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 
 /**
  * Reminders tab — shows upcoming + overdue reminders from Brain's
@@ -62,20 +63,19 @@ export default function RemindersScreen() {
   if (sections.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.heading}>Reminders</Text>
-          <Text style={styles.subheading}>Upcoming events and nudges.</Text>
-        </View>
         <View style={styles.emptyState}>
-          <View style={styles.card}>
-            <Text style={styles.emptyIcon}>{'○'}</Text>
-            <Text style={styles.emptyTitle}>No reminders yet</Text>
-            <Text style={styles.emptyBody}>
-              Tell Dina about an event with{' '}
-              <Text style={styles.code}>/remember</Text> and any dates inside will turn into
-              reminders here.
-            </Text>
-          </View>
+          <Ionicons
+            name="notifications-outline"
+            size={40}
+            color={colors.textMuted}
+            style={{ marginBottom: spacing.md }}
+          />
+          <Text style={styles.emptyTitle}>No reminders yet</Text>
+          <Text style={styles.emptyBody}>
+            Tell Dina about an event with{' '}
+            <Text style={styles.code}>/remember</Text> and any dates inside will turn into
+            reminders here.
+          </Text>
         </View>
       </View>
     );
@@ -83,10 +83,6 @@ export default function RemindersScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.heading}>Reminders</Text>
-        <Text style={styles.subheading}>Upcoming events and nudges.</Text>
-      </View>
       <SectionList
         style={styles.list}
         contentContainerStyle={styles.listContent}
@@ -148,32 +144,16 @@ function formatTime(ms: number): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
-  header: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  heading: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  subheading: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    lineHeight: 20,
-  },
   list: { flex: 1 },
   listContent: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
   sectionHeader: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.4,
+    fontFamily: fonts.sansSemibold,
+    fontSize: 11,
+    letterSpacing: 0.6,
     color: colors.textMuted,
     textTransform: 'uppercase',
     paddingTop: spacing.md,
@@ -196,9 +176,9 @@ const styles = StyleSheet.create({
   },
   rowMain: { flex: 1 },
   message: {
+    fontFamily: fonts.sansMedium,
     fontSize: 15,
     color: colors.textPrimary,
-    fontWeight: '500',
     lineHeight: 20,
   },
   metaRow: {
@@ -209,14 +189,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   due: {
+    fontFamily: fonts.sansMedium,
     fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: '500',
   },
   dueOverdue: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 13,
     color: colors.error,
-    fontWeight: '600',
   },
   personaBadge: {
     paddingHorizontal: spacing.sm,
@@ -225,39 +205,31 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   personaText: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
     color: colors.textSecondary,
-    fontWeight: '600',
     letterSpacing: 0.3,
     textTransform: 'lowercase',
   },
   recurring: {
+    fontFamily: fonts.sans,
     fontSize: 11,
     color: colors.textMuted,
     fontStyle: 'italic',
   },
   emptyState: {
     flex: 1,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.bgSecondary,
-    borderRadius: radius.lg,
-    padding: spacing.xl,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
   },
-  emptyIcon: { fontSize: 32, color: colors.textMuted, marginBottom: spacing.md },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: '600',
+    fontFamily: fonts.heading,
+    fontSize: 18,
     color: colors.textPrimary,
-    letterSpacing: 0.3,
   },
   emptyBody: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: spacing.sm,
@@ -265,7 +237,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   code: {
-    fontFamily: 'Menlo',
+    fontFamily: fonts.mono,
     fontSize: 13,
     color: colors.textPrimary,
     backgroundColor: colors.bgTertiary,

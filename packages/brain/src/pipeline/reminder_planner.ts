@@ -26,13 +26,21 @@
  * Source: ARCHITECTURE.md Task 3.28, brain/src/service/reminder_planner.py
  */
 
-import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
-import type { ExtractedEvent, ExtractedEventKind } from '../enrichment/event_extractor';
+import {
+  getPeopleRepository,
+  RepositoryPersonResolver,
+  type PersonResolver,
+  type ResolvedPerson,
+} from '@dina/core';
+
+import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
 import { createReminder, type Reminder } from '../../../core/src/reminders/service';
+import { queryVault } from '../../../core/src/vault/crud';
+import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
 import { parseReminderPlan } from '../llm/output_parser';
 import { REMINDER_PLAN } from '../llm/prompts';
-import { queryVault } from '../../../core/src/vault/crud';
-import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
+
+import type { ExtractedEvent, ExtractedEventKind } from '../enrichment/event_extractor';
 
 export interface PlannerInput {
   itemId: string;
@@ -44,6 +52,20 @@ export interface PlannerInput {
   /** User timezone (e.g., "America/New_York"). Defaults to UTC. */
   timezone?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * D2D sender DID. When set AND a people-graph repo is registered,
+   * the planner resolves the sender to a `Person` record and injects
+   * their display name + relationship hint + confirmed surfaces into
+   * the LLM prompt context. The reminder reads "Sancho is arriving"
+   * instead of "Someone is arriving"; vault facts stored under any
+   * confirmed alias (canonical name, nickname, role phrase) get
+   * pulled in via FTS keyword expansion.
+   *
+   * Fail-soft — when the DID isn't bound to a person, or the repo
+   * isn't registered, the planner falls back to keyword extraction
+   * over the item text exactly as before.
+   */
+  senderDid?: string;
 }
 
 export interface PlannerResult {
@@ -84,7 +106,7 @@ const defaultLogger: ReminderLogger = {
   // forgot to register a logger still surfaces failures rather than
   // dropping reminders silently (the prior `catch{}` behaviour).
   warn: (record) => {
-    // eslint-disable-next-line no-console
+     
     console.warn('[reminder_planner]', record);
   },
 };
@@ -301,90 +323,170 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
   };
 }
 
-/**
- * Check if a staging item has potential events worth planning.
- */
-export function hasEventSignals(summary: string, body: string): boolean {
-  const text = `${summary} ${body}`.toLowerCase();
-  return /\b(january|february|march|april|may|june|july|august|september|october|november|december|due|deadline|birthday|appointment|meeting|remind)\b/i.test(
-    text,
-  );
-}
-
 // ---------------------------------------------------------------
 // Internal: vault context gathering
 // ---------------------------------------------------------------
 
+/** Per-item summary truncation cap. Long summaries (full email
+ *  bodies, multi-paragraph notes) would otherwise blow the prompt
+ *  budget on a single item. */
+const VAULT_CONTEXT_LINE_MAX_CHARS = 150;
+
+/** Total context-item cap. The engine's rank order is the selection
+ *  criterion; we just truncate the head. */
+const VAULT_CONTEXT_MAX_ITEMS = 5;
+
+/** Vault context search runs against the always-open `general`
+ *  persona. Personal facts about people the user knows ("Emma likes
+ *  dinosaurs") get classified into `general` even when the reminder
+ *  itself is for `work` or `health` — querying the input persona
+ *  would miss those facts whenever the reminder isn't itself in
+ *  `general`. */
+const VAULT_CONTEXT_PERSONA = 'general';
+
 /**
  * Gather related vault items for context enrichment.
  *
- * Extracts keywords (proper nouns, event-related terms) from the item
- * and searches the vault for related items. Returns formatted context.
+ * Hands the user's `summary + body` straight to FTS5 — the engine
+ * owns tokenization (`unicode61`) and ranking; we don't preprocess
+ * user text in JavaScript.
+ *
+ * When `senderDid` resolves to a known person:
+ *   - prepends a `Sender: <name> (<relationship>)` line so the LLM
+ *     can use the right name in the reminder message
+ *   - appends the person's confirmed surfaces (canonical name +
+ *     nicknames + role phrases) to the FTS query so vault facts
+ *     stored under any alias still surface (notes saved against
+ *     "Sanch" still match a search for "Sancho Garcia").
+ *
+ * Returns the formatted context text plus the count of vault items
+ * actually retrieved (the sender hint line doesn't count — it isn't
+ * a vault item).
  */
+
 function gatherVaultContext(input: PlannerInput): { text: string; itemCount: number } {
-  const keywords = extractKeywords(input.summary, input.body);
-  if (keywords.length === 0) return { text: '(no related context found)', itemCount: 0 };
+  const senderHint = resolveSenderHint(input.senderDid);
+
+  // Hand the user's text straight to FTS5 — no JS-side keyword
+  // extraction, stop-word lists, or proper-noun regex. SQLite FTS5
+  // owns tokenization (`unicode61`) and ranking. `sanitizeFTSMatch`
+  // escapes operators and joins terms with OR, so the engine scores
+  // by how many tokens hit + their column weights, which is the
+  // semantically-correct behaviour for natural-language input.
+  //
+  // When a sender is bound to a known person, append the confirmed
+  // surfaces (canonical name + nicknames + role phrases). Vault facts
+  // stored under any alias still surface even when the inbound D2D
+  // body never says the canonical name — e.g. notes saved against
+  // "Sanch" still match a search for "Sancho Garcia".
+  const queryParts = [input.summary, input.body];
+  if (senderHint !== null) {
+    queryParts.push(...senderHint.surfaces);
+  }
+  const queryText = queryParts.filter((s) => s.length > 0).join(' ');
 
   const contextItems: string[] = [];
 
-  try {
-    for (const keyword of keywords.slice(0, 3)) {
-      const results = queryVault(input.persona, {
+  if (queryText.length > 0) {
+    try {
+      // One FTS5 pass against the user's combined text. Limit pulls
+      // up to VAULT_CONTEXT_MAX_ITEMS rows directly — the engine's
+      // rank order is the selection criterion, not anything we
+      // compute on the JS side.
+      const results = queryVault(VAULT_CONTEXT_PERSONA, {
         mode: 'fts5',
-        text: keyword,
-        limit: 3,
+        text: queryText,
+        limit: VAULT_CONTEXT_MAX_ITEMS,
       });
       for (const item of results) {
-        const line = item.content_l0 || item.summary || '';
-        if (line && !contextItems.includes(line)) {
+        if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
+        const raw = item.content_l0 || item.summary || '';
+        if (raw === '') continue;
+        // Truncate to match Python's 150-char per-item cap. Long
+        // summaries (full email bodies, multi-paragraph notes)
+        // would otherwise blow the prompt budget on a single item.
+        const line = raw.slice(0, VAULT_CONTEXT_LINE_MAX_CHARS);
+        if (!contextItems.includes(line)) {
           contextItems.push(line);
         }
       }
+    } catch (err) {
+      // Vault search failed — proceed without context, but log so a
+      // misconfigured vault (closed persona, missing FTS5) doesn't
+      // silently degrade the prompt quality.
+      logger.warn({
+        event: 'reminder_planner.vault_context_error',
+        itemId: input.itemId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-  } catch (err) {
-    // Vault search failed — proceed without context, but log so a
-    // misconfigured vault (closed persona, missing FTS5) doesn't
-    // silently degrade the prompt quality.
-    logger.warn({
-      event: 'reminder_planner.vault_context_error',
-      itemId: input.itemId,
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 
-  if (contextItems.length === 0) return { text: '(no related context found)', itemCount: 0 };
-  return { text: contextItems.map((c) => `- ${c}`).join('\n'), itemCount: contextItems.length };
+  // No sender hint AND no vault context → preserve the legacy
+  // sentinel string so callers/tests detecting "no context" still
+  // see it.
+  if (senderHint === null && contextItems.length === 0) {
+    return { text: '(no related context found)', itemCount: 0 };
+  }
+
+  const lines: string[] = [];
+  if (senderHint !== null) {
+    const relationshipSuffix =
+      senderHint.relationshipHint !== '' ? ` (${senderHint.relationshipHint})` : '';
+    lines.push(`Sender: ${senderHint.displayName}${relationshipSuffix}`);
+  }
+  for (const c of contextItems) {
+    lines.push(`- ${c}`);
+  }
+  return { text: lines.join('\n'), itemCount: contextItems.length };
+}
+
+interface SenderHint {
+  displayName: string;
+  relationshipHint: string;
+  /** Confirmed surface forms (name + nicknames + role phrases),
+   *  whitespace-trimmed. Used as keyword expansions for the FTS
+   *  search — NOT for prompt rendering. */
+  surfaces: string[];
 }
 
 /**
- * Extract searchable keywords from item text.
+ * Resolve the inbound sender DID to a `SenderHint` for the prompt
+ * + keyword expansion. Returns `null` when:
+ *   - no `senderDid` was supplied,
+ *   - the people-graph repo isn't registered (mobile boot path that
+ *     hasn't wired one yet — fail-soft, planner runs as before),
+ *   - the DID isn't bound to a person yet,
+ *   - or the resolver couldn't compute a usable display name (every
+ *     surface is suggested + canonical_name is empty).
  *
- * Finds proper nouns (capitalized words), event-related terms,
- * and strips stop words. Returns up to 5 keywords.
+ * Constructs a fresh `RepositoryPersonResolver` per call. The
+ * resolver is stateless — it only wraps the repo's read methods —
+ * so caching it would just keep a stale repo handle alive across
+ * tests that swap the singleton.
  */
-function extractKeywords(summary: string, body: string): string[] {
-  const text = `${summary} ${body}`;
-  const words = new Set<string>();
-
-  // Proper nouns (capitalized, not sentence-start)
-  const properNounRe = /(?<=\s)([A-Z][a-z]{2,})/g;
-  let match: RegExpExecArray | null;
-  while ((match = properNounRe.exec(text)) !== null) {
-    words.add(match[1]);
+function resolveSenderHint(senderDid?: string): SenderHint | null {
+  if (typeof senderDid !== 'string' || senderDid === '') return null;
+  const repo = getPeopleRepository();
+  if (repo === null) return null;
+  const resolver: PersonResolver = new RepositoryPersonResolver(repo);
+  const person: ResolvedPerson | null = resolver.resolveByDID(senderDid);
+  if (person === null) return null;
+  const displayName = resolver.displayName(senderDid);
+  if (displayName === null) return null;
+  const surfaces: string[] = [];
+  for (const s of person.surfaces) {
+    const trimmed = s.surface.trim();
+    if (trimmed === '') continue;
+    if (!surfaces.includes(trimmed)) surfaces.push(trimmed);
   }
-
-  // Event-related terms
-  const eventTerms = text.match(
-    /\b(birthday|appointment|meeting|deadline|payment|dentist|doctor|school|flight)\b/gi,
-  );
-  if (eventTerms) {
-    for (const term of eventTerms) {
-      words.add(term.toLowerCase());
-    }
-  }
-
-  return [...words].slice(0, 5);
+  return {
+    displayName,
+    relationshipHint: person.relationshipHint,
+    surfaces,
+  };
 }
+
 
 /**
  * Render the REMINDER_PLAN prompt template with all variables.

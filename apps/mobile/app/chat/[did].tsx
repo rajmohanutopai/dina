@@ -28,7 +28,7 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
-import { colors, spacing, radius } from '../../src/theme';
+import { colors, fonts, spacing } from '../../src/theme';
 import { ChatSendError } from '../../src/services/chat_d2d';
 
 export default function ChatScreen() {
@@ -192,13 +192,14 @@ const styles = StyleSheet.create({
   },
   warningText: {
     flex: 1,
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textPrimary,
     marginRight: spacing.sm,
   },
   warningAction: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 13,
-    fontWeight: '600',
     color: colors.accent,
   },
   list: {
@@ -212,6 +213,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
   },
   emptyText: {
+    fontFamily: fonts.sans,
     color: colors.textMuted,
     fontSize: 14,
   },
@@ -236,11 +238,13 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   bubbleTextPeer: {
+    fontFamily: fonts.sans,
     color: colors.dinaBubbleText,
     fontSize: 15,
     lineHeight: 20,
   },
   bubbleTextMe: {
+    fontFamily: fonts.sans,
     color: colors.userBubbleText,
     fontSize: 15,
     lineHeight: 20,
@@ -250,6 +254,7 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
   },
   errorText: {
+    fontFamily: fonts.sans,
     fontSize: 12,
     color: colors.error,
     fontStyle: 'italic',
@@ -273,6 +278,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: spacing.md,
     paddingVertical: Platform.OS === 'ios' ? spacing.sm : 6,
+    fontFamily: fonts.sans,
     fontSize: 15,
     maxHeight: 120,
   },
@@ -285,9 +291,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendText: {
+    fontFamily: fonts.headingBold,
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '700',
   },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },

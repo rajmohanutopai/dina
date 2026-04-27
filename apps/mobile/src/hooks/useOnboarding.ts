@@ -30,7 +30,8 @@ import { wrapSeed, type WrappedSeed } from '@dina/core/src/crypto/aesgcm';
 import { getPublicKey } from '@dina/core/src/crypto/ed25519';
 import { deriveRootSigningKey } from '@dina/core/src/crypto/slip0010';
 import { deriveDIDKey } from '@dina/core/src/identity/did';
-import { createPersona, personaExists, resetPersonaState } from '@dina/core/src/persona/service';
+import { resetPersonaState } from '@dina/core/src/persona/service';
+import { seedDefaultPersonas } from '../onboarding/default_personas';
 
 export type OnboardingStep =
   | 'welcome'
@@ -136,10 +137,9 @@ export async function completeCreateIdentity(
   const pubKey = getPublicKey(rootKey.privateKey);
   const did = deriveDIDKey(pubKey);
 
-  // Create general persona
-  if (!personaExists('general')) {
-    createPersona('general', 'default', 'Default persona');
-  }
+  // Seed the default 4-persona set (general + work + health + finance) —
+  // matches main Dina's bootstrap. Idempotent.
+  seedDefaultPersonas();
 
   return { did, wrappedSeed };
 }

@@ -60,6 +60,8 @@ import type { LocalCapabilityRunner } from '@dina/core/src/workflow/local_delega
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { buildStagingEnrichment } from './staging_enrichment';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
+import { createDemoBusDriverResponder } from './demo_bus_driver_responder';
+import { isAppViewStub } from './appview_stub';
 
 export type BootLogger = (entry: Record<string, unknown>) => void;
 
@@ -405,6 +407,16 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
       'Running against the in-memory AppView stub (demo mode) — results come from seeded demo profiles, not the real AppView network.',
     );
   }
+
+  // Demo BusDriver loopback — when the in-memory AppView stub is in
+  // play, also wrap `sendD2D` so outbound `service.query` envelopes
+  // addressed to `did:plc:bus42demo` short-circuit into a synthesized
+  // `service.response`. Production builds (real AppView) skip the wrap;
+  // bus42demo is only published as a stub profile in demo bootstraps.
+  const demoSendD2D: CreateNodeOptions['sendD2D'] = isAppViewStub(appViewClient)
+    ? createDemoBusDriverResponder({ log }).wrap(sendD2D)
+    : sendD2D;
+
   const isProvider = inputs.role === 'provider' || inputs.role === 'both';
   if (isProvider && inputs.pdsPublisher === undefined) {
     addDegradation(
@@ -489,7 +501,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     did: inputs.did,
     signingKeypair: inputs.signingKeypair,
     pdsSession: inputs.pdsSession ?? makeStubPDSSession(inputs.did),
-    sendD2D,
+    sendD2D: demoSendD2D,
     coreClient,
     appViewClient,
     pdsPublisher: inputs.pdsPublisher,

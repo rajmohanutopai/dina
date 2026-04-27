@@ -269,6 +269,83 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         ON scratchpad(updated_at ASC)
     `,
   },
+  {
+    // People-graph — port of main Dina identity v10 ("Person memory
+    // layer"). Three tables sit alongside `contacts`:
+    //
+    //   - `people` is the canonical entity layer. `contact_did` is
+    //     OPTIONAL — covers humans the user knows about (relatives,
+    //     kids, public figures) who don't have a Dina account. The
+    //     `status` (suggested/confirmed/rejected) + `created_from`
+    //     (llm/manual/imported) fields drive the curation flow over
+    //     LLM-extracted person mentions.
+    //   - `person_surfaces` is the multi-alias index — one person can
+    //     own many surfaces ("Sancho", "Sanch", "Mr. Garcia") with
+    //     per-surface confidence + status. `source_item_id` records
+    //     which vault item taught Dina about this surface, for
+    //     provenance and retraction.
+    //   - `person_extraction_log` dedups extractor runs by
+    //     (item, extractor_version, fingerprint) so re-running the
+    //     LLM with the same content doesn't duplicate surfaces.
+    //
+    // Greenfield install — no backfill from `contacts`. New contacts
+    // get a `people` row created at pair time by the contact service;
+    // the LLM-driven extractor populates additional people from
+    // staged content.
+    version: 5,
+    name: 'people_graph',
+    sql: `
+      CREATE TABLE IF NOT EXISTS people (
+        person_id         TEXT PRIMARY KEY,
+        canonical_name    TEXT NOT NULL DEFAULT '',
+        contact_did       TEXT NOT NULL DEFAULT '',
+        relationship_hint TEXT NOT NULL DEFAULT '',
+        status            TEXT NOT NULL DEFAULT 'suggested',
+        created_from      TEXT NOT NULL DEFAULT 'llm',
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+      ) WITHOUT ROWID;
+
+      -- Hot path: resolve sender DID → person record (used on every
+      -- D2D arrival before vault enrichment).
+      CREATE INDEX IF NOT EXISTS idx_people_contact_did
+        ON people(contact_did) WHERE contact_did != '';
+
+      CREATE TABLE IF NOT EXISTS person_surfaces (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        person_id          TEXT NOT NULL,
+        surface            TEXT NOT NULL,
+        normalized_surface TEXT NOT NULL,
+        surface_type       TEXT NOT NULL DEFAULT 'name',
+        status             TEXT NOT NULL DEFAULT 'suggested',
+        confidence         TEXT NOT NULL DEFAULT 'medium',
+        source_item_id     TEXT NOT NULL DEFAULT '',
+        source_excerpt     TEXT NOT NULL DEFAULT '',
+        extractor_version  TEXT NOT NULL DEFAULT '',
+        created_from       TEXT NOT NULL DEFAULT 'llm',
+        created_at         INTEGER NOT NULL,
+        updated_at         INTEGER NOT NULL
+      );
+
+      -- "Sancho" → person_id resolution; used on every D2D arrival,
+      -- briefing render, vault-search-by-mention.
+      CREATE INDEX IF NOT EXISTS idx_person_surfaces_normalized
+        ON person_surfaces(normalized_surface);
+      CREATE INDEX IF NOT EXISTS idx_person_surfaces_person
+        ON person_surfaces(person_id, normalized_surface);
+      -- For clearExcerptsForItem when a vault item is deleted.
+      CREATE INDEX IF NOT EXISTS idx_person_surfaces_source
+        ON person_surfaces(source_item_id);
+
+      CREATE TABLE IF NOT EXISTS person_extraction_log (
+        source_item_id    TEXT NOT NULL,
+        extractor_version TEXT NOT NULL,
+        fingerprint       TEXT NOT NULL,
+        applied_at        INTEGER NOT NULL,
+        PRIMARY KEY (source_item_id, extractor_version, fingerprint)
+      ) WITHOUT ROWID
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------
@@ -370,6 +447,24 @@ export const PERSONA_MIGRATIONS: Migration[] = [
 
       CREATE INDEX IF NOT EXISTS idx_topic_aliases_canonical
         ON topic_aliases(canonical)
+    `,
+  },
+  {
+    // People-graph companion: index on `vault_items.contact_did` so
+    // person-keyed enrichment queries ("facts about Sancho") are
+    // O(log n). The reminder planner runs this lookup on every D2D
+    // arrival; without an index it's a full vault scan.
+    //
+    // Composite (contact_did, deleted, timestamp DESC) covers the
+    // canonical query: WHERE contact_did = ? AND deleted = 0
+    // ORDER BY timestamp DESC. SQLite picks it for the WHERE clause
+    // and the ordering term in one step.
+    version: 2,
+    name: 'vault_contact_index',
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_vault_items_contact_did
+        ON vault_items(contact_did, deleted, timestamp DESC)
+        WHERE contact_did != ''
     `,
   },
 ];

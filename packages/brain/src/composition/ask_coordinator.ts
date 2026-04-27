@@ -45,6 +45,7 @@ import { AskApprovalResumer } from '../ask/ask_approval_resumer';
 import {
   createAskHandler,
   createAskStatusHandler,
+  type AskAnswer,
   type AskExecuteFn,
   type AskHandlerOptions,
   type AskSubmitResult,
@@ -296,7 +297,16 @@ export function approvalManagerAsSource(mgr: ApprovalManager): ApprovalSource {
 
 function translateLoopResult(result: AgenticLoopResult): ReturnType<AskExecuteFn> extends Promise<infer R> ? R : never {
   if (result.finishReason === 'completed') {
-    return { kind: 'answer', answer: { text: result.answer } };
+    // Surface successful `query_service` dispatches alongside the
+    // narrative so the chat-bridge (`coordinator_ask_handler`) can
+    // post lifecycle-tracked messages instead of duplicating the
+    // narrative + workflow-event push (the racey two-message pattern).
+    const serviceQueries = extractServiceQueriesFromToolCalls(result.toolCalls);
+    const answer: AskAnswer = { text: result.answer };
+    if (serviceQueries.length > 0) {
+      answer.serviceQueries = serviceQueries;
+    }
+    return { kind: 'answer', answer };
   }
   if (result.finishReason === 'approval_required') {
     if (!result.pausedState) {
@@ -321,4 +331,43 @@ function translateLoopResult(result: AgenticLoopResult): ReturnType<AskExecuteFn
       message: `agentic loop terminated with ${result.finishReason}`,
     },
   };
+}
+
+/**
+ * Mine successful `query_service` tool calls out of the agentic loop's
+ * tool-call log. Each successful invocation contributes one
+ * `ServiceQueryDispatch` — `taskId`, `queryId`, capability, and the
+ * provider's display name — keyed off the orchestrator's response so
+ * the chat surface can post a lifecycle-tracked card per dispatch.
+ *
+ * Mirrors the logic in `reasoning/ask_handler.ts` (the legacy
+ * non-coordinator path); both surfaces converge on the same
+ * `ServiceQueryDispatch` shape so downstream consumers stay
+ * single-typed.
+ */
+function extractServiceQueriesFromToolCalls(
+  toolCalls: AgenticLoopResult['toolCalls'],
+): Array<{ taskId: string; queryId: string; capability: string; serviceName: string }> {
+  const out: Array<{ taskId: string; queryId: string; capability: string; serviceName: string }> = [];
+  for (const call of toolCalls) {
+    if (call.name !== 'query_service') continue;
+    if (!call.outcome.success) continue;
+    const payload = call.outcome.result as
+      | { task_id?: string; query_id?: string; to_did?: string; service_name?: string }
+      | null;
+    if (!payload || typeof payload.task_id !== 'string' || payload.task_id === '') continue;
+    const args = call.arguments as { capability?: string } | null;
+    const capability = typeof args?.capability === 'string' ? args.capability : '';
+    const serviceName =
+      typeof payload.service_name === 'string' && payload.service_name !== ''
+        ? payload.service_name
+        : (payload.to_did ?? 'service');
+    out.push({
+      taskId: payload.task_id,
+      queryId: typeof payload.query_id === 'string' ? payload.query_id : '',
+      capability,
+      serviceName,
+    });
+  }
+  return out;
 }

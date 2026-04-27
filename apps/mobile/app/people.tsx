@@ -7,14 +7,17 @@
  * we re-read on focus (Expo Router's `useFocusEffect`).
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, Alert } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Link, useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { listContacts, deleteContact, type Contact } from '@dina/core/src/contacts/directory';
-import { colors, spacing, radius, shadows } from '../src/theme';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 
 export default function PeopleScreen() {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const navigation = useNavigation();
+  const router = useRouter();
 
   const refresh = useCallback(() => {
     setContacts(listContacts());
@@ -27,6 +30,26 @@ export default function PeopleScreen() {
       refresh();
     }, [refresh]),
   );
+
+  // Pin the "+ Add contact" action into the navbar's headerRight so
+  // the in-page hero stays clean.  Using `setOptions` instead of
+  // setting it from the parent Tabs layout keeps the action local
+  // to the screen that owns it.
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => router.push('/add-contact' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Add a contact"
+          hitSlop={8}
+          style={{ paddingHorizontal: spacing.sm + 4, paddingVertical: 6 }}
+        >
+          <Ionicons name="add" size={26} color={colors.textPrimary} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, router]);
 
   const onLongPress = useCallback(
     (contact: Contact) => {
@@ -52,19 +75,14 @@ export default function PeopleScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.heading}>People</Text>
-        <Text style={styles.subheading}>Trusted contacts you can message end-to-end.</Text>
-        <Link href="/add-contact" asChild>
-          <Pressable style={styles.addButton} accessibilityLabel="Add a contact">
-            <Text style={styles.addButtonText}>+ Add contact</Text>
-          </Pressable>
-        </Link>
-      </View>
-
       {contacts.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>{'\u2302'}</Text>
+          <Ionicons
+            name="people-outline"
+            size={40}
+            color={colors.textMuted}
+            style={{ marginBottom: spacing.md }}
+          />
           <Text style={styles.emptyTitle}>No contacts yet</Text>
           <Text style={styles.emptyBody}>
             Add someone by their DID or handle to start an end-to-end encrypted conversation.
@@ -143,45 +161,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgPrimary,
   },
-  header: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  heading: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  subheading: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    lineHeight: 20,
-  },
-  addButton: {
-    alignSelf: 'flex-start',
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.accent,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
   list: { flex: 1 },
   listContent: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
   separator: {
-    height: 1,
-    backgroundColor: colors.borderLight,
+    height: spacing.xs,
   },
   row: {
     flexDirection: 'row',
@@ -190,7 +177,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     backgroundColor: colors.bgSecondary,
     borderRadius: radius.md,
-    marginTop: spacing.xs,
     ...(Platform.OS === 'ios' ? shadows.sm : {}),
   },
   rowPressed: {
@@ -206,21 +192,21 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   avatarText: {
+    fontFamily: fonts.headingBold,
     fontSize: 16,
-    fontWeight: '700',
     color: colors.textPrimary,
   },
   rowText: { flex: 1 },
   rowName: {
+    fontFamily: fonts.heading,
     fontSize: 15,
-    fontWeight: '600',
     color: colors.textPrimary,
     letterSpacing: 0.1,
   },
   rowDid: {
+    fontFamily: fonts.mono,
     fontSize: 12,
     color: colors.textMuted,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     marginTop: 2,
   },
   badge: {
@@ -230,8 +216,8 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   badgeText: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '600',
     letterSpacing: 0.3,
   },
   emptyState: {
@@ -240,17 +226,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
-  emptyIcon: {
-    fontSize: 48,
-    color: colors.textMuted,
-    marginBottom: spacing.md,
-  },
   emptyTitle: {
+    fontFamily: fonts.heading,
     fontSize: 18,
-    fontWeight: '600',
     color: colors.textPrimary,
   },
   emptyBody: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',

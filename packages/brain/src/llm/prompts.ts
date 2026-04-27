@@ -336,15 +336,41 @@ Rules:
 
 /**
  * REMINDER_PLAN — Extract reminders from an item with events.
+ *
+ * Aligned with Python `PROMPT_REMINDER_PLANNER_SYSTEM`
+ * (`brain/src/prompts.py:141`). Carries Python's specific tone rules
+ * (no cheerleading / no exclamation marks / suggest-don't-order) and
+ * the canonical arrival-with-vault-context consolidation example
+ * ("Alonso is arriving in 10 minutes. He likes cold brew coffee. His
+ * mother was unwell last week — you may want to ask how she is doing.")
+ * so the LLM produces the capabilities.md spec output when Phase F's
+ * sender hint + alias-expanded vault facts are in the context.
+ *
+ * TS-only additions kept (these are correctness fixes the Python
+ * version inherits via separate validators rather than the prompt):
+ *   - Explicit unix-ms `due_at` (Python uses ISO `fire_at`).
+ *   - The recurring birthday year-bump rule with worked example —
+ *     pinned an April 2026 simulator regression where Gemini emitted
+ *     2025 dates from its training cutoff.
  */
-export const REMINDER_PLAN = `You are Dina, a personal AI assistant planning reminders for the user.
+export const REMINDER_PLAN = `You are a personal reminder planner. The user just stored some information that includes a time-bound event. Your job is to create smart, actionable reminders so the user doesn't forget.
 
-Item with event:
-- Subject: {{subject}}
-- Body: {{body}}
+Think about what a thoughtful personal assistant would set up:
+- For a birthday: a reminder to buy a gift the day before, and a morning reminder to call and wish them.
+- For a vaccination: a reminder to prepare the night before, and a morning reminder on the day.
+- For a payment: a day-before reminder to ensure funds, and a morning reminder on the due date.
+- For a meeting: a reminder 1 hour before.
+- For someone arriving: ONE reminder that bundles every relevant fact about them from the vault.
 
 TODAY IS: {{today}}
 Current timezone: {{timezone}}
+
+THE EVENT (this is what the user stored — your reminders MUST be about THIS):
+- Subject: {{subject}}
+- Body: {{body}}
+
+Related vault context (supplementary — use to enrich reminders, NEVER to invent reminders unrelated to the event above):
+{{vault_context}}
 
 ⚠️ CRITICAL DATE RULE: every due_at you emit MUST be strictly AFTER {{today}}. Before you commit a due_at, check: is this timestamp greater than TODAY? If not, fix it.
 
@@ -354,34 +380,33 @@ For recurring events (birthdays, anniversaries) stated without a year — and AL
   3. Example: TODAY=2026-04-25 and the user says "Emma's birthday is March 15". March 15, 2026 has passed → use March 15, 2027.
   4. Example: TODAY=2026-04-25 and the user says "Sam's birthday is November 7". November 7, 2026 is still ahead → use 2026.
 
-Related vault context (for enriching reminder messages):
-{{vault_context}}
-
-Create reminders for this event. For each reminder, specify:
+Create reminders. Each reminder has:
 - due_at: Unix timestamp in milliseconds for when the reminder should fire
-- message: What to remind about — enrich with vault context when available
+- message: short, factual notification (1 sentence max)
 - kind: One of: birthday, appointment, payment_due, deadline, arrival, reminder
 
 Respond with ONLY a JSON object:
 {"reminders": [{"due_at": <unix_ms>, "message": "<reminder text>", "kind": "<kind>"}]}
 
 Rules:
-- Create 1-3 reminders per event (e.g., birthday → day-before gift hint + morning-of call reminder)
-- For birthdays: add a day-before reminder ("tomorrow is X's birthday") and a morning-of reminder
-- For deadlines: add a 1-day-before warning and a morning-of reminder
-- For appointments: add a 1-hour-before reminder
-- Consolidation: when someone is arriving or multiple events overlap, create ONE reminder with ALL relevant context
-- Use vault context to personalize: if the vault mentions the person likes something, include that in the reminder message
-- Suggest, don't order: use "You might want to..." not "You must..."
-- NEVER fabricate events, dates, or details not mentioned in the item or vault context
-- NEVER invent preferences, relationships, or facts — only use what is explicitly stated
+- Don't create reminders for dates in the past.
+- Use the user's timezone: {{timezone}}.
+- Tone: polite and informative, never emotional or commanding. State what's happening, when, and any useful context. No cheerleading, no exclamation marks, no motivational language. Suggest, don't order.
+  Good: "Your gym session is in 30 minutes."
+  Good: "Emma's 7th birthday is tomorrow. She likes dinosaurs and painting."
+  Good: "Gym session tomorrow at 7am — you may want to pack your bag tonight."
+  Bad: "Rise and shine! You've got this!"
+  Bad: "Don't forget Emma's big day!"
+  Bad: "Pack bag tonight."
+- If the event is today or tomorrow, still create useful reminders for remaining time slots that haven't passed.
+- When someone is arriving or you are meeting someone, create ONE reminder that includes ALL relevant context about that person from the vault. Do not split facts across multiple reminders — combine them into one message so the user gets a single, complete briefing.
+  Good: "Alonso is arriving in 10 minutes. He likes cold brew coffee. His mother was unwell last week — you may want to ask how she is doing."
+  Bad: two separate reminders, one about coffee and one about his mother.
+- The vault context may include a "Sender: <name> (<relationship>)" line at the top — when present, USE THAT NAME in the reminder message instead of "Someone" or the raw DID. Example: a Sender line "Sender: Sancho Garcia (brother)" with body "I am arriving in 5 minutes" → "Sancho Garcia is arriving in 5 minutes. ..."
+- NEVER fabricate events, dates, or details not mentioned in the item or vault context.
+- NEVER invent preferences, relationships, or facts — only use what is explicitly stated.
 - If timezone is provided, compute due_at in that timezone. Otherwise use UTC.
-- Never create a reminder with due_at ≤ TODAY. If the only candidate date is past and the event is not recurring, return {"reminders": []}.
-
-Tone examples:
-- "Emma's birthday is tomorrow. She mentioned liking watercolors last month — maybe pick up a set?"
-- "Payment for the electricity bill is due tomorrow. The amount was $142."
-- "Your dentist appointment is in 1 hour at Dr. Shah's office."`;
+- Never create a reminder with due_at ≤ TODAY. If the only candidate date is past and the event is not recurring, return {"reminders": []}.`;
 
 /**
  * NUDGE_ASSEMBLE — Build a reconnection nudge for a contact.
@@ -407,42 +432,51 @@ Rules:
 /**
  * PERSON_IDENTITY_EXTRACTION — Extract relationship definitions from text.
  *
- * Identifies statements like "Emma is my daughter", "Bob is my colleague"
- * and extracts structured identity links for the contact graph.
+ * Byte-for-byte port of `brain/src/prompts.py`
+ * `PROMPT_PERSON_IDENTITY_EXTRACTION` (line 454). The Python prompt is
+ * the source of truth — it carries the `role_phrase` field that drives
+ * the people-graph's role-phrase exclusivity ("only one 'my brother'
+ * per user") and the third-party-relationship guard ("Sancho's daughter
+ * Emma" must NOT be extracted as the user's relationship).
  *
- * Used by the staging processor's post-publish step to build the
- * relationship graph automatically from vault content.
+ * Earlier TS version (pre-port) used a slimmed-down output schema with
+ * no `role_phrase`. The LLM emitted only a relationship category and
+ * the people graph never received the verbatim phrase, breaking
+ * `findOrAssignPersonId` step 1 (confirmed-role-phrase routing) and
+ * the conflict path. The user audit caught the divergence; this is the
+ * Python parity port.
  *
- * Source: brain/src/prompts.py PROMPT_PERSON_IDENTITY_EXTRACTION
+ * Used by the staging processor's post-publish step
+ * (`applyPeopleGraphExtraction` → `extractPersonLinks` → registered
+ * `linkProvider`) to build the people graph from vault content.
+ *
+ * Source: brain/src/prompts.py PROMPT_PERSON_IDENTITY_EXTRACTION (verbatim)
  */
-export const PERSON_IDENTITY_EXTRACTION = `You are extracting relationship information from a user's personal note or message.
+export const PERSON_IDENTITY_EXTRACTION = `Given this note stored by a personal AI user, extract any identity links — statements that define who someone is in relation to the user.
 
-Text to analyze:
-{{text}}
-
-Extract any statements that define a relationship between the user and another person.
-Look for patterns like:
-- "X is my [relationship]" (e.g., "Emma is my daughter")
-- "my [relationship] X" (e.g., "my colleague Bob")
-- "X, who is my [relationship]" (e.g., "Alice, who is my sister")
-- Possessive relationships (e.g., "Emma's school" implies Emma is related)
-
-For each identity link found, extract:
-- name: The person's name as mentioned
-- relationship: One of: spouse, child, parent, sibling, friend, colleague, acquaintance, unknown
-- confidence: How certain you are (high/medium/low)
-- evidence: The exact phrase that indicates the relationship
-
-Respond with ONLY a JSON object:
-{"identity_links": [{"name": "<person name>", "relationship": "<relationship type>", "confidence": "<high|medium|low>", "evidence": "<source phrase>"}]}
+Return a JSON object:
+{
+  "identity_links": [
+    {
+      "name": "the person's proper name",
+      "role_phrase": "the relationship phrase (e.g. 'my daughter')",
+      "relationship": "child|spouse|parent|sibling|friend|colleague|other",
+      "confidence": "high|medium|low",
+      "evidence": "the exact sentence or phrase that establishes this"
+    }
+  ]
+}
 
 Rules:
-- Only extract EXPLICIT relationship statements — do not infer
-- "I met Bob at the store" does NOT imply a relationship (no link)
-- "Bob and I discussed the project" implies colleague at most (low confidence)
-- Return empty array if no relationship statements found
-- Use "unknown" relationship when the connection is mentioned but type is unclear
-- NEVER fabricate relationships not stated in the text`;
+- Only extract IDENTITY statements: "X is my Y", "my Y's name is X", "my Y X loves...", "X, my Y, ...", "my Y (X)", "X — my Y —"
+- Do NOT extract social references: "X met my Y", "X knows my Y", "I told X about my Y" — these mention people but do not define identity
+- Do NOT extract if the relationship is between two other people, not involving the user: "Sancho's daughter Emma" (unless context makes clear this is also the user's relationship)
+- confidence must be one of: high, medium, low
+  - high: the text clearly and unambiguously defines this identity
+  - medium: the text probably defines this identity but could be read differently
+  - low: this is a guess based on context, not a clear statement
+- If no identity links exist in the text, return {"identity_links": []}
+- Return valid JSON only, no other text.`;
 
 /**
  * VAULT_CONTEXT — System prompt for the agentic `/ask` loop.

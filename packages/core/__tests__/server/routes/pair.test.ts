@@ -121,7 +121,7 @@ describe('POST /v1/pair/initiate — admin only', () => {
   it('generates a pairing code with the captured device_name + role', async () => {
     const result = await initiate('openclaw-user', 'agent');
     expect(result.status).toBe(201);
-    expect(result.code).toMatch(/^\d{6}$/);
+    expect(result.code).toMatch(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
     const body = result.body as { device_name: string; role: string; expires_at: number };
     expect(body.device_name).toBe('openclaw-user');
     expect(body.role).toBe('agent');

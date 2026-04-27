@@ -12,9 +12,15 @@
  * Source: ARCHITECTURE.md Task 3.29
  */
 
-import { planReminders } from './reminder_planner';
 import { getContact, updateContact } from '../../../core/src/contacts/directory';
-import { extractIdentityLinks, type IdentityLink } from './identity_extraction';
+
+import { extractIdentityLinks } from './identity_extraction';
+import {
+  applyPeopleGraphExtraction,
+  type ApplyPeopleGraphOutcome,
+} from './people_graph_extraction';
+import { planReminders } from './reminder_planner';
+
 import type { VaultItemType } from '../../../core/src/vault/validation';
 
 export interface PostPublishResult {
@@ -23,7 +29,29 @@ export interface PostPublishResult {
   ambiguousRouting: boolean;
   identityLinksFound: number;
   llmRefinedReminders: boolean;
+  /**
+   * People-graph apply outcome. `null` when the people repo wasn't
+   * registered (mobile/test paths that don't carry one yet) or when
+   * the extractor produced no usable links. Populated only when the
+   * repo wrote something — `created + updated > 0` means the people
+   * graph changed for this item.
+   */
+  peopleGraph: PeopleGraphTelemetry | null;
   errors: string[];
+}
+
+export interface PeopleGraphTelemetry {
+  /** How many person-link records the repo accepted. */
+  applied: number;
+  /** Newly-inserted people. */
+  created: number;
+  /** Existing people whose canonical/relationship/surfaces changed. */
+  updated: number;
+  /** Role-phrase conflicts the repo flagged for operator review. */
+  conflicts: number;
+  /** True when the extractor fingerprint already existed in the
+   *  idempotency log — repeat ingest of the same item. */
+  skipped: boolean;
 }
 
 /**
@@ -48,6 +76,7 @@ export async function handlePostPublish(item: {
     ambiguousRouting: false,
     identityLinksFound: 0,
     llmRefinedReminders: false,
+    peopleGraph: null,
     errors: [],
   };
 
@@ -61,6 +90,12 @@ export async function handlePostPublish(item: {
       timestamp: item.timestamp,
       persona: item.persona,
       metadata: item.metadata,
+      // Sender DID drives the people-graph lookup inside the planner —
+      // when set, the LLM prompt carries "Sender: Sancho (brother)"
+      // and the FTS keyword set is expanded with every confirmed
+      // alias so vault facts about Sancho surface regardless of
+      // which name the user wrote them under.
+      senderDid: item.sender_did,
     });
     result.remindersCreated = planResult.remindersCreated;
     result.llmRefinedReminders = planResult.llmRefined;
@@ -87,8 +122,8 @@ export async function handlePostPublish(item: {
   }
 
   // 4. Extract identity/relationship links from text content
+  const text = `${item.summary} ${item.body}`.trim();
   try {
-    const text = `${item.summary} ${item.body}`.trim();
     if (text.length > 0) {
       const extraction = await extractIdentityLinks(text);
       result.identityLinksFound = extraction.links.length;
@@ -97,5 +132,28 @@ export async function handlePostPublish(item: {
     result.errors.push(`identity: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // 5. People-graph apply — runs the typed person-link extractor and
+  //    persists the result via `peopleRepo.applyExtraction`. Fail-soft;
+  //    if the repo isn't registered yet (mobile bootstrap not yet
+  //    upgraded), this is a no-op rather than an error.
+  if (text.length > 0) {
+    const outcome = await applyPeopleGraphExtraction(text, item.id);
+    result.peopleGraph = telemetryFromOutcome(outcome);
+    if (!outcome.ok && (outcome.reason === 'extractor_failed' || outcome.reason === 'apply_failed')) {
+      result.errors.push(`people_graph: ${outcome.reason}: ${outcome.error}`);
+    }
+  }
+
   return result;
+}
+
+function telemetryFromOutcome(outcome: ApplyPeopleGraphOutcome): PeopleGraphTelemetry | null {
+  if (!outcome.ok) return null;
+  return {
+    applied: outcome.linkCount,
+    created: outcome.applied.created,
+    updated: outcome.applied.updated,
+    conflicts: outcome.applied.conflicts.length,
+    skipped: outcome.applied.skipped,
+  };
 }

@@ -18,6 +18,7 @@ import {
 } from '../../src/vault_context/assembly';
 import type { LLMMessage } from '../../src/vault_context/assembly';
 import { storeItem, clearVaults } from '../../../core/src/vault/crud';
+import { DEFAULT_TEST_PERSONAS } from '../../../core/src/vault/crud';
 import { createPersona, resetPersonaState, openPersona } from '../../../core/src/persona/service';
 import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
 import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
@@ -26,7 +27,7 @@ import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 describe('Vault Context Assembly', () => {
   beforeEach(() => {
     resetFactoryCounters();
-    clearVaults();
+    clearVaults([...DEFAULT_TEST_PERSONAS, 'work']);
     setAccessiblePersonas(['general']);
     resetReasoningProvider();
   });

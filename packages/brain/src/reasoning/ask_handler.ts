@@ -229,14 +229,36 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
 
     // Sources: task_ids from successful query_service calls let the chat
     // UI link to the corresponding workflow task (pending delivery).
+    // serviceQueries: full dispatch metadata so the orchestrator can post
+    // a status-tracked `service_query` chat card instead of the racey
+    // "LLM narrative + workflow-event push" pair (Option D).
     const sources: string[] = [];
+    const serviceQueries: ServiceQueryDispatch[] = [];
     for (const call of result.toolCalls) {
       if (!call.outcome.success) continue;
       if (call.name !== 'query_service') continue;
-      const payload = call.outcome.result as { task_id?: string } | null;
-      if (payload && typeof payload.task_id === 'string' && payload.task_id !== '') {
-        sources.push(payload.task_id);
-      }
+      const payload = call.outcome.result as
+        | {
+            task_id?: string;
+            query_id?: string;
+            to_did?: string;
+            service_name?: string;
+          }
+        | null;
+      if (!payload || typeof payload.task_id !== 'string' || payload.task_id === '') continue;
+      sources.push(payload.task_id);
+      const args = call.arguments as { capability?: string } | null;
+      const capability = typeof args?.capability === 'string' ? args.capability : '';
+      const serviceName =
+        typeof payload.service_name === 'string' && payload.service_name !== ''
+          ? payload.service_name
+          : (payload.to_did ?? 'service');
+      serviceQueries.push({
+        taskId: payload.task_id,
+        queryId: typeof payload.query_id === 'string' ? payload.query_id : '',
+        capability,
+        serviceName,
+      });
     }
 
     // Handle empty answers (e.g. budget-exceeded with no final text).
@@ -263,8 +285,23 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       }
     }
 
-    return { response: answer, sources };
+    return { response: answer, sources, serviceQueries };
   };
+}
+
+/**
+ * Metadata captured from a successful `query_service` tool call. The chat
+ * orchestrator turns each dispatch into a status-tracked `service_query`
+ * chat card; the WorkflowEventConsumer then patches the same card in
+ * place when the response arrives. Replaces the prior pattern where the
+ * LLM narrative + the workflow-event push produced two messages for one
+ * query (race condition / clutter — Option D).
+ */
+export interface ServiceQueryDispatch {
+  taskId: string;
+  queryId: string;
+  capability: string;
+  serviceName: string;
 }
 
 function fallbackAnswer(reason: string): string {

@@ -40,6 +40,7 @@ import {
   resetCallerTypeState,
 } from '@dina/core/src/auth/caller_type';
 import { registerPublicKeyResolver, resetMiddlewareState } from '@dina/core/src/auth/middleware';
+import { setNodeDID } from '@dina/core/src/pairing/ceremony';
 import { bootstrapMsgBox, type MsgBoxBootConfig } from '@dina/core/src/relay/msgbox_boot';
 import { D2DDispatcher } from '@dina/brain/src/guardian/d2d_dispatcher';
 import type { DinaMessage } from '@dina/core/src/d2d/envelope';
@@ -139,7 +140,12 @@ import {
   addDinaResponse,
   addApprovalMessage,
   addMessage,
+  addLifecycleMessage,
   hydrateThread,
+  findMessageByTaskId,
+  updateMessageLifecycle,
+  readLifecycle,
+  type ServiceQueryStatus,
 } from '@dina/brain/src/chat/thread';
 import {
   MsgTypeCoordinationRequest,
@@ -443,6 +449,14 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       setDeviceRoleResolver(options.deviceRoleResolver);
     }
 
+    // Pairing ceremony — `generatePairingCode` + `completePairing` need
+    // the home-node DID to embed in the result envelope so the paired
+    // device knows whom it just trusted. The Paired Devices admin
+    // screen calls these directly; without this wiring the screen
+    // surfaces "node DID not set" and pairing fails before any device
+    // sees a code.
+    setNodeDID(options.did);
+
     // Egress senders — Core's route handlers for /v1/service/query,
     // /v1/service/respond, and /v1/msg/send all delegate to these
     // injected callbacks. Without this block the routes return 503.
@@ -583,6 +597,66 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       });
       if (resolved !== null && resolved !== '') target = resolved;
     }
+
+    // Lifecycle pattern — the orchestrator (or AskCoordinator bridge)
+    // posted a `'dina'` message tagged with `metadata.lifecycle.kind ===
+    // 'service_query'` when the query was dispatched. Patch it in place
+    // instead of appending a new message. The two-messages-for-one-query
+    // race is gone.
+    const existing = findMessageByTaskId(target, task.id);
+    const lc = existing !== null ? readLifecycle(existing) : null;
+
+    // Only `service_query` workflow tasks become lifecycle cards — other
+    // task kinds (delegation, etc.) keep using the plain dina path.
+    if (task.kind === 'service_query') {
+      const status = mapResponseStatusToCardStatus(details.response_status);
+      const resultBody = parseEventResult(details.result);
+      const serviceName =
+        details.service_name !== undefined && details.service_name !== ''
+          ? details.service_name
+          : (lc?.kind === 'service_query' ? lc.serviceName : 'service');
+
+      if (lc !== null && lc.kind === 'service_query') {
+        const patch: Partial<{
+          status: ServiceQueryStatus;
+          result: Record<string, unknown>;
+          error: string;
+          serviceName: string;
+        }> = { status, serviceName };
+        if (resultBody !== null) patch.result = resultBody;
+        if (typeof details.error === 'string' && details.error !== '') {
+          patch.error = details.error;
+        }
+        updateMessageLifecycle(target, task.id, patch, text);
+        return;
+      }
+
+      // Workflow event landed before any chat artifact existed (e.g.
+      // peer answered before the LLM completed). Post a fresh lifecycle
+      // message in terminal state so the user still sees one card.
+      // `queryId` isn't present on the event details — recover it from
+      // the task payload (the requester stamped it there at dispatch
+      // time). Falls back to empty when the payload is malformed.
+      const lifecycle: import('@dina/brain/src/chat/thread').ServiceQueryLifecycle = {
+        kind: 'service_query',
+        status,
+        taskId: task.id,
+        queryId: extractQueryIdFromPayload(task.payload),
+        capability:
+          details.capability !== undefined && details.capability !== ''
+            ? details.capability
+            : '',
+        serviceName,
+      };
+      if (resultBody !== null) lifecycle.result = resultBody;
+      if (typeof details.error === 'string' && details.error !== '') {
+        lifecycle.error = details.error;
+      }
+      addLifecycleMessage(target, text, lifecycle);
+      return;
+    }
+
+    // Non-service_query workflow events keep the legacy dina-bubble path.
     addDinaResponse(target, text, sources.length > 0 ? sources : undefined);
   };
   const onApproved: ApprovalEventDispatcher = async ({ task, payload }) => {
@@ -1095,6 +1169,67 @@ function validate(o: CreateNodeOptions): void {
   // Provider role can omit pdsPublisher for nodes that expose services
   // only to known peers (no public discoverability). Runtime handles
   // the absent case by skipping the profile sync in `start()`.
+}
+
+/**
+ * Map the workflow event's `response_status` (success / unavailable /
+ * error / expired / anything else) onto the four terminal states a
+ * `service_query` chat card understands. Anything we don't recognise
+ * collapses to `failed` so the card still leaves the spinner.
+ */
+function mapResponseStatusToCardStatus(status: string | undefined): ServiceQueryStatus {
+  switch (status) {
+    case 'success':
+      return 'resolved';
+    case 'expired':
+      return 'expired';
+    case 'unavailable':
+    case 'error':
+    default:
+      return 'failed';
+  }
+}
+
+/**
+ * The workflow event's `details.result` arrives as either a parsed JSON
+ * object or its string form (Core's mixed delivery). Coerce to a plain
+ * object so the chat card's renderer can read fields like
+ * `eta_minutes`, `map_url` without re-parsing. Returns `null` when the
+ * payload is missing or unparseable.
+ */
+function parseEventResult(raw: unknown): Record<string, unknown> | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (typeof raw === 'string' && raw !== '') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* swallow — the formatter already produced a text fallback */
+    }
+  }
+  return null;
+}
+
+/**
+ * Pull `query_id` out of a `service_query` workflow task's JSON
+ * payload. Used by the deliver path when the workflow event lands
+ * before the LLM dispatch has had a chance to post a lifecycle
+ * message — the lifecycle metadata still wants a queryId for
+ * downstream surfaces (notifications, audit), so we recover it from
+ * the payload that the requester stamped at dispatch time.
+ */
+function extractQueryIdFromPayload(payload: string): string {
+  try {
+    const parsed = JSON.parse(payload) as { query_id?: unknown };
+    return typeof parsed.query_id === 'string' ? parsed.query_id : '';
+  } catch {
+    return '';
+  }
 }
 
 /**

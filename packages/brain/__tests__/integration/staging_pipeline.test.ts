@@ -18,7 +18,7 @@ import {
 } from '../../../core/src/staging/service';
 import { classifyItem, enrichItem, applyTrustScoring } from '../../src/staging/processor';
 import { handlePostPublish } from '../../src/pipeline/post_publish';
-import { planReminders, hasEventSignals } from '../../src/pipeline/reminder_planner';
+import { planReminders } from '../../src/pipeline/reminder_planner';
 import { isDuplicate, markSeen, resetDedupState } from '../../../core/src/sync/dedup';
 import {
   createPersona,
@@ -209,8 +209,6 @@ describe('Staging Pipeline End-to-End Integration', () => {
         timestamp: Date.now(),
         persona: 'general',
       };
-
-      expect(hasEventSignals(itemData.summary, itemData.body)).toBe(true);
 
       const result = await handlePostPublish(itemData);
       // Reminders may or may not be created depending on date parsing

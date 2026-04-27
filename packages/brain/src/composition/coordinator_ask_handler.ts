@@ -36,7 +36,14 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-H.
  */
 
-import { addDinaResponse, addMessage, addSystemMessage } from '../chat/thread';
+import {
+  addDinaResponse,
+  addLifecycleMessage,
+  addMessage,
+  addSystemMessage,
+  findMessageByTaskId,
+  type ServiceQueryLifecycle,
+} from '../chat/thread';
 import type { AskCommandHandler } from '../chat/orchestrator';
 import type { AskCoordinator } from './ask_coordinator';
 import type { AskFailure } from '../ask/ask_handler';
@@ -176,11 +183,37 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         parsed = record.answerJson;
       }
       const answerText = extractAnswerText(parsed);
+      const serviceQueries = extractServiceQueries(parsed);
 
       if (formatHeader !== null && tracking.approvalId !== undefined) {
         const header = formatHeader({ askId, approvalId: tracking.approvalId });
         if (header !== null && header !== '') addSystemMessage(targetThread, header);
       }
+
+      // Service-query dispatches: post one lifecycle-tracked dina
+      // message per dispatch (status `pending` if no workflow event has
+      // landed yet; otherwise the deliver path already posted/patched
+      // it — this branch becomes a no-op via `findMessageByTaskId`).
+      // Suppresses the LLM narrative for this turn since the cards
+      // carry the user-facing message (the narrative is typically just
+      // "I have sent a request — will follow up", which is redundant
+      // with the spinner state).
+      if (serviceQueries.length > 0) {
+        for (const sq of serviceQueries) {
+          if (findMessageByTaskId(targetThread, sq.taskId) !== null) continue;
+          const lifecycle: ServiceQueryLifecycle = {
+            kind: 'service_query',
+            status: 'pending',
+            taskId: sq.taskId,
+            queryId: sq.queryId,
+            capability: sq.capability,
+            serviceName: sq.serviceName,
+          };
+          addLifecycleMessage(targetThread, answerText, lifecycle);
+        }
+        return;
+      }
+
       if (answerText !== '') {
         addDinaResponse(targetThread, answerText, []);
       }
@@ -324,4 +357,36 @@ function safeParse(s: string): unknown {
   } catch {
     return s;
   }
+}
+
+/**
+ * Extract the `serviceQueries` array off the AskCoordinator's answer
+ * payload (set by `translateLoopResult` when the agentic loop made
+ * successful `query_service` tool calls). Defensive — any malformed
+ * shape returns `[]` so the bridge falls back to the plain narrative
+ * path.
+ */
+function extractServiceQueries(value: unknown): Array<{
+  taskId: string;
+  queryId: string;
+  capability: string;
+  serviceName: string;
+}> {
+  if (typeof value !== 'object' || value === null) return [];
+  const v = value as Record<string, unknown>;
+  const raw = v.serviceQueries;
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ taskId: string; queryId: string; capability: string; serviceName: string }> = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.taskId !== 'string' || e.taskId === '') continue;
+    out.push({
+      taskId: e.taskId,
+      queryId: typeof e.queryId === 'string' ? e.queryId : '',
+      capability: typeof e.capability === 'string' ? e.capability : '',
+      serviceName: typeof e.serviceName === 'string' ? e.serviceName : 'service',
+    });
+  }
+  return out;
 }

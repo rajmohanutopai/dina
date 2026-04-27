@@ -59,13 +59,29 @@ export function runHealthCheck(): HealthReport {
   return { overall, checks, timestamp: Date.now() };
 }
 
-/** Check: can we store + query + delete a vault item? */
+/** Check: can we store + query + delete a vault item?
+ *
+ * Probes against the first open persona — `requireRepo()` is strict
+ * now, so writing to a hardcoded `_healthcheck` persona that nobody
+ * ever registered would always throw. Falls back to `warn` when no
+ * persona is open (boot-time state — vault is fine, just nothing to
+ * probe).
+ */
 function checkVaultAccess(): HealthCheck {
   const start = Date.now();
+  const probePersona = listPersonas().find((p) => p.isOpen)?.name;
+  if (!probePersona) {
+    return {
+      name: 'vault_access',
+      status: 'warn',
+      detail: 'No open persona to probe — vault accessibility unverified',
+      latencyMs: Date.now() - start,
+    };
+  }
   try {
-    const id = storeItem('_healthcheck', { summary: '_hc_probe', type: 'note' });
-    const item = getItem('_healthcheck', id);
-    deleteItem('_healthcheck', id);
+    const id = storeItem(probePersona, { summary: '_hc_probe', type: 'note' });
+    const item = getItem(probePersona, id);
+    deleteItem(probePersona, id);
 
     if (!item) {
       return {
@@ -79,7 +95,7 @@ function checkVaultAccess(): HealthCheck {
     return {
       name: 'vault_access',
       status: 'pass',
-      detail: 'Store → get → delete round-trip OK',
+      detail: `Store → get → delete round-trip OK (persona=${probePersona})`,
       latencyMs: Date.now() - start,
     };
   } catch (err) {

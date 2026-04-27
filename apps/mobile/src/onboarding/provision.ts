@@ -33,7 +33,7 @@ import { deriveRootSigningKey, deriveRotationKey } from '@dina/core/src/crypto/s
 import { getPublicKey } from '@dina/core/src/crypto/ed25519';
 import { wrapSeed } from '@dina/core/src/crypto/aesgcm';
 import { createDIDPLC, type PLCCreateResult } from '@dina/core/src/identity/directory';
-import { createPersona, personaExists } from '@dina/core/src/persona/service';
+import { seedDefaultPersonas } from './default_personas';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
 import { saveIdentitySeeds } from '../services/identity_store';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';
@@ -156,9 +156,9 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   // Ensure the default persona exists — matches Step 7 of
   // useOnboarding.completeCreateIdentity so later persona-aware code
   // doesn't hit a missing-row path.
-  if (!personaExists('general')) {
-    createPersona('general', 'default', 'Default persona');
-  }
+  // Seed the default 4-persona set (general + work + health + finance) —
+  // matches main Dina's bootstrap.
+  seedDefaultPersonas();
 
   // 7. Unlock — uses the wrapped seed we just persisted. If this flips
   //    isUnlocked() → true the UnlockGate swaps to `children` on its
@@ -217,9 +217,9 @@ export async function recoverIdentity(opts: {
   progress(opts.onProgress, 'persisting_did');
   await savePersistedDid(opts.expectedDid);
 
-  if (!personaExists('general')) {
-    createPersona('general', 'default', 'Default persona');
-  }
+  // Seed the default 4-persona set (general + work + health + finance) —
+  // matches main Dina's bootstrap.
+  seedDefaultPersonas();
 
   progress(opts.onProgress, 'opening_vault');
   const unlockResult = await unlock(opts.passphrase, wrapped);

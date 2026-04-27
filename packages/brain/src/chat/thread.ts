@@ -30,6 +30,43 @@ export type MessageType =
   | 'system'
   | 'error';
 
+/**
+ * Terminal states for a lifecycle-tracked operation. `pending` is the
+ * initial state; the other three are terminal. (`in_flight` was
+ * proposed but had no trigger — collapsed into `pending` until a
+ * provider-acknowledged event lands.)
+ */
+export type ServiceQueryStatus = 'pending' | 'resolved' | 'failed' | 'expired';
+
+/**
+ * `service_query` lifecycle metadata. Attached to a regular `'dina'`
+ * message under `metadata.lifecycle` — keyed by `taskId` so the
+ * `WorkflowEventConsumer` can find and patch the same message in place
+ * when the response arrives. Mirrors the approval-card pattern
+ * (`metadata.kind` discriminator) instead of inventing a new
+ * `MessageType`, so any future async flow can reuse the same primitive
+ * by adding another `kind` to `MessageLifecycle`.
+ */
+export interface ServiceQueryLifecycle {
+  kind: 'service_query';
+  status: ServiceQueryStatus;
+  taskId: string;
+  queryId: string;
+  capability: string;
+  serviceName: string;
+  /** Validated capability result — present iff `status === 'resolved'`. */
+  result?: Record<string, unknown>;
+  /** Error explanation — present on `failed` / `expired`. */
+  error?: string;
+}
+
+/**
+ * Discriminated union for `metadata.lifecycle`. Today only
+ * `service_query` is wired; future kinds (long vault search, async
+ * trust resolution, peer pairing) extend by adding members.
+ */
+export type MessageLifecycle = ServiceQueryLifecycle;
+
 export interface ChatMessage {
   id: string;
   threadId: string;
@@ -305,6 +342,97 @@ export function addApprovalMessage(
     metadata: { ...metadata, kind: 'service_approval' },
     sources: [metadata.taskId, metadata.capability],
   });
+}
+
+/**
+ * Add a `'dina'` message tagged with lifecycle metadata. The orchestrator
+ * calls this when the LLM dispatches a `query_service` tool call (or a
+ * `/service` slash command does the same): the message starts at
+ * `status: 'pending'` and is patched in place by the
+ * `WorkflowEventConsumer` when the response lands. Mirrors the
+ * approval-card pattern — the renderer dispatches on
+ * `message.metadata.lifecycle.kind`, no new `MessageType` required.
+ */
+export function addLifecycleMessage(
+  threadId: string,
+  content: string,
+  lifecycle: MessageLifecycle,
+  extraSources: string[] = [],
+): ChatMessage {
+  return addMessage(threadId, 'dina', content, {
+    metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
+    sources: [lifecycle.taskId, ...extraSources],
+  });
+}
+
+/**
+ * Read the lifecycle block from a chat message, or return `null` when
+ * the message has no lifecycle attached. Validates the discriminator
+ * so callers get a typed view back.
+ */
+export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
+  const raw = msg.metadata?.lifecycle;
+  if (raw === undefined || raw === null || typeof raw !== 'object') return null;
+  const lc = raw as Record<string, unknown>;
+  if (lc.kind !== 'service_query') return null;
+  if (typeof lc.taskId !== 'string' || lc.taskId === '') return null;
+  if (typeof lc.status !== 'string') return null;
+  return lc as unknown as MessageLifecycle;
+}
+
+/**
+ * Find a thread message keyed by `taskId` on its lifecycle metadata.
+ * Returns `null` when no matching message is present.
+ */
+export function findMessageByTaskId(threadId: string, taskId: string): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  for (const msg of thread) {
+    const lc = readLifecycle(msg);
+    if (lc !== null && lc.taskId === taskId) return msg;
+  }
+  return null;
+}
+
+/**
+ * Patch the lifecycle metadata of the message identified by `taskId`,
+ * optionally rewriting `content` (e.g. swapping the LLM ack for the
+ * formatted result). The message is replaced (not mutated) so
+ * subscribers see a fresh `ChatMessage` reference and inline components
+ * re-render reliably. Returns the patched message, or `null` if no
+ * matching message exists in the thread.
+ */
+export function updateMessageLifecycle(
+  threadId: string,
+  taskId: string,
+  patch: Partial<Omit<ServiceQueryLifecycle, 'kind' | 'taskId'>>,
+  newContent?: string,
+): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  const idx = thread.findIndex((msg) => {
+    const lc = readLifecycle(msg);
+    return lc !== null && lc.taskId === taskId;
+  });
+  if (idx === -1) return null;
+
+  const old = thread[idx];
+  const oldLc = readLifecycle(old);
+  if (oldLc === null) return null;
+  const newLc: ServiceQueryLifecycle = { ...oldLc, ...patch, kind: 'service_query', taskId };
+
+  const newMsg: ChatMessage = {
+    ...old,
+    content: newContent ?? old.content,
+    metadata: {
+      ...(old.metadata ?? {}),
+      lifecycle: newLc as unknown as Record<string, unknown>,
+    },
+  };
+  thread[idx] = newMsg;
+  persistMessage(newMsg);
+  fireSubscribers(newMsg);
+  return newMsg;
 }
 
 /** Reset all threads (for testing). */

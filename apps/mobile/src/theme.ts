@@ -69,23 +69,40 @@ export const radius = {
   full: 9999,
 } as const;
 
+/**
+ * Typography matches the dinakernel.com brand system. Loaded via
+ * `useFonts` in `app/_layout.tsx` so the names below resolve to
+ * registered font families at runtime; styles that ship before the
+ * font finishes loading fall back to the platform's system font.
+ *
+ *   - sans  → Figtree (body copy, inputs, lists)
+ *   - heading → Plus Jakarta Sans (titles, labels, navbar)
+ *   - display → Cormorant Garamond italic (hero / quotes only)
+ *   - mono → JetBrains Mono (DIDs, hashes, code)
+ *
+ * Always pair `fontFamily` with the matching weight name so RN
+ * picks the right registered face — e.g. `Figtree_500Medium`.
+ * `fontWeight` alone won't synthesize a weight on RN.
+ */
 export const fonts = {
-  sans: Platform.select({
-    ios: 'System',
-    android: 'Roboto',
-    default: 'System',
-  }),
-  mono: Platform.select({
-    ios: 'Menlo',
-    android: 'monospace',
-    default: 'monospace',
-  }),
-  // Serif for hero / brand text
-  serif: Platform.select({
-    ios: 'Georgia',
-    android: 'serif',
-    default: 'serif',
-  }),
+  sans: 'Figtree_400Regular',
+  sansMedium: 'Figtree_500Medium',
+  sansSemibold: 'Figtree_600SemiBold',
+
+  heading: 'PlusJakartaSans_600SemiBold',
+  headingBold: 'PlusJakartaSans_700Bold',
+  headingExtraBold: 'PlusJakartaSans_800ExtraBold',
+
+  display: 'CormorantGaramond_600SemiBold_Italic',
+  // `serif` is the legacy name for the display face. Existing call
+  // sites (hero copy in onboarding, admin glyphs, unlock-gate
+  // tagline) read this; the dinakernel.com site uses Cormorant
+  // Garamond italic for the same role, so the name swap is
+  // intentional — not a back-compat shim.
+  serif: 'CormorantGaramond_600SemiBold_Italic',
+
+  mono: 'JetBrainsMono_400Regular',
+  monoMedium: 'JetBrainsMono_500Medium',
 } as const;
 
 export const shadows = {

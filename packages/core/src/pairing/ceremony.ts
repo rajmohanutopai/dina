@@ -1,7 +1,8 @@
 /**
- * Device pairing ceremony — 6-digit code exchange.
+ * Device pairing ceremony — 8-character Crockford-Base32 code exchange.
  *
- * 1. GeneratePairingCode() → 6-digit code (100000–999999), 5-min TTL
+ * 1. GeneratePairingCode() → 8-char alphanumeric code (32^8 ≈ 1.1T
+ *    space, derived from a 32-byte secret via SHA-256), 5-min TTL
  * 2. CompletePairing() → validate code, register Ed25519 public key
  * 3. Returns device_id, node_did
  *
@@ -17,14 +18,14 @@
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { registerDevice as persistDevice } from '../devices/registry';
 import { registerDevice as registerDeviceAuth } from '../auth/caller_type';
 import { multibaseToPublicKey } from '../identity/did';
 import { deriveDIDKey } from '../identity/did';
 
 export interface PairingCode {
-  code: string; // 6-digit numeric string
+  code: string; // 8-char Crockford-Base32 string
   expiresAt: number; // Unix seconds
 }
 
@@ -36,8 +37,9 @@ export interface PairingResult {
 import {
   PAIRING_CODE_TTL_S,
   PAIRING_MAX_PENDING,
-  PAIRING_CODE_MIN,
-  PAIRING_CODE_RANGE,
+  PAIRING_CODE_LENGTH,
+  PAIRING_CODE_ALPHABET,
+  PAIRING_SECRET_BYTES,
 } from '../constants';
 
 const CODE_TTL_SECONDS = PAIRING_CODE_TTL_S;
@@ -79,7 +81,7 @@ export function setNodeDID(did: string): void {
 }
 
 /**
- * Generate a 6-digit pairing code.
+ * Generate an 8-character Crockford-Base32 pairing code.
  *
  * Retries up to 5 times on collision (matching Go's collision retry).
  *
@@ -106,14 +108,23 @@ export function generatePairingCode(
     throw new Error('pairing: max pending codes exceeded (100)');
   }
 
-  // Generate code with collision retry (matching Go's 5-attempt limit)
+  // Generate code with collision retry (matching Go's 5-attempt limit).
+  // Algorithm — bug-for-bug parity with `core/internal/adapter/pairing/pairing.go`:
+  //   1. Sample 32 cryptographically random bytes (PAIRING_SECRET_BYTES).
+  //   2. SHA-256 the secret.
+  //   3. Take the first 8 hash bytes; map each via `byte % 32` into the
+  //      Crockford Base32 alphabet to produce the displayed code.
+  //   4. The 32-byte secret is the cryptographic material; the
+  //      displayed 8-char code is a stable index. (Lite uses the code
+  //      directly as the lookup key into `pendingCodes`; a future
+  //      revision could persist the secret separately if any
+  //      downstream key-derivation needs it.)
   let code: string;
   let retries = 0;
 
   do {
-    const randomValue = bytesToHex(randomBytes(4));
-    const numericValue = (parseInt(randomValue, 16) % PAIRING_CODE_RANGE) + PAIRING_CODE_MIN;
-    code = String(numericValue);
+    const secret = randomBytes(PAIRING_SECRET_BYTES);
+    code = deriveAlphanumericCode(secret, PAIRING_CODE_LENGTH);
     retries++;
   } while (pendingCodes.has(code) && retries <= MAX_COLLISION_RETRIES);
 
@@ -156,7 +167,7 @@ export function getPairingIntent(
  * Brute-force protection: tracks failed attempts per code.
  * After 3 failed attempts, the code is burned (matching Go).
  *
- * @param code - The 6-digit pairing code
+ * @param code - The 8-character Crockford-Base32 pairing code
  * @param deviceName - Human-readable device name
  * @param publicKeyMultibase - z-prefixed Ed25519 public key
  * @returns { deviceId, nodeDID }
@@ -280,4 +291,29 @@ export function verifyPairingIdentityBinding(
 export function clearPairingState(): void {
   pendingCodes.clear();
   nodeDID = null;
+}
+
+/**
+ * Derive an `n`-character Crockford-Base32 pairing code from a
+ * cryptographic secret. Bit-for-bit parity with Go's
+ * `core/internal/adapter/pairing/pairing.go:deriveAlphanumericCode`:
+ * SHA-256 the secret, then map the first `n` hash bytes through
+ * `byte % alphabet.length` into `PAIRING_CODE_ALPHABET`.
+ *
+ * Exported so paired-device tooling (CLI / agent) and tests can
+ * reproduce a code from a known secret without replicating the
+ * algorithm. Not part of the public API for code generation —
+ * `generatePairingCode` is the only legitimate caller in production.
+ */
+export function deriveAlphanumericCode(secret: Uint8Array, n: number): string {
+  if (n <= 0 || n > 32) {
+    throw new Error(`deriveAlphanumericCode: n must be in [1, 32] (got ${n})`);
+  }
+  const hash = sha256(secret);
+  const alphabet = PAIRING_CODE_ALPHABET;
+  const out = new Array<string>(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = alphabet[hash[i] % alphabet.length]!;
+  }
+  return out.join('');
 }

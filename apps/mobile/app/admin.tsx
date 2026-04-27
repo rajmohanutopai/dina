@@ -20,24 +20,13 @@
  */
 
 import React, { useCallback, useState, useSyncExternalStore } from 'react';
-import {
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { colors, fonts, radius, shadows, spacing } from '../src/theme';
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
 import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/runtime_warnings';
-import { clearWrappedSeed } from '../src/services/wrapped_seed_store';
-import { clearIdentitySeeds } from '../src/services/identity_store';
-import { clearPersistedDid, loadPersistedDid } from '../src/services/identity_record';
-import { resetUnlockState } from '../src/hooks/useUnlock';
+import { loadPersistedDid } from '../src/services/identity_record';
+import { signOutLocal, eraseEverythingLocal } from '../src/services/local_data_wipe';
 import { sendChatMessage } from '../src/services/chat_d2d';
 
 export default function AdminScreen(): React.ReactElement {
@@ -61,26 +50,51 @@ export default function AdminScreen(): React.ReactElement {
     };
   }, []);
 
-  const onWipe = useCallback(() => {
+  const onSignOut = useCallback(() => {
     Alert.alert(
-      'Wipe this device?',
-      'Deletes the wrapped master seed, identity keys, and persisted DID. Your Dina on the Dina network stays intact — this only affects this device. You\u2019ll need your recovery phrase to come back.',
+      'Sign out from this device?',
+      'Removes this device’s keys and disconnects it from your Dina. Encrypted data on this device stays on disk but is unreadable without the keys. Re-onboard with your recovery phrase to come back — your data on this device will be recoverable.\n\nYour Dina identity on the network is unaffected.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Wipe',
+          text: 'Sign out',
           style: 'destructive',
           onPress: () => {
             void (async () => {
               try {
-                await clearWrappedSeed();
-                await clearIdentitySeeds();
-                await clearPersistedDid();
-                resetUnlockState();
-                Alert.alert('Wiped', 'Close and reopen the app to onboard again.');
+                await signOutLocal();
+                Alert.alert('Signed out', 'Close and reopen the app to onboard again.');
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                Alert.alert('Couldn\u2019t wipe', msg);
+                Alert.alert('Couldn’t sign out', msg);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, []);
+
+  const onEraseEverything = useCallback(() => {
+    Alert.alert(
+      'Erase everything on this device?',
+      'Permanently deletes all data on this device — chat history, reminders, contacts, vault entries, and your keys. This cannot be undone on this device.\n\nYour Dina identity on the network and any data on other paired devices are unaffected. Re-onboard with your recovery phrase to start fresh on this device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Erase everything',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await eraseEverythingLocal();
+                Alert.alert(
+                  'Erased',
+                  'All data on this device has been deleted. Close and reopen the app to onboard again.',
+                );
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                Alert.alert('Couldn’t erase', msg);
               }
             })();
           },
@@ -108,7 +122,7 @@ export default function AdminScreen(): React.ReactElement {
             {node === null ? 'Node not booted' : `Running as ${shortRole(node.role)}`}
           </Text>
           <Text style={styles.subtitle}>
-            Everything you\u2019d do from <Text style={styles.code}>dina-admin</Text> on the desktop
+            Everything you’d do from <Text style={styles.code}>dina-admin</Text> on the desktop
             install, on-device.
           </Text>
         </View>
@@ -175,7 +189,7 @@ export default function AdminScreen(): React.ReactElement {
         <Section title="Diagnostics">
           <Text style={styles.diagGroupLabel}>Boot degradations</Text>
           {degradations.length === 0 ? (
-            <Text style={styles.diagEmpty}>All boot inputs wired \u2713</Text>
+            <Text style={styles.diagEmpty}>All boot inputs wired ✓</Text>
           ) : (
             degradations.map((d) => (
               <View key={d.code} style={styles.diagItem}>
@@ -207,14 +221,30 @@ export default function AdminScreen(): React.ReactElement {
 
         {/* Danger zone */}
         <Section title="Danger zone" danger>
+          <View style={styles.dangerNote}>
+            <Text style={styles.dangerNoteText}>
+              These actions only affect this device. Your Dina identity on the network is
+              recoverable from your recovery phrase.
+            </Text>
+          </View>
           <Pressable
-            onPress={onWipe}
+            onPress={onSignOut}
             style={({ pressed }) => [styles.dangerBtn, pressed && styles.pressed]}
           >
-            <Text style={styles.dangerTitle}>Wipe this device</Text>
+            <Text style={styles.dangerTitle}>Sign out from this device</Text>
             <Text style={styles.dangerBody}>
-              Deletes wrapped seed + keychain + persisted DID. Requires your recovery phrase to come
-              back.
+              Removes this device’s keys. Encrypted data on this device stays on disk and is
+              recoverable when you re-onboard with your recovery phrase.
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={onEraseEverything}
+            style={({ pressed }) => [styles.dangerBtn, styles.dangerBtnDivider, pressed && styles.pressed]}
+          >
+            <Text style={styles.dangerTitle}>Erase everything on this device</Text>
+            <Text style={styles.dangerBody}>
+              Permanently deletes all data on this device — chat, reminders, contacts, vault
+              entries, and keys. Cannot be undone on this device.
             </Text>
           </Pressable>
         </Section>
@@ -287,6 +317,7 @@ const devTestStyles = StyleSheet.create({
     padding: spacing.md,
   },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
     letterSpacing: 1,
     textTransform: 'uppercase',
@@ -307,9 +338,9 @@ const devTestStyles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   btnText: {
+    fontFamily: fonts.sansSemibold,
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '600',
   },
   detail: {
     marginTop: spacing.sm,
@@ -405,20 +436,21 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   eyebrow: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
     letterSpacing: 2.4,
-    fontWeight: '700',
     color: colors.textMuted,
   },
   title: {
     marginTop: spacing.xs,
-    fontFamily: Platform.OS === 'ios' ? fonts.serif : undefined,
+    fontFamily: fonts.serif,
     fontStyle: 'italic',
     fontSize: 30,
     color: colors.textPrimary,
     letterSpacing: -0.3,
   },
   subtitle: {
+    fontFamily: fonts.sans,
     marginTop: spacing.sm,
     fontSize: 14,
     lineHeight: 20,
@@ -434,9 +466,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   sectionTitle: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
     letterSpacing: 1.5,
-    fontWeight: '700',
     color: colors.textMuted,
     marginBottom: spacing.sm,
     paddingLeft: 4,
@@ -458,6 +490,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderLight,
   },
   rowLabel: {
+    fontFamily: fonts.sansSemibold,
     width: 110,
     fontSize: 12,
     letterSpacing: 0.5,
@@ -473,6 +506,7 @@ const styles = StyleSheet.create({
   },
   rowValue: {
     flex: 1,
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textPrimary,
     lineHeight: 20,
@@ -494,6 +528,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderLight,
   },
   drillArrow: {
+    fontFamily: fonts.sans,
     marginLeft: 'auto',
     fontSize: 18,
     color: colors.textMuted,
@@ -505,28 +540,29 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderLight,
   },
   placeholderTitle: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 14,
-    fontWeight: '600',
     color: colors.textPrimary,
   },
   placeholderBody: {
+    fontFamily: fonts.sans,
     marginTop: 3,
     fontSize: 13,
     lineHeight: 18,
     color: colors.textSecondary,
   },
   placeholderBadge: {
+    fontFamily: fonts.sansSemibold,
     marginTop: 6,
     fontSize: 9,
     letterSpacing: 1.5,
-    fontWeight: '700',
     color: colors.textMuted,
   },
   diagGroupLabel: {
+    fontFamily: fonts.sansSemibold,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 1,
     textTransform: 'uppercase',
     color: colors.textMuted,
@@ -535,6 +571,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   diagEmpty: {
+    fontFamily: fonts.sans,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
     fontSize: 13,
@@ -551,6 +588,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   diagMessage: {
+    fontFamily: fonts.sans,
     marginTop: 2,
     fontSize: 13,
     lineHeight: 18,
@@ -564,19 +602,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   copyAllText: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 13,
-    fontWeight: '600',
     color: colors.textPrimary,
+  },
+  dangerNote: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  dangerNoteText: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textMuted,
+    fontStyle: 'italic',
   },
   dangerBtn: {
     padding: spacing.md,
   },
+  dangerBtnDivider: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
   dangerTitle: {
+    fontFamily: fonts.headingBold,
     fontSize: 15,
-    fontWeight: '700',
     color: colors.error,
   },
   dangerBody: {
+    fontFamily: fonts.sans,
     marginTop: 3,
     fontSize: 13,
     lineHeight: 19,

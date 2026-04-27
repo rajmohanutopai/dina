@@ -15,10 +15,14 @@
 
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
 import { completeReminder, snoozeReminder } from '@dina/core/src/reminders/service';
 import { addSystemMessage } from '@dina/brain/src/chat/thread';
-import { colors, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing } from '../theme';
+import { MessageTimestamp } from './MessageTimestamp';
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const SNOOZE_MS = 60 * 60 * 1000; // 1h
 
@@ -64,11 +68,13 @@ function formatRelative(dueAtMs: number, nowMs: number = Date.now()): string {
   return deltaSec >= 0 ? `in ${day} d` : `${day} d ago`;
 }
 
-const KIND_EMOJI: Record<string, string> = {
-  birthday: '\u{1F382}',
-  appointment: '\u{1F4C5}',
-  payment_due: '\u{1F4B3}',
-  deadline: '\u{23F0}',
+const KIND_ICON: Record<string, IoniconName> = {
+  birthday: 'gift-outline',
+  appointment: 'calendar-outline',
+  payment_due: 'card-outline',
+  deadline: 'alarm-outline',
+  arrival: 'walk-outline',
+  custom: 'notifications-outline',
 };
 
 export function InlineReminderCard({ message }: InlineReminderCardProps): React.JSX.Element | null {
@@ -100,13 +106,14 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
 
   if (meta === null) return null;
 
-  const emoji = KIND_EMOJI[meta.reminderKind] ?? '\u{1F514}'; // 🔔
+  const iconName: IoniconName =
+    KIND_ICON[meta.reminderKind] ?? 'notifications-outline';
   const relative = formatRelative(meta.dueAt);
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.emoji}>{emoji}</Text>
+        <Ionicons name={iconName} size={16} color={colors.textMuted} />
         <Text style={styles.label}>REMINDER · {relative.toUpperCase()}</Text>
       </View>
       <Text style={styles.body}>{message.content}</Text>
@@ -135,6 +142,7 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
       )}
       {resolved === 'done' && <Text style={styles.statusLine}>Done.</Text>}
       {resolved === 'snoozed' && <Text style={styles.statusLine}>Snoozed.</Text>}
+      <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );
 }
@@ -155,25 +163,23 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginBottom: spacing.xs,
   },
-  emoji: {
-    fontSize: 16,
-  },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 1.5,
     color: colors.textMuted,
   },
   body: {
+    fontFamily: fonts.sansMedium,
     fontSize: 15,
     color: colors.textPrimary,
     lineHeight: 22,
     marginBottom: spacing.xs,
   },
   personaLine: {
+    fontFamily: fonts.mono,
     fontSize: 12,
     color: colors.textMuted,
-    fontFamily: 'monospace',
     marginBottom: spacing.sm,
   },
   row: {
@@ -193,9 +199,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   doneText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.bgPrimary,
     fontSize: 14,
-    fontWeight: '600',
   },
   snooze: {
     backgroundColor: 'transparent',
@@ -203,11 +209,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   snoozeText: {
+    fontFamily: fonts.sansMedium,
     color: colors.textPrimary,
     fontSize: 14,
-    fontWeight: '500',
   },
   statusLine: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textMuted,
     fontStyle: 'italic',

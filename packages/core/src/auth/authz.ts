@@ -100,6 +100,15 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   { prefix: '/v1/workflow/tasks/', allowed: new Set(['brain', 'admin', 'agent']) },
   { prefix: '/v1/workflow/', allowed: new Set(['brain', 'admin']) },
 
+  // Agent intent validation — `dina validate` from OpenClaw + sample
+  // agents. Wire-compatible with Go Core: paired agents POST
+  // /v1/agent/validate (the submit endpoint) and poll
+  // /v1/intent/proposals/:id/status (the status endpoint). Brain +
+  // Admin + Device may also probe (chat orchestrator surfaces
+  // proposals; admin UI inspects them).
+  { prefix: '/v1/agent/', allowed: new Set(['brain', 'admin', 'device', 'agent']) },
+  { prefix: '/v1/intent/', allowed: new Set(['brain', 'admin', 'device', 'agent']) },
+
   // User-facing API — Device (app UI) + Admin
   { prefix: '/api/v1/ask', allowed: new Set(['device', 'admin', 'brain']) },
   { prefix: '/api/v1/remember', allowed: new Set(['device', 'admin', 'brain']) },

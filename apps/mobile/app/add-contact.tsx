@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { addContact, getContact } from '@dina/core/src/contacts/directory';
-import { colors, spacing, radius } from '../src/theme';
+import { colors, fonts, spacing, radius } from '../src/theme';
 
 // TEST_PDS_URL is a sensible default for the Dina test network. Users
 // can paste an arbitrary PDS URL to resolve handles on other networks.
@@ -194,12 +194,13 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   heading: {
+    fontFamily: fonts.headingBold,
     fontSize: 24,
-    fontWeight: '700',
     color: colors.textPrimary,
     letterSpacing: -0.3,
   },
   sub: {
+    fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: spacing.xs,
@@ -207,8 +208,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 12,
-    fontWeight: '600',
     color: colors.textMuted,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
@@ -223,15 +224,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: Platform.OS === 'ios' ? spacing.md : spacing.sm,
+    fontFamily: fonts.mono,
     fontSize: 15,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   error: {
+    fontFamily: fonts.sansMedium,
     marginTop: spacing.md,
     color: colors.error,
     fontSize: 14,
   },
   hint: {
+    fontFamily: fonts.sans,
     marginTop: spacing.md,
     color: colors.textMuted,
     fontSize: 13,
@@ -252,9 +255,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSecondary,
   },
   cancelText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.textPrimary,
     fontSize: 15,
-    fontWeight: '600',
   },
   save: {
     flex: 1,
@@ -265,9 +268,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   saveText: {
+    fontFamily: fonts.sansSemibold,
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
   },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.5 },

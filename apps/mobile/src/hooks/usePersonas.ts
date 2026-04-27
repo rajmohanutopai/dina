@@ -135,6 +135,30 @@ export function resetPersonas(): void {
   resetPersonaState();
 }
 
+/**
+ * Format a persona name for display — capitalise + replace
+ * underscores with spaces. Internal storage keeps the lowercase
+ * `[a-z0-9_]+` form (vault file names, classifier prompt list,
+ * registry keys); UI surfaces convert here so users see "Finance"
+ * not "finance" and "Trip Planning" not "trip_planning".
+ *
+ * Single source of truth — every screen that prints a persona name
+ * should call this helper. Don't reach for `name.toUpperCase()` /
+ * `name[0].toUpperCase()` ad-hoc; underscores would slip through.
+ *
+ *   formatPersonaDisplayName('general')        → 'General'
+ *   formatPersonaDisplayName('trip_planning')  → 'Trip Planning'
+ *   formatPersonaDisplayName('')               → ''
+ */
+export function formatPersonaDisplayName(name: string): string {
+  if (!name) return '';
+  return name
+    .split('_')
+    .filter((part) => part.length > 0)
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 /** Map internal PersonaState to UI state. */
 function mapToUI(p: PersonaState): PersonaUIState {
   const props = TIER_PROPS[p.tier];

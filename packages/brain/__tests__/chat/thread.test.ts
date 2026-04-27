@@ -17,6 +17,12 @@ import {
   addDinaResponse,
   addSystemMessage,
   resetThreads,
+  addLifecycleMessage,
+  findMessageByTaskId,
+  updateMessageLifecycle,
+  readLifecycle,
+  subscribeToThread,
+  type ServiceQueryLifecycle,
 } from '../../src/chat/thread';
 
 describe('Chat Message Model + Thread', () => {
@@ -167,6 +173,77 @@ describe('Chat Message Model + Thread', () => {
       expect(getThread('thread-A')).toHaveLength(1);
       expect(getThread('thread-B')).toHaveLength(1);
       expect(getThread('thread-A')[0].content).toBe('private to A');
+    });
+  });
+
+  describe('lifecycle metadata on dina messages', () => {
+    function makeLifecycle(taskId: string, serviceName: string): ServiceQueryLifecycle {
+      return {
+        kind: 'service_query',
+        status: 'pending',
+        taskId,
+        queryId: `q-${taskId}`,
+        capability: 'eta_query',
+        serviceName,
+      };
+    }
+
+    it('addLifecycleMessage posts a regular dina message with lifecycle metadata + taskId source', () => {
+      const msg = addLifecycleMessage('main', 'Looking up Bus 42…', makeLifecycle('sq-1', 'Bus 42'));
+      // Pattern parity with approval cards: lifecycle-tracked messages
+      // are still 'dina' MessageType — UI dispatches on metadata.lifecycle.kind.
+      expect(msg.type).toBe('dina');
+      const lc = readLifecycle(msg);
+      expect(lc?.kind).toBe('service_query');
+      expect(lc?.taskId).toBe('sq-1');
+      expect(lc?.status).toBe('pending');
+      expect(msg.sources).toEqual(['sq-1']);
+    });
+
+    it('readLifecycle returns null when metadata is missing or malformed', () => {
+      const plain = addDinaResponse('main', 'no lifecycle');
+      expect(readLifecycle(plain)).toBeNull();
+      const wrongKind = addMessage('main', 'dina', 'x', {
+        metadata: { lifecycle: { kind: 'unknown_kind' } },
+      });
+      expect(readLifecycle(wrongKind)).toBeNull();
+    });
+
+    it('findMessageByTaskId locates the lifecycle-tracked message', () => {
+      addLifecycleMessage('main', 'A', makeLifecycle('sq-A', 'Bus A'));
+      addLifecycleMessage('main', 'B', makeLifecycle('sq-B', 'Bus B'));
+      addDinaResponse('main', 'unrelated dina message');
+      const found = findMessageByTaskId('main', 'sq-B');
+      expect(found?.content).toBe('B');
+      expect(findMessageByTaskId('main', 'sq-missing')).toBeNull();
+    });
+
+    it('updateMessageLifecycle patches in place + fires subscribers + rewrites content', () => {
+      addLifecycleMessage('main', 'pending…', makeLifecycle('sq-1', 'Bus 42'));
+      let fired = 0;
+      const unsubscribe = subscribeToThread('main', () => {
+        fired++;
+      });
+      const patched = updateMessageLifecycle(
+        'main',
+        'sq-1',
+        { status: 'resolved', result: { eta_minutes: 12, stop_name: 'Castro' } },
+        'Bus 42 — 12 min to Castro',
+      );
+      unsubscribe();
+      expect(patched).not.toBeNull();
+      expect(patched?.content).toBe('Bus 42 — 12 min to Castro');
+      const lc = readLifecycle(patched!);
+      expect(lc?.status).toBe('resolved');
+      expect(lc?.result?.eta_minutes).toBe(12);
+      // Same id as the original — patch, not append.
+      expect(fired).toBe(1);
+      expect(threadLength('main')).toBe(1);
+    });
+
+    it('updateMessageLifecycle returns null for unknown taskId', () => {
+      const patched = updateMessageLifecycle('main', 'sq-missing', { status: 'failed' });
+      expect(patched).toBeNull();
     });
   });
 });

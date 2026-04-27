@@ -10,8 +10,8 @@
  * Source: brain/src/prompts.py PROMPT_PERSON_IDENTITY_EXTRACTION
  */
 
-import { PERSON_IDENTITY_EXTRACTION } from '../llm/prompts';
 import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
+import { PERSON_IDENTITY_EXTRACTION } from '../llm/prompts';
 
 // ---------------------------------------------------------------
 // Types
@@ -89,11 +89,11 @@ const NAME = '([A-Z][a-z]+(?:\\s[A-Z][a-z]+)?)';
  * so that the name capture requires proper capitalization.
  * Relationship keywords are case-insensitive via alternation (e.g., [Mm]y).
  */
-const RELATIONSHIP_PATTERNS: Array<{
+const RELATIONSHIP_PATTERNS: {
   pattern: RegExp;
   relationship: RelationshipType;
   nameGroup: number;
-}> = [
+}[] = [
   // "X is my daughter/son/wife/husband/etc."
   {
     pattern: new RegExp(`\\b${NAME}\\s+is\\s+[Mm]y\\s+(?:daughter|son|child)\\b`, 'g'),
@@ -244,11 +244,12 @@ async function extractWithLLM(text: string): Promise<IdentityLink[]> {
   // emails, phone numbers, etc. Names are NOT scrubbed (by design).
   const { scrubbed, entities } = scrubPII(text);
 
-  const prompt = PERSON_IDENTITY_EXTRACTION.replace('{{text}}', scrubbed);
-  const response = await llmCallFn(
-    "You are extracting relationship information from a user's personal notes for Dina, a personal AI assistant.",
-    prompt,
-  );
+  // Two-message pattern matching Python's `person_link_extractor.py`:
+  // the prompt template is the SYSTEM message; the scrubbed text is
+  // the USER message. The Python source has no `{text}` placeholder
+  // in the template — the text rides as a separate message — and
+  // we mirror that wire shape so the LLM sees the same transcript.
+  const response = await llmCallFn(PERSON_IDENTITY_EXTRACTION, scrubbed);
 
   // Rehydrate PII tokens in the response so names/evidence contain original values
   const rehydrated = entities.length > 0 ? rehydratePII(response, entities) : response;

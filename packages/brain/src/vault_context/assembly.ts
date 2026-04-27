@@ -198,10 +198,27 @@ export async function assembleContext(
   const personas = getAccessiblePersonas();
   const allItems: ContextItem[] = [];
 
+  // Per-persona hit counts — emitted as one structured line so the
+  // simulator log can immediately tell whether /ask saw the right
+  // vaults. A row stored under `personal` but accessible-list ==
+  // ['general'] shows up here as `{persona: 'general', hits: 0}` and
+  // no other persona — the smoking gun for the
+  // "drain wrote, ask didn't see" class of dev-env bug.
+  const perPersonaHits: Record<string, number> = {};
+
   for (const persona of personas) {
     const results = await executeToolSearch(persona, query, 20);
+    perPersonaHits[persona] = results.length;
     allItems.push(...results);
   }
+  // eslint-disable-next-line no-console
+  console.info('[vault_context] assemble', {
+    event: 'vault_context.searched',
+    query_preview: query.slice(0, 80),
+    personas_walked: personas,
+    hits_per_persona: perPersonaHits,
+    total_hits: allItems.length,
+  });
 
   allItems.sort((a, b) => b.score - a.score);
 

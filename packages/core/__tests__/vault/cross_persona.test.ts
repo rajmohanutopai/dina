@@ -7,13 +7,18 @@
  * Source: core/test/vault_test.go (cross-persona section)
  */
 
-import { queryVault, storeItem, clearVaults } from '../../src/vault/crud';
+import {
+  queryVault,
+  storeItem,
+  clearVaults,
+  DEFAULT_TEST_PERSONAS,
+} from '../../src/vault/crud';
 import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Cross-Persona Vault', () => {
   beforeEach(() => {
     resetFactoryCounters();
-    clearVaults();
+    clearVaults([...DEFAULT_TEST_PERSONAS, 'work', 'finance']);
   });
 
   describe('query across open personas', () => {

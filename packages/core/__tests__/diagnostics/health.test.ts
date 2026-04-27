@@ -47,7 +47,16 @@ describe('Health Check Diagnostics', () => {
   });
 
   describe('vault_access check', () => {
-    it('passes when vault is accessible', () => {
+    it('warns when no persona is open (probe needs an open persona)', () => {
+      const report = runHealthCheck();
+      const vaultCheck = report.checks.find((c) => c.name === 'vault_access');
+      expect(vaultCheck!.status).toBe('warn');
+      expect(vaultCheck!.detail).toContain('No open persona');
+    });
+
+    it('passes when vault is accessible (with an open persona)', () => {
+      createPersona('general', 'default', 'Default persona');
+      openPersona('general');
       const report = runHealthCheck();
       const vaultCheck = report.checks.find((c) => c.name === 'vault_access');
       expect(vaultCheck!.status).toBe('pass');
@@ -55,10 +64,12 @@ describe('Health Check Diagnostics', () => {
     });
 
     it('cleans up health check probe item', () => {
+      createPersona('general', 'default', 'Default persona');
+      openPersona('general');
       runHealthCheck();
-      // The _healthcheck item should be deleted after the probe
-      const { getItem } = require('../../src/vault/crud');
-      // No leftover items in the _healthcheck persona
+      // The probe row is deleted by checkVaultAccess; nothing to assert
+      // beyond "no throw" — the strict requireRepo() would surface a
+      // missing persona regression as a thrown vault_access fail.
     });
   });
 

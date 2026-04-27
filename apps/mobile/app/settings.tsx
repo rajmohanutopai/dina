@@ -17,7 +17,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors, spacing, radius, shadows } from '../src/theme';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import {
   PROVIDERS,
   saveApiKey,
@@ -390,14 +390,15 @@ const styles = StyleSheet.create({
   },
   section: { marginBottom: spacing.lg },
   sectionTitle: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 1.5,
     color: colors.textMuted,
     marginBottom: spacing.sm,
     marginLeft: spacing.xs,
   },
   sectionDesc: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textSecondary,
     marginBottom: spacing.md,
@@ -431,8 +432,17 @@ const styles = StyleSheet.create({
   },
   providerInfo: { flex: 1, marginRight: spacing.md },
   providerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  providerName: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
-  providerDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  providerName: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  providerDesc: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   activeBadge: {
     backgroundColor: colors.accent,
     borderRadius: 4,
@@ -440,13 +450,21 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   activeBadgeText: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 9,
-    fontWeight: '700',
     color: colors.white,
     letterSpacing: 0.5,
   },
-  keyPreview: { fontSize: 12, color: colors.textMuted, fontFamily: 'Menlo' },
-  addKey: { fontSize: 14, color: colors.accent, fontWeight: '500' },
+  keyPreview: {
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  addKey: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.accent,
+  },
 
   // Key form
   keyForm: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
@@ -455,6 +473,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    fontFamily: fonts.mono,
     fontSize: 14,
     color: colors.textPrimary,
     borderWidth: 1,
@@ -467,7 +486,11 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   cancelButton: { paddingHorizontal: 16, paddingVertical: 10 },
-  cancelText: { fontSize: 14, color: colors.textMuted, fontWeight: '500' },
+  cancelText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textMuted,
+  },
   saveButton: {
     backgroundColor: colors.accent,
     borderRadius: radius.sm,
@@ -475,7 +498,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   saveButtonDisabled: { opacity: 0.5 },
-  saveText: { fontSize: 14, color: colors.white, fontWeight: '600' },
+  saveText: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 14,
+    color: colors.white,
+  },
 
   // Configured actions
   configuredActions: {
@@ -490,9 +517,17 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: colors.border,
   },
-  useText: { fontSize: 13, color: colors.accent, fontWeight: '500' },
+  useText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.accent,
+  },
   removeButton: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  removeText: { fontSize: 13, color: colors.error, fontWeight: '500' },
+  removeText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.error,
+  },
 
   // Settings rows
   row: {
@@ -504,10 +539,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  rowLabel: { fontSize: 15, color: colors.textPrimary, fontWeight: '500' },
-  rowValue: { fontSize: 14, color: colors.textMuted },
+  rowLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  rowValue: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textMuted,
+  },
 
   footer: { alignItems: 'center', marginTop: spacing.xl, paddingVertical: spacing.lg },
-  footerText: { fontSize: 13, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.5 },
-  footerSubtext: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
+  footerText: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 13,
+    color: colors.textMuted,
+    letterSpacing: 0.5,
+  },
+  footerSubtext: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+  },
 });

@@ -33,7 +33,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { unlock, useIsUnlocked } from '../hooks/useUnlock';
+import { unlock, useIsUnlocked, useUnlockState, getStepLabel } from '../hooks/useUnlock';
 import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { colors, fonts, radius, spacing } from '../theme';
 import { OnboardingFlow } from './onboarding/onboarding_flow';
@@ -42,8 +42,16 @@ type Mode = 'loading' | 'onboarding' | 'locked' | 'unlocking' | 'unlocked';
 
 const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
 
+/** Total budget for the full unlock pipeline. Argon2id KDF + SQLCipher
+ *  open + per-persona DB open + hydration tops out at ~5–8s on iOS
+ *  simulator cold-cache. 30s gives slow devices plenty of headroom while
+ *  still cutting off a genuinely-hung step (op-sqlite file lock, keychain
+ *  stall, etc.) before the spinner spins indefinitely. */
+const UNLOCK_TIMEOUT_MS = 30_000;
+
 export function UnlockGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const unlocked = useIsUnlocked();
+  const unlockState = useUnlockState();
   const [mode, setMode] = useState<Mode>('loading');
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
@@ -86,9 +94,25 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         setMode('onboarding');
         return;
       }
-      const result = await unlock(pp, wrapped);
-      if (result.step === 'failed') {
-        setError(result.error ?? 'Wrong passphrase.');
+      // Race the unlock pipeline against a hard timeout. Without this,
+      // any awaited step that hangs (op-sqlite file lock, keychain
+      // stall, native-module bug) leaves the spinner running forever
+      // with no way back. The Symbol sentinel disambiguates a real
+      // resolved UnlockState from the timeout fire.
+      const TIMEOUT_SENTINEL = Symbol('unlock_timeout');
+      const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+        setTimeout(() => resolve(TIMEOUT_SENTINEL), UNLOCK_TIMEOUT_MS);
+      });
+      const outcome = await Promise.race([unlock(pp, wrapped), timeoutPromise]);
+      if (outcome === TIMEOUT_SENTINEL) {
+        setError(
+          'Unlock is taking longer than expected. Try again, or restart the app if it keeps hanging.',
+        );
+        setMode('locked');
+        return;
+      }
+      if (outcome.step === 'failed') {
+        setError(outcome.error ?? 'Wrong passphrase.');
         setMode('locked');
       }
     } catch (err) {
@@ -172,6 +196,10 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
             <Text style={styles.primaryText}>Unlock</Text>
           )}
         </Pressable>
+
+        {busy ? (
+          <Text style={styles.progress}>{getStepLabel(unlockState.step)}</Text>
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -232,6 +260,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     fontSize: 13,
     color: colors.error,
+  },
+  progress: {
+    marginTop: spacing.md,
+    textAlign: 'center',
+    fontSize: 13,
+    color: colors.textSecondary,
   },
   primary: {
     marginTop: spacing.xl,

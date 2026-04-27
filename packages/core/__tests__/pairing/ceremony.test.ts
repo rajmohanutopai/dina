@@ -15,6 +15,7 @@ import {
   clearPairingState,
   setNodeDID,
   verifyPairingIdentityBinding,
+  deriveAlphanumericCode,
 } from '../../src/pairing/ceremony';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { publicKeyToMultibase } from '../../src/identity/did';
@@ -38,16 +39,34 @@ describe('Device Pairing Ceremony', () => {
   });
 
   describe('generatePairingCode', () => {
-    it('generates a 6-digit numeric code', () => {
+    it('generates an 8-character Crockford-Base32 code', () => {
+      // Wire-compatible with Go's `deriveAlphanumericCode(secret, 8)`.
+      // Alphabet: 0-9, A-H, J-K, M-N, P-T, V-W, X-Y, Z (no I/L/O/U).
       const { code } = generatePairingCode();
-      expect(code).toMatch(/^\d{6}$/);
+      expect(code).toMatch(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
     });
 
-    it('code is in range 100000–999999', () => {
-      const { code } = generatePairingCode();
-      const num = parseInt(code, 10);
-      expect(num).toBeGreaterThanOrEqual(100000);
-      expect(num).toBeLessThanOrEqual(999999);
+    it('matches Go reference algorithm — fixture parity (32-byte 0x42 secret → "2YM43BGA")', () => {
+      // Bug-for-bug parity gate against
+      // `core/internal/adapter/pairing/pairing.go:deriveAlphanumericCode`.
+      // Computation: SHA-256 of 32 × 0x42 bytes → first 8 hash bytes
+      // (0x42 5e d4 e4 a3 6b 30 ea) mapped via `byte % 32` into the
+      // Crockford alphabet → indices 2, 30, 20, 4, 3, 11, 16, 10 →
+      // "2YM43BGA". A drift in alphabet ordering, hash function, or
+      // index width fails this test before any cross-stack pairing
+      // breaks silently in the field.
+      const secret = new Uint8Array(32).fill(0x42);
+      expect(deriveAlphanumericCode(secret, 8)).toBe('2YM43BGA');
+    });
+
+    it('alphabet excludes ambiguous I/L/O/U', () => {
+      // Burst of 100 codes — the alphabet is small enough that any
+      // banned character would surface within a handful of draws.
+      const banned = /[ILOU]/;
+      for (let i = 0; i < 100; i++) {
+        const { code } = generatePairingCode();
+        expect(code).not.toMatch(banned);
+      }
     });
 
     it('sets expiry in the future (~5 minutes)', () => {

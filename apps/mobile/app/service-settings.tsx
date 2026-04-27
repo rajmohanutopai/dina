@@ -25,7 +25,7 @@ import {
   Alert,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { colors, spacing, radius, shadows } from '../src/theme';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import {
   loadServiceConfig,
   saveServiceConfig,
@@ -368,14 +368,15 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   sectionHeader: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '600',
     letterSpacing: 1.2,
     color: colors.textMuted,
     marginBottom: spacing.xs,
     marginLeft: spacing.xs,
   },
   sectionSubtitle: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textSecondary,
     marginBottom: spacing.sm,
@@ -396,12 +397,13 @@ const styles = StyleSheet.create({
   },
   switchLabel: { flex: 1, marginRight: spacing.sm },
   rowTitle: {
+    fontFamily: fonts.sansMedium,
     fontSize: 15,
-    fontWeight: '500',
     color: colors.textPrimary,
     marginBottom: 2,
   },
   rowSubtitle: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textSecondary,
     lineHeight: 18,
@@ -418,13 +420,14 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   label: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '600',
     letterSpacing: 0.8,
     color: colors.textMuted,
     marginBottom: spacing.xs,
   },
   input: {
+    fontFamily: fonts.sans,
     fontSize: 15,
     color: colors.textPrimary,
     paddingVertical: 4,
@@ -446,9 +449,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   capabilityName: {
+    fontFamily: fonts.monoMedium,
     fontSize: 15,
     color: colors.textPrimary,
-    fontWeight: '500',
   },
   policyToggle: {
     flexDirection: 'row',
@@ -466,11 +469,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   policyText: {
+    fontFamily: fonts.sansMedium,
     fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: '500',
   },
   policyActiveText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.white,
   },
   pressed: { opacity: 0.7 },
@@ -485,12 +489,13 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   saveButtonText: {
+    fontFamily: fonts.sansSemibold,
     color: colors.white,
     fontSize: 16,
-    fontWeight: '600',
     letterSpacing: 0.3,
   },
   emptyText: {
+    fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textMuted,
     lineHeight: 18,
@@ -505,6 +510,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   errorText: {
+    fontFamily: fonts.sansMedium,
     color: colors.error,
     fontSize: 13,
     lineHeight: 18,
@@ -516,12 +522,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderLight,
   },
   discoveryCaveatTitle: {
+    fontFamily: fonts.sansSemibold,
     fontSize: 13,
-    fontWeight: '600',
     color: colors.error,
     marginBottom: 4,
   },
   discoveryCaveatBody: {
+    fontFamily: fonts.sans,
     fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 17,

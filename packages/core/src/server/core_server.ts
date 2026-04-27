@@ -28,6 +28,7 @@ import { registerMemoryRoutes } from './routes/memory';
 import { registerContactsRoutes } from './routes/contacts';
 import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
+import { registerIntentRoutes } from './routes/intent';
 
 import { CORE_DEFAULT_PORT } from '../constants';
 export const DEFAULT_PORT = CORE_DEFAULT_PORT;
@@ -89,6 +90,13 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // before the first request. Python parity:
   // `brain/src/service/scratchpad.py` + Go's scratchpad adapter.
   registerScratchpadRoutes(router);
+
+  // Agent intent validation — `/v1/intent/validate` + status poll.
+  // OpenClaw-side `dina validate` calls this; SAFE/BLOCKED resolve
+  // synchronously, MODERATE/HIGH create approval tasks the operator
+  // resolves from the mobile Approvals tab. See
+  // `packages/core/src/server/routes/intent.ts` for the full pipeline.
+  registerIntentRoutes(router);
 
   return router;
 }

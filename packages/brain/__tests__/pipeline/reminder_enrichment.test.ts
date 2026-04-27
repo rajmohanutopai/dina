@@ -6,13 +6,14 @@
 
 import { enrichReminder } from '../../src/pipeline/reminder_enrichment';
 import { storeItem, clearVaults } from '../../../core/src/vault/crud';
+import { DEFAULT_TEST_PERSONAS } from '../../../core/src/vault/crud';
 import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Reminder Context Enrichment', () => {
   beforeEach(() => {
     resetFactoryCounters();
-    clearVaults();
+    clearVaults([...DEFAULT_TEST_PERSONAS, 'work']);
     resetReminderState();
   });
 

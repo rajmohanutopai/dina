@@ -45,6 +45,16 @@ const DEFAULT_POLICY: Record<string, RiskLevel> = {
   send_large: 'MODERATE',
   delete_large: 'MODERATE',
   modify_settings: 'MODERATE',
+  // Docs-canonical aliases — `CAPABILITIES.md` shows
+  // `dina validate ... send_email` / `transfer_money` / `read_vault`.
+  // These names are what OpenClaw + sample agents actually pass over
+  // MCP, so the policy table needs to recognise them at the same risk
+  // levels the docs claim. Without these the resolver fell back to
+  // the `MODERATE` default for everything outside `purchase`/`payment`,
+  // making the BLOCKED scenario silently pass approval instead.
+  send_email: 'MODERATE',
+  transfer_money: 'HIGH',
+  read_vault: 'BLOCKED',
   purchase: 'HIGH',
   payment: 'HIGH',
   bulk_operation: 'HIGH',
