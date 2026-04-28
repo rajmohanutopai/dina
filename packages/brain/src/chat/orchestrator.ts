@@ -160,9 +160,19 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       lastId = msg.id;
     }
     msgId = lastId;
-  } else {
+  } else if (response !== '') {
     const msg = addDinaResponse(thread, response, sources.length > 0 ? sources : undefined);
     msgId = msg.id;
+  } else {
+    // Handler returned an empty response — the contract is "I posted
+    // my own message(s) (approval card, ask_pending placeholder, …)
+    // so don't append another bubble." Without this branch the chat
+    // surfaced a stray empty dina row above the handler's own row,
+    // and async /ask flows showed BOTH a "Working on it…" bubble AND
+    // the resolved answer instead of the placeholder morphing in
+    // place. Return id `''` because there's no orchestrator-owned
+    // message to reference.
+    msgId = '';
   }
 
   return {

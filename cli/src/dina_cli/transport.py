@@ -341,17 +341,38 @@ class MsgBoxTransport:
                    ms=int((time.monotonic() - t_send) * 1000))
 
             # 8. Wait for response with matching id.
+            #
+            # `websockets.sync.client.ClientConnection.recv()` takes its own
+            # `timeout=` argument; the underlying TCP `socket.settimeout()`
+            # is NOT honoured by the library's protocol-aware recv loop. We
+            # learnt that the hard way: passing only `ws.socket.settimeout()`
+            # made `ws.recv()` block indefinitely so a missed response chip
+            # showed up as a frozen CLI rather than a clean timeout.
             deadline = time.time() + self._timeout
             frames_seen = 0
             unmatched_ids: list[str] = []
             recv_err: Exception | None = None
             while time.time() < deadline:
+                remaining = max(deadline - time.time(), 0.01)
                 try:
-                    remaining = max(deadline - time.time(), 0.01)
-                    ws.socket.settimeout(remaining)
-                    data = ws.recv()
+                    data = ws.recv(timeout=remaining)
+                except TimeoutError as e:
+                    # websockets >= 12 raises TimeoutError when the per-recv
+                    # deadline elapses without a frame. Treat as "no more
+                    # frames inside the budget" and let the outer while-loop
+                    # exit cleanly into the timeout-trace path below.
+                    recv_err = e
+                    _trace(rid, "recv_timeout",
+                           frames_seen_before=frames_seen,
+                           elapsed_ms=int((time.monotonic() - t_start) * 1000))
+                    break
                 except Exception as e:
                     recv_err = e
+                    _trace(rid, "recv_exception",
+                           err_type=type(e).__name__,
+                           err=str(e)[:160],
+                           frames_seen_before=frames_seen,
+                           elapsed_ms=int((time.monotonic() - t_start) * 1000))
                     break
                 frames_seen += 1
                 if isinstance(data, (bytes, bytearray)):
@@ -366,6 +387,17 @@ class MsgBoxTransport:
                 env_type = env.get("type", "")
                 env_dir = env.get("direction", "")
                 env_from = env.get("from_did", "")
+                env_to = env.get("to_did", "")
+                # Log every frame we see to expose mismatches between
+                # what the Home Node sent and what we're matching against.
+                _trace(rid, "frame_recv", frame_no=frames_seen,
+                       type=env_type, dir=env_dir,
+                       id8=env_id[:8],
+                       from30=env_from[:30],
+                       to30=env_to[:30],
+                       expected_id8=rid[:8],
+                       expected_from30=self._homenode_did[:30],
+                       expected_to30=did[:30])
                 if (env_type == "rpc" and env_dir == "response"
                         and env_id == rid
                         and env_from == self._homenode_did

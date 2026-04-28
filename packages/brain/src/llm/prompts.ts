@@ -362,7 +362,8 @@ Think about what a thoughtful personal assistant would set up:
 - For a meeting: a reminder 1 hour before.
 - For someone arriving: ONE reminder that bundles every relevant fact about them from the vault.
 
-TODAY IS: {{today}}
+RIGHT NOW IS: {{now_local}}
+NOW (Unix milliseconds, with underscores for readability — strip them before arithmetic): {{now_ms_grouped}}
 Current timezone: {{timezone}}
 
 THE EVENT (this is what the user stored — your reminders MUST be about THIS):
@@ -372,13 +373,32 @@ THE EVENT (this is what the user stored — your reminders MUST be about THIS):
 Related vault context (supplementary — use to enrich reminders, NEVER to invent reminders unrelated to the event above):
 {{vault_context}}
 
-⚠️ CRITICAL DATE RULE: every due_at you emit MUST be strictly AFTER {{today}}. Before you commit a due_at, check: is this timestamp greater than TODAY? If not, fix it.
+How to compute due_at (let NOW_MS be the value above with underscores stripped):
+- "in N minutes" → due_at = NOW_MS + N * 60000  (this IS a valid future time — emit it, do not return [])
+- "in N hours"   → due_at = NOW_MS + N * 3600000
+- "today at HH:MM" / "at HH:MM" without a date → use today's date in {{timezone}}
+- "tomorrow at HH:MM" → tomorrow's date in {{timezone}}
+- A specific date+time → resolve to {{timezone}}, then to Unix milliseconds
+- For a moment that's already past in {{timezone}}, only roll forward when the event is RECURRING (birthday / anniversary) — see rule below.
+
+Worked example — short-horizon arrival from a peer:
+  Body: "I am coming in 15 minutes"
+  Vault context (sender + facts): "Sender: Alonso (friend)\n- Alonso prefers matcha lattes — keep one ready when he visits"
+  → Emit ONE reminder. due_at = NOW_MS + 15 * 60000. kind = "arrival".
+    message = "Alonso is arriving in 15 minutes. He prefers matcha lattes — you may want to have one ready."
+  → Do NOT return {"reminders": []} — the event is in the future, the sender is named, and the vault carries call-to-action context.
+
+Worked example — recognising a JSON-shaped body:
+  Body: \`{"text":"I am coming at 5 pm"}\`
+  Treat the inner "text" as the user-visible event text. Don't emit zero reminders just because the body is wrapped as JSON.
+
+⚠️ CRITICAL DATE RULE: every due_at you emit MUST be strictly greater than NOW_MS (the Unix-ms value above with underscores stripped). Compare numbers, not date strings — the day part is irrelevant, only the millisecond ordering matters. Do NOT roll a one-off event ("in 15 minutes", "at 5pm today") to tomorrow just because the day is already in progress; the only time you advance the day is for a recurring event whose anniversary already passed this year.
 
 For recurring events (birthdays, anniversaries) stated without a year — and ALL birthdays without a year ARE recurring:
-  1. Compare the stated month+day against TODAY.
+  1. Compare the stated month+day against today's month+day in {{timezone}}.
   2. If the month+day this year is already in the past OR is today, use NEXT year.
-  3. Example: TODAY=2026-04-25 and the user says "Emma's birthday is March 15". March 15, 2026 has passed → use March 15, 2027.
-  4. Example: TODAY=2026-04-25 and the user says "Sam's birthday is November 7". November 7, 2026 is still ahead → use 2026.
+  3. Example: today is 2026-04-25 in {{timezone}} and the user says "Emma's birthday is March 15". March 15, 2026 has passed → use March 15, 2027.
+  4. Example: today is 2026-04-25 in {{timezone}} and the user says "Sam's birthday is November 7". November 7, 2026 is still ahead → use 2026.
 
 Create reminders. Each reminder has:
 - due_at: Unix timestamp in milliseconds for when the reminder should fire
@@ -389,8 +409,8 @@ Respond with ONLY a JSON object:
 {"reminders": [{"due_at": <unix_ms>, "message": "<reminder text>", "kind": "<kind>"}]}
 
 Rules:
-- Don't create reminders for dates in the past.
-- Use the user's timezone: {{timezone}}.
+- Don't create reminders for moments that have already passed (due_at ≤ NOW_MS).
+- Use the user's timezone: {{timezone}} when interpreting "today", "tomorrow", "tonight", or any wall-clock time without a date.
 - Tone: polite and informative, never emotional or commanding. State what's happening, when, and any useful context. No cheerleading, no exclamation marks, no motivational language. Suggest, don't order.
   Good: "Your gym session is in 30 minutes."
   Good: "Emma's 7th birthday is tomorrow. She likes dinosaurs and painting."
@@ -399,14 +419,13 @@ Rules:
   Bad: "Don't forget Emma's big day!"
   Bad: "Pack bag tonight."
 - If the event is today or tomorrow, still create useful reminders for remaining time slots that haven't passed.
-- When someone is arriving or you are meeting someone, create ONE reminder that includes ALL relevant context about that person from the vault. Do not split facts across multiple reminders — combine them into one message so the user gets a single, complete briefing.
-  Good: "Alonso is arriving in 10 minutes. He likes cold brew coffee. His mother was unwell last week — you may want to ask how she is doing."
+- When someone is arriving or you are meeting someone, create ONE reminder that includes ALL relevant context about that person from the vault. Do not split facts across multiple reminders — combine them into one message so the user gets a single, complete briefing. Treat preferences in vault context as call-to-action context — if a vault note says "Alonso likes cold brew", the arrival reminder should suggest preparing it ("you may want to have it ready").
+  Good: "Alonso is arriving in 10 minutes. He likes cold brew coffee — you may want to have one ready. His mother was unwell last week — you may want to ask how she is doing."
   Bad: two separate reminders, one about coffee and one about his mother.
 - The vault context may include a "Sender: <name> (<relationship>)" line at the top — when present, USE THAT NAME in the reminder message instead of "Someone" or the raw DID. Example: a Sender line "Sender: Sancho Garcia (brother)" with body "I am arriving in 5 minutes" → "Sancho Garcia is arriving in 5 minutes. ..."
 - NEVER fabricate events, dates, or details not mentioned in the item or vault context.
 - NEVER invent preferences, relationships, or facts — only use what is explicitly stated.
-- If timezone is provided, compute due_at in that timezone. Otherwise use UTC.
-- Never create a reminder with due_at ≤ TODAY. If the only candidate date is past and the event is not recurring, return {"reminders": []}.`;
+- Never create a reminder with due_at ≤ NOW_MS. If the only candidate date is past and the event is not recurring, return {"reminders": []}.`;
 
 /**
  * NUDGE_ASSEMBLE — Build a reconnection nudge for a contact.

@@ -245,10 +245,14 @@ describe('Prompt Registry', () => {
   });
 
   describe('REMINDER_PLAN', () => {
-    it('contains today placeholder', () => {
-      // Renamed from {{event_date}} → {{today}} when the prompt switched
-      // to "what is now" semantics (year-bump for past birthdays).
-      expect(REMINDER_PLAN).toContain('{{today}}');
+    it('contains "what is now" placeholders', () => {
+      // Lineage: {{event_date}} → {{today}} → {{now_local}} +
+      // {{now_ms_grouped}}. Localised string drives the LLM's
+      // year-bump/past-birthday reasoning; underscored Unix-ms is the
+      // arithmetic anchor that survives PII scrubbing (the bare 13-digit
+      // form was getting masked as a phone number — see commit notes).
+      expect(REMINDER_PLAN).toContain('{{now_local}}');
+      expect(REMINDER_PLAN).toContain('{{now_ms_grouped}}');
     });
 
     it('defines reminder JSON output', () => {

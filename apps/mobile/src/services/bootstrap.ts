@@ -50,6 +50,7 @@ import { LeaseExpirySweeper } from '@dina/core/src/workflow/lease_expiry_sweeper
 import { BridgePendingSweeper } from '@dina/core/src/workflow/bridge_pending_sweeper';
 import { StagingDrainScheduler } from '@dina/brain/src/staging/scheduler';
 import type { StagingDrainOptions } from '@dina/brain/src/staging/drain';
+import { installWorkflowApprovalInboxBridge } from '@dina/brain/src/notifications/bridges';
 import {
   LocalDelegationRunner,
   type LocalCapabilityRunner,
@@ -416,6 +417,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const coreGlobals = options.coreGlobals !== false;
   const isProvider = options.role === 'provider' || options.role === 'both';
 
+  // Disposer for the workflow→inbox bridge — captured at install-time so
+  // the dispose() path can detach cleanly when the node tears down.
+  let workflowApprovalBridgeDispose: (() => void) | null = null;
+
   // Core-globals installation is DEFERRED to start() so an unstarted
   // node doesn't mutate process state. Issue #8. The closure captures
   // everything it needs; start() invokes it; dispose() runs the
@@ -423,6 +428,23 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const installCoreGlobals = (): void => {
     if (!coreGlobals) return;
     setWorkflowRepository(options.workflowRepository);
+
+    // Mirror kind=approval workflow tasks into the unified Notifications
+    // inbox. `installApprovalInboxBridge` (in boot_capabilities) only
+    // covers approvals minted via `ApprovalManager` (the persona-guard
+    // path). The two surfaces that go directly to `workflow_tasks` —
+    // `/v1/agent/validate` (intent_validation) and service.query review
+    // policy — bypass the manager, so without this bridge their cards
+    // render in the dedicated /approvals screen but never surface in the
+    // unified Notifications screen's "Approvals" filter. Wired only when
+    // a workflow repo is present (multi-node tests with workflowRepository:
+    // undefined opt out cleanly).
+    if (options.workflowRepository !== undefined) {
+      workflowApprovalBridgeDispose = installWorkflowApprovalInboxBridge(
+        options.workflowRepository,
+      );
+    }
+
     if (options.serviceConfigRepository !== undefined) {
       setServiceConfigRepository(options.serviceConfigRepository);
     }
@@ -1127,6 +1149,20 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           /* swallow */
         }
       }
+      // Detach the workflow→inbox bridge first — once the workflow repo
+      // is unwired, the bridge has nothing to listen to, but we still
+      // explicitly call the disposer so the closure releases its
+      // listener-set reference (avoids holding the repo alive past
+      // dispose for diagnostics tools that look at retained heap).
+      if (workflowApprovalBridgeDispose !== null) {
+        try {
+          workflowApprovalBridgeDispose();
+        } catch {
+          /* swallow — observability mustn't break teardown */
+        }
+        workflowApprovalBridgeDispose = null;
+      }
+
       // Release Core module-level singletons — ONLY the ones this node
       // claimed. A node constructed with `coreGlobals: false` never
       // wrote to the singletons, so tearing them down here would clobber

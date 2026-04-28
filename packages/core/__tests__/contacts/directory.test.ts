@@ -25,6 +25,10 @@ import {
   type Contact,
 } from '../../src/contacts/directory';
 import { setContactRepository, type ContactRepository } from '../../src/contacts/repository';
+import {
+  setPeopleRepository,
+  type PeopleRepository,
+} from '../../src/people/repository';
 
 describe('Contact Directory', () => {
   beforeEach(() => resetContactDirectory());
@@ -99,6 +103,70 @@ describe('Contact Directory', () => {
       addContact('did:plc:alice', 'Alice');
       addContact('did:plc:bob', 'Bob');
       expect(listContacts()).toHaveLength(2);
+    });
+
+    it('lazy-hydrates from SQL when in-memory cache misses', () => {
+      // Simulates the JS-bundle reload race on mobile: the in-memory
+      // `contacts` Map is empty (Cmd+R cleared it), but the SQL
+      // contacts repo is wired and has the row from a prior session.
+      // `getContact` should fall back to the repo, hydrate the cache,
+      // and return the contact — not return null and let the receive
+      // pipeline classify the sender as `senderTrust='unknown'`.
+      const stub: Contact = {
+        did: 'did:plc:carol',
+        displayName: 'Carol',
+        trustLevel: 'verified',
+        sharingTier: 'summary',
+        relationship: 'friend',
+        dataResponsibility: 'external',
+        aliases: ['carol'],
+        notes: '',
+        createdAt: 100,
+        updatedAt: 100,
+      };
+      let getCalls = 0;
+      const repo = {
+        add: () => undefined,
+        get: (did: string) => {
+          getCalls++;
+          return did === stub.did ? stub : null;
+        },
+        list: () => [stub],
+        update: () => undefined,
+        remove: () => true,
+        addAlias: () => undefined,
+        removeAlias: () => undefined,
+        resolveAlias: () => null,
+        getAliases: () => stub.aliases,
+        setPreferredFor: () => undefined,
+        getPreferredFor: () => [],
+        findByPreferredFor: () => [],
+      } as unknown as ContactRepository;
+      setContactRepository(repo);
+      try {
+        // First lookup: cache miss → hits SQL → returns hydrated contact.
+        const first = getContact('did:plc:carol');
+        expect(first).not.toBeNull();
+        expect(first!.trustLevel).toBe('verified');
+        expect(getCalls).toBe(1);
+        // Second lookup: cache hit → no additional SQL call.
+        const second = getContact('did:plc:carol');
+        expect(second).not.toBeNull();
+        expect(getCalls).toBe(1);
+        // Unknown-DID miss with repo wired returns null without a poison cache entry.
+        expect(getContact('did:plc:nobody')).toBeNull();
+        expect(getCalls).toBe(2);
+        expect(getContact('did:plc:nobody')).toBeNull();
+        expect(getCalls).toBe(3);
+      } finally {
+        setContactRepository(null);
+      }
+    });
+
+    it('returns null without throwing when no SQL repo is wired (cold boot)', () => {
+      // Pure-in-memory mode: hydrate has nothing to fall back to.
+      // `getContact` must return null cleanly.
+      expect(getContact('did:plc:nowhere')).toBeNull();
     });
   });
 
@@ -682,6 +750,49 @@ describe('Contact Directory', () => {
       setPreferredFor: Array<{ did: string; categories: readonly string[] }>;
     }
 
+    /**
+     * Build a stubbed PeopleRepository for tests that exercise the
+     * contact↔person mirror path. Default impls throw on any
+     * unexpected call so a regression that grows the contract gets
+     * caught by an obviously-wrong test failure rather than a silent
+     * pass; callers override the methods they care about.
+     */
+    function makeStubPeopleRepo(overrides: Partial<PeopleRepository>): PeopleRepository {
+      const stub = (name: string) => () => {
+        throw new Error(`unexpected PeopleRepository.${name} call in this test`);
+      };
+      return {
+        applyExtraction: stub('applyExtraction'),
+        getPerson: () => null,
+        listPeople: () => [],
+        findByContactDid: () => null,
+        confirmPerson: stub('confirmPerson'),
+        rejectPerson: stub('rejectPerson'),
+        confirmSurface: stub('confirmSurface'),
+        rejectSurface: stub('rejectSurface'),
+        detachSurface: stub('detachSurface'),
+        mergePeople: stub('mergePeople'),
+        deletePerson: stub('deletePerson'),
+        linkContact: stub('linkContact'),
+        upsertContactPerson: stub('upsertContactPerson'),
+        resolveConfirmedSurfaces: () => new Map(),
+        clearExcerptsForItem: () => 0,
+        garbageCollect: () => 0,
+        ...overrides,
+      };
+    }
+
+    function makeSpyPeopleRepo(
+      sink: Array<{ did: string; displayName: string }>,
+    ): PeopleRepository {
+      return makeStubPeopleRepo({
+        upsertContactPerson: (did: string, displayName: string) => {
+          sink.push({ did, displayName });
+          return `person-${did}`;
+        },
+      });
+    }
+
     function makeSpyRepo(): { repo: ContactRepository; spy: RepoSpy } {
       const spy: RepoSpy = {
         add: [],
@@ -782,6 +893,57 @@ describe('Contact Directory', () => {
         did: 'did:plc:alice',
         categories: ['dentist'],
       });
+    });
+
+    it('addContact → people repo.upsertContactPerson (when wired, non-blocked)', () => {
+      const { repo: contactRepo } = makeSpyRepo();
+      setContactRepository(contactRepo);
+      const peopleSpy: Array<{ did: string; displayName: string }> = [];
+      const peopleRepo = makeSpyPeopleRepo(peopleSpy);
+      setPeopleRepository(peopleRepo);
+
+      addContact('did:plc:sancho', 'Sancho', 'verified');
+
+      expect(peopleSpy).toEqual([{ did: 'did:plc:sancho', displayName: 'Sancho' }]);
+      setPeopleRepository(null);
+    });
+
+    it('addContact does NOT mirror blocked contacts into the people graph', () => {
+      const { repo: contactRepo } = makeSpyRepo();
+      setContactRepository(contactRepo);
+      const peopleSpy: Array<{ did: string; displayName: string }> = [];
+      setPeopleRepository(makeSpyPeopleRepo(peopleSpy));
+
+      addContact('did:plc:bad', 'Bad Actor', 'blocked');
+
+      expect(peopleSpy).toEqual([]); // gate skipped, same rationale as egress gate
+      setPeopleRepository(null);
+    });
+
+    it('addContact succeeds when people-graph mirror throws (fail-soft enrichment)', () => {
+      const { repo: contactRepo } = makeSpyRepo();
+      setContactRepository(contactRepo);
+      const throwingPeople: PeopleRepository = makeStubPeopleRepo({
+        upsertContactPerson: () => {
+          throw new Error('people db locked');
+        },
+      });
+      setPeopleRepository(throwingPeople);
+
+      const c = addContact('did:plc:alice', 'Alice', 'verified');
+      expect(c.did).toBe('did:plc:alice');
+      // Contact still landed in memory + the contact-repo write-through.
+      expect(getContact('did:plc:alice')?.displayName).toBe('Alice');
+      setPeopleRepository(null);
+    });
+
+    it('addContact is a no-op on the people graph when no people repo is wired', () => {
+      const { repo: contactRepo } = makeSpyRepo();
+      setContactRepository(contactRepo);
+      setPeopleRepository(null);
+      // Should not throw — the test would fail if the directory
+      // assumed a wired people repo.
+      expect(() => addContact('did:plc:alice', 'Alice', 'verified')).not.toThrow();
     });
 
     it('repo failure surfaces — memory does not silently diverge', () => {

@@ -76,6 +76,29 @@ export interface PeopleRepository {
   deletePerson(personId: string): boolean;
   linkContact(personId: string, contactDid: string): boolean;
   /**
+   * Upsert a person directly from a contact-directory entry —
+   * `(did, displayName)` come from the People UI's "Add Contact"
+   * form, not from an LLM. Creates a confirmed Person row bound to
+   * the DID with `displayName` as a confirmed name surface, OR
+   * reuses the existing person if one already carries that DID
+   * (idempotent — adding the same contact twice doesn't duplicate).
+   *
+   * Why this lives next to `applyExtraction` rather than going
+   * through it: `applyExtraction`'s LLM-shaped contract assigns a
+   * random `person_id` and never touches `contact_did`, so a UI-
+   * driven contact-add via that path would need a follow-up
+   * `linkContact` and an out-of-band person-id lookup. This single
+   * call captures the UI intent — "this exact DID is this exact
+   * person" — without round-tripping through extraction semantics.
+   *
+   * Source item id used for the surface is `contact:<did>` so a
+   * later `clearExcerptsForItem` for that synthetic id is safe and
+   * doesn't collide with vault-item ids.
+   *
+   * Returns the personId of the upserted (or pre-existing) row.
+   */
+  upsertContactPerson(did: string, displayName: string): string;
+  /**
    * Returns a map keyed by normalized surface. Multiple people may
    * share a normalized name (e.g. two confirmed contacts both named
    * "Alex"); the value is every confirmed surface that resolves to
@@ -336,6 +359,78 @@ export class SQLitePeopleRepository implements PeopleRepository {
       [contactDid, nowSec, personId],
     );
     return true;
+  }
+
+  upsertContactPerson(did: string, displayName: string): string {
+    if (did === '') throw new Error('upsertContactPerson: did is required');
+    const trimmedName = displayName.trim();
+    if (trimmedName === '') {
+      throw new Error('upsertContactPerson: displayName is required');
+    }
+    const nowSec = Math.floor(this.nowFn() / 1000);
+    const norm = normalizeAlias(trimmedName);
+
+    let personId = '';
+    this.db.transaction(() => {
+      // 1. Reuse an existing row already bound to this DID (the
+      //    typical "edit display name" case + the idempotent "add
+      //    same contact twice" case both land here).
+      const existing = this.db.query(
+        `SELECT person_id FROM people
+         WHERE contact_did = ? AND status != 'rejected'
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [did],
+      );
+      if (existing.length > 0 && typeof existing[0].person_id === 'string') {
+        personId = existing[0].person_id;
+        // Refresh canonical_name + status; user-driven edits should
+        // win over a stale row. Status flips to confirmed if the
+        // person was previously suggested (an LLM-extracted match
+        // the user just promoted by saving as a contact).
+        this.db.execute(
+          `UPDATE people SET
+             canonical_name = ?,
+             status = 'confirmed',
+             created_from = CASE WHEN created_from = 'llm' THEN 'user' ELSE created_from END,
+             updated_at = ?
+           WHERE person_id = ?`,
+          [trimmedName, nowSec, personId],
+        );
+      } else {
+        // 2. Otherwise, create a new confirmed person bound to the
+        //    DID. We do NOT try to reuse an LLM-suggested person
+        //    that happens to share the canonical name — auto-merging
+        //    on a name collision is risky and the dedicated
+        //    `mergePeople` API exists for that.
+        personId = newPersonId();
+        this.db.execute(
+          `INSERT INTO people (person_id, canonical_name, contact_did,
+            relationship_hint, status, created_from, created_at, updated_at)
+           VALUES (?, ?, ?, '', 'confirmed', 'user', ?, ?)`,
+          [personId, trimmedName, did, nowSec, nowSec],
+        );
+      }
+
+      // 3. Confirmed name surface — the reminder planner expands
+      //    inbound D2D FTS queries with every confirmed surface, so
+      //    notes saved against the contact's display name surface
+      //    even when the message body never says the name.
+      this.upsertSurface({
+        personId,
+        surface: trimmedName,
+        normalizedSurface: norm,
+        surfaceType: 'name',
+        status: SURFACE_STATUS_CONFIRMED,
+        confidence: 'high',
+        sourceItemId: `contact:${did}`,
+        sourceExcerpt: '',
+        extractorVersion: 'contact-directory',
+        nowSec,
+      });
+    });
+
+    return personId;
   }
 
   resolveConfirmedSurfaces(): Map<string, PersonSurface[]> {

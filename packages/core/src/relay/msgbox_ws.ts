@@ -46,7 +46,15 @@ const MAX_DELAY_MS = 60_000; // 60s cap (matching Go)
 // ---------------------------------------------------------------
 
 export interface WSLike {
-  send(data: string): void;
+  /**
+   * Send a frame. The MsgBox relay only processes Binary frames after the
+   * auth handshake (`msgbox/internal/handler.go:105`); Text frames are
+   * silently dropped. After auth, all envelope sends MUST be binary, so
+   * call sites pass `Uint8Array` / `ArrayBuffer`. String sends are still
+   * permitted for the auth_response handshake itself, which the relay
+   * accepts as text.
+   */
+  send(data: string | Uint8Array | ArrayBuffer): void;
   close(): void;
   onopen: (() => void) | null;
   onmessage: ((event: { data: string }) => void) | null;
@@ -233,13 +241,37 @@ export function isAuthenticated(): boolean {
   return connected && authenticated;
 }
 
-/** Send a raw envelope over the WebSocket. */
+/**
+ * Send a raw envelope over the WebSocket as a **Binary** frame.
+ *
+ * The MsgBox relay only forwards binary frames after the auth handshake;
+ * text frames are silently dropped (`msgbox/internal/handler.go:105`).
+ * Building the JSON via `TextEncoder().encode()` produces a `Uint8Array`,
+ * which RN/browser/Node `WebSocket.send` implementations all surface as a
+ * binary frame. Sending the raw string would surface as a text frame and
+ * the response would never reach the recipient.
+ */
 export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
-  if (!ws || !connected || !authenticated) return false;
+  if (!ws || !connected || !authenticated) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] sendEnvelope DROP type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} state ws=${ws !== null} conn=${connected} auth=${authenticated}`,
+    );
+    return false;
+  }
   try {
-    ws.send(JSON.stringify(envelope));
+    const wire = new TextEncoder().encode(JSON.stringify(envelope));
+    ws.send(wire);
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] sendEnvelope OK type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} to=${envelope.to_did?.slice(0, 30)} bytes=${wire.byteLength}`,
+    );
     return true;
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] sendEnvelope THREW type=${envelope.type} id=${envelope.id?.slice(0, 8)} err=${(err as Error).message}`,
+    );
     return false;
   }
 }
@@ -305,6 +337,8 @@ function doConnect(url: string): void {
   ws.onopen = () => {
     connected = true;
     reconnectAttempt = 0; // reset backoff on successful connect
+    // eslint-disable-next-line no-console
+    console.error(`[WS] onopen url=${url}`);
     // Wait for auth_challenge from server — handled in onmessage
   };
 
@@ -332,7 +366,11 @@ function doConnect(url: string): void {
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (ev) => {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] onclose code=${ev?.code ?? '-'} reason=${ev?.reason ?? '-'} wasAuth=${authenticated}`,
+    );
     connected = false;
     authenticated = false;
     authChallengeSeen = false;
@@ -340,7 +378,15 @@ function doConnect(url: string): void {
     if (shouldReconnect) scheduleReconnect();
   };
 
-  ws.onerror = () => {
+  ws.onerror = (ev) => {
+    // ev is `unknown` per WSLike — RN polyfill surfaces { message }, browser
+    // surfaces an Event with { type }. Best-effort string-coerce both.
+    const msg =
+      ev !== null && typeof ev === 'object' && 'message' in ev
+        ? String((ev as { message?: unknown }).message ?? '')
+        : '';
+    // eslint-disable-next-line no-console
+    console.error(`[WS] onerror msg=${msg !== '' ? msg : '(no message)'}`);
     // Error triggers close, which triggers reconnect
   };
 }
@@ -351,21 +397,38 @@ function handleFrameText(text: string): void {
   try {
     msg = JSON.parse(text) as { type?: string } & Record<string, unknown>;
   } catch {
+    // eslint-disable-next-line no-console
+    console.error(`[WS] frame_unparseable preview=${text.slice(0, 120)}`);
     return;
   }
   if (msg.type === 'auth_challenge' && !authenticated) {
+    // eslint-disable-next-line no-console
+    console.error('[WS] frame=auth_challenge — replying');
     handleAuthChallenge(msg as unknown as { nonce: string; ts: number });
     return;
   }
   if (msg.type === 'auth_success') {
+    // eslint-disable-next-line no-console
+    console.error('[WS] frame=auth_success — authenticated');
     authenticated = true;
     return;
   }
   if (!authenticated && isEnvelopeLike(msg) && authChallengeSeen) {
+    // eslint-disable-next-line no-console
+    console.error('[WS] envelope arrived pre-auth_success — flipping to authenticated');
     authenticated = true;
   }
   if (authenticated) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] dispatch type=${msg.type} id=${typeof msg.id === 'string' ? msg.id.slice(0, 8) : '-'} dir=${typeof msg.direction === 'string' ? msg.direction : '-'} from=${typeof msg.from_did === 'string' ? msg.from_did.slice(0, 30) : '-'}`,
+    );
     dispatchEnvelope(msg as unknown as MsgBoxEnvelope);
+  } else {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] frame dropped pre-auth type=${msg.type} authChalSeen=${authChallengeSeen}`,
+    );
   }
 }
 
@@ -457,17 +520,40 @@ function isEnvelopeLike(msg: unknown): msg is MsgBoxEnvelope {
 
 function dispatchEnvelope(env: MsgBoxEnvelope): void {
   // Finding #9: Validate to_did matches our DID — reject misdirected envelopes
-  if (env.to_did && homeNodeDID && env.to_did !== homeNodeDID) return;
+  if (env.to_did && homeNodeDID && env.to_did !== homeNodeDID) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] dispatch DROP misdirected to=${env.to_did.slice(0, 30)} self=${homeNodeDID.slice(0, 30)} id=${env.id?.slice(0, 8)}`,
+    );
+    return;
+  }
 
   // Finding #9: Reject expired envelopes (expires_at is unix seconds)
-  if (env.expires_at && env.expires_at < Math.floor(Date.now() / 1000)) return;
+  if (env.expires_at && env.expires_at < Math.floor(Date.now() / 1000)) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WS] dispatch DROP expired exp=${env.expires_at} now=${Math.floor(Date.now() / 1000)} id=${env.id?.slice(0, 8)}`,
+    );
+    return;
+  }
 
   switch (env.type) {
     case 'd2d':
       if (d2dHandler) d2dHandler(env);
+      else
+        // eslint-disable-next-line no-console
+        console.error(`[WS] dispatch DROP no d2dHandler id=${env.id?.slice(0, 8)}`);
       break;
     case 'rpc':
       if (env.direction === 'request' && rpcHandler) rpcHandler(env);
+      else if (env.direction === 'request')
+        // eslint-disable-next-line no-console
+        console.error(`[WS] dispatch DROP no rpcHandler id=${env.id?.slice(0, 8)}`);
+      else
+        // eslint-disable-next-line no-console
+        console.error(
+          `[WS] dispatch IGNORE rpc dir=${env.direction ?? '-'} (home node only routes requests) id=${env.id?.slice(0, 8)}`,
+        );
       break;
     case 'cancel':
       if (cancelHandler) cancelHandler(env);

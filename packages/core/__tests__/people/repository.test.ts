@@ -422,6 +422,76 @@ describe('SQLitePeopleRepository', () => {
     });
   });
 
+  describe('upsertContactPerson', () => {
+    it('creates a confirmed person + name surface bound to the DID', () => {
+      const did = 'did:plc:abc123';
+      const personId = repo.upsertContactPerson(did, 'Sancho');
+      expect(personId).toMatch(/^person-/);
+
+      const person = repo.findByContactDid(did);
+      expect(person).not.toBeNull();
+      expect(person?.canonicalName).toBe('Sancho');
+      expect(person?.contactDid).toBe(did);
+      expect(person?.status).toBe('confirmed');
+      expect(person?.createdFrom).toBe('user');
+
+      // The display name should be a confirmed surface so the
+      // reminder planner picks it up via FTS expansion.
+      const surfaces = repo.resolveConfirmedSurfaces();
+      const sanchoSurfaces = surfaces.get('sancho') ?? [];
+      expect(sanchoSurfaces).toHaveLength(1);
+      expect(sanchoSurfaces[0].personId).toBe(personId);
+      expect(sanchoSurfaces[0].surface).toBe('Sancho');
+      expect(sanchoSurfaces[0].surfaceType).toBe('name');
+      expect(sanchoSurfaces[0].confidence).toBe('high');
+    });
+
+    it('is idempotent — adding the same DID twice returns the same person id', () => {
+      const did = 'did:plc:abc123';
+      const id1 = repo.upsertContactPerson(did, 'Sancho');
+      const id2 = repo.upsertContactPerson(did, 'Sancho');
+      expect(id2).toBe(id1);
+      // Still exactly one row + one surface.
+      expect(repo.listPeople().filter((p) => p.contactDid === did)).toHaveLength(1);
+      const surfaces = repo.resolveConfirmedSurfaces();
+      expect(surfaces.get('sancho')?.length).toBe(1);
+    });
+
+    it('updates canonical name on rename — second call with new display name overwrites', () => {
+      const did = 'did:plc:abc123';
+      const id1 = repo.upsertContactPerson(did, 'Sancho');
+      const id2 = repo.upsertContactPerson(did, 'Sancho García');
+      expect(id2).toBe(id1);
+      const person = repo.findByContactDid(did);
+      expect(person?.canonicalName).toBe('Sancho García');
+    });
+
+    it('rejects empty did or display name', () => {
+      expect(() => repo.upsertContactPerson('', 'X')).toThrow(/did is required/);
+      expect(() => repo.upsertContactPerson('did:plc:x', '')).toThrow(/displayName is required/);
+      expect(() => repo.upsertContactPerson('did:plc:x', '   ')).toThrow(/displayName is required/);
+    });
+
+    it('does not auto-merge with an LLM-suggested person sharing the canonical name', () => {
+      // LLM-extracted "Sancho" with no DID binding.
+      repo.applyExtraction(
+        ext({
+          sourceItemId: 'item-llm',
+          results: [lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'high' }])],
+        }),
+      );
+      const did = 'did:plc:abc123';
+      const contactPersonId = repo.upsertContactPerson(did, 'Sancho');
+
+      const all = repo.listPeople();
+      expect(all.length).toBeGreaterThanOrEqual(2);
+      // The contact-derived person owns the DID; the LLM one stays unlinked.
+      const linked = all.filter((p) => p.contactDid === did);
+      expect(linked).toHaveLength(1);
+      expect(linked[0].personId).toBe(contactPersonId);
+    });
+  });
+
   describe('resolveConfirmedSurfaces', () => {
     it('returns multiple people sharing a normalized surface', () => {
       // Two confirmed Alices.

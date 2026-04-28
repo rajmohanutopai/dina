@@ -38,11 +38,19 @@ import {
 } from '../../src/auth/caller_type';
 import {
   InMemoryWorkflowRepository,
+  SQLiteWorkflowRepository,
   setWorkflowRepository,
   getWorkflowRepository,
 } from '../../src/workflow/repository';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { randomBytes as nodeRandomBytes } from 'node:crypto';
 
 interface Actor {
   did: string;
@@ -322,5 +330,170 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
         requires_approval: false,
       });
     });
+  });
+});
+
+// ---------------------------------------------------------------
+// SQLite-backed contract suite
+// ---------------------------------------------------------------
+//
+// The suite above runs against `InMemoryWorkflowRepository`, which has no
+// CHECK constraints — so any mismatch between what the route writes and
+// what the SQL schema accepts (e.g. an `origin` value missing from the
+// CHECK list) sails through Jest and only blows up on a real device. This
+// suite drives the full route → router → SQLite path so the column-level
+// contract is exercised end-to-end. Catches the regression that stamped
+// `origin: 'agent'` against a schema that omitted `'agent'` from
+// `CHECK (origin IN (…))`, returning a 500 mid-flight on iOS.
+
+describe('agent intent validation — SQLite-backed contract', () => {
+  let agent: Actor;
+  let router: ReturnType<typeof createCoreRouter>;
+  let adapter: NodeSQLiteAdapter;
+  let tmpDir: string;
+  let dbPath: string;
+
+  beforeEach(() => {
+    resetMiddlewareState();
+    resetCallerTypeState();
+
+    const brain = makeActor(TEST_ED25519_SEED);
+    agent = makeActor(randomBytes(32));
+
+    registerPublicKeyResolver((d) => {
+      if (d === brain.did) return brain.pub;
+      if (d === agent.did) return agent.pub;
+      return null;
+    });
+    registerService(brain.did, 'brain');
+    registerDeviceDID(agent.did, 'agent-1');
+    setDeviceRoleResolver((d) => (d === agent.did ? 'agent' : null));
+
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-intent-sqlite-'));
+    dbPath = path.join(tmpDir, 'identity.sqlite');
+    adapter = new NodeSQLiteAdapter({
+      path: dbPath,
+      passphraseHex: nodeRandomBytes(32).toString('hex'),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    setWorkflowRepository(new SQLiteWorkflowRepository(adapter));
+    router = createCoreRouter();
+  });
+
+  afterEach(() => {
+    setWorkflowRepository(null);
+    try {
+      adapter.close();
+    } catch {
+      /* idempotent */
+    }
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+    resetMiddlewareState();
+    resetCallerTypeState();
+  });
+
+  async function send(
+    method: 'GET' | 'POST',
+    p: string,
+    body?: unknown,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const bodyBytes =
+      body === undefined ? new Uint8Array(0) : new TextEncoder().encode(JSON.stringify(body));
+    const headers = signRequest(method, p, '', bodyBytes, agent.seed, agent.did);
+    const req: CoreRequest = {
+      method,
+      path: p,
+      query: {},
+      params: {},
+      headers: {
+        'x-did': headers['X-DID']!,
+        'x-timestamp': headers['X-Timestamp']!,
+        'x-nonce': headers['X-Nonce']!,
+        'x-signature': headers['X-Signature']!,
+        'content-type': 'application/json',
+      },
+      body: body === undefined ? undefined : body,
+      rawBody: bodyBytes,
+    };
+    const res = await router.handle(req);
+    return { status: res.status, body: (res.body as Record<string, unknown>) ?? {} };
+  }
+
+  function intent(action: string, target: string, extra: Record<string, unknown> = {}): unknown {
+    return { type: 'agent_intent', action, target, ...extra };
+  }
+
+  it('MODERATE intent persists with origin=agent in real SQLite', async () => {
+    const res = await send('POST', '/v1/agent/validate', intent('send_email', 'send X to Y'));
+    expect(res.status).toBe(200);
+    const proposalId = res.body.proposal_id as string;
+    expect(proposalId).toBeTruthy();
+
+    // Read the row directly through the adapter — proves the row landed in
+    // SQLite without tripping the CHECK constraint, and pins the on-disk
+    // contract for `origin`.
+    const rows = adapter.query<{ id: string; kind: string; state: string; origin: string }>(
+      'SELECT id, kind, state, origin FROM workflow_tasks WHERE id = ?',
+      [proposalId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('approval');
+    expect(rows[0].state).toBe('pending_approval');
+    expect(rows[0].origin).toBe('agent');
+  });
+
+  it('HIGH intent persists with origin=agent in real SQLite', async () => {
+    const res = await send('POST', '/v1/agent/validate', intent('transfer_money', 'send 500 USD'));
+    expect(res.status).toBe(200);
+    const proposalId = res.body.proposal_id as string;
+    const rows = adapter.query<{ origin: string; priority: string }>(
+      'SELECT origin, priority FROM workflow_tasks WHERE id = ?',
+      [proposalId],
+    );
+    expect(rows[0].origin).toBe('agent');
+    expect(rows[0].priority).toBe('high');
+  });
+
+  it('every documented origin value is accepted by the CHECK constraint', () => {
+    // Pins the full allowlist so adding a new origin to the route without
+    // updating the schema fails this test (and adding it to the schema
+    // without updating the route is harmless — the route stamps a value
+    // already in the list).
+    const allowed = [
+      '',
+      'telegram',
+      'api',
+      'd2d',
+      'admin',
+      'system',
+      'cli',
+      'dinamobile',
+      'agent',
+    ] as const;
+    const repo = getWorkflowRepository()!;
+    const now = Date.now();
+    for (const origin of allowed) {
+      expect(() =>
+        repo.create({
+          id: `t-${origin || 'empty'}`,
+          kind: 'approval',
+          status: 'pending_approval',
+          priority: 'normal',
+          description: `origin=${origin || 'empty'}`,
+          payload: '{}',
+          result_summary: '',
+          policy: '',
+          origin,
+          created_at: now,
+          updated_at: now,
+        }),
+      ).not.toThrow();
+    }
   });
 });

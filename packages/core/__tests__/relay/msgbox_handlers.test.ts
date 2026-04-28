@@ -52,11 +52,23 @@ function setupIdentity(): void {
   setIdentity(HOME_DID, TEST_ED25519_SEED);
 }
 
-/** Create a mock WebSocket that captures sends. */
+/** Create a mock WebSocket that captures sends. Decodes binary-frame
+ *  payloads to strings so existing JSON.parse-based assertions still work
+ *  after `sendEnvelope` switched to binary frames (relay only forwards
+ *  binary frames after auth). */
 function createCapturingWS(): { ws: WSLike; sent: string[] } {
   const sent: string[] = [];
+  const decoder = new TextDecoder();
   const ws: WSLike = {
-    send: jest.fn((data: string) => sent.push(data)),
+    send: jest.fn((data: string | Uint8Array | ArrayBuffer) => {
+      if (typeof data === 'string') {
+        sent.push(data);
+      } else if (data instanceof Uint8Array) {
+        sent.push(decoder.decode(data));
+      } else {
+        sent.push(decoder.decode(new Uint8Array(data)));
+      }
+    }),
     close: jest.fn(),
     onopen: null,
     onmessage: null,
@@ -402,6 +414,56 @@ describe('MsgBox Envelope Handlers', () => {
         expect(lastSent.from_did).toBe(HOME_DID);
         expect(lastSent.to_did).toBe(SENDER_DID);
         expect(lastSent.ciphertext).toBeDefined();
+      }
+    });
+
+    it('sends envelopes as binary frames (Uint8Array) — relay drops text frames', async () => {
+      // Regression guard: the MsgBox relay (`msgbox/internal/handler.go:105`)
+      // only forwards `MessageBinary` frames after auth — `MessageText`
+      // frames are silently dropped. If `sendEnvelope` ever reverts to
+      // `ws.send(string)` the relay would drop every outbound envelope and
+      // every CLI/peer would see frames_seen=0 timeouts. Pinning the wire
+      // type here so a regression fails loudly rather than silently.
+      const sentRaw: Array<string | Uint8Array | ArrayBuffer> = [];
+      const ws: WSLike = {
+        send: jest.fn((data: string | Uint8Array | ArrayBuffer) => {
+          sentRaw.push(data);
+        }),
+        close: jest.fn(),
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+        readyState: 1,
+      };
+      setTimeout(() => {
+        if (ws.onopen) ws.onopen();
+      }, 0);
+      setWSFactory(() => ws);
+
+      const { connectToMsgBox } = await import('../../src/relay/msgbox_ws');
+      await connectToMsgBox('wss://test.relay/ws');
+      await new Promise((r) => setTimeout(r, 10));
+
+      if (ws.onmessage) {
+        ws.onmessage({
+          data: JSON.stringify({ type: 'auth_challenge', nonce: 'test', ts: 12345 }),
+        });
+        ws.onmessage({ data: JSON.stringify({ type: 'auth_success' }) });
+      }
+
+      // Auth response itself is allowed to be a text frame (the relay's
+      // auth path uses MessageText — `msgbox/internal/auth.go:144`). Skip
+      // those when asserting the envelope frame type.
+      const sentAfterAuth = sendD2DViaWS(SENDER_DID, SENDER_PUB, { text: 'binary-check' });
+      if (isAuthenticated()) {
+        expect(sentAfterAuth).toBe(true);
+        const last = sentRaw[sentRaw.length - 1];
+        expect(last).toBeInstanceOf(Uint8Array);
+        // And the bytes must be valid envelope JSON.
+        const decoded = new TextDecoder().decode(last as Uint8Array);
+        const parsed = JSON.parse(decoded);
+        expect(parsed.type).toBe('d2d');
       }
     });
   });

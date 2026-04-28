@@ -36,6 +36,10 @@ import {
   SQLiteStagingRepository,
 } from '@dina/core/src/staging/repository';
 import {
+  setPeopleRepository,
+  SQLitePeopleRepository,
+} from '@dina/core/src/people/repository';
+import {
   setVaultRepository,
   SQLiteVaultRepository,
   resetVaultRepositories,
@@ -106,6 +110,17 @@ export async function initializePersistence(
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
   setStagingRepository(new SQLiteStagingRepository(identityDB));
   setChatMessageRepository(new SQLiteChatMessageRepository(identityDB));
+  // People graph backs the reminder planner's sender resolver +
+  // the post-publish people-graph extractor. Without it,
+  // `getPeopleRepository()` returns null → `resolveSenderHint`
+  // bails → inbound D2D from a known contact never expands the
+  // FTS query with the contact's confirmed surfaces, so vault
+  // facts stored under that person's name don't surface in the
+  // reminder's LLM context. Symptom in production: a "Sancho is
+  // arriving in 15 min" D2D produced a generic reminder with no
+  // Sancho-specific context, even though the user had stored
+  // notes about him.
+  setPeopleRepository(new SQLitePeopleRepository(identityDB));
 
   // GAP-PERSIST-02: hydrate the in-memory contact directory from
   // SQLite so persisted contacts (and their alias index) are visible

@@ -360,7 +360,7 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
 });
 
 describe('createCoordinatorAskHandler — async window deferral', () => {
-  it('returns "Working on it" placeholder when fast-path elapses, posts late answer', async () => {
+  it('posts an ask_pending placeholder, then patches it in place when the answer arrives', async () => {
     const llm = makeScripted();
     // Hold the LLM until we approve with a manual gate.
     let release: () => void = () => undefined;
@@ -386,10 +386,22 @@ describe('createCoordinatorAskHandler — async window deferral', () => {
     try {
       const responsePromise = handler('slow question');
       const r = await responsePromise;
-      expect(r.response).toMatch(/Working on it/);
+      // The handler returns an empty response — its contract is "I
+      // posted my own placeholder; orchestrator, don't post a
+      // duplicate". The placeholder lives in the thread already.
+      expect(r.response).toBe('');
 
-      // Now release the LLM; background execution finishes; bridge
-      // posts via the registry event stream.
+      // Placeholder is in the thread, lifecycle status `pending`.
+      const beforeThread = getThread(THREAD);
+      expect(beforeThread).toHaveLength(1);
+      expect(beforeThread[0]?.content).toMatch(/Working on it/);
+      expect(beforeThread[0]?.metadata?.lifecycle).toMatchObject({
+        kind: 'ask_pending',
+        status: 'pending',
+      });
+
+      // Now release the LLM; background execution finishes; the bridge
+      // patches the placeholder in place — no second bubble appended.
       release();
       // Give the event loop a few microtasks to settle.
       for (let i = 0; i < 5; i++) {
@@ -399,6 +411,10 @@ describe('createCoordinatorAskHandler — async window deferral', () => {
       const thread = getThread(THREAD);
       expect(thread).toHaveLength(1);
       expect(thread[0]?.content).toBe('late answer');
+      expect(thread[0]?.metadata?.lifecycle).toMatchObject({
+        kind: 'ask_pending',
+        status: 'complete',
+      });
     } finally {
       dispose();
     }

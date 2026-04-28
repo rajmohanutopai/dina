@@ -233,7 +233,25 @@ export interface WorkflowRepository {
    */
   listTasksWithStashPrefix(prefix: string, limit: number): WorkflowTask[];
   size(): number;
+
+  /**
+   * Subscribe to newly-created `kind === 'approval'` tasks. Listeners
+   * fire synchronously after the row is recorded, with a defensive
+   * shallow clone so an observer mutating the task can't corrupt
+   * storage. Returns a disposer.
+   *
+   * The notifications-inbox bridge is the canonical consumer — it surfaces
+   * `/v1/agent/validate` proposals + service.query review-policy approvals
+   * (both go directly to `workflow_tasks`, bypassing `ApprovalManager`)
+   * into the unified Notifications screen.
+   *
+   * Listeners that throw are isolated — one bad observer must not break
+   * the create() path or starve other observers.
+   */
+  subscribeApprovalCreated(listener: ApprovalCreatedListener): () => void;
 }
+
+export type ApprovalCreatedListener = (task: WorkflowTask) => void;
 
 // ---------------------------------------------------------------------------
 // Global repository accessor (follows the existing `reminders/repository.ts`
@@ -271,6 +289,8 @@ const EVENT_COLUMNS = `
 `.trim();
 
 export class SQLiteWorkflowRepository implements WorkflowRepository {
+  private readonly approvalListeners = new Set<ApprovalCreatedListener>();
+
   constructor(private readonly db: DatabaseAdapter) {}
 
   create(task: WorkflowTask): void {
@@ -324,6 +344,14 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     } catch (err) {
       throw classifyConflict(err, task, idemKey !== null);
     }
+    fanOutApprovalCreated(this.approvalListeners, task);
+  }
+
+  subscribeApprovalCreated(listener: ApprovalCreatedListener): () => void {
+    this.approvalListeners.add(listener);
+    return () => {
+      this.approvalListeners.delete(listener);
+    };
   }
 
   getById(id: string): WorkflowTask | null {
@@ -850,6 +878,7 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
   private readonly tasks = new Map<string, WorkflowTask>();
   private readonly events: WorkflowEvent[] = [];
   private nextEventId = 1;
+  private readonly approvalListeners = new Set<ApprovalCreatedListener>();
 
   create(task: WorkflowTask): void {
     if (this.tasks.has(task.id)) {
@@ -868,6 +897,14 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     }
     // Defensive copy so callers mutating the input don't corrupt storage.
     this.tasks.set(task.id, { ...task });
+    fanOutApprovalCreated(this.approvalListeners, task);
+  }
+
+  subscribeApprovalCreated(listener: ApprovalCreatedListener): () => void {
+    this.approvalListeners.add(listener);
+    return () => {
+      this.approvalListeners.delete(listener);
+    };
   }
 
   getById(id: string): WorkflowTask | null {
@@ -1391,6 +1428,37 @@ function inferServiceName(task: WorkflowTask): string {
 
 function optionalStr(v: string | undefined): string | null {
   return v === undefined || v === '' ? null : v;
+}
+
+/**
+ * Fan out a freshly-created approval task to subscribers. Shared between
+ * `SQLiteWorkflowRepository` and `InMemoryWorkflowRepository` so the
+ * inbox bridge fires identically regardless of which backend runs.
+ *
+ * Three guarantees:
+ *   1. Non-approval tasks are skipped — listeners are explicitly the
+ *      Notifications-inbox surface for approval-class tasks (see
+ *      `WorkflowRepository.subscribeApprovalCreated`).
+ *   2. Each listener receives a defensive shallow clone — a faulty
+ *      observer mutating the task can't poison the canonical row that
+ *      was just persisted.
+ *   3. Errors are isolated — one bad observer must not break the
+ *      `create()` path or starve other observers. Mirrors
+ *      `ApprovalManager.requestApproval`'s try/swallow contract.
+ */
+function fanOutApprovalCreated(
+  listeners: ReadonlySet<ApprovalCreatedListener>,
+  task: WorkflowTask,
+): void {
+  if (task.kind !== 'approval') return;
+  if (listeners.size === 0) return;
+  for (const fn of listeners) {
+    try {
+      fn({ ...task });
+    } catch {
+      /* swallow — see contract above */
+    }
+  }
 }
 
 function stringOrUndef(v: unknown): string | undefined {

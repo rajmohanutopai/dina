@@ -41,7 +41,9 @@ import {
   addLifecycleMessage,
   addMessage,
   addSystemMessage,
+  findMessageByAskId,
   findMessageByTaskId,
+  updateAskLifecycle,
   type ServiceQueryLifecycle,
 } from '../chat/thread';
 import type { AskCommandHandler } from '../chat/orchestrator';
@@ -174,6 +176,14 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     const record = await coordinator.registry.get(askId);
     if (record === null) return;
     const targetThread = tracking.threadId;
+    // True iff the bridge posted an `ask_pending` placeholder up
+    // front (async-window deferral). In that case we patch the same
+    // message in place so the user sees one bubble morphing from
+    // "Working on it…" into the resolved answer, instead of two
+    // stacked bubbles. False for pending_approval flows (the
+    // approval card is already a distinct typed message; we still
+    // append a fresh dina bubble below it for the answer).
+    const hasAskPlaceholder = findMessageByAskId(targetThread, askId) !== null;
 
     if (record.status === 'complete' && record.answerJson !== undefined) {
       let parsed: unknown;
@@ -199,6 +209,13 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       // "I have sent a request — will follow up", which is redundant
       // with the spinner state).
       if (serviceQueries.length > 0) {
+        // If a placeholder is sitting in the thread, retire it so the
+        // service-query cards don't read as "Working on it… (pending)
+        // + service card (pending)". Patching in place keeps
+        // ordering, just swaps the content for the LLM narrative.
+        if (hasAskPlaceholder) {
+          updateAskLifecycle(targetThread, askId, { status: 'complete' }, answerText);
+        }
         for (const sq of serviceQueries) {
           if (findMessageByTaskId(targetThread, sq.taskId) !== null) continue;
           const lifecycle: ServiceQueryLifecycle = {
@@ -214,7 +231,10 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         return;
       }
 
-      if (answerText !== '') {
+      if (hasAskPlaceholder) {
+        // One-bubble morph — patch the placeholder content + status.
+        updateAskLifecycle(targetThread, askId, { status: 'complete' }, answerText);
+      } else if (answerText !== '') {
         addDinaResponse(targetThread, answerText, []);
       }
       return;
@@ -228,7 +248,12 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         failureKind,
         raw: errPayload as AskFailure | string,
       });
-      addDinaResponse(targetThread, text, []);
+      const status = record.status === 'failed' ? 'failed' : 'expired';
+      if (hasAskPlaceholder) {
+        updateAskLifecycle(targetThread, askId, { status, error: text }, text);
+      } else {
+        addDinaResponse(targetThread, text, []);
+      }
       return;
     }
   }
@@ -301,17 +326,25 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     }
 
     // Submission timed out the fast-path window — answer arrives later
-    // via the registry event stream. Track the id and acknowledge.
+    // via the registry event stream. Post an `ask_pending` placeholder
+    // INTO the chat thread directly so the bridge owns the row it later
+    // patches in place. Returning `response: ''` keeps the orchestrator
+    // from posting a duplicate `dina` bubble (the orchestrator skips
+    // empty handler responses — see chat/orchestrator.ts handleChat).
     if (result.kind === 'async') {
-      pending.set(result.body.request_id, {
+      const askId = result.body.request_id;
+      pending.set(askId, {
         approvalId: undefined,
         persona: undefined,
         threadId: callerThread,
       });
-      return {
-        response: "Working on it — I'll reply when the answer is ready.",
-        sources: [],
-      };
+      const placeholder = "Working on it — I'll reply when the answer is ready.";
+      addLifecycleMessage(callerThread, placeholder, {
+        kind: 'ask_pending',
+        status: 'pending',
+        askId,
+      });
+      return { response: '', sources: [] };
     }
 
     return { response: "I couldn't process that ask.", sources: [] };

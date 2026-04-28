@@ -402,20 +402,31 @@ export default function RootLayout() {
             primary="Starting Dina…"
             details={['Loading identity + runtime']}
           />
-        ) : bootState.degradations.length > 0 || runtimeWarnings.length > 0 ? (
-          <BootBanner
-            kind="warning"
-            primary={
-              bootState.degradations.length > 0
-                ? 'Dina running in dev-degraded mode.'
-                : 'Runtime warnings active.'
-            }
-            details={[
-              ...formatDegradations(bootState.degradations),
-              ...formatRuntimeWarnings(runtimeWarnings),
-            ]}
-          />
-        ) : null}
+        ) : (() => {
+          // Only surface degradations the user can act on — demo-build
+          // expected codes (e.g. `discovery.stub` for the in-memory
+          // AppView fixture) are shipped in bootState.degradations for
+          // diagnostics but suppressed from the banner so a clean demo
+          // launch doesn't read as "something is broken".
+          const surfaceDegradations = bannerWorthyDegradations(bootState.degradations);
+          if (surfaceDegradations.length === 0 && runtimeWarnings.length === 0) {
+            return null;
+          }
+          return (
+            <BootBanner
+              kind="warning"
+              primary={
+                surfaceDegradations.length > 0
+                  ? 'Dina running in dev-degraded mode.'
+                  : 'Runtime warnings active.'
+              }
+              details={[
+                ...formatDegradations(surfaceDegradations),
+                ...formatRuntimeWarnings(runtimeWarnings),
+              ]}
+            />
+          );
+        })()}
         {showTabs ? (
           <Tabs
             screenOptions={{
@@ -645,6 +656,30 @@ function BootBanner({
  */
 function formatDegradations(list: BootDegradation[]): string[] {
   return list.map((d) => `\u2022 ${d.code}: ${d.message}`);
+}
+
+/**
+ * Codes that represent expected demo-build defaults rather than real
+ * runtime issues. Ship in `bootState.degradations` for the admin
+ * screen + bug reports, but suppress from the user-facing yellow
+ * banner so a normal demo launch reads as "Dina is fine" instead of
+ * "something is degraded \u2014 what did I break?".
+ *
+ * Why each is here:
+ *   - `discovery.stub` \u2014 running against the in-memory AppView
+ *     fixture is the *expected* state for the demo build; surfacing
+ *     it as a warning every launch made the banner permanent
+ *     wallpaper.
+ */
+const BANNER_SUPPRESS_CODES = new Set<string>(['discovery.stub']);
+
+/**
+ * Filter out demo-expected codes so the yellow banner only fires on
+ * degradations that actually want operator attention. The full list
+ * remains in `bootState.degradations` for diagnostics.
+ */
+function bannerWorthyDegradations(list: BootDegradation[]): BootDegradation[] {
+  return list.filter((d) => !BANNER_SUPPRESS_CODES.has(d.code));
 }
 
 function formatRuntimeWarnings(list: readonly RuntimeWarning[]): string[] {

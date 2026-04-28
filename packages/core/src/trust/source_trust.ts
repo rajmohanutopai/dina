@@ -26,7 +26,20 @@ export interface SourceTrustResult {
 }
 
 /** Sources that indicate self-authored content. */
-const SELF_SOURCES = new Set(['personal', 'cli', 'telegram', 'chat', 'voice']);
+const SELF_SOURCES = new Set([
+  'personal',
+  'cli',
+  'telegram',
+  'chat',
+  'voice',
+  // Mobile chat orchestrator stamps `source: 'user_remember'` for every
+  // /remember turn (see brain/src/chat/orchestrator.ts:handleRemember).
+  // Without this entry the classifier falls through to "unknown",
+  // tagging the user's own memories as "(unverified sender)" in the
+  // L0 enrichment — visible to the user as a confusing caveat on the
+  // vault detail screen.
+  'user_remember',
+]);
 const SELF_SENDERS = new Set(['user', 'self', 'me']);
 
 /** Marketing sender patterns. */

@@ -129,7 +129,14 @@ export default function AdminScreen(): React.ReactElement {
 
         {/* Identity */}
         <Section title="Identity">
-          <Row label="DID" value={persistedDid ?? node?.did ?? '—'} copyable onCopy={copy} mono />
+          <Row
+            label="DID"
+            value={persistedDid ?? node?.did ?? '—'}
+            copyable
+            onCopy={copy}
+            mono
+            truncate
+          />
           <Row label="Role" value={shortRole(node?.role)} />
           <Row label="Brain client" value={node === null ? 'offline' : 'connected'} />
           <Placeholder
@@ -379,12 +386,26 @@ function Row(props: {
   copyable?: boolean;
   onCopy?: (v: string) => void;
   mono?: boolean;
+  /**
+   * When true, render the value on a single line with middle
+   * truncation. Right for opaque identifiers like a DID — wrapping
+   * one across two lines mid-token reads as garbled, and the
+   * head+tail of a `did:plc:...ecewk` is what users actually scan
+   * for. The Copy glyph still grabs the full value so the truncated
+   * display doesn't lose information.
+   */
+  truncate?: boolean;
 }): React.ReactElement {
+  const valueLines = props.truncate ? 1 : 2;
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{props.label}</Text>
       <View style={styles.rowValueWrap}>
-        <Text style={[styles.rowValue, props.mono && styles.rowValueMono]} numberOfLines={2}>
+        <Text
+          style={[styles.rowValue, props.mono && styles.rowValueMono]}
+          numberOfLines={valueLines}
+          ellipsizeMode={props.truncate ? 'middle' : 'tail'}
+        >
           {props.value}
         </Text>
         {props.copyable && props.value !== '—' ? (

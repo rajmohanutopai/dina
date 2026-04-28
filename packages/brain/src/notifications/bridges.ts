@@ -24,6 +24,8 @@
  */
 
 import type { ApprovalManager, ApprovalRequest } from '../../../core/src/approval/manager';
+import type { WorkflowRepository } from '../../../core/src/workflow/repository';
+import type { WorkflowTask } from '../../../core/src/workflow/domain';
 import { appendNotification } from './inbox';
 
 /**
@@ -60,6 +62,64 @@ export function installApprovalInboxBridge(approvalManager: ApprovalManager): ()
       sourceId: req.id,
       deepLink: `dina://approvals/${req.id}`,
       now: req.created_at !== 0 ? req.created_at : undefined,
+    });
+  });
+}
+
+/**
+ * Subscribe an inbox bridge to a `WorkflowRepository`. Every newly
+ * created `kind === 'approval'` workflow task posts an `'approval'`-kind
+ * notification — covering the two surfaces that bypass `ApprovalManager`:
+ *
+ *   - `/v1/agent/validate` (intent_validation): MODERATE/HIGH actions
+ *     create a `pending_approval` row directly in `workflow_tasks`.
+ *   - `service_handler` review-policy approvals: D2D `service.query`
+ *     callers whose responsePolicy is `'review'` land here too.
+ *
+ * Without this bridge the dedicated `/approvals` screen renders these
+ * cards (it queries `workflow_tasks` directly) but the unified
+ * Notifications screen's "Approvals" filter shows "No notifications yet"
+ * — exactly the gap that surfaced when `dina validate` lit up
+ * `/approvals` but not `/notifications`.
+ *
+ * Notification shape mirrors `installApprovalInboxBridge`:
+ *   - `id` / `sourceId`: the task id (idempotent — a re-installed
+ *     bridge after a hot reload won't duplicate inbox entries).
+ *   - `title`: the task `description` (formatted by the producer:
+ *     intent → `"send_email: <target>"`; service.query → `"Service
+ *     review: <capability> from <did>"`).
+ *   - `body`: empty — the title carries the salient info; payload
+ *     details (target, agent_did) live on the `/approvals` screen so
+ *     we don't double-render. Brain bridges are deliberately terse.
+ *   - `deepLink`: `dina://approvals/<id>` — same scheme as the
+ *     ApprovalManager bridge so the inbox row and the dedicated
+ *     screen converge.
+ *   - `expiresAt`: the task's expiry (seconds → ms) — lets the inbox
+ *     auto-purge cards whose underlying approval has timed out.
+ *
+ * Returns a disposer that detaches the listener.
+ */
+export function installWorkflowApprovalInboxBridge(
+  workflowRepo: WorkflowRepository,
+): () => void {
+  return workflowRepo.subscribeApprovalCreated((task: WorkflowTask) => {
+    const title =
+      task.description !== '' ? task.description : `Approval requested (${task.id})`;
+    appendNotification({
+      id: task.id,
+      kind: 'approval',
+      title,
+      body: '',
+      sourceId: task.id,
+      deepLink: `dina://approvals/${task.id}`,
+      // `expires_at` on workflow_tasks is unix seconds; the inbox uses ms.
+      expiresAt:
+        task.expires_at !== undefined && task.expires_at > 0
+          ? task.expires_at * 1_000
+          : undefined,
+      // `created_at` is already ms — pass through so reorders by
+      // chronology pin the row at the right place.
+      now: task.created_at,
     });
   });
 }

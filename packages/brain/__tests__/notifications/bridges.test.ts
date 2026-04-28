@@ -10,6 +10,7 @@
 
 import {
   installApprovalInboxBridge,
+  installWorkflowApprovalInboxBridge,
   subscribeBriefingEvents,
 } from '../../src/notifications/bridges';
 import {
@@ -18,6 +19,32 @@ import {
   resetNotifications,
 } from '../../src/notifications/inbox';
 import { ApprovalManager } from '../../../core/src/approval/manager';
+import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import {
+  WorkflowTaskKind,
+  WorkflowTaskPriority,
+  WorkflowTaskState,
+  type WorkflowTask,
+} from '../../../core/src/workflow/domain';
+
+function approvalTask(overrides: Partial<WorkflowTask> = {}): WorkflowTask {
+  const now = 1_700_000_000_000;
+  return {
+    id: 'apr-1',
+    kind: WorkflowTaskKind.Approval,
+    status: WorkflowTaskState.PendingApproval,
+    priority: WorkflowTaskPriority.Normal,
+    description: 'send_email: Send Q4 report to legal',
+    payload: JSON.stringify({ type: 'intent_validation' }),
+    result_summary: '',
+    policy: '',
+    origin: 'agent',
+    expires_at: Math.floor(now / 1_000) + 1_800, // 30 min
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
 
 describe('Notifications inbox bridges (5.66)', () => {
   beforeEach(() => {
@@ -106,6 +133,118 @@ describe('Notifications inbox bridges (5.66)', () => {
         sourceId: 'appr-3',
       });
       expect(listNotifications().filter((i) => i.id === 'appr-3')).toHaveLength(1);
+    });
+  });
+
+  describe('installWorkflowApprovalInboxBridge', () => {
+    it('appends an approval-kind notification on every kind=approval task creation', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalInboxBridge(repo);
+
+      repo.create(
+        approvalTask({
+          id: 'prop-intent-abc',
+          description: 'send_email: Send Q4 report',
+        }),
+      );
+
+      const items = listNotifications();
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        id: 'prop-intent-abc',
+        kind: 'approval',
+        title: 'send_email: Send Q4 report',
+        body: '',
+        sourceId: 'prop-intent-abc',
+        deepLink: 'dina://approvals/prop-intent-abc',
+        firedAt: 1_700_000_000_000,
+      });
+    });
+
+    it('translates expires_at from seconds to milliseconds for the inbox', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalInboxBridge(repo);
+      repo.create(approvalTask({ id: 'apr-exp', expires_at: 1_700_000_900 }));
+      expect(listNotifications()[0]!.expiresAt).toBe(1_700_000_900_000);
+    });
+
+    it('omits expiresAt when the task has no expiry', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalInboxBridge(repo);
+      repo.create(approvalTask({ id: 'apr-noexp', expires_at: undefined }));
+      expect(listNotifications()[0]!.expiresAt).toBeUndefined();
+    });
+
+    it('falls back to "Approval requested (id)" when description is empty', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalInboxBridge(repo);
+      repo.create(approvalTask({ id: 'apr-noname', description: '' }));
+      expect(listNotifications()[0]!.title).toBe('Approval requested (apr-noname)');
+    });
+
+    it('does NOT fire for non-approval tasks (delegation, service_query, …)', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalInboxBridge(repo);
+      repo.create(
+        approvalTask({
+          id: 'sq-1',
+          kind: WorkflowTaskKind.ServiceQuery,
+          status: WorkflowTaskState.Created,
+        }),
+      );
+      repo.create(
+        approvalTask({
+          id: 'del-1',
+          kind: WorkflowTaskKind.Delegation,
+          status: WorkflowTaskState.Created,
+        }),
+      );
+      expect(listNotifications()).toHaveLength(0);
+    });
+
+    it('disposer detaches the listener', () => {
+      const repo = new InMemoryWorkflowRepository();
+      const off = installWorkflowApprovalInboxBridge(repo);
+      off();
+      repo.create(approvalTask({ id: 'after-off' }));
+      expect(listNotifications()).toHaveLength(0);
+    });
+
+    it('idempotent on re-fire — using task.id ensures a second emit upserts', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalInboxBridge(repo);
+      repo.create(approvalTask({ id: 'apr-idem' }));
+      // Simulate a cold-start replay where the inbox sees the same id again.
+      appendNotification({
+        id: 'apr-idem',
+        kind: 'approval',
+        title: 'send_email: Send Q4 report to legal',
+        body: '',
+        sourceId: 'apr-idem',
+      });
+      expect(listNotifications().filter((i) => i.id === 'apr-idem')).toHaveLength(1);
+    });
+
+    it('coexists with installApprovalInboxBridge — each bridge owns its source', () => {
+      const repo = new InMemoryWorkflowRepository();
+      const mgr = new ApprovalManager();
+      installWorkflowApprovalInboxBridge(repo);
+      installApprovalInboxBridge(mgr);
+
+      repo.create(approvalTask({ id: 'apr-workflow', description: 'review service.query' }));
+      mgr.requestApproval({
+        id: 'apr-mgr',
+        action: 'vault_search',
+        requester_did: 'did:key:zX',
+        persona: 'general',
+        reason: 'Search foo',
+        preview: '',
+        created_at: 5,
+      });
+
+      const ids = listNotifications().map((i) => i.id);
+      expect(ids).toEqual(expect.arrayContaining(['apr-workflow', 'apr-mgr']));
+      expect(ids).toHaveLength(2);
     });
   });
 

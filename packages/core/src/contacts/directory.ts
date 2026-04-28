@@ -24,6 +24,7 @@ import {
 import { getContactRepository } from './repository';
 import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
 import { addContact as addEgressGateContact } from '../d2d/gates';
+import { getPeopleRepository } from '../people/repository';
 import { addKnownContact } from '../trust/source_trust';
 
 export type TrustLevel = 'blocked' | 'unknown' | 'verified' | 'trusted';
@@ -140,6 +141,31 @@ export function addContact(
     addKnownContact(did);
   }
 
+  // Mirror this contact into the people graph so the reminder
+  // planner's `resolveSenderHint` can find a Person via
+  // `findByContactDid` on inbound D2D, and so vault facts saved
+  // under the contact's display name surface in FTS expansion.
+  // Fail-soft: when the people repo isn't wired (test harness, or
+  // a host that hasn't called `setPeopleRepository`) this is a
+  // no-op rather than blocking the contact-add. Blocked contacts
+  // are intentionally NOT mirrored — same rationale as the
+  // egress-gate skip above (the people graph is for resolution,
+  // and a blocked DID has nothing to resolve).
+  if (contact.trustLevel !== 'blocked') {
+    const peopleRepo = getPeopleRepository();
+    if (peopleRepo !== null) {
+      try {
+        peopleRepo.upsertContactPerson(did, contact.displayName);
+      } catch {
+        // People-graph mirror is enrichment, not load-bearing for
+        // contact creation — drop the error rather than fail the
+        // user-visible "save contact" action. The next D2D from
+        // this DID will still be quarantine-correct via the
+        // contacts table; only the FTS surface expansion is missed.
+      }
+    }
+  }
+
   return contact;
 }
 
@@ -167,7 +193,32 @@ export function addContactIfNotExists(
 
 /** Get a contact by DID. Returns null if not found. */
 export function getContact(did: string): Contact | null {
-  return contacts.get(did) ?? null;
+  const cached = contacts.get(did);
+  if (cached !== undefined) return cached;
+  // Cache miss: fall back to the SQL repo when wired. Closes the race
+  // where a JS bundle reload (Expo fast-refresh / Cmd+R) clears the
+  // in-memory Map while the underlying SQLite database — opened at
+  // the native layer — survives. Without this, an inbound D2D
+  // arriving before the next manual unlock sees `contactFound=false`,
+  // resolves to `senderTrust='unknown'`, and the receive pipeline
+  // quarantines the message even though the user has the sender as
+  // a verified contact in the People tab. The SQL fetch hydrates the
+  // single row; subsequent calls hit the cache.
+  const repo = getContactRepository();
+  if (repo === null) return null;
+  const fromSql = repo.get(did);
+  if (fromSql !== null) {
+    contacts.set(did, fromSql);
+    for (const alias of fromSql.aliases ?? []) {
+      const key = alias.trim().toLowerCase();
+      if (key !== '') aliasIndex.set(key, fromSql.did);
+    }
+    if (fromSql.trustLevel !== 'blocked') {
+      addEgressGateContact(fromSql.did);
+      addKnownContact(fromSql.did);
+    }
+  }
+  return fromSql;
 }
 
 /** List all contacts. */
@@ -390,6 +441,10 @@ export function hydrateContactDirectory(): number {
   const sqlRepo = getContactRepository();
   if (sqlRepo === null) return 0;
   const rows = sqlRepo.list();
+  // Pull the people repo once — `upsertContactPerson` is idempotent,
+  // so backfilling on every boot is safe and self-healing for users
+  // who created contacts before the people-graph mirror existed.
+  const peopleRepo = getPeopleRepository();
   let loaded = 0;
   for (const row of rows) {
     contacts.set(row.did, row);
@@ -405,6 +460,18 @@ export function hydrateContactDirectory(): number {
     if (row.trustLevel !== 'blocked') {
       addEgressGateContact(row.did);
       addKnownContact(row.did);
+      // Backfill into the people graph on every boot. Idempotent —
+      // re-runs on already-mirrored contacts just refresh the row.
+      // Fail-soft: a missing people repo or a transient SQL error
+      // shouldn't break contact hydration (the egress gate above is
+      // the load-bearing piece).
+      if (peopleRepo !== null) {
+        try {
+          peopleRepo.upsertContactPerson(row.did, row.displayName);
+        } catch {
+          /* enrichment only — see comment in addContact */
+        }
+      }
     }
     loaded++;
   }

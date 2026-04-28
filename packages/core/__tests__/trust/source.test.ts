@@ -69,6 +69,18 @@ describe('Source Trust Classification', () => {
       const result = classifySourceTrust('user', 'telegram', 'chat');
       expect(result.sender_trust).toBe('self');
     });
+
+    it('user_remember source is self even with empty sender', () => {
+      // Mobile chat orchestrator's /remember handler stamps `source:
+      // 'user_remember'` and ships no `sender` field. The classifier
+      // must still recognise this as self-authored content so the L0
+      // enrichment doesn't tag the user's own memories with
+      // "(unverified sender)".
+      const result = classifySourceTrust('', 'user_remember', '');
+      expect(result.sender_trust).toBe('self');
+      expect(result.confidence).toBe('high');
+      expect(result.retrieval_policy).toBe('normal');
+    });
   });
 
   describe('isSelfSender', () => {
@@ -78,6 +90,10 @@ describe('Source Trust Classification', () => {
 
     it('CLI source → true', () => {
       expect(isSelfSender('user', 'cli')).toBe(true);
+    });
+
+    it('user_remember source → true (mobile /remember turn)', () => {
+      expect(isSelfSender('', 'user_remember')).toBe(true);
     });
 
     it('external email → false', () => {

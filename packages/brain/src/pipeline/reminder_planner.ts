@@ -491,24 +491,93 @@ function resolveSenderHint(senderDid?: string): SenderHint | null {
 /**
  * Render the REMINDER_PLAN prompt template with all variables.
  *
- * Python parity (`PROMPT_REMINDER_PLANNER_SYSTEM`, `brain/src/prompts.py:141`):
- * the LLM receives `{{today}}` (current date/time) so it can infer
- * next-occurrence for recurring events stated without a year (birthdays,
- * anniversaries). TS previously passed `{{event_date}}` (the ingest
- * timestamp), which didn't tell the LLM what "now" was and let year-less
- * dates silently default to the current year — blocking "/remember
- * Emma's birthday is March 15th" any time we're past March 15.
+ * The LLM receives **two** representations of "now":
+ *   - `{{now_local}}` — wall-clock string in the user's timezone
+ *     ("Tuesday, April 28, 2026 at 12:35 PM IST"). Human-readable so
+ *     the model can reason about "today / tomorrow / tonight" without
+ *     timezone math.
+ *   - `{{now_ms}}` — Unix milliseconds. Used for offset arithmetic
+ *     ("in 15 minutes" → due_at = {{now_ms}} + 15 * 60000) and as
+ *     the strict-ordering reference for the past-event filter.
+ *
+ * Earlier versions passed only `{{today}}` as a UTC ISO string. The
+ * model conflated "after today" with "after today's date" and rolled
+ * "in 15 minutes" forward by a full day — see April 2026 simulator
+ * regression where the Sancho-arrival e2e produced a Tomorrow-noon
+ * reminder. Forcing the LLM to compute against `{{now_ms}}` rather
+ * than parse a date-string moved the bug surface from "model timezone
+ * math" to "deterministic JS arithmetic" (which we already trust).
  */
 function renderReminderPrompt(
   input: PlannerInput,
   vaultContext: string,
   resolvedTimezone: string,
 ): string {
+  const nowMs = Date.now();
+  const nowLocal = formatNowInTimezone(nowMs, resolvedTimezone);
+  // The now_ms value goes into the prompt with underscore separators
+  // (e.g. `1_745_837_100_000`) for two reasons:
+  //   1. The PII scrubber's phone regexes match long bare digit runs
+  //      and would assign `[PHONE_1]` to the timestamp, pushing the
+  //      user's actual phone to `[PHONE_2]` — which broke
+  //      reminder-planner's PII rehydration test on the simulator
+  //      (`Call [PHONE_1] …` came back resolved against the timestamp,
+  //      not against `555-444-3333`). Underscores break the digit run
+  //      and the regexes never match.
+  //   2. Most LLMs handle `1_745_837_100_000` and `1745837100000`
+  //      interchangeably (Python-style numeric literal). The prompt
+  //      tells the model to strip underscores before arithmetic, so
+  //      `due_at = NOW_MS + N * 60000` still resolves to a clean
+  //      number even when the model echoes the underscored form.
+  const nowMsGrouped = groupDigitsForPrompt(nowMs);
+  // `{{now_ms_grouped}}` and `{{timezone}}` appear multiple times in
+  // the prompt — `replaceAll` ensures every occurrence is substituted.
+  // Single-occurrence placeholders (`{{subject}}`, `{{body}}`,
+  // `{{now_local}}`, `{{vault_context}}`) stay on `replace` so a
+  // stray `{{` inside user input can't trigger surprise expansion.
   return REMINDER_PLAN.replace('{{subject}}', input.summary)
     .replace('{{body}}', input.body.slice(0, 4000))
-    .replace('{{today}}', new Date().toISOString())
-    .replace('{{timezone}}', resolvedTimezone)
+    .replace('{{now_local}}', nowLocal)
+    .replaceAll('{{now_ms_grouped}}', nowMsGrouped)
+    .replaceAll('{{timezone}}', resolvedTimezone)
     .replace('{{vault_context}}', vaultContext);
+}
+
+/**
+ * Group a positive integer into `1_234_567` form. Used to keep long
+ * Unix-ms values in the prompt out of the PII phone-number regex's
+ * jaws — see comment on the call site for the failure mode this
+ * fixes. We use underscores (Python / JavaScript numeric-literal
+ * style) instead of commas so the LLM's "strip underscores before
+ * arithmetic" hint doesn't conflict with anything else.
+ */
+function groupDigitsForPrompt(n: number): string {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '_');
+}
+
+/**
+ * Format "now" as a human-readable wall-clock string in the user's
+ * timezone, e.g. "Tuesday, April 28, 2026 at 12:35 PM IST". Falls
+ * back to ISO when `Intl.DateTimeFormat` rejects the timezone (zero
+ * recovery cost — every modern runtime ships Intl, but the fallback
+ * keeps us correct on a stripped-down environment rather than throwing).
+ */
+function formatNowInTimezone(nowMs: number, tz: string): string {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+      timeZone: tz,
+    });
+    return fmt.format(new Date(nowMs));
+  } catch {
+    return new Date(nowMs).toISOString();
+  }
 }
 
 // ---------------------------------------------------------------

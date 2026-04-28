@@ -118,10 +118,23 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
   }
 
   // 4. Verify Ed25519 signature
+  //
+  // Resolution order:
+  //   1. The host-supplied resolver, if any. This is how `did:plc:`
+  //      identities (and any non-self-describing DID method) are
+  //      mapped to public keys.
+  //   2. did:key fallback. did:key encodes the public key in the
+  //      DID itself, so the key is *always* derivable — even for
+  //      DIDs the resolver has never seen (e.g. a freshly-paired
+  //      agent). Without this fallback, every signed RPC from a
+  //      paired agent on mobile 401s with "Cannot resolve public
+  //      key for DID" because the mobile resolver only knows the
+  //      self-DID and explicitly-registered D2D peers.
   let publicKey: Uint8Array | null = null;
   if (publicKeyResolver) {
     publicKey = publicKeyResolver(did);
-  } else if (did.startsWith('did:key:')) {
+  }
+  if (!publicKey && did.startsWith('did:key:')) {
     try {
       publicKey = extractPublicKey(did);
     } catch {

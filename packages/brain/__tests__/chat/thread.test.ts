@@ -195,8 +195,13 @@ describe('Chat Message Model + Thread', () => {
       expect(msg.type).toBe('dina');
       const lc = readLifecycle(msg);
       expect(lc?.kind).toBe('service_query');
-      expect(lc?.taskId).toBe('sq-1');
-      expect(lc?.status).toBe('pending');
+      // Narrow on the discriminator before reaching for kind-specific
+      // fields — `MessageLifecycle` is a union of service_query +
+      // ask_pending after task 5.21-H polished the async flow.
+      if (lc?.kind === 'service_query') {
+        expect(lc.taskId).toBe('sq-1');
+        expect(lc.status).toBe('pending');
+      }
       expect(msg.sources).toEqual(['sq-1']);
     });
 
@@ -234,8 +239,11 @@ describe('Chat Message Model + Thread', () => {
       expect(patched).not.toBeNull();
       expect(patched?.content).toBe('Bus 42 — 12 min to Castro');
       const lc = readLifecycle(patched!);
-      expect(lc?.status).toBe('resolved');
-      expect(lc?.result?.eta_minutes).toBe(12);
+      expect(lc?.kind).toBe('service_query');
+      if (lc?.kind === 'service_query') {
+        expect(lc.status).toBe('resolved');
+        expect(lc.result?.eta_minutes).toBe(12);
+      }
       // Same id as the original — patch, not append.
       expect(fired).toBe(1);
       expect(threadLength('main')).toBe(1);

@@ -28,15 +28,18 @@ import { useRouter } from 'expo-router';
 import { addContact, getContact } from '@dina/core/src/contacts/directory';
 import { colors, fonts, spacing, radius } from '../src/theme';
 
-// TEST_PDS_URL is a sensible default for the Dina test network. Users
-// can paste an arbitrary PDS URL to resolve handles on other networks.
+// Shown as a placeholder hint, not a pre-filled value — pre-filling
+// the field made the dev PDS URL look like a hard-coded production
+// dependency to first-time users. The fallback below still uses this
+// when the field is left blank, so handle-only input keeps working
+// out of the box on the test network.
 const DEFAULT_PDS_URL = 'https://test-pds.dinakernel.com';
 
 export default function AddContactScreen() {
   const router = useRouter();
   const [didOrHandle, setDidOrHandle] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [pdsUrl, setPdsUrl] = useState(DEFAULT_PDS_URL);
+  const [pdsUrl, setPdsUrl] = useState('');
   const [status, setStatus] = useState<'idle' | 'resolving' | 'saving' | 'error'>('idle');
   const [errorText, setErrorText] = useState('');
 

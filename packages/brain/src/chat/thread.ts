@@ -61,11 +61,43 @@ export interface ServiceQueryLifecycle {
 }
 
 /**
- * Discriminated union for `metadata.lifecycle`. Today only
- * `service_query` is wired; future kinds (long vault search, async
- * trust resolution, peer pairing) extend by adding members.
+ * Terminal states for an `ask_pending` placeholder. The bridge
+ * (`createCoordinatorAskHandler`) posts the placeholder when the
+ * coordinator's fast-path window elapses (or pending_approval is
+ * deferred), then patches the same message in place when the
+ * registry event stream settles. Mirrors `ServiceQueryStatus`.
  */
-export type MessageLifecycle = ServiceQueryLifecycle;
+export type AskPendingStatus = 'pending' | 'complete' | 'failed' | 'expired';
+
+/**
+ * `ask_pending` lifecycle metadata. Attached to a regular `'dina'`
+ * message so the user sees a single bubble that morphs from
+ * "Working on it…" into the resolved answer (or failure note),
+ * instead of two stacked bubbles. Keyed by the registry's `askId`
+ * so the bridge can locate and patch the same row when its event
+ * stream fires.
+ */
+export interface AskPendingLifecycle {
+  kind: 'ask_pending';
+  status: AskPendingStatus;
+  askId: string;
+  /** Approval id when the deferral is driven by pending_approval. */
+  approvalId?: string;
+  /** Persona under approval, surfaced in the inline placeholder UI. */
+  persona?: string;
+  /** Error explanation — present on failed / expired. */
+  error?: string;
+}
+
+/**
+ * Discriminated union for `metadata.lifecycle`. Two kinds today:
+ *   - `service_query` — workflow tasks for D2D capability calls.
+ *   - `ask_pending`   — async `/ask` deferrals (coordinator fast-path
+ *                      timeout + pending_approval flows).
+ * Future kinds (long vault search, peer pairing) extend by adding
+ * members and a discriminator branch in `readLifecycle`.
+ */
+export type MessageLifecycle = ServiceQueryLifecycle | AskPendingLifecycle;
 
 export interface ChatMessage {
   id: string;
@@ -359,9 +391,14 @@ export function addLifecycleMessage(
   lifecycle: MessageLifecycle,
   extraSources: string[] = [],
 ): ChatMessage {
+  // Use the discriminator to pick the natural identity key for the
+  // sources index — taskId for service queries, askId for ask
+  // placeholders. Surfacing the key in `sources` keeps it
+  // greppable in repository rows even if metadata indexing changes.
+  const key = lifecycle.kind === 'service_query' ? lifecycle.taskId : lifecycle.askId;
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
-    sources: [lifecycle.taskId, ...extraSources],
+    sources: [key, ...extraSources],
   });
 }
 
@@ -374,22 +411,46 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
   const raw = msg.metadata?.lifecycle;
   if (raw === undefined || raw === null || typeof raw !== 'object') return null;
   const lc = raw as Record<string, unknown>;
-  if (lc.kind !== 'service_query') return null;
-  if (typeof lc.taskId !== 'string' || lc.taskId === '') return null;
+  if (typeof lc.kind !== 'string') return null;
   if (typeof lc.status !== 'string') return null;
-  return lc as unknown as MessageLifecycle;
+  if (lc.kind === 'service_query') {
+    if (typeof lc.taskId !== 'string' || lc.taskId === '') return null;
+    return lc as unknown as ServiceQueryLifecycle;
+  }
+  if (lc.kind === 'ask_pending') {
+    if (typeof lc.askId !== 'string' || lc.askId === '') return null;
+    return lc as unknown as AskPendingLifecycle;
+  }
+  return null;
 }
 
 /**
- * Find a thread message keyed by `taskId` on its lifecycle metadata.
- * Returns `null` when no matching message is present.
+ * Find a thread message keyed by `taskId` on its lifecycle metadata
+ * (only `service_query` kind has a taskId). Returns `null` when no
+ * matching message is present.
  */
 export function findMessageByTaskId(threadId: string, taskId: string): ChatMessage | null {
   const thread = threads.get(threadId);
   if (!thread) return null;
   for (const msg of thread) {
     const lc = readLifecycle(msg);
-    if (lc !== null && lc.taskId === taskId) return msg;
+    if (lc !== null && lc.kind === 'service_query' && lc.taskId === taskId) return msg;
+  }
+  return null;
+}
+
+/**
+ * Find a thread message keyed by `askId` on its lifecycle metadata
+ * (only `ask_pending` kind has an askId). Returns `null` when no
+ * matching message is present. Used by the coordinator-ask bridge
+ * to locate its own placeholder when the registry stream fires.
+ */
+export function findMessageByAskId(threadId: string, askId: string): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  for (const msg of thread) {
+    const lc = readLifecycle(msg);
+    if (lc !== null && lc.kind === 'ask_pending' && lc.askId === askId) return msg;
   }
   return null;
 }
@@ -412,14 +473,54 @@ export function updateMessageLifecycle(
   if (!thread) return null;
   const idx = thread.findIndex((msg) => {
     const lc = readLifecycle(msg);
-    return lc !== null && lc.taskId === taskId;
+    return lc !== null && lc.kind === 'service_query' && lc.taskId === taskId;
   });
   if (idx === -1) return null;
 
   const old = thread[idx];
   const oldLc = readLifecycle(old);
-  if (oldLc === null) return null;
+  if (oldLc === null || oldLc.kind !== 'service_query') return null;
   const newLc: ServiceQueryLifecycle = { ...oldLc, ...patch, kind: 'service_query', taskId };
+
+  const newMsg: ChatMessage = {
+    ...old,
+    content: newContent ?? old.content,
+    metadata: {
+      ...(old.metadata ?? {}),
+      lifecycle: newLc as unknown as Record<string, unknown>,
+    },
+  };
+  thread[idx] = newMsg;
+  persistMessage(newMsg);
+  fireSubscribers(newMsg);
+  return newMsg;
+}
+
+/**
+ * Patch the `ask_pending` lifecycle metadata of the message identified
+ * by `askId`, optionally rewriting `content` (e.g. swapping the
+ * "Working on it…" placeholder for the resolved answer). Mirrors
+ * `updateMessageLifecycle` but for the ask-bridge flow. Returns the
+ * patched message, or `null` if no matching placeholder exists.
+ */
+export function updateAskLifecycle(
+  threadId: string,
+  askId: string,
+  patch: Partial<Omit<AskPendingLifecycle, 'kind' | 'askId'>>,
+  newContent?: string,
+): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  const idx = thread.findIndex((msg) => {
+    const lc = readLifecycle(msg);
+    return lc !== null && lc.kind === 'ask_pending' && lc.askId === askId;
+  });
+  if (idx === -1) return null;
+
+  const old = thread[idx];
+  const oldLc = readLifecycle(old);
+  if (oldLc === null || oldLc.kind !== 'ask_pending') return null;
+  const newLc: AskPendingLifecycle = { ...oldLc, ...patch, kind: 'ask_pending', askId };
 
   const newMsg: ChatMessage = {
     ...old,

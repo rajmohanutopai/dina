@@ -54,6 +54,11 @@ const ALLOWED_REPO_IMPORTERS: readonly { file: string; rationale: string }[] = [
     rationale:
       'Notifications inbox (task 5.66) — in-memory items array is authoritative for reads; NotificationLogRepository is an optional persistence backing. Same dual-write pattern as chat/thread.ts: hydrate on boot, fire-and-forget persist, swallow errors so a failing repo never breaks subscriber fan-out.',
   },
+  {
+    file: 'notifications/bridges.ts',
+    rationale:
+      "Workflow→inbox bridge — surfaces kind=approval workflow tasks (intent_validation from /v1/agent/validate, service.query review-policy approvals) into the unified Notifications screen. Goes directly to WorkflowRepository.subscribeApprovalCreated because there is no CoreClient method for repository event subscriptions: the contract is in-process pub/sub, not request/response, so a remote-RPC port doesn't fit. Same shape as installApprovalInboxBridge subscribing to ApprovalManager — Brain owns the inbox surface; observing the producer is part of that ownership.",
+  },
 ];
 
 /**

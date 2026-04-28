@@ -67,6 +67,7 @@ describe('Migration v3 (workflow_tasks + workflow_events)', () => {
   });
 });
 
+
 describe('WorkflowRepository (in-memory) — create', () => {
   it('creates and returns the task by id', () => {
     const r = buildRepo();
@@ -136,6 +137,101 @@ describe('WorkflowRepository (in-memory) — create', () => {
     const copy = r.getById('task-1')!;
     copy.description = 'mutated';
     expect(r.getById('task-1')?.description).toBe('test');
+  });
+});
+
+describe('WorkflowRepository — subscribeApprovalCreated', () => {
+  it('fires once per kind=approval task with the persisted row', () => {
+    const r = buildRepo();
+    const seen: WorkflowTask[] = [];
+    r.subscribeApprovalCreated((t) => {
+      seen.push(t);
+    });
+    r.create(
+      baseTask({
+        id: 'apr-1',
+        kind: WorkflowTaskKind.Approval,
+        status: WorkflowTaskState.PendingApproval,
+        description: 'review service.query',
+      }),
+    );
+    expect(seen).toHaveLength(1);
+    expect(seen[0].id).toBe('apr-1');
+    expect(seen[0].kind).toBe('approval');
+    expect(seen[0].status).toBe('pending_approval');
+  });
+
+  it('does NOT fire for non-approval tasks (delegation, service_query, etc.)', () => {
+    const r = buildRepo();
+    const seen: WorkflowTask[] = [];
+    r.subscribeApprovalCreated((t) => {
+      seen.push(t);
+    });
+    r.create(baseTask({ id: 'sq-1', kind: WorkflowTaskKind.ServiceQuery }));
+    r.create(baseTask({ id: 'del-1', kind: WorkflowTaskKind.Delegation }));
+    expect(seen).toHaveLength(0);
+  });
+
+  it('multiple subscribers all receive the event independently', () => {
+    const r = buildRepo();
+    const a: string[] = [];
+    const b: string[] = [];
+    r.subscribeApprovalCreated((t) => a.push(t.id));
+    r.subscribeApprovalCreated((t) => b.push(t.id));
+    r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval }));
+    expect(a).toEqual(['apr-1']);
+    expect(b).toEqual(['apr-1']);
+  });
+
+  it('disposer detaches the listener — no events after unsubscribe', () => {
+    const r = buildRepo();
+    const seen: string[] = [];
+    const off = r.subscribeApprovalCreated((t) => seen.push(t.id));
+    r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval }));
+    off();
+    r.create(baseTask({ id: 'apr-2', kind: WorkflowTaskKind.Approval }));
+    expect(seen).toEqual(['apr-1']);
+  });
+
+  it('listener mutating the received task does not corrupt stored row', () => {
+    const r = buildRepo();
+    r.subscribeApprovalCreated((t) => {
+      // Cast to mutable + scribble — defensive clone must protect storage.
+      (t as { description: string }).description = 'mutated by listener';
+    });
+    r.create(
+      baseTask({
+        id: 'apr-1',
+        kind: WorkflowTaskKind.Approval,
+        description: 'original',
+      }),
+    );
+    expect(r.getById('apr-1')?.description).toBe('original');
+  });
+
+  it('a throwing listener does not break create() or starve other listeners', () => {
+    const r = buildRepo();
+    const ok: string[] = [];
+    r.subscribeApprovalCreated(() => {
+      throw new Error('observer blew up');
+    });
+    r.subscribeApprovalCreated((t) => ok.push(t.id));
+    expect(() =>
+      r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval })),
+    ).not.toThrow();
+    expect(r.getById('apr-1')).not.toBeNull();
+    expect(ok).toEqual(['apr-1']);
+  });
+
+  it('does NOT fire when create() throws (duplicate id)', () => {
+    const r = buildRepo();
+    const seen: string[] = [];
+    r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval }));
+    r.subscribeApprovalCreated((t) => seen.push(t.id));
+    expect(() =>
+      r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval })),
+    ).toThrow(WorkflowConflictError);
+    expect(seen).toHaveLength(0);
   });
 });
 

@@ -492,7 +492,14 @@ async function sendRPCResponse(
   const cliPub = extractPublicKey(requestEnv.from_did);
   const sealed = sealEncrypt(responseBytes, cliPub, nonceScheme);
 
-  sendEnvelope({
+  // `sendEnvelope` returns `false` when the WS is mid-reconnect /
+  // unauthenticated; the response is silently dropped in that case
+  // and the CLI eventually trips its 30 s recv timeout. If the send
+  // would silently drop, queue the envelope and retry until the
+  // socket is back, capped at the relay-side TTL (120 s) so we
+  // don't pile up dead envelopes when the client has long
+  // disconnected.
+  const env: MsgBoxEnvelope = {
     type: 'rpc',
     id: requestEnv.id,
     from_did: myDID,
@@ -500,7 +507,38 @@ async function sendRPCResponse(
     direction: 'response',
     expires_at: Math.floor(Date.now() / 1000) + 120,
     ciphertext: bytesToBase64(sealed),
-  });
+  };
+  const ok = await sendOrRetryUntilExpired(env);
+  // eslint-disable-next-line no-console
+  console.error(
+    `[RPC] sent rid=${requestEnv.id.slice(0, 8)} status=${response.status} delivered=${ok}`,
+  );
+}
+
+/**
+ * Send `env` over the relay WS, with a brief retry window so a
+ * mid-reconnect race doesn't silently drop the response. Tries
+ * once, then polls the connection state every 200 ms for up to
+ * `MAX_SEND_RETRY_MS` total. Returns `true` on a successful WS
+ * write, `false` after the budget is exhausted.
+ *
+ * The cap is intentionally short — the CLI's recv timeout is 30 s
+ * by default, and a real reconnect either completes in <1 s (the
+ * WS layer's `reconnect_attempt` schedule) or won't complete in
+ * time anyway. Long retries also block tests that drive a never-
+ * connected fake WS.
+ */
+const MAX_SEND_RETRY_MS = 2_000;
+const SEND_RETRY_INTERVAL_MS = 200;
+
+async function sendOrRetryUntilExpired(env: MsgBoxEnvelope): Promise<boolean> {
+  if (sendEnvelope(env)) return true;
+  const deadlineMs = Date.now() + MAX_SEND_RETRY_MS;
+  while (Date.now() < deadlineMs) {
+    await new Promise((resolve) => setTimeout(resolve, SEND_RETRY_INTERVAL_MS));
+    if (sendEnvelope(env)) return true;
+  }
+  return false;
 }
 
 async function sendRPCError(
