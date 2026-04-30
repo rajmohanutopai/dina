@@ -665,6 +665,100 @@ describe('conformance vector — nacl_sealed_box (task 10.10)', () => {
   });
 });
 
+// ─── TN-PROTO-004 — trust_score_v1 ─────────────────────────────────────────
+
+import {
+  computeScoreV1,
+  type ScoreV1Input,
+  type ScoreV1Output,
+} from '../src/trust/score_v1';
+
+interface ScoreV1Case {
+  name: string;
+  notes?: string;
+  input: ScoreV1Input;
+  expected_output: ScoreV1Output;
+}
+
+interface ScoreV1Vector {
+  name: 'trust_score_v1';
+  task: 'TN-PROTO-004';
+  scenario: { now_ms: number; now_iso: string };
+  cases: ScoreV1Case[];
+}
+
+describe('conformance vector — trust_score_v1 (TN-PROTO-004)', () => {
+  const vector = loadVector<ScoreV1Vector>('trust_score_v1.json');
+
+  it('file is structurally well-formed', () => {
+    expect(vector.name).toBe('trust_score_v1');
+    expect(vector.task).toBe('TN-PROTO-004');
+    expect(vector.scenario).toBeDefined();
+    expect(typeof vector.scenario.now_ms).toBe('number');
+    expect(vector.cases.length).toBeGreaterThan(0);
+  });
+
+  it('scenario now_iso decodes back to scenario now_ms', () => {
+    expect(new Date(vector.scenario.now_iso).getTime()).toBe(vector.scenario.now_ms);
+  });
+
+  it.each(
+    vector.cases.map((c) => [c.name, c]),
+  )('%s — computeScoreV1 matches frozen expected output', (_name, c) => {
+    const got = computeScoreV1(c.input, vector.scenario.now_ms);
+    // Strict equality across every numeric field — both sides are
+    // deterministic IEEE-754 doubles produced by the same reference.
+    expect(got.overallScore).toBe(c.expected_output.overallScore);
+    expect(got.confidence).toBe(c.expected_output.confidence);
+    expect(got.components.sentiment).toBe(c.expected_output.components.sentiment);
+    expect(got.components.vouch).toBe(c.expected_output.components.vouch);
+    expect(got.components.reviewer).toBe(c.expected_output.components.reviewer);
+    expect(got.components.network).toBe(c.expected_output.components.network);
+  });
+
+  it('every overallScore is in [0, 1]', () => {
+    for (const c of vector.cases) {
+      expect(c.expected_output.overallScore).toBeGreaterThanOrEqual(0);
+      expect(c.expected_output.overallScore).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('every component is in [0, 1]', () => {
+    for (const c of vector.cases) {
+      const comps = c.expected_output.components;
+      for (const k of ['sentiment', 'vouch', 'reviewer', 'network'] as const) {
+        expect(comps[k]).toBeGreaterThanOrEqual(0);
+        expect(comps[k]).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('confidence is one of the six discrete tiers', () => {
+    const allowed = new Set([0.0, 0.2, 0.4, 0.6, 0.8, 0.95]);
+    for (const c of vector.cases) {
+      expect(allowed.has(c.expected_output.confidence)).toBe(true);
+    }
+  });
+
+  it('cases cover each flag severity at least once', () => {
+    const seen = new Set<string>();
+    for (const c of vector.cases) for (const s of c.input.flagSeverities) seen.add(s);
+    expect(seen.has('critical')).toBe(true);
+    expect(seen.has('serious')).toBe(true);
+    expect(seen.has('warning')).toBe(true);
+  });
+
+  it('a tombstone-coordination case is present (tombstoneCount >= 3)', () => {
+    expect(vector.cases.some((c) => c.input.tombstoneCount >= 3)).toBe(true);
+  });
+
+  it('an unvouched-author case is present (author weight collapses to zero)', () => {
+    expect(vector.cases.some((c) =>
+      c.input.attestationsAbout.some((a) => !a.authorHasInboundVouch),
+    )).toBe(true);
+  });
+});
+
 // ─── Vectors-dir hygiene ───────────────────────────────────────────────────
 
 describe('conformance vectors — manifest hygiene', () => {

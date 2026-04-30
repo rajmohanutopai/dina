@@ -120,6 +120,19 @@ export default function NotificationsScreen(): React.JSX.Element {
             <Text style={styles.emptyText}>
               {filter === 'unread' ? 'All caught up' : 'No notifications yet'}
             </Text>
+            {/* The bare "No notifications yet" line gave a first-time
+                user no sense of what *would* live here — they'd guess
+                push messages? alerts? Each filter has a different
+                surface so the hint is filter-aware. */}
+            <Text style={styles.emptySubtitle}>
+              {filter === 'unread'
+                ? 'You’ve read everything in this view.'
+                : filter === 'reminder'
+                  ? 'Reminders Dina sets from your Remember notes will appear here.'
+                  : filter === 'approval'
+                    ? 'Approval requests from agents and services will appear here.'
+                    : 'Reminders, approvals, and chat events will appear here.'}
+            </Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -276,5 +289,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textMuted,
+  },
+  emptySubtitle: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    lineHeight: 18,
+    opacity: 0.8,
   },
 });

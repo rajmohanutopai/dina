@@ -34,10 +34,12 @@ export async function processTombstones(db: DrizzleDB): Promise<void> {
 
   for (const stat of tombstoneStats) {
     try {
-      // Update the tombstone count on the profile
+      // Update the tombstone count on the profile.
+      // TN-SCORE-002: stamp V1 on every reviewer-profile write.
       await db
         .update(didProfiles)
         .set({
+          scoreVersion: 'v1',
           deletionCount: Number(stat.totalTombstones),
           disputedThenDeletedCount: Number(stat.disputedCount),
           computedAt: new Date(),
@@ -52,6 +54,7 @@ export async function processTombstones(db: DrizzleDB): Promise<void> {
         await db
           .update(didProfiles)
           .set({
+            scoreVersion: 'v1',
             coordinationFlagCount: Number(stat.disputedCount),
             needsRecalc: true,
             computedAt: new Date(),

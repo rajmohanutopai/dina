@@ -34,6 +34,15 @@ export interface DIDDocument {
   verificationMethod: VerificationMethod[];
   authentication: string[];
   service: ServiceEndpoint[];
+  /**
+   * Verification relationships available for assertion (record-signing).
+   *
+   * Per W3C DID Core §5.3.2, entries are either string references into
+   * `verificationMethod` (fragment-only or fully-qualified DID URLs) or
+   * inline `VerificationMethod` objects. Trust Network V1 namespace keys
+   * register here (plan §3.5.2) — `did:plc:xxxx#namespace_<N>`.
+   */
+  assertionMethod?: (string | VerificationMethod)[];
   /** ISO 8601 creation timestamp. */
   created?: string;
 }

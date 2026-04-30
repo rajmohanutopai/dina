@@ -1,15 +1,17 @@
 /**
- * Paired Devices — admin screen for device-pairing (port of main-dina
- * `dina-admin device pair` + `device list`).
+ * Agents — admin screen for authorizing remote clients that act on
+ * the user's behalf (port of main-dina `dina-admin device pair` +
+ * `device list`). Today every entry here is a `dina-agent` install
+ * (or a thing that wraps it like OpenClaw or `dina-cli`); there is
+ * no Dina-to-Dina pairing — that's Contacts (DIDs).
  *
- * Shows the currently-paired devices (dina-agent containers, rich
- * devices, thin clients) and lets the admin mint a new 6-digit
- * pairing code that the device presents via
+ * Mints a new 8-character pairing code that the agent presents via
  * `dina configure --pairing-code`. The screen talks to Core via the
  * in-process ceremony / registry modules — no HTTP round-trip needed
  * because Admin UI runs inside the same JS runtime as Core.
  *
- * Reached via the "Paired Devices" row on the main Settings screen.
+ * Reached via the "Agents" row on the main Settings screen. Route
+ * stays `/paired-devices` to avoid breaking the deep-link surface.
  * Hidden from the tab bar.
  */
 
@@ -49,7 +51,10 @@ interface LiveCode {
 
 export default function PairedDevicesScreen() {
   const [devices, setDevices] = useState<PairedDevice[]>([]);
-  const [deviceName, setDeviceName] = useState('openclaw-user');
+  // Empty default; the placeholder below shows `openclaw-user` as a
+  // hint. Pre-filling forced anyone pairing dina-cli or a phone to
+  // clear the field before typing — a self-defeating "convenience".
+  const [deviceName, setDeviceName] = useState('');
   const [role, setRole] = useState<DeviceRole>('agent');
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
@@ -112,11 +117,11 @@ export default function PairedDevicesScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Paired Devices' }} />
+      <Stack.Screen options={{ title: 'Agents' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Section title={`PAIRED (${devices.length})`}>
+        <Section title={`CONNECTED (${devices.length})`}>
           {devices.length === 0 ? (
-            <Text style={styles.empty}>No devices paired yet.</Text>
+            <Text style={styles.empty}>No agents connected yet.</Text>
           ) : (
             devices.map((d) => (
               <View key={d.deviceId} style={styles.deviceRow}>
@@ -144,15 +149,18 @@ export default function PairedDevicesScreen() {
           </Pressable>
         </Section>
 
-        <Section title="PAIR A NEW DEVICE">
+        <Section title="AUTHORIZE A NEW AGENT">
           <Text style={styles.help}>
-            Generate an 8-character code, then give it to the device you want to pair.{'\n'}• dina-agent
-            / openclaw: paste into <Text style={styles.mono}>USER_PAIRING_CODE</Text> in
-            docker/.env.{'\n'}• dina-cli: run{' '}
-            <Text style={styles.mono}>dina configure --pairing-code &lt;code&gt;</Text>.
+            Agents act on your behalf — today that means{' '}
+            <Text style={styles.mono}>dina-agent</Text> (
+            <Text style={styles.mono}>pip install dina-agent</Text>), used directly or via wrappers
+            like OpenClaw and <Text style={styles.mono}>dina-cli</Text>.{'\n\n'}
+            Generate an 8-character code, then hand it to the agent:{'\n'}• dina-agent / openclaw:
+            paste into <Text style={styles.mono}>USER_PAIRING_CODE</Text> in docker/.env.{'\n'}•
+            dina-cli: run <Text style={styles.mono}>dina configure --pairing-code &lt;code&gt;</Text>.
           </Text>
 
-          <Text style={styles.label}>Device name</Text>
+          <Text style={styles.label}>Agent name</Text>
           <TextInput
             style={styles.input}
             value={deviceName}

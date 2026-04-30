@@ -51,15 +51,16 @@ describe('conformance CLI — exit-code contract (task 10.15)', () => {
     const { code, stdout } = runCLI();
     expect(code).toBe(0);
     expect(stdout).toContain('@dina/protocol conformance report');
-    expect(stdout).toContain('passed:         9');
+    expect(stdout).toContain('passed:         10');
     expect(stdout).toContain('failed:         0');
   });
 
   it('prints a PASS line for every frozen vector in the human report', () => {
     const { stdout } = runCLI();
     const passLines = stdout.split('\n').filter((l) => l.trim().startsWith('PASS '));
-    // 9 frozen vectors in the current manifest; any drift is a regression.
-    expect(passLines.length).toBe(9);
+    // 10 frozen vectors in the current manifest (9 Phase 1b + trust_score_v1).
+    // Any drift is a regression.
+    expect(passLines.length).toBe(10);
   });
 
   it('--json emits parseable machine output with the expected shape', () => {

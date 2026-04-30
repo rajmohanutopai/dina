@@ -253,8 +253,12 @@ export function isAuthenticated(): boolean {
  */
 export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
   if (!ws || !connected || !authenticated) {
+    // Transient: socket is mid-(re)connect or auth handshake. Caller
+    // (sendOrRetryUntilExpired) polls until authenticated or the
+    // envelope's TTL expires. `.warn` so persistent drops still
+    // surface, without lighting up LogBox during normal connect.
     // eslint-disable-next-line no-console
-    console.error(
+    console.warn(
       `[WS] sendEnvelope DROP type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} state ws=${ws !== null} conn=${connected} auth=${authenticated}`,
     );
     return false;
@@ -262,8 +266,11 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
   try {
     const wire = new TextEncoder().encode(JSON.stringify(envelope));
     ws.send(wire);
+    // Trace event — `console.log` (not `.error`) so RN's LogBox stays
+    // empty on a healthy session. Only genuine failures should trip
+    // LogBox; routine "frame went out OK" is metro-only telemetry.
     // eslint-disable-next-line no-console
-    console.error(
+    console.log(
       `[WS] sendEnvelope OK type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} to=${envelope.to_did?.slice(0, 30)} bytes=${wire.byteLength}`,
     );
     return true;
@@ -337,8 +344,9 @@ function doConnect(url: string): void {
   ws.onopen = () => {
     connected = true;
     reconnectAttempt = 0; // reset backoff on successful connect
+    // Healthy connect — trace, not error (see sendEnvelope OK comment).
     // eslint-disable-next-line no-console
-    console.error(`[WS] onopen url=${url}`);
+    console.log(`[WS] onopen url=${url}`);
     // Wait for auth_challenge from server — handled in onmessage
   };
 
@@ -367,8 +375,11 @@ function doConnect(url: string): void {
   };
 
   ws.onclose = (ev) => {
+    // Close is the lifecycle's normal terminator (server reaped, app
+    // backgrounded, OS suspended the socket) — trace level. Reconnect
+    // logic below handles any actually-needed recovery.
     // eslint-disable-next-line no-console
-    console.error(
+    console.log(
       `[WS] onclose code=${ev?.code ?? '-'} reason=${ev?.reason ?? '-'} wasAuth=${authenticated}`,
     );
     connected = false;
@@ -402,31 +413,41 @@ function handleFrameText(text: string): void {
     return;
   }
   if (msg.type === 'auth_challenge' && !authenticated) {
+    // Healthy handshake step — trace. Was `.error` and lit LogBox up
+    // every cold launch; that buried real warnings under noise.
     // eslint-disable-next-line no-console
-    console.error('[WS] frame=auth_challenge — replying');
+    console.log('[WS] frame=auth_challenge — replying');
     handleAuthChallenge(msg as unknown as { nonce: string; ts: number });
     return;
   }
   if (msg.type === 'auth_success') {
+    // Same rationale as auth_challenge — happy-path trace.
     // eslint-disable-next-line no-console
-    console.error('[WS] frame=auth_success — authenticated');
+    console.log('[WS] frame=auth_success — authenticated');
     authenticated = true;
     return;
   }
   if (!authenticated && isEnvelopeLike(msg) && authChallengeSeen) {
+    // Production relay skips the explicit `auth_success` and just
+    // streams buffered envelopes — so this branch is the *normal*
+    // promotion path on a real backend. Trace, not error.
     // eslint-disable-next-line no-console
-    console.error('[WS] envelope arrived pre-auth_success — flipping to authenticated');
+    console.log('[WS] envelope arrived pre-auth_success — flipping to authenticated');
     authenticated = true;
   }
   if (authenticated) {
     // eslint-disable-next-line no-console
-    console.error(
+    console.log(
       `[WS] dispatch type=${msg.type} id=${typeof msg.id === 'string' ? msg.id.slice(0, 8) : '-'} dir=${typeof msg.direction === 'string' ? msg.direction : '-'} from=${typeof msg.from_did === 'string' ? msg.from_did.slice(0, 30) : '-'}`,
     );
     dispatchEnvelope(msg as unknown as MsgBoxEnvelope);
   } else {
+    // Pre-auth drop — *expected* during initial handshake (the relay
+    // emits an auth_challenge before we accept any other frame). The
+    // misbehaving-relay scenario is rare; keep this at `.log` so the
+    // first few seconds after connect don't light up LogBox.
     // eslint-disable-next-line no-console
-    console.error(
+    console.log(
       `[WS] frame dropped pre-auth type=${msg.type} authChalSeen=${authChallengeSeen}`,
     );
   }
@@ -550,8 +571,12 @@ function dispatchEnvelope(env: MsgBoxEnvelope): void {
         // eslint-disable-next-line no-console
         console.error(`[WS] dispatch DROP no rpcHandler id=${env.id?.slice(0, 8)}`);
       else
+        // RPC responses on the home node are an expected case (the
+        // home node only consumes incoming *requests*; responses
+        // come back along the same socket but are routed by id, not
+        // by handler) — trace, not error.
         // eslint-disable-next-line no-console
-        console.error(
+        console.log(
           `[WS] dispatch IGNORE rpc dir=${env.direction ?? '-'} (home node only routes requests) id=${env.id?.slice(0, 8)}`,
         );
       break;

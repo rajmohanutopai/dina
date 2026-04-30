@@ -333,4 +333,119 @@ describe('CachingPlcResolver (task 6.10)', () => {
       expect(events[0]!.outcome).toBe('invalid_did');
     });
   });
+
+  // ── Event taxonomy + payload pinning ─────────────────────────────────
+  // The four outcome values ('found', 'not_found', 'invalid_did',
+  // 'network_error') feed observability dashboards that count
+  // resolution failures by class. The previous tests only pinned two
+  // ('found' + 'invalid_did') and never asserted the `did` payload
+  // field — a refactor that swapped outcomes or sent the wrong did
+  // would silently break per-DID drill-downs in the admin UI without
+  // breaking any test.
+
+  describe('events — full outcome taxonomy + did payload', () => {
+    interface ResolvedEv {
+      kind: 'resolved';
+      did: string;
+      outcome: 'found' | 'not_found' | 'invalid_did' | 'network_error';
+    }
+
+    function captureResolved(): {
+      events: ResolvedEv[];
+      onEvent: (e: { kind: string }) => void;
+    } {
+      const events: ResolvedEv[] = [];
+      return {
+        events,
+        onEvent: (e) => {
+          if (e.kind === 'resolved') events.push(e as ResolvedEv);
+        },
+      };
+    }
+
+    it('outcome=not_found event includes the normalised did', async () => {
+      const { events, onEvent } = captureResolved();
+      const r = new CachingPlcResolver({
+        fetchFn: fetchOk(null), // null body → not_found
+        onEvent,
+      });
+      await r.resolve(DID);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.outcome).toBe('not_found');
+      expect(events[0]?.did).toBe(DID);
+    });
+
+    it('outcome=network_error event includes the normalised did', async () => {
+      // SWR's blocking-fetch throw with no cached entry surfaces as
+      // network_error (line 157 of caching_plc_resolver.ts). Pin the
+      // outcome + the did payload so per-DID error dashboards keep
+      // working through a refactor.
+      const { events, onEvent } = captureResolved();
+      const r = new CachingPlcResolver({
+        fetchFn: async () => {
+          throw new Error('ENETDOWN');
+        },
+        onEvent,
+      });
+      await r.resolve(DID);
+      const ev = events.find((e) => e.outcome === 'network_error');
+      expect(ev).toBeDefined();
+      expect(ev?.did).toBe(DID);
+    });
+
+    it('outcome=found event includes the normalised did (counter-pin to outcome alone)', async () => {
+      // Counter-pin: the existing "fires resolved with outcome=found"
+      // test only checked .outcome. A refactor that always sent
+      // did="" would have passed it. Pin the did field too.
+      const { events, onEvent } = captureResolved();
+      const r = new CachingPlcResolver({ fetchFn: fetchOk(), onEvent });
+      await r.resolve(DID);
+      expect(events[0]?.outcome).toBe('found');
+      expect(events[0]?.did).toBe(DID);
+    });
+
+    it('outcome=invalid_did event carries the RAW (unnormalised) did string', async () => {
+      // For invalid_did, we never produced a normalised form (the
+      // validator rejected). Production at line 148 emits
+      // `String(did ?? '')` so observability sees what the caller
+      // actually sent. Pin so a refactor can't silently swap to ''
+      // (info-loss) or to a normalised form (impossible since
+      // normalisation failed).
+      const { events, onEvent } = captureResolved();
+      const r = new CachingPlcResolver({ fetchFn: fetchOk(), onEvent });
+      await r.resolve('did:web:nope');
+      expect(events[0]?.outcome).toBe('invalid_did');
+      expect(events[0]?.did).toBe('did:web:nope');
+    });
+
+    it('outcome=invalid_did handles null/undefined input via String(did ?? "")', async () => {
+      // The String(did ?? '') pattern is the documented coercion.
+      // Pin: null → '', undefined → '', plain object → '[object Object]'.
+      // No throws — invalid input must surface as a structured event.
+      const { events, onEvent } = captureResolved();
+      const r = new CachingPlcResolver({ fetchFn: fetchOk(), onEvent });
+      await r.resolve(null as unknown as string);
+      await r.resolve(undefined as unknown as string);
+      const invalidEvents = events.filter((e) => e.outcome === 'invalid_did');
+      expect(invalidEvents).toHaveLength(2);
+      expect(invalidEvents[0]?.did).toBe('');
+      expect(invalidEvents[1]?.did).toBe('');
+    });
+
+    it('exactly one resolved event per resolve() call (no duplicate emission)', async () => {
+      // Same contract iter-60 pinned for trust_resolve_client. Two
+      // sequential resolutions of the same DID emit two events, not
+      // four (one per call, not "one per cache-state-machine-step").
+      const { events, onEvent } = captureResolved();
+      const r = new CachingPlcResolver({ fetchFn: fetchOk(), onEvent });
+      await r.resolve(DID);
+      await r.resolve(DID); // fresh hit on the second call
+      await r.resolve(DID); // fresh hit on the third call
+      expect(events).toHaveLength(3);
+      for (const ev of events) {
+        expect(ev.outcome).toBe('found');
+        expect(ev.did).toBe(DID);
+      }
+    });
+  });
 });

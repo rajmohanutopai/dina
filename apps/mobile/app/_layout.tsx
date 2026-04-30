@@ -1,13 +1,18 @@
 /**
  * Root layout — Expo Router file-based routing.
  *
- * Tab navigator: Chat, Vault, People, Reminders, Settings
- * Styled with Dina warm design system.
+ * Tab navigator: Chat, People, Trust, Approvals (provider-only)
+ * Hamburger: Vault, Reminders, Notifications, Settings, Help
+ *
+ * Reminders + Notifications moved off the bottom bar — both are
+ * secondary surfaces (reminders fan out into the unified inbox
+ * already), so they live in the menu sheet instead. Trust Network
+ * takes the freed-up bottom-bar slot.
  */
 
 import '../src/polyfills';
 import React, { useEffect, useSyncExternalStore } from 'react';
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs, useRouter, usePathname } from 'expo-router';
 import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
@@ -48,6 +53,7 @@ import { markNotificationRead } from '@dina/brain/src/notifications/inbox';
 import { handleNotificationTap } from '../src/notifications/deep_link';
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
+import { isTrustTabHidden } from '../src/trust/flags';
 
 // Horizontal Dina mark used in the Chat tab's header. Other tabs
 // keep their text title — using the wordmark on every screen would
@@ -80,9 +86,11 @@ type NavMenuItem = {
 };
 
 const NAV_MENU_ITEMS: NavMenuItem[] = [
-  { label: 'Vault',    icon: 'lock-closed-outline',         href: '/vault'    },
-  { label: 'Settings', icon: 'settings-outline',            href: '/settings' },
-  { label: 'Help',     icon: 'help-circle-outline',         href: '/help'     },
+  { label: 'Vault',         icon: 'lock-closed-outline',     href: '/vault'         },
+  { label: 'Reminders',     icon: 'notifications-outline',   href: '/reminders'     },
+  { label: 'Notifications', icon: 'mail-outline',            href: '/notifications' },
+  { label: 'Settings',      icon: 'settings-outline',        href: '/settings'      },
+  { label: 'Help',          icon: 'help-circle-outline',     href: '/help'          },
 ];
 
 function HeaderMenuButton({ onPress }: { onPress: () => void }) {
@@ -99,15 +107,48 @@ function HeaderMenuButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+/**
+ * Always-visible Help button on the tab header. The empty-state CTA on
+ * the Chat screen teaches first-time users; this is the same path
+ * available from any tab once they're past the initial screen.
+ */
+function HeaderHelpButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Open help"
+      style={{ paddingHorizontal: 12, paddingVertical: 6 }}
+    >
+      <Ionicons name="help-circle-outline" size={24} color={colors.tabInactive} />
+    </Pressable>
+  );
+}
+
 function NavMenuSheet({
   visible,
   onClose,
   onSelect,
+  currentPath,
 }: {
   visible: boolean;
   onClose: () => void;
   onSelect: (href: string) => void;
+  /**
+   * Pathname of the currently rendered screen, e.g. `/settings` or
+   * `/vault/general`. The matching menu entry is omitted so the user
+   * doesn't see "Settings" while already on Settings — tapping it
+   * was a router.push to the same route, which read as broken.
+   */
+  currentPath: string;
 }) {
+  // Match by prefix so deep routes like `/vault/general` still hide
+  // the Vault entry. Exact equality alone would leave Vault visible
+  // when the user is already inside one of its sub-screens.
+  const items = NAV_MENU_ITEMS.filter(
+    (item) => !(currentPath === item.href || currentPath.startsWith(`${item.href}/`)),
+  );
   return (
     <Modal
       visible={visible}
@@ -117,7 +158,7 @@ function NavMenuSheet({
     >
       <Pressable style={navMenuStyles.backdrop} onPress={onClose}>
         <Pressable style={navMenuStyles.sheet} onPress={() => undefined}>
-          {NAV_MENU_ITEMS.map((item) => (
+          {items.map((item) => (
             <TouchableOpacity
               key={item.href}
               style={navMenuStyles.row}
@@ -197,28 +238,19 @@ const PROVIDER_BLOCKERS: ReadonlySet<string> = new Set([
 
 type TabName =
   | 'Chat'
-  | 'Vault'
   | 'People'
-  | 'Reminders'
-  | 'Approvals'
-  | 'Notifications'
-  | 'Settings';
+  | 'Trust'
+  | 'Approvals';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 // One outline + one filled glyph per tab. Filled is shown when the tab
 // is focused, outline otherwise — matches the iOS HIG convention.
-// Reminders uses the bell ("notifications") and the dedicated
-// Notifications tab uses the envelope ("mail") so the two stay
-// distinguishable in the tab bar.
 const TAB_GLYPHS: Record<TabName, { outline: IoniconName; filled: IoniconName }> = {
-  Chat: { outline: 'chatbubble-outline', filled: 'chatbubble' },
-  Vault: { outline: 'lock-closed-outline', filled: 'lock-closed' },
-  People: { outline: 'people-outline', filled: 'people' },
-  Reminders: { outline: 'notifications-outline', filled: 'notifications' },
-  Approvals: { outline: 'checkmark-circle-outline', filled: 'checkmark-circle' },
-  Notifications: { outline: 'mail-outline', filled: 'mail' },
-  Settings: { outline: 'settings-outline', filled: 'settings' },
+  Chat:      { outline: 'chatbubble-outline',         filled: 'chatbubble' },
+  People:    { outline: 'people-outline',             filled: 'people' },
+  Trust:     { outline: 'shield-checkmark-outline',   filled: 'shield-checkmark' },
+  Approvals: { outline: 'checkmark-circle-outline',   filled: 'checkmark-circle' },
 };
 
 function TabIcon({ name, focused }: { name: TabName; focused: boolean }) {
@@ -291,13 +323,11 @@ export default function RootLayout() {
   const providerBlocked = bootState.degradations.some((d) => PROVIDER_BLOCKERS.has(d.code));
   const showProviderTabs = runningAsProvider && !providerBlocked;
 
-  // Tab-bar badge counts from the unified inbox (5.69). These hooks
-  // subscribe to inbox events and re-render with the live unread
-  // count, capped to "9+" so a long string can't blow out the layout.
-  const reminderBadge = useUnreadBadge('reminder');
+  // Approvals is the only badge-bearing bottom tab now (Reminders +
+  // Notifications moved to the hamburger menu). The unified-inbox hooks
+  // for those still drive the in-screen UIs themselves; we just don't
+  // surface their counts on the tab bar anymore.
   const approvalBadge = useUnreadBadge('approval');
-  // Aggregate unread (all kinds) for the Notifications tab itself.
-  const notificationsBadge = useUnreadBadge();
 
   // Fire watcher mounted at the root so reminders post into the chat
   // thread + inbox regardless of which tab is currently visible.
@@ -312,6 +342,7 @@ export default function RootLayout() {
   useReminderFireWatcher({ threadId: 'main', enabled: unlocked });
 
   const router = useRouter();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const handleMenuSelect = (href: string) => {
     setMenuOpen(false);
@@ -444,6 +475,7 @@ export default function RootLayout() {
               },
               headerShadowVisible: false,
               headerLeft: () => <HeaderMenuButton onPress={() => setMenuOpen(true)} />,
+              headerRight: () => <HeaderHelpButton onPress={() => router.push('/help')} />,
               tabBarStyle: {
                 backgroundColor: colors.bgPrimary,
                 borderTopWidth: 1,
@@ -496,13 +528,26 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
+              name="trust/index"
+              options={{
+                title: 'Trust',
+                tabBarIcon: ({ focused }) => <TabIcon name="Trust" focused={focused} />,
+                // Hide the tab when AppView's `trust_v1_enabled` flag is
+                // explicitly false (TN-FLAG-005 + TN-MOB-051). Default
+                // visible — `null` from `getCachedTrustV1Enabled` (i.e.
+                // unloaded / expired) does NOT hide so dev workflows
+                // before the AppView config endpoint lands stay usable.
+                href: isTrustTabHidden() ? null : undefined,
+              }}
+            />
+            <Tabs.Screen
               name="reminders"
               options={{
                 title: 'Reminders',
-                tabBarIcon: ({ focused }) => <TabIcon name="Reminders" focused={focused} />,
-                // Unread fired-reminder count from the unified inbox
-                // (5.66/5.69). Capped to "9+" via formatBadgeCount.
-                tabBarBadge: reminderBadge,
+                // Reached via the hamburger menu. The route stays mounted
+                // so deep links (notifications → reminder detail) still
+                // work; href: null only hides the tab-bar entry.
+                href: null,
               }}
             />
             <Tabs.Screen
@@ -521,8 +566,10 @@ export default function RootLayout() {
               name="notifications"
               options={{
                 title: 'Notifications',
-                tabBarIcon: ({ focused }) => <TabIcon name="Notifications" focused={focused} />,
-                tabBarBadge: notificationsBadge,
+                // Reached via the hamburger menu. Reminder fan-out into the
+                // unified inbox still happens; the surface is just no
+                // longer pinned to the bottom bar.
+                href: null,
               }}
             />
             <Tabs.Screen
@@ -546,7 +593,12 @@ export default function RootLayout() {
             <Tabs.Screen
               name="paired-devices"
               options={{
-                title: 'Paired Devices',
+                // Title is "Agents", not "Paired Devices" — first-time
+                // users read the old label as "another phone running
+                // Dina", which this screen has nothing to do with
+                // (cross-Dina trust lives in Contacts). Route stays
+                // `/paired-devices` to keep deep links working.
+                title: 'Agents',
                 // Hidden from the tab bar — reached via drill-down from Settings.
                 // Admin surface for `dina-admin device pair`; no dedicated tab.
                 href: null,
@@ -593,6 +645,7 @@ export default function RootLayout() {
         visible={menuOpen}
         onClose={() => setMenuOpen(false)}
         onSelect={handleMenuSelect}
+        currentPath={pathname}
       />
     </View>
   );

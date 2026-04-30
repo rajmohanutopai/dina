@@ -268,3 +268,24 @@ export function deriveRotationKey(seed: Uint8Array, generation: number): Derived
 export function deriveServiceKey(seed: Uint8Array, serviceIndex: number): DerivedKey {
   return derivePath(seed, `m/9999'/3'/${serviceIndex}'`);
 }
+
+/**
+ * Derive a pseudonymous-namespace Ed25519 signing key at
+ * `m/9999'/4'/{namespaceIndex}'`.
+ *
+ * Trust Network V1 lets a user publish attestations under separate
+ * cryptographic identities ("namespaces") — health reviews under one,
+ * product reviews under another, anonymous restaurant reviews under a
+ * third. Each namespace's signing key is appended to the master DID's
+ * `assertionMethod` set as `did:plc:xxxx#namespace_<N>`. The user's
+ * single recoverable BIP-39 seed deterministically yields every
+ * namespace key under purpose-4, so a wipe + restore from seed
+ * recovers the full namespace lineage without any side-channel state.
+ *
+ * Purpose-4 is the next free slot after Service Auth (purpose 3); the
+ * full assignment is documented in `ARCHITECTURE.md` §"Key Derivation"
+ * and `docs/TRUST_NETWORK_V1_PLAN.md` §3.5 (Pseudonymous Identity).
+ */
+export function deriveNamespaceKey(seed: Uint8Array, namespaceIndex: number): DerivedKey {
+  return derivePath(seed, `m/9999'/4'/${namespaceIndex}'`);
+}

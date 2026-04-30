@@ -97,6 +97,11 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
       await db
         .update(subjectScores)
         .set({
+          // TN-SCORE-002: explicit V1 stamp. Without this, a row that
+          // was V2-stamped (in a future where V2 has run) would stay
+          // marked V2 even after a V1 refresh tick, mis-describing its
+          // contents. Stamping every write keeps the row self-describing.
+          scoreVersion: 'v1',
           totalAttestations: result.total,
           positive: result.positive,
           neutral: result.neutral,

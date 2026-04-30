@@ -33,7 +33,7 @@ import {
   verifyAttestation,
   resetPDSFetchFn,
   setPDSFetchFn,
-  type AttestationRecord,
+  type Attestation,
   type SignedAttestation,
 } from '../../src/pds';
 
@@ -83,12 +83,13 @@ describe('@dina/core/pds namespace scaffold (task 6.1)', () => {
     expect(typeof resetPDSFetchFn).toBe('function');
   });
 
-  it('AttestationRecord + SignedAttestation types are exported', () => {
-    const record: AttestationRecord = {
-      subject_did: 'did:plc:subject',
+  it('Attestation + SignedAttestation types are exported', () => {
+    const record: Attestation = {
+      subject: { type: 'did', did: 'did:plc:subject' },
       category: 'developer_tool',
-      rating: 85,
-      verdict: { note: 'scaffold test' },
+      sentiment: 'positive',
+      createdAt: '2026-01-15T12:00:00.000Z',
+      text: 'scaffold test',
     };
     const signed: SignedAttestation = {
       record,
@@ -96,7 +97,8 @@ describe('@dina/core/pds namespace scaffold (task 6.1)', () => {
       signer_did: 'did:plc:signer',
     };
     expect(signed.signer_did).toBe('did:plc:signer');
-    expect(signed.record.rating).toBe(85);
+    expect(signed.record.subject.did).toBe('did:plc:subject');
+    expect(signed.record.sentiment).toBe('positive');
   });
 
   it('PDSSession type carries the expected shape', () => {

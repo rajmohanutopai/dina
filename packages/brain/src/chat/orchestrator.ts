@@ -281,7 +281,7 @@ async function handleRemember(text: string): Promise<BotResponse> {
   // ack — the drain still runs on its own cadence and reminders land
   // a few seconds later.
   if (rememberDrainHook === null) {
-    return plainResponse(`Got it — I'll remember that. (${id})`);
+    return plainResponse(`Got it — I'll remember that.`);
   }
 
   // Drive the drain inline so the user-facing reply mirrors Python's
@@ -293,12 +293,12 @@ async function handleRemember(text: string): Promise<BotResponse> {
   } catch {
     // Drain failures shouldn't break the user round-trip — fall back
     // to the legacy ack so the user knows the item is staged.
-    return plainResponse(`Got it — I'll remember that. (${id})`);
+    return plainResponse(`Got it — I'll remember that.`);
   }
 
   const { persona } = drainResult;
   if (persona === null) {
-    return plainResponse(`Got it — I'll remember that. (${id})`);
+    return plainResponse(`Got it — I'll remember that.`);
   }
 
   const lines: string[] = [`Stored in ${formatPersonaDisplayName(persona)} vault.`];

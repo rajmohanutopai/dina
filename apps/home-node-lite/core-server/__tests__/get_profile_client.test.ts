@@ -242,6 +242,181 @@ describe('createGetProfileClient (task 6.13)', () => {
       }
     });
 
+    // ── parseCapabilitySchema per-guard taxonomy ────────────────────
+    // Production has 5 distinct null-return guards inside
+    // parseCapabilitySchema. The above test only covers schema_hash.
+    // Each guard maps to a different malformed wire shape — when the
+    // schema is rejected the capability stays in the `capabilities`
+    // array but lacks a matching entry in `capabilitySchemas`, which
+    // triggers the "capability declared but no matching schema"
+    // malformed_response. Iterate so every guard surfaces explicitly.
+
+    it.each([
+      ['schema is null', null],
+      ['schema is array', []],
+      ['schema is string', 'not-an-object'],
+      ['schema is number', 42],
+      ['schema is boolean', true],
+    ])('parseCapabilitySchema rejects: %s', async (_label, schemaValue) => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query =
+        schemaValue as unknown;
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (out.ok === false && out.reason === 'malformed_response') {
+        expect(out.detail).toMatch(/no matching schema/);
+      }
+    });
+
+    it('schema with non-string description → rejected', async () => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 42, // number — should be string
+        params: {},
+        result: {},
+        schema_hash: 'a'.repeat(64),
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
+    it.each([
+      ['null params', null],
+      ['array params', []],
+      ['string params', 'object'],
+      ['number params', 42],
+    ])('schema with %s → rejected', async (_label, params) => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params,
+        result: {},
+        schema_hash: 'a'.repeat(64),
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
+    it.each([
+      ['null result', null],
+      ['array result', []],
+      ['number result', 42],
+    ])('schema with %s → rejected', async (_label, result) => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params: {},
+        result,
+        schema_hash: 'a'.repeat(64),
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
+    // ── SCHEMA_HASH_RE strictness — the regex is /^[0-9a-f]{64}$/.
+    // Not just "any 64-char hash" — strictly LOWERCASE hex, exactly
+    // 64 chars. Pin all three dimensions so a refactor that loosened
+    // to /^[0-9a-fA-F]+$/ (case-insensitive, variable length) surfaces
+    // here. The 64-char requirement aligns with SHA-256's hexdigest
+    // length, which is the documented schema_hash format.
+
+    it('uppercase hex schema_hash rejected (regex is strict-lowercase)', async () => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params: {},
+        result: {},
+        schema_hash: 'A'.repeat(64), // uppercase A — should be rejected
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
+    it('63-char schema_hash rejected (length-strict)', async () => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params: {},
+        result: {},
+        schema_hash: 'a'.repeat(63), // one char short
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
+    it('65-char schema_hash rejected (length-strict)', async () => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params: {},
+        result: {},
+        schema_hash: 'a'.repeat(65), // one char extra
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
+    it('non-string schema_hash rejected', async () => {
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params: {},
+        result: {},
+        schema_hash: 0xdeadbeef, // number, not string
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
+    it('all-zeros 64-char lowercase hex schema_hash accepted (regex boundary)', async () => {
+      // Counter-pin: an all-zeros hash IS valid (matches the regex).
+      // A refactor that added an "all zeros is suspicious" check
+      // would silently break this — pin so the regex stays the only
+      // gate.
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params: {},
+        result: {},
+        schema_hash: '0'.repeat(64),
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(true);
+    });
+
+    it('mixed-case digits in schema_hash rejected (e.g. one A in otherwise-lowercase)', async () => {
+      // Most paranoid pin: one uppercase letter anywhere in the 64
+      // chars rejects. Counter-test for the previous "all uppercase"
+      // pin — proves the regex is char-by-char strict.
+      const profile = validProfile();
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = {
+        description: 'ETA',
+        params: {},
+        result: {},
+        schema_hash: 'a'.repeat(63) + 'A', // 63 lowercase + 1 uppercase
+      };
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
+      const out = await get({ operatorDid: DID });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_response');
+    });
+
     it('indexedAtMs non-integer → malformed_response', async () => {
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody({ indexedAtMs: 'yesterday' })),
@@ -274,6 +449,144 @@ describe('createGetProfileClient (task 6.13)', () => {
       });
       await get({ operatorDid: DID });
       expect(events[0]!.capabilityCount).toBe(1);
+    });
+  });
+
+  // ── rejected event taxonomy + operatorDid payload ────────────────────
+  // Existing tests pin only `fetched`. Production emits `rejected` with
+  // `operatorDid` + `reason` payloads across 5 distinct paths. Same bug
+  // class iter-67/iter-68 closed for service_search_client +
+  // contact_resolve_client. The operatorDid field varies: raw
+  // (unnormalised, via String()) for invalid_did, trim-normalised for
+  // the rest. Pin both halves so observability dashboards keep
+  // correlating per-DID failures correctly.
+
+  describe('events — rejected payloads (full reason taxonomy)', () => {
+    interface RejectedEv {
+      kind: 'rejected';
+      operatorDid: string;
+      reason:
+        | 'invalid_did'
+        | 'not_found'
+        | 'malformed_response'
+        | 'network_error'
+        | 'rejected_by_appview';
+    }
+
+    function captureRejected(): {
+      events: RejectedEv[];
+      onEvent: (e: { kind: string; operatorDid?: string; reason?: string }) => void;
+    } {
+      const events: RejectedEv[] = [];
+      return {
+        events,
+        onEvent: (e) => {
+          if (e.kind === 'rejected') events.push(e as RejectedEv);
+        },
+      };
+    }
+
+    it('rejected.reason="invalid_did" carries the RAW (unnormalised) operatorDid', async () => {
+      // Production line 137: `operatorDid: String(input?.operatorDid ?? '')`.
+      // Pin documented coercion so observability sees what the caller
+      // sent, not '' (info loss) or a trimmed-but-still-invalid form.
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody()), onEvent });
+      await get({ operatorDid: 'not-a-did' });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('invalid_did');
+      expect(events[0]?.operatorDid).toBe('not-a-did');
+    });
+
+    it('rejected.reason="invalid_did" with non-string operatorDid coerces via String()', async () => {
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody()), onEvent });
+      await get({ operatorDid: 42 as unknown as string });
+      expect(events[0]?.reason).toBe('invalid_did');
+      expect(events[0]?.operatorDid).toBe('42');
+    });
+
+    it('rejected.reason="invalid_did" with null operatorDid coerces to ""', async () => {
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody()), onEvent });
+      await get({ operatorDid: null as unknown as string });
+      expect(events[0]?.reason).toBe('invalid_did');
+      expect(events[0]?.operatorDid).toBe('');
+    });
+
+    it('rejected.reason="not_found" carries the trimmed validated DID', async () => {
+      // Counter-pin: post-validation events carry the normalised
+      // (trimmed) DID. A refactor that sent the raw input here would
+      // surface untrimmed DIDs in observability.
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({
+        fetchFn: stubFetch(null, 404),
+        onEvent,
+      });
+      await get({ operatorDid: `  ${DID}  ` });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('not_found');
+      expect(events[0]?.operatorDid).toBe(DID); // trimmed
+    });
+
+    it('rejected.reason="not_found" emitted for null body on 200 (not just 404)', async () => {
+      // Production line 156: `result.status === 404 || result.body === null`
+      // — both paths route to not_found. Pin so a refactor that
+      // separated them surfaces the divergence (e.g. status=200 with
+      // null body should NOT silently become "rejected_by_appview").
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({
+        fetchFn: stubFetch(null, 200),
+        onEvent,
+      });
+      await get({ operatorDid: DID });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('not_found');
+    });
+
+    it('rejected.reason="network_error" carries the validated DID', async () => {
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({
+        fetchFn: async () => {
+          throw new Error('ENETDOWN');
+        },
+        onEvent,
+      });
+      await get({ operatorDid: DID });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('network_error');
+      expect(events[0]?.operatorDid).toBe(DID);
+    });
+
+    it('rejected.reason="rejected_by_appview" carries the validated DID', async () => {
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({
+        fetchFn: stubFetch({ error: 'db down' }, 503),
+        onEvent,
+      });
+      await get({ operatorDid: DID });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('rejected_by_appview');
+      expect(events[0]?.operatorDid).toBe(DID);
+    });
+
+    it('rejected.reason="malformed_response" carries the validated DID', async () => {
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({
+        fetchFn: stubFetch({ ...okBody(), profile: 'not-an-object' }),
+        onEvent,
+      });
+      await get({ operatorDid: DID });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('malformed_response');
+      expect(events[0]?.operatorDid).toBe(DID);
+    });
+
+    it('successful path emits NO rejected events (clean discrimination)', async () => {
+      const { events, onEvent } = captureRejected();
+      const get = createGetProfileClient({ fetchFn: stubFetch(okBody()), onEvent });
+      await get({ operatorDid: DID });
+      expect(events).toHaveLength(0);
     });
   });
 });

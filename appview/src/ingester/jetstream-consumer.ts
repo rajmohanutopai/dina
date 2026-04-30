@@ -1,6 +1,7 @@
 import WebSocket from 'ws'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import type {
@@ -13,7 +14,17 @@ import type {
 import { routeHandler } from './handlers/index.js'
 import { validateRecord } from './record-validator.js'
 import { BoundedIngestionQueue } from './bounded-queue.js'
-import { isRateLimited } from './rate-limiter.js'
+import {
+  isRateLimited,
+  isCollectionRateLimited,
+  getCollectionDailyCap,
+} from './rate-limiter.js'
+import { recordRejection } from './rejection-writer.js'
+import { readCachedBoolFlag } from './feature-flag-cache.js'
+import {
+  verifyNamespaceSignature,
+  type NamespaceGateContext,
+} from './namespace-signature-gate.js'
 import { env } from '@/config/env.js'
 import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
 import { ingesterCursor } from '@/db/schema/index.js'
@@ -138,7 +149,36 @@ export class JetstreamConsumer {
   private queue: BoundedIngestionQueue | null = null
   private highestSeenTimeUs: number = 0
 
+  /**
+   * Optional namespace-signature gate (TN-ING-003 / Plan §3.5.1). When
+   * provided, every namespace-bearing record is checked against the
+   * author's DID document before handler dispatch — records whose
+   * namespace isn't declared as an `assertionMethod` are rejected
+   * with `namespace_disabled` BEFORE they pollute the per-namespace
+   * reviewer-stats table.
+   *
+   * **Optional, not required**: a fresh deployment that hasn't yet
+   * configured a PLC resolver leaves this undefined; the gate is
+   * skipped, and namespace-bearing records pass through (V1 cohort
+   * is overwhelmingly root-identity, so the security cost of a
+   * temporary gate-off is bounded). Production deployments inject a
+   * gate via the `setNamespaceGate()` method during boot.
+   */
+  private namespaceGate: NamespaceGateContext | null = null
+
   constructor(private db: DrizzleDB) {}
+
+  /**
+   * Inject the namespace-signature gate's context. Called once during
+   * boot after the PLC resolver + DID-doc cache are initialised.
+   * Idempotent: setting twice replaces the previous gate (used by
+   * tests to swap in mocks). Setting `null` disables the gate (used
+   * during graceful resolver-down windows where operators want to
+   * fall back to "skip the gate" rather than fail-closed).
+   */
+  setNamespaceGate(gate: NamespaceGateContext | null): void {
+    this.namespaceGate = gate
+  }
 
   /**
    * Write an event to the overflow spool on disk.
@@ -309,17 +349,78 @@ export class JetstreamConsumer {
 
     if (!TRUST_COLLECTIONS.includes(collection as any)) return
 
+    // Both `JetstreamCommitCreate` and `JetstreamCommitDelete` carry
+    // `rkey: string`, so we can safely build the AT-URI here once and
+    // reuse it across the rejection branches below.
+    const atUri = `at://${did}/${collection}/${commit.rkey}`
+
+    // TN-OBS-002 / Plan §13.8 — synthesize a per-event correlation id
+    // BEFORE any gate fires so rejected records (rate-limit, feature-
+    // off, schema-invalid) also get a traceable log line. Generated
+    // here, plumbed through the dispatcher branches via the
+    // `rejectionCtx` + the handler's `RecordOp.traceId`. Deletes
+    // share the same trace shape so the post-hoc query "what
+    // happened to URI X?" returns one trace covering create + later
+    // delete on a single record.
+    const traceId = randomUUID()
+    const rejectionCtx = { db: this.db, logger, metrics, traceId }
+
+    // Feature-flag gate (TN-ING-004 / Plan §13.10). Read FIRST — before
+    // rate-limiting, validation, or any per-record work — so a flipped
+    // kill-switch shortcuts the entire pipeline. 5-second TTL cache
+    // batches reads from per-event to ≤ 12/min regardless of traffic
+    // (see `feature-flag-cache.ts`). Deletes also gate on the flag —
+    // when the feature is off, AppView shouldn't process upstream
+    // deletions either; resuming will replay from the cursor.
+    const trustEnabled = await readCachedBoolFlag(this.db, 'trust_v1_enabled')
+    if (!trustEnabled) {
+      await recordRejection(rejectionCtx, {
+        atUri,
+        did,
+        reason: 'feature_off',
+        detail: { operation: commit.operation },
+      })
+      return
+    }
+
     if (isRateLimited(did)) {
+      await recordRejection(rejectionCtx, { atUri, did, reason: 'rate_limit' })
+      // Keep the legacy counter for dashboards that already chart it;
+      // `ingester.rejections{reason=rate_limit}` from recordRejection
+      // is the authoritative new counter going forward.
       metrics.incr('ingester.rate_limited_drops', { collection })
+      return
+    }
+
+    // Per-collection per-day quota gate (TN-ING-002 / Plan §3.5 + §6.1).
+    // Tighter caps than the hourly per-DID limit above and per-collection,
+    // so an author saturating attestations can still post endorsements.
+    // Only applies to creates/updates — deletes don't consume the quota
+    // (an honest cleanup path shouldn't be rate-limited).
+    if (
+      (commit.operation === 'create' || commit.operation === 'update') &&
+      isCollectionRateLimited(did, collection)
+    ) {
+      await recordRejection(rejectionCtx, {
+        atUri,
+        did,
+        reason: 'rate_limit',
+        detail: {
+          scope: 'per_collection_daily',
+          collection,
+          daily_cap: getCollectionDailyCap(collection),
+        },
+      })
+      metrics.incr('ingester.rate_limited_drops', { collection, scope: 'per_collection_daily' })
       return
     }
 
     metrics.incr('ingester.events.received', { collection, operation: commit.operation })
 
     if (commit.operation === 'create' || commit.operation === 'update') {
-      await this.handleCreateOrUpdate(did, commit as JetstreamCommitCreate['commit'])
+      await this.handleCreateOrUpdate(did, commit as JetstreamCommitCreate['commit'], traceId)
     } else if (commit.operation === 'delete') {
-      await this.handleDelete(did, commit as JetstreamCommitDelete['commit'])
+      await this.handleDelete(did, commit as JetstreamCommitDelete['commit'], traceId)
     }
 
     this.eventsSinceCursorSave++
@@ -332,7 +433,11 @@ export class JetstreamConsumer {
     }
   }
 
-  private async handleCreateOrUpdate(did: string, commit: JetstreamCommitCreate['commit']): Promise<void> {
+  private async handleCreateOrUpdate(
+    did: string,
+    commit: JetstreamCommitCreate['commit'],
+    traceId: string,
+  ): Promise<void> {
     const { collection, rkey, record, cid } = commit
     const uri = `at://${did}/${collection}/${rkey}`
 
@@ -349,21 +454,73 @@ export class JetstreamConsumer {
     // Reject records with missing or malformed CIDs — they cannot have come
     // from a well-formed AT Protocol commit.
     if (!cid) {
-      logger.warn({ uri }, 'Record missing CID — rejected')
+      // Legacy counter retained for existing dashboards; the new
+      // canonical counter is `ingester.rejections{reason=schema_invalid}`
+      // emitted by recordRejection.
       metrics.incr('ingester.validation.cid_missing', { collection })
+      await recordRejection(
+        { db: this.db, logger, metrics, traceId },
+        { atUri: uri, did, reason: 'schema_invalid', detail: { phase: 'cid_missing' } },
+      )
       return
     }
     if (!/^bafy[a-z2-7]{50,}$/.test(cid)) {
-      logger.warn({ uri, cid: cid.slice(0, 20) }, 'Malformed CID — rejected')
       metrics.incr('ingester.validation.cid_invalid', { collection })
+      await recordRejection(
+        { db: this.db, logger, metrics, traceId },
+        {
+          atUri: uri,
+          did,
+          reason: 'schema_invalid',
+          detail: { phase: 'cid_malformed', cid_prefix: cid.slice(0, 20) },
+        },
+      )
       return
     }
 
     const validation = validateRecord(collection, record)
     if (!validation.success) {
-      logger.warn({ uri, errors: validation.errors }, 'Record validation failed')
       metrics.incr('ingester.validation.failed', { collection })
+      await recordRejection(
+        { db: this.db, logger, metrics, traceId },
+        {
+          atUri: uri,
+          did,
+          reason: 'schema_invalid',
+          detail: { phase: 'zod_validation', errors: validation.errors },
+        },
+      )
       return
+    }
+
+    // Namespace-signature gate (TN-ING-003 / Plan §3.5.1). Runs AFTER
+    // schema validation (so we know `record.namespace` is at least a
+    // bounds-checked string) and BEFORE handler dispatch (so a
+    // disabled namespace never pollutes the per-namespace reviewer-
+    // stats table). Gate is only invoked when the AppView has been
+    // configured with a DID resolver — until then namespace-bearing
+    // records pass through unchecked. The gate's own internal logic
+    // short-circuits records WITHOUT a namespace (V1 majority root-
+    // identity path), so calling it on every record is cheap.
+    if (this.namespaceGate !== null) {
+      const validatedRecord = validation.data as { namespace?: string | null }
+      const gateResult = await verifyNamespaceSignature(
+        this.namespaceGate,
+        did,
+        validatedRecord.namespace,
+      )
+      if (!gateResult.ok) {
+        await recordRejection(
+          { db: this.db, logger, metrics, traceId },
+          {
+            atUri: uri,
+            did,
+            reason: gateResult.reason,
+            detail: gateResult.detail,
+          },
+        )
+        return
+      }
     }
 
     const handler = routeHandler(collection)
@@ -381,12 +538,23 @@ export class JetstreamConsumer {
     await handler.handleCreate(ctx, {
       uri, did, collection, rkey, cid,
       record: validation.data as Record<string, unknown>,
+      traceId,
     })
 
+    // TN-OBS-002: trace_id lives in structured LOGS, not metric
+    // labels — UUID-cardinality labels explode the metric backend
+    // (Prometheus, Loki, CloudWatch all warn against per-request
+    // label values). The trace appears in the dispatcher log line
+    // and the handler's row write; metrics stay low-cardinality.
+    logger.info({ collection, operation: commit.operation, uri, trace_id: traceId }, 'Record processed')
     metrics.incr('ingester.records.processed', { collection, operation: commit.operation })
   }
 
-  private async handleDelete(did: string, commit: JetstreamCommitDelete['commit']): Promise<void> {
+  private async handleDelete(
+    did: string,
+    commit: JetstreamCommitDelete['commit'],
+    traceId: string,
+  ): Promise<void> {
     const { collection, rkey } = commit
     const uri = `at://${did}/${collection}/${rkey}`
 
@@ -394,7 +562,8 @@ export class JetstreamConsumer {
     if (!handler) return
 
     const ctx = { db: this.db, logger, metrics }
-    await handler.handleDelete(ctx, { uri, did, collection, rkey })
+    await handler.handleDelete(ctx, { uri, did, collection, rkey, traceId })
+    logger.info({ collection, operation: 'delete', uri, trace_id: traceId }, 'Record processed')
     metrics.incr('ingester.records.processed', { collection, operation: 'delete' })
   }
 

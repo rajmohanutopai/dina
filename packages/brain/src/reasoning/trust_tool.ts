@@ -26,6 +26,7 @@
  * `search_provider_services` uses).
  */
 
+import type { SubjectType } from '@dina/protocol';
 import type { AgentTool } from './tool_registry';
 import type {
   AppViewClient,
@@ -79,7 +80,7 @@ export function createSearchTrustNetworkTool(
         subjectType: {
           type: 'string',
           description:
-            "Filter search to one subject type. One of: 'did', 'content', 'product', 'dataset', 'organization', 'claim'.",
+            "Filter search to one subject type. One of: 'did', 'content', 'product', 'dataset', 'organization', 'claim', 'place'.",
         },
         domain: {
           type: 'string',
@@ -194,16 +195,15 @@ function isResolveContext(
   );
 }
 
-function isSubjectType(
-  value: string,
-): value is 'did' | 'content' | 'product' | 'dataset' | 'organization' | 'claim' {
+function isSubjectType(value: string): value is SubjectType {
   return (
     value === 'did' ||
     value === 'content' ||
     value === 'product' ||
     value === 'dataset' ||
     value === 'organization' ||
-    value === 'claim'
+    value === 'claim' ||
+    value === 'place'
   );
 }
 

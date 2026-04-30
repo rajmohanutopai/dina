@@ -2,7 +2,7 @@
  * T2D.14 — Trust network: attestation signing, expert reviews, outcome
  * tracking, anonymization, trust scoring, PDS forgery prevention.
  *
- * Category B: integration/contract test.
+ * Category B: integration/contract test against the AppView wire shape.
  *
  * Source: tests/integration/test_trust_network.py
  */
@@ -10,20 +10,23 @@
 import {
   signAttestation,
   validateLexicon,
-  isValidRating,
   verifyAttestation,
 } from '../../src/trust/pds_publish';
-import type { AttestationRecord } from '../../src/trust/pds_publish';
+import type { Attestation } from '../../src/trust/pds_publish';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 describe('Trust Network Integration', () => {
-  const testRecord: AttestationRecord = {
-    subject_did: 'did:plc:seller',
-    category: 'product_review',
-    rating: 85,
-    verdict: { product: 'Aeron Chair', recommendation: 'BUY' },
-    evidence_uri: 'https://youtube.com/watch?v=abc',
+  const FIXED_CREATED_AT = '2026-01-15T12:00:00.000Z';
+
+  const testRecord: Attestation = {
+    subject: { type: 'did', did: 'did:plc:seller' },
+    category: 'product',
+    sentiment: 'positive',
+    createdAt: FIXED_CREATED_AT,
+    text: 'Aeron Chair — recommend buy',
+    dimensions: [{ dimension: 'comfort', value: 'exceeded' }],
+    evidence: [{ type: 'video', uri: 'https://youtube.com/watch?v=abc' }],
   };
 
   const pubKey = getPublicKey(TEST_ED25519_SEED);
@@ -41,86 +44,68 @@ describe('Trust Network Integration', () => {
       expect(verifyAttestation(signed, pubKey)).toBe(true);
     });
 
-    it('multiple experts can attest same product', () => {
-      // Different signers → different signatures, same subject_did
+    it('multiple experts can attest the same subject', () => {
+      // Different signers → different signatures, same subject DID.
       const s1 = signAttestation(testRecord, TEST_ED25519_SEED, 'did:key:z6MkExpert1');
       const key2 = new Uint8Array(32).fill(0x42);
       const s2 = signAttestation(testRecord, key2, 'did:key:z6MkExpert2');
       expect(s1.signature_hex).not.toBe(s2.signature_hex);
-      expect(s1.record.subject_did).toBe(s2.record.subject_did);
+      expect(s1.record.subject.did).toBe(s2.record.subject.did);
     });
   });
 
   describe('outcome tracking', () => {
-    it('user can record purchase outcome', () => {
-      const outcome: AttestationRecord = {
-        subject_did: 'did:plc:seller',
-        category: 'product_review',
-        rating: 90,
-        verdict: { outcome: 'satisfied', product_quality: 90 },
+    it('user can record a purchase outcome', () => {
+      const outcome: Attestation = {
+        subject: { type: 'did', did: 'did:plc:seller' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: FIXED_CREATED_AT,
+        dimensions: [{ dimension: 'overall', value: 'met' }],
+        text: 'Order arrived on time, quality matched listing.',
       };
-      const errors = validateLexicon(outcome);
-      expect(errors).toEqual([]);
+      expect(validateLexicon(outcome)).toEqual([]);
     });
 
-    it('outcome reports contain no PII', () => {
-      // Outcome data is anonymized — product_category, not buyer identity
-      // Lexicon validation does not enforce PII presence — that's the scrubber's job
-      const errors = validateLexicon(testRecord);
-      expect(errors).toEqual([]);
+    it('outcome lexicon validation does not enforce PII presence (scrubber owns that)', () => {
+      // Lexicon validation is structural. PII is the scrubber's job —
+      // the wire format itself doesn't try to detect names/emails.
+      expect(validateLexicon(testRecord)).toEqual([]);
     });
 
-    it('outcome records facts not opinions', () => {
-      // Lexicon structure enforces: verdict is structured data, not free text
-      const errors = validateLexicon(testRecord);
-      expect(errors).toEqual([]);
-      expect(typeof testRecord.verdict).toBe('object');
-    });
-  });
-
-  describe('trust scoring', () => {
-    it('every bot has tracked trust score', () => {
-      // AppView maintains trust scores — mobile queries as read-only client
-      expect(true).toBe(true);
-    });
-
-    it('compromised bot score drops sharply', () => {
-      expect(true).toBe(true);
-    });
-
-    it('Dina auto-routes to highest-trust bot', () => {
-      expect(true).toBe(true);
-    });
-
-    it('trust scores visible to user', () => {
-      expect(true).toBe(true);
-    });
-
-    it('trust score capped at 100.0', () => {
-      expect(isValidRating(100)).toBe(true);
-      expect(isValidRating(101)).toBe(false);
-    });
-
-    it('trust score floor at 0.0', () => {
-      expect(isValidRating(0)).toBe(true);
-      expect(isValidRating(-1)).toBe(false);
+    it('dimensions carry structured ratings, not free-form opinion', () => {
+      // Structure enforced by the lexicon: dimension values must come
+      // from a closed enum (exceeded/met/below/failed), not free text.
+      expect(validateLexicon(testRecord)).toEqual([]);
+      expect(testRecord.dimensions?.[0]?.value).toBe('exceeded');
     });
   });
 
   describe('PDS forgery prevention', () => {
-    it('records signed by author DID — PDS cannot forge', () => {
-      // Ed25519 signature binds record to author's identity
+    it('records are signed by the author DID — PDS cannot forge', () => {
+      // Ed25519 signature binds the record to the author's identity.
       const signed = signAttestation(testRecord, TEST_ED25519_SEED, 'did:key:z6MkAuthor');
       expect(verifyAttestation(signed, pubKey)).toBe(true);
 
-      // Tampering invalidates signature
-      const tampered = { ...signed, record: { ...signed.record, rating: 0 } };
+      // Tampering — swapping sentiment positive→negative — invalidates
+      // the signature.
+      const tampered = {
+        ...signed,
+        record: { ...signed.record, sentiment: 'negative' as const },
+      };
       expect(verifyAttestation(tampered, pubKey)).toBe(false);
     });
 
-    it('high participation from verified users', () => {
-      // Architectural: verified users contribute more outcomes
-      expect(true).toBe(true);
+    it('tampering with subject DID invalidates the signature', () => {
+      const signed = signAttestation(testRecord, TEST_ED25519_SEED, 'did:key:z6MkAuthor');
+      const tampered = {
+        ...signed,
+        record: {
+          ...signed.record,
+          subject: { ...signed.record.subject, did: 'did:plc:attacker' },
+        },
+      };
+      expect(verifyAttestation(tampered, pubKey)).toBe(false);
     });
   });
 });

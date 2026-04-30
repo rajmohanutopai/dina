@@ -82,15 +82,15 @@ describe('LexiconValidator (task 6.5)', () => {
     it('returns unknown_collection when $type missing + no argument', () => {
       const v = new LexiconValidator({ 'x': { type: 'object' } });
       const r = v.validate({ foo: 'bar' });
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]!.kind).toBe('unknown_collection');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('unknown_collection');
     });
 
     it('returns unknown_collection for unregistered collection', () => {
       const v = new LexiconValidator({ 'x': { type: 'object' } });
       const r = v.validate({}, 'not-registered');
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]!.kind).toBe('unknown_collection');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('unknown_collection');
     });
   });
 
@@ -130,8 +130,8 @@ describe('LexiconValidator (task 6.5)', () => {
       ['null rejects undefined', undefined, 'null_t'],
     ])('%s', (_label, value, collection) => {
       const r = v.validate(value, collection);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]!.kind).toBe('type_mismatch');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('type_mismatch');
     });
 
     it('NaN / Infinity rejected for number type', () => {
@@ -239,10 +239,10 @@ describe('LexiconValidator (task 6.5)', () => {
     it('min/max items', () => {
       const empty = v.validate([], 'strArr');
       const big = v.validate(['a', 'b', 'c', 'd'], 'strArr');
-      expect(empty.ok).toBe(false);
-      expect(big.ok).toBe(false);
-      if (!empty.ok) expect(empty.errors[0]!.kind).toBe('min_items_violation');
-      if (!big.ok) expect(big.errors[0]!.kind).toBe('max_items_violation');
+      if (empty.ok) throw new Error('expected empty ok:false');
+      if (big.ok) throw new Error('expected big ok:false');
+      expect(empty.errors[0]?.kind).toBe('min_items_violation');
+      expect(big.errors[0]?.kind).toBe('max_items_violation');
     });
 
     it('per-item type check reports index in path', () => {
@@ -265,8 +265,8 @@ describe('LexiconValidator (task 6.5)', () => {
     it('pattern match', () => {
       expect(v.validate('route_42', 'code').ok).toBe(true);
       const r = v.validate('UPPER', 'code');
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]!.kind).toBe('pattern_mismatch');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('pattern_mismatch');
     });
 
     it('minLength / maxLength', () => {
@@ -278,8 +278,8 @@ describe('LexiconValidator (task 6.5)', () => {
     it('enum', () => {
       expect(v.validate('red', 'color').ok).toBe(true);
       const r = v.validate('yellow', 'color');
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]!.kind).toBe('enum_mismatch');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('enum_mismatch');
     });
 
     it('malformed pattern in schema skipped (no crash)', () => {
@@ -306,8 +306,8 @@ describe('LexiconValidator (task 6.5)', () => {
     it('integer type rejects float', () => {
       expect(v.validate(25, 'age').ok).toBe(true);
       const r = v.validate(25.5, 'age');
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]!.kind).toBe('type_mismatch');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('type_mismatch');
     });
   });
 
@@ -321,8 +321,8 @@ describe('LexiconValidator (task 6.5)', () => {
     it('const exact match', () => {
       expect(v.validate('yes', 'yes').ok).toBe(true);
       const r = v.validate('no', 'yes');
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]!.kind).toBe('const_mismatch');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('const_mismatch');
     });
 
     it('enum allows mixed types', () => {
@@ -366,6 +366,392 @@ describe('LexiconValidator (task 6.5)', () => {
     });
   });
 
+  describe('type-check exhaustion — exotic value types', () => {
+    // The `matchesType` switch handles 7 named types; pin what
+    // happens for value types that don't naturally fit any branch.
+    const v = new LexiconValidator({
+      str: { type: 'string' },
+      num: { type: 'number' },
+      int: { type: 'integer' },
+      bool: { type: 'boolean' },
+      obj: { type: 'object' },
+      arr: { type: 'array' },
+      anyobj: { type: 'object' },
+    });
+
+    it('BigInt rejected by every type (no branch matches)', () => {
+      const big = BigInt(1);
+      // BigInt is `typeof === 'bigint'` — none of the 7 branches accept it.
+      for (const collection of ['str', 'num', 'int', 'bool', 'obj', 'arr']) {
+        expect(v.validate(big, collection).ok).toBe(false);
+      }
+    });
+
+    it('Symbol rejected by every type', () => {
+      const sym = Symbol('x');
+      for (const collection of ['str', 'num', 'int', 'bool', 'obj', 'arr']) {
+        expect(v.validate(sym, collection).ok).toBe(false);
+      }
+    });
+
+    it('function rejected by object type (typeof function ≠ object)', () => {
+      // Pin: even though functions are objects in many contexts,
+      // matchesType('object') uses `typeof === 'object'` strictly.
+      const fn = (): number => 0;
+      expect(v.validate(fn, 'obj').ok).toBe(false);
+      expect(v.validate(fn, 'arr').ok).toBe(false);
+    });
+
+    it('Date instance MATCHES object type (typeof === object, not array)', () => {
+      // Pin documented behavior: the type system treats Date as a
+      // plain object. Lexicon authors should NOT use `type: 'object'`
+      // for date-flavoured fields — use `type: 'string'` with a pattern.
+      // This test pins the actual behavior so a future "tighten object
+      // matching" change is intentional.
+      const d = new Date('2026-04-30');
+      expect(v.validate(d, 'anyobj').ok).toBe(true);
+    });
+
+    it('Map instance MATCHES object type', () => {
+      // Same documented behavior — class instances reduce to typeof.
+      expect(v.validate(new Map(), 'anyobj').ok).toBe(true);
+    });
+
+    it('Set instance MATCHES object type', () => {
+      expect(v.validate(new Set(), 'anyobj').ok).toBe(true);
+    });
+  });
+
+  describe('const + enum + type interaction (early-return semantics)', () => {
+    // The walker's order: const → enum → type → per-type constraints.
+    // const + enum return immediately on success/failure, skipping
+    // later checks. Pin the actual ordering.
+    it('const passes → continues to type check (return is only on FAILURE)', () => {
+      // The `if (!deepEquals)` block only returns when the const
+      // check FAILS. Pass-through does NOT short-circuit subsequent
+      // checks. Pin: a contradictory schema {const: 42, type: 'string'}
+      // still reports the type mismatch even though const passed.
+      const v = new LexiconValidator({
+        contradictory: { const: 42, type: 'string' },
+      });
+      const r = v.validate(42, 'contradictory');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('type_mismatch');
+    });
+
+    it('const fails → only const_mismatch reported (no type error)', () => {
+      // Value mismatching const → const_mismatch error → return.
+      // Even though string-42 also fails the type check, it doesn't
+      // appear in errors. Pin the early-return on FAILURE.
+      const v = new LexiconValidator({
+        contradictory: { const: 42, type: 'string' },
+      });
+      const r = v.validate('hello', 'contradictory');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors).toHaveLength(1);
+      expect(r.errors[0]?.kind).toBe('const_mismatch');
+    });
+
+    it('enum passes → continues to type check (only failure short-circuits)', () => {
+      // Counter-pin to the const test: same return-on-failure semantics.
+      // {enum: [42], type: 'string'} validating 42 → enum passes,
+      // then type check fires.
+      const v = new LexiconValidator({
+        e: { enum: [42, 'hello'], type: 'string' },
+      });
+      const r = v.validate(42, 'e');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('type_mismatch');
+    });
+
+    it('enum fails → only enum_mismatch reported', () => {
+      const v = new LexiconValidator({
+        e: { enum: [1, 2, 3], type: 'integer' },
+      });
+      const r = v.validate(99, 'e');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors).toHaveLength(1);
+      expect(r.errors[0]?.kind).toBe('enum_mismatch');
+    });
+
+    it('type mismatch returns early — minLength check NOT run', () => {
+      // {type: 'string', minLength: 5}, value 42 → only one
+      // type_mismatch error, no min_length error.
+      const v = new LexiconValidator({
+        s: { type: 'string', minLength: 5 },
+      });
+      const r = v.validate(42, 's');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors).toHaveLength(1);
+      expect(r.errors[0]?.kind).toBe('type_mismatch');
+    });
+
+    it('NaN as const fails strict equality (a === b false for NaN)', () => {
+      // deepEquals uses `a === b` first — and `NaN === NaN` is false.
+      // Pin: a schema declaring const NaN is unsatisfiable.
+      const v = new LexiconValidator({ n: { const: Number.NaN } });
+      const r = v.validate(Number.NaN, 'n');
+      // NaN value also fails the implicit number-finite check,
+      // BUT the const check runs first.
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('const_mismatch');
+    });
+
+    it('NaN in enum is unreachable (deepEquals false for NaN)', () => {
+      const v = new LexiconValidator({ e: { enum: [Number.NaN, 'fallback'] } });
+      // NaN value cannot match the NaN entry — falls through to other
+      // entries; only 'fallback' matches.
+      expect(v.validate(Number.NaN, 'e').ok).toBe(false);
+      expect(v.validate('fallback', 'e').ok).toBe(true);
+    });
+  });
+
+  describe('additionalProperties — true + undefined are permissive', () => {
+    it('additionalProperties: true allows unknown keys', () => {
+      const v = new LexiconValidator({
+        obj: {
+          type: 'object',
+          properties: { known: { type: 'string' } },
+          additionalProperties: true,
+        },
+      });
+      expect(v.validate({ known: 'x', unknown: 99 }, 'obj').ok).toBe(true);
+    });
+
+    it('additionalProperties omitted (undefined) allows unknown keys', () => {
+      // Counter-pin: omitted means permissive (matches JSON Schema spec).
+      const v = new LexiconValidator({
+        obj: {
+          type: 'object',
+          properties: { known: { type: 'string' } },
+        },
+      });
+      expect(v.validate({ known: 'x', unknown: 99 }, 'obj').ok).toBe(true);
+    });
+
+    it('additionalProperties: false IS the only rejecting form', () => {
+      // Sanity counter-pin: pre-existing test covers false rejecting.
+      const v = new LexiconValidator({
+        obj: {
+          type: 'object',
+          properties: { known: { type: 'string' } },
+          additionalProperties: false,
+        },
+      });
+      expect(v.validate({ known: 'x', unknown: 99 }, 'obj').ok).toBe(false);
+    });
+
+    it('object with no properties + additionalProperties:false rejects ALL keys', () => {
+      // Edge case: empty properties + strict additional. Anything
+      // non-empty → all keys flagged.
+      const v = new LexiconValidator({
+        empty: { type: 'object', additionalProperties: false },
+      });
+      const r = v.validate({ a: 1, b: 2 }, 'empty');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors.every((e) => e.kind === 'additional_property_not_allowed')).toBe(true);
+      expect(r.errors).toHaveLength(2);
+    });
+  });
+
+  describe('constructor — edge cases', () => {
+    it('throws when schemas is undefined', () => {
+      // Pre-existing test covers null; pin undefined too.
+      expect(
+        () =>
+          new LexiconValidator(
+            undefined as unknown as Record<string, LexiconSchema>,
+          ),
+      ).toThrow(/schemas/);
+    });
+
+    it('throws when schemas is a primitive (number)', () => {
+      expect(
+        () =>
+          new LexiconValidator(
+            42 as unknown as Record<string, LexiconSchema>,
+          ),
+      ).toThrow(/schemas/);
+    });
+
+    it('empty schemas object → constructs successfully', () => {
+      // Edge case: zero schemas registered. has() always false,
+      // collections() returns []. validate() returns
+      // unknown_collection.
+      const v = new LexiconValidator({});
+      expect(v.collections()).toEqual([]);
+      expect(v.has('any')).toBe(false);
+      const r = v.validate({}, 'any');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors[0]?.kind).toBe('unknown_collection');
+    });
+
+    it.each([
+      ['null', null],
+      ['undefined', undefined],
+      ['number', 42],
+      ['string', 'not-a-schema'],
+      ['boolean', true],
+    ])('schema entry as %s → throws', (_label, badEntry) => {
+      expect(
+        () =>
+          new LexiconValidator({
+            x: badEntry as unknown as LexiconSchema,
+          }),
+      ).toThrow(/must be an object/);
+    });
+
+    it('schema entry as array → still treated as object (Array IS typeof object)', () => {
+      // Pin: the constructor's check is `!schema || typeof schema !== 'object'`
+      // — does NOT call Array.isArray. So an array schema slips through
+      // construction. The validator would behave oddly later but it's
+      // documented permissive. A future tighten would surface here.
+      expect(
+        () => new LexiconValidator({ x: [] as unknown as LexiconSchema }),
+      ).not.toThrow();
+    });
+  });
+
+  describe('maxErrors — boundary values', () => {
+    function arrayOf20Mismatches(): unknown[] {
+      return new Array(20).fill(42);
+    }
+
+    it('explicit-undefined maxErrors falls back to DEFAULT_MAX_ERRORS', () => {
+      // Pin: opts.maxErrors === undefined uses ?? fallback.
+      const v = new LexiconValidator(
+        { many: { type: 'array', items: { type: 'string' } } },
+        { maxErrors: undefined },
+      );
+      const r = v.validate(arrayOf20Mismatches(), 'many');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors).toHaveLength(DEFAULT_MAX_ERRORS);
+    });
+
+    it('maxErrors: 0 → returns immediately with no errors collected (still ok:false)', () => {
+      // The current `errors.length >= maxErrors` check at the start
+      // of every push means 0 caps right away. The result is
+      // {ok: false, errors: []} — empty array, but ok:false because
+      // the function checks `errors.length === 0` AFTER the walk.
+      // Wait — when maxErrors is 0, no errors get pushed, so
+      // errors.length === 0 → returns ok:true. Pin actual behavior.
+      const v = new LexiconValidator(
+        { many: { type: 'array', items: { type: 'string' } } },
+        { maxErrors: 0 },
+      );
+      const r = v.validate(arrayOf20Mismatches(), 'many');
+      // Documented quirk: maxErrors=0 makes ALL violations
+      // unreportable, which the validator treats as ok:true.
+      // This is actually a DEFECT-class issue worth flagging
+      // but pinning current behavior so a fix is intentional.
+      expect(r.ok).toBe(true);
+    });
+
+    it('maxErrors: 1 → caps at 1, still ok:false', () => {
+      const v = new LexiconValidator(
+        { many: { type: 'array', items: { type: 'string' } } },
+        { maxErrors: 1 },
+      );
+      const r = v.validate(arrayOf20Mismatches(), 'many');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors).toHaveLength(1);
+    });
+
+    it('maxErrors very large → collects all errors below the cap', () => {
+      const v = new LexiconValidator(
+        { many: { type: 'array', items: { type: 'string' } } },
+        { maxErrors: 1000 },
+      );
+      const r = v.validate(arrayOf20Mismatches(), 'many');
+      if (r.ok) throw new Error('expected ok:false');
+      expect(r.errors).toHaveLength(20);
+    });
+  });
+
+  describe('multi-error document order', () => {
+    // When multiple violations exist in different parts of a doc,
+    // pin the visit order: top-level required first, then property
+    // walk in input-key order, recursing into objects/arrays.
+    it('reports errors in walk order: required missing first, then property errors', () => {
+      const v = new LexiconValidator({
+        prof: {
+          type: 'object',
+          required: ['name', 'isPublic'],
+          properties: {
+            name: { type: 'string' },
+            isPublic: { type: 'boolean' },
+            tags: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      });
+      const r = v.validate(
+        {
+          // name missing → required_missing
+          // isPublic = 'yes' → type_mismatch
+          // tags = [42] → type_mismatch on /tags/0
+          isPublic: 'yes',
+          tags: [42],
+        },
+        'prof',
+      );
+      if (r.ok) throw new Error('expected ok:false');
+      // First error: required_missing for /name (required check runs
+      // BEFORE the property walk).
+      expect(r.errors[0]).toMatchObject({
+        path: '/name',
+        kind: 'required_missing',
+      });
+      // Subsequent errors are in property order.
+      const paths = r.errors.map((e) => e.path);
+      expect(paths).toEqual(['/name', '/isPublic', '/tags/0']);
+    });
+
+    it('nested array errors include item index in path order', () => {
+      const v = new LexiconValidator({
+        a: { type: 'array', items: { type: 'string' } },
+      });
+      const r = v.validate([42, 'ok', 99, 'fine', 7], 'a');
+      if (r.ok) throw new Error('expected ok:false');
+      // Indices 0, 2, 4 are bad — must appear in that order.
+      const paths = r.errors.map((e) => e.path);
+      expect(paths).toEqual(['/0', '/2', '/4']);
+    });
+  });
+
+  describe('outcome shape pinning', () => {
+    const v = new LexiconValidator({
+      s: { type: 'string' },
+    });
+
+    it('ok:true outcome has exactly {ok: true} (no extra fields)', () => {
+      const r = v.validate('hi', 's');
+      // Pin minimal-success shape — no `errors: []` leak.
+      expect(Object.keys(r).sort()).toEqual(['ok']);
+      expect(r.ok).toBe(true);
+    });
+
+    it('ok:false outcome has exactly {ok: false, errors: [...]}', () => {
+      const r = v.validate(42, 's');
+      expect(Object.keys(r).sort()).toEqual(['errors', 'ok']);
+      if (!r.ok) {
+        expect(Array.isArray(r.errors)).toBe(true);
+        // errors[].length is at least 1 (no silent empty failure).
+        expect(r.errors.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('every error has exactly {path, kind, message} (no extra fields)', () => {
+      const r = v.validate(42, 's');
+      if (r.ok) throw new Error('expected ok:false');
+      for (const err of r.errors) {
+        expect(Object.keys(err).sort()).toEqual(['kind', 'message', 'path']);
+        expect(typeof err.path).toBe('string');
+        expect(typeof err.kind).toBe('string');
+        expect(typeof err.message).toBe('string');
+      }
+    });
+  });
+
   describe('JSON-pointer path encoding', () => {
     it('escapes "/" in property names', () => {
       const v = new LexiconValidator({
@@ -378,10 +764,9 @@ describe('LexiconValidator (task 6.5)', () => {
         },
       });
       const r = v.validate({}, 'top');
-      if (!r.ok) {
-        // "/" becomes "~1", "~" becomes "~0"
-        expect(r.errors[0]!.path).toBe('/path~1with~1slashes');
-      }
+      if (r.ok) throw new Error('expected ok:false');
+      // "/" becomes "~1", "~" becomes "~0"
+      expect(r.errors[0]?.path).toBe('/path~1with~1slashes');
     });
   });
 });

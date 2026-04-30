@@ -16,7 +16,7 @@ const didString = z.string().min(8).max(2048).regex(/^did:[a-z]+:/, 'Must be a v
 const boundedUri = z.string().min(1).max(2048)
 
 const subjectRefSchema = z.object({
-  type: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim']),
+  type: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place']),
   did: didString.optional(),
   uri: boundedUri.optional(),
   name: z.string().max(200).optional(),
@@ -61,6 +61,13 @@ const boundedIsoDate = isoDateString.refine(
 
 // ── Record schemas ──────────────────────────────────────────────────
 
+// Pseudonymous-namespace fragment (TN-DB-012 / Plan §3.5). Format
+// `#namespace_<N>` per `packages/core/src/identity/plc_namespace_update.ts`,
+// or absent / empty for the root identity. Length-bounded; strict
+// fragment-format check is the ingester's job (TN-ING-003) since it
+// requires resolving the author's DID document.
+const namespaceFragment = z.string().min(1).max(255)
+
 const attestationSchema = z.object({
   subject: subjectRefSchema,
   category: z.string().min(1).max(200),
@@ -79,6 +86,7 @@ const attestationSchema = z.object({
   mentions: z.array(mentionSchema).max(10).optional(),
   relatedAttestations: z.array(relatedAttestationSchema).max(5).optional(),
   bilateralReview: z.record(z.unknown()).optional(),
+  namespace: namespaceFragment.optional(),
   createdAt: boundedIsoDate,
 })
 
@@ -98,6 +106,7 @@ const endorsementSchema = z.object({
   endorsementType: z.string().min(1).max(100),
   relationship: z.string().max(200).optional(),
   text: z.string().max(2000).optional(),
+  namespace: namespaceFragment.optional(),
   createdAt: boundedIsoDate,
 })
 

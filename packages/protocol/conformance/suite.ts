@@ -36,6 +36,7 @@ import { base58 } from '@scure/base';
 
 import { buildCanonicalPayload } from '../src/canonical_sign';
 import { buildMessageJSON, type BuildMessageJSONInput } from '../src/envelope_builder';
+import { computeScoreV1, type ScoreV1Input, type ScoreV1Output } from '../src/trust/score_v1';
 import { buildAuthSignedPayload } from '../src/types/auth_frames';
 
 // ─── Report shape ──────────────────────────────────────────────────────────
@@ -280,6 +281,31 @@ const VERIFIERS: Record<string, Verifier> = {
     if (!svc || !svc.id.endsWith(a.messaging_service_fragment)) failures.push('svc-fragment');
     if (svc && !a.allowed_service_types.includes(svc.type)) failures.push('svc-type');
     return { cases: 1, failures };
+  },
+
+  trust_score_v1(vector) {
+    const v = vector as {
+      scenario: { now_ms: number };
+      cases: {
+        name: string;
+        input: ScoreV1Input;
+        expected_output: ScoreV1Output;
+      }[];
+    };
+    const failures: string[] = [];
+    for (const c of v.cases) {
+      const got = computeScoreV1(c.input, v.scenario.now_ms);
+      const want = c.expected_output;
+      // Byte-exact float compare — both sides come from the same
+      // deterministic reference, so any drift means the formula moved.
+      if (got.overallScore !== want.overallScore) failures.push(`${c.name}:overallScore`);
+      if (got.confidence !== want.confidence) failures.push(`${c.name}:confidence`);
+      if (got.components.sentiment !== want.components.sentiment) failures.push(`${c.name}:sentiment`);
+      if (got.components.vouch !== want.components.vouch) failures.push(`${c.name}:vouch`);
+      if (got.components.reviewer !== want.components.reviewer) failures.push(`${c.name}:reviewer`);
+      if (got.components.network !== want.components.network) failures.push(`${c.name}:network`);
+    }
+    return { cases: v.cases.length, failures };
   },
 
   nacl_sealed_box(vector) {

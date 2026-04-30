@@ -14,6 +14,8 @@ import {
   Text,
   TextInput,
   FlatList,
+  Modal,
+  Pressable,
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
@@ -21,6 +23,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 import { colors, spacing, radius, shadows } from '../src/theme';
 import { useLiveThread } from '../src/hooks/useChatThread';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
@@ -45,6 +48,7 @@ type UiMessage = ChatMessage & {
     | 'ask-approval'
     | 'service-approval'
     | 'service-query'
+    | 'ask-pending'
     | 'nudge'
     | 'reminder'
     | 'briefing';
@@ -62,9 +66,22 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // reply, dispatched here on the metadata block. Mirrors the
   // approval-card pattern (kind discriminator on metadata, no new
   // MessageType).
-  const lifecycle = m.metadata?.lifecycle as { kind?: unknown } | undefined;
+  const lifecycle = m.metadata?.lifecycle as
+    | { kind?: unknown; status?: unknown }
+    | undefined;
   if (m.type === 'dina' && lifecycle?.kind === 'service_query') {
     return 'service-query';
+  }
+  // ask_pending bubble — show as animated dots while status is
+  // 'pending'. Once the bridge patches it to 'complete', content
+  // becomes the answer text and we fall through to the regular
+  // 'dina' branch so the same row renders as a normal reply.
+  if (
+    m.type === 'dina' &&
+    lifecycle?.kind === 'ask_pending' &&
+    lifecycle.status === 'pending'
+  ) {
+    return 'ask-pending';
   }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
@@ -73,8 +90,24 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   return 'system';
 }
 
-// Action definitions for CTAs
+// Action definitions for the chat-mode selector. Three first-class
+// categories: Ask, Remember, Task. The user must pick one before they
+// can send \u2014 keeps Dina from sliding into open-ended chatbot territory
+// (Anti-Her principle: every interaction is transactional).
+//
+// Task currently routes through `/ask ` because the orchestrator's
+// /ask path already handles delegation via the agentic tool-use loop
+// (an agent is invoked through the loop when paired). A dedicated
+// `/task` command may be introduced later \u2014 when it lands, only the
+// `prefix` on this entry needs to change.
 const ACTIONS = [
+  {
+    key: 'ask',
+    label: 'Ask',
+    description: 'Search across everything you\u2019ve stored in your vault',
+    prefix: '/ask ',
+    placeholder: "e.g. When is Emma's birthday?",
+  },
   {
     key: 'remember',
     label: 'Remember',
@@ -83,15 +116,16 @@ const ACTIONS = [
     placeholder: "e.g. Emma's birthday is March 15",
   },
   {
-    key: 'ask',
-    label: 'Ask',
-    description: 'Search across everything you\u2019ve stored in your vault',
+    key: 'task',
+    label: 'Task',
+    description: 'Hand work to an agent \u2014 fetch email, run a workflow, \u2026',
     prefix: '/ask ',
-    placeholder: "e.g. When is Emma's birthday?",
+    placeholder: 'e.g. Fetch my new email',
   },
 ] as const;
 
 export default function ChatScreen() {
+  const router = useRouter();
   // Live-subscribed view of the Brain thread store. Issue #1 + #2:
   // - `send` routes through `handleChat` → uses the installed /ask,
   //   /service, /service_approve, /service_deny command handlers.
@@ -105,9 +139,11 @@ export default function ChatScreen() {
   // until they wandered back. The root mount fixes that.
   const [inputText, setInputText] = useState('');
   const [activeAction, setActiveAction] = useState<(typeof ACTIONS)[number] | null>(null);
+  // Mode-switch popover (opened by tapping the pill once a mode is
+  // active). Replaces the legacy chip bar above the input.
+  const [modePopoverOpen, setModePopoverOpen] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
-  const prevInputLen = useRef(0);
 
   // Map Brain's MessageType (user/dina/approval/nudge/briefing/system/error)
   // onto the three display buckets the bubble renderer knows.
@@ -145,29 +181,6 @@ export default function ChatScreen() {
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
 
-  const handleChipAction = useCallback((action: (typeof ACTIONS)[number]) => {
-    setActiveAction(action);
-    setInputText('');
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, []);
-
-  const handleInputChange = useCallback(
-    (text: string) => {
-      // Detect backspace on empty input — clear the action chip
-      if (activeAction && text === '' && prevInputLen.current === 0) {
-        setActiveAction(null);
-      }
-      prevInputLen.current = text.length;
-      setInputText(text);
-    },
-    [activeAction],
-  );
-
-  const clearAction = useCallback(() => {
-    setActiveAction(null);
-    setInputText('');
-  }, []);
-
   const renderMessage = useCallback(({ item }: { item: UiMessage }) => {
     // Pattern A inline approval card — 5.21-H. The bridge writes
     // `'approval'`-typed messages with `metadata.kind === 'ask_approval'`
@@ -193,6 +206,22 @@ export default function ChatScreen() {
     // LLM-narrative + workflow-event-push double message.
     if (item.displayType === 'service-query') {
       return <InlineServiceQueryCard message={item} />;
+    }
+    // ask_pending placeholder — Dina hasn't returned the answer in
+    // the fast-path window. Render as animated typing dots inside a
+    // dina-style bubble; when the bridge patches lifecycle.status to
+    // 'complete', toDisplayType falls through to 'dina' and this row
+    // re-renders as a normal reply with the answer text.
+    if (item.displayType === 'ask-pending') {
+      return (
+        <View style={[styles.messageBubble, styles.dinaBubble]}>
+          <View style={styles.typingDots}>
+            <View style={[styles.typingDot, { opacity: 0.4 }]} />
+            <View style={[styles.typingDot, { opacity: 0.6 }]} />
+            <View style={[styles.typingDot, { opacity: 0.8 }]} />
+          </View>
+        </View>
+      );
     }
     // Proactive nudge card — 5.62. Reconnection / reminder context /
     // pending promise / health alert. Tier dot indicates urgency.
@@ -274,50 +303,29 @@ export default function ChatScreen() {
             Everything stays on your device.{'\n'}Your data, your rules.
           </Text>
 
-          {/* Action cards */}
+          {/* Help CTA \u2014 first-time-user discovery surface. The previous
+              two action cards (Remember / Ask) duplicated the chip
+              bar above the input AND only taught two of the eight
+              capabilities; tapping through to Help is a richer entry
+              point. The header `?` icon (added in _layout.tsx) keeps
+              Help reachable once the user is past this empty state. */}
           <View style={styles.actionCards}>
-            <Text style={styles.actionSectionTitle}>WHAT WOULD YOU LIKE TO DO?</Text>
-
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => handleAction(ACTIONS[0])}
+              onPress={() => router.push('/help')}
               activeOpacity={0.7}
             >
               <View style={styles.actionCardHeader}>
                 <View style={styles.actionIcon}>
-                  <Text style={styles.actionIconText}>{'\u2726'}</Text>
-                </View>
-                <Text style={styles.actionCardTitle}>Remember something</Text>
-                <Text style={styles.actionArrow}>{'\u2192'}</Text>
-              </View>
-              <Text style={styles.actionCardDesc}>
-                Store a fact, event, preference, or anything you want to keep safe
-              </Text>
-              <View style={styles.actionExample}>
-                <Text style={styles.actionExampleText}>"Emma's birthday is March 15"</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => handleAction(ACTIONS[1])}
-              activeOpacity={0.7}
-            >
-              <View style={styles.actionCardHeader}>
-                <View style={[styles.actionIcon, styles.actionIconAsk]}>
                   <Text style={styles.actionIconText}>?</Text>
                 </View>
-                <Text style={styles.actionCardTitle}>Ask a question</Text>
+                <Text style={styles.actionCardTitle}>What can Dina do?</Text>
                 <Text style={styles.actionArrow}>{'\u2192'}</Text>
               </View>
               <Text style={styles.actionCardDesc}>
-                Search across everything you've stored in your vault
+                {'Tour the capabilities \u2014 your vault, working with agents, coordinating with people, and queries to the Dina network.'}
               </Text>
-              <View style={styles.actionExample}>
-                <Text style={styles.actionExampleText}>"When is Emma's birthday?"</Text>
-              </View>
             </TouchableOpacity>
-
           </View>
         </ScrollView>
       ) : (
@@ -344,100 +352,136 @@ export default function ChatScreen() {
         </View>
       )}
 
-      {/* Quick action chips — always visible when there are messages */}
-      {messages.length > 0 && !isTyping && (
-        <View style={styles.chipBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipScroll}
-          >
-            <TouchableOpacity
-              style={[styles.chip, activeAction?.key === 'remember' && styles.chipActive]}
-              onPress={() => handleChipAction(ACTIONS[0])}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.chipIcon}>{'\u2726'}</Text>
-              <Text
-                style={[
-                  styles.chipLabel,
-                  activeAction?.key === 'remember' && styles.chipLabelActive,
-                ]}
-              >
-                Remember
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.chip, activeAction?.key === 'ask' && styles.chipActive]}
-              onPress={() => handleChipAction(ACTIONS[1])}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.chipIcon}>?</Text>
-              <Text
-                style={[styles.chipLabel, activeAction?.key === 'ask' && styles.chipLabelActive]}
-              >
-                Ask
-              </Text>
-            </TouchableOpacity>
-            {/* Legacy in-memory count chip removed: /remember writes
-                to Brain's staging pipeline now, which this counter
-                didn't observe. The real vault count surfaces via the
-                Vault tab once the Core-side list-items endpoint lands
-                (issue #16). */}
-          </ScrollView>
-        </View>
-      )}
 
       {/* Input area */}
       <View style={styles.inputContainer}>
-        <View style={styles.inputWrapper}>
-          {activeAction && (
-            <TouchableOpacity style={styles.inputChip} onPress={clearAction} activeOpacity={0.7}>
-              <Text style={styles.inputChipText}>{activeAction.label}</Text>
-              <Text style={styles.inputChipX}>{'\u00D7'}</Text>
-            </TouchableOpacity>
+        {/* Mode selector lives *inside* the input wrapper. Force-pick
+            is preserved (Anti-Her: chat is transactional, not
+            open-ended) but the chips sit in the message box itself so
+            first-time users read them as the input rather than as a
+            separate toolbar. Once a mode is picked, the chips collapse
+            into a pill at the left of the wrapper; tap the pill to
+            swap modes via a popover. */}
+        <View
+          style={[
+            styles.inputWrapper,
+            activeAction === null && styles.inputWrapperChips,
+          ]}
+        >
+          {activeAction === null ? (
+            <>
+              <View style={styles.modeChips}>
+                {ACTIONS.map((action) => (
+                  <TouchableOpacity
+                    key={action.key}
+                    style={styles.modeChip}
+                    onPress={() => handleAction(action)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.modeChipLabel}>{action.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {/* Decorative ghost send button — anchors the wrapper
+                  visually as a message bar so the chips read as the
+                  input rather than free-floating buttons. Inert: no
+                  message to send until the user picks a mode. */}
+              <View
+                style={[styles.sendButton, styles.sendButtonDisabled]}
+                pointerEvents="none"
+              >
+                <Text style={[styles.sendArrow, styles.sendArrowDisabled]}>
+                  {'↑'}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.modePill}
+                onPress={() => setModePopoverOpen(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modePillLabel}>{activeAction.label}</Text>
+                <Text style={styles.modePillChevron}>{'\u25BE'}</Text>
+              </TouchableOpacity>
+              <TextInput
+                ref={inputRef}
+                testID="chat-input"
+                style={[styles.textInput, styles.textInputWithChip]}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder={activeAction.placeholder}
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="send"
+                onSubmitEditing={() => sendMessage()}
+                editable={!isTyping}
+                autoCorrect={false}
+                multiline
+                maxLength={2000}
+              />
+              <TouchableOpacity
+                testID="send-button"
+                style={[
+                  styles.sendButton,
+                  (!inputText.trim() || isTyping) && styles.sendButtonDisabled,
+                ]}
+                onPress={() => sendMessage()}
+                disabled={!inputText.trim() || isTyping}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.sendArrow,
+                    (!inputText.trim() || isTyping) && styles.sendArrowDisabled,
+                  ]}
+                >
+                  {'\u2191'}
+                </Text>
+              </TouchableOpacity>
+            </>
           )}
-          <TextInput
-            ref={inputRef}
-            testID="chat-input"
-            style={[styles.textInput, activeAction && styles.textInputWithChip]}
-            value={inputText}
-            onChangeText={handleInputChange}
-            placeholder={activeAction?.placeholder ?? 'Message Dina...'}
-            placeholderTextColor={colors.textMuted}
-            returnKeyType="send"
-            onSubmitEditing={() => sendMessage()}
-            editable={!isTyping}
-            autoCorrect={false}
-            multiline
-            maxLength={2000}
-            onKeyPress={({ nativeEvent }) => {
-              if (nativeEvent.key === 'Backspace' && inputText === '' && activeAction) {
-                clearAction();
-              }
-            }}
-          />
-          <TouchableOpacity
-            testID="send-button"
-            style={[
-              styles.sendButton,
-              (!inputText.trim() || isTyping) && styles.sendButtonDisabled,
-            ]}
-            onPress={() => sendMessage()}
-            disabled={!inputText.trim() || isTyping}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.sendArrow,
-                (!inputText.trim() || isTyping) && styles.sendArrowDisabled,
-              ]}
-            >
-              {'\u2191'}
-            </Text>
-          </TouchableOpacity>
         </View>
       </View>
+
+      {/* Mode-switch popover \u2014 slides up when user taps the pill. */}
+      <Modal
+        visible={modePopoverOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModePopoverOpen(false)}
+      >
+        <Pressable
+          style={styles.popoverBackdrop}
+          onPress={() => setModePopoverOpen(false)}
+        >
+          <Pressable style={styles.popoverSheet} onPress={() => undefined}>
+            <Text style={styles.popoverHint}>Switch mode</Text>
+            {ACTIONS.map((action) => {
+              const isActive = activeAction?.key === action.key;
+              return (
+                <TouchableOpacity
+                  key={action.key}
+                  style={[styles.popoverRow, isActive && styles.popoverRowActive]}
+                  onPress={() => {
+                    setActiveAction(action);
+                    setModePopoverOpen(false);
+                    setTimeout(() => inputRef.current?.focus(), 100);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.popoverLabel, isActive && styles.popoverLabelActive]}
+                  >
+                    {action.label}
+                  </Text>
+                  <Text style={styles.popoverDesc}>{action.description}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -481,14 +525,6 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: 28,
   },
-  actionSectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    color: colors.textMuted,
-    marginBottom: spacing.md,
-    marginLeft: spacing.xs,
-  },
   actionCard: {
     backgroundColor: colors.bgSecondary,
     borderRadius: radius.lg,
@@ -512,9 +548,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
-  actionIconAsk: {
-    backgroundColor: colors.bgTertiary,
-  },
   actionIconText: {
     fontSize: 14,
     color: colors.textPrimary,
@@ -535,19 +568,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 20,
     marginLeft: 40,
-  },
-  actionExample: {
-    marginTop: 10,
-    marginLeft: 40,
-    backgroundColor: colors.bgTertiary,
-    borderRadius: radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  actionExampleText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
   },
   // Message list
   messageList: {
@@ -650,54 +670,52 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
-  // Quick-action chips
-  chipBar: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.bgPrimary,
-  },
-  chipScroll: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  // Mode selector — 3-chip row that fills the input wrapper when no
+  // mode is active. Once a mode is picked, the wrapper switches to
+  // the pill + TextInput + send layout.
+  modeChips: {
+    flex: 1,
+    flexDirection: 'row',
     gap: 8,
   },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.bgSecondary,
+  modeChip: {
+    flex: 1,
+    backgroundColor: colors.bgPrimary,
     borderRadius: radius.full,
-    paddingHorizontal: 14,
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: colors.border,
+    alignItems: 'center',
   },
-  chipActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  chipIcon: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginRight: 6,
-  },
-  chipLabel: {
-    fontSize: 13,
+  modeChipLabel: {
+    fontSize: 14,
     fontWeight: '500',
     color: colors.textPrimary,
   },
-  chipLabelActive: {
-    color: colors.white,
-  },
-  chipInfo: {
+
+  // Mode pill — selected mode shown inside the input wrapper.
+  // Tappable: opens the mode-switch popover.
+  modePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 6,
+    alignSelf: 'center',
   },
-  chipInfoText: {
+  modePillLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.white,
+    letterSpacing: 0.3,
+  },
+  modePillChevron: {
     fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '500',
+    color: 'rgba(255,255,255,0.85)',
+    marginLeft: 5,
+    fontWeight: '600',
   },
 
   // Message chip (in user bubble)
@@ -717,28 +735,51 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // Input chip (in input bar)
-  inputChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 6,
-    alignSelf: 'center',
+  // Mode-switch popover (modal slide-up sheet)
+  popoverBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
   },
-  inputChipText: {
+  popoverSheet: {
+    backgroundColor: colors.bgPrimary,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    ...shadows.sm,
+  },
+  popoverHint: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+  popoverRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    marginBottom: 4,
+  },
+  popoverRowActive: {
+    backgroundColor: colors.bgSecondary,
+  },
+  popoverLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  popoverLabelActive: {
+    color: colors.accent,
+  },
+  popoverDesc: {
     fontSize: 13,
-    fontWeight: '600',
-    color: colors.white,
-    letterSpacing: 0.3,
-  },
-  inputChipX: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
-    marginLeft: 5,
-    fontWeight: '600',
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 
   // Input
@@ -759,6 +800,13 @@ const styles = StyleSheet.create({
     paddingRight: 6,
     paddingVertical: 6,
     ...shadows.sm,
+  },
+  // No-mode wrapper override: symmetric padding + center alignment
+  // so the 3 chips sit centered inside the input box.
+  inputWrapperChips: {
+    paddingLeft: 6,
+    paddingRight: 6,
+    alignItems: 'center',
   },
   textInput: {
     flex: 1,

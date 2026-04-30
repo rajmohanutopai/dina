@@ -222,14 +222,19 @@ describe('SS8.2 Search Params', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0293", "section": "01", "sectionName": "General", "title": "UT-SP-009: invalid subjectType enum"}
   it('UT-SP-009: invalid subjectType enum', () => {
-    // Description: subjectType = "place"
+    // Description: subjectType = made-up sentinel ('place' became valid in TN-DB-011)
     // Expected: Zod error
-    const result = SearchParams.safeParse({ q: 'test', subjectType: 'place' })
+    const result = SearchParams.safeParse({ q: 'test', subjectType: 'not-a-real-type' })
     expect(result.success).toBe(false)
     if (!result.success) {
       const typeError = result.error.issues.find((i) => i.path.includes('subjectType'))
       expect(typeError).toBeDefined()
     }
+  })
+
+  it('UT-SP-009b: subjectType = "place" is accepted (TN-DB-011)', () => {
+    const result = SearchParams.safeParse({ q: 'test', subjectType: 'place' })
+    expect(result.success).toBe(true)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0294", "section": "01", "sectionName": "General", "title": "UT-SP-010: tags -- comma-separated parsing"}

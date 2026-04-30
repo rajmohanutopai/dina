@@ -451,7 +451,14 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 - **D2D:** NaCl `crypto_box_seal` encrypted messaging between Home Nodes, dead-drop durability when vault is locked
 - **CLI:** `dina remember`, `ask`, `draft`, `validate`, `task`, `configure`, `session`, `status` (`remember`, `ask`, and `validate` require `--session <session-id>`)
 - **Admin:** `dina-admin` CLI (Unix socket), web UI at `/admin/*` (dashboard, settings, contacts, devices, chat, history)
-- **Trust Network:** AT Protocol AppView in TypeScript (Jetstream ingester + 9 scorer jobs + 5 xRPC endpoints)
+- **Trust Network V1:** First social-review system on AT Protocol with pseudonymous identities and bilateral cosignature
+  - **Records (19 lexicons under `com.dina.trust.*`):** attestation, vouch, endorsement, flag, reply, reaction, report, revocation, delegation, collection, media, subject, amendment, verification, reviewRequest, comparison, subjectClaim, trustPolicy, namespaceProfile
+  - **Scoring:** v1 trust-score formula (sentiment / vouch / reviewer / network components) with frozen conformance vectors that every Dina implementation pins to byte-for-byte
+  - **Pseudonymous namespaces:** users derive per-context identity keys from their master seed (`m/9999'/4'/N'`) and register them as `assertionMethod` verification methods on their published DID document. One PDS account, multiple namespaces, single-mnemonic recovery
+  - **Cosignature handshake:** D2D request/accept/reject with state-machine-driven expiry, sender footer ("Co-signed by X · Y"), recipient inbox row, push notification dispatch
+  - **AppView indexer:** AT Protocol Jetstream ingester + 9 scorer jobs + 5 xRPC endpoints, with curated subject-enrichment lookups (host → media-type, well-known orgs, product/place keywords)
+  - **Mobile:** Trust tab on the bottom nav (feature-flagged), search + facets, subject card, compose flow with conflict chooser + cosig-release edit warning, namespace management, offline outbox state machine, first-run + settings disclosure, error/empty states
+  - **Pseudonymity caveat (V1):** namespaces share one DID document — pseudonymous to first-impression observers, NOT to a sophisticated investigator correlating signatures across records. Per-namespace PDS accounts (true pseudonymity) ship in V2. The first-run modal + Settings → "About Trust Network" disclose this honestly.
 
 ---
 

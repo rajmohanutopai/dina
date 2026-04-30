@@ -19,6 +19,9 @@ import {
   getQuarantinedDids,
   getWriteCount,
   resetRateLimiter,
+  isCollectionRateLimited,
+  getCollectionWriteCount,
+  getCollectionDailyCap,
 } from '@/ingester/rate-limiter.js'
 import { BoundedIngestionQueue } from '@/ingester/bounded-queue.js'
 import type { QueueItem } from '@/ingester/bounded-queue.js'
@@ -424,9 +427,9 @@ describe('§2.1 Record Validator', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0097", "section": "01", "sectionName": "General", "title": "UT-RV-020: subject ref \u2014 all type variants"}
   it('UT-RV-020: subject ref — all type variants', () => {
-    // Input: type = "did", "content", "product", "dataset", "organization", "claim"
-    // Expected: All pass validation
-    const types = ['did', 'content', 'product', 'dataset', 'organization', 'claim'] as const
+    // Input: type = "did", "content", "product", "dataset", "organization", "claim", "place"
+    // Expected: All pass validation. (TN-DB-011 added "place".)
+    const types = ['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place'] as const
     for (const type of types) {
       const result = validateRecord(
         'com.dina.trust.attestation',
@@ -438,11 +441,11 @@ describe('§2.1 Record Validator', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0098", "section": "01", "sectionName": "General", "title": "UT-RV-021: subject ref \u2014 invalid type"}
   it('UT-RV-021: subject ref — invalid type', () => {
-    // Input: type = "place" (not in enum)
-    // Expected: success = false
+    // Input: type = made-up value (not in enum). 'place' is now accepted
+    // (TN-DB-011, 2026-04-29); use a clearly invalid sentinel here.
     const result = validateRecord(
       'com.dina.trust.attestation',
-      validAttestation({ subject: { type: 'place', did: 'did:plc:test' } }),
+      validAttestation({ subject: { type: 'not-a-real-type', did: 'did:plc:test' } }),
     )
     expect(result.success).toBe(false)
     expect(result.errors).toBeDefined()
@@ -699,6 +702,46 @@ describe('§2.1 Record Validator', () => {
     expect(result.success).toBe(false)
     expect(result.errors).toBeDefined()
   })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0114", "section": "01", "sectionName": "General", "title": "UT-RV-038: attestation accepts optional namespace fragment (TN-DB-012)"}
+  it('UT-RV-038: attestation accepts optional namespace fragment (TN-DB-012)', () => {
+    // Plan §3.5 — pseudonymous-namespace fragment passes validation. Empty/absent is also valid
+    // (root identity case) — covered by UT-RV-001 which already passes without `namespace`.
+    const result = validateRecord(
+      'com.dina.trust.attestation',
+      validAttestation({ namespace: '#namespace_2' }),
+    )
+    expect(result.success).toBe(true)
+    expect((result.data as Record<string, unknown>).namespace).toBe('#namespace_2')
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0115", "section": "01", "sectionName": "General", "title": "UT-RV-039: attestation rejects oversized namespace (TN-DB-012)"}
+  it('UT-RV-039: attestation rejects oversized namespace (TN-DB-012)', () => {
+    // Length cap (255 chars) protects against pathological / malicious fragments. Strict format
+    // checking is deferred to TN-ING-003 (signature gate that resolves the DID document).
+    const result = validateRecord(
+      'com.dina.trust.attestation',
+      validAttestation({ namespace: 'x'.repeat(300) }),
+    )
+    expect(result.success).toBe(false)
+    expect(result.errors).toBeDefined()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0116", "section": "01", "sectionName": "General", "title": "UT-RV-040: endorsement accepts optional namespace fragment (TN-DB-012)"}
+  it('UT-RV-040: endorsement accepts optional namespace fragment (TN-DB-012)', () => {
+    // Symmetric with UT-RV-038. Endorsements published under a non-root namespace stay
+    // accountable to that compartment.
+    const validEndorsement = {
+      subject: 'did:plc:target',
+      skill: 'cooking',
+      endorsementType: 'worked-together',
+      createdAt: now,
+      namespace: '#namespace_3',
+    }
+    const result = validateRecord('com.dina.trust.endorsement', validEndorsement)
+    expect(result.success).toBe(true)
+    expect((result.data as Record<string, unknown>).namespace).toBe('#namespace_3')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -906,6 +949,113 @@ describe('§2.2 Rate Limiter', () => {
       isRateLimited(did)
     }
     expect(getWriteCount(did)).toBe(5)
+  })
+
+  // ── Per-collection per-day quotas (TN-ING-002) ──────────────────────
+
+  // TRACE: {"suite": "APPVIEW", "case": "0124", "section": "01", "sectionName": "General", "title": "UT-RL-011: getCollectionDailyCap pins Plan §3.5 caps (TN-ING-002)"}
+  it('UT-RL-011: getCollectionDailyCap pins Plan §3.5 caps (TN-ING-002)', () => {
+    // Plan §3.5 / §6.1 — the documented per-author per-day caps.
+    // Pin them as a regression guard: if a future PR rebalances the
+    // caps, this test surfaces the change at the unit level so the
+    // doc + impl stay in lockstep.
+    expect(getCollectionDailyCap('com.dina.trust.attestation')).toBe(60)
+    expect(getCollectionDailyCap('com.dina.trust.endorsement')).toBe(30)
+    expect(getCollectionDailyCap('com.dina.trust.flag')).toBe(10)
+  })
+
+  it('UT-RL-012: collections without a documented cap return null + are unrestricted (TN-ING-002)', () => {
+    // Plan §3.5 only specifies caps for attestation/endorsement/flag.
+    // Other trust collections (vouches, replies, reactions, …) use only
+    // the hourly per-DID gate — the per-collection check returns false.
+    expect(getCollectionDailyCap('com.dina.trust.vouch')).toBeNull()
+    const did = 'did:plc:rl012'
+    // 100 vouches don't trigger per-collection rate limiting.
+    for (let i = 0; i < 100; i++) {
+      expect(isCollectionRateLimited(did, 'com.dina.trust.vouch')).toBe(false)
+    }
+  })
+
+  it('UT-RL-013: 60th attestation passes; 61st rejected (TN-ING-002)', () => {
+    // Cap is 60/day. Records 1..60 pass; 61 hits.
+    const did = 'did:plc:rl013'
+    for (let i = 0; i < 60; i++) {
+      expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(false)
+    }
+    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(true)
+  })
+
+  it('UT-RL-014: 30th endorsement passes; 31st rejected (TN-ING-002)', () => {
+    const did = 'did:plc:rl014'
+    for (let i = 0; i < 30; i++) {
+      expect(isCollectionRateLimited(did, 'com.dina.trust.endorsement')).toBe(false)
+    }
+    expect(isCollectionRateLimited(did, 'com.dina.trust.endorsement')).toBe(true)
+  })
+
+  it('UT-RL-015: 10th flag passes; 11th rejected (TN-ING-002)', () => {
+    const did = 'did:plc:rl015'
+    for (let i = 0; i < 10; i++) {
+      expect(isCollectionRateLimited(did, 'com.dina.trust.flag')).toBe(false)
+    }
+    expect(isCollectionRateLimited(did, 'com.dina.trust.flag')).toBe(true)
+  })
+
+  it('UT-RL-016: per-collection caps are independent — saturating one does not affect another (TN-ING-002)', () => {
+    // Plan §3.5 explicit design: an author who saturates their attestation
+    // cap can still post endorsements / flags. The cache is keyed on
+    // (DID, collection); each tuple is its own bucket.
+    const did = 'did:plc:rl016'
+    for (let i = 0; i < 60; i++) {
+      isCollectionRateLimited(did, 'com.dina.trust.attestation')
+    }
+    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(true)
+    // Endorsement bucket untouched.
+    expect(isCollectionRateLimited(did, 'com.dina.trust.endorsement')).toBe(false)
+    expect(isCollectionRateLimited(did, 'com.dina.trust.flag')).toBe(false)
+  })
+
+  it('UT-RL-017: different DIDs are independent (TN-ING-002)', () => {
+    const didA = 'did:plc:rl017a'
+    const didB = 'did:plc:rl017b'
+    for (let i = 0; i < 60; i++) {
+      isCollectionRateLimited(didA, 'com.dina.trust.attestation')
+    }
+    expect(isCollectionRateLimited(didA, 'com.dina.trust.attestation')).toBe(true)
+    expect(isCollectionRateLimited(didB, 'com.dina.trust.attestation')).toBe(false)
+  })
+
+  it('UT-RL-018: getCollectionWriteCount tracks the bucket, not the rolled-up DID counter (TN-ING-002)', () => {
+    // Sanity check that the per-collection counter is independent of
+    // the per-DID hourly counter: 5 attestations bumps the attestation
+    // bucket only, not endorsements/flags.
+    const did = 'did:plc:rl018'
+    for (let i = 0; i < 5; i++) {
+      isCollectionRateLimited(did, 'com.dina.trust.attestation')
+    }
+    expect(getCollectionWriteCount(did, 'com.dina.trust.attestation')).toBe(5)
+    expect(getCollectionWriteCount(did, 'com.dina.trust.endorsement')).toBe(0)
+    expect(getCollectionWriteCount(did, 'com.dina.trust.flag')).toBe(0)
+  })
+
+  it('UT-RL-019: 24h sliding window — old timestamps prune, freeing the cap (TN-ING-002)', () => {
+    // The cap is per-trailing-24h, not per-calendar-day. Mock Date.now
+    // to advance past the window and verify the bucket frees up.
+    const did = 'did:plc:rl019'
+    const t0 = 1_000_000_000_000
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(t0)
+
+    // Saturate the attestation cap at t0.
+    for (let i = 0; i < 60; i++) {
+      isCollectionRateLimited(did, 'com.dina.trust.attestation')
+    }
+    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(true)
+
+    // Advance past 24h — old timestamps prune, capacity restored.
+    nowSpy.mockReturnValue(t0 + 24 * 60 * 60 * 1000 + 1)
+    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(false)
+
+    nowSpy.mockRestore()
   })
 })
 

@@ -110,12 +110,21 @@ export const ACTION_PROCEED_CONFIDENCE = 0.4;
 export const ACTION_CAUTION_SCORE = 0.4;
 export const ACTION_VERIFY_SCORE = 0.2;
 
-export const CONTEXT_MULTIPLIERS: Readonly<Record<TrustContext, number>> = {
+/**
+ * Frozen at runtime — `Readonly<>` on the type alone is a compile-
+ * time-only constraint, but this constant is a shared module export
+ * read by every `decideTrust` call. A buggy or hostile caller could
+ * mutate `CONTEXT_MULTIPLIERS.read = 99` and silently poison every
+ * subsequent decision (including those on other request paths).
+ * `Object.freeze` prevents that — the assignment becomes a TypeError
+ * in strict mode (which Node 22 / ESM modules use by default).
+ */
+export const CONTEXT_MULTIPLIERS: Readonly<Record<TrustContext, number>> = Object.freeze({
   read: 1.0,
   transaction: 0.9,
   'share-pii': 0.85,
   'autonomous-action': 0.8,
-};
+});
 
 export const FLAG_PENALTY_PER_FLAG = 0.6;
 export const RING_BOOST_DIRECT = 1.15;

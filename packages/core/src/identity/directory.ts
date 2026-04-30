@@ -21,6 +21,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { base58 } from '@scure/base';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { base32LowercaseNoPad } from './base32';
 
 /** Multicodec varint prefix for secp256k1 public key: 0xe7 0x01. */
 const SECP256K1_MULTICODEC = new Uint8Array([0xe7, 0x01]);
@@ -263,7 +264,8 @@ function base64urlEncode(bytes: Uint8Array): string {
 export function derivePLCDID(signedOperation: Record<string, unknown>): string {
   const cborBytes = dagCborEncode(signedOperation);
   const hash = sha256(cborBytes);
-  const b32 = base32Encode(hash).slice(0, 24).toLowerCase();
+  // PLC spec truncates to 24 chars; alphabet is already lowercase.
+  const b32 = base32LowercaseNoPad(hash).slice(0, 24);
   return `did:plc:${b32}`;
 }
 
@@ -342,29 +344,6 @@ export async function resolveDIDPLC(
   return response.json() as Promise<Record<string, unknown>>;
 }
 
-// ---------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------
-
-/** Base32 encode (RFC 4648 without padding). */
-function base32Encode(data: Uint8Array): string {
-  const ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
-  let bits = 0;
-  let value = 0;
-  let result = '';
-
-  for (const byte of data) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      result += ALPHABET[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-
-  if (bits > 0) {
-    result += ALPHABET[(value << (5 - bits)) & 31];
-  }
-
-  return result;
-}
+// Helpers moved to `./base32.ts` so the PLC namespace update composer
+// (`./plc_namespace_update.ts`) can share the same implementation. See
+// that file's header for the rationale.

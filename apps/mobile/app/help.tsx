@@ -10,15 +10,7 @@
  */
 
 import React, { useCallback } from 'react';
-import {
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  type ImageSourcePropType,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { colors, fonts, radius, shadows, spacing } from '../src/theme';
 
@@ -26,19 +18,9 @@ interface CapabilityCard {
   icon: string;
   title: string;
   description: string;
-  /**
-   * Visual example — shown above the description when present. Renders
-   * as a 16:9 `<Image>` with rounded corners. Falls back to the text
-   * `example` below when not set so a half-screenshotted help screen
-   * still ships cleanly.
-   */
-  screenshot?: ImageSourcePropType;
-  /**
-   * Text fallback example (italic chat-bubble look). Always rendered
-   * when set AND `screenshot` is not — the two are mutually exclusive
-   * by intent: one card has either a real screenshot OR a phrasing
-   * example, never both.
-   */
+  /** Italic chat-bubble-style sample phrasing surfaced under the
+   *  description. Optional — cards that drill-through (`href`) skip
+   *  the example because the destination IS the example. */
   example?: string;
   /** When set, taps the card and routes to this expo-router path. */
   href?: string;
@@ -49,8 +31,14 @@ const STORAGE_CARDS: CapabilityCard[] = [
     icon: '✦',
     title: 'Remember something',
     description:
-      'Store a fact, preference, event, or note. Dina classifies it into the right vault, scrubs PII, and indexes it for later search.',
-    screenshot: require('../assets/help/remember_confirmation.png'),
+      'Store a fact, preference, event, or note. Dina classifies it into the right vault — health into Health, finance into Financial, everyday into General — and sensitive vaults stay locked, so what you tell Dina there stays gated. PII is scrubbed and the entry is indexed for later search.',
+    // The previous design used a chat screenshot (16:9 image) here.
+    // It rendered ~540px tall — twice the height of every other
+    // card on this page — which made Help feel broken before the
+    // user even scrolled. Switching to the same `example` pattern
+    // every other card uses brings the page into rhythm and lets
+    // the user try /remember directly from the Chat tab anyway.
+    example: '“Emma’s birthday is March 15.”',
   },
   {
     icon: '?',
@@ -77,30 +65,73 @@ const TIME_CARDS: CapabilityCard[] = [
   },
 ];
 
-const SERVICES_CARDS: CapabilityCard[] = [
+// People → People via Dinas. The headline isn't just encrypted P2P
+// (that's the channel); it's that the receiving Dina enriches the
+// arriving message with context from ITS OWN vault about the sender,
+// so the recipient is prepared without having to remember anything.
+const PEOPLE_CARDS: CapabilityCard[] = [
   {
-    icon: '🚌',
-    title: 'Ask the world, through Dina',
+    icon: '✉',
+    title: 'Your Dina talks to theirs',
     description:
-      'Some questions live outside your vault — bus arrivals, store hours, a clinic’s next opening. Dina searches the public Dina network for a service that can answer, fills in the right parameters from your question, and brings the structured reply back as a card.',
+      'Tell your Dina to inform a contact — “Tell Sancho I’ll be there in 15” — and your Dina hands off to Sancho’s Dina over an encrypted peer-to-peer channel. Sancho’s Dina notifies him AND pulls context from its own vault about you: “Alonso’s coming in 15. He loves PB&J. His mother had a fall last week — you might ask how she’s doing.” Each Dina enriches the message with what its own user would want to know.',
     example:
-      '“When does bus 42 reach Castro?” → Dina finds the SF Transit service, asks it, replies with the ETA and a map link.',
+      '“Inform Sancho I’ll be there in 15” → Sancho’s Dina alerts him with a reminder and the context it knows about you.',
   },
 ];
 
-const SAFETY_CARDS: CapabilityCard[] = [
+// Working WITH agents is the primary value prop — Dina coordinates,
+// agents (dina-agent installs, today reached via OpenClaw / dina-cli)
+// do the real fetching/executing. The safety net (approval gate) is
+// part of the agent story — agents do work, Dina holds the keys to
+// risky operations — so it lives inside this section instead of
+// floating as its own one-card "Safety net" group.
+const AGENT_CARDS: CapabilityCard[] = [
+  {
+    icon: '🤖',
+    title: 'Run real work through agents',
+    description:
+      'Agents work with Dina in two directions. Dina can hand work to an agent (e.g. OpenClaw) — “fetch new email”, “book the flight” — and the agent executes. Or an agent acts on its own and submits its intent to Dina first, so Dina can apply your rules, approve, or ask you. Install dina-agent (pip install dina-agent) and pair it; both flows are supported.',
+    example:
+      'dina-agent fetches your Gmail → Dina classifies new mail → reminders, contacts, and notes land in the right vault.',
+  },
   {
     icon: '✓',
     title: 'You approve risky actions',
     description:
-      'Agents can ask Dina for permission before sending money, sharing data, or running anything sensitive. You see the request as a card and tap Approve or Deny.',
+      'Sensitive vaults (health, financial, anything you flag) stay locked by default. When an agent needs to read one, Dina waits for your approval.',
+  },
+];
+
+// Network capabilities — these reach OUTSIDE your local Dina. The
+// previous copy described them like a web crawler ("searches the
+// public network"), which made them sound interchangeable with any
+// agent that hits the open web (OpenClaw, generic LLM tools). The
+// distinction matters: Dina queries the operator's OWN Dina with
+// a typed schema, and trust signals come from a decentralized graph
+// the network maintains — neither lives on your device.
+const NETWORK_CARDS: CapabilityCard[] = [
+  {
+    icon: '🚌',
+    title: 'Direct answers from the source',
+    description:
+      'You can connect to external services hosted by other Dinas — bus arrivals, store hours, a clinic’s next opening. Each operator runs their own Dina that publishes the capabilities it serves through its connected agents (SF Transit publishes "eta_query", a clinic publishes "next_opening"). Your Dina finds the operator on the Dina network and sends a typed query directly to their Dina; the operator’s agent computes the answer. The reply is a structured response from the source itself.',
+    example:
+      '“When does bus 42 reach Castro?” → SF Transit’s Dina answers with the ETA and a map link.',
   },
   {
     icon: '❖',
-    title: 'Trust before you buy',
+    title: 'Trust signals from the network',
     description:
-      'Ask about a product, vendor, or doctor — Dina checks the Trust Network for verified peer reviews instead of ads.',
+      'All reviews, including yours, live on a decentralized trust graph the Dina network maintains. Each review is signed by the reviewer’s identity (DID), weighted by whether they actually transacted, vouched for by their peers, and time-decayed.\n\nBecause every reviewer carries a verified reputation, and every review inherits that weight, signals in the graph are believable. Fake reviews or sponsored reviews do not move the trust score.\n\nWhen you ask Dina something, Dina goes through the Trust Network to decide for you — whether you’re picking a chair to buy, or checking whether a YouTube creator typically posts AI-generated videos.',
     example: '“Is the Calmly mattress any good?”',
+  },
+  {
+    icon: '🎯',
+    title: 'Searches that know you',
+    description:
+      'Dina applies what she knows about you to every external query. Ask for a chair and Dina searches for one with lumbar support under $500 — because she’s seen your back-pain notes and your budget. Doctors, restaurants, flights, products: results come back already tuned to your context.',
+    example: '“Find me a chair” → Dina searches for “chair with lumbar support, under $500”.',
   },
 ];
 
@@ -110,13 +141,6 @@ const PRIVACY_CARDS: CapabilityCard[] = [
     title: 'Your data stays on this device',
     description:
       'Vault is encrypted with keys derived from your passphrase. The Dina network sees only what you explicitly publish — never your raw notes.',
-  },
-  {
-    icon: '✎',
-    title: 'Manage paired devices',
-    description:
-      'Pair openclaw, dina-cli, or another phone via an 8-character code. Revoke any device anytime.',
-    href: '/paired-devices',
   },
   {
     icon: '☰',
@@ -152,14 +176,23 @@ export default function HelpScreen(): React.ReactElement {
 
         <CardSection title="Your data" cards={STORAGE_CARDS} onPress={onCardPress} />
         <CardSection title="Time-aware" cards={TIME_CARDS} onPress={onCardPress} />
-        <CardSection title="Beyond your data" cards={SERVICES_CARDS} onPress={onCardPress} />
-        <CardSection title="Safety net" cards={SAFETY_CARDS} onPress={onCardPress} />
+        {/* People comes after Time-aware: contact coordination is
+            still about local-life primitives (events, reminders),
+            just routed through someone else's Dina. */}
+        <CardSection title="Coordinate with people" cards={PEOPLE_CARDS} onPress={onCardPress} />
+        {/* Agents come BEFORE Beyond your Dina — the network section
+            makes more sense in the context that you have agents
+            doing real work for you. The approval-gate card lives
+            inside Work-with-agents (it's the safety net for what
+            agents do, not its own concept). */}
+        <CardSection title="Work with agents" cards={AGENT_CARDS} onPress={onCardPress} />
+        <CardSection title="Beyond your Dina" cards={NETWORK_CARDS} onPress={onCardPress} />
         <CardSection title="Privacy & control" cards={PRIVACY_CARDS} onPress={onCardPress} />
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Dina is a sovereign AI. The keys live on your phone — no one, including Anthropic, can
-            read your data without you.
+            Dina is a sovereign AI. The keys live on your phone — no one can read your data
+            without you.
           </Text>
         </View>
       </ScrollView>
@@ -197,16 +230,8 @@ function CardSection({
             <Text style={styles.cardTitle}>{card.title}</Text>
             {card.href !== undefined ? <Text style={styles.cardArrow}>{'›'}</Text> : null}
           </View>
-          {card.screenshot !== undefined ? (
-            <Image
-              source={card.screenshot}
-              style={styles.screenshot}
-              resizeMode="cover"
-              accessibilityIgnoresInvertColors
-            />
-          ) : null}
           <Text style={styles.cardDesc}>{card.description}</Text>
-          {card.screenshot === undefined && card.example !== undefined ? (
+          {card.example !== undefined ? (
             <View style={styles.exampleBox}>
               <Text style={styles.exampleText}>{card.example}</Text>
             </View>
@@ -308,13 +333,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: colors.textSecondary,
-  },
-  screenshot: {
-    marginTop: spacing.sm,
-    width: '100%',
-    aspectRatio: 16 / 9,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bgTertiary,
   },
   exampleBox: {
     marginTop: spacing.sm,

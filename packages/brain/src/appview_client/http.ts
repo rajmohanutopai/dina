@@ -20,6 +20,7 @@
  * Source: brain/src/adapter/appview_client.py
  */
 
+import type { Confidence, Sentiment, SubjectType } from '@dina/protocol';
 import {
   backoff,
   isRetryableStatus,
@@ -184,9 +185,9 @@ export interface SearchTrustParams {
   q?: string;
   category?: string;
   domain?: string;
-  subjectType?: 'did' | 'content' | 'product' | 'dataset' | 'organization' | 'claim';
-  sentiment?: 'positive' | 'neutral' | 'negative';
-  minConfidence?: 'speculative' | 'moderate' | 'high' | 'certain';
+  subjectType?: SubjectType;
+  sentiment?: Sentiment;
+  minConfidence?: Confidence;
   authorDid?: string;
   tags?: string[];
   sort?: 'recent' | 'relevant';

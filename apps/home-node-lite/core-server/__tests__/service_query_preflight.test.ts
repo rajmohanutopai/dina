@@ -360,4 +360,165 @@ describe('createServiceQueryPreflight (task 6.24)', () => {
       expect(out.verdicts[0]!.candidate.operatorDid).toBe(DID_A);
     });
   });
+
+  // ── Event payload contract pinning ───────────────────────────────────
+  // Existing event tests use `kinds.toContain('completed')` — that
+  // only verifies the event TYPE is emitted, NOT the payload shape.
+  // A future refactor that swapped `passed`/`rejected`, dropped the
+  // error string, or sent the wrong did would silently pass those
+  // assertions while breaking every observability dashboard
+  // downstream. Pin the full payload contract.
+
+  describe('events — payload contract', () => {
+    function pickEvent<K extends PreflightEvent['kind']>(
+      events: readonly PreflightEvent[],
+      kind: K,
+    ): Extract<PreflightEvent, { kind: K }> | undefined {
+      return events.find((e): e is Extract<PreflightEvent, { kind: K }> => e.kind === kind);
+    }
+
+    it('completed event carries accurate passed + rejected counts', async () => {
+      // 3 candidates: 2 pass with 'proceed', 1 has decision='avoid'
+      // (rejected by minAction='caution'). Pin the count math:
+      //   passed   = sorted.length          = 2
+      //   rejected = verdicts.length - sorted.length = 1
+      const events: PreflightEvent[] = [];
+      const preflight = createServiceQueryPreflight({
+        searchFn: okSearch([
+          candidate({ operatorDid: DID_A }),
+          candidate({ operatorDid: DID_B }),
+          candidate({ operatorDid: DID_C }),
+        ]),
+        trustFn: okTrust({
+          [DID_A]: { score: 0.95, confidence: 0.9, flagCount: 0 },
+          [DID_B]: { score: 0.85, confidence: 0.6, flagCount: 0 },
+          [DID_C]: { score: 0.05, confidence: 0.05, flagCount: 0 }, // → avoid
+        }),
+        onEvent: (e) => events.push(e),
+      });
+      await preflight({ capability: 'eta_query', context: 'read' });
+      const completed = pickEvent(events, 'completed');
+      expect(completed).toBeDefined();
+      expect(completed?.passed).toBe(2);
+      expect(completed?.rejected).toBe(1);
+    });
+
+    it('completed.rejected counts trust-failed candidates too', async () => {
+      // trust_failed candidates have decision === null → not in
+      // `sorted` → contribute to `rejected`. Counter-pin against a
+      // refactor that ONLY counts decision-rejections (would
+      // under-report when the trust resolver itself is flapping).
+      const events: PreflightEvent[] = [];
+      const preflight = createServiceQueryPreflight({
+        searchFn: okSearch([
+          candidate({ operatorDid: DID_A }),
+          candidate({ operatorDid: DID_B }),
+        ]),
+        trustFn: okTrust({
+          [DID_A]: { score: 0.95, confidence: 0.9, flagCount: 0 },
+          // DID_B not in map → trust_failed
+        }),
+        onEvent: (e) => events.push(e),
+      });
+      await preflight({ capability: 'eta_query', context: 'read' });
+      const completed = pickEvent(events, 'completed');
+      expect(completed?.passed).toBe(1);
+      expect(completed?.rejected).toBe(1);
+    });
+
+    it('search_failed event carries the upstream error verbatim', async () => {
+      const events: PreflightEvent[] = [];
+      const preflight = createServiceQueryPreflight({
+        searchFn: async () => ({ ok: false, error: 'ETIMEDOUT contacting AppView' }),
+        trustFn: okTrust({}),
+        onEvent: (e) => events.push(e),
+      });
+      await preflight({ capability: 'eta_query', context: 'read' });
+      const failed = pickEvent(events, 'search_failed');
+      expect(failed?.error).toBe('ETIMEDOUT contacting AppView');
+    });
+
+    it('trust_failed event carries the candidate did + the upstream error', async () => {
+      const events: PreflightEvent[] = [];
+      const preflight = createServiceQueryPreflight({
+        searchFn: okSearch([candidate({ operatorDid: DID_A })]),
+        trustFn: async (did) => ({ ok: false, error: `resolver down for ${did}` }),
+        onEvent: (e) => events.push(e),
+      });
+      await preflight({ capability: 'eta_query', context: 'read' });
+      const failed = pickEvent(events, 'trust_failed');
+      expect(failed?.did).toBe(DID_A);
+      expect(failed?.error).toBe(`resolver down for ${DID_A}`);
+    });
+
+    it('candidate_evaluated.action is "unknown" when decision.level === "unknown"', async () => {
+      // When score+confidence are both null, decideTrust returns
+      // level='unknown' + action='verify'. The event payload
+      // collapses that to action='unknown' (the type is
+      // `TrustAction | 'unknown'`) so dashboards can distinguish
+      // "we ran the gate and it said verify" from "we had no data
+      // to gate against". Pin the contract.
+      const events: PreflightEvent[] = [];
+      const preflight = createServiceQueryPreflight({
+        searchFn: okSearch([candidate({ operatorDid: DID_A })]),
+        trustFn: okTrust({
+          [DID_A]: { score: null, confidence: null, flagCount: 0 },
+        }),
+        onEvent: (e) => events.push(e),
+      });
+      await preflight({ capability: 'eta_query', context: 'read' });
+      const evaluated = pickEvent(events, 'candidate_evaluated');
+      expect(evaluated?.did).toBe(DID_A);
+      expect(evaluated?.action).toBe('unknown');
+    });
+
+    it('candidate_evaluated.action is the actual TrustAction when level is NOT unknown', async () => {
+      // Counter-pin: when there IS data, the event reports the
+      // bona-fide action, not 'unknown'. Together with the previous
+      // test this proves the discriminator is `level === 'unknown'`,
+      // not "any verify-action".
+      const events: PreflightEvent[] = [];
+      const preflight = createServiceQueryPreflight({
+        searchFn: okSearch([candidate({ operatorDid: DID_A })]),
+        trustFn: okTrust({
+          [DID_A]: { score: 0.25, confidence: 0.8, flagCount: 0 }, // → verify
+        }),
+        onEvent: (e) => events.push(e),
+      });
+      await preflight({ capability: 'eta_query', context: 'read' });
+      const evaluated = pickEvent(events, 'candidate_evaluated');
+      expect(evaluated?.action).toBe('verify');
+    });
+
+    it('trust_failed candidates appear AFTER successful verdicts in the output', async () => {
+      // Documented contract: "putting them AFTER successful verdicts
+      // keeps the proceed list clean". A future refactor that
+      // intercalated failed verdicts among successful ones would
+      // surface broken candidates in the prime real estate the
+      // chooser screen renders first.
+      const preflight = createServiceQueryPreflight({
+        searchFn: okSearch([
+          candidate({ operatorDid: DID_A }),
+          candidate({ operatorDid: DID_B }), // will trust_fail
+          candidate({ operatorDid: DID_C }),
+        ]),
+        trustFn: okTrust({
+          [DID_A]: { score: 0.95, confidence: 0.9, flagCount: 0 },
+          [DID_C]: { score: 0.85, confidence: 0.6, flagCount: 0 },
+        }),
+      });
+      const out = (await preflight({
+        capability: 'eta_query',
+        context: 'read',
+      })) as Extract<PreflightOutcome, { ok: true }>;
+      expect(out.verdicts).toHaveLength(3);
+      // Last verdict is the trust_failed one (DID_B).
+      expect(out.verdicts[out.verdicts.length - 1]?.candidate.operatorDid).toBe(DID_B);
+      expect(out.verdicts[out.verdicts.length - 1]?.decision).toBeNull();
+      expect(out.verdicts[out.verdicts.length - 1]?.error).toBe(`unknown did ${DID_B}`);
+      // Successful verdicts come first — neither has decision === null.
+      expect(out.verdicts[0]?.decision).not.toBeNull();
+      expect(out.verdicts[1]?.decision).not.toBeNull();
+    });
+  });
 });

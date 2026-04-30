@@ -1,0 +1,574 @@
+{
+  "name": "trust_score_v1",
+  "description": "computeScoreV1(input, nowMs) yields exactly the expected_output for each case, with `nowMs` fixed to 2026-04-22T12:00:00Z. Frozen reference is packages/protocol/src/trust/score_v1.ts. AppView's scorer mirrors this formula with `now = Date.now()`. Consumed by __tests__/conformance_vectors.test.ts and the conformance suite verifier.",
+  "level": "L2",
+  "task": "TN-PROTO-004",
+  "producer": {
+    "tool": "packages/protocol/src/trust/score_v1.ts :: computeScoreV1",
+    "frozen_at": "2026-04-29"
+  },
+  "scenario": {
+    "now_ms": 1776859200000,
+    "now_iso": "2026-04-22T12:00:00.000Z"
+  },
+  "cases": [
+    {
+      "name": "empty_baseline",
+      "notes": "No signals at all. Sentiment defaults to 0.5, vouch floor 0.1, reviewer/network 0. Pure damping output.",
+      "input": {
+        "attestationsAbout": [],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.20625000000000002,
+        "components": {
+          "sentiment": 0.5,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0
+      }
+    },
+    {
+      "name": "single_positive_att_high_author",
+      "notes": "One 30-day-old positive attestation from a vouched 0.9-score author. Sentiment saturates to 1.0.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1774267200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.9,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.37625000000000003,
+        "components": {
+          "sentiment": 1,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    },
+    {
+      "name": "unvouched_author_zero_weight",
+      "notes": "High-confidence attestation but author has no inbound vouch — weight collapses to 0, sentiment falls back to 0.5.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1776254400000,
+            "evidenceCount": 2,
+            "hasCosignature": true,
+            "isVerified": true,
+            "authorTrustScore": 0.95,
+            "authorHasInboundVouch": false
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.20625000000000002,
+        "components": {
+          "sentiment": 0.5,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    },
+    {
+      "name": "vouch_driven",
+      "notes": "Score driven by 5 vouches (2 high-confidence). No attestations, no reviewer, no network.",
+      "input": {
+        "attestationsAbout": [],
+        "vouchCount": 5,
+        "highConfidenceVouches": 2,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.365034618965708,
+        "components": {
+          "sentiment": 0.5,
+          "vouch": 0.847221736309214,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.4
+      }
+    },
+    {
+      "name": "flag_critical_penalty",
+      "notes": "Same shape as single_positive_att_high_author but with one critical flag → raw × 0.3.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1774267200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.9,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 1,
+        "flagSeverities": [
+          "critical"
+        ],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.123375,
+        "components": {
+          "sentiment": 1,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    },
+    {
+      "name": "flag_serious_penalty",
+      "notes": "Serious flag → raw × 0.6.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1774267200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.9,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 1,
+        "flagSeverities": [
+          "serious"
+        ],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.23175,
+        "components": {
+          "sentiment": 1,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    },
+    {
+      "name": "flag_warning_penalty",
+      "notes": "Warning flag → raw × 0.85.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1774267200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.9,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 1,
+        "flagSeverities": [
+          "warning"
+        ],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.32206250000000003,
+        "components": {
+          "sentiment": 1,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    },
+    {
+      "name": "multiple_flags_compound",
+      "notes": "Two flags compound multiplicatively: raw × 0.85 × 0.6 = raw × 0.51.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1774267200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.9,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 2,
+        "flagSeverities": [
+          "warning",
+          "serious"
+        ],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.1992375,
+        "components": {
+          "sentiment": 1,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    },
+    {
+      "name": "tombstone_coordination_penalty",
+      "notes": "Tombstone count ≥ 3 triggers ×0.4 coordination penalty. Reviewer score is computed (totalAttestationsBy=10, deletionRate=0.3 zeros it).",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1774267200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.9,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 10,
+        "revocationCount": 0,
+        "tombstoneCount": 3,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.15950000000000003,
+        "components": {
+          "sentiment": 1,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.6
+      }
+    },
+    {
+      "name": "full_multi_component",
+      "notes": "Comprehensive case exercising all four components + warning flag. Confirms compound damping.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1776254400000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.85,
+            "authorHasInboundVouch": true
+          },
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1769083200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.85,
+            "authorHasInboundVouch": true
+          },
+          {
+            "sentiment": "negative",
+            "recordCreatedAtMs": 1775649600000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.7,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 10,
+        "highConfidenceVouches": 4,
+        "endorsementCount": 20,
+        "activeFlagCount": 1,
+        "flagSeverities": [
+          "warning"
+        ],
+        "totalAttestationsBy": 50,
+        "revocationCount": 0,
+        "tombstoneCount": 2,
+        "helpfulReactions": 80,
+        "unhelpfulReactions": 10,
+        "withEvidenceCount": 30,
+        "inboundEdgeCount": 15,
+        "delegationInboundCount": 3
+      },
+      "expected_output": {
+        "overallScore": 0.5779824291390585,
+        "components": {
+          "sentiment": 0.6730433798474825,
+          "vouch": 1,
+          "reviewer": 0.6811111111111111,
+          "network": 0.8251657375555285
+        },
+        "confidence": 0.8
+      }
+    },
+    {
+      "name": "neutral_sentiment_half_weight",
+      "notes": "A neutral attestation contributes weight × 0.5 to weightedPositive — sentiment lands at exactly 0.5 with a single neutral input.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "neutral",
+            "recordCreatedAtMs": 1776859200000,
+            "evidenceCount": 0,
+            "hasCosignature": false,
+            "isVerified": false,
+            "authorTrustScore": 0.8,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.20625000000000002,
+        "components": {
+          "sentiment": 0.5,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    },
+    {
+      "name": "reviewer_high_quality",
+      "notes": "Reviewer with perfect helpful + evidence rate, no deletions. Reviewer component saturates near 0.9.",
+      "input": {
+        "attestationsAbout": [],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 100,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 100,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 100,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.35925,
+        "components": {
+          "sentiment": 0.5,
+          "vouch": 0.1,
+          "reviewer": 0.8999999999999999,
+          "network": 0
+        },
+        "confidence": 0.95
+      }
+    },
+    {
+      "name": "network_saturation",
+      "notes": "Inbound edges + delegations saturate the network component at 1.0.",
+      "input": {
+        "attestationsAbout": [],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 200,
+        "delegationInboundCount": 10
+      },
+      "expected_output": {
+        "overallScore": 0.33375,
+        "components": {
+          "sentiment": 0.5,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 1
+        },
+        "confidence": 0
+      }
+    },
+    {
+      "name": "evidence_verified_bilateral_stack",
+      "notes": "Single positive attestation with all three multipliers active (1.3 × 1.5 × 1.4 = 2.73). Sentiment is 1.0 since the only attestation is positive — multipliers affect weighting between attestations, not the single-att numerator/denominator ratio.",
+      "input": {
+        "attestationsAbout": [
+          {
+            "sentiment": "positive",
+            "recordCreatedAtMs": 1776859200000,
+            "evidenceCount": 3,
+            "hasCosignature": true,
+            "isVerified": true,
+            "authorTrustScore": 0.5,
+            "authorHasInboundVouch": true
+          }
+        ],
+        "vouchCount": 0,
+        "highConfidenceVouches": 0,
+        "endorsementCount": 0,
+        "activeFlagCount": 0,
+        "flagSeverities": [],
+        "totalAttestationsBy": 0,
+        "revocationCount": 0,
+        "tombstoneCount": 0,
+        "helpfulReactions": 0,
+        "unhelpfulReactions": 0,
+        "withEvidenceCount": 0,
+        "inboundEdgeCount": 0,
+        "delegationInboundCount": 0
+      },
+      "expected_output": {
+        "overallScore": 0.37625000000000003,
+        "components": {
+          "sentiment": 1,
+          "vouch": 0.1,
+          "reviewer": 0,
+          "network": 0
+        },
+        "confidence": 0.2
+      }
+    }
+  ],
+  "notes": [
+    "Score scale is `[0, 1]` real, not the 0–100 display scale.",
+    "Recency uses 180-day exponential decay; ageDays = (nowMs - recordCreatedAtMs) / 86_400_000.",
+    "Authors without inbound vouches contribute zero weight, regardless of authorTrustScore.",
+    "Flag penalties compound multiplicatively in array order; severity strings outside critical/serious/warning are ignored (info / future severities).",
+    "Tombstone coordination penalty triggers at >= COORDINATION_TOMBSTONE_THRESHOLD (3) and applies once.",
+    "Damping pulls every raw towards BASE_SCORE: overall = 0.85*raw + 0.15*0.1 → an empty-input subject lands near 0.21, not 0.",
+    "Expected values are full IEEE-754 doubles (no rounding) — the reference function is deterministic so === comparison in the regression test is byte-exact."
+  ]
+}

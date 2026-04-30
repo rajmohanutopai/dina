@@ -63,12 +63,17 @@ vi.mock('@/ingester/record-validator.js', () => ({
 
 // Track rate limiter calls
 const mockIsRateLimited = vi.fn().mockReturnValue(false)
+const mockIsCollectionRateLimited = vi.fn().mockReturnValue(false)
+const mockGetCollectionDailyCap = vi.fn().mockReturnValue(null)
 
 vi.mock('@/ingester/rate-limiter.js', () => ({
   isRateLimited: (...args: any[]) => mockIsRateLimited(...args),
+  isCollectionRateLimited: (...args: any[]) => mockIsCollectionRateLimited(...args),
+  getCollectionDailyCap: (...args: any[]) => mockGetCollectionDailyCap(...args),
   resetRateLimiter: vi.fn(),
   getQuarantinedDids: vi.fn(() => new Set()),
   getWriteCount: vi.fn(() => 0),
+  getCollectionWriteCount: vi.fn(() => 0),
 }))
 
 // Track metrics calls
@@ -166,6 +171,7 @@ vi.mock('ws', () => ({
 
 // Now import the consumer after all mocks are set
 import { JetstreamConsumer } from '@/ingester/jetstream-consumer.js'
+import { clearFlagCache } from '@/ingester/feature-flag-cache.js'
 
 // ── Test fixtures ─────────────────────────────────────────────────────
 
@@ -286,10 +292,16 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockIsRateLimited.mockReturnValue(false)
+    mockIsCollectionRateLimited.mockReturnValue(false)
+    mockGetCollectionDailyCap.mockReturnValue(null)
     mockValidateRecord.mockReturnValue({
       success: true,
       data: { subject: { type: 'did', did: 'did:plc:abc' }, category: 'quality', sentiment: 'positive', createdAt: now },
     })
+    // Reset feature-flag cache (TN-ING-004) — module-level state could
+    // otherwise leak `false` values from a future OFF-path test into
+    // subsequent ON-path tests within the 5s TTL window.
+    clearFlagCache()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0238", "section": "01", "sectionName": "General", "title": "UT-JC-001: kind = "}
@@ -388,21 +400,92 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     // HIGH-06: Rate limiting now applies to all operations, not just creates
     expect(mockHandleDelete).not.toHaveBeenCalled()
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rate_limited_drops', expect.any(Object))
+    // TN-ING-005: rate-limit rejection also writes to ingest_rejections.
+    expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rejections', { reason: 'rate_limit' })
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0263", "section": "01", "sectionName": "General", "title": "UT-JC-027: per-collection daily quota -> rejected (TN-ING-002)"}
+  it('UT-JC-027: per-collection daily quota -> rejected (TN-ING-002)', async () => {
+    // Description: Per-DID per-collection per-day cap (Plan §3.5: 60 attestations,
+    //   30 endorsements, 10 flags). When the bucket fills, the dispatcher rejects
+    //   the create with reason='rate_limit' + scope='per_collection_daily' detail.
+    //   Distinct from the existing per-DID hourly limit; both gates run.
+    mockIsCollectionRateLimited.mockReturnValue(true)
+    mockGetCollectionDailyCap.mockReturnValue(60) // attestation cap
+    const { processEvent } = createTestConsumer()
+    await processEvent(makeCommitCreate())
+
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+    // Rejection writer fires with the per-collection-daily detail.
+    expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rejections', { reason: 'rate_limit' })
+    expect(mockMetricsIncr).toHaveBeenCalledWith(
+      'ingester.rate_limited_drops',
+      expect.objectContaining({ scope: 'per_collection_daily' }),
+    )
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0264", "section": "01", "sectionName": "General", "title": "UT-JC-028: per-collection cap NOT consulted on delete (TN-ING-002)"}
+  it('UT-JC-028: per-collection cap NOT consulted on delete (TN-ING-002)', async () => {
+    // Plan §3.5: deletes don't consume the daily quota — an honest cleanup path
+    // shouldn't be rate-limited for going over the create cap.
+    mockIsCollectionRateLimited.mockReturnValue(true)
+    const { processEvent } = createTestConsumer()
+    await processEvent(makeCommitDelete())
+
+    // Delete went through (handler called); per-collection check NOT consulted.
+    expect(mockIsCollectionRateLimited).not.toHaveBeenCalled()
+    expect(mockHandleDelete).toHaveBeenCalled()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0260", "section": "01", "sectionName": "General", "title": "UT-JC-026: feature-flag OFF -> trust collection event skipped (TN-ING-004)"}
+  it('UT-JC-026: feature-flag OFF -> trust collection event skipped (TN-ING-004)', async () => {
+    // Description: Operator flips trust_v1_enabled = false. Dispatcher must short-circuit
+    //   BEFORE rate-limiting, validation, or any per-record work. The rejection writer
+    //   (TN-ING-005) records the URI under reason='feature_off' so the mobile outbox watcher
+    //   can surface async failures even during a kill-switch window.
+    const { processEvent, db } = createTestConsumer()
+    // Override the DB stub: select returns row with bool_value=false (kill-switch flipped).
+    ;(db as { select: ReturnType<typeof vi.fn> }).select = vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ boolValue: false }]),
+        }),
+      }),
+    })
+
+    await processEvent(makeCommitCreate())
+
+    // Handler not invoked — short-circuit happens before validation.
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+    expect(mockValidateRecord).not.toHaveBeenCalled()
+    // Rejection counter bumped with feature_off reason.
+    expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rejections', { reason: 'feature_off' })
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0246", "section": "01", "sectionName": "General", "title": "UT-JC-009: validation failure -> event skipped"}
   it('UT-JC-009: validation failure -> event skipped', async () => {
     // Description: Invalid record structure
-    // Expected: Handler not called, metrics incremented
+    // Expected: Handler not called; legacy `ingester.validation.failed` counter
+    //   bumped (existing dashboards); new `ingester.rejections{reason=schema_invalid}`
+    //   counter also bumped via recordRejection (TN-ING-005). Log line is now
+    //   the unified "Record rejected by ingester" with structured fields
+    //   (at_uri, did, reason='schema_invalid', phase='zod_validation', errors).
     mockValidateRecord.mockReturnValue({ success: false, errors: [{ message: 'invalid' }] })
     const { processEvent } = createTestConsumer()
     await processEvent(makeCommitCreate())
     expect(mockHandleCreate).not.toHaveBeenCalled()
     expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.objectContaining({ errors: expect.anything() }),
-      'Record validation failed',
+      expect.objectContaining({
+        reason: 'schema_invalid',
+        phase: 'zod_validation',
+        errors: expect.anything(),
+      }),
+      'Record rejected by ingester',
     )
+    // Legacy counter retained for existing dashboards.
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.validation.failed', expect.any(Object))
+    // New canonical counter (TN-ING-005).
+    expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rejections', { reason: 'schema_invalid' })
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0247", "section": "01", "sectionName": "General", "title": "UT-JC-010: unknown handler -> event skipped"}
@@ -723,5 +806,149 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     await processEvent(makeCommitUpdate())
     expect(mockHandleCreate).not.toHaveBeenCalled()
     expect(mockHandleDelete).not.toHaveBeenCalled()
+  })
+
+  // ─── TN-ING-003: Namespace-signature gate dispatcher integration ─────────
+  //
+  // The gate's own logic is tested exhaustively in
+  // `namespace_signature_gate.test.ts` (19 tests covering skip / pass /
+  // namespace_disabled / signature_invalid / caching / observability).
+  // These three integration tests pin the dispatcher-side wiring:
+  //   1. Gate not configured → namespace-bearing record passes through
+  //      (default-permissive, the V1 boot-phase posture).
+  //   2. Gate configured + namespace_disabled → record rejected,
+  //      handler not invoked, ingester.rejections{reason=namespace_disabled}
+  //      counter bumped via recordRejection.
+  //   3. Gate configured + signature_invalid (resolver throws) → same
+  //      rejection path with reason=signature_invalid.
+
+  // TRACE: {"suite": "APPVIEW", "case": "0265", "section": "01", "sectionName": "General", "title": "UT-JC-029: namespace gate not configured -> record passes through (TN-ING-003)"}
+  it('UT-JC-029: namespace gate not configured -> record passes through (TN-ING-003)', async () => {
+    // Description: When the consumer hasn't been wired with a gate yet
+    //   (boot-phase posture), namespace-bearing records pass through
+    //   the dispatcher untouched. The handler runs as normal.
+    // Expected: handleCreate called; no namespace-related rejection counters fire.
+    mockValidateRecord.mockReturnValue({
+      success: true,
+      data: {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'quality',
+        sentiment: 'positive',
+        namespace: 'namespace_3',
+        createdAt: now,
+      },
+    })
+    const { processEvent } = createTestConsumer()
+    // Note: setNamespaceGate intentionally NOT called — gate is null.
+    await processEvent(makeCommitCreate())
+    expect(mockHandleCreate).toHaveBeenCalled()
+    // No namespace_disabled / signature_invalid rejection counter.
+    expect(mockMetricsIncr).not.toHaveBeenCalledWith('ingester.rejections', { reason: 'namespace_disabled' })
+    expect(mockMetricsIncr).not.toHaveBeenCalledWith('ingester.rejections', { reason: 'signature_invalid' })
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0266", "section": "01", "sectionName": "General", "title": "UT-JC-030: namespace gate rejects undeclared namespace (TN-ING-003)"}
+  it('UT-JC-030: namespace gate rejects undeclared namespace (TN-ING-003)', async () => {
+    // Description: The author's DID doc doesn't declare `namespace_3`
+    //   as an assertionMethod. Gate returns namespace_disabled. The
+    //   dispatcher must NOT call the handler — preserve the
+    //   per-namespace reviewer-stats table from being polluted by
+    //   undeclared namespaces.
+    // Expected: handleCreate NOT called; ingester.rejections{reason=namespace_disabled}.
+    mockValidateRecord.mockReturnValue({
+      success: true,
+      data: {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'quality',
+        sentiment: 'positive',
+        namespace: 'namespace_3',
+        createdAt: now,
+      },
+    })
+    const { consumer, processEvent } = createTestConsumer()
+    // Wire a gate whose resolver returns a doc WITHOUT namespace_3.
+    const { createDidDocCache } = await import('@/shared/utils/did-doc-cache')
+    const cache = createDidDocCache({ ttlMs: 60_000, max: 10 })
+    consumer.setNamespaceGate({
+      didDocCache: cache,
+      didResolver: async (did) => ({
+        id: did,
+        verificationMethod: [],
+        assertionMethod: [],
+      }),
+    })
+
+    await processEvent(makeCommitCreate())
+
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+    expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rejections', { reason: 'namespace_disabled' })
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0267", "section": "01", "sectionName": "General", "title": "UT-JC-031: namespace gate rejects on resolver error (TN-ING-003)"}
+  it('UT-JC-031: namespace gate rejects on resolver error (TN-ING-003)', async () => {
+    // Description: PLC directory unreachable; the gate fails CLOSED with
+    //   reason=signature_invalid. Critical security posture — failing
+    //   open would let unverified namespace records land during
+    //   transient PLC outages.
+    // Expected: handleCreate NOT called; ingester.rejections{reason=signature_invalid}.
+    mockValidateRecord.mockReturnValue({
+      success: true,
+      data: {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'quality',
+        sentiment: 'positive',
+        namespace: 'namespace_3',
+        createdAt: now,
+      },
+    })
+    const { consumer, processEvent } = createTestConsumer()
+    const { createDidDocCache } = await import('@/shared/utils/did-doc-cache')
+    const cache = createDidDocCache({ ttlMs: 60_000, max: 10 })
+    consumer.setNamespaceGate({
+      didDocCache: cache,
+      didResolver: async () => {
+        throw new Error('PLC unreachable')
+      },
+    })
+
+    await processEvent(makeCommitCreate())
+
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+    expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rejections', { reason: 'signature_invalid' })
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0268", "section": "01", "sectionName": "General", "title": "UT-JC-032: namespace gate skips records without a namespace (TN-ING-003)"}
+  it('UT-JC-032: namespace gate skips records without a namespace (TN-ING-003)', async () => {
+    // Description: V1 root-identity records (no namespace field) must
+    //   bypass the gate's resolver call entirely — the gate's own
+    //   short-circuit handles this, but pin the dispatcher contract
+    //   that records without a namespace still reach handleCreate.
+    // Expected: handleCreate called; resolver NOT called.
+    mockValidateRecord.mockReturnValue({
+      success: true,
+      data: {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'quality',
+        sentiment: 'positive',
+        // namespace intentionally omitted (root-identity path).
+        createdAt: now,
+      },
+    })
+    const { consumer, processEvent } = createTestConsumer()
+    const { createDidDocCache } = await import('@/shared/utils/did-doc-cache')
+    const cache = createDidDocCache({ ttlMs: 60_000, max: 10 })
+    let resolverCalls = 0
+    consumer.setNamespaceGate({
+      didDocCache: cache,
+      didResolver: async (did) => {
+        resolverCalls++
+        return { id: did, verificationMethod: [], assertionMethod: [] }
+      },
+    })
+
+    await processEvent(makeCommitCreate())
+
+    expect(mockHandleCreate).toHaveBeenCalled()
+    expect(resolverCalls).toBe(0)
   })
 })

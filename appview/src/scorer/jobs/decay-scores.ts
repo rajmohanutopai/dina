@@ -19,9 +19,14 @@ export async function decayScores(db: DrizzleDB): Promise<void> {
 
   // Decay DID profile scores for inactive profiles
   // Only decay profiles that haven't been computed recently and have a score above base
+  // TN-SCORE-002: stamp V1 on every decay update — decay tweaks the
+  // values, so the row's content is "still V1-derived". Without
+  // stamping, a row left at 'v2' would persist that label even
+  // though V1 just modified it.
   const profileResult = await db
     .update(didProfiles)
     .set({
+      scoreVersion: 'v1',
       overallTrustScore: sql`${didProfiles.overallTrustScore} * ${DECAY_RATE}`,
       computedAt: now,
     })
@@ -37,6 +42,7 @@ export async function decayScores(db: DrizzleDB): Promise<void> {
   const subjectResult = await db
     .update(subjectScores)
     .set({
+      scoreVersion: 'v1',
       weightedScore: sql`${subjectScores.weightedScore} * ${DECAY_RATE}`,
       confidence: sql`GREATEST(${subjectScores.confidence} * ${DECAY_RATE}, 0.1)`,
       computedAt: now,

@@ -12,7 +12,7 @@
  * This test composes the exact same pieces the mobile stack uses:
  *   - the contacts directory (ring-1 weight)
  *   - an injected `TrustQueryClient`-shaped stub standing in for
- *     `app.dina.trust.getProfile` (what the mobile app would hit
+ *     `com.dina.trust.getProfile` (what the mobile app would hit
  *     via the real AppView HTTP client)
  *
  * What this catches vs the simulator:
@@ -95,10 +95,18 @@ describe('mobile Scenario 4 — Trust Network query', () => {
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',
-        score: 87,
-        attestationCount: 42,
-        categories: { product_review: 30, identity_verification: 12 },
-        lastUpdated: Date.now(),
+        overallTrustScore: 0.87,
+        attestationSummary: { total: 42, positive: 36, neutral: 4, negative: 2 },
+        vouchCount: 8,
+        endorsementCount: 12,
+        reviewerStats: {
+          totalAttestationsBy: 30,
+          corroborationRate: 0.82,
+          evidenceRate: 0.7,
+          helpfulRatio: 0.78,
+        },
+        activeDomains: ['chairs.example', 'reviews.org'],
+        lastActive: Date.now(),
       }),
     );
 
@@ -124,10 +132,18 @@ describe('mobile Scenario 4 — Trust Network query', () => {
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',
-        score: 50,
-        attestationCount: 5,
-        categories: {},
-        lastUpdated: Date.now(),
+        overallTrustScore: 0.5,
+        attestationSummary: { total: 5, positive: 3, neutral: 1, negative: 1 },
+        vouchCount: 1,
+        endorsementCount: 0,
+        reviewerStats: {
+          totalAttestationsBy: 5,
+          corroborationRate: 0.4,
+          evidenceRate: 0.2,
+          helpfulRatio: 0.5,
+        },
+        activeDomains: [],
+        lastActive: Date.now(),
       }),
     );
 
@@ -172,14 +188,22 @@ describe('mobile Scenario 4 — Trust Network query', () => {
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',
-        score: 65,
-        attestationCount: 10,
-        // Non-empty categories are REQUIRED for profileToReviews to
-        // synthesize review rows — an attestationCount alone isn't
-        // enough. This pin surfaces any regression where the
-        // profile→reviews mapper stops walking categories.
-        categories: { product_review: 7, identity_verification: 3 },
-        lastUpdated: Date.now(),
+        // A non-zero attestation total + a non-null score is REQUIRED
+        // for profileToReviews to synthesize a review row — an unscored
+        // (null) profile or zero total returns []. This pin surfaces a
+        // regression where the profile→review mapper short-circuits.
+        overallTrustScore: 0.65,
+        attestationSummary: { total: 10, positive: 7, neutral: 2, negative: 1 },
+        vouchCount: 2,
+        endorsementCount: 3,
+        reviewerStats: {
+          totalAttestationsBy: 10,
+          corroborationRate: 0.6,
+          evidenceRate: 0.5,
+          helpfulRatio: 0.65,
+        },
+        activeDomains: ['chairs.example'],
+        lastActive: Date.now(),
       }),
     );
 
@@ -190,7 +214,7 @@ describe('mobile Scenario 4 — Trust Network query', () => {
 
     // Resolver should have hit resolveByName → got the DID → queried
     // AppView. If the resolver path is broken we'd see fromNetwork=0
-    // here even with populated categories.
+    // here even with a populated profile.
     expect(result.fromNetwork).toBeGreaterThanOrEqual(1);
   });
 });

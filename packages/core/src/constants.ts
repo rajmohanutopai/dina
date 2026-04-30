@@ -154,8 +154,6 @@ export const QUARANTINE_TTL_MS = 30 * MS_DAY;
 // ---------------------------------------------------------------
 
 export const TRUST_CACHE_TTL_MS = MS_HOUR;
-export const TRUST_RATING_MIN = 0;
-export const TRUST_RATING_MAX = 100;
 
 // ---------------------------------------------------------------
 // Lifecycle / mobile security

@@ -78,7 +78,7 @@ export default function AdminScreen(): React.ReactElement {
   const onEraseEverything = useCallback(() => {
     Alert.alert(
       'Erase everything on this device?',
-      'Permanently deletes all data on this device — chat history, reminders, contacts, vault entries, and your keys. This cannot be undone on this device.\n\nYour Dina identity on the network and any data on other paired devices are unaffected. Re-onboard with your recovery phrase to start fresh on this device.',
+      'Permanently deletes all data on this device — chat history, reminders, contacts, vault entries, and your keys. This cannot be undone on this device.\n\nYour Dina identity on the network is unaffected. Re-onboard with your recovery phrase to start fresh on this device.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -160,9 +160,10 @@ export default function AdminScreen(): React.ReactElement {
           />
         </Section>
 
-        {/* Devices */}
-        <Section title="Devices">
-          <DrillRow label="Paired devices" onPress={() => router.push('/paired-devices')} />
+        {/* Agents — see paired-devices.tsx for why this is "Agents"
+            and not "Paired Devices". Route + section preserved. */}
+        <Section title="Agents">
+          <DrillRow label="Agents" onPress={() => router.push('/paired-devices')} />
         </Section>
 
         {/* Model */}
@@ -424,7 +425,7 @@ function DrillRow({ label, onPress }: { label: string; onPress: () => void }): R
       onPress={onPress}
       style={({ pressed }) => [styles.drillRow, pressed && styles.pressed]}
     >
-      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.drillLabel}>{label}</Text>
       <Text style={styles.drillArrow}>{'\u203A'}</Text>
     </Pressable>
   );
@@ -547,6 +548,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
+  },
+  // DrillRow label is a primary action (e.g. "Agents") — title-case,
+  // 16pt. rowLabel below is a small-caps key for the IDENTITY /
+  // SECURITY key-value pairs and would otherwise render the row's
+  // "Agents" as "AGENTS", duplicating the section title above it.
+  drillLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 16,
+    color: colors.textPrimary,
   },
   drillArrow: {
     fontFamily: fonts.sans,

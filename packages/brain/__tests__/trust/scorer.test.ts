@@ -46,6 +46,18 @@ describe('Trust Scorer', () => {
       expect(score.sender_trust).toBe('self');
     });
 
+    // Regression: /remember from chat ingested as source='user_remember'
+    // must score as self. Without this, the orchestrator's handleRemember
+    // staging row falls into the unknown-sender bucket and the LLM
+    // caveats the user's own facts as "an unverified source claims…".
+    it('user_remember source → self, high, normal', () => {
+      const score = scoreSender('', 'user_remember', 'chat', contacts);
+      expect(score.sender_trust).toBe('self');
+      expect(score.confidence).toBe('high');
+      expect(score.retrieval_policy).toBe('normal');
+      expect(score.source_type).toBe('self');
+    });
+
     it('known contact by email → contact_ring1, medium, normal', () => {
       const score = scoreSender('alice@example.com', 'gmail', 'chat', contacts);
       expect(score.sender_trust).toBe('contact_ring1');

@@ -72,8 +72,8 @@ export default function RemindersScreen() {
           />
           <Text style={styles.emptyTitle}>No reminders yet</Text>
           <Text style={styles.emptyBody}>
-            Tell Dina about an event with{' '}
-            <Text style={styles.code}>/remember</Text> and any dates inside will turn into
+            Tell Dina about an event in Chat — pick{' '}
+            <Text style={styles.code}>Remember</Text> and any dates inside will turn into
             reminders here.
           </Text>
         </View>

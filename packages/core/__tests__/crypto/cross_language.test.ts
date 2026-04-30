@@ -21,7 +21,11 @@
  *   Total: 47 fixture vectors + 10 additional verifications = 57+ tests
  */
 
-import { derivePath, derivePathSecp256k1 } from '../../src/crypto/slip0010';
+import {
+  derivePath,
+  derivePathSecp256k1,
+  deriveNamespaceKey,
+} from '../../src/crypto/slip0010';
 import { sign, verify, getPublicKey } from '../../src/crypto/ed25519';
 import { derivePersonaDEK, deriveDEKHash } from '../../src/crypto/hkdf';
 import {
@@ -96,6 +100,38 @@ describe('Cross-Language Crypto Verification (Go Fixtures)', () => {
         const result = derivePath(hexToBytes(v.inputs.seed_hex), v.inputs.path);
         expect(bytesToHex(result.publicKey)).toBe(v.expected.public_key_hex);
         expect(bytesToHex(result.privateKey)).toBe(v.expected.private_key_hex);
+      });
+    }
+  });
+
+  // ================================================================
+  // SLIP-0010 Ed25519 — Namespace keys (TN-IDENT-002 / TN-IDENT-004)
+  //
+  // Pseudonymous-namespace keys at m/9999'/4'/N'. Generated from the
+  // canonical TS reference (deriveNamespaceKey); any future Go / Rust /
+  // Swift / Kotlin port MUST verify against this fixture.
+  // ================================================================
+  const namespaceFixture = 'crypto/slip0010_namespace_keys.json';
+  const namespaceSuite = hasFixture(namespaceFixture) ? describe : describe.skip;
+  namespaceSuite('SLIP-0010 Ed25519 namespace keys (TN-IDENT-004)', () => {
+    const vectors = loadVectors<
+      { seed_hex: string; path: string; namespace_index: number },
+      { public_key_hex: string; private_key_hex: string; chain_code_hex: string }
+    >(namespaceFixture);
+
+    for (const v of vectors) {
+      it(`${v.description} (direct path)`, () => {
+        const result = derivePath(hexToBytes(v.inputs.seed_hex), v.inputs.path);
+        expect(bytesToHex(result.publicKey)).toBe(v.expected.public_key_hex);
+        expect(bytesToHex(result.privateKey)).toBe(v.expected.private_key_hex);
+        expect(bytesToHex(result.chainCode)).toBe(v.expected.chain_code_hex);
+      });
+
+      it(`${v.description} (deriveNamespaceKey convenience)`, () => {
+        const result = deriveNamespaceKey(hexToBytes(v.inputs.seed_hex), v.inputs.namespace_index);
+        expect(bytesToHex(result.publicKey)).toBe(v.expected.public_key_hex);
+        expect(bytesToHex(result.privateKey)).toBe(v.expected.private_key_hex);
+        expect(bytesToHex(result.chainCode)).toBe(v.expected.chain_code_hex);
       });
     }
   });
@@ -340,6 +376,7 @@ describe('Cross-Language Crypto Verification (Go Fixtures)', () => {
       'crypto/bip39_mnemonic_to_seed.json',
       'crypto/slip0010_root_signing_key.json',
       'crypto/slip0010_persona_keys.json',
+      'crypto/slip0010_namespace_keys.json',
       'crypto/slip0010_rotation_key.json',
       'crypto/slip0010_adversarial.json',
       'crypto/ed25519_sign_verify.json',

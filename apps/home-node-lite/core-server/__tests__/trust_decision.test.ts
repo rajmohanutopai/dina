@@ -228,6 +228,123 @@ describe('decideTrust — clamping + invalid input', () => {
     const lo = decideTrust({ score: 0.7, confidence: -1 });
     expect(lo.confidence).toBe(0);
   });
+
+  // ── ±Infinity clamp coverage ────────────────────────────────────────
+  // The previous tests only covered NaN; production uses
+  // `!Number.isFinite(n)` which catches NaN AND ±Infinity. A
+  // future refactor to `Number.isNaN(n)` would silently let
+  // Infinity poison the comparator (Infinity * 0.6 = Infinity →
+  // bandLevel(Infinity) returns 'high', flipping a malformed input
+  // into a "proceed" verdict in the worst case). Pin the contract.
+
+  it.each([
+    ['+Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('score=%s clamps to 0 (avoid)', (_label, value) => {
+    const d = decideTrust({ score: value, confidence: 0.9 });
+    expect(d.score).toBe(0);
+    expect(d.action).toBe('avoid');
+    expect(d.level).toBe('very-low');
+  });
+
+  it.each([
+    ['+Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('confidence=%s clamps to 0', (_label, value) => {
+    const d = decideTrust({ score: 0.9, confidence: value });
+    expect(d.confidence).toBe(0);
+    // High score with confidence=0 → caution (proceed needs confidence ≥ 0.4).
+    expect(d.action).toBe('caution');
+  });
+
+  it('flagCount=+Infinity collapses score toward 0 (no NaN poisoning, no reason-string corruption)', () => {
+    // `Math.max(0, Infinity) === Infinity`, then `0.6 ** Infinity === 0`
+    // which clean-zeroes the score. The branch DOES enter (Infinity > 0
+    // is true) so reason emission must not crash on the toString
+    // serialisation. Regression-pin against a refactor that uses
+    // `flagCount.toFixed()` (would throw on Infinity).
+    const d = decideTrust({
+      score: 0.95,
+      confidence: 0.95,
+      flagCount: Number.POSITIVE_INFINITY,
+    });
+    expect(d.score).toBe(0);
+    expect(d.action).toBe('avoid');
+    // Reason includes the flag count without crashing.
+    expect(d.reasons.some((r) => /flag/.test(r))).toBe(true);
+  });
+
+  it('flagCount=NaN does NOT enter the penalty branch (NaN > 0 is false)', () => {
+    // `Math.max(0, NaN) === NaN`, then `NaN > 0` is false — the
+    // if-branch is skipped, score is unchanged, no reason is pushed.
+    // Pin the safe-degradation contract: malformed flagCount silently
+    // becomes "no flags" rather than poisoning the score.
+    const d = decideTrust({
+      score: 0.9,
+      confidence: 0.9,
+      flagCount: Number.NaN,
+    });
+    expect(d.score).toBeCloseTo(0.9, 2);
+    expect(d.action).toBe('proceed');
+    // No flag reason was emitted (branch was skipped).
+    expect(d.reasons.some((r) => /flag/.test(r))).toBe(false);
+  });
+});
+
+// ── Module-level invariants ────────────────────────────────────────────
+// Constants exported from this module are read by every decideTrust
+// call across the process. They MUST be frozen at runtime so a buggy
+// caller can't mutate the shared map and poison subsequent decisions.
+// `Readonly<>` on the type alone is a compile-time constraint and
+// gives no runtime protection.
+
+describe('CONTEXT_MULTIPLIERS — runtime freeze invariant', () => {
+  it('the multiplier map is Object.frozen at module load', () => {
+    expect(Object.isFrozen(CONTEXT_MULTIPLIERS)).toBe(true);
+  });
+
+  it('mutation attempts do not change the multiplier value', () => {
+    // In strict mode (Node ESM modules + Jest with TS) the assignment
+    // throws a TypeError; in sloppy mode it silently no-ops. Either
+    // way the value MUST not change — that's the load-bearing
+    // invariant. Use a try/catch so the test passes under both.
+    const before = CONTEXT_MULTIPLIERS.read;
+    try {
+      (CONTEXT_MULTIPLIERS as { read: number }).read = 99;
+    } catch {
+      /* strict-mode TypeError is the documented signal */
+    }
+    expect(CONTEXT_MULTIPLIERS.read).toBe(before);
+  });
+
+  it('subsequent decideTrust call is unaffected by a (failed) mutation attempt', () => {
+    // The reason the freeze matters: shared module state across
+    // calls. Counter-pin: even if a buggy caller TRIES to mutate
+    // (caught above), a subsequent decideTrust must still use the
+    // documented multiplier (read=1.0, no adjustment).
+    try {
+      (CONTEXT_MULTIPLIERS as { read: number }).read = 99;
+    } catch {
+      /* swallow */
+    }
+    // 0.7 × 1.0 (read) = 0.7 → proceed at confidence 0.5.
+    const d = decideTrust({ score: 0.7, confidence: 0.5, context: 'read' });
+    expect(d.score).toBeCloseTo(0.7, 5);
+    expect(d.action).toBe('proceed');
+  });
+
+  it('every documented context key is present and finite', () => {
+    // Defence against a refactor that removed a key (would make
+    // `decideTrust({context: '<missing>'})` look up `undefined` and
+    // multiply by NaN). The closed enum + every value finite is the
+    // load-bearing pair.
+    const keys = Object.keys(CONTEXT_MULTIPLIERS).sort();
+    expect(keys).toEqual(['autonomous-action', 'read', 'share-pii', 'transaction']);
+    for (const k of keys) {
+      const v = CONTEXT_MULTIPLIERS[k as keyof typeof CONTEXT_MULTIPLIERS];
+      expect(Number.isFinite(v)).toBe(true);
+    }
+  });
 });
 
 describe('decideTrust — reasons', () => {

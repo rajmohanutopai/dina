@@ -92,7 +92,10 @@ export default function AddContactScreen() {
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.heading}>Add a contact</Text>
+        {/* The Stack header already shows "Add Contact" — repeating it
+            as a serif H1 here doubled the title for no benefit. The
+            helper line carries the actual instruction the user reads
+            first. */}
         <Text style={styles.sub}>
           Paste a DID (did:plc:… or did:key:…) or a handle (busdriver.test-pds.dinakernel.com).
         </Text>
@@ -104,7 +107,7 @@ export default function AddContactScreen() {
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
-          placeholder="did:plc:… or alice.test-pds.dinakernel.com"
+          placeholder="did:plc:… or alice.handle"
           placeholderTextColor={colors.textMuted}
           style={styles.input}
           editable={!busy}
@@ -196,17 +199,10 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
   },
-  heading: {
-    fontFamily: fonts.headingBold,
-    fontSize: 24,
-    color: colors.textPrimary,
-    letterSpacing: -0.3,
-  },
   sub: {
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textSecondary,
-    marginTop: spacing.xs,
     lineHeight: 20,
     marginBottom: spacing.lg,
   },

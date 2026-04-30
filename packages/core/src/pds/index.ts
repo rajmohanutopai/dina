@@ -37,6 +37,6 @@ export {
   resetPDSFetchFn,
 } from '../trust/pds_publish';
 export type {
-  AttestationRecord,
+  Attestation,
   SignedAttestation,
 } from '../trust/pds_publish';

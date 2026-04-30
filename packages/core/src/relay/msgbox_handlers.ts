@@ -226,7 +226,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
     }
 
     // eslint-disable-next-line no-console
-    console.error(`[RPC] recv from=${env.from_did.slice(0, 30)}... id=${env.id.slice(0, 8)}`);
+    console.log(`[RPC] recv from=${env.from_did.slice(0, 30)}... id=${env.id.slice(0, 8)}`);
     // 1. Decrypt before any routing decision — the inner path tells
     //    us whether this is a pair-ceremony request or a normal
     //    signed call. Remember the sender's nonce scheme so the
@@ -247,7 +247,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       throw decErr;
     }
     // eslint-disable-next-line no-console
-    console.error(`[RPC] decrypted ${plaintext.length} bytes (nonce=${nonceScheme})`);
+    console.log(`[RPC] decrypted ${plaintext.length} bytes (nonce=${nonceScheme})`);
     const inner = JSON.parse(new TextDecoder().decode(plaintext));
 
     if (
@@ -263,7 +263,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
     const isPairPath = inner.method.toUpperCase() === 'POST' && PAIR_PATHS.has(inner.path);
 
     // eslint-disable-next-line no-console
-    console.error(
+    console.log(
       `[RPC] in from=${env.from_did.slice(0, 30)} path=${inner.path} pair=${isPairPath}`,
     );
 
@@ -274,7 +274,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       // envelope's did:key must derive from the body's public key.
       const publicKeyMultibase = extractPairPublicKey(inner.body);
       // eslint-disable-next-line no-console
-      console.error(`[RPC] pair body pub=${publicKeyMultibase?.slice(0, 20)}`);
+      console.log(`[RPC] pair body pub=${publicKeyMultibase?.slice(0, 20)}`);
       if (publicKeyMultibase === null) {
         // eslint-disable-next-line no-console
         console.error(`[RPC] pair reject: no public_key in body`);
@@ -365,7 +365,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
 
     if (!controller.signal.aborted) {
       // eslint-disable-next-line no-console
-      console.error(
+      console.log(
         `[RPC] out status=${response.status} nonce=${nonceScheme} body=${response.body?.slice(0, 200)}`,
       );
       await sendRPCResponse(env, myDID, privateKey, response, nonceScheme);
@@ -510,7 +510,7 @@ async function sendRPCResponse(
   };
   const ok = await sendOrRetryUntilExpired(env);
   // eslint-disable-next-line no-console
-  console.error(
+  console.log(
     `[RPC] sent rid=${requestEnv.id.slice(0, 8)} status=${response.status} delivered=${ok}`,
   );
 }

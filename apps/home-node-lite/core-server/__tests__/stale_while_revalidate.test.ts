@@ -385,6 +385,37 @@ describe('SwrCache (task 6.16)', () => {
       await expect(cache.get('k')).rejects.toThrow(/ttlMsFn/);
     });
 
+    // ── ±Infinity TTL coverage ────────────────────────────────────
+    // Production guard `!Number.isFinite(ttlMs) || ttlMs < 0` catches
+    // NaN AND ±Infinity. A refactor to `Number.isNaN(n)` would let
+    // +Infinity through and the entry would be cached forever
+    // ("ageMs < Infinity" is always true) — silently breaking PLC
+    // doc rotation, AppView trust refresh, every SWR consumer.
+    it.each([
+      ['+Infinity', Number.POSITIVE_INFINITY],
+      ['-Infinity', Number.NEGATIVE_INFINITY],
+    ])('TTL=%s rejects + throws', async (_label, value) => {
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => 'x',
+        ttlMsFn: () => value,
+      });
+      await expect(cache.get('k')).rejects.toThrow(/ttlMsFn/);
+    });
+
+    it('non-finite TTL → no entry stored (rejection happens before set)', async () => {
+      // Counter-pin: when ttlMsFn returns Infinity, the cache must
+      // NOT store the entry. A buggy implementation that wrote first
+      // and validated second would leave a phantom entry that a
+      // subsequent get() would serve as "fresh".
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => 'x',
+        ttlMsFn: () => Number.POSITIVE_INFINITY,
+      });
+      await expect(cache.get('k')).rejects.toThrow();
+      expect(cache.size()).toBe(0);
+      expect(cache.peek('k')).toBeNull();
+    });
+
     it('ttlMsFn = 0 → entry stored but immediately stale', async () => {
       const clock = fakeClock(1000);
       let calls = 0;
@@ -464,6 +495,199 @@ describe('SwrCache (task 6.16)', () => {
       expect(calls).toBe(1);
       const peeked = cache.peek({ id: '1', meta: 'c' });
       expect(peeked?.value).toBe('v1');
+    });
+  });
+
+  // ── Event payload contract pinning ───────────────────────────────────
+  // Existing event tests use `events.some((e) => e.kind === '<X>')`
+  // — they only verify the event TYPE is emitted, NOT the payload.
+  // Observability dashboards downstream (admin UI "N hits, M stale,
+  // P errors recovered, latest revalidate took Q ms") read the payload
+  // fields. A future refactor that swapped fields, dropped the error
+  // string, or sent the wrong key would silently pass those existing
+  // assertions. Pin the payload contract.
+
+  describe('events — payload contract', () => {
+    function pickEvent<K extends SwrEvent['kind']>(
+      events: readonly SwrEvent[],
+      kind: K,
+    ): Extract<SwrEvent, { kind: K }> | undefined {
+      return events.find((e): e is Extract<SwrEvent, { kind: K }> => e.kind === kind);
+    }
+
+    it('error_fallback event carries the upstream error string + ageMs of the served stale entry', async () => {
+      const events: SwrEvent[] = [];
+      const sequence: (() => string)[] = [
+        () => 'first',
+        () => {
+          throw new Error('ENETDOWN');
+        },
+      ];
+      let i = 0;
+      const clock = fakeClock(1000);
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => {
+          const fn = sequence[i++];
+          if (fn === undefined) throw new Error('test sequence exhausted');
+          return fn();
+        },
+        ttlMsFn: () => 60_000,
+        staleTtlMs: 60_000,
+        nowMsFn: clock.nowMsFn,
+        onEvent: (e) => events.push(e),
+      });
+      await cache.get('k');
+      clock.advance(200_000); // past TTL + stale window → blocking refetch
+      const recovered = await cache.get('k');
+      expect(recovered.source).toBe('error-fallback');
+      const ev = pickEvent(events, 'error_fallback');
+      expect(ev).toBeDefined();
+      expect(ev?.key).toBe('k');
+      expect(ev?.error).toContain('ENETDOWN');
+      // ageMs is the age of the stale entry served (200_000 ms past
+      // the original 1000ms write).
+      expect(ev?.ageMs).toBe(200_000);
+    });
+
+    it('revalidate_failed event carries the upstream error string', async () => {
+      const events: SwrEvent[] = [];
+      const sequence: (() => string)[] = [
+        () => 'first',
+        () => {
+          throw new Error('transient-DNS-failure');
+        },
+      ];
+      let i = 0;
+      const clock = fakeClock(1000);
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => {
+          const fn = sequence[i++];
+          if (fn === undefined) throw new Error('test sequence exhausted');
+          return fn();
+        },
+        ttlMsFn: () => 60_000,
+        staleTtlMs: 600_000,
+        nowMsFn: clock.nowMsFn,
+        onEvent: (e) => events.push(e),
+      });
+      await cache.get('k');
+      clock.advance(120_000); // SWR window
+      await cache.get('k'); // stale-while-revalidate kicks off background refresh
+      // Drain microtasks so the background refresh's catch-handler runs.
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      const ev = pickEvent(events, 'revalidate_failed');
+      expect(ev).toBeDefined();
+      expect(ev?.key).toBe('k');
+      expect(ev?.error).toContain('transient-DNS-failure');
+    });
+
+    it('coalesced event carries the shared key (one event per coalesce, not per joiner)', async () => {
+      // The coalescing test pinned BEHAVIOUR (one fetch). This pins
+      // EVENT EMISSION — every joiner past the first emits a
+      // `coalesced` event so the admin UI can count "we saved N
+      // round-trips this hour".
+      const events: SwrEvent[] = [];
+      const settleable = { release: () => undefined };
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () =>
+          new Promise<string>((resolve) => {
+            settleable.release = () => {
+              resolve('value');
+              return undefined;
+            };
+          }),
+        ttlMsFn: () => 60_000,
+        onEvent: (e) => events.push(e),
+      });
+      const p1 = cache.get('k');
+      const p2 = cache.get('k');
+      const p3 = cache.get('k');
+      settleable.release();
+      await Promise.all([p1, p2, p3]);
+      const coalesced = events.filter((e) => e.kind === 'coalesced');
+      // 3 callers, 1 leader → 2 joiners → 2 coalesced events.
+      expect(coalesced).toHaveLength(2);
+      // Every coalesced event is for key 'k'.
+      for (const e of coalesced) {
+        expect(e.kind === 'coalesced' && e.key).toBe('k');
+      }
+    });
+
+    it('revalidate_succeeded event carries durationMs (≥0, finite)', async () => {
+      // The duration is computed via `nowMsFn() - startMs` inside
+      // startRefresh. With an injected clock + zero-cost fetchFn the
+      // duration is 0. Pin the contract: the field is a finite
+      // non-negative number, regardless of clock.
+      const events: SwrEvent[] = [];
+      const clock = fakeClock(1000);
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => {
+          // Advance the clock during the fetch so the duration is
+          // measurably positive — proves `nowMsFn()-startMs` is wired
+          // correctly, not always returning 0.
+          clock.advance(50);
+          return 'v';
+        },
+        ttlMsFn: () => 60_000,
+        nowMsFn: clock.nowMsFn,
+        onEvent: (e) => events.push(e),
+      });
+      await cache.get('k');
+      const ev = pickEvent(events, 'revalidate_succeeded');
+      expect(ev).toBeDefined();
+      expect(ev?.key).toBe('k');
+      expect(ev?.durationMs).toBe(50);
+      expect(Number.isFinite(ev?.durationMs)).toBe(true);
+    });
+
+    it('miss event carries the key', async () => {
+      const events: SwrEvent[] = [];
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => 'v',
+        ttlMsFn: () => 60_000,
+        onEvent: (e) => events.push(e),
+      });
+      await cache.get('subject-42');
+      const ev = pickEvent(events, 'miss');
+      expect(ev?.key).toBe('subject-42');
+    });
+
+    it('fresh_hit event carries the key + ageMs of the served entry', async () => {
+      const events: SwrEvent[] = [];
+      const clock = fakeClock(1000);
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => 'v',
+        ttlMsFn: () => 60_000,
+        nowMsFn: clock.nowMsFn,
+        onEvent: (e) => events.push(e),
+      });
+      await cache.get('k'); // miss + writes entry at t=1000
+      clock.advance(5000); // 5s into the 60s TTL
+      events.length = 0;
+      await cache.get('k'); // fresh hit
+      const ev = pickEvent(events, 'fresh_hit');
+      expect(ev?.key).toBe('k');
+      expect(ev?.ageMs).toBe(5000);
+    });
+
+    it('stale_served event carries the key + ageMs (past TTL)', async () => {
+      const events: SwrEvent[] = [];
+      const clock = fakeClock(1000);
+      const cache = new SwrCache<string, string>({
+        fetchFn: async () => 'v',
+        ttlMsFn: () => 60_000,
+        staleTtlMs: 600_000,
+        nowMsFn: clock.nowMsFn,
+        onEvent: (e) => events.push(e),
+      });
+      await cache.get('k');
+      clock.advance(120_000); // 60s past TTL, inside stale window
+      events.length = 0;
+      await cache.get('k');
+      const ev = pickEvent(events, 'stale_served');
+      expect(ev?.key).toBe('k');
+      expect(ev?.ageMs).toBe(120_000);
     });
   });
 });

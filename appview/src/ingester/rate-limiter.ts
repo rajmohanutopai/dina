@@ -119,4 +119,104 @@ export function getWriteCount(did: string): number {
 export function resetRateLimiter(): void {
   rateLimitCache.clear()
   quarantinedDids.clear()
+  collectionRateLimitCache.clear()
+}
+
+// ─── Per-collection per-day quotas (TN-ING-002 / Plan §3.5 + §6.1) ──────
+//
+// On top of the per-DID hourly limit above, attestations / endorsements /
+// flags get tighter per-author per-day caps. This isn't a duplicate gate;
+// the daily caps are far stricter than the hourly limit allows in
+// aggregate, and they're per-collection (an author saturating their
+// attestation cap can still post endorsements). Both gates run in the
+// dispatcher; either firing rejects the record.
+//
+// **Sliding 24h window**: timestamps pruned on every check, like the
+// hourly limit. Same memory bound (`MAX_TRACKED_DIDS`) — the cache key
+// becomes `<did>::<collection>` so the LRU evicts (DID, collection)
+// pairs least-recently-seen.
+//
+// **Caps from Plan §3.5**: 60 attestations / 30 endorsements / 10 flags
+// per author per day. Other trust-collection records (vouches, replies,
+// reactions, etc.) use only the hourly per-DID gate above.
+//
+// **In-memory only — same multi-instance caveat as the hourly gate**:
+// each AppView instance maintains its own counter; production with
+// multiple replicas can effectively allow N×cap. For shared limiting,
+// move to Redis-backed counters (sliding-window via INCR + EXPIRE).
+
+const COLLECTION_DAILY_CAPS: ReadonlyMap<string, number> = new Map([
+  ['com.dina.trust.attestation', 60],
+  ['com.dina.trust.endorsement', 30],
+  ['com.dina.trust.flag', 10],
+])
+
+const COLLECTION_WINDOW_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+const collectionRateLimitCache = new LRUCache<string, RateLimitEntry>({
+  max: CONSTANTS.MAX_TRACKED_DIDS,
+})
+
+/** Cache key that pairs a DID with the collection NSID. */
+function collectionCacheKey(did: string, collection: string): string {
+  return `${did}::${collection}`
+}
+
+/**
+ * Check the per-collection per-day quota (TN-ING-002). Returns true if
+ * the record should be rejected — the author has met or exceeded the
+ * documented cap for this collection within the trailing 24 hours.
+ *
+ * Records the write on success (matching `isRateLimited`'s
+ * "check-and-record" semantics so callers don't need a separate
+ * commit step).
+ *
+ * Collections without a cap (vouches, replies, reactions, etc.) return
+ * false unconditionally — the per-DID hourly limit still applies via
+ * `isRateLimited`.
+ */
+export function isCollectionRateLimited(did: string, collection: string): boolean {
+  const cap = COLLECTION_DAILY_CAPS.get(collection)
+  if (cap === undefined) return false
+
+  const now = Date.now()
+  const key = collectionCacheKey(did, collection)
+  let entry = collectionRateLimitCache.get(key)
+  if (!entry) {
+    entry = { timestamps: [] }
+    collectionRateLimitCache.set(key, entry)
+  }
+
+  // Prune timestamps outside the 24h sliding window.
+  entry.timestamps = entry.timestamps.filter((t) => now - t < COLLECTION_WINDOW_MS)
+
+  if (entry.timestamps.length >= cap) {
+    return true
+  }
+  entry.timestamps.push(now)
+  return false
+}
+
+/**
+ * Get the current write count for a (DID, collection) pair within the
+ * 24h sliding window. Returns 0 if the pair isn't tracked.
+ *
+ * Useful for `dina-admin trust quota-status <did>` and observability.
+ */
+export function getCollectionWriteCount(did: string, collection: string): number {
+  const cap = COLLECTION_DAILY_CAPS.get(collection)
+  if (cap === undefined) return 0
+  const now = Date.now()
+  const entry = collectionRateLimitCache.get(collectionCacheKey(did, collection))
+  if (!entry) return 0
+  return entry.timestamps.filter((t) => now - t < COLLECTION_WINDOW_MS).length
+}
+
+/**
+ * Read-only view of the daily caps. Tests + the admin CLI use this
+ * for assertions and pretty-printing without reaching into the module
+ * internals.
+ */
+export function getCollectionDailyCap(collection: string): number | null {
+  return COLLECTION_DAILY_CAPS.get(collection) ?? null
 }

@@ -1,0 +1,71 @@
+{
+  "domain": "crypto/slip0010_namespaces",
+  "version": 1,
+  "generated_from": "packages/core/src/crypto/slip0010.ts deriveNamespaceKey (canonical TS reference for purpose-4 pseudonymous-namespace key tree). Re-derivable via SLIP-0010 Ed25519 with HMAC key 'ed25519 seed' over the 64-byte BIP-39 test seed.",
+  "generated_at": "2026-04-29",
+  "task": "TN-IDENT-002 / TN-IDENT-004",
+  "notes": [
+    "Test seed is the canonical TEST_MNEMONIC_SEED from packages/test-harness/src/fixtures/constants.ts (mirrors core/test/testutil/fixtures.go).",
+    "Path purpose-4 is the pseudonymous-namespace branch — see ARCHITECTURE.md §Key Derivation and docs/TRUST_NETWORK_V1_PLAN.md §3.5.",
+    "All four (private_key, public_key, chain_code) are pinned because chain_code is what makes the next derivation step deterministic — losing it breaks future child derivations.",
+    "Any future Go / Rust / Swift / Kotlin port verifies against this file; bit-flip in any field fails the cross-language gate."
+  ],
+  "vectors": [
+    {
+      "description": "Namespace signing key at m/9999'/4'/0'",
+      "source_test": "TN-IDENT-004 conformance vector",
+      "inputs": {
+        "path": "m/9999'/4'/0'",
+        "namespace_index": 0,
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "4ff0048936a216455bb5ff78a9f3d4e200b6b940ea3639c3dccc50040f241112",
+        "public_key_hex": "6efe8333bd6df36b05103251743517119877ca63448511b64c6c67729cc17e83",
+        "chain_code_hex": "67ba3cc6148fa2f25dbea30e04f7a669f81b705bb32a25d014487535e4ce2324"
+      }
+    },
+    {
+      "description": "Namespace signing key at m/9999'/4'/1'",
+      "source_test": "TN-IDENT-004 conformance vector",
+      "inputs": {
+        "path": "m/9999'/4'/1'",
+        "namespace_index": 1,
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "9d4a9d1756638603baec622212a49b26fc832584a770c2b96283dcd9bd0ddb11",
+        "public_key_hex": "b5ced86e8edccb93837bd4a1c3ae99a9ad7f1aa61711a58e514c5b0eea6e4ca6",
+        "chain_code_hex": "99fdafa82c1d4fab04ac25d0d7ea7b9dc502b687b4644c4aec76ce3e5a160a32"
+      }
+    },
+    {
+      "description": "Namespace signing key at m/9999'/4'/2'",
+      "source_test": "TN-IDENT-004 conformance vector",
+      "inputs": {
+        "path": "m/9999'/4'/2'",
+        "namespace_index": 2,
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "43a07086e9f5a476286269cb8eca327a89d72649794332f032111185b425e147",
+        "public_key_hex": "67fbaf2912918373c0236d5a5f664e11a8ac7cbfff05a8a6ddc0fae33214901f",
+        "chain_code_hex": "7880ca28ba76a6968a10bf58457924707357983a926afd995d80a0207b39db0d"
+      }
+    },
+    {
+      "description": "Namespace signing key at m/9999'/4'/3'",
+      "source_test": "TN-IDENT-004 conformance vector",
+      "inputs": {
+        "path": "m/9999'/4'/3'",
+        "namespace_index": 3,
+        "seed_hex": "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+      },
+      "expected": {
+        "private_key_hex": "b36543c1ad67920468803a4534a96075cbab8b1dfd18ecfdd0c79fb7f2aea53b",
+        "public_key_hex": "600ac9909bf257bfa1383c8f6593e617bca4738e6cf9a00583a1d646d1817499",
+        "chain_code_hex": "9e4b3e28bae7589ce52070cdd444a87c35d09baccebead445d29ca92a2908740"
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { eq, sql, and, inArray } from 'drizzle-orm'
+import { eq, sql, and, inArray, isNotNull } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
   didProfiles,
@@ -12,6 +12,7 @@ import {
   tombstones,
   delegations,
   subjects,
+  subjectScores,
   verifications,
 } from '@/db/schema/index.js'
 import { computeTrustScore, type TrustScoreInput } from '../algorithms/trust-score.js'
@@ -20,6 +21,35 @@ import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
 
 const BATCH_SIZE = CONSTANTS.SCORER_BATCH_SIZE
+
+/**
+ * TN-SCORE-004 — cascade enqueue threshold.
+ *
+ * When a reviewer's `overallTrustScore` moves by ≥ this much (in the
+ * raw `[0, 1]` scale), enqueue a recompute of every subject they've
+ * attested to. The threshold is "1 point on the public 0-100 display
+ * scale" = 0.01 in the raw scale; smaller jitters from new attestations
+ * landing or decay shouldn't ripple through to subjects, but a
+ * meaningful change to a reviewer's credibility should refresh the
+ * subjects whose scores depend on it.
+ *
+ * Tunable as a constant rather than a flag — operators almost never
+ * need to change it, and a single source of truth makes the
+ * "did this fire?" debugging trivial.
+ */
+const CASCADE_THRESHOLD = 0.01
+
+/**
+ * TN-SCORE-004 — per-reviewer cascade fan-out cap.
+ *
+ * High-volume reviewers (review_count > 1000) won't ripple their
+ * full attestation set on every score nudge — that'd swamp the
+ * scorer queue and starve the rest of the cron tick. Plan §13.7
+ * notes that high-volume reviewers naturally rate-limit themselves
+ * via this cap; the dirty rows still get picked up over multiple
+ * scorer ticks.
+ */
+const CASCADE_MAX_SUBJECTS = 1000
 
 export async function refreshProfiles(db: DrizzleDB): Promise<void> {
   // Fetch dirty profiles
@@ -37,7 +67,27 @@ export async function refreshProfiles(db: DrizzleDB): Promise<void> {
   const dids = dirtyProfiles.map(p => p.did)
   logger.info({ count: dids.length }, 'refresh-profiles: processing dirty profiles')
 
+  // TN-SCORE-004: snapshot the OLD overallTrustScore for every dirty
+  // DID in one batch query before we start the loop. We need the old
+  // value to detect material score changes and decide whether to
+  // cascade — fetching it inline per-DID would double the per-tick
+  // SELECT count for no gain. NULL old values (first-time profile)
+  // are stored as null and treated as 0 when computing delta below
+  // (a profile that goes from "no score" to "0.7" cascades; a
+  // brand-new low-trust DID with score 0.0 doesn't).
+  const oldScoreRows = await db
+    .select({
+      did: didProfiles.did,
+      overallTrustScore: didProfiles.overallTrustScore,
+    })
+    .from(didProfiles)
+    .where(inArray(didProfiles.did, dids))
+  const oldScoreByDid = new Map(
+    oldScoreRows.map((r) => [r.did, r.overallTrustScore]),
+  )
+
   let updated = 0
+  let cascaded = 0
 
   for (const did of dids) {
     try {
@@ -47,6 +97,9 @@ export async function refreshProfiles(db: DrizzleDB): Promise<void> {
       await db
         .update(didProfiles)
         .set({
+          // TN-SCORE-002: explicit V1 stamp on every reviewer score
+          // refresh. See did-profiles.ts schema docstring for rationale.
+          scoreVersion: 'v1',
           overallTrustScore: result.overallScore,
           totalAttestationsAbout: input.attestationsAbout.length,
           positiveAbout: input.attestationsAbout.filter(a => a.sentiment === 'positive').length,
@@ -64,13 +117,102 @@ export async function refreshProfiles(db: DrizzleDB): Promise<void> {
         .where(eq(didProfiles.did, did))
 
       updated++
+
+      // TN-SCORE-004 — cascade to subjects this reviewer has attested
+      // to when their score moved enough to be visible at the
+      // 1-point-on-the-display-scale boundary.
+      const oldScore = oldScoreByDid.get(did) ?? 0
+      const newScore = result.overallScore ?? 0
+      const delta = Math.abs(newScore - oldScore)
+      if (delta >= CASCADE_THRESHOLD) {
+        const cascadedSubjects = await cascadeReviewerScoreChange(db, did)
+        cascaded += cascadedSubjects
+      }
     } catch (err) {
       logger.error({ err, did }, 'refresh-profiles: failed to process DID')
     }
   }
 
   metrics.counter('scorer.refresh_profiles.updated', updated)
-  logger.info({ updated, total: dids.length }, 'refresh-profiles: batch complete')
+  if (cascaded > 0) {
+    metrics.counter('scorer.cascade.enqueued', cascaded)
+  }
+  logger.info(
+    { updated, total: dids.length, cascaded },
+    'refresh-profiles: batch complete',
+  )
+}
+
+/**
+ * TN-SCORE-004 — when a reviewer's score moved materially, mark every
+ * subject they've attested to as `needsRecalc=true` so the next
+ * `refresh-subject-scores` tick picks them up. Returns the number of
+ * subjects enqueued.
+ *
+ * **Why a separate function**: keeps the cascade logic isolated for
+ * unit-testing and makes the call site in `refreshProfiles` read as
+ * three lines instead of an inline subquery + update.
+ *
+ * **Cap at CASCADE_MAX_SUBJECTS (1000)**: bounds the per-reviewer
+ * fan-out. The DB query uses `selectDistinct` + `LIMIT` so a reviewer
+ * with 50k attestations still only enqueues 1000 subjects per cascade
+ * trigger. Subsequent triggers (after subjects refresh and the
+ * reviewer's score moves again) will pick up different subjects since
+ * the marked rows already cleared their `needsRecalc` bit by then.
+ *
+ * **WHERE filter excludes already-dirty rows**: avoids redundant
+ * `UPDATE … SET needs_recalc=true` work on rows that are already
+ * dirty. Saves write amplification + lock pressure under cascade
+ * storms (e.g. a pivotal reviewer's score moving daily during decay).
+ *
+ * **Counter accuracy via `.returning()`**: returns the count of rows
+ * the UPDATE actually flipped, NOT the count of attested subjects.
+ * Matters because under a cascade storm most candidate subjects may
+ * already be dirty — the counter would otherwise drift away from
+ * "queue work added" toward "queue work attempted".
+ */
+async function cascadeReviewerScoreChange(
+  db: DrizzleDB,
+  reviewerDid: string,
+): Promise<number> {
+  // Pick up to CASCADE_MAX_SUBJECTS distinct subjects this reviewer
+  // has attested to. `selectDistinct` collapses duplicates (a reviewer
+  // who attested to the same subject multiple times under different
+  // dimension claims still only gets ONE recompute slot); the
+  // `attestations_subject_idx` covers this query.
+  const rows = await db
+    .selectDistinct({ subjectId: attestations.subjectId })
+    .from(attestations)
+    .where(
+      and(
+        eq(attestations.authorDid, reviewerDid),
+        eq(attestations.isRevoked, false),
+        isNotNull(attestations.subjectId),
+      ),
+    )
+    .limit(CASCADE_MAX_SUBJECTS)
+
+  // `selectDistinct` returns the column type as `string | null` even
+  // though `isNotNull` filtered nulls out — the type system can't see
+  // through the WHERE. Filter at the JS level too for type safety.
+  const subjectIds = rows
+    .map((r) => r.subjectId)
+    .filter((id): id is string => id !== null)
+
+  if (subjectIds.length === 0) return 0
+
+  const flipped = await db
+    .update(subjectScores)
+    .set({ needsRecalc: true })
+    .where(
+      and(
+        inArray(subjectScores.subjectId, subjectIds),
+        eq(subjectScores.needsRecalc, false),
+      ),
+    )
+    .returning({ subjectId: subjectScores.subjectId })
+
+  return flipped.length
 }
 
 async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<TrustScoreInput> {

@@ -5,6 +5,8 @@ import type { SubjectRef } from '@/shared/types/lexicon-types.js'
 import { subjects } from '@/db/schema/index.js'
 import { CONSTANTS } from '@/config/constants.js'
 import { logger } from '@/shared/utils/logger.js'
+import { enrichSubject } from '@/util/subject_enrichment.js'
+import { detectLanguage } from '@/ingester/language-detect.js'
 
 /**
  * 3-tier subject identity resolution (Fix 2 + Fix 10):
@@ -58,9 +60,30 @@ export async function resolveOrCreateSubject(
 
   const name = ref.name || ref.uri || ref.did || 'Unknown Subject'
 
+  // TN-ING-007: enrich on create — call the deterministic composer
+  // (TN-ENRICH-005) inline so new subjects are immediately searchable
+  // by category / metadata / language. The composer is a pure
+  // function over the SubjectRef; running it here costs ~µs.
+  //
+  // The ON CONFLICT branch deliberately does NOT overwrite the
+  // enrichment columns (`category`, `metadata`, `language`,
+  // `enriched_at`) on the existing row. Three reasons:
+  //   - Idempotency: the same subject re-referenced from a second
+  //     attestation must not bump enriched_at, otherwise the weekly
+  //     batch (TN-ENRICH-006) would never see it as stale.
+  //   - Operator overrides: if a future admin tool curates a subject's
+  //     category, a re-ingestion event must not blow it away.
+  //   - Author-scoped collisions: two authors referencing the same
+  //     subject by name converge on the SAME deterministic ID; the
+  //     enrichment of the first wins, which is correct (the second
+  //     author's payload doesn't carry new heuristic information).
+  const enrichment = enrichSubject(ref)
+  const language = detectLanguage(name)
+
   const result = await db.execute(sql`
     INSERT INTO subjects (
       id, name, subject_type, did, identifiers_json,
+      category, metadata, language, enriched_at,
       author_scoped_did, created_at, updated_at
     )
     VALUES (
@@ -69,6 +92,10 @@ export async function resolveOrCreateSubject(
       ${ref.type},
       ${ref.did ?? null},
       ${JSON.stringify(identifiers)}::jsonb,
+      ${enrichment.category},
+      ${JSON.stringify(enrichment.metadata)}::jsonb,
+      ${language},
+      NOW(),
       ${isAuthorScoped ? authorDid : null},
       NOW(),
       NOW()

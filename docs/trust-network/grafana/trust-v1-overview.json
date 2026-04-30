@@ -1,0 +1,371 @@
+{
+  "__notes_preface": [
+    "Trust Network V1 — Overview Dashboard (TN-OBS-004 / Plan §13.8).",
+    "",
+    "This is the starter dashboard that every V1 deployment should fork.",
+    "Wire it against your Prometheus datasource, then customise per",
+    "deployment. The 8 panels mirror the alert-grade metric set from",
+    "docs/trust-network/observability.md §2.",
+    "",
+    "Import path:",
+    "  Grafana → Dashboards → Import → Upload JSON file → select this",
+    "  file → choose your Prometheus datasource → Import.",
+    "",
+    "Why JSON in the repo: dashboards are code. Reviewing a metric",
+    "addition + the panel that visualises it in the same PR keeps",
+    "the source-of-truth aligned. Operator-specific tweaks (alert",
+    "thresholds, page rotations, datasource UID) belong in the",
+    "fork — not in this committed file.",
+    "",
+    "Schema version 38 = Grafana 9.x+; older Grafanas may need a",
+    "manual import-with-conversion. The JSON is intentionally minimal —",
+    "no embedded alert rules (those go in Prometheus YAML — see",
+    "observability.md §5), no embedded users, no UID hardcoding (the",
+    "import flow assigns a fresh UID).",
+    "",
+    "DO NOT add UUID-typed labels (trace_id, request_id) to any panel",
+    "query. The aggregator caps cardinality at 10k label sets per",
+    "metric; high-cardinality labels burn the budget. See",
+    "observability.md §4 for the cardinality discipline."
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Dina Trust Network V1 — operator-facing health and SLO overview. See docs/trust-network/observability.md for the metric definitions and alert thresholds.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "1 = ingester WebSocket connected to Jetstream; 0 = disconnected. Alert if 0 for > 30s.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "DOWN" } }, "type": "value" },
+            { "options": { "1": { "color": "green", "text": "UP" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "ingester_connected",
+          "legendFormat": "ingester",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Ingester ↔ Jetstream",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "Trust V1 master flag state. 1 = enabled (ramp ON); 0 = disabled (operator killed). See docs/trust-network/ops-runbook.md.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "color": "orange", "text": "DISABLED" } }, "type": "value" },
+            { "options": { "1": { "color": "green", "text": "ENABLED" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "trust_v1_enabled",
+          "legendFormat": "flag",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Trust V1 Flag",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "Sustained-zero rate when historic baseline is non-zero suggests Jetstream connection lost or trust-V1 disabled. See observability.md §2.1.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "sum(rate(ingester_events_received[5m])) by (collection)",
+          "legendFormat": "{{collection}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Ingester throughput (events/sec by collection)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "Backpressure indicator. Alert if > 5000 for > 5 min — queue cap is 10000; half-full and holding signals downstream not draining.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1000 },
+              { "color": "red", "value": 5000 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "ingester_queue_depth",
+          "legendFormat": "depth",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Ingester queue depth",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "Stacked rejection rate by reason. signature_invalid non-zero (post TN-ING-003) → page; rate_limit baseline + 3σ → investigate sybil cluster.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 30, "stacking": { "mode": "normal" } }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "sum(rate(ingester_rejections[5m])) by (reason)",
+          "legendFormat": "{{reason}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Rejections by reason (events/sec)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "Average xRPC latency per method. Alert if avg > 1000ms for > 5 min on methods other than the known-slow ones (networkFeed for large viewers, subjectGet for heavily-attested subjects). See observability.md §2.5.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2 },
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 500 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "rate(xrpc_request_duration_ms_sum[5m]) / rate(xrpc_request_duration_ms_count[5m])",
+          "legendFormat": "{{method}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "xRPC latency (avg ms by method)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "Per-scorer-job cap-hit counter (rate over 15 min). Sustained non-zero → per-run cap undersized. See observability.md §2.7 and ops-runbook.md §2.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 60 }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "increase(scorer_subject_scores_cap_hit[15m])",
+          "legendFormat": "subject_scores",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "increase(scorer_enrich_recompute_cap_hit[15m])",
+          "legendFormat": "enrich_recompute",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Scorer cap hits (15-min increase)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_PROMETHEUS}",
+      "description": "DB connection pool utilisation. Alert if in-use > 80% of DATABASE_POOL_MAX for > 5 min — imminent pool exhaustion + 503s. See ops-runbook.md §6.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.6 },
+              { "color": "red", "value": 0.8 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "id": 8,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "9.0.0",
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "editorMode": "code",
+          "expr": "db_pool_in_use / db_pool_max",
+          "legendFormat": "in_use_fraction",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "DB pool utilisation (in-use / max)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["dina", "trust-v1", "appview"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Dina Trust Network V1 — Overview",
+  "uid": null,
+  "version": 1,
+  "weekStart": ""
+}

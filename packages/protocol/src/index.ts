@@ -117,3 +117,153 @@ export type {
   Ed25519VerifyFn,
   VerifyMessageSignatureInput,
 } from './validators';
+
+// Trust Network wire types (TN-PROTO-001). Pure type declarations
+// for the `com.dina.trust.*` AT Protocol record family — Lite, Brain
+// and mobile all consume from here so the workspace has one
+// definition. AppView's parallel `lexicon-types.ts` mirrors this
+// file until cross-workspace publish is set up.
+export type {
+  SubjectType,
+  SubjectRef,
+  Sentiment,
+  DimensionValue,
+  DimensionRating,
+  EvidenceItem,
+  Confidence,
+  Mention,
+  CoSignature,
+  RelatedAttestation,
+  Attestation,
+  VouchConfidence,
+  Vouch,
+  Endorsement,
+  FlagSeverity,
+  Flag,
+  ReplyIntent,
+  Reply,
+  ReactionType,
+  Reaction,
+  ReportType,
+  ReportRecord,
+  Revocation,
+  Delegation,
+  Collection,
+  Media,
+  SubjectRecord,
+  Amendment,
+  VerificationResult,
+  Verification,
+  ReviewRequest,
+  Comparison,
+  SubjectClaimType,
+  SubjectClaim,
+  TrustPolicy,
+  NotificationPrefs,
+  TrustNsid,
+} from './trust/types';
+export { TRUST_NSIDS } from './trust/types';
+
+// D2D cosig handshake (TN-PROTO-002). Wire types + pure state
+// machine for the trust.cosig.{request,accept,reject} 3-message
+// exchange. The machine is clock-pure: callers feed `tick` events
+// carrying an ISO-8601 `now` so unit tests stay deterministic.
+export type {
+  CosigMessageType,
+  CosigRequest,
+  CosigAccept,
+  CosigReject,
+  CosigRejectReason,
+  CosigMessage,
+  CosigStatus,
+  CosigState,
+  CosigStatePending,
+  CosigStateAccepted,
+  CosigStateRejected,
+  CosigStateExpired,
+  CosigEvent,
+} from './d2d/cosig';
+export {
+  COSIG_REQUEST_TYPE,
+  COSIG_ACCEPT_TYPE,
+  COSIG_REJECT_TYPE,
+  cosigInitial,
+  cosigStep,
+  validateCosigRequest,
+  validateCosigAccept,
+  validateCosigReject,
+} from './d2d/cosig';
+
+// Trust-score bands (TN-MOB-002). Canonical thresholds + display
+// formatters for the `[0, 1]` real score. Mobile + home-node-lite
+// trust decision both import from here so band semantics stay
+// consistent across the UI surface.
+export type { TrustBand } from './trust/score_bands';
+export {
+  BAND_HIGH,
+  BAND_MODERATE,
+  BAND_LOW,
+  trustBandFor,
+  trustScoreDisplay,
+  trustScoreLabel,
+} from './trust/score_bands';
+
+// Shared identifier parser (TN-PROTO-003). Pure functions — used by
+// mobile compose flows + AppView's subject enricher to detect and
+// normalise external identifiers (DOI / arxiv / ISBN / EAN / UPC /
+// ASIN / place_id) into a canonical form.
+export type { IdentifierType, ParsedIdentifier } from './trust/identifier_parser';
+export {
+  parseIdentifier,
+  parseDoi,
+  parseArxiv,
+  parseIsbn13,
+  parseIsbn10,
+  parseEan13,
+  parseUpc,
+  parseAsin,
+  parsePlaceId,
+} from './trust/identifier_parser';
+
+// DID document `assertionMethod` resolution (TN-AUTH-001). Pure
+// resolver — translates `assertionMethod` string-references and
+// inline VMs into the underlying `VerificationMethod` objects so
+// AppView's signature gate and the mobile verifier can look up the
+// namespace key referenced by a record's `namespace` field.
+export {
+  resolveAssertionMethods,
+  resolveAssertionMethod,
+} from './identity/did_resolver';
+
+// Trust-record commit signature verifier (TN-AUTH-002). Pure
+// closed-default verifier — given a record's bytes + signature +
+// the author's DID doc + the claimed namespace, checks whether the
+// signature verifies under the matching `assertionMethod` key.
+// Crypto + multibase decode are injected (zero-runtime-deps).
+export { verifyRecordCommit } from './identity/verify_record';
+export type {
+  VerifyRecordCommitInput,
+  MultikeyDecodeFn,
+} from './identity/verify_record';
+
+// Trust Network V1 score formula (TN-PROTO-004 / TN-PROTO-005).
+// Pure, zero-dep, deterministic reference. AppView's wall-clock
+// scorer is the call-site behaviour; this is the formula every
+// implementation pins to via `conformance/vectors/trust_score_v1.json`.
+export type {
+  ScoreV1Sentiment,
+  ScoreV1FlagSeverity,
+  ScoreV1AttestationAbout,
+  ScoreV1Input,
+  ScoreV1Components,
+  ScoreV1Output,
+} from './trust/score_v1';
+export {
+  SCORE_V1_CONSTANTS,
+  computeScoreV1,
+  computeSentimentV1,
+  computeVouchV1,
+  computeReviewerV1,
+  computeNetworkV1,
+  computeConfidenceV1,
+} from './trust/score_v1';

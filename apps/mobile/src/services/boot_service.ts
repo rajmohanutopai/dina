@@ -601,9 +601,24 @@ function isAppViewStubClient(
   return isAppViewStub(client);
 }
 
+/**
+ * Codes that represent expected demo-build defaults. Logged at
+ * `console.log` level (not `.warn`) so RN's LogBox stays empty on a
+ * clean demo launch — these aren't issues a user can fix and the
+ * banner suppression in `app/_layout.tsx` already hides them from
+ * the UI. Mirror of `BANNER_SUPPRESS_CODES` in the layout: any code
+ * that's user-visible-suppressed should be log-level-suppressed too,
+ * so the two stay in sync.
+ */
+const DEMO_EXPECTED_CODES: ReadonlySet<string> = new Set(['discovery.stub']);
+
 /** Default logger — surfaces to console so boot-time degradations are visible. */
 function defaultLogger(entry: Record<string, unknown>): void {
-  if (entry.event === 'boot.degradation' || entry.event === 'boot.sendD2D.noop') {
+  const isDegradation =
+    entry.event === 'boot.degradation' || entry.event === 'boot.sendD2D.noop';
+  const isDemoExpected =
+    typeof entry.code === 'string' && DEMO_EXPECTED_CODES.has(entry.code);
+  if (isDegradation && !isDemoExpected) {
     // eslint-disable-next-line no-console
     console.warn('[dina:boot]', entry);
   } else {

@@ -1,6 +1,6 @@
 /** Subject reference — used in attestations to identify what's being reviewed */
 export interface SubjectRef {
-  type: 'did' | 'content' | 'product' | 'dataset' | 'organization' | 'claim'
+  type: 'did' | 'content' | 'product' | 'dataset' | 'organization' | 'claim' | 'place'
   did?: string
   uri?: string
   name?: string
@@ -55,6 +55,16 @@ export interface Attestation {
   mentions?: Mention[]
   relatedAttestations?: RelatedAttestation[]
   bilateralReview?: Record<string, unknown>
+  /**
+   * `namespace` (TN-DB-012 / Plan §3.5) — optional fragment id of the
+   * `verificationMethod` in the author's DID document under which this
+   * record was signed. E.g. `'#namespace_2'` for an attestation
+   * published under the author's third pseudonymous compartment.
+   * Absent or empty = signed under the root identity.
+   * The ingester verifies the commit signature against this key
+   * (TN-ING-003). Reviewer-trust scoring is per-(did, namespace).
+   */
+  namespace?: string
   createdAt: string
 }
 
@@ -76,6 +86,14 @@ export interface Endorsement {
   endorsementType: string
   relationship?: string
   text?: string
+  /**
+   * `namespace` (TN-DB-012 / Plan §3.5) — fragment id of the
+   * `verificationMethod` under which this endorsement was signed,
+   * symmetric with `Attestation.namespace`. Pseudonymous endorsements
+   * keep the same accountability semantics as the attestations they
+   * cosign.
+   */
+  namespace?: string
   createdAt: string
 }
 

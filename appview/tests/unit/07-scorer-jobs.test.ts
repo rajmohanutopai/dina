@@ -3,9 +3,9 @@
  * Section 7 -- Scorer Jobs -- Scheduling Logic (src/scorer/)
  * =============================================================================
  * Plan traceability: UNIT_TEST_PLAN.md SS7
- * Subsections:       SS7.1 Scheduler        (UT-SCH-001 .. UT-SCH-013)
+ * Subsections:       SS7.1 Scheduler        (UT-SCH-001 .. UT-SCH-018)
  *                    SS7.2 Decay Scores      (UT-DS-001  .. UT-DS-004)
- * Total tests:       17
+ * Total tests:       22
  * =============================================================================
  */
 
@@ -35,6 +35,8 @@ const mockDetectSybil = vi.fn().mockResolvedValue(undefined)
 const mockProcessTombstones = vi.fn().mockResolvedValue(undefined)
 const mockDecayScores = vi.fn().mockResolvedValue(undefined)
 const mockCleanupExpired = vi.fn().mockResolvedValue(undefined)
+const mockCosigExpirySweep = vi.fn().mockResolvedValue(undefined)
+const mockSubjectOrphanGc = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('@/scorer/jobs/refresh-profiles.js', () => ({
   refreshProfiles: (...args: any[]) => mockRefreshProfiles(...args),
@@ -63,6 +65,12 @@ vi.mock('@/scorer/jobs/decay-scores.js', () => ({
 vi.mock('@/scorer/jobs/cleanup-expired.js', () => ({
   cleanupExpired: (...args: any[]) => mockCleanupExpired(...args),
 }))
+vi.mock('@/scorer/jobs/cosig-expiry-sweep.js', () => ({
+  cosigExpirySweep: (...args: any[]) => mockCosigExpirySweep(...args),
+}))
+vi.mock('@/scorer/jobs/subject-orphan-gc.js', () => ({
+  subjectOrphanGc: (...args: any[]) => mockSubjectOrphanGc(...args),
+}))
 
 // Mock logger and metrics
 const mockLoggerInfo = vi.fn()
@@ -89,6 +97,15 @@ vi.mock('@/shared/utils/metrics.js', () => ({
   },
 }))
 
+// TN-SCORE-010: feature-flag gate. Mock readBoolFlag so existing tests
+// continue to exercise the job-execution path; new UT-SCH-014..016 tests
+// override the return value to hit the disabled / read-error branches.
+const mockReadBoolFlag = vi.fn()
+
+vi.mock('@/db/queries/appview-config.js', () => ({
+  readBoolFlag: (...args: any[]) => mockReadBoolFlag(...args),
+}))
+
 // Import scheduler after mocks
 import { startScheduler } from '@/scorer/scheduler.js'
 
@@ -113,14 +130,18 @@ describe('SS7.1 Scheduler', () => {
   beforeEach(() => {
     cronScheduleCalls.length = 0
     vi.clearAllMocks()
+    // Default: trust feature is ON. The flag-read branch tests below
+    // override this to test disabled and read-error paths.
+    mockReadBoolFlag.mockResolvedValue(true)
     startScheduler(mockDb)
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0263", "section": "01", "sectionName": "General", "title": "UT-SCH-001: all 9 jobs registered"}
-  it('UT-SCH-001: all 9 jobs registered', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0263", "section": "01", "sectionName": "General", "title": "UT-SCH-001: all 11 jobs registered"}
+  it('UT-SCH-001: all 12 jobs registered', () => {
     // Description: startScheduler called
-    // Expected: 9 cron.schedule calls made
-    expect(cronScheduleCalls).toHaveLength(9)
+    // Expected: 12 cron.schedule calls made (9 baseline + cosig-expiry-sweep
+    // + subject-orphan-gc + subject-enrich-recompute (TN-ENRICH-006))
+    expect(cronScheduleCalls).toHaveLength(12)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0264", "section": "01", "sectionName": "General", "title": "UT-SCH-002: refresh-profiles runs every 5 min"}
@@ -194,6 +215,25 @@ describe('SS7.1 Scheduler', () => {
     expect(entry).toBeDefined()
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "0283", "section": "01", "sectionName": "General", "title": "UT-SCH-017: cosig-expiry-sweep runs hourly at :30"}
+  it('UT-SCH-017: cosig-expiry-sweep runs hourly at :30', () => {
+    // TN-SCORE-006: hourly cadence per Plan §10. The :30 offset is
+    // deliberate — keeps it from colliding with the on-the-hour
+    // refresh-domain-scores job. Pin both schedule + offset so a
+    // future refactor doesn't accidentally collapse them.
+    const entry = findJobBySchedule('30 * * * *')
+    expect(entry).toBeDefined()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0284", "section": "01", "sectionName": "General", "title": "UT-SCH-018: subject-orphan-gc runs Sunday 05:00"}
+  it('UT-SCH-018: subject-orphan-gc runs Sunday 05:00', () => {
+    // TN-SCORE-005: weekly cadence per Plan §5.4. Sunday off-peak,
+    // after the daily decay (03:00) + cleanup (04:00) finish so the
+    // GC sees the freshest reference graph.
+    const entry = findJobBySchedule('0 5 * * 0')
+    expect(entry).toBeDefined()
+  })
+
   // TRACE: {"suite": "APPVIEW", "case": "0273", "section": "01", "sectionName": "General", "title": "UT-SCH-011: job error -> caught and logged"}
   it('UT-SCH-011: job error -> caught and logged', async () => {
     // Description: Handler throws error
@@ -240,6 +280,70 @@ describe('SS7.1 Scheduler', () => {
       'scorer.job.errors',
       expect.objectContaining({ job: 'refresh-profiles' }),
     )
+  })
+
+  // TN-SCORE-010: feature-flag gate. The scorer must be a no-op when
+  // `trust_v1_enabled = false`, even after schemas/seeds are deployed.
+  // This is the master kill-switch — closed posture during ramp.
+
+  // TRACE: {"suite": "APPVIEW", "case": "0280", "section": "01", "sectionName": "General", "title": "UT-SCH-014: trust_v1_enabled=false skips job"}
+  it('UT-SCH-014: trust_v1_enabled=false skips job', async () => {
+    // Flag explicitly OFF — handler must not run.
+    mockReadBoolFlag.mockResolvedValueOnce(false)
+
+    const job = cronScheduleCalls[0]
+    await job.callback()
+
+    expect(mockRefreshProfiles).not.toHaveBeenCalled()
+    expect(mockMetricsIncr).toHaveBeenCalledWith(
+      'scorer.job.skipped_disabled',
+      expect.objectContaining({ job: 'refresh-profiles' }),
+    )
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0281", "section": "01", "sectionName": "General", "title": "UT-SCH-015: flag read error -> closed-default skip"}
+  it('UT-SCH-015: flag read error -> closed-default skip', async () => {
+    // Closed-default: if we can't read the flag, don't run the scorer.
+    // Same posture as the local/distributed locks — defer the run, don't
+    // crash, don't run against unknown-flag state.
+    mockReadBoolFlag.mockRejectedValueOnce(new Error('connection refused'))
+
+    const job = cronScheduleCalls[0]
+    await job.callback()
+
+    expect(mockRefreshProfiles).not.toHaveBeenCalled()
+    expect(mockMetricsIncr).toHaveBeenCalledWith(
+      'scorer.job.skipped_flag_error',
+      expect.objectContaining({ job: 'refresh-profiles' }),
+    )
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error), job: 'refresh-profiles' }),
+      expect.stringContaining('flag read failed'),
+    )
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "0282", "section": "01", "sectionName": "General", "title": "UT-SCH-016: flag check precedes lock acquisition"}
+  it('UT-SCH-016: flag check precedes lock acquisition', async () => {
+    // When the flag is off, the job must short-circuit BEFORE trying to
+    // acquire any pg advisory lock — otherwise a disabled scorer would
+    // still hit the DB on every cron tick.
+    let dbExecuteCalled = false
+    const dbWithExecute = {
+      execute: () => {
+        dbExecuteCalled = true
+        return Promise.resolve({ rows: [{ acquired: true }] })
+      },
+    } as any
+    cronScheduleCalls.length = 0
+    vi.clearAllMocks()
+    mockReadBoolFlag.mockResolvedValue(false)
+    startScheduler(dbWithExecute)
+
+    const job = cronScheduleCalls[0]
+    await job.callback()
+
+    expect(dbExecuteCalled).toBe(false)
+    expect(mockRefreshProfiles).not.toHaveBeenCalled()
   })
 })
 

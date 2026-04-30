@@ -281,6 +281,412 @@ describe('verifyPlcChain (task 6.8)', () => {
     });
   });
 
+  describe('validateShape — per-branch detail taxonomy', () => {
+    // Each rejection in `validateShape` returns a distinct detail
+    // string. Pin them so observability surfacing can rely on the
+    // exact wording, AND so a refactor that consolidates branches
+    // is caught.
+    async function shapeRejectsWith(
+      overrides: Partial<PlcOperation> & Record<string, unknown>,
+      detailMatcher: RegExp,
+    ): Promise<void> {
+      const bad = { ...op(), ...overrides } as PlcOperation;
+      const result = await verifyPlcChain([bad], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.reason).toBe('malformed_op');
+      expect(result.opIndex).toBe(0);
+      expect(result.detail).toMatch(detailMatcher);
+    }
+
+    it('non-string sig → "non-empty string" detail', async () => {
+      await shapeRejectsWith({ sig: 42 as unknown as string }, /sig.*non-empty string/);
+    });
+
+    it('null sig → "non-empty string" detail', async () => {
+      await shapeRejectsWith({ sig: null as unknown as string }, /sig.*non-empty string/);
+    });
+
+    it('empty sig → "non-empty string" detail', async () => {
+      await shapeRejectsWith({ sig: '' }, /sig.*non-empty string/);
+    });
+
+    it('non-string non-null prev → "null or a non-empty string" detail', async () => {
+      await shapeRejectsWith(
+        { prev: 42 as unknown as string },
+        /prev.*null or a non-empty string/,
+      );
+    });
+
+    it('empty-string prev → "null or a non-empty string" detail', async () => {
+      // Empty string is distinct from null — must reject.
+      await shapeRejectsWith(
+        { prev: '' as unknown as string },
+        /prev.*null or a non-empty string/,
+      );
+    });
+
+    it('non-array rotationKeys → "non-empty array" detail', async () => {
+      await shapeRejectsWith(
+        { rotationKeys: 'K1' as unknown as string[] },
+        /rotationKeys.*non-empty array/,
+      );
+    });
+
+    it('null rotationKeys → "non-empty array" detail', async () => {
+      await shapeRejectsWith(
+        { rotationKeys: null as unknown as string[] },
+        /rotationKeys.*non-empty array/,
+      );
+    });
+
+    it('empty rotationKeys → "non-empty array" detail', async () => {
+      await shapeRejectsWith({ rotationKeys: [] }, /rotationKeys.*non-empty array/);
+    });
+
+    it('rotationKey entry empty string → "non-empty strings" detail', async () => {
+      // Distinct from non-string — empty-string still has type=string.
+      await shapeRejectsWith(
+        { rotationKeys: [''] },
+        /rotationKeys entries.*non-empty strings/,
+      );
+    });
+
+    it('rotationKey entry null → "non-empty strings" detail', async () => {
+      await shapeRejectsWith(
+        { rotationKeys: [null as unknown as string] },
+        /rotationKeys entries.*non-empty strings/,
+      );
+    });
+
+    it('rotationKey entry non-string at non-zero index → "non-empty strings" detail', async () => {
+      // Iterates all entries, not just first.
+      await shapeRejectsWith(
+        { rotationKeys: ['K1', 42 as unknown as string] },
+        /rotationKeys entries.*non-empty strings/,
+      );
+    });
+
+    it('non-number createdAtMs → "non-negative integer" detail', async () => {
+      await shapeRejectsWith(
+        { createdAtMs: 'soon' as unknown as number },
+        /createdAtMs.*non-negative integer/,
+      );
+    });
+
+    it('NaN createdAtMs → "non-negative integer" detail', async () => {
+      await shapeRejectsWith(
+        { createdAtMs: Number.NaN },
+        /createdAtMs.*non-negative integer/,
+      );
+    });
+
+    it('Infinity createdAtMs → "non-negative integer" detail', async () => {
+      await shapeRejectsWith(
+        { createdAtMs: Number.POSITIVE_INFINITY },
+        /createdAtMs.*non-negative integer/,
+      );
+    });
+
+    it('-Infinity createdAtMs → "non-negative integer" detail', async () => {
+      await shapeRejectsWith(
+        { createdAtMs: Number.NEGATIVE_INFINITY },
+        /createdAtMs.*non-negative integer/,
+      );
+    });
+
+    it('zero createdAtMs is allowed (counter-pin: not negative, is integer)', async () => {
+      const genesis = op({ createdAtMs: 0 });
+      const result = await verifyPlcChain([genesis], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('validateShape — non-object op rejection', () => {
+    // The `op === null || typeof op !== 'object' || Array.isArray(op)`
+    // branch returns "op must be an object". Existing test only covers
+    // null; pin the other variants too.
+    it.each([
+      ['array', [] as unknown as PlcOperation],
+      ['string', 'op-as-string' as unknown as PlcOperation],
+      ['number', 42 as unknown as PlcOperation],
+      ['boolean', true as unknown as PlcOperation],
+      ['undefined', undefined as unknown as PlcOperation],
+    ])('rejects %s op with malformed_op + "must be an object" detail', async (_label, badOp) => {
+      const result = await verifyPlcChain([badOp], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.reason).toBe('malformed_op');
+      expect(result.opIndex).toBe(0);
+      expect(result.detail).toMatch(/must be an object/);
+    });
+  });
+
+  describe('chain walking — opIndex at deeper positions', () => {
+    // Pre-existing tests pin opIndex at index 1. Pin deeper indices
+    // so an off-by-one in the loop bound is caught.
+    async function cidOf(n: number): Promise<string> {
+      return `cid-${n}-sig-`;
+    }
+
+    it('prev_mismatch at index 3 reports opIndex=3', async () => {
+      const o1 = op({ rotationKeys: ['K1'], createdAtMs: 1000 });
+      const o2 = op({
+        sig: 'sig-by-K1',
+        prev: await cidOf(1),
+        rotationKeys: ['K2'],
+        createdAtMs: 2000,
+      });
+      const o3 = op({
+        sig: 'sig-by-K2',
+        prev: await cidOf(2),
+        rotationKeys: ['K3'],
+        createdAtMs: 3000,
+      });
+      const o4 = op({
+        sig: 'sig-by-K3',
+        prev: 'cid-WRONG',
+        rotationKeys: ['K4'],
+        createdAtMs: 4000,
+      });
+      const result = await verifyPlcChain([o1, o2, o3, o4], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.reason).toBe('prev_mismatch');
+      expect(result.opIndex).toBe(3);
+    });
+
+    it('signer_not_authorised at index 2 reports opIndex=2', async () => {
+      const o1 = op({ rotationKeys: ['K1'], createdAtMs: 1000 });
+      const o2 = op({
+        sig: 'sig-by-K1',
+        prev: await cidOf(1),
+        rotationKeys: ['K2'],
+        createdAtMs: 2000,
+      });
+      const o3 = op({
+        // Signed by K_ROGUE which is NOT in op2.rotationKeys (K2 only)
+        sig: 'sig-by-K_ROGUE',
+        prev: await cidOf(2),
+        rotationKeys: ['K3'],
+        createdAtMs: 3000,
+      });
+      const result = await verifyPlcChain([o1, o2, o3], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.reason).toBe('signer_not_authorised');
+      expect(result.opIndex).toBe(2);
+    });
+
+    it('timestamp_regression at index 4 reports opIndex=4', async () => {
+      const o1 = op({ rotationKeys: ['K1'], createdAtMs: 1000 });
+      const o2 = op({
+        sig: 'sig-by-K1',
+        prev: await cidOf(1),
+        rotationKeys: ['K1'],
+        createdAtMs: 2000,
+      });
+      const o3 = op({
+        sig: 'sig-by-K1',
+        prev: await cidOf(2),
+        rotationKeys: ['K1'],
+        createdAtMs: 3000,
+      });
+      const o4 = op({
+        sig: 'sig-by-K1',
+        prev: await cidOf(3),
+        rotationKeys: ['K1'],
+        createdAtMs: 4000,
+      });
+      const o5 = op({
+        sig: 'sig-by-K1',
+        prev: await cidOf(4),
+        rotationKeys: ['K1'],
+        createdAtMs: 3500, // regresses below o4
+      });
+      const result = await verifyPlcChain([o1, o2, o3, o4, o5], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.reason).toBe('timestamp_regression');
+      expect(result.opIndex).toBe(4);
+    });
+
+    it('shape error at the LAST op of a long chain reports correct opIndex', async () => {
+      // All ops are validated up-front before crypto walks. Pin that
+      // a malformed final op surfaces as opIndex=n-1.
+      const good = op({ rotationKeys: ['K1'] });
+      const bad = { ...op(), sig: '' } as PlcOperation;
+      const result = await verifyPlcChain([good, good, good, good, bad], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.reason).toBe('malformed_op');
+      expect(result.opIndex).toBe(4);
+    });
+  });
+
+  describe('default serialiser — strips ONLY sig field', () => {
+    // CRITICAL invariant: the default serialiser strips `sig` so the
+    // signed bytes don't include the signature itself (which would
+    // make verification circular). Other fields MUST be preserved or
+    // signatures over rotationKeys / prev / payload won't verify.
+    it('uses default serialiser when serialiseFn omitted', async () => {
+      // Capture the messageBytes the verifier sees.
+      const captured: Uint8Array[] = [];
+      const verifyFn: VerifyFn = async ({ messageBytes, signature, publicKey }) => {
+        captured.push(messageBytes);
+        return signature === `sig-by-${publicKey}`;
+      };
+      const genesis = op({
+        sig: 'sig-by-K1',
+        rotationKeys: ['K1'],
+        createdAtMs: 1234,
+      });
+      const result = await verifyPlcChain([genesis], {
+        cidFn: scriptedCid(),
+        verifyFn,
+      });
+      expect(result.ok).toBe(true);
+      expect(captured).toHaveLength(1);
+      const decoded = JSON.parse(new TextDecoder().decode(captured[0]));
+      // sig field MUST be stripped.
+      expect(decoded).not.toHaveProperty('sig');
+      // All other fields MUST be present.
+      expect(decoded).toHaveProperty('prev', null);
+      expect(decoded).toHaveProperty('rotationKeys', ['K1']);
+      expect(decoded).toHaveProperty('createdAtMs', 1234);
+    });
+
+    it('preserves arbitrary extra fields (e.g. verificationMethods, services)', async () => {
+      // Real PLC ops carry verificationMethods + services + alsoKnownAs.
+      // The default serialiser must keep them in the signed bytes —
+      // otherwise the chain would verify even with payload tampering.
+      const captured: Uint8Array[] = [];
+      const verifyFn: VerifyFn = async ({ messageBytes, signature, publicKey }) => {
+        captured.push(messageBytes);
+        return signature === `sig-by-${publicKey}`;
+      };
+      const genesis: PlcOperation = {
+        sig: 'sig-by-K1',
+        prev: null,
+        rotationKeys: ['K1'],
+        createdAtMs: 1234,
+        verificationMethods: [{ id: '#atproto', type: 'Multikey' }],
+        services: { atproto_pds: { endpoint: 'https://bsky.social' } },
+        alsoKnownAs: ['at://alice.example'],
+      };
+      const result = await verifyPlcChain([genesis], { cidFn: scriptedCid(), verifyFn });
+      expect(result.ok).toBe(true);
+      const decoded = JSON.parse(new TextDecoder().decode(captured[0]));
+      expect(decoded).toHaveProperty('verificationMethods');
+      expect(decoded).toHaveProperty('services');
+      expect(decoded).toHaveProperty('alsoKnownAs', ['at://alice.example']);
+    });
+
+    it('decoded bytes are valid JSON (UTF-8 round-trip)', async () => {
+      // Counter-pin: bytes are produced via TextEncoder; they must
+      // decode cleanly via TextDecoder. Catches a regression where
+      // someone uses Buffer.from in a non-UTF-8 mode.
+      const captured: Uint8Array[] = [];
+      const verifyFn: VerifyFn = async ({ messageBytes, signature, publicKey }) => {
+        captured.push(messageBytes);
+        return signature === `sig-by-${publicKey}`;
+      };
+      await verifyPlcChain([op()], { cidFn: scriptedCid(), verifyFn });
+      const decoded = new TextDecoder().decode(captured[0]);
+      expect(() => JSON.parse(decoded)).not.toThrow();
+    });
+  });
+
+  describe('outcome shape pinning', () => {
+    // Pin exact key sets per outcome variant.
+    it('success outcome has exactly {ok, headCid, opCount}', async () => {
+      const result = await verifyPlcChain([op()], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      expect(Object.keys(result).sort()).toEqual(['headCid', 'ok', 'opCount']);
+    });
+
+    it('malformed_op failure has detail field', async () => {
+      const result = await verifyPlcChain(
+        [{ ...op(), sig: '' } as PlcOperation],
+        { cidFn: scriptedCid(), verifyFn: scriptedVerify() },
+      );
+      if (result.ok) throw new Error('expected ok:false');
+      const { detail } = result;
+      if (typeof detail !== 'string') throw new Error('expected detail string');
+      expect(detail.length).toBeGreaterThan(0);
+    });
+
+    it('genesis_prev_not_null failure has detail with the offending prev value', async () => {
+      const result = await verifyPlcChain(
+        [op({ prev: 'cid-fake' })],
+        { cidFn: scriptedCid(), verifyFn: scriptedVerify() },
+      );
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.detail).toMatch(/cid-fake/);
+    });
+
+    it('prev_mismatch detail includes both expected + actual cid', async () => {
+      const o1 = op();
+      const o2 = op({
+        sig: 'sig-by-K1',
+        prev: 'cid-WRONG',
+        rotationKeys: ['K2'],
+        createdAtMs: 2000,
+      });
+      const result = await verifyPlcChain([o1, o2], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.detail).toMatch(/cid-WRONG/);
+      expect(result.detail).toMatch(/cid-1/); // first scripted CID
+    });
+
+    it('timestamp_regression detail includes both timestamps', async () => {
+      const o1 = op({ createdAtMs: 5000 });
+      const o2 = op({
+        sig: 'sig-by-K1',
+        prev: 'cid-1-sig-',
+        rotationKeys: ['K2'],
+        createdAtMs: 3000,
+      });
+      const result = await verifyPlcChain([o1, o2], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      expect(result.detail).toMatch(/3000/);
+      expect(result.detail).toMatch(/5000/);
+    });
+
+    it('empty_chain failure has NO detail (minimal failure form)', async () => {
+      const result = await verifyPlcChain([], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
+      if (result.ok) throw new Error('expected ok:false');
+      // Counter-pin: only ok/reason/opIndex — no extra fields.
+      expect(Object.keys(result).sort()).toEqual(['ok', 'opIndex', 'reason']);
+    });
+  });
+
   describe('injected serialise + verify', () => {
     it('verify errors on a key do not invalidate other candidates', async () => {
       const verifyFn: VerifyFn = async ({ publicKey, signature }) => {

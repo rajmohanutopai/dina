@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Conformance-vector manifest. Status 'pending' means the vector file does not yet exist; the populating task is named in 'task'. When a task lands, swap .pending → the real .json file and flip status to 'frozen'.",
   "version": "0",
-  "updated": "2026-04-22",
+  "updated": "2026-04-29",
   "vectors": [
     {
       "name": "ed25519_sign_verify",
@@ -84,6 +84,15 @@
       "status": "frozen",
       "frozen_at": "2026-04-22",
       "summary": "Dina-flavoured PLC document with Multikey + #dina_signing + #dina_messaging fragments. Shape-level assertions only; crypto verification lands with task 10.11."
+    },
+    {
+      "name": "trust_score_v1",
+      "slot": "trust_score_v1.json",
+      "level": "L2",
+      "task": "TN-PROTO-004",
+      "status": "frozen",
+      "frozen_at": "2026-04-29",
+      "summary": "Trust Network V1 score formula — 14 cases pinning every component (sentiment / vouch / reviewer / network), every flag severity, the tombstone coordination penalty, and confidence tiers. Re-derivable via packages/protocol/src/trust/score_v1.ts :: computeScoreV1(input, nowMs) with nowMs fixed to 2026-04-22T12:00:00Z. AppView's scorer mirrors the same formula with `now = Date.now()`."
     }
   ]
 }

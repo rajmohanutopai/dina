@@ -135,6 +135,8 @@ export async function refreshReviewerStats(db: DrizzleDB): Promise<void> {
       await db
         .update(didProfiles)
         .set({
+          // TN-SCORE-002: explicit V1 stamp.
+          scoreVersion: 'v1',
           totalAttestationsBy,
           revocationCount,
           deletionCount: tombstoneCount,

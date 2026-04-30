@@ -41,18 +41,70 @@ const FORBIDDEN_PREFIXES = [
   '@dina/app',
 ];
 
-/** Third-party runtime deps protocol must never pull — it's a zero-dep package. */
-const FORBIDDEN_RUNTIME_DEPS = [
-  '@noble/',
-  '@scure/',
-  'hash-wasm',
-  'tweetnacl',
-  'libsodium',
-  'argon2',
-  'undici',
-  'ws',
-  'fetch',
-];
+/**
+ * Allowlist of bare Node built-in module names. Code that references
+ * a built-in without the `node:` prefix (e.g. `import fs from 'fs'`)
+ * is still common in the wild, so we accept the canonical set rather
+ * than forcing every import site to be rewritten. Anything else that
+ * isn't a relative path or a `node:` specifier is treated as a
+ * third-party runtime dep and fails the gate.
+ *
+ * Sourced from Node 22's `module.builtinModules`. The list is small
+ * enough to inline; baking it in keeps the test self-contained and
+ * deterministic across Node minor versions.
+ */
+const NODE_BUILTIN_MODULES = new Set([
+  'assert',
+  'async_hooks',
+  'buffer',
+  'child_process',
+  'cluster',
+  'console',
+  'constants',
+  'crypto',
+  'dgram',
+  'diagnostics_channel',
+  'dns',
+  'domain',
+  'events',
+  'fs',
+  'fs/promises',
+  'http',
+  'http2',
+  'https',
+  'inspector',
+  'module',
+  'net',
+  'os',
+  'path',
+  'path/posix',
+  'path/win32',
+  'perf_hooks',
+  'process',
+  'punycode',
+  'querystring',
+  'readline',
+  'repl',
+  'stream',
+  'stream/consumers',
+  'stream/promises',
+  'stream/web',
+  'string_decoder',
+  'sys',
+  'timers',
+  'timers/promises',
+  'tls',
+  'trace_events',
+  'tty',
+  'url',
+  'util',
+  'util/types',
+  'v8',
+  'vm',
+  'wasi',
+  'worker_threads',
+  'zlib',
+]);
 
 function* walk(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
@@ -65,9 +117,21 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
+/**
+ * Strip TS comments before regex-scanning for imports. Without this,
+ * a docstring example like `// import { x } from '@some/dep'` shows
+ * up as a real import. Doesn't try to be a full TS parser — just
+ * removes `/* … *\/` blocks and `// …` lines, which is enough for
+ * our import-detection regexes.
+ */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
 function collectImportSpecifiers(src: string): string[] {
   // Match both `import … from 'x'` and `import 'x'` side-effect imports,
   // plus dynamic `import('x')` and `require('x')`.
+  const stripped = stripComments(src);
   const specs: string[] = [];
   const patterns = [
     /import\s+[^;]*?from\s+['"]([^'"]+)['"]/g,
@@ -76,7 +140,7 @@ function collectImportSpecifiers(src: string): string[] {
     /require\(['"]([^'"]+)['"]\)/g,
   ];
   for (const p of patterns) {
-    for (const m of src.matchAll(p)) {
+    for (const m of stripped.matchAll(p)) {
       const spec = m[1];
       if (spec) specs.push(spec);
     }
@@ -105,19 +169,23 @@ describe('@dina/protocol dependency hygiene (task 1.26)', () => {
   });
 
   it('no source file pulls a third-party runtime dep', () => {
+    // Strict zero-runtime-deps invariant — every specifier must be one of:
+    //   • a `node:` builtin (`node:fs`, `node:crypto`, …)
+    //   • a bare Node built-in name (`fs`, `crypto`, …) from `NODE_BUILTIN_MODULES`
+    //   • a relative path (`./foo`, `../foo`)
+    //   • an absolute path (`/abs/foo`)
+    // Anything else — including transitive deps that creep in via
+    // generated client code or copy-pasted helpers — is a third-party
+    // runtime dep and fails the gate. Replaces the previous allowlist
+    // approach (`@noble/`, `@scure/`, …) which silently passed any
+    // newly-introduced package not on the named list.
     const offenders: { file: string; specifier: string }[] = [];
     for (const f of files) {
       const src = readFileSync(f, 'utf8');
       for (const spec of collectImportSpecifiers(src)) {
-        // Skip built-ins (`node:*`), relative paths, and TS-type-only imports
-        // (`type X from 'y'` already captured by the regex; we allow those
-        // only if they match our allowlist — but the simpler invariant is
-        // "no runtime imports at all" because the package is types+constants+
-        // pure-function only).
         if (spec.startsWith('node:') || spec.startsWith('.') || spec.startsWith('/')) continue;
-        if (FORBIDDEN_RUNTIME_DEPS.some((p) => spec === p || spec.startsWith(p))) {
-          offenders.push({ file: f.replace(PROTOCOL_SRC, 'src'), specifier: spec });
-        }
+        if (NODE_BUILTIN_MODULES.has(spec)) continue;
+        offenders.push({ file: f.replace(PROTOCOL_SRC, 'src'), specifier: spec });
       }
     }
     expect(offenders).toEqual([]);

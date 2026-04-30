@@ -1,33 +1,46 @@
 /**
- * T2A.19 — PDS attestation publishing: signing, lexicon, rating, publish.
+ * T2A.19 — PDS attestation publishing: signing, lexicon, publish.
  *
- * Category B: contract test.
+ * Wire-contract tests against the Attestation shape that
+ * AppView's `attestationSchema` Zod validator accepts. Records that
+ * pass `validateLexicon` here MUST be accepted by AppView's ingester;
+ * records that AppView rejects MUST fail here. Drift between the two
+ * is the regression class this file guards.
  *
- * Source: core/test/pds_test.go (portable parts)
+ * Source: core/test/pds_test.go (portable parts) +
+ *         appview/src/ingester/record-validator.ts (wire contract).
  */
 
 import {
   signAttestation,
   validateLexicon,
-  isValidRating,
   publishToPDS,
   verifyAttestation,
   setPDSFetchFn,
   resetPDSFetchFn,
 } from '../../src/trust/pds_publish';
-import type { AttestationRecord } from '../../src/trust/pds_publish';
+import type { Attestation } from '../../src/trust/pds_publish';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 describe('PDS Attestation Publishing', () => {
-  const testRecord: AttestationRecord = {
-    subject_did: 'did:plc:seller123',
-    category: 'product_review',
-    rating: 85,
-    verdict: { product: 'Aeron Chair', recommendation: 'BUY' },
-    evidence_uri: 'https://youtube.com/watch?v=abc123',
-  };
+  // Fixed timestamp keeps signatures deterministic across runs.
+  const FIXED_CREATED_AT = '2026-01-15T12:00:00.000Z';
 
+  function makeRecord(overrides: Partial<Attestation> = {}): Attestation {
+    return {
+      subject: { type: 'did', did: 'did:plc:seller123' },
+      category: 'product',
+      sentiment: 'positive',
+      createdAt: FIXED_CREATED_AT,
+      text: 'Aeron Chair — recommend buy',
+      dimensions: [{ dimension: 'quality', value: 'exceeded' }],
+      evidence: [{ type: 'video', uri: 'https://youtube.com/watch?v=abc123' }],
+      ...overrides,
+    };
+  }
+
+  const testRecord = makeRecord();
   const signerDID = 'did:key:z6MkTest';
   const pubKey = getPublicKey(TEST_ED25519_SEED);
 
@@ -58,7 +71,10 @@ describe('PDS Attestation Publishing', () => {
 
     it('tampered record fails verification', () => {
       const signed = signAttestation(testRecord, TEST_ED25519_SEED, signerDID);
-      const tampered = { ...signed, record: { ...signed.record, rating: 10 } };
+      const tampered = {
+        ...signed,
+        record: { ...signed.record, sentiment: 'negative' as const },
+      };
       expect(verifyAttestation(tampered, pubKey)).toBe(false);
     });
 
@@ -76,73 +92,191 @@ describe('PDS Attestation Publishing', () => {
   });
 
   describe('validateLexicon', () => {
-    it('accepts valid record with all required fields', () => {
+    it('accepts a fully populated valid record', () => {
       expect(validateLexicon(testRecord)).toEqual([]);
     });
 
-    it('rejects record missing subject_did', () => {
-      const bad = { ...testRecord, subject_did: '' };
-      expect(validateLexicon(bad).some((e) => e.includes('subject_did'))).toBe(true);
+    it('accepts the minimum required fields', () => {
+      const minimal: Attestation = {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'identity',
+        sentiment: 'neutral',
+        createdAt: FIXED_CREATED_AT,
+      };
+      expect(validateLexicon(minimal)).toEqual([]);
     });
 
-    it('rejects record with non-DID subject_did', () => {
-      const bad = { ...testRecord, subject_did: 'not-a-did' };
-      expect(validateLexicon(bad).some((e) => e.includes('valid DID'))).toBe(true);
+    it('rejects a record missing subject entirely', () => {
+      const bad = { ...testRecord, subject: undefined as unknown as Attestation['subject'] };
+      expect(validateLexicon(bad).some((e) => e.includes('subject'))).toBe(true);
+    });
+
+    it('rejects subject without any identifier (no did/uri/name/identifier)', () => {
+      const bad = makeRecord({ subject: { type: 'did' } });
+      expect(
+        validateLexicon(bad).some((e) => e.includes('at least one of: did, uri, name, identifier')),
+      ).toBe(true);
+    });
+
+    it('rejects subject.did that does not look like a DID', () => {
+      const bad = makeRecord({ subject: { type: 'did', did: 'not-a-did' } });
+      expect(validateLexicon(bad).some((e) => e.includes('subject.did'))).toBe(true);
+    });
+
+    it('rejects subject.did shorter than 8 chars (matches AppView min)', () => {
+      // 'did:a:y' = 7 chars: passes the regex, fails AppView's min(8).
+      // Lite must reject too, otherwise records get dropped at ingest.
+      const bad = makeRecord({ subject: { type: 'did', did: 'did:a:y' } });
+      expect(validateLexicon(bad).some((e) => e.includes('subject.did'))).toBe(true);
+    });
+
+    it('rejects unknown subject.type values', () => {
+      const bad = makeRecord({
+        subject: {
+          type: 'made-up' as unknown as Attestation['subject']['type'],
+          identifier: 'x',
+        },
+      });
+      expect(validateLexicon(bad).some((e) => e.includes('subject.type'))).toBe(true);
+    });
+
+    it('accepts each documented subject.type (incl. place — TN-DB-011)', () => {
+      const types: Attestation['subject']['type'][] = [
+        'did',
+        'content',
+        'product',
+        'dataset',
+        'organization',
+        'claim',
+        'place',
+      ];
+      for (const t of types) {
+        const ref =
+          t === 'did'
+            ? { type: t, did: 'did:plc:abc' }
+            : { type: t, identifier: 'sample-id' };
+        const rec = makeRecord({ subject: ref });
+        expect(validateLexicon(rec)).toEqual([]);
+      }
     });
 
     it('rejects record missing category', () => {
-      const bad = { ...testRecord, category: '' };
+      const bad = makeRecord({ category: '' });
       expect(validateLexicon(bad).some((e) => e.includes('category'))).toBe(true);
     });
 
-    it('rejects record with invalid category', () => {
-      const bad = { ...testRecord, category: 'made_up_category' };
-      expect(validateLexicon(bad).some((e) => e.includes('category must be'))).toBe(true);
+    it('rejects category longer than 200 chars', () => {
+      const bad = makeRecord({ category: 'x'.repeat(201) });
+      expect(validateLexicon(bad).some((e) => e.includes('category must be ≤200'))).toBe(true);
     });
 
-    it('rejects record with out-of-range rating', () => {
-      const bad = { ...testRecord, rating: 150 };
-      expect(validateLexicon(bad).some((e) => e.includes('rating'))).toBe(true);
+    it('rejects record missing sentiment', () => {
+      const bad = { ...testRecord, sentiment: undefined as unknown as Attestation['sentiment'] };
+      expect(validateLexicon(bad).some((e) => e.includes('sentiment'))).toBe(true);
     });
 
-    it('rejects record with negative rating', () => {
-      const bad = { ...testRecord, rating: -5 };
-      expect(validateLexicon(bad).some((e) => e.includes('rating'))).toBe(true);
+    it('rejects unknown sentiment values', () => {
+      const bad = makeRecord({
+        sentiment: 'meh' as unknown as Attestation['sentiment'],
+      });
+      expect(validateLexicon(bad).some((e) => e.includes('sentiment'))).toBe(true);
     });
 
-    it('accepts record without optional evidence_uri', () => {
-      const { evidence_uri, ...noEvidence } = testRecord;
-      expect(validateLexicon(noEvidence as AttestationRecord)).toEqual([]);
+    it('rejects record missing createdAt', () => {
+      const bad = { ...testRecord, createdAt: '' };
+      expect(validateLexicon(bad).some((e) => e.includes('createdAt'))).toBe(true);
     });
 
-    it('validates evidence_uri format when present', () => {
-      const bad = { ...testRecord, evidence_uri: 'not-a-uri' };
-      expect(validateLexicon(bad).some((e) => e.includes('evidence_uri'))).toBe(true);
+    it('rejects createdAt more than 5 minutes in the future', () => {
+      const future = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const bad = makeRecord({ createdAt: future });
+      expect(validateLexicon(bad).some((e) => e.includes('createdAt'))).toBe(true);
     });
 
-    it('accepts http:// evidence_uri', () => {
-      const rec = { ...testRecord, evidence_uri: 'http://example.com/review' };
-      expect(validateLexicon(rec)).toEqual([]);
+    it('rejects text longer than 2000 chars', () => {
+      const bad = makeRecord({ text: 'x'.repeat(2001) });
+      expect(validateLexicon(bad).some((e) => e.includes('text must be'))).toBe(true);
     });
 
-    it('collects multiple errors', () => {
-      const bad = { ...testRecord, subject_did: '', category: '', rating: 200 };
-      expect(validateLexicon(bad).length).toBeGreaterThanOrEqual(3);
+    it('rejects more than 10 dimensions', () => {
+      const dimensions = Array.from({ length: 11 }, (_, i) => ({
+        dimension: `d${i}`,
+        value: 'met' as const,
+      }));
+      const bad = makeRecord({ dimensions });
+      expect(validateLexicon(bad).some((e) => e.includes('dimensions must have at most'))).toBe(
+        true,
+      );
     });
-  });
 
-  describe('isValidRating', () => {
-    it('accepts 0', () => expect(isValidRating(0)).toBe(true));
-    it('accepts 100', () => expect(isValidRating(100)).toBe(true));
-    it('accepts 50', () => expect(isValidRating(50)).toBe(true));
-    it('rejects -1', () => expect(isValidRating(-1)).toBe(false));
-    it('rejects 101', () => expect(isValidRating(101)).toBe(false));
-    it('rejects fractional numbers', () => expect(isValidRating(50.5)).toBe(false));
-    it('rejects NaN', () => expect(isValidRating(NaN)).toBe(false));
+    it('rejects dimension with unknown value', () => {
+      type DimValue = NonNullable<Attestation['dimensions']>[number]['value'];
+      const bad = makeRecord({
+        dimensions: [
+          {
+            dimension: 'quality',
+            value: 'awesome' as unknown as DimValue,
+          },
+        ],
+      });
+      expect(validateLexicon(bad).some((e) => e.includes('dimensions[0].value'))).toBe(true);
+    });
+
+    it('rejects more than 10 tags', () => {
+      const bad = makeRecord({ tags: Array.from({ length: 11 }, (_, i) => `t${i}`) });
+      expect(validateLexicon(bad).some((e) => e.includes('tags must have at most'))).toBe(true);
+    });
+
+    it('rejects tag longer than 50 chars', () => {
+      const bad = makeRecord({ tags: ['x'.repeat(51)] });
+      expect(validateLexicon(bad).some((e) => e.includes('tags[0]'))).toBe(true);
+    });
+
+    it('rejects more than 10 evidence items', () => {
+      const evidence = Array.from({ length: 11 }, () => ({
+        type: 'video',
+        uri: 'https://example.com',
+      }));
+      const bad = makeRecord({ evidence });
+      expect(validateLexicon(bad).some((e) => e.includes('evidence must have at most'))).toBe(
+        true,
+      );
+    });
+
+    it('rejects evidence with type longer than 100 chars', () => {
+      const bad = makeRecord({
+        evidence: [{ type: 'x'.repeat(101), uri: 'https://example.com' }],
+      });
+      expect(validateLexicon(bad).some((e) => e.includes('evidence[0].type'))).toBe(true);
+    });
+
+    it('rejects unknown confidence values', () => {
+      const bad = makeRecord({
+        confidence: 'maybe' as unknown as Attestation['confidence'],
+      });
+      expect(validateLexicon(bad).some((e) => e.includes('confidence'))).toBe(true);
+    });
+
+    it('accepts all documented confidence values', () => {
+      for (const c of ['certain', 'high', 'moderate', 'speculative'] as const) {
+        const rec = makeRecord({ confidence: c });
+        expect(validateLexicon(rec)).toEqual([]);
+      }
+    });
+
+    it('collects multiple errors at once', () => {
+      const bad: Attestation = {
+        subject: { type: 'unknown' as unknown as Attestation['subject']['type'] },
+        category: '',
+        sentiment: 'wrong' as unknown as Attestation['sentiment'],
+        createdAt: '',
+      };
+      expect(validateLexicon(bad).length).toBeGreaterThanOrEqual(4);
+    });
   });
 
   describe('publishToPDS', () => {
-    it('publishes to PDS XRPC endpoint', async () => {
+    it('posts to PDS XRPC createRecord endpoint with correct collection', async () => {
       let capturedURL = '';
       let capturedBody: Record<string, unknown> = {};
       setPDSFetchFn(async (url: any, opts: any) => {
@@ -151,7 +285,7 @@ describe('PDS Attestation Publishing', () => {
         return {
           ok: true,
           json: async () => ({
-            uri: 'at://did:key:z6MkTest/community.dina.trust.attestation/rkey1',
+            uri: 'at://did:key:z6MkTest/com.dina.trust.attestation/rkey1',
           }),
         } as Response;
       });
@@ -159,12 +293,12 @@ describe('PDS Attestation Publishing', () => {
       const uri = await publishToPDS(signed, 'https://pds.dinakernel.com');
       expect(capturedURL).toBe('https://pds.dinakernel.com/xrpc/com.atproto.repo.createRecord');
       expect(capturedBody.repo).toBe(signerDID);
-      expect(capturedBody.collection).toBe('community.dina.trust.attestation');
+      expect(capturedBody.collection).toBe('com.dina.trust.attestation');
       expect(uri).toContain('at://');
     });
 
-    it('returns AT-URI from response', async () => {
-      const expectedURI = 'at://did:key:z6MkTest/community.dina.trust.attestation/abc';
+    it('returns the AT-URI from the PDS response', async () => {
+      const expectedURI = 'at://did:key:z6MkTest/com.dina.trust.attestation/abc';
       setPDSFetchFn(
         async () =>
           ({
@@ -177,15 +311,21 @@ describe('PDS Attestation Publishing', () => {
       expect(uri).toBe(expectedURI);
     });
 
-    it('validates record before publishing', async () => {
-      const badRecord: AttestationRecord = { ...testRecord, subject_did: '' };
+    it('runs validation before publishing — invalid records never reach the wire', async () => {
+      let fetchCalled = false;
+      setPDSFetchFn(async () => {
+        fetchCalled = true;
+        return { ok: true, json: async () => ({ uri: 'at://x/y/z' }) } as Response;
+      });
+      const badRecord = makeRecord({ subject: { type: 'did', did: 'not-a-did' } });
       const signed = signAttestation(badRecord, TEST_ED25519_SEED, signerDID);
       await expect(publishToPDS(signed, 'https://pds.example.com')).rejects.toThrow(
         'validation failed',
       );
+      expect(fetchCalled).toBe(false);
     });
 
-    it('throws on HTTP error', async () => {
+    it('throws on non-2xx HTTP response', async () => {
       setPDSFetchFn(
         async () =>
           ({
@@ -198,7 +338,21 @@ describe('PDS Attestation Publishing', () => {
       await expect(publishToPDS(signed, 'https://pds.example.com')).rejects.toThrow('HTTP 401');
     });
 
-    it('includes signature and signer in record body', async () => {
+    it('throws when PDS response is missing the AT-URI', async () => {
+      setPDSFetchFn(
+        async () =>
+          ({
+            ok: true,
+            json: async () => ({}),
+          }) as Response,
+      );
+      const signed = signAttestation(testRecord, TEST_ED25519_SEED, signerDID);
+      await expect(publishToPDS(signed, 'https://pds.example.com')).rejects.toThrow(
+        'missing AT-URI',
+      );
+    });
+
+    it('attaches signature, signer, and $type to the published record', async () => {
       let capturedRecord: Record<string, unknown> = {};
       setPDSFetchFn(async (_url: any, opts: any) => {
         const body = JSON.parse(opts.body);
@@ -209,10 +363,10 @@ describe('PDS Attestation Publishing', () => {
       await publishToPDS(signed, 'https://pds.example.com');
       expect(capturedRecord.signature_hex).toBe(signed.signature_hex);
       expect(capturedRecord.signer_did).toBe(signerDID);
-      expect(capturedRecord.$type).toBe('community.dina.trust.attestation');
+      expect(capturedRecord.$type).toBe('com.dina.trust.attestation');
     });
 
-    it('strips trailing slash from PDS URL', async () => {
+    it('strips a trailing slash from the PDS URL', async () => {
       let capturedURL = '';
       setPDSFetchFn(async (url: any) => {
         capturedURL = String(url);

@@ -240,6 +240,29 @@ describe('resolveTtl (task 6.9)', () => {
     it('NaN defaultTtlMs throws RangeError', () => {
       expect(() => resolveTtl({ defaultTtlMs: NaN })).toThrow();
     });
+
+    // ── ±Infinity coverage ─────────────────────────────────────────
+    // Production guard `!Number.isFinite(opts.defaultTtlMs) || ... < 0`
+    // catches NaN AND ±Infinity. A refactor to `Number.isNaN(n)` (a
+    // common "fix" when only NaN appears in tests) would silently let
+    // Infinity through — and `+Infinity * 1000` clamped to maxTtlMs
+    // would surface a 24h ceiling-cap result that LOOKS sane, hiding
+    // the input bug. Pin every non-finite that should throw.
+
+    it.each([
+      ['+Infinity', Number.POSITIVE_INFINITY],
+      ['-Infinity', Number.NEGATIVE_INFINITY],
+    ])('defaultTtlMs=%s throws RangeError', (_label, value) => {
+      expect(() => resolveTtl({ defaultTtlMs: value })).toThrow(/defaultTtlMs/);
+    });
+
+    it.each([
+      ['+Infinity', Number.POSITIVE_INFINITY],
+      ['-Infinity', Number.NEGATIVE_INFINITY],
+      ['NaN', Number.NaN],
+    ])('maxTtlMs=%s throws RangeError', (_label, value) => {
+      expect(() => resolveTtl({ defaultTtlMs: 0, maxTtlMs: value })).toThrow(/maxTtlMs/);
+    });
   });
 
   describe('constants', () => {

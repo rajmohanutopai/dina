@@ -45,6 +45,11 @@ async function computeResolveResponse(
     subjectRef = JSON.parse(subjectJson)
   } catch {
     return {
+      // TN-API-003 fields — null on parse failure (subject can't be resolved):
+      subjectId: null,
+      reviewCount: 0,
+      lastAttestedAt: null,
+      // Legacy fields:
       subjectType: 'unknown',
       trustLevel: 'none',
       confidence: 0,
@@ -105,6 +110,26 @@ async function computeResolveResponse(
   })
 
   return {
+    // TN-API-003 / Plan §6.3 fields:
+    //   - `subjectId` is the canonical resolved ID (or null when the
+    //     SubjectRef doesn't yet exist in the index)
+    //   - `reviewCount` is total attestations as seen by the scorer
+    //     (0 when subjectId is null OR when the row hasn't been
+    //     scored yet — `subjectScores` may be absent if the scorer
+    //     hasn't ticked since the first attestation landed)
+    //   - `lastAttestedAt` is `subject_scores.last_attestation_at`,
+    //     populated by `refresh-subject-scores`. Null when the row
+    //     hasn't been scored OR has no attestations.
+    //   - `conflicts` is intentionally omitted — V1 doesn't perform
+    //     fuzzy/same-as merging (Plan §13.10), so a single resolution
+    //     always wins. V2 fills this when the merge resolver lands.
+    subjectId,
+    reviewCount: scores?.totalAttestations ?? 0,
+    lastAttestedAt: scores?.lastAttestationAt
+      ? scores.lastAttestationAt.toISOString()
+      : null,
+
+    // Legacy trust-decision fields (kept verbatim):
     subjectType: subjectRef.type,
     trustLevel: rec.trustLevel,
     confidence: rec.confidence,

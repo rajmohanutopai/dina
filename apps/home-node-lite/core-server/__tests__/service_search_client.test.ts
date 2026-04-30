@@ -255,4 +255,188 @@ describe('createServiceSearchClient (task 6.12)', () => {
       );
     });
   });
+
+  // ── rejected event payload pinning ───────────────────────────────────
+  // Existing tests pin only the `searched` event. Production emits a
+  // `rejected` event with `reason` + `detail` payload across 4
+  // distinct paths (invalid_input, network_error, rejected_by_appview,
+  // malformed_response). Without these pins, a refactor that swapped
+  // reasons or dropped `detail` would silently break per-reason
+  // observability dashboards. Same bug class iter-65 closed for
+  // service_query_preflight + iter-66 closed for SwrCache.
+
+  describe('events — rejected payloads (full reason taxonomy)', () => {
+    interface RejectedEv {
+      kind: 'rejected';
+      reason: string;
+      detail?: string;
+    }
+
+    function captureRejected(): {
+      events: RejectedEv[];
+      onEvent: (e: { kind: string; reason?: string; detail?: string }) => void;
+    } {
+      const events: RejectedEv[] = [];
+      return {
+        events,
+        onEvent: (e) => {
+          if (e.kind === 'rejected') events.push(e as RejectedEv);
+        },
+      };
+    }
+
+    it('rejected.reason="invalid_input" carries the validation detail', async () => {
+      const { events, onEvent } = captureRejected();
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch(okBody()),
+        onEvent,
+      });
+      await search({ capability: 'BAD-CAP' });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('invalid_input');
+      expect(events[0]?.detail).toContain('capability');
+    });
+
+    it('rejected.reason="network_error" carries the upstream error message', async () => {
+      const { events, onEvent } = captureRejected();
+      const search = createServiceSearchClient({
+        fetchFn: async () => {
+          throw new Error('ECONNRESET resolving AppView');
+        },
+        onEvent,
+      });
+      await search({});
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('network_error');
+      expect(events[0]?.detail).toContain('ECONNRESET');
+    });
+
+    it('rejected.reason="rejected_by_appview" carries the upstream error string', async () => {
+      const { events, onEvent } = captureRejected();
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ error: 'database is down' }, 503),
+        onEvent,
+      });
+      await search({});
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('rejected_by_appview');
+      expect(events[0]?.detail).toBe('database is down');
+    });
+
+    it('rejected.reason="rejected_by_appview" with non-string error → "status N" detail', async () => {
+      // Counter-pin to the previous test: when the body's error field
+      // is missing or non-string, the event's detail falls back to
+      // `status N`. Pinning so a refactor can't silently swap to ''
+      // (info-loss) or dump the entire raw body (PII leak).
+      const { events, onEvent } = captureRejected();
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ error: { nested: 'object' } }, 502),
+        onEvent,
+      });
+      await search({});
+      expect(events[0]?.reason).toBe('rejected_by_appview');
+      expect(events[0]?.detail).toBe('status 502');
+    });
+
+    it('rejected.reason="malformed_response" carries the parse-failure detail', async () => {
+      const { events, onEvent } = captureRejected();
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: 'not-an-array' }),
+        onEvent,
+      });
+      await search({});
+      expect(events).toHaveLength(1);
+      expect(events[0]?.reason).toBe('malformed_response');
+      expect(events[0]?.detail).toContain('services');
+    });
+
+    it('successful path emits NO rejected events (clean discrimination)', async () => {
+      // Counter-pin: the `rejected` channel is mutually exclusive
+      // with `searched`. A refactor that emitted both for an
+      // accidentally-overlapping branch (e.g. malformed entry inside
+      // an otherwise-valid response) would silently double-count
+      // rejection metrics.
+      const { events, onEvent } = captureRejected();
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch(okBody([match()])),
+        onEvent,
+      });
+      await search({ capability: 'eta_query' });
+      expect(events).toHaveLength(0);
+    });
+  });
+
+  // ── total field handling ─────────────────────────────────────────────
+  // Production guards `total` with `Number.isInteger(body.total) &&
+  // body.total >= 0`, falling back to `services.length` otherwise.
+  // The previous tests never exercised these guards — a refactor
+  // that loosened to `typeof === 'number'` would let NaN/Infinity/
+  // floats through, surfacing nonsensical "247.5 results" pagers in
+  // the search UI.
+
+  describe('parseResponse — total field guards', () => {
+    it('valid integer total preserved when ≥ services.length', async () => {
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: [match()], total: 47 }),
+      });
+      const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+      expect(out.response.total).toBe(47);
+      expect(out.response.services).toHaveLength(1);
+    });
+
+    it('total=0 with empty services preserved (boundary — must NOT confuse with null)', async () => {
+      // Defence against a refactor that wrote `if (!body.total)` —
+      // would map 0 → fallback. 0 is meaningful ("no matches") and
+      // must surface distinctly from "field missing".
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: [], total: 0 }),
+      });
+      const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+      expect(out.response.total).toBe(0);
+    });
+
+    it('non-integer total falls back to services.length', async () => {
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: [match(), match({ name: 'B' })], total: 5.5 }),
+      });
+      const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+      expect(out.response.total).toBe(2); // services.length
+    });
+
+    it('negative total falls back to services.length', async () => {
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: [match()], total: -1 }),
+      });
+      const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+      expect(out.response.total).toBe(1);
+    });
+
+    it.each([
+      ['NaN', Number.NaN],
+      ['+Infinity', Number.POSITIVE_INFINITY],
+      ['-Infinity', Number.NEGATIVE_INFINITY],
+    ])('non-finite total %s falls back to services.length', async (_label, value) => {
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: [match()], total: value }),
+      });
+      const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+      expect(out.response.total).toBe(1);
+    });
+
+    it('non-number total falls back to services.length', async () => {
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: [match()], total: '5' as unknown as number }),
+      });
+      const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+      expect(out.response.total).toBe(1);
+    });
+
+    it('missing total field falls back to services.length', async () => {
+      const search = createServiceSearchClient({
+        fetchFn: stubFetch({ services: [match(), match({ name: 'B' }), match({ name: 'C' })] }),
+      });
+      const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+      expect(out.response.total).toBe(3);
+    });
+  });
 });

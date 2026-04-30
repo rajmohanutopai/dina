@@ -6,6 +6,7 @@ export {
   derivePersonaSigningKey,
   deriveRotationKey,
   deriveServiceKey,
+  deriveNamespaceKey,
 } from './slip0010';
 export type { DerivedKey } from './slip0010';
 export { derivePersonaDEK, deriveBackupKey, deriveDEKHash } from './hkdf';

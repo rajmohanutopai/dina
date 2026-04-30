@@ -10,8 +10,8 @@
 import {
   signAttestation,
   verifyAttestation,
-  isValidRating,
 } from '../../../core/src/trust/pds_publish';
+import type { Attestation } from '../../../core/src/trust/pds_publish';
 import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
 import {
   createPersona,
@@ -73,18 +73,16 @@ describe('User Stories', () => {
   });
 
   describe('01: Purchase Journey', () => {
-    it('trust scores are valid ratings (0-100)', () => {
-      expect(isValidRating(85)).toBe(true);
-      expect(isValidRating(-1)).toBe(false);
-      expect(isValidRating(101)).toBe(false);
-    });
+    const FIXED_CREATED_AT = '2026-01-15T12:00:00.000Z';
 
-    it('verdict stored with cryptographic signature', () => {
-      const record = {
-        subject_did: 'did:plc:seller',
-        category: 'product_review',
-        rating: 85,
-        verdict: { product: 'Chair', recommendation: 'BUY' },
+    it('product attestation stored with cryptographic signature', () => {
+      const record: Attestation = {
+        subject: { type: 'did', did: 'did:plc:seller' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: FIXED_CREATED_AT,
+        text: 'Aeron Chair — recommend',
+        dimensions: [{ dimension: 'comfort', value: 'exceeded' }],
       };
       const signed = signAttestation(record, TEST_ED25519_SEED, 'did:key:z6MkReviewer');
       expect(signed.signature_hex).toMatch(/^[0-9a-f]{128}$/);
@@ -98,14 +96,17 @@ describe('User Stories', () => {
     });
 
     it('outcome tracked as attestation', () => {
-      const record = {
-        subject_did: 'did:plc:seller',
-        category: 'product_review',
-        rating: 90,
-        verdict: { outcome: 'satisfied' },
+      const record: Attestation = {
+        subject: { type: 'did', did: 'did:plc:seller' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: FIXED_CREATED_AT,
+        dimensions: [{ dimension: 'overall', value: 'met' }],
+        text: 'Order arrived on time, quality matched listing.',
       };
       const signed = signAttestation(record, TEST_ED25519_SEED, 'did:key:z6MkBuyer');
-      expect(signed.record.rating).toBe(90);
+      expect(signed.record.sentiment).toBe('positive');
+      expect(signed.record.dimensions?.[0]?.value).toBe('met');
     });
   });
 
@@ -160,32 +161,34 @@ describe('User Stories', () => {
   });
 
   describe('03: Dead Internet Filter', () => {
-    it('trust scores distinguish authentic vs synthetic', () => {
-      const authentic = signAttestation(
-        {
-          subject_did: 'did:plc:seller',
-          category: 'product_review',
-          rating: 92,
-          verdict: { source: 'verified_purchase' },
-        },
-        TEST_ED25519_SEED,
-        'did:key:z6MkVerified',
-      );
-      expect(verifyAttestation(authentic, getPublicKey(TEST_ED25519_SEED))).toBe(true);
+    const FIXED_CREATED_AT = '2026-01-15T12:00:00.000Z';
+
+    it('authentic attestations are signed and verifiable', () => {
+      const authentic: Attestation = {
+        subject: { type: 'did', did: 'did:plc:seller' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: FIXED_CREATED_AT,
+        confidence: 'certain',
+        evidence: [{ type: 'receipt', uri: 'https://example.com/r/1' }],
+        text: 'Verified purchase',
+      };
+      const signed = signAttestation(authentic, TEST_ED25519_SEED, 'did:key:z6MkVerified');
+      expect(verifyAttestation(signed, getPublicKey(TEST_ED25519_SEED))).toBe(true);
     });
 
-    it('provenance is cryptographically verifiable', () => {
-      const signed = signAttestation(
-        {
-          subject_did: 'did:plc:product',
-          category: 'content_quality',
-          rating: 30,
-          verdict: { flag: 'synthetic' },
-        },
-        TEST_ED25519_SEED,
-        'did:key:z6MkAuditor',
-      );
+    it('synthetic content can be flagged with a negative attestation', () => {
+      const flag: Attestation = {
+        subject: { type: 'content', uri: 'https://example.com/post/123' },
+        category: 'content_quality',
+        sentiment: 'negative',
+        createdAt: FIXED_CREATED_AT,
+        tags: ['synthetic'],
+        text: 'Likely AI-generated',
+      };
+      const signed = signAttestation(flag, TEST_ED25519_SEED, 'did:key:z6MkAuditor');
       expect(signed.signer_did).toBe('did:key:z6MkAuditor');
+      expect(signed.record.sentiment).toBe('negative');
     });
   });
 

@@ -198,6 +198,116 @@ describe('buildServiceProfile (task 6.17)', () => {
       );
       expect(profile.serviceArea!.radiusKm).toBe(25);
     });
+
+    // ── Deep-isolation contract — pinning structuredClone semantics ─────
+    // The existing test pins TOP-LEVEL field mutation. structuredClone
+    // is a deep copy, so deeply-nested mutation in params, result,
+    // responsePolicy, and capabilitySchemas[cap] all should be
+    // isolated. Pin so a refactor to a shallow `{...input}` (which
+    // would NOT deep-copy nested objects) surfaces here.
+
+    it('mutating params (deep nested object) does NOT corrupt the profile', () => {
+      const cfg = baseConfig();
+      const profile = buildServiceProfile(cfg);
+      // Reach 3 levels deep into the JSON Schema params.
+      const props = (cfg.capabilitySchemas.eta_query!.params as { properties: Record<string, unknown> }).properties;
+      (props.route_id as { type: string }).type = 'MUTATED';
+      // Profile's params is the sibling deep-clone — unchanged.
+      const profileProps = (profile.capabilitySchemas.eta_query!.params as { properties: Record<string, unknown> }).properties;
+      expect((profileProps.route_id as { type: string }).type).toBe('string');
+    });
+
+    it('mutating result (deep nested object) does NOT corrupt the profile', () => {
+      const cfg = baseConfig();
+      const profile = buildServiceProfile(cfg);
+      const resultProps = (cfg.capabilitySchemas.eta_query!.result as { properties: Record<string, unknown> }).properties;
+      (resultProps.eta_minutes as { type: string }).type = 'MUTATED';
+      const profileResultProps = (profile.capabilitySchemas.eta_query!.result as { properties: Record<string, unknown> }).properties;
+      expect((profileResultProps.eta_minutes as { type: string }).type).toBe('integer');
+    });
+
+    it('mutating responsePolicy (sibling object) does NOT corrupt the profile', () => {
+      const cfg = baseConfig();
+      const profile = buildServiceProfile(cfg);
+      cfg.responsePolicy.eta_query = 'manual'; // change after build
+      expect(profile.responsePolicy.eta_query).toBe('auto');
+    });
+
+    it('mutating capabilitySchemas (replacing a key) does NOT corrupt the profile', () => {
+      const cfg = baseConfig();
+      const profile = buildServiceProfile(cfg);
+      // Replace the entire schema entry on the source.
+      cfg.capabilitySchemas.eta_query = {
+        description: 'HACKED',
+        params: { hacked: true },
+        result: { hacked: true },
+      };
+      // Profile's schema is the deep-clone snapshot from build-time.
+      expect(profile.capabilitySchemas.eta_query!.description).toBe(
+        'Query estimated bus arrival time',
+      );
+      expect(profile.capabilitySchemas.eta_query!.params).not.toEqual({ hacked: true });
+    });
+
+    it('two profiles built from the SAME input are not aliased', () => {
+      // Counter-pin: each build() call deep-clones independently.
+      // A refactor that cached the cloned input would alias profiles
+      // built back-to-back. Pin so that aliasing surfaces.
+      const cfg = baseConfig();
+      const a = buildServiceProfile(cfg);
+      const b = buildServiceProfile(cfg);
+      // Different objects.
+      expect(a).not.toBe(b);
+      expect(a.capabilitySchemas).not.toBe(b.capabilitySchemas);
+      expect(a.capabilitySchemas.eta_query).not.toBe(b.capabilitySchemas.eta_query);
+      expect(a.capabilitySchemas.eta_query!.params).not.toBe(b.capabilitySchemas.eta_query!.params);
+      expect(a.serviceArea).not.toBe(b.serviceArea);
+      // But same VALUES (deep-equal).
+      expect(a).toEqual(b);
+    });
+
+    it('reverse-isolation: mutating the BUILT profile does NOT corrupt the source input', () => {
+      // The structuredClone runs ONCE at the start. The output then
+      // contains references INTO the cloned input — but those
+      // references are owned by the profile, not the source. A caller
+      // who mutates the profile (e.g. to add `$type` later) shouldn't
+      // disturb the source config.
+      const cfg = baseConfig();
+      const sourceArea = cfg.serviceArea;
+      const sourceSchema = cfg.capabilitySchemas.eta_query;
+      if (!sourceArea || !sourceSchema) throw new Error('expected serviceArea + schema in baseConfig');
+      const originalRadius = sourceArea.radiusKm;
+      const profile = buildServiceProfile(cfg);
+      const builtArea = profile.serviceArea;
+      const builtSchema = profile.capabilitySchemas.eta_query;
+      if (!builtArea || !builtSchema) throw new Error('expected serviceArea + schema on profile');
+      // Caller mutates the BUILT profile.
+      profile.name = 'TEST_MUTATED';
+      builtArea.radiusKm = 99999;
+      builtSchema.description = 'MUTATED';
+      // Source config is unaffected.
+      expect(cfg.name).toBe('SF Transit Authority');
+      expect(sourceArea.radiusKm).toBe(originalRadius);
+      expect(sourceSchema.description).toBe('Query estimated bus arrival time');
+    });
+
+    it('schema_hash is unaffected by source-input mutation after build', () => {
+      // The schema_hash is computed at build time over the cloned
+      // params/result. A refactor that re-computed lazily on access
+      // (returning a getter) would silently let post-build source
+      // mutations change the hash. Pin so the hash is captured-at-build.
+      const cfg = baseConfig();
+      const profile = buildServiceProfile(cfg);
+      const builtSchema = profile.capabilitySchemas.eta_query;
+      const sourceSchema = cfg.capabilitySchemas.eta_query;
+      if (!builtSchema || !sourceSchema) throw new Error('expected eta_query in capabilitySchemas');
+      const originalHash = builtSchema.schema_hash;
+      // Mutate source params after build.
+      const props = (sourceSchema.params as { properties: Record<string, unknown> }).properties;
+      (props.route_id as { type: string }).type = 'integer'; // would change hash
+      // Profile's hash is the build-time snapshot.
+      expect(builtSchema.schema_hash).toBe(originalHash);
+    });
   });
 
   describe('name validation', () => {
@@ -311,6 +421,157 @@ describe('buildServiceProfile (task 6.17)', () => {
       expect(() => buildServiceProfile(cfg)).not.toThrow();
       cfg.serviceArea = { lat: -90, lng: -180, radiusKm: 1 };
       expect(() => buildServiceProfile(cfg)).not.toThrow();
+    });
+
+    // ── Extended boundary coverage ────────────────────────────────────
+    // The existing it.each pins range + NaN-on-lat. Production guard
+    // is `!Number.isFinite() || out-of-range` for ALL three fields.
+    // A refactor that loosened any one to `Number.isNaN()` would
+    // silently let ±Infinity through as a "valid" coordinate.
+
+    it.each([
+      ['+Infinity lat', { lat: Number.POSITIVE_INFINITY, lng: 0, radiusKm: 1 }],
+      ['-Infinity lat', { lat: Number.NEGATIVE_INFINITY, lng: 0, radiusKm: 1 }],
+      ['NaN lng', { lat: 0, lng: Number.NaN, radiusKm: 1 }],
+      ['+Infinity lng', { lat: 0, lng: Number.POSITIVE_INFINITY, radiusKm: 1 }],
+      ['-Infinity lng', { lat: 0, lng: Number.NEGATIVE_INFINITY, radiusKm: 1 }],
+      ['NaN radiusKm', { lat: 0, lng: 0, radiusKm: Number.NaN }],
+      ['+Infinity radiusKm', { lat: 0, lng: 0, radiusKm: Number.POSITIVE_INFINITY }],
+    ])('rejects non-finite %s', (_label, area) => {
+      const cfg = baseConfig();
+      cfg.serviceArea = area;
+      expect(() => buildServiceProfile(cfg)).toThrow();
+    });
+
+    it.each([
+      ['lat is string', { lat: '37.7' as unknown as number, lng: 0, radiusKm: 1 }],
+      ['lat is null', { lat: null as unknown as number, lng: 0, radiusKm: 1 }],
+      ['lng is string', { lat: 0, lng: '0' as unknown as number, radiusKm: 1 }],
+      ['lng is undefined', { lat: 0, lng: undefined as unknown as number, radiusKm: 1 }],
+      ['radiusKm is string', { lat: 0, lng: 0, radiusKm: '1' as unknown as number }],
+      ['radiusKm is null', { lat: 0, lng: 0, radiusKm: null as unknown as number }],
+    ])('rejects non-number %s', (_label, area) => {
+      const cfg = baseConfig();
+      cfg.serviceArea = area;
+      expect(() => buildServiceProfile(cfg)).toThrow();
+    });
+
+    it.each([
+      ['null serviceArea', null],
+      ['array serviceArea', [37.7, -122.4, 25]],
+      ['number serviceArea', 42],
+      ['string serviceArea', 'SF'],
+    ])('rejects non-object %s', (_label, area) => {
+      const cfg = baseConfig();
+      (cfg as unknown as { serviceArea: unknown }).serviceArea = area;
+      expect(() => buildServiceProfile(cfg)).toThrow(/serviceArea must be an object/);
+    });
+
+    it('rejects empty serviceArea object (missing all required fields)', async () => {
+      // The first field-check (lat) fires + throws — the empty-object
+      // case is the most reduction-prone "I'll just clear it" config bug.
+      const cfg = baseConfig();
+      (cfg as unknown as { serviceArea: unknown }).serviceArea = {};
+      expect(() => buildServiceProfile(cfg)).toThrow(/lat/);
+    });
+  });
+
+  // ── validateCapabilityListMatches edge cases ─────────────────────────
+  // Existing test only covers length-mismatch (line 257). Production has
+  // 3 distinct guards: non-array input, length mismatch, content
+  // mismatch (same length but different keys). Pin all three.
+
+  describe('explicit capabilities list validation', () => {
+    it('rejects non-array capabilities', () => {
+      const cfg: BuildProfileInput = {
+        name: 'x',
+        isPublic: true,
+        capabilitySchemas: { eta_query: etaSchema() },
+        responsePolicy: { eta_query: 'auto' },
+        capabilities: 'eta_query' as unknown as string[], // string instead of array
+      };
+      expect(() => buildServiceProfile(cfg)).toThrow(/must be an array/);
+    });
+
+    it('rejects same-length but different-content capabilities', () => {
+      // A refactor that compared only `length` would pass this.
+      // Production iterates element-by-element after sort; pin that.
+      const cfg: BuildProfileInput = {
+        name: 'x',
+        isPublic: true,
+        capabilitySchemas: { eta_query: etaSchema() },
+        responsePolicy: { eta_query: 'auto' },
+        capabilities: ['wrong_cap'], // same length=1, different value
+      };
+      expect(() => buildServiceProfile(cfg)).toThrow(/does not match/);
+    });
+
+    it('accepts capabilities in different order than schema keys (sort-equality)', () => {
+      // Counter-pin: explicit list need NOT match insertion order — the
+      // builder sorts both sides before comparing. Pin so a refactor
+      // that required reference-equality surfaces here.
+      const cfg: BuildProfileInput = {
+        name: 'x',
+        isPublic: true,
+        capabilitySchemas: { zeta: etaSchema(), alpha: etaSchema() },
+        responsePolicy: { zeta: 'auto', alpha: 'auto' },
+        capabilities: ['zeta', 'alpha'], // reverse-alpha order
+      };
+      expect(() => buildServiceProfile(cfg)).not.toThrow();
+      const profile = buildServiceProfile(cfg);
+      // Output is always sort-canonical regardless of input order.
+      expect(profile.capabilities).toEqual(['alpha', 'zeta']);
+    });
+  });
+
+  // ── Capability schema array-rejection counter-pin ────────────────────
+  // The existing 'rejects capability with non-object params' test uses
+  // `[]` (an array). Production guard is `!== object || isArray()`.
+  // Pin all three rejection branches per field for params + result.
+
+  describe('capability schema params/result rejection taxonomy', () => {
+    it.each([
+      ['null params', null],
+      ['array params', []],
+      ['string params', 'object'],
+      ['number params', 42],
+      ['boolean params', true],
+    ])('rejects capability with %s', (_label, params) => {
+      const cfg = baseConfig();
+      (cfg.capabilitySchemas.eta_query as unknown as { params: unknown }).params = params;
+      expect(() => buildServiceProfile(cfg)).toThrow(/params/);
+    });
+
+    it.each([
+      ['null result', null],
+      ['array result', []],
+      ['string result', 'object'],
+      ['number result', 42],
+    ])('rejects capability with %s', (_label, result) => {
+      const cfg = baseConfig();
+      (cfg.capabilitySchemas.eta_query as unknown as { result: unknown }).result = result;
+      expect(() => buildServiceProfile(cfg)).toThrow(/result/);
+    });
+
+    it.each([
+      ['null description', null],
+      ['number description', 42],
+      ['undefined description', undefined],
+      ['boolean description', true],
+    ])('rejects capability with %s', (_label, description) => {
+      const cfg = baseConfig();
+      (cfg.capabilitySchemas.eta_query as unknown as { description: unknown }).description = description;
+      expect(() => buildServiceProfile(cfg)).toThrow(/description/);
+    });
+
+    it.each([
+      ['null schema', null],
+      ['number schema', 42],
+      ['string schema', 'oops'],
+    ])('rejects capability with %s', (_label, schema) => {
+      const cfg = baseConfig();
+      (cfg.capabilitySchemas as unknown as Record<string, unknown>).eta_query = schema;
+      expect(() => buildServiceProfile(cfg)).toThrow(/schema must be an object/);
     });
   });
 

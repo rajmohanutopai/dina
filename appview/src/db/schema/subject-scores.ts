@@ -2,8 +2,23 @@ import { sql } from 'drizzle-orm'
 import { pgTable, text, timestamp, boolean, jsonb, real, integer, index } from 'drizzle-orm/pg-core'
 import { subjects } from './subjects'
 
+/**
+ * `score_version` (TN-DB-001 / Plan §4.1) — every score row carries the
+ * version of the algorithm that produced it. V1 stamps `'v1'`; V2's sybil
+ * clustering will write `'v2'` rows alongside V1 (the xRPC layer reads the
+ * freshest by `computed_at`). Default `'v1'` so legacy code paths that
+ * insert without specifying a version don't break and still produce
+ * version-stamped rows.
+ *
+ * The plan §4.1 long-form design has `UNIQUE (subject_id, score_version)`
+ * with `id BIGSERIAL` PK; the existing AppView shape pre-dates that and
+ * keeps `subjectId` as the PK — V1 leaves that surface unchanged (one row
+ * per subject for now), with multi-version coexistence deferred to V2.
+ * The column is here so V2 can roll forward without a second migration.
+ */
 export const subjectScores = pgTable('subject_scores', {
   subjectId: text('subject_id').primaryKey().references(() => subjects.id),
+  scoreVersion: text('score_version').notNull().default('v1'),
   needsRecalc: boolean('needs_recalc').default(true).notNull(),
   totalAttestations: integer('total_attestations').default(0),
   positive: integer('positive').default(0),

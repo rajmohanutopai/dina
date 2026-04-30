@@ -141,10 +141,18 @@ describe('Trust Network Search', () => {
     it('queries AppView for DID-based identity attestations', async () => {
       const mockProfile: TrustProfile = {
         did: 'did:plc:vendor',
-        score: 78,
-        attestationCount: 15,
-        categories: { product_review: 10, identity_verification: 5 },
-        lastUpdated: Date.now(),
+        overallTrustScore: 0.78,
+        attestationSummary: { total: 15, positive: 11, neutral: 3, negative: 1 },
+        vouchCount: 4,
+        endorsementCount: 6,
+        reviewerStats: {
+          totalAttestationsBy: 20,
+          corroborationRate: 0.8,
+          evidenceRate: 0.65,
+          helpfulRatio: 0.75,
+        },
+        activeDomains: ['vendor.example'],
+        lastActive: Date.now(),
       };
 
       const mockClient = {
@@ -193,18 +201,252 @@ describe('Trust Network Search', () => {
       expect(result.fromNetwork).toBe(0);
     });
 
-    it('only queries AppView for DID-based identity attestation searches', async () => {
+    it('uses searchAttestations (not getProfile) for free-text queries', async () => {
+      const searchSpy = jest.fn(async () => ({
+        success: true,
+        results: [],
+        totalEstimate: 0,
+      }));
       const mockClient = {
         queryProfile: jest.fn(),
         queryBatch: jest.fn(),
+        searchAttestations: searchSpy,
         toTrustScore: jest.fn(),
       } as unknown as TrustQueryClient;
 
       registerTrustQueryClient(mockClient);
 
-      // entity_reviews with a name (not DID) should NOT query AppView
+      // entity_reviews with a name (not DID) should hit search, not getProfile.
+      // The previous (TN-LITE-005-pre) behaviour silently skipped AppView
+      // entirely for free-text queries; that was a real gap.
       await searchTrustNetwork({ query: 'ProductCo', type: 'entity_reviews' });
       expect(mockClient.queryProfile).not.toHaveBeenCalled();
+      expect(searchSpy).toHaveBeenCalledTimes(1);
+      expect((searchSpy.mock.calls[0] as unknown[] | undefined)?.[0]).toMatchObject({ q: 'ProductCo' });
+    });
+  });
+
+  describe('filter overlay (TN-LITE-005)', () => {
+    it('routes a filtered DID query through search, not getProfile', async () => {
+      const searchSpy = jest.fn(async () => ({
+        success: true,
+        results: [
+          {
+            uri: 'at://did:plc:author/com.dina.trust.attestation/1',
+            authorDid: 'did:plc:author',
+            category: 'product',
+            sentiment: 'positive' as const,
+            confidence: 'high' as const,
+            recordCreatedAt: '2026-01-15T12:00:00.000Z',
+          },
+        ],
+        totalEstimate: 1,
+      }));
+      const profileSpy = jest.fn();
+      const mockClient = {
+        queryProfile: profileSpy,
+        queryBatch: jest.fn(),
+        searchAttestations: searchSpy,
+        toTrustScore: jest.fn(),
+      } as unknown as TrustQueryClient;
+
+      registerTrustQueryClient(mockClient);
+
+      const result = await searchTrustNetwork({
+        query: 'did:plc:vendor',
+        type: 'identity_attestations',
+        category: 'product',
+        sentiment: 'positive',
+      });
+
+      expect(profileSpy).not.toHaveBeenCalled();
+      expect(searchSpy).toHaveBeenCalledTimes(1);
+      const params = (searchSpy.mock.calls[0] as unknown[] | undefined)?.[0] as Record<
+        string,
+        unknown
+      >;
+      // The DID is passed as the FTS needle (q), NOT auto-promoted to
+      // authorDid. The previous draft routed DID + filters as
+      // `authorDid: did` which silently flipped the semantic from
+      // "ABOUT this DID" to "BY this DID". Pinning q here guards
+      // against that regression.
+      expect(params.q).toBe('did:plc:vendor');
+      expect(params.authorDid).toBeUndefined();
+      expect(params.category).toBe('product');
+      expect(params.sentiment).toBe('positive');
+      expect(result.fromNetwork).toBe(1);
+    });
+
+    it('honours an explicit authorDid filter on a free-text query', async () => {
+      const searchSpy = jest.fn(async () => ({
+        success: true,
+        results: [],
+        totalEstimate: 0,
+      }));
+      const mockClient = {
+        queryProfile: jest.fn(),
+        queryBatch: jest.fn(),
+        searchAttestations: searchSpy,
+        toTrustScore: jest.fn(),
+      } as unknown as TrustQueryClient;
+      registerTrustQueryClient(mockClient);
+
+      await searchTrustNetwork({
+        query: 'aeron chair',
+        type: 'entity_reviews',
+        authorDid: 'did:plc:reviewer',
+      });
+
+      const params = (searchSpy.mock.calls[0] as unknown[] | undefined)?.[0] as Record<
+        string,
+        unknown
+      >;
+      expect(params.q).toBe('aeron chair');
+      expect(params.authorDid).toBe('did:plc:reviewer');
+    });
+
+    it('passes through every supported filter field', async () => {
+      const searchSpy = jest.fn(async () => ({
+        success: true,
+        results: [],
+        totalEstimate: 0,
+      }));
+      const mockClient = {
+        queryProfile: jest.fn(),
+        queryBatch: jest.fn(),
+        searchAttestations: searchSpy,
+        toTrustScore: jest.fn(),
+      } as unknown as TrustQueryClient;
+      registerTrustQueryClient(mockClient);
+
+      await searchTrustNetwork({
+        query: 'aeron chair',
+        type: 'entity_reviews',
+        subjectType: 'product',
+        category: 'product',
+        domain: 'amazon.com',
+        sentiment: 'positive',
+        authorDid: 'did:plc:reviewer',
+        tags: 'verified,evidence',
+        minConfidence: 'high',
+        since: '2025-01-01T00:00:00.000Z',
+        until: '2026-04-29T00:00:00.000Z',
+        sort: 'recent',
+        limit: 50,
+      });
+
+      const params = (searchSpy.mock.calls[0] as unknown[] | undefined)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({
+        q: 'aeron chair',
+        subjectType: 'product',
+        category: 'product',
+        domain: 'amazon.com',
+        sentiment: 'positive',
+        // authorDid is overridden because the query was free-text and
+        // our authorDid filter sticks.
+        authorDid: 'did:plc:reviewer',
+        tags: 'verified,evidence',
+        minConfidence: 'high',
+        since: '2025-01-01T00:00:00.000Z',
+        until: '2026-04-29T00:00:00.000Z',
+        sort: 'recent',
+        limit: 50,
+      });
+    });
+
+    it('cache key fingerprints filters — different filters do not collide', async () => {
+      const searchSpy = jest.fn(async () => ({
+        success: true,
+        results: [],
+        totalEstimate: 0,
+      }));
+      const mockClient = {
+        queryProfile: jest.fn(),
+        queryBatch: jest.fn(),
+        searchAttestations: searchSpy,
+        toTrustScore: jest.fn(),
+      } as unknown as TrustQueryClient;
+      registerTrustQueryClient(mockClient);
+
+      // Same query string + type but different filter set must NOT
+      // hit each other's cached row. Pre-TN-LITE-005, the cache key
+      // was just `${type}:${query}` and the second call would have
+      // been served stale results from the first.
+      const r1 = await searchTrustNetwork({
+        query: 'chair',
+        type: 'entity_reviews',
+        sentiment: 'positive',
+      });
+      const r2 = await searchTrustNetwork({
+        query: 'chair',
+        type: 'entity_reviews',
+        sentiment: 'negative',
+      });
+
+      expect(r1.cached).toBe(false);
+      expect(r2.cached).toBe(false);
+      expect(searchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('identical filter set hits the cache on the second call', async () => {
+      const searchSpy = jest.fn(async () => ({
+        success: true,
+        results: [],
+        totalEstimate: 0,
+      }));
+      const mockClient = {
+        queryProfile: jest.fn(),
+        queryBatch: jest.fn(),
+        searchAttestations: searchSpy,
+        toTrustScore: jest.fn(),
+      } as unknown as TrustQueryClient;
+      registerTrustQueryClient(mockClient);
+
+      await searchTrustNetwork({
+        query: 'chair',
+        type: 'entity_reviews',
+        sentiment: 'positive',
+      });
+      const second = await searchTrustNetwork({
+        query: 'chair',
+        type: 'entity_reviews',
+        sentiment: 'positive',
+      });
+      expect(second.cached).toBe(true);
+      expect(searchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps confidence levels onto 1–5 review ratings', async () => {
+      const searchSpy = jest.fn(async () => ({
+        success: true,
+        results: [
+          { uri: 'at://x/1', confidence: 'certain' as const },
+          { uri: 'at://x/2', confidence: 'high' as const },
+          { uri: 'at://x/3', confidence: 'moderate' as const },
+          { uri: 'at://x/4', confidence: 'speculative' as const },
+        ],
+        totalEstimate: 4,
+      }));
+      const mockClient = {
+        queryProfile: jest.fn(),
+        queryBatch: jest.fn(),
+        searchAttestations: searchSpy,
+        toTrustScore: jest.fn(),
+      } as unknown as TrustQueryClient;
+      registerTrustQueryClient(mockClient);
+
+      const r = await searchTrustNetwork({
+        query: 'sample',
+        type: 'entity_reviews',
+        category: 'product',
+      });
+      // Reviews come back sorted by reviewerTrust desc — all 50 here,
+      // then by recency. Pull them by URI to match input order.
+      const byUri = new Map(r.reviews.map((rv) => [rv.comment, rv]));
+      expect(byUri.get('Attestation at://x/1')?.rating).toBe(5);
+      expect(byUri.get('Attestation at://x/2')?.rating).toBe(4);
+      expect(byUri.get('Attestation at://x/3')?.rating).toBe(3);
+      expect(byUri.get('Attestation at://x/4')?.rating).toBe(2);
     });
   });
 

@@ -59,6 +59,9 @@ export async function cleanAllTables(db: TestDB) {
       did_profiles,
       subject_scores,
       domain_scores,
+      ingest_rejections,
+      cosig_requests,
+      trust_v1_params,
       subjects
     CASCADE
   `)

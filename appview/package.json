@@ -10,11 +10,14 @@
     "test:status": "tsx test_appview.ts",
     "build": "tsc",
     "migrate": "drizzle-kit migrate",
-    "generate": "drizzle-kit generate"
+    "generate": "drizzle-kit generate",
+    "admin:trust": "tsx src/admin/trust-flag-cli.ts",
+    "admin:enrich": "tsx src/admin/trust-enrich-cli.ts"
   },
   "dependencies": {
     "dotenv": "16.6.1",
     "drizzle-orm": "0.38.4",
+    "franc-min": "^6.2.0",
     "lru-cache": "11.2.6",
     "node-cron": "3.0.3",
     "pg": "8.18.0",

@@ -10,6 +10,31 @@ export const subjects = pgTable('subjects', {
   authorScopedDid: text('author_scoped_did'),
   canonicalSubjectId: text('canonical_subject_id'),
   needsRecalc: boolean('needs_recalc').default(true).notNull(),
+  // ── Enrichment columns (TN-DB-007 / Plan §3.6 + §4.1) ──────────────
+  // The ingester writes these via the deterministic `enrichSubject()`
+  // pure-data composer (see `appview/src/util/subject_enrichment.ts`).
+  // Publishers don't need to know the taxonomy — enrichment is server-
+  // side, so the wire schema stays sparse.
+  category: text('category'),
+  // `metadata`: type-specific bag per plan §3.6.2 — `host`, `media_type`,
+  // `identifier_kind`, `lat`/`lng`, `org_type`, `qid`, `did_method`, etc.
+  // NOT NULL with default `'{}'` so the GIN index never sees NULL (also
+  // simplifies search xRPC's `metadata->>'lat'` extraction — no null
+  // guard needed).
+  metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+  // BCP-47 language tag (e.g. `'en'`, `'pt-BR'`). Auto-detected by
+  // `franc-min` over name + searchable text. Nullable for legacy rows
+  // and content where detection failed.
+  language: text('language'),
+  // Set to NOW() by the enricher on every recompute. NULL = never
+  // enriched (orphan or pre-V1 row); the weekly batch re-enrichment job
+  // (TN-ENRICH-006) prioritises NULL/oldest rows.
+  // Plain `timestamp` (TIMESTAMP WITHOUT TIME ZONE) matches AppView's
+  // codebase convention; Plan §4.1 letter calls for TIMESTAMPTZ but
+  // every other timestamp column across the 27 baseline tables is
+  // plain TIMESTAMP — a single TIMESTAMPTZ column would be a bug
+  // magnet. Same reasoning as `ingest_rejections.rejected_at`.
+  enrichedAt: timestamp('enriched_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
@@ -17,4 +42,32 @@ export const subjects = pgTable('subjects', {
   index('subjects_identifiers_idx').using('gin', table.identifiersJson),
   index('subjects_author_scoped_idx').on(table.authorScopedDid).where(sql`${table.authorScopedDid} IS NOT NULL`),
   index('subjects_canonical_idx').on(table.canonicalSubjectId).where(sql`${table.canonicalSubjectId} IS NOT NULL`),
+  // Search xRPC: `category=` filter. Partial — most rows will eventually
+  // have category, but pre-enrichment rows are NULL, so the partial
+  // predicate keeps the b-tree small until backfill completes.
+  index('subjects_category_idx').on(table.category).where(sql`${table.category} IS NOT NULL`),
+  // Search xRPC: `language=` filter. Same partial-index rationale.
+  index('subjects_language_idx').on(table.language).where(sql`${table.language} IS NOT NULL`),
+  // Search xRPC: `metadataFilters=` jsonb-contains queries (e.g.
+  // `metadata @> '{"host": "amazon.com"}'`). `jsonb_path_ops` opclass
+  // is faster + smaller than the default `jsonb_ops` for the @>
+  // containment operator that the search xRPC actually uses (per
+  // Postgres docs — half the size, often ~5× the lookup speed).
+  index('subjects_metadata_idx').using('gin', table.metadata.op('jsonb_path_ops')),
+  // Geo radius query for `place` subjects. Two-column expression index
+  // — Drizzle's `.on(...args)` is variadic, so each `sql` argument
+  // becomes a separate index column (a single combined `sql` would be
+  // treated as one column). Generated DDL:
+  //   `... ON subjects ((metadata->>'lat'), (metadata->>'lng'))`.
+  // Lets the search xRPC use a b-tree range scan for
+  // `lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?` bounding-box queries.
+  // Partial — only `place` rows with parsed coords have these keys, so
+  // the index size is bounded by the place population, not the whole
+  // subject corpus.
+  index('subjects_geo_idx')
+    .on(
+      sql`(${table.metadata}->>'lat')`,
+      sql`(${table.metadata}->>'lng')`,
+    )
+    .where(sql`${table.metadata} ? 'lat' AND ${table.metadata} ? 'lng'`),
 ])

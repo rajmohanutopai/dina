@@ -159,6 +159,29 @@ describe('TrustScoreResolver (task 6.21)', () => {
       expect(res.ring).toBeNull();
       expect(res.flagCount).toBe(0);
     });
+
+    it('emits resolved event with source=unknown, score=null', async () => {
+      // The 'found' branch's resolved-event shape is pinned in the
+      // 'events' describe block below. The 'unknown' branch flows
+      // through a different `toTrustScore` arm (early return) — pin
+      // its event shape so a future refactor that reorders the early
+      // return doesn't accidentally drop the event or emit it with
+      // the wrong source/score.
+      const events: TrustResolverEvent[] = [];
+      const fetchFn: TrustFetchFn = async () => ({ kind: 'unknown' });
+      const r = new TrustScoreResolver({
+        fetchFn,
+        onEvent: (e) => events.push(e),
+      });
+      await r.getTrustScore(DID_A);
+      const resolved = events.find((e) => e.kind === 'resolved') as
+        | Extract<TrustResolverEvent, { kind: 'resolved' }>
+        | undefined;
+      expect(resolved).toBeDefined();
+      expect(resolved?.did).toBe(DID_A);
+      expect(resolved?.source).toBe('unknown');
+      expect(resolved?.score).toBeNull();
+    });
   });
 
   describe('flagCount + ring pass-through', () => {

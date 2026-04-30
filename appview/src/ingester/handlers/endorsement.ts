@@ -23,6 +23,11 @@ export const endorsementHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record as unknown as Endorsement
 
+    // Pseudonymous-namespace fragment (TN-DB-012). Symmetric with
+    // attestations — endorsements published under a non-root namespace
+    // stay accountable to that compartment.
+    const namespace = record.namespace ?? null
+
     // Upsert the endorsement record
     await ctx.db.insert(endorsements).values({
       uri: op.uri,
@@ -33,6 +38,7 @@ export const endorsementHandler: RecordHandler = {
       endorsementType: record.endorsementType,
       relationship: record.relationship ?? null,
       text: record.text ?? null,
+      namespace,
       recordCreatedAt: new Date(record.createdAt),
     }).onConflictDoUpdate({
       target: endorsements.uri,
@@ -43,6 +49,7 @@ export const endorsementHandler: RecordHandler = {
         endorsementType: record.endorsementType,
         relationship: record.relationship ?? null,
         text: record.text ?? null,
+        namespace,
         recordCreatedAt: new Date(record.createdAt),
         indexedAt: new Date(),
       },

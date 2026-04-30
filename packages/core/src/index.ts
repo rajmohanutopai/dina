@@ -23,6 +23,54 @@ export type {
   PLCCreateResult,
   PLCDirectoryConfig,
 } from './identity/directory';
+// PLC namespace update composer (TN-IDENT-005 / TN-IDENT-008).
+// Pure-functional composers — add a namespace key, or remove one.
+// Submission to the PLC directory is the concern of TN-IDENT-006.
+export {
+  cidForOperation,
+  namespaceFragment,
+  composeNamespaceUpdate,
+  composeAndSignNamespaceUpdate,
+  composeNamespaceDisable,
+  composeAndSignNamespaceDisable,
+} from './identity/plc_namespace_update';
+export type {
+  ComposeNamespaceUpdateParams,
+  ComposedNamespaceUpdate,
+  ComposeAndSignNamespaceUpdateParams,
+  SignedNamespaceUpdate,
+  ComposeNamespaceDisableParams,
+  ComposedNamespaceDisable,
+  ComposeAndSignNamespaceDisableParams,
+  SignedNamespaceDisable,
+} from './identity/plc_namespace_update';
+// PLC-op submission with retry + backoff (TN-IDENT-006). Pure-ish
+// HTTP submitter — caller injects fetch/sleep for testability.
+// Classifies failures: permanent (4xx) vs transient (5xx / network).
+export {
+  submitPlcOperation,
+  computePLCBackoff,
+  PLCSubmitError,
+  DEFAULT_MAX_ATTEMPTS,
+  DEFAULT_BACKOFF_BASE_MS,
+} from './identity/plc_submit';
+export type {
+  SubmitPlcOperationParams,
+  SubmitPlcOperationConfig,
+  SubmitPlcOperationResult,
+} from './identity/plc_submit';
+// Namespace creation orchestrator (TN-IDENT-007). Wraps the four
+// lower-level primitives (derive → compose → sign → submit) into a
+// single tested call. Steps 6 (publish namespaceProfile) + 7 (poll
+// AppView) of plan §3.5.3 are caller responsibility.
+export {
+  createNamespace,
+  nextAvailableNamespaceIndex,
+} from './identity/namespace_create_flow';
+export type {
+  CreateNamespaceFlowParams,
+  CreateNamespaceFlowResult,
+} from './identity/namespace_create_flow';
 export type { DIDDocument, VerificationMethod, ServiceEndpoint } from './identity/did_document';
 export * from './d2d/envelope';
 export type { DinaMessage, D2DPayload } from './d2d/envelope';
@@ -243,7 +291,7 @@ export type { WSMessageType, WSMessage } from './ws/framing';
 export * from './onboarding/portable';
 export type { OnboardingResult } from './onboarding/portable';
 export * from './trust/pds_publish';
-export type { AttestationRecord, SignedAttestation } from './trust/pds_publish';
+export type { Attestation, SignedAttestation } from './trust/pds_publish';
 export * from './approval/pending_reason';
 export type { PendingReasonRecord } from './approval/pending_reason';
 export * from './schema/identity';
@@ -288,6 +336,20 @@ export type { Platform } from './process/model';
 export * from './lifecycle/sleep_wake';
 export type { AppState } from './lifecycle/sleep_wake';
 export * from './trust/network_search';
+export * from './trust/cache';
+export type { TrustScore } from './trust/cache';
+export { TrustQueryClient } from './trust/query_client';
+export type {
+  TrustProfile,
+  AttestationSummary,
+  ReviewerStats,
+  QueryConfig,
+  QueryError,
+  QueryResult,
+  AttestationSearchParams,
+  AttestationSearchHit,
+  SearchResult,
+} from './trust/query_client';
 export * from './relay/msgbox_handlers';
 export { bootstrapMsgBox } from './relay/msgbox_boot';
 export type { MsgBoxBootConfig } from './relay/msgbox_boot';

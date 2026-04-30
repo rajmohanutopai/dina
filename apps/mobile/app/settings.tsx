@@ -307,18 +307,21 @@ export default function SettingsScreen() {
         );
       })()}
 
-      {/* Paired Devices — admin surface for `dina-admin device pair`.
-          Always visible: even a requester-only node may want to pair a
-          dina-agent container to run delegation tasks. Port of main-
-          dina's device admin CLI into the mobile app. */}
-      <SettingsSection title="DEVICES">
+      {/* Agents — admin surface for `dina-admin device pair`. Always
+          visible: even a requester-only node may want to authorize a
+          dina-agent install to run delegation tasks. Port of main-
+          dina's device admin CLI into the mobile app. Renamed away
+          from "Paired Devices" because first-time users read that
+          as "another phone running Dina"; see paired-devices.tsx
+          for the full rationale. */}
+      <SettingsSection title="AGENTS">
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/paired-devices')}
           accessibilityRole="button"
-          accessibilityLabel="Open Paired Devices"
+          accessibilityLabel="Open Agents"
         >
-          <Text style={styles.rowLabel}>Paired devices</Text>
+          <Text style={styles.rowLabel}>Agents</Text>
           <Text style={styles.rowValue}>{'\u203A'}</Text>
         </TouchableOpacity>
       </SettingsSection>
