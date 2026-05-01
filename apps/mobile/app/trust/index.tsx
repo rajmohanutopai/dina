@@ -341,6 +341,21 @@ export default function TrustFeedScreen(
             testID="trust-search-input"
             accessibilityLabel="Search the trust network"
           />
+          {q.length > 0 ? (
+            <Pressable
+              onPress={() => onQChange?.('')}
+              style={({ pressed }) => [
+                styles.searchClearBtn,
+                pressed && styles.searchClearBtnPressed,
+              ]}
+              testID="trust-search-clear"
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={8}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
@@ -518,6 +533,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textPrimary,
     paddingVertical: spacing.sm,
+  },
+  searchClearBtn: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    marginLeft: spacing.xs,
+  },
+  searchClearBtnPressed: {
+    opacity: 0.5,
   },
   loading: {
     flex: 1,

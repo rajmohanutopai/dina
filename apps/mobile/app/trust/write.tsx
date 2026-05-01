@@ -34,7 +34,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import {
   View,
@@ -507,6 +507,28 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     setLocalError(null);
     setShowErrors(false);
   }, [defaultInitial, props.initial]);
+  // Reset on screen focus — Expo Router caches mounted screens so a
+  // user who navigates away mid-compose (back to Trust, then "Write a
+  // review" again) would otherwise see their stale draft. The reset
+  // mirrors the user's expectation that landing on /trust/write is a
+  // *fresh* form. Skipped in edit mode (`editing` set) — that path
+  // intentionally seeds the form from the existing record. Skipped in
+  // controlled-mode (test-supplied `initial`) so render tests stay
+  // deterministic. Tracked via a ref so the FIRST focus (mount) is a
+  // no-op — the initial useState already handles that.
+  const hasFocusedOnceRef = React.useRef(false);
+  useFocusEffect(
+    React.useCallback(() => {
+      if (props.initial !== undefined || editing !== undefined) return;
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+      setState(defaultInitial);
+      setLocalError(null);
+      setShowErrors(false);
+    }, [defaultInitial, props.initial, editing]),
+  );
   const validation = React.useMemo(() => validateWriteForm(state), [state]);
   const editWarning = React.useMemo<EditWarning | null>(
     () => (editing ? deriveEditWarning(editing.cosigCount) : null),

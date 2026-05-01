@@ -202,6 +202,50 @@ describe('TrustFeedScreen — search input wiring', () => {
   });
 });
 
+describe('TrustFeedScreen — search clear button', () => {
+  it('clear button is hidden when q is empty', () => {
+    const { queryByTestId } = render(
+      <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} q="" />,
+    );
+    expect(queryByTestId('trust-search-clear')).toBeNull();
+  });
+
+  it('clear button renders when q has content', () => {
+    const { getByTestId } = render(
+      <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} q="aeron" />,
+    );
+    expect(getByTestId('trust-search-clear')).toBeTruthy();
+  });
+
+  it('tapping clear fires onQChange("")', () => {
+    const onChange = jest.fn();
+    const { getByTestId } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        q="aeron chair"
+        onQChange={onChange}
+      />,
+    );
+    fireEvent.press(getByTestId('trust-search-clear'));
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('uncontrolled: tapping clear empties the local search state', () => {
+    // No q/onQChange supplied → screen owns local state. Type something,
+    // verify clear button appears, tap it, verify the input clears.
+    const { getByTestId, queryByTestId } = render(
+      <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} />,
+    );
+    fireEvent.changeText(getByTestId('trust-search-input'), 'aeron');
+    expect(getByTestId('trust-search-input').props.value).toBe('aeron');
+    expect(getByTestId('trust-search-clear')).toBeTruthy();
+    fireEvent.press(getByTestId('trust-search-clear'));
+    expect(getByTestId('trust-search-input').props.value).toBe('');
+    expect(queryByTestId('trust-search-clear')).toBeNull();
+  });
+});
+
 describe('TrustFeedScreen — interactions', () => {
   it('tap on a feed card fires onSelectSubject', () => {
     const onSelect = jest.fn();
