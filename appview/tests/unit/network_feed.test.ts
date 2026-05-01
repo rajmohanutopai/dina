@@ -30,18 +30,28 @@ interface AttestationRow {
 }
 
 /**
- * DB stub for `db.select().from(attestations).where(...).orderBy(...).limit(...)`.
- * Returns the seeded rows verbatim — the test asserts at the
- * boundary (response shape, cursor encoding) without faking the
- * planner.
+ * DB stub for the join-flavoured query the handler now issues:
+ * `db.select({attestation, handle}).from(attestations).leftJoin(...)`
+ *   `.where(...).orderBy(...).limit(...)` returning
+ * `{attestation, handle}[]`. The handler then flattens to
+ * `{...attestation, authorHandle: normalizeHandle(handle)}`.
+ *
+ * The stub returns rows wrapped in the join shape so the handler's
+ * flatten step exercises naturally. Tests still assert at the
+ * response boundary — the wrapping is plumbing.
  */
-function stubDb(rows: AttestationRow[]): DrizzleDB {
+function stubDb(rows: AttestationRow[], handles?: Map<string, string | null>): DrizzleDB {
   return {
     select: () => ({
       from: () => ({
-        where: () => ({
-          orderBy: () => ({
-            limit: async () => rows,
+        leftJoin: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: async () => rows.map((r) => ({
+                attestation: r,
+                handle: handles?.get(r.authorDid) ?? null,
+              })),
+            }),
           }),
         }),
       }),

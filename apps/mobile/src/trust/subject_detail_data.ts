@@ -74,6 +74,21 @@ export interface SubjectDetailInput {
   readonly subjectTrustScore: number | null;
   readonly reviewCount: number;
   readonly reviews: readonly SubjectReview[];
+  /**
+   * Subject-ref kind ("product" / "place" / etc.). Carried so the
+   * "Write a review" CTA can deep-link into the write screen with full
+   * subject context — without it the write screen has only `subjectId`
+   * and can't reconstruct the SubjectRef the inject path needs.
+   * Optional for backwards compatibility; tests passing synthetic
+   * `SubjectDetailInput` may omit it.
+   */
+  readonly subjectKind?: string;
+  /** Identifier (ASIN, ISBN, etc.) when the subject ref carries one. */
+  readonly subjectIdentifier?: string;
+  /** DID when the subject ref is a `did:` reference. */
+  readonly subjectDid?: string;
+  /** URI when the subject ref is a `content` / `dataset` reference. */
+  readonly subjectUri?: string;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────

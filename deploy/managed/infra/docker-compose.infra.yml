@@ -147,6 +147,13 @@ services:
       PORT: "3000"
       NODE_ENV: production
       RATE_LIMIT_RPM: "60"
+      # Test-inject endpoints (`com.dina.test.injectAttestation` /
+      # `deleteAttestation`) — enabled only when BOTH env vars are
+      # set + non-empty. Test environments wire them; prod leaves them
+      # unset so the endpoints 404. The token is a deploy-time secret
+      # with shared knowledge between AppView + the mobile dev build.
+      DINA_TEST_INJECT: ${DINA_TEST_INJECT:-}
+      DINA_TEST_INJECT_TOKEN: ${DINA_TEST_INJECT_TOKEN:-}
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:

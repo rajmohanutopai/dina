@@ -39,6 +39,23 @@ export const KeyboardAvoidingView = passthrough('KeyboardAvoidingView');
 export const ActivityIndicator = passthrough('ActivityIndicator');
 export const Switch = passthrough('Switch');
 
+/**
+ * Modal — when `visible` is false we return null so RTL queries don't
+ * find IDs that aren't actually on screen. When visible, render the
+ * children inline so testID + tap simulation work normally.
+ */
+export const Modal: React.FC<any> = ({ visible, children, ...rest }) => {
+  if (visible !== true) return null;
+  return React.createElement('Modal', rest, children);
+};
+Modal.displayName = 'Modal';
+
+export const Share = {
+  share: async (_content: { message?: string; url?: string; title?: string }) => ({
+    action: 'sharedAction' as const,
+  }),
+};
+
 export const Pressable: React.FC<any> = ({ onPress, children, ...rest }) =>
   React.createElement('Pressable', { ...rest, onPress }, children);
 Pressable.displayName = 'Pressable';

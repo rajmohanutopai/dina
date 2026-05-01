@@ -47,6 +47,12 @@ jest.mock('../../src/services/identity_record', () => ({
   }),
 }));
 
+jest.mock('../../src/services/display_name_override', () => ({
+  clearDisplayNameOverride: jest.fn(async () => {
+    callLog.push('clearDisplayNameOverride');
+  }),
+}));
+
 jest.mock('../../src/hooks/useUnlock', () => ({
   resetUnlockState: jest.fn(() => {
     callLog.push('resetUnlockState');
@@ -63,6 +69,7 @@ import { signOutLocal, eraseEverythingLocal } from '../../src/services/local_dat
 import { clearWrappedSeed } from '../../src/services/wrapped_seed_store';
 import { clearIdentitySeeds } from '../../src/services/identity_store';
 import { clearPersistedDid } from '../../src/services/identity_record';
+import { clearDisplayNameOverride } from '../../src/services/display_name_override';
 import { resetUnlockState } from '../../src/hooks/useUnlock';
 import { shutdownAllPersistence } from '../../src/storage/init';
 
@@ -72,20 +79,22 @@ describe('signOutLocal', () => {
     jest.clearAllMocks();
   });
 
-  it('clears wrapped seed + identity keys + persisted DID + resets unlock state', async () => {
+  it('clears wrapped seed + identity keys + persisted DID + display-name override + resets unlock state', async () => {
     await signOutLocal();
     expect(clearWrappedSeed).toHaveBeenCalledTimes(1);
     expect(clearIdentitySeeds).toHaveBeenCalledTimes(1);
     expect(clearPersistedDid).toHaveBeenCalledTimes(1);
+    expect(clearDisplayNameOverride).toHaveBeenCalledTimes(1);
     expect(resetUnlockState).toHaveBeenCalledTimes(1);
   });
 
-  it('runs the four clears in deterministic order', async () => {
+  it('runs the clears in deterministic order', async () => {
     await signOutLocal();
     expect(callLog).toEqual([
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
+      'clearDisplayNameOverride',
       'resetUnlockState',
     ]);
   });
@@ -136,6 +145,7 @@ describe('eraseEverythingLocal', () => {
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
+      'clearDisplayNameOverride',
       'resetUnlockState',
     ]);
   });
@@ -223,6 +233,7 @@ describe('eraseEverythingLocal', () => {
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
+      'clearDisplayNameOverride',
       'resetUnlockState',
     ]);
   });

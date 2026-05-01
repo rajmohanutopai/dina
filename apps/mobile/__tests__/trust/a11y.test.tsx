@@ -42,8 +42,10 @@ import { render } from '@testing-library/react-native';
 import NamespaceScreen from '../../app/trust/namespace';
 import OutboxScreen from '../../app/trust/outbox';
 import ReviewerProfileScreen from '../../app/trust/reviewer/[did]';
-import SearchScreen, { type SearchResult } from '../../app/trust/search';
-import TrustFeedScreen, { type FeedItem } from '../../app/trust/index';
+import SearchScreen from '../../app/trust/search';
+import type { SearchResult } from '../../app/trust/search';
+import TrustFeedScreen from '../../app/trust/index';
+import type { FeedItem } from '../../app/trust/index';
 import SubjectDetailScreen from '../../app/trust/[subjectId]';
 import WriteScreen from '../../app/trust/write';
 

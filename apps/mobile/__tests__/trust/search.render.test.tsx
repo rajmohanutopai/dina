@@ -19,7 +19,8 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 
-import SearchScreen, { type SearchResult } from '../../app/trust/search';
+import SearchScreen from '../../app/trust/search';
+import type { SearchResult } from '../../app/trust/search';
 import type { SubjectCardDisplay } from '../../src/trust/subject_card';
 import type { FacetBar } from '../../src/trust/facets';
 
@@ -63,11 +64,15 @@ describe('SearchScreen — render states', () => {
     expect(getByTestId('search-retry')).toBeTruthy();
   });
 
-  it('hides Retry CTA when onRetry is omitted', () => {
-    const { queryByTestId } = render(
+  it('renders Retry CTA when onRetry is omitted (runner-engaged default)', () => {
+    // The screen now installs a default `onRetry` that bumps an
+    // internal retry-nonce so the auto-runner re-fires. Tests that
+    // genuinely need a no-Retry error panel pass an explicit no-op
+    // handler instead of relying on omission.
+    const { getByTestId } = render(
       <SearchScreen results={[]} facets={EMPTY_FACETS} error="boom" />,
     );
-    expect(queryByTestId('search-retry')).toBeNull();
+    expect(getByTestId('search-retry')).toBeTruthy();
   });
 
   it('renders loading state when isLoading + no results', () => {

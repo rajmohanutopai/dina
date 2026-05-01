@@ -42,6 +42,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React from 'react';
 import {
   View,
@@ -57,15 +58,24 @@ import { colors, fonts, spacing, radius } from '../../src/theme';
 import { FacetBarView } from '../../src/trust/components/facet_bar_view';
 import { FirstRunModalView } from '../../src/trust/components/first_run_modal_view';
 import { SubjectCardView } from '../../src/trust/components/subject_card_view';
+import { useNetworkFeed } from '../../src/trust/runners/use_network_feed';
+import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 
 import type { FacetBar } from '../../src/trust/facets';
-import type { SubjectCardDisplay } from '../../src/trust/subject_card';
+// Re-export FeedItem from the runner module so existing test imports
+// (`import type { FeedItem } from '<screen>'`) keep working without
+// pulling on the screen's React tree.
+export type { FeedItem } from '../../src/trust/runners/use_network_feed';
+import type { FeedItem } from '../../src/trust/runners/use_network_feed';
 
-/** One feed item — `{subjectId, display}`. */
-export interface FeedItem {
-  readonly subjectId: string;
-  readonly display: SubjectCardDisplay;
-}
+/**
+ * Module-level constants used as default-prop sentinels. Defining them
+ * outside the component avoids re-allocating on every render — that
+ * keeps `feed`/`facets` reference-stable so memoised children and
+ * effect deps don't see a fresh array each render.
+ */
+const EMPTY_FEED: readonly FeedItem[] = [];
+const EMPTY_FACETS: FacetBar = { primary: [], overflow: [] };
 
 export interface TrustFeedScreenProps {
   /** Current text in the search box. */
@@ -74,10 +84,14 @@ export interface TrustFeedScreenProps {
   onQChange?: (next: string) => void;
   /** Fired when the user submits the search (return key or magnifier tap). */
   onSubmitSearch?: (q: string) => void;
-  /** The network-feed cards for this viewer. */
-  feed: readonly FeedItem[];
-  /** Derived facets from the feed set. */
-  facets: FacetBar;
+  /**
+   * The network-feed cards for this viewer. Defaults to `[]` so the
+   * screen can be rendered as an Expo Router default export with no
+   * runner — the empty state ("Your network is quiet") fires.
+   */
+  feed?: readonly FeedItem[];
+  /** Derived facets from the feed set. Defaults to an empty bar. */
+  facets?: FacetBar;
   /** Currently-active facet (drives chip selected state). */
   activeFacet?: string | null;
   /** Whether the runner is mid-fetch. */
@@ -108,15 +122,57 @@ export interface TrustFeedScreenProps {
 export default function TrustFeedScreen(
   props: TrustFeedScreenProps,
 ): React.ReactElement {
+  // `useRouter` is consulted as a navigation fallback when the caller
+  // didn't supply explicit `onSubmitSearch` / `onSelectSubject` props.
+  // Tests pass the callbacks directly (controlled mode); production —
+  // where Expo Router renders the default export with no props — gets
+  // sensible drill-down navigation via `router.push`.
+  const router = useRouter();
+  // When no parent runner supplies `q`/`onQChange`, the screen owns the
+  // search input state so typed characters echo (the production landing
+  // route mounts the default export with no props — without this local
+  // state the TextInput's value would always be ''). Tests that pass
+  // controlled props bypass this entirely.
+  const isSearchControlled = props.q !== undefined || props.onQChange !== undefined;
+  const [localQ, setLocalQ] = React.useState('');
+  // Auto-runner: fetch the user's 1-hop network feed when no caller
+  // supplies controlled feed state. Tests that pass `feed` / `isLoading`
+  // explicitly stay presentational; production lands here with no props
+  // and the runner kicks in. Empty 1-hop network → empty `feed` →
+  // existing "Your network is quiet" UX still fires.
+  const isFeedControlled =
+    props.feed !== undefined || props.isLoading !== undefined;
+  const viewerDid = getBootedNode()?.did ?? '';
+  const [feedNonce, setFeedNonce] = React.useState(0);
+  const auto = useNetworkFeed({
+    viewerDid,
+    enabled: !isFeedControlled && viewerDid !== '',
+    retryNonce: feedNonce,
+  });
+  // Refetch on focus so a freshly-published attestation by a contact
+  // shows up the next time the user lands here — same pattern as the
+  // other trust runners (search / subject detail / reviewer profile).
+  useFocusEffect(
+    React.useCallback(() => {
+      if (isFeedControlled || viewerDid === '') return;
+      setFeedNonce((n) => n + 1);
+    }, [isFeedControlled, viewerDid]),
+  );
   const {
-    q = '',
-    onQChange,
-    onSubmitSearch,
-    feed,
-    facets,
+    q = isSearchControlled ? '' : localQ,
+    onQChange = isSearchControlled ? undefined : setLocalQ,
+    onSubmitSearch = (next: string) => {
+      const trimmed = next.trim();
+      if (trimmed.length === 0) return;
+      router.push({ pathname: '/trust/search', params: { q: trimmed } });
+    },
+    feed = auto.feed.length > 0 ? auto.feed : EMPTY_FEED,
+    isLoading = auto.isLoading,
+    facets = EMPTY_FACETS,
     activeFacet = null,
-    isLoading = false,
-    onSelectSubject,
+    onSelectSubject = (subjectId: string) => {
+      router.push({ pathname: '/trust/[subjectId]', params: { subjectId } });
+    },
     onTapFacet,
     onShowMoreFacets,
     firstRunVisible = false,
@@ -171,8 +227,8 @@ export default function TrustFeedScreen(
           <Ionicons name="people-outline" size={40} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>Your network is quiet</Text>
           <Text style={styles.emptyBody}>
-            Search for subjects (products, places, content) above — you can review them
-            even before your contacts do.
+            Search for products, places, content, organizations, people, datasets, or
+            claims above — or be the first to review something new.
           </Text>
           {onSubmitSearch && q.trim().length > 0 && (
             <Pressable
@@ -189,6 +245,19 @@ export default function TrustFeedScreen(
               <Text style={styles.searchCtaLabel}>Search “{q.trim()}”</Text>
             </Pressable>
           )}
+          <Pressable
+            onPress={() => router.push({ pathname: '/trust/write', params: { createKind: 'product' } })}
+            style={({ pressed }) => [
+              styles.writeCta,
+              pressed && styles.writeCtaPressed,
+            ]}
+            testID="trust-feed-write-cta"
+            accessibilityRole="button"
+            accessibilityLabel="Write the first review"
+          >
+            <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
+            <Text style={styles.writeCtaLabel}>Write a review</Text>
+          </Pressable>
         </View>
       ) : (
         <ScrollView
@@ -284,6 +353,23 @@ const styles = StyleSheet.create({
   },
   searchCtaPressed: { backgroundColor: colors.accentHover },
   searchCtaLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.bgSecondary,
+  },
+  writeCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
+    gap: spacing.xs,
+    minHeight: 44,
+    marginTop: spacing.sm,
+  },
+  writeCtaPressed: { backgroundColor: colors.accentHover },
+  writeCtaLabel: {
     fontFamily: fonts.sansMedium,
     fontSize: 14,
     color: colors.bgSecondary,

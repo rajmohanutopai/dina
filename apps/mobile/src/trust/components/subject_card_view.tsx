@@ -69,16 +69,24 @@ export function SubjectCardView(props: SubjectCardViewProps): React.ReactElement
         )}
       </View>
 
-      {/* Score badge + review count */}
+      {/* Score badge + review count.
+          Hide the badge for unrated subjects — search returns
+          attestation hits without subject-score data, so every
+          card-on-search would otherwise show a meaningless "—" badge
+          that contradicts the band the detail page renders. When the
+          score IS known (network feed, future score-enriched search)
+          the badge stays. */}
       <View style={styles.scoreRow}>
-        <View
-          style={[styles.scoreBadge, { backgroundColor: BAND_COLOUR[display.score.band] }]}
-          testID={`subject-card-band-${subjectId}`}
-        >
-          <Text style={styles.scoreText}>
-            {display.showNumericScore ? display.score.label : BAND_LABEL[display.score.band]}
-          </Text>
-        </View>
+        {display.score.band !== 'unrated' && (
+          <View
+            style={[styles.scoreBadge, { backgroundColor: BAND_COLOUR[display.score.band] }]}
+            testID={`subject-card-band-${subjectId}`}
+          >
+            <Text style={styles.scoreText}>
+              {display.showNumericScore ? display.score.label : BAND_LABEL[display.score.band]}
+            </Text>
+          </View>
+        )}
         <Text style={styles.reviewCount}>
           {display.reviewCount} {display.reviewCount === 1 ? 'review' : 'reviews'}
         </Text>

@@ -54,6 +54,13 @@ import { handleNotificationTap } from '../src/notifications/deep_link';
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { isTrustTabHidden } from '../src/trust/flags';
+import { parentRouteFor } from '../src/navigation/parent_route';
+import {
+  closeMenu,
+  getMenuOpen,
+  openMenu,
+  subscribeMenuOpen,
+} from '../src/navigation/menu_state';
 
 // Horizontal Dina mark used in the Chat tab's header. Other tabs
 // keep their text title — using the wordmark on every screen would
@@ -88,7 +95,8 @@ type NavMenuItem = {
 const NAV_MENU_ITEMS: NavMenuItem[] = [
   { label: 'Vault',         icon: 'lock-closed-outline',     href: '/vault'         },
   { label: 'Reminders',     icon: 'notifications-outline',   href: '/reminders'     },
-  { label: 'Notifications', icon: 'mail-outline',            href: '/notifications' },
+  // Notifications was here; now it's a bottom-bar tab so the menu
+  // entry would just be a duplicate. Reachable via the bell-icon tab.
   { label: 'Settings',      icon: 'settings-outline',        href: '/settings'      },
   { label: 'Help',          icon: 'help-circle-outline',     href: '/help'          },
 ];
@@ -103,6 +111,59 @@ function HeaderMenuButton({ onPress }: { onPress: () => void }) {
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}
     >
       <Ionicons name="menu-outline" size={26} color={colors.tabInactive} />
+    </Pressable>
+  );
+}
+
+/**
+ * iOS-style back chevron used on every drill-down screen
+ * (`/admin`, `/trust/[subjectId]`, `/chat/[did]`, …).
+ *
+ * We can't rely on Expo Router's automatic back button here: the
+ * root layout uses `<Tabs>`, and the global `screenOptions.headerLeft`
+ * — which injects the hamburger — silently overrides whatever the
+ * navigator would otherwise render. Drill-down screens explicitly
+ * pass this component as `headerLeft` so the user gets a visible
+ * "<" affordance, while the 5 top-level tabs keep the hamburger.
+ *
+ * Why route-aware navigation instead of `router.back()`:
+ *   With bare `<Tabs>` (no per-tab `<Stack>`), `router.back()` pops
+ *   the previously-focused tab — not the previously-pushed screen.
+ *   So Trust → Search → Back lands on the Chat tab if Chat was
+ *   focused before the user switched to Trust. We compute the
+ *   logical parent from the pathname and navigate there directly.
+ *   Detailed rationale + the section-parent map live in
+ *   `src/navigation/parent_route.ts`.
+ */
+function HeaderBackButton({
+  onMenuFallback: _onMenuFallback,
+}: {
+  onMenuFallback: () => void;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const onPress = () => {
+    const parent = parentRouteFor(pathname);
+    // `replace` rather than `push` so a user repeatedly bouncing
+    // between a section's root and a drill-down doesn't grow the
+    // navigation stack indefinitely.
+    router.replace(parent as never);
+  };
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={12}
+      accessibilityRole="button"
+      accessibilityLabel="Back"
+      style={{
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
+      }}
+    >
+      <Ionicons name="chevron-back" size={26} color={colors.tabInactive} />
     </Pressable>
   );
 }
@@ -240,6 +301,7 @@ type TabName =
   | 'Chat'
   | 'People'
   | 'Trust'
+  | 'Notifications'
   | 'Approvals';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -247,10 +309,11 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 // One outline + one filled glyph per tab. Filled is shown when the tab
 // is focused, outline otherwise — matches the iOS HIG convention.
 const TAB_GLYPHS: Record<TabName, { outline: IoniconName; filled: IoniconName }> = {
-  Chat:      { outline: 'chatbubble-outline',         filled: 'chatbubble' },
-  People:    { outline: 'people-outline',             filled: 'people' },
-  Trust:     { outline: 'shield-checkmark-outline',   filled: 'shield-checkmark' },
-  Approvals: { outline: 'checkmark-circle-outline',   filled: 'checkmark-circle' },
+  Chat:          { outline: 'chatbubble-outline',         filled: 'chatbubble' },
+  People:        { outline: 'people-outline',             filled: 'people' },
+  Trust:         { outline: 'shield-checkmark-outline',   filled: 'shield-checkmark' },
+  Notifications: { outline: 'notifications-outline',      filled: 'notifications' },
+  Approvals:     { outline: 'checkmark-circle-outline',   filled: 'checkmark-circle' },
 };
 
 function TabIcon({ name, focused }: { name: TabName; focused: boolean }) {
@@ -323,11 +386,15 @@ export default function RootLayout() {
   const providerBlocked = bootState.degradations.some((d) => PROVIDER_BLOCKERS.has(d.code));
   const showProviderTabs = runningAsProvider && !providerBlocked;
 
-  // Approvals is the only badge-bearing bottom tab now (Reminders +
-  // Notifications moved to the hamburger menu). The unified-inbox hooks
-  // for those still drive the in-screen UIs themselves; we just don't
-  // surface their counts on the tab bar anymore.
+  // Two badge-bearing bottom tabs:
+  //   - Approvals: provider-only inbound service queries that need a
+  //     human decision (gated on provider role + readiness).
+  //   - Notifications: unified inbox of every kind (reminder / approval
+  //     / nudge / briefing / ask_approval). Pinned to the bar because
+  //     it's where the user looks for "what's new" — the hamburger-menu
+  //     version was easy to miss and led to stale unread counts.
   const approvalBadge = useUnreadBadge('approval');
+  const notificationsBadge = useUnreadBadge();
 
   // Fire watcher mounted at the root so reminders post into the chat
   // thread + inbox regardless of which tab is currently visible.
@@ -343,11 +410,27 @@ export default function RootLayout() {
 
   const router = useRouter();
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = React.useState(false);
+  // Menu open state lives in a module singleton so per-tab Stack
+  // headers (`app/trust/_layout.tsx`, `app/vault/_layout.tsx`) can
+  // open it from inside their nav trees too.
+  const menuOpen = useSyncExternalStore(
+    subscribeMenuOpen,
+    getMenuOpen,
+    getMenuOpen,
+  );
   const handleMenuSelect = (href: string) => {
-    setMenuOpen(false);
+    closeMenu();
     router.push(href as never);
   };
+
+  // Reused by every drill-down screen via `headerLeft` so the user
+  // gets a visible back chevron instead of the inherited hamburger.
+  // Top-level tabs keep the hamburger via the Tabs-level
+  // `screenOptions.headerLeft` default below.
+  const renderHeaderBackButton = React.useCallback(
+    () => <HeaderBackButton onMenuFallback={openMenu} />,
+    [],
+  );
 
   // Notification system boot (5.59 / 5.61). Runs once after unlock —
   // sets up Android channels, requests OS permission (idempotent —
@@ -474,7 +557,7 @@ export default function RootLayout() {
                 letterSpacing: 0.3,
               },
               headerShadowVisible: false,
-              headerLeft: () => <HeaderMenuButton onPress={() => setMenuOpen(true)} />,
+              headerLeft: () => <HeaderMenuButton onPress={openMenu} />,
               headerRight: () => <HeaderHelpButton onPress={() => router.push('/help')} />,
               tabBarStyle: {
                 backgroundColor: colors.bgPrimary,
@@ -504,20 +587,20 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
-              name="vault/index"
+              name="vault"
               options={{
                 title: 'Vaults',
                 // Reached via the hamburger menu (HeaderMenuButton).
+                // The folder has its own Stack layout (`app/vault/_layout.tsx`)
+                // that scopes back-navigation to vault drill-downs, so a
+                // single Tabs.Screen entry is enough — every nested
+                // `vault/<name>` is rendered inside that Stack.
                 href: null,
-              }}
-            />
-            <Tabs.Screen
-              name="vault/[name]"
-              options={{
-                title: 'Vault',
-                // Drill-down from `/vault`. Without this entry expo-router
-                // would auto-register the dynamic route as a tab.
-                href: null,
+                // Same rationale as `trust` above — the Stack owns
+                // header rendering for the whole tab, including the
+                // index. Letting Tabs render its header would
+                // duplicate the band on every screen.
+                headerShown: false,
               }}
             />
             <Tabs.Screen
@@ -528,10 +611,25 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
-              name="trust/index"
+              name="trust"
               options={{
                 title: 'Trust',
                 tabBarIcon: ({ focused }) => <TabIcon name="Trust" focused={focused} />,
+                // The trust folder has its own Stack layout
+                // (`app/trust/_layout.tsx`) that scopes back-navigation
+                // properly: search → subject → reviewer → back goes
+                // to subject. With the Stack in place, every nested
+                // `trust/...` route is a Stack child rather than its
+                // own Tabs entry, so this single declaration covers
+                // the whole tab.
+                //
+                // `headerShown: false` here delegates ALL header rendering
+                // to the Stack — the Stack provides the hamburger header
+                // for the index, and the auto back-chevron header for
+                // drill-downs. Letting both render produces a duplicate
+                // header band on every screen.
+                headerShown: false,
+                //
                 // Hide the tab when AppView's `trust_v1_enabled` flag is
                 // explicitly false (TN-FLAG-005 + TN-MOB-051). Default
                 // visible — `null` from `getCachedTrustV1Enabled` (i.e.
@@ -548,6 +646,17 @@ export default function RootLayout() {
                 // so deep links (notifications → reminder detail) still
                 // work; href: null only hides the tab-bar entry.
                 href: null,
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="notifications"
+              options={{
+                title: 'Notifications',
+                tabBarIcon: ({ focused }) => (
+                  <TabIcon name="Notifications" focused={focused} />
+                ),
+                tabBarBadge: notificationsBadge,
               }}
             />
             <Tabs.Screen
@@ -563,21 +672,12 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
-              name="notifications"
-              options={{
-                title: 'Notifications',
-                // Reached via the hamburger menu. Reminder fan-out into the
-                // unified inbox still happens; the surface is just no
-                // longer pinned to the bottom bar.
-                href: null,
-              }}
-            />
-            <Tabs.Screen
               name="settings"
               options={{
                 title: 'Settings',
                 // Reached via the hamburger menu (HeaderMenuButton).
                 href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
             <Tabs.Screen
@@ -588,6 +688,7 @@ export default function RootLayout() {
                 // Also hidden entirely when the node isn't provider-capable so
                 // the drill-down target doesn't expose a dead-end flow.
                 href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
             <Tabs.Screen
@@ -602,6 +703,7 @@ export default function RootLayout() {
                 // Hidden from the tab bar — reached via drill-down from Settings.
                 // Admin surface for `dina-admin device pair`; no dedicated tab.
                 href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
             <Tabs.Screen
@@ -612,6 +714,7 @@ export default function RootLayout() {
                 // tab. Without this entry expo-router file-based routing
                 // would auto-register `app/help.tsx` as a bottom tab.
                 href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
             <Tabs.Screen
@@ -620,6 +723,7 @@ export default function RootLayout() {
                 title: 'Add Contact',
                 // Reached via the People tab's "+ Add" button; no tab of its own.
                 href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
             <Tabs.Screen
@@ -628,6 +732,7 @@ export default function RootLayout() {
                 title: 'Chat',
                 // Per-peer drill-down; never a tab target.
                 href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
             <Tabs.Screen
@@ -636,6 +741,7 @@ export default function RootLayout() {
                 title: 'Admin',
                 // Drill-down from Settings; not a tab target.
                 href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
           </Tabs>
@@ -643,7 +749,7 @@ export default function RootLayout() {
       </UnlockGate>
       <NavMenuSheet
         visible={menuOpen}
-        onClose={() => setMenuOpen(false)}
+        onClose={closeMenu}
         onSelect={handleMenuSelect}
         currentPath={pathname}
       />

@@ -88,6 +88,28 @@ describe('provisionIdentity', () => {
     ]);
   });
 
+  it('uses the explicit handle when provided, skipping the silent suffix derivation', async () => {
+    // The picker wizard hands `provisionIdentity` a fully-qualified
+    // handle. The function must use it as-is — not run it through
+    // `deriveHandle` (which would ignore the picker's choice and slap
+    // a random hex suffix on the owner name).
+    const mnemonic = generateNewMnemonic();
+    (globalThis as unknown as { fetch: typeof globalThis.fetch }).fetch = jest.fn(
+      async () => new Response(null, { status: 200 }),
+    ) as unknown as typeof globalThis.fetch;
+
+    const explicit = 'raju.test-pds.dinakernel.com';
+    const result = await provisionIdentity({
+      mnemonic,
+      passphrase: TEST_PASSPHRASE,
+      ownerName: 'someone-else',
+      handle: explicit,
+      msgboxEndpoint: TEST_MSGBOX,
+      plcURL: TEST_PLC_URL,
+    });
+    expect(result.handle).toBe(explicit);
+  });
+
   it('surfaces PLC registration failure as a tagged error', async () => {
     const mnemonic = generateNewMnemonic();
     (globalThis as unknown as { fetch: typeof globalThis.fetch }).fetch = jest.fn(

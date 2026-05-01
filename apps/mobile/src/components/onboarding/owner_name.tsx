@@ -1,11 +1,11 @@
 /**
  * OwnerName — first step of the Create path.
  *
- * Collects a short display name that becomes the base of the PDS handle
- * (install.sh step 8b: `${sanitized}${randhex}.${pds_host}`). Sanitization
- * happens server-side in `deriveHandle`; here we just show a live
- * preview of what the handle is likely to look like so the user isn't
- * surprised by the truncation + hex suffix.
+ * Collects a short display name. The next step (`HandlePicker`) uses
+ * this to seed the public handle prefix and lets the user check + edit
+ * it interactively against the PDS. We just show a sanitized preview
+ * here so the user has a sense of what comes next; the picker is
+ * authoritative.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -55,10 +55,10 @@ export function OwnerName(props: OwnerNameProps): React.ReactElement {
 
       {handlePreview !== null ? (
         <View style={styles.preview}>
-          <Text style={styles.previewLabel}>YOUR HANDLE WILL LOOK LIKE</Text>
+          <Text style={styles.previewLabel}>SUGGESTED HANDLE</Text>
           <Text style={styles.previewValue}>{handlePreview}</Text>
           <Text style={styles.previewHint}>
-            A 4-character suffix is added so the handle is unique.
+            You&rsquo;ll be able to edit this in the next step.
           </Text>
         </View>
       ) : null}
@@ -76,7 +76,7 @@ function buildPreview(name: string): string | null {
   const pdsHost = resolveMsgBoxURL().includes('test-mailbox')
     ? 'test-pds.dinakernel.com'
     : 'pds.dinakernel.com';
-  return `${sanitized}\u2026.${pdsHost}`;
+  return `${sanitized}.${pdsHost}`;
 }
 
 const styles = StyleSheet.create({

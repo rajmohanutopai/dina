@@ -34,6 +34,10 @@ describe('emptyWriteFormState', () => {
       headline: '',
       body: '',
       confidence: null,
+      // `subject: null` marks the form as "review-only" — backed by an
+      // existing AppView subjectId. The describe-a-new-subject path
+      // uses `emptyWriteFormStateWithSubject()` instead.
+      subject: null,
     });
   });
 });

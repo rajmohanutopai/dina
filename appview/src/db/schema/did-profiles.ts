@@ -24,6 +24,20 @@ import { pgTable, text, timestamp, boolean, jsonb, real, integer, index } from '
  */
 export const didProfiles = pgTable('did_profiles', {
   did: text('did').primaryKey(),
+  /**
+   * Display handle — the value of `alsoKnownAs[0]` from the DID's PLC
+   * document with the `at://` prefix stripped. Populated lazily by the
+   * `backfill-handles` scorer job; nullable until first resolution
+   * (and stays null when the DID's owner never published a handle).
+   *
+   * Surfaced through `com.dina.trust.subjectGet` so the mobile reviewer
+   * roster can render `raju.pds.dinakernel.com` instead of
+   * `did:plc:abc123…`. The handle is informational only — DID is the
+   * authoritative identity. A handle change in PLC eventually
+   * propagates here when `backfill-handles` re-resolves; we do not
+   * trust the handle for any security check.
+   */
+  handle: text('handle'),
   scoreVersion: text('score_version').notNull().default('v1'),
   needsRecalc: boolean('needs_recalc').default(true).notNull(),
   totalAttestationsAbout: integer('total_attestations_about').default(0),

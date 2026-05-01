@@ -215,17 +215,28 @@ function captureWhere(node: unknown, fragments: string[]): void {
 
 function makeStubDb(): { db: DrizzleDB; capture: CapturedQuery } {
   const capture: CapturedQuery = { sqlFragments: [] }
+  // The handler builds two query shapes against `from()`:
+  //   1. main query — `from().leftJoin().where().orderBy().limit()`
+  //      (joins did_profiles for authorHandle)
+  //   2. subqueries — `from().where()` chains for `subjects` / `subjectScores`
+  //      that the main query consumes via `inArray(...)`.
+  // The stub supports both by returning `where` AND `leftJoin` from
+  // every `from()` so either chain resolves.
+  const buildWhere = (whereExpr: unknown) => {
+    captureWhere(whereExpr, capture.sqlFragments)
+    return {
+      orderBy: () => ({
+        limit: async () => [],
+      }),
+    }
+  }
   const db: any = {
     select: () => ({
       from: () => ({
-        where: (whereExpr: unknown) => {
-          captureWhere(whereExpr, capture.sqlFragments)
-          return {
-            orderBy: () => ({
-              limit: async () => [],
-            }),
-          }
-        },
+        leftJoin: () => ({
+          where: buildWhere,
+        }),
+        where: buildWhere,
       }),
     }),
   }

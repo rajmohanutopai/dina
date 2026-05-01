@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { eq, and, desc, lt, or } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { attestations } from '@/db/schema/index.js'
+import { attestations, didProfiles } from '@/db/schema/index.js'
+import { normalizeHandle } from '@/util/handle_normalize.js'
 
 export const GetAttestationsParams = z.object({
   subjectId: z.string().max(256).optional(),
@@ -39,18 +40,31 @@ export async function getAttestations(
     }
   }
 
-  const results = await db.select()
+  // Left-join `did_profiles` so each attestation row carries the
+  // author's display handle. Same shape as networkFeed/search for
+  // consistency. Left join (not inner) so authors without a
+  // profile row still appear; their handle just lands as null.
+  const results = await db.select({
+      attestation: attestations,
+      handle: didProfiles.handle,
+    })
     .from(attestations)
+    .leftJoin(didProfiles, eq(attestations.authorDid, didProfiles.did))
     .where(and(...conditions))
     .orderBy(desc(attestations.recordCreatedAt), desc(attestations.uri))
     .limit(params.limit + 1)
 
   const hasMore = results.length > params.limit
   const page = hasMore ? results.slice(0, params.limit) : results
-  const lastRow = page[page.length - 1]
+  // Flatten join shape; same convention as networkFeed/search.
+  const flat = page.map((r) => ({
+    ...r.attestation,
+    authorHandle: normalizeHandle(r.handle),
+  }))
+  const lastRow = page[page.length - 1]?.attestation
 
   return {
-    attestations: page,
+    attestations: flat,
     cursor: hasMore && lastRow
       ? `${lastRow.recordCreatedAt.toISOString()}::${lastRow.uri}`
       : undefined,

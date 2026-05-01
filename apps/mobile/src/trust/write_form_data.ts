@@ -28,6 +28,8 @@ import type { Sentiment, Confidence } from '@dina/protocol';
 
 export const HEADLINE_MAX_LENGTH = 140;
 export const BODY_MAX_LENGTH = 4000;
+export const SUBJECT_NAME_MAX_LENGTH = 200;
+export const SUBJECT_IDENTIFIER_MAX_LENGTH = 256;
 
 /** Closed enum of the sentiment selector buttons. Order = display order. */
 export const SENTIMENT_OPTIONS: ReadonlyArray<Sentiment> = ['positive', 'neutral', 'negative'];
@@ -40,6 +42,45 @@ export const CONFIDENCE_OPTIONS: ReadonlyArray<Confidence> = [
   'speculative',
 ];
 
+/**
+ * AppView's `subject.type` taxonomy (mirror of
+ * `appview/src/shared/types/lexicon-types.ts:SubjectRef.type`). Order
+ * matches the order the picker renders.
+ */
+export type SubjectKind =
+  | 'product'
+  | 'place'
+  | 'organization'
+  | 'content'
+  | 'did'
+  | 'dataset'
+  | 'claim';
+
+export const SUBJECT_KIND_OPTIONS: ReadonlyArray<SubjectKind> = [
+  'product',
+  'place',
+  'organization',
+  'content',
+  'did',
+  'dataset',
+  'claim',
+];
+
+/**
+ * Per-kind hint copy. Surfaced under the picker so the user knows
+ * what kind of identifier each option expects. Keep these short — they
+ * fit on one line under the chip row.
+ */
+export const SUBJECT_KIND_HINT: Record<SubjectKind, string> = {
+  product: 'A reviewable product (e.g. Aeron Chair, ASIN, ISBN).',
+  place: 'A location — restaurant, venue, address.',
+  organization: 'A company, publisher, or service provider.',
+  content: 'An article, video, podcast, or web page (URL).',
+  did: 'A person or AT-protocol identity (did:plc / did:web).',
+  dataset: 'A published dataset with a stable URI.',
+  claim: 'A factual claim that can be sourced or contested.',
+};
+
 // ─── Public types ─────────────────────────────────────────────────────────
 
 /** Form state — all fields, exactly the shape the screen renders. */
@@ -48,6 +89,32 @@ export interface WriteFormState {
   readonly headline: string;
   readonly body: string;
   readonly confidence: Confidence | null;
+  /**
+   * Subject describe-fields (TN-MOB-021). When the screen receives a
+   * `subjectId` URL param, `subject` is `null` — the subject already
+   * exists in AppView and the form publishes against the existing row.
+   * When the user reaches the form via "Add to trust network" (no
+   * existing subject), the screen prompts them to fill these fields,
+   * and the publish payload carries them as `record.subject`.
+   */
+  readonly subject: WriteSubjectState | null;
+}
+
+/**
+ * Per-kind subject input. The screen swaps the visible fields based on
+ * `kind`, but the state shape is unified so a kind change doesn't
+ * discard already-entered values (a user who types a name then picks
+ * a different kind keeps the name).
+ */
+export interface WriteSubjectState {
+  readonly kind: SubjectKind;
+  readonly name: string;
+  /** DID for `did` / `organization` subjects. */
+  readonly did: string;
+  /** URI for `content` / `dataset` subjects (often a URL). */
+  readonly uri: string;
+  /** Stable identifier for `product` / `claim` / `place`. */
+  readonly identifier: string;
 }
 
 /**
@@ -60,7 +127,15 @@ export type WriteFormError =
   | 'headline_too_long'
   | 'body_too_long'
   | 'sentiment_required'
-  | 'confidence_required';
+  | 'confidence_required'
+  | 'subject_name_required'
+  | 'subject_name_too_long'
+  | 'subject_did_required'
+  | 'subject_did_invalid'
+  | 'subject_uri_required'
+  | 'subject_uri_invalid'
+  | 'subject_identifier_required'
+  | 'subject_identifier_too_long';
 
 export interface WriteFormValidation {
   /** True when the form's current state can be published. */
@@ -89,7 +164,27 @@ export function emptyWriteFormState(): WriteFormState {
     headline: '',
     body: '',
     confidence: null,
+    subject: null,
   };
+}
+
+/**
+ * Initial state when the user opens the form WITHOUT an existing
+ * subjectId (the "describe a new item" path). The kind defaults to
+ * `product` because that's the most common review target — the user
+ * can pick another kind from the chip row.
+ */
+export function emptyWriteFormStateWithSubject(
+  kind: SubjectKind = 'product',
+): WriteFormState {
+  return {
+    ...emptyWriteFormState(),
+    subject: emptySubjectState(kind),
+  };
+}
+
+export function emptySubjectState(kind: SubjectKind): WriteSubjectState {
+  return { kind, name: '', did: '', uri: '', identifier: '' };
 }
 
 /**
@@ -110,12 +205,74 @@ export function validateWriteForm(state: WriteFormState): WriteFormValidation {
   if (state.sentiment === null) errors.push('sentiment_required');
   if (state.confidence === null) errors.push('confidence_required');
 
+  // Subject validation — only fires when the form is in
+  // "describe a new subject" mode. Forms backed by an existing
+  // subjectId leave `subject` null/undefined and skip these checks.
+  // Treat undefined as null so legacy callers (tests with old-shape
+  // `initial`, edit-mode payloads from the runner) keep working.
+  if (state.subject != null) {
+    errors.push(...validateSubjectState(state.subject));
+  }
+
   return {
     canPublish: errors.length === 0,
     errors,
     headlineLength: state.headline.length,
     bodyLength: body.length,
   };
+}
+
+/**
+ * Per-kind subject validation. Returned errors are appended to the
+ * outer form's error list so the screen renders them under the
+ * relevant subject input.
+ */
+export function validateSubjectState(
+  subject: WriteSubjectState,
+): ReadonlyArray<WriteFormError> {
+  const errors: WriteFormError[] = [];
+  const name = subject.name.trim();
+
+  if (name.length === 0) errors.push('subject_name_required');
+  if (subject.name.length > SUBJECT_NAME_MAX_LENGTH) errors.push('subject_name_too_long');
+
+  switch (subject.kind) {
+    case 'did':
+      if (subject.did.trim().length === 0) errors.push('subject_did_required');
+      else if (!isPlausibleDid(subject.did)) errors.push('subject_did_invalid');
+      break;
+    case 'organization':
+      // Organization-level reviews don't strictly need a DID — a name
+      // alone is fine (e.g. "Aeron Chairs" without a DID). If the user
+      // does provide a DID, validate its shape.
+      if (subject.did.trim().length > 0 && !isPlausibleDid(subject.did)) {
+        errors.push('subject_did_invalid');
+      }
+      break;
+    case 'content':
+    case 'dataset':
+      if (subject.uri.trim().length === 0) errors.push('subject_uri_required');
+      else if (!isPlausibleUri(subject.uri)) errors.push('subject_uri_invalid');
+      break;
+    case 'product':
+    case 'place':
+    case 'claim':
+      if (subject.identifier.length > SUBJECT_IDENTIFIER_MAX_LENGTH) {
+        errors.push('subject_identifier_too_long');
+      }
+      // identifier is OPTIONAL for these kinds — name alone is enough
+      // to disambiguate within AppView's hash-based subjectId.
+      break;
+  }
+  return errors;
+}
+
+function isPlausibleDid(value: string): boolean {
+  return /^did:[a-z]+:[A-Za-z0-9._:%-]+$/.test(value.trim());
+}
+
+function isPlausibleUri(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim());
 }
 
 /**
@@ -135,5 +292,21 @@ export function describeWriteFormError(error: WriteFormError): string {
       return 'Choose a sentiment.';
     case 'confidence_required':
       return 'Choose a confidence level.';
+    case 'subject_name_required':
+      return 'Give the subject a name.';
+    case 'subject_name_too_long':
+      return `Name must be ${SUBJECT_NAME_MAX_LENGTH} characters or fewer.`;
+    case 'subject_did_required':
+      return 'Enter the subject’s DID (did:plc:… or did:web:…).';
+    case 'subject_did_invalid':
+      return 'That doesn’t look like a valid DID.';
+    case 'subject_uri_required':
+      return 'Enter the URL or AT-URI.';
+    case 'subject_uri_invalid':
+      return 'That URL or URI is malformed.';
+    case 'subject_identifier_required':
+      return 'An identifier is required.';
+    case 'subject_identifier_too_long':
+      return `Identifier must be ${SUBJECT_IDENTIFIER_MAX_LENGTH} characters or fewer.`;
   }
 }

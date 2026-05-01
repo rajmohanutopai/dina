@@ -72,6 +72,11 @@ export interface ReviewerStats {
  */
 export interface TrustProfile {
   did: string;
+  /**
+   * Display handle from PLC `alsoKnownAs[0]`. `null` when AppView
+   * hasn't backfilled it yet OR the DID has no published handle.
+   */
+  handle: string | null;
   overallTrustScore: number | null;
   attestationSummary: AttestationSummary;
   vouchCount: number;
@@ -388,6 +393,7 @@ function parseLastActive(raw: unknown): number | null {
 function parseProfile(data: Record<string, unknown>): TrustProfile {
   return {
     did: String(data.did ?? ''),
+    handle: typeof data.handle === 'string' && data.handle.length > 0 ? data.handle : null,
     overallTrustScore: parseScore(data.overallTrustScore),
     attestationSummary: parseAttestationSummary(data.attestationSummary),
     vouchCount: nonNegativeInt(data.vouchCount),

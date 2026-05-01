@@ -33,7 +33,16 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React from 'react';
+import { getBootedNode } from '../../../src/hooks/useNodeBootstrap';
+
+/**
+ * How long the screen waits for `profile` before surfacing a friendly
+ * "couldn't reach trust network" error. See same constant in
+ * `[subjectId].tsx` for the rationale.
+ */
+const LOAD_BUDGET_MS = 5000;
 import {
   View,
   Text,
@@ -49,19 +58,26 @@ import {
   formatLastActive,
 } from '../../../src/trust/reviewer_profile_data';
 import { BAND_COLOUR, BAND_LABEL } from '../../../src/trust/band_theme';
+import { useReviewerProfile } from '../../../src/trust/runners/use_reviewer_profile';
+import { IdentityModal } from '../../../src/components/identity/identity_modal';
+import { shortHandle } from '../../../src/trust/handle_display';
 
 import type { TrustProfile } from '@dina/core';
 
 export interface ReviewerProfileScreenProps {
   /**
    * The reviewer's profile from `com.dina.trust.getProfile`. `null`
-   * while loading.
+   * while loading. Defaults to `null` so the screen mounts as a
+   * routable Expo Router default export with the loading state
+   * showing — the runner that resolves the profile slots in later.
    */
-  profile: TrustProfile | null;
+  profile?: TrustProfile | null;
   /**
    * Pseudonymous namespace fragment (e.g. `'namespace_2'`) when the
    * deep-link landed on a per-namespace slice. Surfaced under the DID
    * in the header so the user knows which compartment they're seeing.
+   * When omitted in production, the URL `?namespace=…` query param is
+   * consulted via `useLocalSearchParams`.
    */
   namespace?: string | null;
   /** Loading-error string. `null` when there's no error. */
@@ -77,9 +93,85 @@ export interface ReviewerProfileScreenProps {
 
 
 export default function ReviewerProfileScreen(
-  props: ReviewerProfileScreenProps,
+  props: ReviewerProfileScreenProps = {},
 ): React.ReactElement {
-  const { profile, namespace = null, error = null, onRetry, nowMs = Date.now() } = props;
+  // Hooks must run unconditionally (Rules of Hooks). The route param
+  // is consulted only as a fallback when the caller didn't supply
+  // `namespace`. Tests pass it explicitly and the param is ignored.
+  const params = useLocalSearchParams<{
+    namespace?: string | string[];
+    did?: string | string[];
+  }>();
+  const paramNamespace = Array.isArray(params.namespace)
+    ? params.namespace[0]
+    : params.namespace;
+  const paramDidRaw = Array.isArray(params.did) ? params.did[0] : params.did;
+  // Reviewer links encode the DID (`did:plc:…` → `did%3Aplc%3A…`)
+  // because the path segment otherwise contains literal colons. Expo
+  // Router returns the encoded form here, but the downstream runner
+  // bails on `!did.startsWith('did:')` — without this decode the
+  // screen sits on the loading spinner forever (no fetch, no error).
+  // `safelyDecode` is defensive against `decodeURIComponent` throwing
+  // on malformed input (e.g. a stray `%`).
+  const paramDid = paramDidRaw !== undefined ? safelyDecode(paramDidRaw) : undefined;
+  // Local state lets the screen exit the loading state with a graceful
+  // error after the load budget elapses. Skipped in controlled mode
+  // (when caller supplies `profile` / `error` props).
+  const [autoError, setAutoError] = React.useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = React.useState(0);
+  // Auto-runner: fetch the profile from AppView when no controlled
+  // props are supplied (i.e. production routing — tests pass
+  // `profile` or `error` and the runner stays inert).
+  const isControlled = props.profile !== undefined || props.error !== undefined;
+  const auto = useReviewerProfile({
+    did: paramDid ?? '',
+    enabled: !isControlled,
+    retryNonce,
+  });
+  // Refresh on focus so a recently-vouched / recently-revoked
+  // attestation moves the reviewer's score the next time the user lands
+  // here — the runner's deps are stable on a steady DID otherwise.
+  useFocusEffect(
+    React.useCallback(() => {
+      if (isControlled || !paramDid) return;
+      setAutoError(null);
+      setRetryNonce((n) => n + 1);
+    }, [isControlled, paramDid]),
+  );
+  // Runner state wins over the legacy auto-timeout: when paramDid is
+  // present the runner is engaged and authoritative. The autoError
+  // remains only as a courtesy fallback for the no-DID degraded path.
+  const runnerEngaged = !isControlled && Boolean(paramDid);
+  const {
+    profile = auto.profile,
+    namespace = paramNamespace ?? null,
+    error = runnerEngaged ? auto.error : autoError,
+    onRetry = () => {
+      setAutoError(null);
+      setRetryNonce((n) => n + 1);
+    },
+    nowMs = Date.now(),
+  } = props;
+
+  React.useEffect(() => {
+    // Auto-timeout fallback only fires in degraded states the runner
+    // can't reach: no paramDid (so the runner stays inert), or the
+    // screen is mounted in the rare uncontrolled-WITHOUT-runner path.
+    // When the runner has engaged for this DID, profile / error from
+    // the runner state are authoritative and this fallback is silent.
+    if (props.profile !== undefined || props.error !== undefined) return;
+    if (paramDid) return;
+    const id = setTimeout(() => {
+      setAutoError("Couldn't reach the trust network. Check your connection and try again.");
+    }, LOAD_BUDGET_MS);
+    return () => clearTimeout(id);
+  }, [paramDid, retryNonce, props.profile, props.error]);
+
+  // IdentityModal visibility — declared up here so the hook count
+  // stays constant across the loading/error/loaded branches below.
+  // Rules of Hooks: every useState must run on every render or React
+  // throws "Rendered more hooks than during the previous render".
+  const [identityOpen, setIdentityOpen] = React.useState(false);
 
   if (error !== null) {
     return (
@@ -121,6 +213,19 @@ export default function ReviewerProfileScreen(
 
   const display = deriveReviewerProfileDisplay(profile);
   const lastActive = formatLastActive(display.lastActiveMs, nowMs);
+  // Self-profile detection — when the user is looking at their OWN
+  // DID, the band badge ("VERY LOW" by default for new accounts) reads
+  // as a self-judgement rather than a useful signal. Suppress to a
+  // softer "You" pill so the screen feels like a self-dashboard, not a
+  // verdict.
+  const ownDid = getBootedNode()?.did ?? null;
+  const isSelf = ownDid !== null && ownDid === display.did;
+
+  // Default render is the short username. The full handle, full DID,
+  // and PLC services are revealed in the IdentityModal when the user
+  // taps the header — same affordance every other peer-row gets.
+  const shortName =
+    display.handle !== null ? shortHandle(display.handle) : null;
 
   return (
     <ScrollView
@@ -131,29 +236,64 @@ export default function ReviewerProfileScreen(
       {/* ─── Header card: identity + score + band ─────────────────── */}
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
-          <View style={styles.headerIdentity}>
-            <Text
-              style={styles.headerDid}
-              numberOfLines={1}
-              ellipsizeMode="middle"
-              accessibilityLabel={`Reviewer ${display.did}`}
-            >
-              {display.did}
-            </Text>
+          <Pressable
+            style={styles.headerIdentity}
+            onPress={() => setIdentityOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Show full identity for ${shortName ?? display.did}`}
+            testID="reviewer-identity-tap"
+          >
+            {/* Default: short username only — `alice` rather than
+                `alice.pds.dinakernel.com`. The full handle, DID, and
+                PLC services are exposed in the IdentityModal on tap. */}
+            {shortName !== null ? (
+              <>
+                <Text
+                  style={styles.headerHandle}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  accessibilityLabel={`Reviewer ${shortName}`}
+                  testID="reviewer-handle"
+                >
+                  {shortName}
+                </Text>
+                <Text style={styles.headerHint} testID="reviewer-handle-hint">
+                  Tap for full identity
+                </Text>
+              </>
+            ) : (
+              <Text
+                style={styles.headerDid}
+                numberOfLines={1}
+                ellipsizeMode="middle"
+                accessibilityLabel={`Reviewer ${display.did}`}
+              >
+                {display.did}
+              </Text>
+            )}
             {namespace && (
               <Text style={styles.headerNamespace} testID="reviewer-namespace">
                 #{namespace}
               </Text>
             )}
-          </View>
-          <View
-            style={[styles.scoreBadge, { backgroundColor: BAND_COLOUR[display.band] }]}
-            testID={`reviewer-band-${display.band}`}
-          >
-            <Text style={styles.scoreLabel}>
-              {display.hasNumericScore ? display.scoreLabel : BAND_LABEL[display.band]}
-            </Text>
-          </View>
+          </Pressable>
+          {isSelf ? (
+            <View
+              style={[styles.scoreBadge, styles.selfBadge]}
+              testID="reviewer-self-badge"
+            >
+              <Text style={styles.scoreLabel}>You</Text>
+            </View>
+          ) : (
+            <View
+              style={[styles.scoreBadge, { backgroundColor: BAND_COLOUR[display.band] }]}
+              testID={`reviewer-band-${display.band}`}
+            >
+              <Text style={styles.scoreLabel}>
+                {display.hasNumericScore ? display.scoreLabel : BAND_LABEL[display.band]}
+              </Text>
+            </View>
+          )}
         </View>
         <View style={styles.headerMeta}>
           <Ionicons name="time-outline" size={14} color={colors.textMuted} />
@@ -161,13 +301,29 @@ export default function ReviewerProfileScreen(
         </View>
       </View>
 
+      <IdentityModal
+        visible={identityOpen}
+        onClose={() => setIdentityOpen(false)}
+        did={display.did}
+        initialHandle={display.handle}
+      />
+
       {/* ─── Stats grid ─────────────────────────────────────────── */}
       <View style={styles.statsGrid} testID="reviewer-stats-grid">
-        <StatCell label="Attestations" value={display.totalAttestations} />
-        <StatCell label="Vouches" value={display.vouchCount} />
-        <StatCell label="Endorsements" value={display.endorsementCount} />
+        <StatCell
+          label="Reviews written"
+          testKey="attestations"
+          value={display.reviewsWritten}
+        />
+        <StatCell label="Vouches" testKey="vouches" value={display.vouchCount} />
+        <StatCell
+          label="Endorsements"
+          testKey="endorsements"
+          value={display.endorsementCount}
+        />
         <StatCell
           label="Helpful"
+          testKey="helpful"
           value={
             display.helpfulRatioDisplay !== null
               ? `${display.helpfulRatioDisplay}%`
@@ -176,6 +332,7 @@ export default function ReviewerProfileScreen(
         />
         <StatCell
           label="Corroborated"
+          testKey="corroborated"
           value={
             display.corroborationRateDisplay !== null
               ? `${display.corroborationRateDisplay}%`
@@ -222,12 +379,32 @@ export default function ReviewerProfileScreen(
 
 interface StatCellProps {
   label: string;
+  /**
+   * Stable test/AX hook — independent of the visible label so we can
+   * relabel ("Attestations" → "Reviews written") without breaking the
+   * test suite or accessibility expectations.
+   */
+  testKey: string;
   value: number | string;
+}
+
+/**
+ * `decodeURIComponent` throws on malformed sequences (`%XX` with non-
+ * hex). Wrap so a malformed deep link surfaces as the original string
+ * (which the runner will then validate via `startsWith('did:')`)
+ * rather than an uncaught render error.
+ */
+function safelyDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function StatCell(props: StatCellProps): React.ReactElement {
   return (
-    <View style={styles.statCell} testID={`reviewer-stat-${props.label.toLowerCase()}`}>
+    <View style={styles.statCell} testID={`reviewer-stat-${props.testKey}`}>
       <Text style={styles.statValue}>{props.value}</Text>
       <Text style={styles.statLabel}>{props.label}</Text>
     </View>
@@ -323,6 +500,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textPrimary,
   },
+  // Primary line when a handle is resolved — readable, sans-serif,
+  // sized like a name header rather than the mono small-caps DID.
+  headerHandle: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  // Tap-affordance hint below the short username. Tells the user
+  // there's more to see (full handle, DID, PLC services) without
+  // showing the noise inline.
+  headerHint: {
+    fontFamily: fonts.sans,
+    fontSize: 10,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+    marginTop: 2,
+  },
   headerNamespace: {
     fontFamily: fonts.sansMedium,
     fontSize: 13,
@@ -334,6 +529,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     minWidth: 56,
     alignItems: 'center',
+  },
+  selfBadge: {
+    backgroundColor: colors.textSecondary,
   },
   scoreLabel: {
     fontFamily: fonts.headingBold,

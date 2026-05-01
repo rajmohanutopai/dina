@@ -300,6 +300,11 @@ case "$ACTION" in
             COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build
             COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
         "
+        # Apply any new Drizzle migrations on update too — without this
+        # an `update` against a DB that's behind the new schema would
+        # leave Web/Ingester pointing at columns/tables that don't exist.
+        # `drizzle-kit migrate` is idempotent (no-op when caught up).
+        push_schema
         health_check
         ;;
     status)

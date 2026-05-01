@@ -22,6 +22,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import {
   View,
@@ -35,6 +36,7 @@ import {
 import { colors, fonts, spacing, radius } from '../../src/theme';
 import { SubjectCardView } from '../../src/trust/components/subject_card_view';
 import { FacetBarView } from '../../src/trust/components/facet_bar_view';
+import { useTrustSearch } from '../../src/trust/runners/use_trust_search';
 
 import type { SubjectCardDisplay } from '../../src/trust/subject_card';
 import type { FacetBar } from '../../src/trust/facets';
@@ -45,13 +47,20 @@ export interface SearchResult {
   readonly display: SubjectCardDisplay;
 }
 
+/**
+ * Module-level empty defaults. Hoisted out of the render so memoised
+ * children + dep arrays don't see fresh references on every mount.
+ */
+const EMPTY_RESULTS: readonly SearchResult[] = [];
+const EMPTY_FACETS: FacetBar = { primary: [], overflow: [] };
+
 export interface SearchScreenProps {
   /** The user's query — surfaced in the empty-state copy. */
   q?: string;
-  /** Pre-computed search results, ready to render. */
-  results: readonly SearchResult[];
-  /** Pre-computed facet bar from the same result set. */
-  facets: FacetBar;
+  /** Pre-computed search results, ready to render. Defaults to `[]`. */
+  results?: readonly SearchResult[];
+  /** Pre-computed facet bar from the same result set. Defaults empty. */
+  facets?: FacetBar;
   /** Currently-active facet value (drives the chip's selected state). */
   activeFacet?: string | null;
   /** Whether the runner is mid-flight on a fetch. */
@@ -69,17 +78,45 @@ export interface SearchScreenProps {
 }
 
 export default function SearchScreen(props: SearchScreenProps): React.ReactElement {
+  // Hooks must be called unconditionally. `useLocalSearchParams`
+  // surfaces the `?q=…` query that `TrustFeedScreen` passes via
+  // `router.push`; `useRouter` is the navigation fallback for
+  // subject-card taps when no `onSelectSubject` callback is wired.
+  const params = useLocalSearchParams<{ q?: string | string[] }>();
+  const paramQ = Array.isArray(params.q) ? params.q[0] : params.q;
+  const router = useRouter();
+  const q = props.q ?? paramQ ?? '';
+  // Auto-runner: fire the AppView search round-trip when the caller
+  // didn't provide any controlled state (tests always pass at least
+  // one of `results`/`isLoading`/`error`, so they keep the screen pure).
+  const isControlled =
+    props.results !== undefined ||
+    props.isLoading !== undefined ||
+    props.error !== undefined;
+  const [retryNonce, setRetryNonce] = React.useState(0);
+  // Refetch when the screen regains focus — covers re-deep-linking with
+  // the same query (Expo Router doesn't remount, so q-keyed effects
+  // wouldn't otherwise refire) and any state change that happened while
+  // the user was on another tab.
+  useFocusEffect(
+    React.useCallback(() => {
+      if (isControlled) return;
+      setRetryNonce((n) => n + 1);
+    }, [isControlled]),
+  );
+  const auto = useTrustSearch({ q, enabled: !isControlled, retryNonce });
   const {
-    q,
-    results,
-    facets,
+    results = auto.results,
+    facets = EMPTY_FACETS,
     activeFacet = null,
-    isLoading = false,
-    error = null,
-    onSelectSubject,
+    isLoading = auto.isLoading,
+    error = auto.error,
+    onSelectSubject = (subjectId: string) => {
+      router.push({ pathname: '/trust/[subjectId]', params: { subjectId } });
+    },
     onTapFacet,
     onShowMoreFacets,
-    onRetry,
+    onRetry = () => setRetryNonce((n) => n + 1),
   } = props;
 
   if (error !== null) {
@@ -106,8 +143,18 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
     );
   }
 
+  const trimmedQ = q && q.trim().length > 0 ? q.trim() : '';
+
   return (
     <View style={styles.container} testID="search-screen">
+      {trimmedQ.length > 0 && (
+        <View style={styles.queryEcho} testID="search-query-echo">
+          <Ionicons name="search" size={14} color={colors.textMuted} />
+          <Text style={styles.queryEchoText} numberOfLines={1}>
+            “{trimmedQ}”
+          </Text>
+        </View>
+      )}
       <FacetBarView
         facets={facets}
         activeValue={activeFacet}
@@ -125,10 +172,35 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
           <Ionicons name="search-outline" size={36} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No results</Text>
           <Text style={styles.emptyBody}>
-            {q && q.trim().length > 0
-              ? `Nothing found for “${q.trim()}”. Try a different search or clear filters.`
+            {trimmedQ.length > 0
+              ? `Nothing found for “${trimmedQ}”. Try a different search or write the first review.`
               : 'Try a search above, or browse by category.'}
           </Text>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/trust/write',
+                params: {
+                  createKind: 'product',
+                  ...(trimmedQ.length > 0 ? { initialName: trimmedQ } : {}),
+                },
+              })
+            }
+            style={({ pressed }) => [
+              styles.writeCta,
+              pressed && styles.writeCtaPressed,
+            ]}
+            testID="search-write-cta"
+            accessibilityRole="button"
+            accessibilityLabel={
+              trimmedQ.length > 0 ? `Write the first review for ${trimmedQ}` : 'Write a review'
+            }
+          >
+            <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
+            <Text style={styles.writeCtaLabel}>
+              {trimmedQ.length > 0 ? `Review “${trimmedQ}”` : 'Write a review'}
+            </Text>
+          </Pressable>
         </View>
       ) : (
         <ScrollView
@@ -157,6 +229,37 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
+  queryEcho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+    gap: spacing.xs,
+  },
+  queryEchoText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textSecondary,
+    flexShrink: 1,
+  },
+  writeCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
+    gap: spacing.xs,
+    minHeight: 44,
+    marginTop: spacing.md,
+  },
+  writeCtaPressed: { backgroundColor: colors.accentHover },
+  writeCtaLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.bgSecondary,
+  },
   loading: {
     flex: 1,
     paddingVertical: spacing.xxl,

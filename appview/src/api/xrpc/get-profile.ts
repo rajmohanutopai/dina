@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { didProfiles } from '@/db/schema/index.js'
 import { withSWR, CACHE_TTLS } from '../middleware/swr-cache.js'
+import { normalizeHandle } from '@/util/handle_normalize.js'
 import type { GetProfileResponse } from '@/shared/types/api-types.js'
 
 export const GetProfileParams = z.object({
@@ -26,6 +27,7 @@ export async function getProfile(
 
     return {
       did: profile.did,
+      handle: normalizeHandle(profile.handle),
       overallTrustScore: profile.overallTrustScore,
       attestationSummary: {
         total: profile.totalAttestationsAbout ?? 0,

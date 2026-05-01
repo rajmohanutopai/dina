@@ -144,27 +144,39 @@ function makeStubDb(opts: { rows: StubRow[]; ftsTimeoutCode?: string }): {
 
   const orderByCaptures: unknown[] = []
 
-  const buildSelectChain = (inTx: boolean) => ({
-    select: () => ({
-      from: () => ({
-        where: (whereExpr: unknown) => {
-          captureWhere(whereExpr, capture.sqlFragments)
-          return {
-            orderBy: (...clauses: unknown[]) => {
-              orderByCaptures.push(...clauses)
-              for (const c of clauses) captureWhere(c, capture.sqlFragments)
-              return {
-                limit: async () => {
-                  if (inTx) capture.inTransaction = true
-                  return opts.rows
-                },
-              }
-            },
-          }
+  // The handler now left-joins did_profiles to surface authorHandle.
+  // Stub supports both `from().leftJoin().where().orderBy().limit()`
+  // (main query) and `from().where()` (subqueries against `subjects`
+  // / `subjectScores`). The stub wraps emitted rows in `{attestation,
+  // handle}` shape so the handler's flatten step exercises naturally.
+  const buildSelectChain = (inTx: boolean) => {
+    const buildOrderBy = (...clauses: unknown[]) => {
+      orderByCaptures.push(...clauses)
+      for (const c of clauses) captureWhere(c, capture.sqlFragments)
+      return {
+        limit: async () => {
+          if (inTx) capture.inTransaction = true
+          return opts.rows.map((r) => ({ attestation: r, handle: null }))
         },
+      }
+    }
+    const buildWhere = (whereExpr: unknown) => {
+      captureWhere(whereExpr, capture.sqlFragments)
+      return {
+        orderBy: buildOrderBy,
+      }
+    }
+    return {
+      select: () => ({
+        from: () => ({
+          leftJoin: () => ({
+            where: buildWhere,
+          }),
+          where: buildWhere,
+        }),
       }),
-    }),
-  })
+    }
+  }
 
   const db: any = {
     ...buildSelectChain(false),

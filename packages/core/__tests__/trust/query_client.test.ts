@@ -263,6 +263,7 @@ describe('TrustQueryClient (9.1)', () => {
       const client = new TrustQueryClient();
       const profile: TrustProfile = {
         did: 'did:plc:test',
+        handle: null,
         overallTrustScore: 0.85,
         attestationSummary: { total: 20, positive: 18, neutral: 1, negative: 1 },
         vouchCount: 2,
@@ -289,6 +290,7 @@ describe('TrustQueryClient (9.1)', () => {
       const client = new TrustQueryClient();
       const profile: TrustProfile = {
         did: 'did:plc:test',
+        handle: null,
         overallTrustScore: null,
         attestationSummary: { total: 0, positive: 0, neutral: 0, negative: 0 },
         vouchCount: 0,

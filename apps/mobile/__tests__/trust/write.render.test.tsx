@@ -161,7 +161,11 @@ describe('WriteScreen — Publish CTA disabled state', () => {
 });
 
 describe('WriteScreen — inline errors', () => {
-  it('headline error appears after typing then clearing', () => {
+  it('headline_empty error appears after publish attempt then clearing', () => {
+    // Errors are suppressed on a fresh form to avoid the screen
+    // scolding the user before they've touched anything. Tapping
+    // Publish on an invalid form reveals errors and they stay visible
+    // for subsequent edits.
     const { getByTestId, queryByTestId } = render(
       <WriteScreen
         subjectTitle="X"
@@ -174,11 +178,21 @@ describe('WriteScreen — inline errors', () => {
       />,
     );
     expect(queryByTestId('write-error-headline_empty')).toBeNull();
+    // Clear without publish-attempt → still suppressed.
+    fireEvent.changeText(getByTestId('write-headline-input'), '');
+    expect(queryByTestId('write-error-headline_empty')).toBeNull();
+    // Refill, attempt publish (valid → fires onPublish), then clear
+    // again — errors are now visible.
+    fireEvent.changeText(getByTestId('write-headline-input'), 'Great');
+    fireEvent.press(getByTestId('write-publish'));
     fireEvent.changeText(getByTestId('write-headline-input'), '');
     expect(getByTestId('write-error-headline_empty')).toBeTruthy();
   });
 
-  it('headline_too_long error surfaces past the cap', () => {
+  it('headline_too_long error surfaces past the cap (length errors always show)', () => {
+    // Length-overflow errors are exempt from the publish-gate — the
+    // user OBVIOUSLY interacted with the field if its value exceeds
+    // the cap, so showing the error immediately matches their action.
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
     fireEvent.changeText(
       getByTestId('write-headline-input'),
@@ -240,9 +254,13 @@ describe('WriteScreen — submit + cancel', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
-  it('hides Cancel button when onCancel is omitted', () => {
-    const { queryByTestId } = render(<WriteScreen subjectTitle="X" />);
-    expect(queryByTestId('write-cancel')).toBeNull();
+  it('renders Cancel button when onCancel is omitted (router fallback)', () => {
+    // The screen now provides a router-based navigation fallback so
+    // Cancel is always wired in production. Callers that need a
+    // bespoke close-handler pass it explicitly; omission just means
+    // "fall back to navigation history".
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    expect(getByTestId('write-cancel')).toBeTruthy();
   });
 
   it('renders submitError panel when submitError is set', () => {

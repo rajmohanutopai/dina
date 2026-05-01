@@ -23,6 +23,22 @@ export type {
   PLCCreateResult,
   PLCDirectoryConfig,
 } from './identity/directory';
+// Handle picker — Bluesky-style availability check + suggestion generator
+// used by mobile + Lite + main-Dina onboarding to pick a clean alsoKnownAs
+// handle instead of always appending a random hex suffix.
+export {
+  sanitizeHandlePrefix,
+  validateHandleFormat,
+  checkHandleAvailability,
+  generateCandidates,
+  pickHandle,
+} from './identity/handle_picker';
+export type {
+  AvailabilityKind,
+  AvailabilityResult,
+  PickerOptions,
+  PickHandleResult,
+} from './identity/handle_picker';
 // PLC namespace update composer (TN-IDENT-005 / TN-IDENT-008).
 // Pure-functional composers — add a namespace key, or remove one.
 // Submission to the PLC directory is the concern of TN-IDENT-006.

@@ -160,7 +160,13 @@ describe('SubjectCardView — tap behaviour', () => {
 });
 
 describe('SubjectCardView — band colour', () => {
-  it.each(['high', 'moderate', 'low', 'very-low', 'unrated'] as const)(
+  // The badge is rendered for every RATED band — `unrated` is the
+  // signal "we don't know yet" and showing a meaningless "—" badge
+  // alongside the review count was confusing on search results
+  // (where the wire response doesn't carry subject scores). Test
+  // each rated band gets its testID, then a separate case for
+  // `unrated` asserts the badge is hidden.
+  it.each(['high', 'moderate', 'low', 'very-low'] as const)(
     'attaches a per-band testID for band %s',
     (band) => {
       const { getByTestId } = render(
@@ -181,6 +187,25 @@ describe('SubjectCardView — band colour', () => {
       expect(getByTestId('subject-card-band-sub-1')).toBeTruthy();
     },
   );
+
+  it('hides the band badge entirely when the subject is unrated', () => {
+    const { queryByTestId } = render(
+      <SubjectCardView
+        subjectId="sub-1"
+        display={makeDisplay({
+          score: {
+            score: null,
+            label: '—',
+            bandName: 'x',
+            band: 'unrated',
+            colorToken: 'unrated' as 'high',
+          },
+          showNumericScore: false,
+        })}
+      />,
+    );
+    expect(queryByTestId('subject-card-band-sub-1')).toBeNull();
+  });
 });
 
 describe('buildA11yLabel', () => {

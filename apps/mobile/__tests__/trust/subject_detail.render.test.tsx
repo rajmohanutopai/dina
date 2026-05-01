@@ -50,11 +50,16 @@ describe('SubjectDetailScreen — render states', () => {
     expect(getByTestId('subject-detail-retry')).toBeTruthy();
   });
 
-  it('hides Retry CTA when onRetry is omitted', () => {
-    const { queryByTestId } = render(
+  it('renders Retry CTA when onRetry is omitted (auto-timeout reset)', () => {
+    // The screen now provides a router-aware default for `onRetry` — it
+    // resets the auto-timeout state so the user can re-trigger the
+    // load. Callers that genuinely want a no-Retry error panel pass
+    // `onRetry={undefined}` is no longer a way to hide it; the CTA is
+    // always available in production paths.
+    const { getByTestId } = render(
       <SubjectDetailScreen subjectId="sub-1" data={null} error="boom" />,
     );
-    expect(queryByTestId('subject-detail-retry')).toBeNull();
+    expect(getByTestId('subject-detail-retry')).toBeTruthy();
   });
 
   it('renders loading state when data is null AND no error', () => {
@@ -121,11 +126,15 @@ describe('SubjectDetailScreen — header', () => {
     expect(getByTestId('subject-detail-write-cta')).toBeTruthy();
   });
 
-  it('hides Write CTA when onWriteReview is omitted', () => {
-    const { queryByTestId } = render(
+  it('renders Write CTA when onWriteReview is omitted (router fallback)', () => {
+    // Screens now expose a router-based navigation fallback so the
+    // Write CTA is always present in production. Callers that genuinely
+    // need to suppress it (read-only contexts, e.g. a quoted preview)
+    // pass an explicit no-op handler instead of relying on omission.
+    const { getByTestId } = render(
       <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
     );
-    expect(queryByTestId('subject-detail-write-cta')).toBeNull();
+    expect(getByTestId('subject-detail-write-cta')).toBeTruthy();
   });
 });
 

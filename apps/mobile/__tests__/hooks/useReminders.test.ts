@@ -18,7 +18,16 @@ import {
 } from '../../src/hooks/useReminders';
 import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
 
-const NOW = Date.now();
+// Anchor NOW to noon local time so `NOW + HOUR` always stays on the
+// same day regardless of when the test happens to run. Using
+// `Date.now()` here flaked nightly: a run that started within an
+// hour of midnight wrapped `NOW + HOUR` into the next calendar day,
+// and the "labels today and tomorrow" test below saw the new day's
+// label in `groups[0]`. Pinning to noon makes the assertion
+// time-of-day independent.
+const _now = new Date();
+_now.setHours(12, 0, 0, 0);
+const NOW = _now.getTime();
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 

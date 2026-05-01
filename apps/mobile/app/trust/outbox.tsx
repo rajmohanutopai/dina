@@ -52,10 +52,19 @@ import {
   type OutboxRow,
   type OutboxStatus,
 } from '../../src/trust/outbox';
+import {
+  subscribeOutbox,
+  dismissLocal,
+  type AttestationDraftBody,
+} from '../../src/trust/outbox_store';
 
 export interface OutboxScreenProps<DraftBody = unknown> {
-  /** All outbox rows from the runner — terminal + non-terminal mixed. */
-  rows: readonly OutboxRow<DraftBody>[];
+  /**
+   * All outbox rows from the runner — terminal + non-terminal mixed.
+   * Defaults to `[]` so the screen renders the friendly empty state
+   * ("Nothing in your outbox") when no runner is attached.
+   */
+  rows?: readonly OutboxRow<DraftBody>[];
   /** Fired when the user taps "Try again" on a failure row. */
   onRetry?: (clientId: string) => void;
   /** Fired when the user dismisses a terminal row. */
@@ -99,12 +108,54 @@ function rejectReasonText<DraftBody>(row: OutboxRow<DraftBody>): string {
   return REJECT_REASON_LABEL[reason] ?? `Rejected: ${reason}`;
 }
 
+/**
+ * Stable empty-rows sentinel — see destructure default in `OutboxScreen`.
+ * Frozen + cast through `unknown` because `OutboxScreen` is generic over
+ * `DraftBody`: a single shared `[]` is structurally compatible with every
+ * instantiation, so we hand the empty array to the destructure default
+ * with the per-call generic type for free.
+ */
+const EMPTY_ROWS: readonly never[] = Object.freeze([]);
+
 export default function OutboxScreen<DraftBody = unknown>(
-  props: OutboxScreenProps<DraftBody>,
+  props: OutboxScreenProps<DraftBody> = {},
 ): React.ReactElement {
-  const { rows, onRetry, onDismiss, renderDraftPreview } = props;
+  // Subscribe to the local outbox store when running uncontrolled
+  // (production path). Tests + a future runner pass `rows` directly so
+  // the subscription is bypassed via the destructure default.
+  const [storeRows, setStoreRows] = React.useState<
+    readonly OutboxRow<AttestationDraftBody>[]
+  >([]);
+  React.useEffect(() => {
+    if (props.rows !== undefined) return;
+    return subscribeOutbox(setStoreRows);
+  }, [props.rows]);
+  // The empty array sentinel is hoisted out of the render tree via the
+  // module-level `EMPTY_ROWS` so dependency-tracked memoisation in
+  // `selectInboxFailureRows` / `inFlightCount` doesn't see a fresh
+  // reference on every mount.
+  const {
+    rows = (storeRows as unknown as readonly OutboxRow<DraftBody>[]),
+    onRetry,
+    onDismiss = (clientId: string) => dismissLocal(clientId),
+    renderDraftPreview = ((draft: unknown) => {
+      // Default preview: the attestation's headline. Falls back to a
+      // generic label if a non-attestation draft ever lands in the
+      // outbox (defensive — current store only stores attestations).
+      const d = draft as Partial<AttestationDraftBody>;
+      return typeof d.headline === 'string' && d.headline.length > 0
+        ? d.headline
+        : 'Draft';
+    }) as (draft: DraftBody) => string,
+  } = props;
   const failures = React.useMemo(() => selectInboxFailureRows(rows), [rows]);
   const inFlight = React.useMemo(() => inFlightCount(rows), [rows]);
+  // Queued (non-terminal, non-failure) rows — surfaced as an explicit
+  // list so the user sees what they've drafted, not just a count.
+  const queued = React.useMemo(
+    () => rows.filter((r) => r.status === 'queued-offline'),
+    [rows],
+  );
 
   return (
     <ScrollView
@@ -136,28 +187,90 @@ export default function OutboxScreen<DraftBody = unknown>(
             Reviews you publish will appear here briefly while they&apos;re being delivered.
           </Text>
         </View>
-      ) : failures.length === 0 ? (
-        <View style={styles.empty} testID="outbox-no-failures">
-          <Ionicons name="checkmark-circle-outline" size={36} color={colors.success} />
-          <Text style={styles.emptyTitle}>All caught up</Text>
-          <Text style={styles.emptyBody}>
-            No stuck or rejected reviews. We&apos;ll let you know if anything needs attention.
-          </Text>
-        </View>
       ) : (
-        <View style={styles.list}>
-          {failures.map((row) => (
-            <FailureRow
-              key={row.clientId}
-              row={row}
-              onRetry={onRetry}
-              onDismiss={onDismiss}
-              renderDraftPreview={renderDraftPreview}
-            />
-          ))}
-        </View>
+        <>
+          {queued.length > 0 && (
+            <View style={styles.list} testID="outbox-queued-list">
+              {queued.map((row) => (
+                <QueuedRow
+                  key={row.clientId}
+                  row={row}
+                  onDismiss={onDismiss}
+                  renderDraftPreview={renderDraftPreview}
+                />
+              ))}
+            </View>
+          )}
+          {failures.length === 0 ? (
+            <View style={styles.empty} testID="outbox-no-failures">
+              <Ionicons name="checkmark-circle-outline" size={36} color={colors.success} />
+              <Text style={styles.emptyTitle}>All caught up</Text>
+              <Text style={styles.emptyBody}>
+                No stuck or rejected reviews. We&apos;ll let you know if anything needs attention.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {failures.map((row) => (
+                <FailureRow
+                  key={row.clientId}
+                  row={row}
+                  onRetry={onRetry}
+                  onDismiss={onDismiss}
+                  renderDraftPreview={renderDraftPreview}
+                />
+              ))}
+            </View>
+          )}
+        </>
       )}
     </ScrollView>
+  );
+}
+
+/**
+ * A queued (not-yet-published) draft row. Shows the headline + a
+ * dismiss affordance. No retry — queued rows transition forward
+ * automatically when the network is reachable; for the local-only
+ * outbox they sit until dismissed.
+ */
+interface QueuedRowProps<DraftBody> {
+  row: OutboxRow<DraftBody>;
+  onDismiss?: (clientId: string) => void;
+  renderDraftPreview?: (draft: DraftBody) => string;
+}
+
+function QueuedRow<DraftBody>(props: QueuedRowProps<DraftBody>): React.ReactElement {
+  const { row, onDismiss, renderDraftPreview } = props;
+  const preview = renderDraftPreview ? renderDraftPreview(row.draftBody) : '';
+  return (
+    <View
+      style={styles.row}
+      testID={`outbox-queued-${row.clientId}`}
+      accessibilityLabel={`Queued: ${preview || 'Draft'}`}
+    >
+      <View style={styles.rowHeader}>
+        <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
+        <Text style={styles.rowStatus}>Queued</Text>
+      </View>
+      {preview.length > 0 && (
+        <Text style={styles.rowPreview} numberOfLines={2}>
+          {preview}
+        </Text>
+      )}
+      {onDismiss && (
+        <Pressable
+          onPress={() => onDismiss(row.clientId)}
+          style={({ pressed }) => [styles.dismissBtn, pressed && styles.dismissBtnPressed]}
+          testID={`outbox-queued-dismiss-${row.clientId}`}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss draft"
+        >
+          <Ionicons name="close" size={14} color={colors.textMuted} />
+          <Text style={styles.dismissLabel}>Dismiss</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 

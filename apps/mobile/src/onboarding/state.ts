@@ -17,6 +17,14 @@ export type StartupMode = 'auto' | 'manual';
 /** Final slot carried through create → mnemonic → provisioning. */
 export interface CreateDraft {
   ownerName: string;
+  /**
+   * Full handle picked in the `create_handle` step (e.g.
+   * `raju.pds.dinakernel.com`). Carried through to provisioning so the
+   * PLC genesis op stamps the chosen handle in `alsoKnownAs` instead of
+   * the silent always-suffix derivation that ran before the wizard
+   * step existed.
+   */
+  handle: string;
   passphrase: string;
   startupMode: StartupMode;
   mnemonic: string[];
@@ -35,6 +43,7 @@ export type Step =
   | { kind: 'choose' }
   // Create path ----------------------------------------------------------
   | { kind: 'create_name'; draft: Partial<CreateDraft> }
+  | { kind: 'create_handle'; draft: Partial<CreateDraft> }
   | { kind: 'create_passphrase'; draft: Partial<CreateDraft> }
   | { kind: 'create_mnemonic_reveal'; draft: Partial<CreateDraft> }
   | { kind: 'create_mnemonic_verify'; draft: Partial<CreateDraft> }
@@ -66,15 +75,17 @@ export function locateStep(step: Step): StepLocation | null {
     case 'choose':
       return null;
     case 'create_name':
-      return { current: 1, total: 5, label: 'Your name' };
+      return { current: 1, total: 6, label: 'Your name' };
+    case 'create_handle':
+      return { current: 2, total: 6, label: 'Pick a handle' };
     case 'create_passphrase':
-      return { current: 2, total: 5, label: 'Passphrase' };
+      return { current: 3, total: 6, label: 'Passphrase' };
     case 'create_mnemonic_reveal':
-      return { current: 3, total: 5, label: 'Recovery phrase' };
+      return { current: 4, total: 6, label: 'Recovery phrase' };
     case 'create_mnemonic_verify':
-      return { current: 4, total: 5, label: 'Confirm phrase' };
+      return { current: 5, total: 6, label: 'Confirm phrase' };
     case 'provisioning_create':
-      return { current: 5, total: 5, label: 'Setting up' };
+      return { current: 6, total: 6, label: 'Setting up' };
     case 'recover_mnemonic':
       return { current: 1, total: 3, label: 'Recovery phrase' };
     case 'recover_passphrase':
@@ -101,8 +112,10 @@ export function previousStep(step: Step): Step | null {
       return null;
     case 'create_name':
       return { kind: 'choose' };
-    case 'create_passphrase':
+    case 'create_handle':
       return { kind: 'create_name', draft: step.draft };
+    case 'create_passphrase':
+      return { kind: 'create_handle', draft: step.draft };
     case 'create_mnemonic_reveal':
       return { kind: 'create_passphrase', draft: step.draft };
     case 'create_mnemonic_verify':

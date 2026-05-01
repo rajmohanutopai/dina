@@ -20,7 +20,16 @@
  */
 
 import React, { useCallback, useState, useSyncExternalStore } from 'react';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { colors, fonts, radius, shadows, spacing } from '../src/theme';
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
@@ -28,6 +37,12 @@ import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/ru
 import { loadPersistedDid } from '../src/services/identity_record';
 import { signOutLocal, eraseEverythingLocal } from '../src/services/local_data_wipe';
 import { sendChatMessage } from '../src/services/chat_d2d';
+import {
+  getDisplayNameOverride,
+  hydrateDisplayNameOverride,
+  setDisplayNameOverride,
+  subscribeDisplayNameOverride,
+} from '../src/services/display_name_override';
 
 export default function AdminScreen(): React.ReactElement {
   const router = useRouter();
@@ -137,6 +152,7 @@ export default function AdminScreen(): React.ReactElement {
             mono
             truncate
           />
+          <DisplayNameRow />
           <Row label="Role" value={shortRole(node?.role)} />
           <Row label="Brain client" value={node === null ? 'offline' : 'connected'} />
           <Placeholder
@@ -359,6 +375,189 @@ const devTestStyles = StyleSheet.create({
   },
   detailErr: {
     color: colors.error,
+  },
+});
+
+/**
+ * "Rename your id" — local-only display name override.
+ *
+ * Distinct from the published handle on plc.directory. The published
+ * handle is what other Dinas see; this override is the friendly label
+ * this device renders for the user's own DID. Re-publishing PLC to
+ * change the canonical handle is destructive (touches the rotation
+ * key, costs an AppView re-index), so the UI keeps the two
+ * concerns separate: edit here for free, re-publish behind the
+ * "Re-publish PLC document" placeholder when that lands.
+ */
+function DisplayNameRow(): React.ReactElement {
+  const override = useSyncExternalStore(
+    subscribeDisplayNameOverride,
+    getDisplayNameOverride,
+    getDisplayNameOverride,
+  );
+
+  // Hydrate from keychain on first mount. The store snapshot stays
+  // null until this resolves; that's fine — the row simply renders
+  // "Not set" for one frame on the very first admin-page open.
+  React.useEffect(() => {
+    void hydrateDisplayNameOverride();
+  }, []);
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const onEdit = (): void => {
+    setDraft(override ?? '');
+    setEditing(true);
+  };
+
+  const onCancel = (): void => {
+    setEditing(false);
+    setDraft('');
+  };
+
+  const onSave = useCallback(async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await setDisplayNameOverride(draft);
+      setEditing(false);
+      setDraft('');
+    } catch (err) {
+      Alert.alert(
+        'Couldn’t save',
+        err instanceof Error ? err.message : String(err),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [draft]);
+
+  if (editing) {
+    return (
+      <View style={styles.row}>
+        <Text style={styles.rowLabel}>Display name</Text>
+        <View style={displayNameStyles.editWrap}>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="e.g. Sancho"
+            placeholderTextColor={colors.textMuted}
+            style={displayNameStyles.input}
+            autoFocus
+            autoCapitalize="words"
+            autoCorrect={false}
+            spellCheck={false}
+            maxLength={64}
+            editable={!busy}
+          />
+          <View style={displayNameStyles.actions}>
+            <Pressable
+              onPress={onCancel}
+              disabled={busy}
+              style={({ pressed }) => [
+                displayNameStyles.btn,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={displayNameStyles.btnTextSecondary}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                void onSave();
+              }}
+              disabled={busy}
+              style={({ pressed }) => [
+                displayNameStyles.btn,
+                displayNameStyles.btnPrimary,
+                pressed && styles.pressed,
+                busy && styles.pressed,
+              ]}
+            >
+              <Text style={displayNameStyles.btnTextPrimary}>
+                {busy ? 'Saving…' : 'Save'}
+              </Text>
+            </Pressable>
+          </View>
+          <Text style={displayNameStyles.hint}>
+            Local only — does not change your handle on plc.directory.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <Pressable onPress={onEdit} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+      <Text style={styles.rowLabel}>Display name</Text>
+      <View style={styles.rowValueWrap}>
+        <Text
+          style={[
+            styles.rowValue,
+            override === null && displayNameStyles.unset,
+          ]}
+          numberOfLines={1}
+        >
+          {override ?? 'Not set — tap to edit'}
+        </Text>
+        <Text style={styles.copyGlyph}>{'✎'}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+const displayNameStyles = StyleSheet.create({
+  editWrap: {
+    flex: 1,
+  },
+  input: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    color: colors.textPrimary,
+    backgroundColor: colors.bgPrimary,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    justifyContent: 'flex-end',
+  },
+  btn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  btnPrimary: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  btnTextPrimary: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  btnTextSecondary: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
+  hint: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  unset: {
+    color: colors.textMuted,
+    fontStyle: 'italic',
   },
 });
 

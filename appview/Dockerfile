@@ -22,7 +22,12 @@ COPY drizzle/ drizzle/
 COPY src/ src/
 COPY --from=builder /app/dist dist/
 
-CMD ["npx", "drizzle-kit", "push", "--force"]
+# `drizzle-kit migrate` reads the journal + applies any unapplied
+# migrations from drizzle/ in order, tracked in `drizzle.__drizzle_migrations`.
+# Non-interactive (unlike `push --force`, which still prompts on renames),
+# idempotent (re-runs are no-ops once everything's applied), and works
+# against both fresh and existing databases.
+CMD ["npx", "drizzle-kit", "migrate"]
 
 # Runtime stage: production dependencies only
 FROM node:22-alpine AS runner

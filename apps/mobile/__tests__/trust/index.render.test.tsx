@@ -9,7 +9,8 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import React from 'react';
 
-import TrustFeedScreen, { type FeedItem } from '../../app/trust/index';
+import TrustFeedScreen from '../../app/trust/index';
+import type { FeedItem } from '../../app/trust/index';
 
 import type { FacetBar } from '../../src/trust/facets';
 import type { SubjectCardDisplay } from '../../src/trust/subject_card';
@@ -95,11 +96,17 @@ describe('TrustFeedScreen — render states', () => {
     expect(queryByTestId('trust-feed-search-cta')).toBeNull();
   });
 
-  it('does NOT render Search CTA when onSubmitSearch is omitted', () => {
-    const { queryByTestId } = render(
+  it('renders Search CTA when onSubmitSearch is omitted (router fallback)', () => {
+    // The screen now provides a router-based navigation fallback when
+    // no `onSubmitSearch` callback is supplied — production users get
+    // a working "Search <q>" button on the empty state without a runner
+    // having to wire it. Tests that need the CTA hidden can pass
+    // `onSubmitSearch={undefined}` explicitly via a sentinel — but
+    // omission no longer hides the CTA.
+    const { getByTestId } = render(
       <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} q="aeron" />,
     );
-    expect(queryByTestId('trust-feed-search-cta')).toBeNull();
+    expect(getByTestId('trust-feed-search-cta')).toBeTruthy();
   });
 
   it('renders feed cards when feed is non-empty', () => {

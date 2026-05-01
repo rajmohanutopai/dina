@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
   attestations,
@@ -8,6 +8,7 @@ import {
   subjectScores,
 } from '@/db/schema/index.js'
 import { computeGraphContext } from '@/db/queries/graph.js'
+import { normalizeHandle } from '@/util/handle_normalize.js'
 
 /**
  * `com.dina.trust.subjectGet` (TN-API-002 / Plan §6.2).
@@ -86,6 +87,15 @@ export interface SubjectRefShape {
 
 export interface ReviewerEntry {
   did: string
+  /**
+   * Display handle from the reviewer's PLC document — the value of
+   * `alsoKnownAs[0]` minus the `at://` prefix. Mobile clients render
+   * this when present and fall back to a truncated DID otherwise.
+   * Populated lazily by the `backfill-handles` scorer job; `null`
+   * for any DID that hasn't been resolved yet OR that has no
+   * published handle (in PLC the field may simply be empty).
+   */
+  handle: string | null
   trustScore: number | null
   trustBand: TrustBand
   attestation: {
@@ -102,6 +112,14 @@ export interface SubjectGetResponse {
   band: TrustBand
   reviewCount: number
   reviewers: {
+    /**
+     * The viewer's own attestations (when the user reviewed this
+     * subject themselves). Surfaced separately so the mobile UI can
+     * render a "Your review" section rather than dropping it on the
+     * floor or sorting it under "strangers". Empty when the viewer
+     * hasn't reviewed this subject.
+     */
+    self: ReviewerEntry[]
     contacts: ReviewerEntry[]
     extended: ReviewerEntry[]
     strangers: ReviewerEntry[]
@@ -134,13 +152,15 @@ interface AttestationRow {
   authorDid: string
 }
 
-/** Compose a ReviewerEntry from an attestation + the author's score. */
+/** Compose a ReviewerEntry from an attestation + the author's score + handle. */
 function reviewerEntryOf(
   att: AttestationRow,
   score: number | null,
+  handle: string | null,
 ): ReviewerEntry {
   return {
     did: att.authorDid,
+    handle: normalizeHandle(handle),
     trustScore: score,
     trustBand: trustBandFor(score),
     attestation: {
@@ -191,34 +211,52 @@ export async function subjectGet(
       score: null,
       band: 'unrated',
       reviewCount: 0,
-      reviewers: { contacts: [], extended: [], strangers: [] },
+      reviewers: { self: [], contacts: [], extended: [], strangers: [] },
     }
   }
 
   const subject = subjectRefFromRow(subjectRow)
   const score = scoreRow?.weightedScore ?? null
-  const reviewCount = scoreRow?.totalAttestations ?? 0
 
-  // Phase 2 — attestation rows for this subject. Cap the read at
-  // MAX_REVIEWER_TOTAL so a 10k-reviewer subject doesn't blow the
-  // request budget; the per-group cap below trims further.
-  const attRows = await db
-    .select({
-      uri: attestations.uri,
-      text: attestations.text,
-      sentiment: attestations.sentiment,
-      recordCreatedAt: attestations.recordCreatedAt,
-      authorDid: attestations.authorDid,
-    })
-    .from(attestations)
-    .where(
-      and(
-        eq(attestations.subjectId, subjectId),
-        eq(attestations.isRevoked, false),
+  // Phase 2 — attestation rows for this subject + the live count.
+  //
+  // We deliberately do NOT use `scoreRow.totalAttestations` for the
+  // count: that field is materialized by the background scorer
+  // (`scorer/jobs/subject_scoring.ts`), so a freshly-injected
+  // attestation reads as `reviewCount: 0` until the next scoring tick.
+  // The mobile detail screen showed "0 reviews" right after a publish
+  // for exactly this reason. Counting non-revoked attestations
+  // directly is one cheap COUNT(*) and is always current.
+  const [attRows, [countRow]] = await Promise.all([
+    db
+      .select({
+        uri: attestations.uri,
+        text: attestations.text,
+        sentiment: attestations.sentiment,
+        recordCreatedAt: attestations.recordCreatedAt,
+        authorDid: attestations.authorDid,
+      })
+      .from(attestations)
+      .where(
+        and(
+          eq(attestations.subjectId, subjectId),
+          eq(attestations.isRevoked, false),
+        ),
+      )
+      .orderBy(desc(attestations.recordCreatedAt))
+      .limit(MAX_REVIEWER_TOTAL),
+    db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(attestations)
+      .where(
+        and(
+          eq(attestations.subjectId, subjectId),
+          eq(attestations.isRevoked, false),
+        ),
       ),
-    )
-    .orderBy(desc(attestations.recordCreatedAt))
-    .limit(MAX_REVIEWER_TOTAL)
+  ])
+
+  const reviewCount = countRow?.c ?? 0
 
   if (attRows.length === 0) {
     return {
@@ -226,7 +264,7 @@ export async function subjectGet(
       score,
       band: trustBandFor(score),
       reviewCount,
-      reviewers: { contacts: [], extended: [], strangers: [] },
+      reviewers: { self: [], contacts: [], extended: [], strangers: [] },
     }
   }
 
@@ -239,7 +277,9 @@ export async function subjectGet(
     depthByDid.set(node.did, node.depth)
   }
 
-  // Phase 4 — author trust scores (single batched lookup).
+  // Phase 4 — author trust scores + display handles (single batched
+  // lookup against `did_profiles`). The handle comes from the same
+  // join we already do for scores; no extra round-trip.
   const authorDids = [...new Set(attRows.map((a) => a.authorDid))]
   const profileRows =
     authorDids.length > 0
@@ -247,6 +287,7 @@ export async function subjectGet(
           .select({
             did: didProfiles.did,
             overallTrustScore: didProfiles.overallTrustScore,
+            handle: didProfiles.handle,
           })
           .from(didProfiles)
           .where(inArray(didProfiles.did, authorDids))
@@ -254,16 +295,30 @@ export async function subjectGet(
   const scoreByDid = new Map(
     profileRows.map((r) => [r.did, r.overallTrustScore]),
   )
+  const handleByDid = new Map(profileRows.map((r) => [r.did, r.handle]))
 
   // Phase 5 — categorize each attestation by the author's depth.
-  // The viewer themselves should never appear as a reviewer of their
-  // own subject in this surface — exclude defensively.
+  //
+  // The viewer's own attestations land in `self` rather than being
+  // dropped (the previous `continue` lost them entirely, so a user
+  // viewing a subject they reviewed saw `reviewCount: 1` but no
+  // review on the page — the mobile detail screen had no way to
+  // render "Your review"). Depth=1 → contacts, depth=2 → extended,
+  // anything else (including unknown / depth ≥3) → strangers.
+  const self: ReviewerEntry[] = []
   const contacts: ReviewerEntry[] = []
   const extended: ReviewerEntry[] = []
   const strangers: ReviewerEntry[] = []
   for (const att of attRows) {
-    if (att.authorDid === viewerDid) continue
-    const entry = reviewerEntryOf(att, scoreByDid.get(att.authorDid) ?? null)
+    const entry = reviewerEntryOf(
+      att,
+      scoreByDid.get(att.authorDid) ?? null,
+      handleByDid.get(att.authorDid) ?? null,
+    )
+    if (att.authorDid === viewerDid) {
+      self.push(entry)
+      continue
+    }
     const depth = depthByDid.get(att.authorDid)
     if (depth === 1) contacts.push(entry)
     else if (depth === 2) extended.push(entry)
@@ -276,6 +331,7 @@ export async function subjectGet(
     band: trustBandFor(score),
     reviewCount,
     reviewers: {
+      self: sortReviewers(self).slice(0, MAX_REVIEWERS_PER_GROUP),
       contacts: sortReviewers(contacts).slice(0, MAX_REVIEWERS_PER_GROUP),
       extended: sortReviewers(extended).slice(0, MAX_REVIEWERS_PER_GROUP),
       strangers: sortReviewers(strangers).slice(0, MAX_REVIEWERS_PER_GROUP),

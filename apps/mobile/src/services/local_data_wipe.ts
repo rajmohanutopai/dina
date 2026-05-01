@@ -23,6 +23,7 @@ import { Paths, type Directory, type File } from 'expo-file-system';
 import { clearWrappedSeed } from './wrapped_seed_store';
 import { clearIdentitySeeds } from './identity_store';
 import { clearPersistedDid } from './identity_record';
+import { clearDisplayNameOverride } from './display_name_override';
 import { resetUnlockState } from '../hooks/useUnlock';
 import { shutdownAllPersistence } from '../storage/init';
 
@@ -41,6 +42,7 @@ export async function signOutLocal(): Promise<void> {
   await clearWrappedSeed();
   await clearIdentitySeeds();
   await clearPersistedDid();
+  await clearDisplayNameOverride();
   resetUnlockState();
 }
 

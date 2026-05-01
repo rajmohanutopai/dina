@@ -71,11 +71,13 @@ describe('ReviewerProfileScreen — render states', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('error state hides Retry CTA when onRetry is omitted', () => {
-    const { queryByTestId } = render(
+  it('error state renders Retry CTA when onRetry is omitted (auto-timeout reset)', () => {
+    // The screen provides a default `onRetry` that resets the
+    // auto-timeout state, so the CTA is always present in production.
+    const { getByTestId } = render(
       <ReviewerProfileScreen profile={null} error="Network unreachable" />,
     );
-    expect(queryByTestId('reviewer-profile-retry')).toBeNull();
+    expect(getByTestId('reviewer-profile-retry')).toBeTruthy();
   });
 
   it('renders loaded state with all sections when profile is provided', () => {

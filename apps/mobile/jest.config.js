@@ -26,6 +26,7 @@ module.exports = {
     '^expo-file-system$': '<rootDir>/__mocks__/expo-file-system.ts',
     '^expo-notifications$': '<rootDir>/__mocks__/expo-notifications.ts',
     '^@expo/vector-icons$': '<rootDir>/__mocks__/expo-vector-icons.ts',
+    '^expo-router$': '<rootDir>/__mocks__/expo-router.ts',
   },
   transform: {
     // `isolatedModules: true` tells ts-jest to transpile each file in

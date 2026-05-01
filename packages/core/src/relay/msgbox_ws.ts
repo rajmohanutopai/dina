@@ -41,6 +41,13 @@ export type EnvelopeHandler = (envelope: MsgBoxEnvelope) => void;
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 60_000; // 60s cap (matching Go)
 
+/**
+ * `WebSocket.readyState` enum values (browser + RN polyfill agree on
+ * these). Only `OPEN` (1) accepts `.send()` without throwing — any
+ * other state is a fast-drop with a warning, never a thrown error.
+ */
+const WS_OPEN = 1;
+
 // ---------------------------------------------------------------
 // Injectable WebSocket factory (for testing)
 // ---------------------------------------------------------------
@@ -252,14 +259,22 @@ export function isAuthenticated(): boolean {
  * the response would never reach the recipient.
  */
 export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
-  if (!ws || !connected || !authenticated) {
+  if (!ws || !connected || !authenticated || ws.readyState !== WS_OPEN) {
     // Transient: socket is mid-(re)connect or auth handshake. Caller
     // (sendOrRetryUntilExpired) polls until authenticated or the
     // envelope's TTL expires. `.warn` so persistent drops still
     // surface, without lighting up LogBox during normal connect.
+    //
+    // The `ws.readyState !== OPEN` guard is the belt-and-braces piece:
+    // `connected` is JS-side state we maintain ourselves and can race
+    // with a close/reconnect; `readyState` is the polyfill's truth and
+    // calling `.send()` while it's CONNECTING throws synchronously
+    // ("INVALID_STATE_ERR" on RN), which surfaces as a LogBox toast
+    // that intercepts taps and looks to the user like the whole UI
+    // is frozen.
     // eslint-disable-next-line no-console
     console.warn(
-      `[WS] sendEnvelope DROP type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} state ws=${ws !== null} conn=${connected} auth=${authenticated}`,
+      `[WS] sendEnvelope DROP type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} state ws=${ws !== null} conn=${connected} auth=${authenticated} ready=${ws?.readyState ?? '-'}`,
     );
     return false;
   }
@@ -275,8 +290,13 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
     );
     return true;
   } catch (err) {
+    // Demote to warn — a transient INVALID_STATE_ERR or "WebSocket is
+    // closed" surfaces as a LogBox red-toast on RN otherwise, which
+    // covers the bottom tab bar + intercepts taps. The caller already
+    // gets a falsy return and `sendOrRetryUntilExpired` will replay,
+    // so escalating to console.error every time was wrong.
     // eslint-disable-next-line no-console
-    console.error(
+    console.warn(
       `[WS] sendEnvelope THREW type=${envelope.type} id=${envelope.id?.slice(0, 8)} err=${(err as Error).message}`,
     );
     return false;
@@ -459,14 +479,34 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
   const sig = signHandshake(challenge.nonce, String(challenge.ts), homeNodePrivateKey);
   const pubHex = bytesToHex(getPublicKey(homeNodePrivateKey));
 
-  ws.send(
-    JSON.stringify({
-      type: 'auth_response',
-      did: homeNodeDID,
-      sig,
-      pub: pubHex,
-    }),
-  );
+  // Guard against the race where `onmessage` delivers a buffered
+  // auth_challenge while the polyfill still reports CONNECTING (seen
+  // on RN's WebSocket implementation when frames arrive before the
+  // open event has propagated up the JS bridge). `.send()` in that
+  // window throws INVALID_STATE_ERR synchronously and bubbles out as
+  // a LogBox toast. We re-arm by waiting for the next auth_challenge
+  // — the relay re-sends it on its own retry cadence.
+  if (ws.readyState !== WS_OPEN) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[WS] auth_challenge ignored — ws not open (readyState=${ws.readyState})`,
+    );
+    return;
+  }
+  try {
+    ws.send(
+      JSON.stringify({
+        type: 'auth_response',
+        did: homeNodeDID,
+        sig,
+        pub: pubHex,
+      }),
+    );
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[WS] auth_response send failed: ${(err as Error).message}`);
+    return;
+  }
 
   // Mark that we've replied to the challenge so the onmessage handler
   // can accept either an explicit `auth_success` or a buffered-envelope

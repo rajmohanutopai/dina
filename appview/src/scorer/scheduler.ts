@@ -12,6 +12,7 @@ import { cleanupExpired } from './jobs/cleanup-expired.js'
 import { cosigExpirySweep } from './jobs/cosig-expiry-sweep.js'
 import { subjectOrphanGc } from './jobs/subject-orphan-gc.js'
 import { subjectEnrichRecompute } from './jobs/subject-enrich-recompute.js'
+import { backfillHandles } from './jobs/backfill-handles.js'
 import type { DrizzleDB } from '@/db/connection.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
@@ -45,6 +46,12 @@ const jobs: ScorerJob[] = [
   // orphan-gc (05:00) so heuristic-map updates propagate to all live
   // subjects before the day's other jobs see them.
   { name: 'subject-enrich-recompute', schedule: '0 2 * * 0', handler: subjectEnrichRecompute },
+  // Backfills `did_profiles.handle` from PLC `alsoKnownAs[0]`.
+  // Cosmetic / display-name surface — see `backfill-handles.ts`.
+  // 10 minutes is fast enough that fresh profiles get a handle
+  // within one or two ticks, slow enough not to hammer the PLC
+  // directory.
+  { name: 'backfill-handles', schedule: '*/10 * * * *', handler: backfillHandles },
 ]
 
 /**

@@ -141,6 +141,7 @@ describe('Trust Network Search', () => {
     it('queries AppView for DID-based identity attestations', async () => {
       const mockProfile: TrustProfile = {
         did: 'did:plc:vendor',
+        handle: null,
         overallTrustScore: 0.78,
         attestationSummary: { total: 15, positive: 11, neutral: 3, negative: 1 },
         vouchCount: 4,

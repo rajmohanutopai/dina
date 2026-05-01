@@ -42,6 +42,14 @@ import {
 } from 'react-native';
 
 import { colors, fonts, spacing, radius } from '../../src/theme';
+
+/**
+ * How long the screen waits for `prior` (the user's PLC operation)
+ * before surfacing a friendly "DID not yet resolved" message instead
+ * of spinning forever. PLC reads are fast when the AppView is reachable;
+ * a 5s budget catches "AppView unreachable" and unblocks the UI.
+ */
+const LOAD_BUDGET_MS = 5000;
 import {
   deriveNamespaceRows,
   canAddNamespace,
@@ -50,14 +58,18 @@ import {
 } from '../../src/trust/namespace_screen_data';
 
 export interface NamespaceScreenProps {
-  /** Root DID (`did:plc:xxxx`). Used only for display + VM id construction. */
-  did: string;
+  /**
+   * Root DID (`did:plc:xxxx`). Optional — defaults to empty string so
+   * the screen mounts as a routable Expo Router default export when no
+   * runner is wired. Tests pass it explicitly.
+   */
+  did?: string;
   /**
    * The user's current PLC signed operation. `null` when not yet
    * resolved (offline, post-rotation propagation window) — the screen
    * renders a loading state and disables the Add CTA.
    */
-  prior: Record<string, unknown> | null;
+  prior?: Record<string, unknown> | null;
   /** Whether the runner is actively submitting an Add operation. */
   isAdding?: boolean;
   /** Fired when the user taps "+ Add namespace". Receives the next index. */
@@ -69,11 +81,24 @@ export interface NamespaceScreenProps {
   onSelectNamespace?: (row: NamespaceRow) => void;
 }
 
-export default function NamespaceScreen(props: NamespaceScreenProps): React.ReactElement {
-  const { did, prior, isAdding = false, onAddNamespace, onSelectNamespace } = props;
+export default function NamespaceScreen(props: NamespaceScreenProps = {}): React.ReactElement {
+  const { did = '', prior = null, isAdding = false, onAddNamespace, onSelectNamespace } = props;
   const rows = React.useMemo(() => deriveNamespaceRows(did, prior), [did, prior]);
   const nextIdx = nextNamespaceIndexFor(prior);
   const canAdd = canAddNamespace(prior) && !isAdding;
+
+  // Auto-timeout: when no `prior` op is supplied within the load
+  // budget, surface a graceful "couldn't reach trust network" message
+  // instead of spinning forever. Skipped in controlled mode (when the
+  // caller passes `prior` explicitly — tests + a future runner).
+  const [timedOut, setTimedOut] = React.useState(false);
+  const [retryNonce, setRetryNonce] = React.useState(0);
+  React.useEffect(() => {
+    if (props.prior !== undefined) return;
+    setTimedOut(false);
+    const id = setTimeout(() => setTimedOut(true), LOAD_BUDGET_MS);
+    return () => clearTimeout(id);
+  }, [retryNonce, props.prior]);
 
   return (
     <ScrollView
@@ -90,7 +115,30 @@ export default function NamespaceScreen(props: NamespaceScreenProps): React.Reac
         </Text>
       </View>
 
-      {prior === null ? (
+      {prior === null && timedOut ? (
+        <View style={styles.empty} testID="namespace-error">
+          <Ionicons name="cloud-offline-outline" size={36} color={colors.textMuted} />
+          <Text style={styles.emptyTitle}>DID document unavailable</Text>
+          <Text style={styles.emptyBody}>
+            Couldn&apos;t reach the trust network to read your namespaces. Check your
+            connection and try again.
+          </Text>
+          <Pressable
+            onPress={() => setRetryNonce((n) => n + 1)}
+            style={({ pressed }) => [
+              styles.cta,
+              pressed && styles.ctaPressed,
+              { marginTop: spacing.md },
+            ]}
+            testID="namespace-retry"
+            accessibilityRole="button"
+            accessibilityLabel="Retry"
+          >
+            <Ionicons name="refresh" size={16} color={colors.bgSecondary} />
+            <Text style={styles.ctaLabel}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : prior === null ? (
         <View style={styles.loading} testID="namespace-loading">
           <ActivityIndicator color={colors.textMuted} />
           <Text style={styles.loadingText}>Loading your DID document…</Text>

@@ -117,6 +117,27 @@ describe('deriveReviewerProfileDisplay — counts + domains passthrough', () => 
     expect(d.endorsementCount).toBe(7);
   });
 
+  it('surfaces reviews-written count from reviewerStats.totalAttestationsBy', () => {
+    // The reviewer profile screen wants "reviews this DID has WRITTEN"
+    // not "reviews about this DID" (which is attestationSummary.total).
+    // Without this distinction the user's own profile reads "0
+    // attestations" forever — they only get reviews ABOUT them when
+    // someone else vouches.
+    const d = deriveReviewerProfileDisplay(
+      makeProfile({
+        attestationSummary: { total: 0, positive: 0, neutral: 0, negative: 0 },
+        reviewerStats: {
+          totalAttestationsBy: 5,
+          corroborationRate: 0,
+          evidenceRate: 0,
+          helpfulRatio: 0,
+        },
+      }),
+    );
+    expect(d.reviewsWritten).toBe(5);
+    expect(d.totalAttestations).toBe(0);
+  });
+
   it('passes through activeDomains as-is', () => {
     const domains = ['github.com', 'arxiv.org', 'amazon.com'];
     const d = deriveReviewerProfileDisplay(makeProfile({ activeDomains: domains }));

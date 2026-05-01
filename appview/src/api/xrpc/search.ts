@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { eq, and, desc, gte, lte, lt, or, sql, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { attestations, subjects, subjectScores } from '@/db/schema/index.js'
+import { attestations, subjects, subjectScores, didProfiles } from '@/db/schema/index.js'
+import { normalizeHandle } from '@/util/handle_normalize.js'
 import type { SearchResponse } from '@/shared/types/api-types.js'
 
 const CONFIDENCE_ORDER = ['speculative', 'moderate', 'high', 'certain'] as const
@@ -283,9 +284,17 @@ export async function search(
 
   // XR4: Wrap in statement_timeout when FTS is used to prevent
   // CPU-intensive queries from blocking the database.
+  // Left-join `did_profiles` so each result row carries the
+  // author's display handle alongside the raw DID — mobile search
+  // result cards prefer the handle over the DID. Left join (not
+  // inner) so authors without a profile row yet still appear.
   const runQuery = async (queryDb: DrizzleDB) => {
-    return queryDb.select()
+    return queryDb.select({
+      attestation: attestations,
+      handle: didProfiles.handle,
+    })
       .from(attestations)
+      .leftJoin(didProfiles, eq(attestations.authorDid, didProfiles.did))
       .where(and(...conditions))
       .orderBy(...orderClause)
       .limit(limit + 1)
@@ -311,13 +320,19 @@ export async function search(
 
   const hasMore = results.length > limit
   const page = hasMore ? results.slice(0, limit) : results
-  const lastRow = page[page.length - 1]
+  // Flatten the join shape so clients see a flat row + new
+  // `authorHandle` field (same shape convention as networkFeed).
+  const flat = page.map((r) => ({
+    ...r.attestation,
+    authorHandle: normalizeHandle(r.handle),
+  }))
+  const lastRow = page[page.length - 1]?.attestation
   const nextCursor = hasMore && lastRow
     ? `${lastRow.recordCreatedAt.toISOString()}::${lastRow.uri}`
     : undefined
 
   return {
-    results: page,
+    results: flat,
     cursor: nextCursor,
     totalEstimate: null,
   }

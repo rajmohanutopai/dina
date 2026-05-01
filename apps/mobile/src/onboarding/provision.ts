@@ -58,8 +58,20 @@ export interface ProvisionProgress {
 export interface ProvisionOptions {
   mnemonic: string[];
   passphrase: string;
-  /** Used to derive the PLC handle (`{sanitized}{randhex}.{pds_host}`). */
+  /**
+   * Display name. When `handle` is omitted, this seeds the always-suffix
+   * fallback derivation (`{sanitized}{randhex}.{pds_host}`) — used by the
+   * dev autopilot path and recovery tests. The interactive flow picks a
+   * handle through the wizard and passes it via `handle` directly, so
+   * the fallback only fires for non-UI callers.
+   */
   ownerName: string;
+  /**
+   * Pre-picked handle (full DNS form, e.g. `raju.pds.dinakernel.com`).
+   * When set, used as-is. When omitted, falls back to `deriveHandle()`
+   * for backwards compatibility with the dev autopilot + recovery paths.
+   */
+  handle?: string;
   /** Override the PLC directory URL. Defaults to `https://plc.directory`. */
   plcURL?: string;
   /** Override the MsgBox endpoint baked into the genesis op. Defaults to
@@ -124,7 +136,10 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
 
   // 5. PLC genesis + publish.
   progress(opts.onProgress, 'publishing_plc');
-  const handle = deriveHandle(opts.ownerName, msgboxEndpoint);
+  // Prefer the explicit handle from the picker wizard. Fall back to the
+  // silent always-suffix derivation only when no handle was passed —
+  // dev autopilot, recovery tests, and any non-interactive caller.
+  const handle = opts.handle ?? deriveHandle(opts.ownerName, msgboxEndpoint);
   let plcResult: PLCCreateResult;
   try {
     plcResult = await createDIDPLC(

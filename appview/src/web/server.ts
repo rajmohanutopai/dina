@@ -14,6 +14,13 @@ import { attestationStatus, AttestationStatusParams } from '@/api/xrpc/attestati
 import { cosigList, CosigListParams } from '@/api/xrpc/cosig-list.js'
 import { networkFeed, NetworkFeedParams } from '@/api/xrpc/network-feed.js'
 import { subjectGet, SubjectGetParams } from '@/api/xrpc/subject-get.js'
+import {
+  InjectAttestationBody,
+  DeleteAttestationBody,
+  injectAttestation,
+  deleteAttestation,
+  checkTestInjectAuth,
+} from '@/api/xrpc/test-inject.js'
 import { gateTrustNamespace } from '@/api/middleware/trust-flag-gate.js'
 import {
   checkPerMethodRateLimit,
@@ -97,6 +104,58 @@ const server = http.createServer(async (req, res) => {
     } catch {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ status: 'degraded', reason: 'db_unreachable' }))
+    }
+    return
+  }
+
+  // POST writes — test-mode-only inject endpoints. Hidden behind a
+  // 404 unless `DINA_TEST_INJECT=1` AND `DINA_TEST_INJECT_TOKEN` are
+  // both set on the container; the token must match
+  // `Authorization: Bearer <token>`. See test-inject.ts for the
+  // gate. Treats wrong/absent auth identically to "endpoint not
+  // found" so probes can't enumerate the surface.
+  if (
+    req.method === 'POST' &&
+    (url.pathname === '/xrpc/com.dina.test.injectAttestation' ||
+      url.pathname === '/xrpc/com.dina.test.deleteAttestation')
+  ) {
+    const authFail = checkTestInjectAuth(req.headers.authorization)
+    if (authFail !== null) {
+      res.writeHead(authFail.status, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(authFail.body))
+      return
+    }
+    let raw = ''
+    for await (const chunk of req) raw += chunk
+    let body: unknown
+    try {
+      body = JSON.parse(raw)
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'InvalidRequest', message: 'malformed JSON' }))
+      return
+    }
+    try {
+      if (url.pathname.endsWith('injectAttestation')) {
+        const parsed = InjectAttestationBody.parse(body)
+        const out = await injectAttestation(db, parsed)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(out))
+      } else {
+        const parsed = DeleteAttestationBody.parse(body)
+        const out = await deleteAttestation(db, parsed)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(out))
+      }
+    } catch (err: any) {
+      if (err?.name === 'ZodError') {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'InvalidRequest', message: err.message }))
+      } else {
+        logger.error({ err, path: url.pathname }, 'test-inject handler error')
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'InternalServerError' }))
+      }
     }
     return
   }

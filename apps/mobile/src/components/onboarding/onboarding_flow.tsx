@@ -18,6 +18,7 @@ import { generateNewMnemonic } from '../../hooks/useOnboarding';
 import { Welcome } from './welcome';
 import { ModeChoice } from './mode_choice';
 import { OwnerName } from './owner_name';
+import { HandlePicker } from './handle_pick';
 import { PassphraseSet } from './passphrase_set';
 import { MnemonicReveal } from './mnemonic_reveal';
 import { MnemonicVerify } from './mnemonic_verify';
@@ -48,6 +49,10 @@ export function OnboardingFlow(): React.ReactElement {
     const mnemonic = generateNewMnemonic();
     const draft: CreateDraft = {
       ownerName: DEV_OWNER,
+      // Empty triggers the silent always-suffix fallback in
+      // `provisionIdentity` — fine for the dev path which bypasses the
+      // picker wizard.
+      handle: '',
       passphrase: DEV_PASSPHRASE,
       startupMode: 'auto',
       mnemonic,
@@ -76,8 +81,23 @@ export function OnboardingFlow(): React.ReactElement {
           onBack={goBack}
           onContinue={(name) =>
             setStep({
-              kind: 'create_passphrase',
+              kind: 'create_handle',
               draft: { ...step.draft, ownerName: name },
+            })
+          }
+        />
+      );
+
+    case 'create_handle':
+      return (
+        <HandlePicker
+          seedPrefix={step.draft.ownerName ?? ''}
+          initialHandle={step.draft.handle}
+          onBack={goBack}
+          onContinue={(handle) =>
+            setStep({
+              kind: 'create_passphrase',
+              draft: { ...step.draft, handle },
             })
           }
         />
@@ -134,6 +154,7 @@ export function OnboardingFlow(): React.ReactElement {
           onVerified={() => {
             const complete: CreateDraft = {
               ownerName: step.draft.ownerName ?? 'Dina',
+              handle: step.draft.handle ?? '',
               passphrase: step.draft.passphrase ?? '',
               startupMode: step.draft.startupMode ?? 'auto',
               mnemonic: step.draft.mnemonic ?? [],
@@ -152,6 +173,11 @@ export function OnboardingFlow(): React.ReactElement {
             mnemonic: step.draft.mnemonic,
             passphrase: step.draft.passphrase,
             ownerName: step.draft.ownerName,
+            // When the user came through the wizard, `handle` is set
+            // and we pass it to the PLC genesis op as-is. When the
+            // dev autopilot bypasses the wizard, this is empty and
+            // `provisionIdentity` falls back to `deriveHandle`.
+            handle: step.draft.handle.length > 0 ? step.draft.handle : undefined,
           }}
           onDone={() => {
             // `unlock()` inside provisionIdentity flips isUnlocked → true;

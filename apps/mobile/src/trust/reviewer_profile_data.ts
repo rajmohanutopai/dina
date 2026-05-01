@@ -40,6 +40,14 @@ export interface ReviewerProfileDisplay {
   /** Reviewer DID (`did:plc:xxxx`). */
   readonly did: string;
   /**
+   * Resolved handle from PLC `alsoKnownAs[0]` (e.g.
+   * `alice.pds.dinakernel.com`) when the AppView has backfilled it,
+   * `null` otherwise. The header renders this prominently with the
+   * DID as a smaller subtitle so reviewers are recognisable at a
+   * glance — DID is for receipts, handle is for humans.
+   */
+  readonly handle: string | null;
+  /**
    * `[0, 100]` integer for the score badge. `null` when the profile
    * has no score yet (DID known but unscored — render an em-dash).
    */
@@ -48,8 +56,18 @@ export interface ReviewerProfileDisplay {
   readonly scoreLabel: string;
   /** Trust band for badge colour. `'unrated'` for null scores. */
   readonly band: TrustBand;
-  /** Total attestations authored by this reviewer (across all sentiments). */
+  /**
+   * Total attestations RECEIVED by this DID (reviews ABOUT them).
+   * Used for the per-sentiment breakdown chips.
+   */
   readonly totalAttestations: number;
+  /**
+   * Total attestations AUTHORED by this DID (reviews BY them).
+   * Surfaced as the headline "Reviews written" count — that's the
+   * meaningful signal for a reviewer profile (vs. attestationSummary
+   * which is what others said about THIS DID).
+   */
+  readonly reviewsWritten: number;
   /**
    * Per-sentiment counts. Renders as e.g. "12 positive · 3 neutral ·
    * 1 negative" on the screen.
@@ -117,10 +135,12 @@ export function deriveReviewerProfileDisplay(
   const total = profile.attestationSummary.total;
   return {
     did: profile.did,
+    handle: profile.handle ?? null,
     scoreDisplay: trustScoreDisplay(profile.overallTrustScore),
     scoreLabel: trustScoreLabel(profile.overallTrustScore),
     band: trustBandFor(profile.overallTrustScore),
     totalAttestations: total,
+    reviewsWritten: profile.reviewerStats.totalAttestationsBy,
     positiveCount: profile.attestationSummary.positive,
     neutralCount: profile.attestationSummary.neutral,
     negativeCount: profile.attestationSummary.negative,

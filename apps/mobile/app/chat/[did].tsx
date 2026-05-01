@@ -12,7 +12,7 @@
  * simply never arrives unless both sides have the other in contacts.
  */
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -28,8 +28,11 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import type { ChatMessage } from '@dina/brain/src/chat/thread';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
+import { getProfile as getTrustProfile } from '../../src/trust/appview_runtime';
+import { displayName as displayNameOf } from '../../src/trust/handle_display';
 import { colors, fonts, spacing } from '../../src/theme';
 import { ChatSendError } from '../../src/services/chat_d2d';
+import { IdentityModal } from '../../src/components/identity/identity_modal';
 
 export default function ChatScreen() {
   const params = useLocalSearchParams<{ did: string }>();
@@ -41,6 +44,29 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+
+  // Best-effort handle resolution for non-contacts. The chat title
+  // would otherwise show `did:plc:abc1…7890`, which is hard to read
+  // and tells the user nothing. AppView lookup is fire-and-forget
+  // (silent on failure); contacts use their stored displayName.
+  const [resolvedHandle, setResolvedHandle] = useState<string | null>(null);
+  useEffect(() => {
+    if (peerDID === '' || isKnownContact) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await getTrustProfile(peerDID);
+        if (!cancelled && profile?.handle) {
+          setResolvedHandle(profile.handle);
+        }
+      } catch {
+        // Best-effort — silent fallback to shortDID.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [peerDID, isKnownContact]);
 
   const onSubmit = useCallback(async (): Promise<void> => {
     const text = draft.trim();
@@ -78,7 +104,14 @@ export default function ChatScreen() {
     }
   }, [draft, busy, send]);
 
-  const title = peerContact?.displayName ?? shortDID(peerDID);
+  // Title preference: user-set contact displayName > short username
+  // (first label of resolved PLC handle) > truncated DID. Tapping the
+  // header opens the IdentityModal with the full handle, DID, and
+  // PLC services.
+  const title =
+    peerContact?.displayName ?? displayNameOf(resolvedHandle, peerDID);
+
+  const [identityOpen, setIdentityOpen] = useState(false);
 
   return (
     <KeyboardAvoidingView
@@ -86,7 +119,31 @@ export default function ChatScreen() {
       style={styles.container}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
-      <Stack.Screen options={{ title }} />
+      <Stack.Screen
+        options={{
+          title,
+          headerTitle: () => (
+            <Pressable
+              onPress={() => setIdentityOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Show identity for ${title}`}
+              hitSlop={8}
+              style={styles.headerTitleBtn}
+            >
+              <Text style={styles.headerTitleText} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text style={styles.headerTitleHint}>tap for identity</Text>
+            </Pressable>
+          ),
+        }}
+      />
+      <IdentityModal
+        visible={identityOpen}
+        onClose={() => setIdentityOpen(false)}
+        did={peerDID}
+        initialHandle={resolvedHandle}
+      />
 
       {!isKnownContact && peerDID !== '' && (
         <Pressable style={styles.warningBanner} onPress={() => router.push('/add-contact')}>
@@ -167,12 +224,6 @@ function Bubble({ message, peerDID }: { message: ChatMessage; peerDID: string })
       </View>
     </View>
   );
-}
-
-function shortDID(did: string): string {
-  if (!did) return 'Chat';
-  if (did.length <= 24) return did;
-  return `${did.slice(0, 14)}\u2026${did.slice(-4)}`;
 }
 
 const styles = StyleSheet.create({
@@ -297,4 +348,20 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
+  headerTitleBtn: {
+    alignItems: 'center',
+  },
+  headerTitleText: {
+    fontFamily: fonts.headingBold,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  headerTitleHint: {
+    fontFamily: fonts.sans,
+    fontSize: 9,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+    marginTop: 1,
+  },
 });

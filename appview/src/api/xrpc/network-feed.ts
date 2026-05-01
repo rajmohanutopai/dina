@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { and, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { attestations } from '@/db/schema/index.js'
+import { attestations, didProfiles } from '@/db/schema/index.js'
 import { computeGraphContext } from '@/db/queries/graph.js'
+import { normalizeHandle } from '@/util/handle_normalize.js'
 
 /**
  * `com.dina.trust.networkFeed` (TN-API-004 / Plan §6.4).
@@ -120,19 +121,35 @@ export async function networkFeed(
     )
   }
 
+  // Left-join `did_profiles` so the author's display handle rides
+  // along on each row — mobile feed cards prefer the resolved handle
+  // (e.g. `alice.pds.dinakernel.com`) over the raw DID. Left join
+  // (not inner) so authors without a `did_profiles` row yet still
+  // appear in the feed; their handle just lands as null.
   const rows = await db
-    .select()
+    .select({
+      attestation: attestations,
+      handle: didProfiles.handle,
+    })
     .from(attestations)
+    .leftJoin(didProfiles, eq(attestations.authorDid, didProfiles.did))
     .where(and(...conditions))
     .orderBy(desc(attestations.recordCreatedAt), desc(attestations.uri))
     .limit(params.limit + 1)
 
   const hasMore = rows.length > params.limit
   const page = hasMore ? rows.slice(0, params.limit) : rows
-  const last = page[page.length - 1]
+  // Surface `authorHandle` as a flat field on each attestation row so
+  // clients consuming the feed don't need to know about the join
+  // structure. `'' → null` mapping centralised in `normalizeHandle`.
+  const flat = page.map((r) => ({
+    ...r.attestation,
+    authorHandle: normalizeHandle(r.handle),
+  }))
+  const last = page[page.length - 1]?.attestation
 
   return {
-    attestations: page,
+    attestations: flat,
     cursor:
       hasMore && last
         ? `${last.recordCreatedAt.toISOString()}::${last.uri}`

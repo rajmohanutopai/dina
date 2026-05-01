@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { addContact, getContact } from '@dina/core/src/contacts/directory';
+import { getProfile as getTrustProfile } from '../src/trust/appview_runtime';
 import { colors, fonts, spacing, radius } from '../src/theme';
 
 // Shown as a placeholder hint, not a pre-filled value — pre-filling
@@ -72,7 +73,24 @@ export default function AddContactScreen() {
       return;
     }
 
-    const name = displayName.trim() !== '' ? displayName.trim() : prettyNameFromDid(did, raw);
+    // If the user typed a bare DID and didn't enter a display name,
+    // try the AppView for the contact's published handle and use it
+    // as the default — `did:plc:abc1234…` is unreadable, but
+    // `alice.pds.dinakernel.com` is recognisable. The lookup is
+    // best-effort; on failure we fall back to the existing
+    // `prettyNameFromDid` (handle-first-label or DID slice).
+    let name = displayName.trim();
+    if (name === '') {
+      if (raw.startsWith('did:')) {
+        try {
+          const profile = await getTrustProfile(did);
+          if (profile?.handle) name = profile.handle;
+        } catch {
+          // Best-effort — silent on failure; fall through to prettyName.
+        }
+      }
+      if (name === '') name = prettyNameFromDid(did, raw);
+    }
 
     setStatus('saving');
     try {

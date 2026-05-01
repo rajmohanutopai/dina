@@ -65,6 +65,12 @@ export interface SearchResponse {
 /** Response from com.dina.trust.getProfile */
 export interface GetProfileResponse {
   did: string
+  /**
+   * Display handle (`alsoKnownAs[0]` minus `at://` from PLC). `null`
+   * when AppView hasn't backfilled the handle for this DID yet, or
+   * when the DID's PLC doc has no published handle.
+   */
+  handle: string | null
   overallTrustScore: number | null
   attestationSummary: {
     total: number
