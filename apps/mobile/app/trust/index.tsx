@@ -363,9 +363,21 @@ export default function TrustFeedScreen(
           <Ionicons name="people-outline" size={40} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>Your network is quiet</Text>
           <Text style={styles.emptyBody}>
-            Search for products, places, content, organizations, people, datasets, or
-            claims above — or be the first to review something new.
+            Search above for what you want to review. If nothing matches, you can
+            create the first review for it from there.
           </Text>
+          {/*
+            Why no unconditional "Write a review" CTA here: jumping
+            straight to /trust/write?createKind=product lets a user
+            mint a duplicate subject for something already in the
+            network — they never see existing matches first. The
+            search-first path is the only entry to writing: type
+            above → "Search '<q>'" → if results, tap an existing
+            subject and "Write a review" from its detail page; if no
+            results, the search empty state offers "Review '<q>'"
+            with the typed term pre-filled. Either way, the user has
+            checked for an existing subject before writing.
+          */}
           {onSubmitSearch && q.trim().length > 0 && (
             <Pressable
               onPress={() => onSubmitSearch(q.trim())}
@@ -381,19 +393,6 @@ export default function TrustFeedScreen(
               <Text style={styles.searchCtaLabel}>Search “{q.trim()}”</Text>
             </Pressable>
           )}
-          <Pressable
-            onPress={() => router.push({ pathname: '/trust/write', params: { createKind: 'product' } })}
-            style={({ pressed }) => [
-              styles.writeCta,
-              pressed && styles.writeCtaPressed,
-            ]}
-            testID="trust-feed-write-cta"
-            accessibilityRole="button"
-            accessibilityLabel="Write the first review"
-          >
-            <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
-            <Text style={styles.writeCtaLabel}>Write a review</Text>
-          </Pressable>
         </View>
       ) : (
         <ScrollView
@@ -564,23 +563,6 @@ const styles = StyleSheet.create({
   },
   searchCtaPressed: { backgroundColor: colors.accentHover },
   searchCtaLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.bgSecondary,
-  },
-  writeCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.accent,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
-    gap: spacing.xs,
-    minHeight: 44,
-    marginTop: spacing.sm,
-  },
-  writeCtaPressed: { backgroundColor: colors.accentHover },
-  writeCtaLabel: {
     fontFamily: fonts.sansMedium,
     fontSize: 14,
     color: colors.bgSecondary,

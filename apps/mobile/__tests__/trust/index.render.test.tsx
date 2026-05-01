@@ -109,6 +109,23 @@ describe('TrustFeedScreen — render states', () => {
     expect(getByTestId('trust-feed-search-cta')).toBeTruthy();
   });
 
+  it('does NOT render an unconditional Write CTA in the empty state', () => {
+    // Regression guard: a prior shape of the empty state shipped a
+    // "Write a review" button that jumped straight to
+    // `/trust/write?createKind=product` without searching first. That
+    // let users mint duplicate subjects for things already in the
+    // network — they never saw existing matches. The single entry
+    // path to writing is now: search-first (the bar above) → if
+    // results, tap an existing subject and write from its detail; if
+    // no results, the search empty state offers "Review '<q>'" with
+    // the typed term pre-filled. Pinning the absence here so the CTA
+    // can't reappear silently.
+    const { queryByTestId } = render(
+      <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} q="" />,
+    );
+    expect(queryByTestId('trust-feed-write-cta')).toBeNull();
+  });
+
   it('renders feed cards when feed is non-empty', () => {
     const { getByTestId, getAllByTestId } = render(
       <TrustFeedScreen feed={makeFeed(3)} facets={SOME_FACETS} />,
