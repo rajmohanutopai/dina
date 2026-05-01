@@ -1901,8 +1901,18 @@ function mockHandlerCtx() {
   const deleteMock = vi.fn().mockReturnValue({
     where: vi.fn().mockResolvedValue(undefined),
   })
+  // The attestation handler runs `db.update(subjects).set({...}).where(...)`
+  // for the META-011 last_active_at bump on every create. The trust-edge
+  // tests in §2.6 don't care about that side effect, but the call has to
+  // resolve cleanly or `handleCreate` throws before reaching the
+  // sentiment/subject-type branches the tests are actually exercising.
+  const updateMock = vi.fn().mockReturnValue({
+    set: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    }),
+  })
   return {
-    db: { insert: insertMock, delete: deleteMock } as any,
+    db: { insert: insertMock, delete: deleteMock, update: updateMock } as any,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     metrics: { incr: vi.fn(), gauge: vi.fn(), histogram: vi.fn(), counter: vi.fn() },
   }

@@ -35,6 +35,18 @@ export const subjects = pgTable('subjects', {
   // plain TIMESTAMP — a single TIMESTAMPTZ column would be a bug
   // magnet. Same reasoning as `ingest_rejections.rejected_at`.
   enrichedAt: timestamp('enriched_at'),
+  // TN-V2-META-011 — server-derived freshness signal. Updated to
+  // GREATEST(existing, attestation.recordCreatedAt) on every
+  // attestation create. Powers the "stale review" badge in §5
+  // (subject hasn't been reviewed in N months → grey banner) and
+  // the per-category recency-decay tuning in RANK-006. Distinct
+  // from `updatedAt` (any subject row mutation, including
+  // enrichment) and `createdAt` (when the subject row itself was
+  // first persisted). NULL = no attestation has landed yet, which
+  // shouldn't happen in practice (subjects are created by the
+  // attestation path) but is permitted for forward-compat with
+  // future "subject pre-registration" flows.
+  lastActiveAt: timestamp('last_active_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
@@ -70,4 +82,12 @@ export const subjects = pgTable('subjects', {
       sql`(${table.metadata}->>'lng')`,
     )
     .where(sql`${table.metadata} ? 'lat' AND ${table.metadata} ? 'lng'`),
+  // TN-V2-META-011 — partial b-tree index. Powers "stale subjects"
+  // queries (`WHERE last_active_at < NOW() - INTERVAL '6 months'`)
+  // and per-category recency-decay sort tweaks. Partial WHERE NOT
+  // NULL keeps the b-tree small while pre-attestation rows exist
+  // (none in V1, but the column is nullable).
+  index('subjects_last_active_idx')
+    .on(table.lastActiveAt)
+    .where(sql`${table.lastActiveAt} IS NOT NULL`),
 ])

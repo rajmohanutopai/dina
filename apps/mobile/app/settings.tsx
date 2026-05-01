@@ -307,6 +307,74 @@ export default function SettingsScreen() {
         );
       })()}
 
+      {/* Trust preferences (TN-V2-CTX). Local-only viewer profile —
+          region, languages, budget, devices, dietary, accessibility.
+          Drives the V2 actionability layer: which results get
+          surfaced / boosted / demoted on the trust-network screens.
+          Loyalty Law: NONE of this leaves the device. */}
+      <SettingsSection title="TRUST PREFERENCES">
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/trust-preferences/region')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Region settings"
+          testID="settings-row-region"
+        >
+          <Text style={styles.rowLabel}>Region</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/trust-preferences/budget')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Budget settings"
+          testID="settings-row-budget"
+        >
+          <Text style={styles.rowLabel}>Budget</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/trust-preferences/devices')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Devices settings"
+          testID="settings-row-devices"
+        >
+          <Text style={styles.rowLabel}>Devices</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/trust-preferences/languages')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Languages settings"
+          testID="settings-row-languages"
+        >
+          <Text style={styles.rowLabel}>Languages</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/trust-preferences/dietary')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Dietary settings"
+          testID="settings-row-dietary"
+        >
+          <Text style={styles.rowLabel}>Dietary</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/trust-preferences/accessibility')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Accessibility settings"
+          testID="settings-row-accessibility"
+        >
+          <Text style={styles.rowLabel}>Accessibility</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+      </SettingsSection>
+
       {/* Agents — admin surface for `dina-admin device pair`. Always
           visible: even a requester-only node may want to authorize a
           dina-agent install to run delegation tasks. Port of main-

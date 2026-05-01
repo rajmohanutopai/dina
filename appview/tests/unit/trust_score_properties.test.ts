@@ -170,8 +170,15 @@ describe('computeTrustScore — range invariants', () => {
 
 describe('computeTrustScore — idempotency / determinism', () => {
   forEach('same input → identical output (no hidden mutation)', (input) => {
-    const a = computeTrustScore(input)
-    const b = computeTrustScore(input)
+    // Pass a fixed `now` so the recency-decay exponent (which reads
+    // the clock via daysSince) is deterministic across the two
+    // calls. Without pinning the clock, two consecutive invocations
+    // drift by ~1e-15 in the exp() factor as Date.now() advances —
+    // which breaks `.toBe()` equality. The test's intent is "no
+    // hidden state mutation", not "function is wall-clock pure".
+    const FIXED_NOW = 1_777_500_000_000
+    const a = computeTrustScore(input, FIXED_NOW)
+    const b = computeTrustScore(input, FIXED_NOW)
     expect(b.overallScore).toBe(a.overallScore)
     expect(b.components).toEqual(a.components)
     expect(b.confidence).toBe(a.confidence)

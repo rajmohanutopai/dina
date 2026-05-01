@@ -34,6 +34,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import { colors, fonts, spacing, radius } from '../../theme';
 import { BAND_COLOUR, BAND_LABEL } from '../band_theme';
+
 import type { SubjectCardDisplay } from '../subject_card';
 
 export interface SubjectCardViewProps {
@@ -68,6 +69,80 @@ export function SubjectCardView(props: SubjectCardViewProps): React.ReactElement
           </Text>
         )}
       </View>
+
+      {/* TN-V2-P1 + RANK-011/012/013: context chips. Two visual
+          tiers within the same row:
+
+          1. Warning chips first (regionPill, recency) — surface
+             actionability friction the viewer should weigh BEFORE
+             the descriptors, since "you can't get this here" or
+             "this is 5 years old" outweigh "the website is
+             amazon.de" for decision-making.
+          2. Descriptor chips (host, language, location, priceTier)
+             — what / where / how much.
+
+          The row hides entirely when ALL six chips are null so
+          cards without any signal don't gain a blank gap. */}
+      {(display.regionPill ||
+        display.recency ||
+        display.host ||
+        display.language ||
+        display.location ||
+        display.priceTier) && (
+        <View style={styles.contextChips} testID={`subject-card-context-${subjectId}`}>
+          {display.regionPill && (
+            <View
+              style={[styles.contextChip, styles.warningChip]}
+              testID={`subject-card-region-${subjectId}`}
+            >
+              <Text style={styles.contextChipText} numberOfLines={1}>
+                {display.regionPill}
+              </Text>
+            </View>
+          )}
+          {display.recency && (
+            <View
+              style={[styles.contextChip, styles.warningChip]}
+              testID={`subject-card-recency-${subjectId}`}
+            >
+              <Ionicons name="time-outline" size={11} color={colors.textMuted} />
+              <Text style={styles.contextChipText} numberOfLines={1}>
+                {display.recency}
+              </Text>
+            </View>
+          )}
+          {display.host && (
+            <View style={styles.contextChip} testID={`subject-card-host-${subjectId}`}>
+              <Ionicons name="globe-outline" size={11} color={colors.textMuted} />
+              <Text style={styles.contextChipText} numberOfLines={1}>
+                {display.host}
+              </Text>
+            </View>
+          )}
+          {display.language && (
+            <View style={styles.contextChip} testID={`subject-card-language-${subjectId}`}>
+              <Text style={styles.contextChipText} numberOfLines={1}>
+                {display.language}
+              </Text>
+            </View>
+          )}
+          {display.location && (
+            <View style={styles.contextChip} testID={`subject-card-location-${subjectId}`}>
+              <Ionicons name="location-outline" size={11} color={colors.textMuted} />
+              <Text style={styles.contextChipText} numberOfLines={1}>
+                {display.location}
+              </Text>
+            </View>
+          )}
+          {display.priceTier && (
+            <View style={styles.contextChip} testID={`subject-card-price-${subjectId}`}>
+              <Text style={styles.contextChipText} numberOfLines={1}>
+                {display.priceTier}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Score badge + review count.
           Hide the badge for unrated subjects — search returns
@@ -136,6 +211,23 @@ export function SubjectCardView(props: SubjectCardViewProps): React.ReactElement
 export function buildA11yLabel(display: SubjectCardDisplay): string {
   const parts: string[] = [display.title];
   if (display.subtitle) parts.push(display.subtitle);
+  // TN-V2-P1 + RANK-011/012/013: include all six context chips in
+  // a11y so VoiceOver users hear the same actionability signal
+  // sighted users see in the chip row. Order matches the chip-row
+  // visual order — warnings (regionPill, recency) first since they
+  // are the load-bearing decision signals, then descriptors (host,
+  // language, location, priceTier). Without this, screen-reader
+  // users tap a result thinking it's locally available and discover
+  // otherwise on the detail page. The bare tier symbol "$$$" reads
+  // as "dollar dollar dollar" which is correct — VoiceOver speaks
+  // symbols verbatim. The "📍" emoji on regionPill is also spoken
+  // verbatim ("location pin") — that's a deliberate cue.
+  if (display.regionPill) parts.push(display.regionPill);
+  if (display.recency) parts.push(display.recency);
+  if (display.host) parts.push(display.host);
+  if (display.language) parts.push(display.language);
+  if (display.location) parts.push(display.location);
+  if (display.priceTier) parts.push(display.priceTier);
   parts.push(`trust ${BAND_LABEL[display.score.band]}`);
   parts.push(
     `${display.reviewCount} ${display.reviewCount === 1 ? 'review' : 'reviews'}`,
@@ -170,6 +262,38 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 12,
     color: colors.textMuted,
+  },
+  // TN-V2-P1 context chips — small muted pills under the subtitle.
+  // Visual weight intentionally lower than the score badge so the
+  // primary signal (trust band + count) still dominates the card.
+  contextChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  contextChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgTertiary,
+  },
+  // TN-V2-RANK-011 + RANK-012 — warning variant for region pill +
+  // recency badge. Hairline border on the same muted background so
+  // it reads as "still a chip, but the kind that asks you to look
+  // twice". Intentionally NOT a screaming red — the goal is gentle
+  // friction, not alarm. Shares typography with descriptor chips.
+  warningChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  contextChipText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textMuted,
+    letterSpacing: 0.3,
   },
   scoreRow: {
     flexDirection: 'row',

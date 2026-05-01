@@ -41,6 +41,16 @@ export const InjectAttestationBody = z.object({
   authorDid: z.string().regex(/^did:[a-z]+:/, 'must be a DID'),
   rkey: z.string().min(1).max(256),
   cid: z.string().min(1).max(256),
+  // The inner record uses `.passthrough()` so V2 wire fields
+  // (useCases / lastUsedMs / reviewerExperience / recommendFor /
+  // notRecommendFor / alternatives / compliance / accessibility /
+  // compat / price / availability / schedule) flow through to
+  // `attestationHandler.handleCreate`, which reads them directly. The
+  // production Jetstream path validates the full V2 surface in
+  // `record-validator.ts`; this dev-shortcut endpoint trusts the
+  // mobile preflight + treats unknown V2 fields as opaque payload
+  // for the handler. Endpoint is gated by `DINA_TEST_INJECT=1` +
+  // bearer token, never exposed in prod, so passthrough is safe.
   record: z.object({
     subject: SubjectRefSchema,
     category: z.string().min(1).max(256),
@@ -50,7 +60,7 @@ export const InjectAttestationBody = z.object({
     domain: z.string().max(253).optional(),
     tags: z.array(z.string()).optional(),
     createdAt: z.string().datetime(),
-  }),
+  }).passthrough(),
 })
 
 export type InjectAttestationBodyType = z.infer<typeof InjectAttestationBody>

@@ -322,6 +322,23 @@ export interface InjectAttestationRequest {
     domain?: string;
     tags?: string[];
     createdAt: string;
+    // ── V2 wire fields (TN-V2-MOBILE-WIRE) — every field optional; ──
+    // mobile populates them from the compose form's V2 inputs and
+    // omits empty ones so AppView's empty-array → NULL collapse stays
+    // a cheap server-side pass. Mirror of the V2 fields in
+    // `appview/src/shared/types/lexicon-types.ts` Attestation.
+    useCases?: string[];
+    lastUsedMs?: number;
+    reviewerExperience?: 'novice' | 'intermediate' | 'expert';
+    recommendFor?: string[];
+    notRecommendFor?: string[];
+    alternatives?: SubjectRefBody[];
+    compliance?: string[];
+    accessibility?: string[];
+    compat?: string[];
+    price?: { low_e7: number; high_e7: number; currency: string; lastSeenMs: number };
+    availability?: { regions?: string[]; shipsTo?: string[]; soldAt?: string[] };
+    schedule?: { leadDays?: number; seasonal?: number[] };
   };
 }
 

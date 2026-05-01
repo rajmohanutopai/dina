@@ -151,6 +151,105 @@ describe('SearchParams — TN-API-001 schema', () => {
       expect(r.data.limit).toBe(25)
     }
   })
+
+  // ── TN-V2-RANK-001 — viewerRegion schema ─────────────────────
+  it('accepts viewerRegion as ISO 3166-1 alpha-2 (uppercase 2 letters)', () => {
+    for (const code of ['US', 'GB', 'IN', 'DE', 'JP', 'BR']) {
+      const r = SearchParams.safeParse({ viewerRegion: code })
+      expect(r.success).toBe(true)
+    }
+  })
+
+  it('rejects lowercase viewerRegion (closed format)', () => {
+    const r = SearchParams.safeParse({ viewerRegion: 'us' })
+    expect(r.success).toBe(false)
+  })
+
+  it('rejects 3-letter viewerRegion (alpha-2 only)', () => {
+    const r = SearchParams.safeParse({ viewerRegion: 'USA' })
+    expect(r.success).toBe(false)
+  })
+
+  it('rejects single-letter viewerRegion', () => {
+    const r = SearchParams.safeParse({ viewerRegion: 'U' })
+    expect(r.success).toBe(false)
+  })
+
+  it('rejects digit-bearing viewerRegion', () => {
+    const r = SearchParams.safeParse({ viewerRegion: 'U1' })
+    expect(r.success).toBe(false)
+  })
+
+  // ── TN-V2-RANK-004 — dietaryTags + accessibilityTags schema ───
+  it('accepts dietaryTags as a comma-separated string', () => {
+    const r = SearchParams.safeParse({ dietaryTags: 'halal,vegan,gluten-free' })
+    expect(r.success).toBe(true)
+  })
+
+  it('accepts accessibilityTags as a comma-separated string', () => {
+    const r = SearchParams.safeParse({ accessibilityTags: 'wheelchair,captions' })
+    expect(r.success).toBe(true)
+  })
+
+  it('rejects dietaryTags exceeding 1000 chars (DOS guard)', () => {
+    const r = SearchParams.safeParse({ dietaryTags: 'x'.repeat(1001) })
+    expect(r.success).toBe(false)
+  })
+
+  it('rejects accessibilityTags exceeding 1000 chars', () => {
+    const r = SearchParams.safeParse({ accessibilityTags: 'x'.repeat(1001) })
+    expect(r.success).toBe(false)
+  })
+
+  // ── TN-V2-RANK-003 — compatTags schema ─────────────────────────────
+  it('accepts compatTags as a comma-separated string', () => {
+    const r = SearchParams.safeParse({ compatTags: 'usb-c,lightning' })
+    expect(r.success).toBe(true)
+  })
+
+  it('rejects compatTags exceeding 1000 chars', () => {
+    const r = SearchParams.safeParse({ compatTags: 'x'.repeat(1001) })
+    expect(r.success).toBe(false)
+  })
+
+  // ── TN-V2-RANK-002 — priceRange schema ─────────────────────────────
+  it('accepts priceMinE7 + priceMaxE7 as integers', () => {
+    const r = SearchParams.safeParse({ priceMinE7: 10_00_000_000, priceMaxE7: 50_00_000_000 })
+    expect(r.success).toBe(true)
+  })
+
+  it('coerces string priceMinE7 to integer (URL query convenience)', () => {
+    // SearchParams uses z.coerce.number() for the e7 columns to
+    // tolerate query-string params (`?priceMinE7=1000000000`),
+    // matching the existing `limit` / `minReviewCount` pattern.
+    const r = SearchParams.safeParse({ priceMinE7: '1000000000', priceMaxE7: '5000000000' })
+    expect(r.success).toBe(true)
+  })
+
+  it('accepts only priceMinE7 (open-ended upper)', () => {
+    const r = SearchParams.safeParse({ priceMinE7: 10_00_000_000 })
+    expect(r.success).toBe(true)
+  })
+
+  it('accepts only priceMaxE7 (open-ended lower)', () => {
+    const r = SearchParams.safeParse({ priceMaxE7: 50_00_000_000 })
+    expect(r.success).toBe(true)
+  })
+
+  it('rejects negative priceMinE7', () => {
+    const r = SearchParams.safeParse({ priceMinE7: -1 })
+    expect(r.success).toBe(false)
+  })
+
+  it('rejects priceMinE7 > priceMaxE7 (reversed range)', () => {
+    const r = SearchParams.safeParse({ priceMinE7: 5_00_000_000, priceMaxE7: 1_00_000_000 })
+    expect(r.success).toBe(false)
+  })
+
+  it('accepts priceMinE7 == priceMaxE7 (point query)', () => {
+    const r = SearchParams.safeParse({ priceMinE7: 25_00_000_000, priceMaxE7: 25_00_000_000 })
+    expect(r.success).toBe(true)
+  })
 })
 
 // ── Handler behaviour: WHERE-clause assembly ──────────────────
@@ -225,17 +324,29 @@ function makeStubDb(): { db: DrizzleDB; capture: CapturedQuery } {
   const buildWhere = (whereExpr: unknown) => {
     captureWhere(whereExpr, capture.sqlFragments)
     return {
-      orderBy: () => ({
-        limit: async () => [],
-      }),
+      // TN-V2-RANK-007 — orderBy now carries the region-boost CASE
+      // when viewerRegion is set; capture its args so tests can
+      // pin the boost expression alongside the WHERE predicates.
+      orderBy: (...exprs: unknown[]) => {
+        for (const e of exprs) captureWhere(e, capture.sqlFragments)
+        return {
+          limit: async () => [],
+        }
+      },
     }
   }
+  // TN-V2-RANK-007 — when viewerRegion is set, the handler chains
+  // a second leftJoin (subjects). The stub returns a chainable
+  // object so both `from().leftJoin().where()` AND
+  // `from().leftJoin().leftJoin().where()` resolve.
+  const buildLeftJoin = (): any => ({
+    leftJoin: () => buildLeftJoin(),
+    where: buildWhere,
+  })
   const db: any = {
     select: () => ({
       from: () => ({
-        leftJoin: () => ({
-          where: buildWhere,
-        }),
+        leftJoin: () => buildLeftJoin(),
         where: buildWhere,
       }),
     }),
@@ -357,6 +468,241 @@ describe('search handler — TN-API-001 WHERE-clause assembly', () => {
     expect(sqlText).toContain('product%') // categoryPrefix value
     expect(sqlText).toContain('<param:"en">') // language (eq wraps in Param)
     expect(sqlText).toContain('<param:5>') // minReviewCount (gte wraps in Param)
+  })
+
+  // ── TN-V2-RANK-001 — viewerRegion filter ────────────────────────────
+  it('viewerRegion adds the JSONB containment + missing-pass predicate', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      viewerRegion: 'GB',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    // Two halves: missing-pass via jsonb_array_length COALESCE, and
+    // positive containment via `@>`.
+    expect(sqlText).toMatch(/jsonb_array_length/i)
+    expect(sqlText).toMatch(/COALESCE/i)
+    expect(sqlText).toMatch(/@>/)
+    // The viewer-region payload travels as a parameter inside the
+    // JSON-stringified containment object.
+    expect(sqlText).toContain('"GB"')
+  })
+
+  it('viewerRegion = undefined adds NO predicate (silent skip)', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).not.toMatch(/availability/i)
+    expect(sqlText).not.toMatch(/jsonb_array_length/i)
+  })
+
+  // ── TN-V2-RANK-004 — dietaryTags + accessibilityTags filters ──
+  it('dietaryTags adds an array-containment predicate against attestations.compliance', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      dietaryTags: 'halal,vegan',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).toMatch(/@>/)
+    expect(sqlText).toMatch(/::text\[\]/)
+    expect(sqlText).toContain('halal')
+    expect(sqlText).toContain('vegan')
+  })
+
+  it('accessibilityTags adds an array-containment predicate against attestations.accessibility', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      accessibilityTags: 'wheelchair,captions',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).toMatch(/@>/)
+    expect(sqlText).toContain('wheelchair')
+    expect(sqlText).toContain('captions')
+  })
+
+  it('empty dietaryTags string adds NO predicate (silent skip)', async () => {
+    // `?dietaryTags=` (empty string) shouldn't add `tags @> ARRAY[]`
+    // — that would be either "match all rows" or a SQL error
+    // depending on driver. Silent skip is the right semantic.
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      dietaryTags: '',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).not.toMatch(/compliance/i)
+  })
+
+  it('whitespace-only dietaryTags entries are dropped from the IN list', async () => {
+    // `?dietaryTags=halal,,vegan` should be parsed as [halal, vegan]
+    // — the doubled comma yields an empty entry that we silently
+    // drop rather than building `... @> ARRAY[...,'',...]` and
+    // erroring at the DB.
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      dietaryTags: 'halal,, ,vegan',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).toContain('halal')
+    expect(sqlText).toContain('vegan')
+    // The doubled-comma artifact must NOT survive into the query.
+    // Stub renders raw strings as-is, so checking for `''` proves
+    // we didn't propagate an empty-string parameter.
+    expect(sqlText).not.toContain("''")
+  })
+
+  it('dietaryTags entry > 50 chars throws (per-tag bound matches META-005/006 validator)', async () => {
+    const { db } = makeStubDb()
+    await expect(
+      search(db, {
+        dietaryTags: 'x'.repeat(51),
+        sort: 'recent',
+        limit: 25,
+      } as never),
+    ).rejects.toThrow(/exceeds maximum length/)
+  })
+
+  // ── TN-V2-RANK-003 — compatTags filter (OVERLAP, not containment) ──
+  it('compatTags adds an array-OVERLAP predicate (&&) — not containment', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      compatTags: 'usb-c,lightning',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    // Pin the OVERLAP semantic: the SQL must use `&&`, not `@>`
+    // — flipping to containment would silently shrink the result
+    // set to "devices supporting both connectors" (almost always
+    // empty) when the user asked for "either".
+    expect(sqlText).toMatch(/&&/)
+    expect(sqlText).not.toMatch(/compat[^&]*@>/i)
+    expect(sqlText).toContain('usb-c')
+    expect(sqlText).toContain('lightning')
+  })
+
+  it('empty compatTags string adds NO predicate (silent skip)', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      compatTags: '',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).not.toMatch(/compat[^_]/)
+  })
+
+  it('compatTags entry > 50 chars throws (per-tag bound matches META-003 validator)', async () => {
+    const { db } = makeStubDb()
+    await expect(
+      search(db, {
+        compatTags: 'x'.repeat(51),
+        sort: 'recent',
+        limit: 25,
+      } as never),
+    ).rejects.toThrow(/exceeds maximum length/)
+  })
+
+  // ── TN-V2-RANK-002 — priceRange filter ─────────────────────
+  // Note: the stub captures sql-template `queryChunks` and elides
+  // `PgColumn` references (Drizzle's columns aren't `StringChunk`
+  // shapes — they have a different rendering path that surfaces
+  // the column NAME only when the SQL is finally serialised by
+  // the driver, not at AST time). So tests pin operators (`<=`,
+  // `>=`, `IS NULL`) and inline integer values, NOT column names.
+  it('priceRange (both bounds) adds an integer range-overlap predicate with missing-pass', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      priceMinE7: 10_00_000_000,
+      priceMaxE7: 50_00_000_000,
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    // Range-overlap: low <= max AND high >= min.
+    expect(sqlText).toMatch(/<=/)
+    expect(sqlText).toMatch(/>=/)
+    // Missing-pass clause: NULL price rows should still be eligible.
+    expect(sqlText).toMatch(/IS NULL/)
+    // Both bounds inlined into the captured fragments (Drizzle
+    // doesn't wrap raw `${num}` in `Param`, so the value renders
+    // as a literal string — same convention as the existing
+    // viewerRegion `'GB'` assertion).
+    expect(sqlText).toContain('1000000000')
+    expect(sqlText).toContain('5000000000')
+  })
+
+  it('priceRange (priceMinE7 only) adds the high >= min half only', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      priceMinE7: 10_00_000_000,
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    // Pin the half-open shape: `>=` is the high-side operator;
+    // the upper-bound number must NOT appear (that proves we
+    // didn't accidentally emit a `<= max` clause).
+    expect(sqlText).toMatch(/>=/)
+    expect(sqlText).toContain('1000000000')
+    // The all-bounds test inlined `5000000000`; this one mustn't.
+    expect(sqlText).not.toContain('5000000000')
+    // Missing-pass branch is part of the price predicate.
+    expect(sqlText).toMatch(/IS NULL/)
+  })
+
+  it('priceRange (priceMaxE7 only) adds the low <= max half only', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      priceMaxE7: 50_00_000_000,
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).toMatch(/<=/)
+    expect(sqlText).toContain('5000000000')
+    expect(sqlText).not.toContain('1000000000')
+    expect(sqlText).toMatch(/IS NULL/)
+  })
+
+  it('absent priceRange adds NO price predicate (no missing-pass clause emitted)', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, { sort: 'recent', limit: 25 } as never)
+    const sqlText = capture.sqlFragments.join('')
+    // No price-range numbers should appear in the SQL when
+    // neither bound is set. The price predicate is fully gated
+    // on at least one of priceMinE7 / priceMaxE7 being defined.
+    expect(sqlText).not.toContain('1000000000')
+    expect(sqlText).not.toContain('5000000000')
+  })
+
+  // ── TN-V2-RANK-007 — viewer-region sort boost ───────────────
+  it('viewerRegion adds a CASE-based boost to ORDER BY (RANK-007)', async () => {
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      viewerRegion: 'GB',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    // The boost lives in the orderBy chain; our stub captures
+    // ORDER BY fragments alongside WHERE because both go through
+    // the same captureWhere recurser. Confirm the CASE expression
+    // and DESC keyword appear with the region payload.
+    const sqlText = capture.sqlFragments.join('')
+    expect(sqlText).toMatch(/CASE WHEN/i)
+    expect(sqlText).toContain('"GB"')
+    expect(sqlText).toMatch(/DESC/)
   })
 
   it('reviewersInNetwork is parsed but does NOT affect the WHERE (forward-compat stub)', async () => {

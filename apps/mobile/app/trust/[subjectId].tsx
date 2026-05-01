@@ -39,16 +39,20 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
+import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
+import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
 import { colors, fonts, spacing, radius } from '../../src/theme';
+import { BAND_COLOUR, BAND_LABEL } from '../../src/trust/band_theme';
+import { useSubjectDetail } from '../../src/trust/runners/use_subject_detail';
+import { trustBandFor, type TrustBand } from '../../src/trust/score_helpers';
 import {
   deriveSubjectDetail,
+  type SubjectAlternative,
   type SubjectDetailInput,
 } from '../../src/trust/subject_detail_data';
-import { BAND_COLOUR, BAND_LABEL } from '../../src/trust/band_theme';
+
 import type { SubjectReview } from '../../src/trust/subject_card';
-import { trustBandFor, type TrustBand } from '../../src/trust/score_helpers';
-import { useSubjectDetail } from '../../src/trust/runners/use_subject_detail';
-import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
+
 
 /**
  * How long the screen waits for `data` before surfacing a
@@ -116,6 +120,11 @@ export default function SubjectDetailScreen(
   const [autoError, setAutoError] = React.useState<string | null>(null);
   const [retryNonce, setRetryNonce] = React.useState(0);
   const subjectId = props.subjectId ?? paramSubjectId ?? '';
+  // TN-V2-RANK-012 — viewer region for the region pill. Keystore-
+  // resident; never sent over the wire (Loyalty Law). The hook is
+  // safe to call before unlock — `profile` is null until hydration
+  // completes, which means the region pill is silently null too.
+  const { profile: viewerProfile } = useViewerPreferences();
   // Auto-runner: fetch subject detail from AppView when no controlled
   // props are supplied. The viewer DID drives reviewer-bucket grouping
   // server-side, so we read it from the booted node. Without a node
@@ -222,7 +231,13 @@ export default function SubjectDetailScreen(
     );
   }
 
-  const detail = deriveSubjectDetail(data);
+  // TN-V2-RANK-011 + RANK-012 — feed the chip derivation viewer
+  // state. `viewerRegion` drives the region pill; `nowMs` is the
+  // recency-badge clock. Region is keystore-resident (Loyalty Law);
+  // it never reaches the network, only the local lens.
+  const detail = deriveSubjectDetail(data, {
+    viewerRegion: viewerProfile?.region,
+  });
   const { header } = detail;
 
   return (
@@ -240,6 +255,89 @@ export default function SubjectDetailScreen(
           <Text style={styles.subtitle} numberOfLines={1}>
             {header.subtitle}
           </Text>
+        )}
+        {/* TN-V2-RANK-015 — flag-warning banner. Renders above the
+            chip row because it's the load-bearing exclusion signal
+            (more critical than even the region pill: "your contacts
+            flagged this brand" outweighs "you can't get this here").
+            Visually distinct (warning colour + alert icon) so it
+            reads as a SAFETY CTA, not just another descriptor.
+            Banner-or-nothing posture: silent when count is zero so
+            non-flagged subjects don't get reassurance theatre. */}
+        {header.flagWarning && (
+          <View style={styles.flagWarningBanner} testID="subject-detail-flag-warning">
+            <Ionicons name="warning-outline" size={16} color={colors.warning} />
+            <Text style={styles.flagWarningText} numberOfLines={2}>
+              {header.flagWarning.text}
+            </Text>
+          </View>
+        )}
+        {/* TN-V2-P1-004 + RANK-011/012/013: context chips mirror the
+            card surface. Same warning-then-descriptor order: region
+            pill + recency first (load-bearing exclusion + freshness
+            signals), then host + language + location + price.
+            Larger here than on the card because the detail header
+            has more vertical space — same chip semantics, same
+            gating. */}
+        {(header.regionPill ||
+          header.recency ||
+          header.host ||
+          header.language ||
+          header.location ||
+          header.priceTier) && (
+          <View style={styles.contextChips} testID="subject-detail-context">
+            {header.regionPill && (
+              <View
+                style={[styles.contextChip, styles.warningChip]}
+                testID="subject-detail-region"
+              >
+                <Text style={styles.contextChipText} numberOfLines={1}>
+                  {header.regionPill}
+                </Text>
+              </View>
+            )}
+            {header.recency && (
+              <View
+                style={[styles.contextChip, styles.warningChip]}
+                testID="subject-detail-recency"
+              >
+                <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                <Text style={styles.contextChipText} numberOfLines={1}>
+                  {header.recency}
+                </Text>
+              </View>
+            )}
+            {header.host && (
+              <View style={styles.contextChip} testID="subject-detail-host">
+                <Ionicons name="globe-outline" size={12} color={colors.textMuted} />
+                <Text style={styles.contextChipText} numberOfLines={1}>
+                  {header.host}
+                </Text>
+              </View>
+            )}
+            {header.language && (
+              <View style={styles.contextChip} testID="subject-detail-language">
+                <Text style={styles.contextChipText} numberOfLines={1}>
+                  {header.language}
+                </Text>
+              </View>
+            )}
+            {header.location && (
+              <View style={styles.contextChip} testID="subject-detail-location">
+                <Ionicons name="location-outline" size={12} color={colors.textMuted} />
+                <Text style={styles.contextChipText} numberOfLines={1}>
+                  {header.location}
+                </Text>
+              </View>
+            )}
+            {header.priceTier && (
+              <View style={styles.contextChip} testID="subject-detail-price">
+                <Text style={styles.contextChipText} numberOfLines={1}>
+                  {header.priceTier}
+                </Text>
+              </View>
+            )}
+          </View>
         )}
         <View style={styles.headerRow}>
           <View
@@ -310,7 +408,66 @@ export default function SubjectDetailScreen(
         onSelectReviewer={onSelectReviewer}
         viewerDid={viewerDidProp}
       />
+      {/* TN-V2-RANK-014 — alternatives strip below the reviews. The
+          strip's existence signals "if this subject doesn't fit you,
+          here are 3 trusted alternatives in the same category". Hide
+          entirely when empty (no candidates / pre-server xRPC) so
+          the user doesn't see a header with no content. */}
+      {detail.alternatives.length > 0 && (
+        <AlternativesStrip
+          alternatives={detail.alternatives}
+          onSelectAlternative={(altId) =>
+            router.push({ pathname: '/trust/[subjectId]', params: { subjectId: altId } })
+          }
+        />
+      )}
     </ScrollView>
+  );
+}
+
+interface AlternativesStripProps {
+  readonly alternatives: readonly SubjectAlternative[];
+  readonly onSelectAlternative: (subjectId: string) => void;
+}
+
+function AlternativesStrip(props: AlternativesStripProps): React.ReactElement {
+  const { alternatives, onSelectAlternative } = props;
+  return (
+    <View style={styles.alternativesStrip} testID="subject-detail-alternatives">
+      <Text style={styles.alternativesTitle}>
+        {alternatives.length === 1 ? '1 trusted alternative' : `${alternatives.length} trusted alternatives`}
+      </Text>
+      <View style={styles.alternativesRow}>
+        {alternatives.map((alt) => (
+          <Pressable
+            key={alt.subjectId}
+            onPress={() => onSelectAlternative(alt.subjectId)}
+            style={({ pressed }) => [
+              styles.alternativeCard,
+              pressed && styles.alternativeCardPressed,
+            ]}
+            testID={`subject-detail-alternative-${alt.subjectId}`}
+            accessibilityRole="button"
+            accessibilityLabel={`${alt.title}, trust ${BAND_LABEL[alt.band]}`}
+          >
+            {alt.band !== 'unrated' && (
+              <View
+                style={[styles.alternativeBand, { backgroundColor: BAND_COLOUR[alt.band] }]}
+                testID={`subject-detail-alternative-band-${alt.subjectId}`}
+              />
+            )}
+            <Text style={styles.alternativeTitle} numberOfLines={2}>
+              {alt.title}
+            </Text>
+            {alt.category && (
+              <Text style={styles.alternativeCategory} numberOfLines={1}>
+                {alt.category}
+              </Text>
+            )}
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -503,6 +660,60 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
   },
+  // TN-V2-P1-004: context chips on the detail header. Slightly larger
+  // type than the card chips (12pt vs 10pt) since the detail surface
+  // has more vertical space and the chips are still the secondary
+  // signal (the score badge dominates).
+  contextChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  contextChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgTertiary,
+  },
+  // TN-V2-RANK-011 + RANK-012 — same gentle-friction treatment as
+  // on the card surface (hairline border on the muted background).
+  warningChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  // TN-V2-RANK-015 — flag-warning banner. Stronger visual treatment
+  // than the warning chips above (it's a SAFETY CTA, not a
+  // descriptor): warning-tinted background with a hairline border
+  // in the warning hue, alert icon left-aligned with the copy. Sits
+  // BETWEEN subtitle and chip row so the user can't miss it before
+  // their eye drifts to the score badge.
+  flagWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgTertiary,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.warning,
+  },
+  flagWarningText: {
+    flex: 1,
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.textPrimary,
+    lineHeight: 18,
+  },
+  contextChipText: {
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    color: colors.textMuted,
+    letterSpacing: 0.3,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -610,5 +821,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
     lineHeight: 19,
+  },
+  // TN-V2-RANK-014 — alternatives strip below the review list. Lays
+  // out as a horizontal row of compact cards with a section header.
+  // The cards are sized to fit 3 abreast on a phone (each ~ 1/3 of
+  // the screen width minus gutters). On wider screens flex-wrap
+  // takes over so the strip degrades gracefully.
+  alternativesStrip: {
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  alternativesTitle: {
+    fontFamily: fonts.headingBold,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  alternativesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  alternativeCard: {
+    flex: 1,
+    minWidth: 100,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    gap: spacing.xs,
+  },
+  alternativeCardPressed: { backgroundColor: colors.bgTertiary },
+  alternativeBand: {
+    width: 24,
+    height: 4,
+    borderRadius: radius.sm,
+  },
+  alternativeTitle: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.textPrimary,
+    lineHeight: 17,
+  },
+  alternativeCategory: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
   },
 });

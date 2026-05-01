@@ -1,4 +1,5 @@
 import { CONSTANTS } from '@/config/constants.js'
+import { halflifeForCategory } from './category_halflife.js'
 
 export interface TrustScoreInput {
   attestationsAbout: {
@@ -9,6 +10,14 @@ export interface TrustScoreInput {
     isVerified: boolean
     authorTrustScore: number | null
     authorHasInboundVouch: boolean
+    /**
+     * Attestation's own `category` field — drives per-category
+     * recency-decay tuning (TN-V2-RANK-006). Optional for
+     * back-compat with callers built before RANK-006 (they get the
+     * default half-life). New callers should always populate it
+     * since the attestations table guarantees a non-NULL category.
+     */
+    category?: string | null
   }[]
   vouchCount: number
   highConfidenceVouches: number
@@ -36,8 +45,17 @@ export interface TrustScoreOutput {
   confidence: number
 }
 
-export function computeTrustScore(input: TrustScoreInput): TrustScoreOutput {
-  const sentiment = computeSentiment(input)
+/**
+ * `now` is injectable so the function is deterministic given its
+ * input. Default to `Date.now()` for production callers (refresh
+ * jobs); tests + property checks pass a fixed value so two calls
+ * with the same input produce strictly equal output. Without this,
+ * `daysSince()` reads the clock per-call and the recency-decay
+ * exponent drifts by ~1e-15 between consecutive invocations —
+ * enough to break a `.toBe()` equality assertion.
+ */
+export function computeTrustScore(input: TrustScoreInput, now: number = Date.now()): TrustScoreOutput {
+  const sentiment = computeSentiment(input, now)
   const vouch = computeVouch(input)
   const reviewer = computeReviewer(input)
   const network = computeNetwork(input)
@@ -72,7 +90,7 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreOutput {
   }
 }
 
-export function computeSentiment(input: TrustScoreInput): number {
+export function computeSentiment(input: TrustScoreInput, now: number = Date.now()): number {
   const atts = input.attestationsAbout
   if (atts.length === 0) return 0.5
 
@@ -80,8 +98,14 @@ export function computeSentiment(input: TrustScoreInput): number {
   let weightedTotal = 0
 
   for (const a of atts) {
-    const ageDays = Math.max(0, daysSince(a.recordCreatedAt))
-    const recency = Math.exp(-ageDays / CONSTANTS.SENTIMENT_HALFLIFE_DAYS)
+    const ageDays = Math.max(0, daysSince(a.recordCreatedAt, now))
+    // TN-V2-RANK-006 — per-category recency-decay. Tech reviews
+    // age out fast; books age out slowly. `halflifeForCategory`
+    // falls back to `DEFAULT_HALFLIFE_DAYS` (sourced from
+    // `CONSTANTS.SENTIMENT_HALFLIFE_DAYS` so V1 + V2 stay in sync)
+    // for categories without an explicit override.
+    const halflife = halflifeForCategory(a.category)
+    const recency = Math.exp(-ageDays / halflife)
     const evidence = a.evidenceJson?.length ? CONSTANTS.EVIDENCE_MULTIPLIER : 1.0
     const verified = a.isVerified ? CONSTANTS.VERIFIED_MULTIPLIER : 1.0
     const bilateral = a.hasCosignature ? CONSTANTS.BILATERAL_MULTIPLIER : 1.0
@@ -154,6 +178,6 @@ export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v))
 }
 
-export function daysSince(date: Date): number {
-  return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)
+export function daysSince(date: Date, now: number = Date.now()): number {
+  return (now - date.getTime()) / (1000 * 60 * 60 * 24)
 }

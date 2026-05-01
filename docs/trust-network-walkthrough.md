@@ -15,7 +15,9 @@
 >   guide (predates V1; covers the database / FTS / scoring
 >   plumbing in depth).
 > - `docs/trust-network/threat-model.md` — V1 limitations
->   enumerated (TN-DOCS-002).
+>   enumerated (TN-DOCS-002), with §8 extending the model for V2.
+> - `docs/trust-network/V2-actionability.md` — public-facing
+>   explainer of the V2 actionability layer (TN-V2-DOCS-001).
 > - `docs/trust-network/deploy-runbook.md` — production deploy
 >   procedure (TN-OPS-001).
 > - `docs/trust-network/ops-runbook.md` — incident-response
@@ -24,6 +26,8 @@
 >   per-task substantive completion notes.
 > - `docs/TRUST_NETWORK_V1_TASKS.md` — same task IDs cross-listed
 >   against the Plan v3 sections.
+> - `docs/TRUST_NETWORK_V2_BACKLOG.md` — V2 backlog grouped by
+>   the four clusters described in §11 below.
 
 ---
 
@@ -331,3 +335,94 @@ is done.
 | Add a new record type | `appview/src/ingester/record-validator.ts` (Zod schema), `appview/src/ingester/handlers/<name>.ts` (handler), `appview/src/db/schema/<name>.ts` (table), then update the totals in BACKLOG.md |
 | Add a new xRPC endpoint | `appview/src/api/xrpc/<name>.ts`, wire in `appview/src/web/server.ts`, add to TN-API-007's `PER_METHOD_LIMITS_RPM` table |
 | Add a new operator CLI | match the `appview/src/admin/trust-flag-cli.ts` pattern (positional args, exit 0/1/2 semantics, fresh DB per invocation, pure `run<X>Command` for testability) |
+| Browse the V2 actionability layer | `docs/trust-network/V2-actionability.md` (overview), `docs/TRUST_NETWORK_V2_BACKLOG.md` (per-task work), §11 below (cluster overview) |
+
+---
+
+## 11. V2 — the actionability layer
+
+V1 answers *"do people I trust think this is good?"* That's a great
+filter for the **opinion** layer, but it's not enough for the
+**action** layer: a 5-star pen sold only in Uganda doesn't help a user
+in San Francisco; a Portuguese-language manual doesn't help an English
+reader; a "highly recommended" steakhouse doesn't help a vegan.
+
+V2 closes those gaps without touching V1's trust math. The trust
+score still flows out of `appview/src/scorer/algorithms/trust-score.ts`
+unchanged. V2 is a **lens** that sits over V1 — it filters, sorts,
+and surfaces *applicability* alongside trust.
+
+### The four clusters
+
+The V2 backlog (`docs/TRUST_NETWORK_V2_BACKLOG.md`) partitions the
+work into four clusters that compose:
+
+| Cluster | What it adds | Where it lives | Trust-relative |
+|---|---|---|---|
+| **A — Viewer profile** | Region / languages / budget / devices / dietary / accessibility | `apps/mobile/src/services/user_preferences.ts` + `app/trust-preferences/*` | Local-only (never sent to AppView) |
+| **B — Subject metadata** | `availability`, `price`, `compat`, `schedule`, `compliance`, `accessibility` | `appview/src/db/schema/subjects.ts` (`metadata` JSONB) + ingester enrichers | Server-side, public |
+| **C — Review structure** | `useCase`, `reviewerExperience`, `lastUsedMs`, `recommendFor`, `alternatives` | `com.dina.trust.attestation.v2` lexicon + `apps/mobile/app/write/*` | Public, optional fields (V1 attestations remain valid) |
+| **D — Ranking + surfaces** | Search filters, region boost, alternatives strip, negative-space warnings, card chips | `appview/src/api/xrpc/*` + `apps/mobile/app/trust/*` | Composed from A + B + C |
+
+Cluster A is the privacy hinge. The viewer profile *never* leaves
+the device — AppView serves un-personalised data, and the mobile
+client filters/highlights with the local profile. This extends the
+V1 Loyalty Law: a viewer's preferences are as sensitive as their
+search history. See `threat-model.md` §8 for the V2 surface analysis.
+
+Clusters B and C extend the public ledger: more facts about the
+subject, more nuance from the reviewer. They strengthen the
+reviewer-declared signal so the lens has more to work with.
+
+Cluster D is the connective tissue — it wires A's local lens through
+the network's B/C signals into the surfaces the user touches:
+
+- **Card chips** (`SubjectCardView`): host (`P1-001`), language
+  (`P1-002`), location (`P1-003`), price tier (`RANK-013`), region
+  pill (`RANK-012`), recency badge (`RANK-011`).
+- **Search filter chips** (`viewer_filter_chips_view.tsx`): the
+  viewer's profile preferences as opt-in toggles. Off by default
+  — V1's "filter by trust" intuition still wins.
+- **Detail-page surfaces** (`[subjectId].tsx`): same chip row in the
+  header (`P1-004` + `RANK-013`), "3 trusted alternatives" strip
+  below the review list (`RANK-014`), flag-warning banner above the
+  fold (`RANK-015`).
+- **New xRPCs**: `getAlternatives` (`RANK-009`), `getNegativeSpace`
+  (`RANK-010`).
+
+Each chip / surface follows the same pattern as the V1 trust badge:
+**data-layer normalisation** (a pure derive function in `src/trust/`
+returning a string-or-null), **dumb-renderer view** (in
+`src/trust/components/`), and **screen wiring** that consumes the
+display projection. Both card and detail surfaces share the same
+normalisers (`subject_card.ts` exports `normaliseHostChip`,
+`normaliseLanguageChip`, `normalisePlaceLocation`,
+`normalisePriceTier`) so the chip contracts can't drift between
+surfaces — parity tests in `__tests__/trust/subject_detail_data.test.ts`
+pin this.
+
+### Where V2 stands today
+
+The actionability backlog is partway through Phase 2A (Cluster A —
+the viewer profile and the local lens) and the card-side P1 chips
+in Cluster D. Snapshot:
+
+- **Cluster A** — viewer profile keystore (`TEST-001`), per-field
+  preference screens (region / languages / budget / devices /
+  dietary / accessibility), `useViewerPreferences` hook with race-
+  safe `mutateUserPreferences` queue: **shipped**.
+- **Cluster D — card chips** — host / language / place location /
+  price tier on `SubjectCardView` + the detail header: **shipped**.
+- **Cluster D — search filter chips** (`RANK-005`, `RANK-016`):
+  language filter live; region/budget/devices/dietary/accessibility
+  stubbed pending Cluster B server-side metadata.
+- **Cluster B** (subject metadata enrichers, AppView indexes),
+  **Cluster C** (lexicon v2, Write-form additions), and the
+  remaining Cluster D ranking/surface tasks (recency decay,
+  `getAlternatives`, `getNegativeSpace`, flag-warning banner) are
+  open work — see the backlog.
+
+When Cluster B lands, the stub filters in
+`apps/mobile/src/trust/preferences/viewer_filters.ts` flip to
+`isApplicable: true` one at a time. The shape of the lens is
+already there; it's waiting for server signal.

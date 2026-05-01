@@ -1,5 +1,6 @@
 import { CONSTANTS } from '@/config/constants.js'
 import { clamp, daysSince } from './trust-score.js'
+import { halflifeForCategory } from './category_halflife.js'
 
 export interface AttestationForAggregation {
   sentiment: string
@@ -11,6 +12,13 @@ export interface AttestationForAggregation {
   authorHasInboundVouch: boolean
   dimensionsJson?: unknown[]
   domain?: string | null
+  /**
+   * Attestation's own `category` field — drives per-category
+   * recency-decay tuning (TN-V2-RANK-006). Symmetric with
+   * `TrustScoreInput.attestationsAbout.category` so the two scorer
+   * paths use the same half-life lookup.
+   */
+  category?: string | null
 }
 
 export interface SentimentAggregation {
@@ -59,7 +67,11 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     // to match the formula in trust-score.ts (was missing 2.1x for
     // verified bilateral attestations).
     const ageDays = Math.max(0, daysSince(a.recordCreatedAt))
-    const recency = Math.exp(-ageDays / CONSTANTS.SENTIMENT_HALFLIFE_DAYS)
+    // TN-V2-RANK-006 — per-category recency-decay (symmetric with
+    // computeSentiment in trust-score.ts). When `category` is null
+    // the lookup falls back to the V1 baseline; explicit per-category
+    // half-lives apply when present.
+    const recency = Math.exp(-ageDays / halflifeForCategory(a.category))
     const evidence = a.evidenceJson?.length ? CONSTANTS.EVIDENCE_MULTIPLIER : 1.0
     const verified = a.isVerified ? CONSTANTS.VERIFIED_MULTIPLIER : 1.0
     const bilateral = a.hasCosignature ? CONSTANTS.BILATERAL_MULTIPLIER : 1.0

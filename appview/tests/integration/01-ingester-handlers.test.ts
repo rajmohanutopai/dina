@@ -118,6 +118,841 @@ describe('§1.1 Attestation Handler', () => {
     expect(row.text).toBe('Great laptop with excellent battery life')
   })
 
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-USECASES", "section": "01", "sectionName": "General", "title": "IT-ATT-002b: persists useCases + lastUsedMs (TN-V2-REV-001 / REV-003)"}
+  it('IT-ATT-002b: persists useCases + lastUsedMs (TN-V2-REV-001 / REV-003)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const lastUsedMs = Date.now() - 30 * 24 * 60 * 60 * 1000  // 30 days ago
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-rev',
+      did: 'did:plc:authorV2',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-rev',
+      cid: 'bafyv2rev',
+      record: {
+        subject: { type: 'product', name: 'V2 Subject' },
+        category: 'tech',
+        sentiment: 'positive',
+        useCases: ['everyday', 'travel'],
+        lastUsedMs,
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-rev'))
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    expect(row.useCases).toEqual(['everyday', 'travel'])
+    // Wire is integer ms; DB stores as `timestamp` for query ergonomics.
+    expect(row.lastUsedAt).toBeInstanceOf(Date)
+    expect(row.lastUsedAt!.getTime()).toBe(lastUsedMs)
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002c: empty useCases collapses to NULL; absent lastUsedMs stays NULL"}
+  it('IT-ATT-002c: empty useCases collapses to NULL; absent lastUsedMs stays NULL', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-empty',
+      did: 'did:plc:authorV2e',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-empty',
+      cid: 'bafyv2empty',
+      record: {
+        subject: { type: 'product', name: 'Empty V2 Subject' },
+        category: 'tech',
+        sentiment: 'positive',
+        useCases: [],  // explicit empty — should collapse so GIN index is sparse
+        // lastUsedMs absent
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-empty'))
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    expect(row.useCases).toBeNull()
+    expect(row.lastUsedAt).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EXP", "section": "01", "sectionName": "General", "title": "IT-ATT-002e: persists reviewerExperience + recommendFor/notRecommendFor (TN-V2-REV-002 / REV-004)"}
+  it('IT-ATT-002e: persists reviewerExperience + recommendFor/notRecommendFor (TN-V2-REV-002 / REV-004)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-exp',
+      did: 'did:plc:authorV2x',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-exp',
+      cid: 'bafyv2exp',
+      record: {
+        subject: { type: 'product', name: 'Expert Subject' },
+        category: 'tech',
+        sentiment: 'positive',
+        reviewerExperience: 'expert',
+        recommendFor: ['professional', 'everyday'],
+        notRecommendFor: ['gaming'],
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-exp'))
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    expect(row.reviewerExperience).toBe('expert')
+    expect(row.recommendFor).toEqual(['professional', 'everyday'])
+    expect(row.notRecommendFor).toEqual(['gaming'])
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EXP-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002f: absent reviewerExperience stays NULL; empty recommend lists collapse to NULL"}
+  it('IT-ATT-002f: absent reviewerExperience stays NULL; empty recommend lists collapse to NULL', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-exp-empty',
+      did: 'did:plc:authorV2xe',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-exp-empty',
+      cid: 'bafyv2expempty',
+      record: {
+        subject: { type: 'product', name: 'No-Exp Subject' },
+        category: 'tech',
+        sentiment: 'positive',
+        // reviewerExperience absent
+        recommendFor: [],
+        notRecommendFor: [],
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-exp-empty'))
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    expect(row.reviewerExperience).toBeNull()
+    expect(row.recommendFor).toBeNull()
+    expect(row.notRecommendFor).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-COMPLIANCE", "section": "01", "sectionName": "General", "title": "IT-ATT-002n: META-005/006 — persists compliance + accessibility tags"}
+  it('IT-ATT-002n: META-005/006 — persists compliance + accessibility tags', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-tags',
+      did: 'did:plc:authorTags',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-tags',
+      cid: 'bafytags',
+      record: {
+        subject: { type: 'product', name: 'Tagged Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        compliance: ['halal', 'vegan', 'gluten-free'],
+        accessibility: ['wheelchair', 'captions'],
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-tags'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].compliance).toEqual(['halal', 'vegan', 'gluten-free'])
+    expect(rows[0].accessibility).toEqual(['wheelchair', 'captions'])
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-COMPLIANCE-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002o: META-005/006 — empty arrays collapse to NULL"}
+  it('IT-ATT-002o: META-005/006 — empty arrays collapse to NULL (sparse GIN)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-tags-empty',
+      did: 'did:plc:authorTagsE',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-tags-empty',
+      cid: 'bafytagse',
+      record: {
+        subject: { type: 'product', name: 'Empty Tagged Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        compliance: [],
+        accessibility: [],
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-tags-empty'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].compliance).toBeNull()
+    expect(rows[0].accessibility).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-COMPLIANCE-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002p: META-005/006 — idempotent upsert overwrites tag arrays"}
+  it('IT-ATT-002p: META-005/006 — idempotent upsert overwrites tag arrays (reviewer can amend)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const uri = 'at://did:plc:test/com.dina.trust.attestation/v2-tags-update'
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorTagsU',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-tags-update', cid: 'bafytagsu1',
+      record: {
+        subject: { type: 'product', name: 'Updateable Tagged' },
+        category: 'product', sentiment: 'positive',
+        compliance: ['halal', 'kosher'],
+        accessibility: ['wheelchair'],
+        createdAt: new Date().toISOString(),
+      },
+    })
+    // Reviewer realised they were wrong about kosher; updated review.
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorTagsU',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-tags-update', cid: 'bafytagsu2',
+      record: {
+        subject: { type: 'product', name: 'Updateable Tagged' },
+        category: 'product', sentiment: 'positive',
+        compliance: ['halal'],         // dropped kosher
+        accessibility: [],              // dropped wheelchair entirely
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, uri))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].compliance).toEqual(['halal'])
+    expect(rows[0].accessibility).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-PRICE", "section": "01", "sectionName": "General", "title": "IT-ATT-002q: META-002 — persists price range as 4 columns (low_e7/high_e7/currency/last_seen_at)"}
+  it('IT-ATT-002q: META-002 — persists price range as 4 columns (low_e7/high_e7/currency/last_seen_at)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const lastSeenMs = Date.now() - 2 * 24 * 60 * 60 * 1000 // 2 days ago
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-price',
+      did: 'did:plc:authorPrice',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-price',
+      cid: 'bafyprice',
+      record: {
+        subject: { type: 'product', name: 'Priced Product' },
+        category: 'product',
+        sentiment: 'positive',
+        price: {
+          low_e7: 19_99_000_000,    // $19.99
+          high_e7: 29_99_000_000,   // $29.99
+          currency: 'USD',
+          lastSeenMs,
+        },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-price'))
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    // bigint mode 'number' returns the e7 value as a JS number — within
+    // safe-integer range for any realistic price (< $900T).
+    expect(row.priceLowE7).toBe(19_99_000_000)
+    expect(row.priceHighE7).toBe(29_99_000_000)
+    expect(row.priceCurrency).toBe('USD')
+    expect(row.priceLastSeenAt).toBeInstanceOf(Date)
+    expect(row.priceLastSeenAt!.getTime()).toBe(lastSeenMs)
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-PRICE-ABSENT", "section": "01", "sectionName": "General", "title": "IT-ATT-002r: META-002 — absent price stays NULL across all 4 columns"}
+  it('IT-ATT-002r: META-002 — absent price stays NULL across all 4 columns', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-price-absent',
+      did: 'did:plc:authorPriceA',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-price-absent',
+      cid: 'bafypricea',
+      record: {
+        subject: { type: 'product', name: 'No-Price Product' },
+        category: 'product',
+        sentiment: 'positive',
+        // price absent — every column should be NULL.
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-price-absent'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].priceLowE7).toBeNull()
+    expect(rows[0].priceHighE7).toBeNull()
+    expect(rows[0].priceCurrency).toBeNull()
+    expect(rows[0].priceLastSeenAt).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-PRICE-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002s: META-002 — idempotent upsert overwrites price (reviewer can amend)"}
+  it('IT-ATT-002s: META-002 — idempotent upsert overwrites price (reviewer can amend)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const uri = 'at://did:plc:test/com.dina.trust.attestation/v2-price-update'
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorPriceU',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-price-update', cid: 'bafypriceu1',
+      record: {
+        subject: { type: 'product', name: 'Repriced Product' },
+        category: 'product', sentiment: 'positive',
+        price: { low_e7: 10_00_000_000, high_e7: 20_00_000_000, currency: 'USD', lastSeenMs: Date.now() - 86_400_000 },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    // Reviewer notices a price change and amends — the upsert should
+    // overwrite. The IS-NULL-OR-overlap predicate downstream relies on
+    // the columns reflecting the latest declared range.
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorPriceU',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-price-update', cid: 'bafypriceu2',
+      record: {
+        subject: { type: 'product', name: 'Repriced Product' },
+        category: 'product', sentiment: 'positive',
+        price: { low_e7: 25_00_000_000, high_e7: 35_00_000_000, currency: 'EUR', lastSeenMs: Date.now() - 60_000 },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, uri))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].priceLowE7).toBe(25_00_000_000)
+    expect(rows[0].priceHighE7).toBe(35_00_000_000)
+    expect(rows[0].priceCurrency).toBe('EUR')
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL", "section": "01", "sectionName": "General", "title": "IT-ATT-002t: META-001 — persists availability triple as 3 columns"}
+  it('IT-ATT-002t: META-001 — persists availability triple as 3 text[] columns', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-avail',
+      did: 'did:plc:authorAvail',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-avail',
+      cid: 'bafyavail',
+      record: {
+        subject: { type: 'product', name: 'Available Product' },
+        category: 'product',
+        sentiment: 'positive',
+        availability: {
+          regions: ['US', 'GB'],
+          shipsTo: ['US', 'GB', 'CA'],
+          soldAt: ['amazon.com', 'walmart.com'],
+        },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-avail'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].availabilityRegions).toEqual(['US', 'GB'])
+    expect(rows[0].availabilityShipsTo).toEqual(['US', 'GB', 'CA'])
+    expect(rows[0].availabilitySoldAt).toEqual(['amazon.com', 'walmart.com'])
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL-PARTIAL", "section": "01", "sectionName": "General", "title": "IT-ATT-002u: META-001 — partial availability persists declared sub-fields, leaves others NULL"}
+  it('IT-ATT-002u: META-001 — partial availability persists declared sub-fields, leaves others NULL', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-avail-partial',
+      did: 'did:plc:authorAvailP',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-avail-partial', cid: 'bafyavailp',
+      record: {
+        subject: { type: 'product', name: 'Partial Avail' },
+        category: 'product', sentiment: 'positive',
+        // Reviewer only knows where it's sold; not shipping or retailers.
+        availability: { regions: ['IN'] },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-avail-partial'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].availabilityRegions).toEqual(['IN'])
+    expect(rows[0].availabilityShipsTo).toBeNull()
+    expect(rows[0].availabilitySoldAt).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002v: META-001 — empty arrays collapse to NULL (sparse GIN)"}
+  it('IT-ATT-002v: META-001 — empty arrays in availability collapse to NULL', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-avail-empty',
+      did: 'did:plc:authorAvailE',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-avail-empty', cid: 'bafyavaile',
+      record: {
+        subject: { type: 'product', name: 'Empty Avail' },
+        category: 'product', sentiment: 'positive',
+        availability: { regions: [], shipsTo: [], soldAt: [] },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-avail-empty'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].availabilityRegions).toBeNull()
+    expect(rows[0].availabilityShipsTo).toBeNull()
+    expect(rows[0].availabilitySoldAt).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-SCHED", "section": "01", "sectionName": "General", "title": "IT-ATT-002w: META-004 — persists schedule as JSONB"}
+  it('IT-ATT-002w: META-004 — persists schedule as JSONB blob (heterogeneous shape)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const schedule = {
+      hours: {
+        mon: { open: '09:00', close: '17:00' },
+        tue: { open: '09:00', close: '17:00' },
+        sat: { open: '10:00', close: '14:00' },
+      },
+      leadDays: 7,
+      seasonal: [3, 4, 5, 6, 7, 8, 9, 10],
+    }
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-sched',
+      did: 'did:plc:authorSched',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-sched', cid: 'bafysched',
+      record: {
+        subject: { type: 'place', name: 'Scheduled Place' },
+        category: 'place', sentiment: 'positive',
+        schedule,
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-sched'))
+    expect(rows).toHaveLength(1)
+    // JSONB round-trips structurally — Postgres preserves the
+    // object shape; key ordering inside JSONB is normalised but
+    // toEqual compares structure.
+    expect(rows[0].scheduleJson).toEqual(schedule)
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-SCHED-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002x: META-004 — empty schedule object collapses to NULL"}
+  it('IT-ATT-002x: META-004 — empty schedule object collapses to NULL (no information stored)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-sched-empty',
+      did: 'did:plc:authorSchedE',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-sched-empty', cid: 'bafyschede',
+      record: {
+        subject: { type: 'place', name: 'Empty Schedule' },
+        category: 'place', sentiment: 'positive',
+        schedule: {},  // explicit empty — should collapse so a future "schedule declared?" query works
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-sched-empty'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].scheduleJson).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-SCHED-PARTIAL", "section": "01", "sectionName": "General", "title": "IT-ATT-002y: META-004 — partial schedule (only leadDays) preserved, not collapsed"}
+  it('IT-ATT-002y: META-004 — partial schedule preserved (only leadDays declared)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-sched-partial',
+      did: 'did:plc:authorSchedP',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-sched-partial', cid: 'bafyschedp',
+      record: {
+        subject: { type: 'place', name: 'Lead-Only Service' },
+        category: 'service', sentiment: 'positive',
+        schedule: { leadDays: 14 },  // a service that needs 2-week advance booking
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-sched-partial'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].scheduleJson).toEqual({ leadDays: 14 })
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002z: META-001/004 — idempotent upsert overwrites availability + schedule"}
+  it('IT-ATT-002z: META-001/004 — idempotent upsert overwrites availability + schedule (reviewer can amend)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const uri = 'at://did:plc:test/com.dina.trust.attestation/v2-meta-update'
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorMU',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-meta-update', cid: 'bafymu1',
+      record: {
+        subject: { type: 'product', name: 'Updateable Meta' },
+        category: 'product', sentiment: 'positive',
+        availability: { regions: ['US'], soldAt: ['amazon.com'] },
+        schedule: { leadDays: 7 },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    // Reviewer learns more — wider region set, no longer at amazon,
+    // and the schedule's leadDays changed.
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorMU',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-meta-update', cid: 'bafymu2',
+      record: {
+        subject: { type: 'product', name: 'Updateable Meta' },
+        category: 'product', sentiment: 'positive',
+        availability: { regions: ['US', 'GB', 'CA'], soldAt: ['walmart.com'] },
+        schedule: { leadDays: 3 },
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, uri))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].availabilityRegions).toEqual(['US', 'GB', 'CA'])
+    expect(rows[0].availabilitySoldAt).toEqual(['walmart.com'])
+    expect(rows[0].scheduleJson).toEqual({ leadDays: 3 })
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-ALL-UPSERT", "section": "01", "sectionName": "General", "title": "IT-ATT-002aa: invariant — every V2 attestation field participates in upsert (insert + overwrite parity)"}
+  it('IT-ATT-002aa: invariant — every V2 attestation field participates in upsert (no insert-only drift)', async () => {
+    // Meta-test that pins the structural invariant: every V2 wire
+    // field that goes through `handleCreate`'s insert path must also
+    // be overwritten by `onConflictDoUpdate`. A future field that
+    // gets added to the insert path but forgotten in the update path
+    // would silently keep the FIRST write's value forever — invisible
+    // bug. The single-row before/after diff here catches it for every
+    // V2 field at once.
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const uri = 'at://did:plc:test/com.dina.trust.attestation/v2-all-upsert'
+    const did = 'did:plc:authorAllU'
+
+    // First write — populate every V2 field with VALUE_A.
+    await handler.handleCreate(ctx, {
+      uri, did,
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-all-upsert', cid: 'bafyallu1',
+      record: {
+        subject: { type: 'product', name: 'All-Field Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        useCases: ['everyday'],
+        lastUsedMs: 1_000_000_000_000,
+        reviewerExperience: 'novice',
+        recommendFor: ['casual'],
+        notRecommendFor: ['professional'],
+        alternatives: [{ type: 'product', name: 'Alt A' }],
+        compliance: ['halal'],
+        accessibility: ['captions'],
+        compat: ['usb-c'],
+        price: { low_e7: 1_000_000_000, high_e7: 2_000_000_000, currency: 'USD', lastSeenMs: 1_000_000_000_000 },
+        availability: { regions: ['US'], shipsTo: ['US'], soldAt: ['amazon.com'] },
+        schedule: { leadDays: 1 },
+        namespace: '#namespace_1',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    // Second write — same URI, every V2 field set to VALUE_B.
+    // Every field must overwrite, none stick on VALUE_A.
+    await handler.handleCreate(ctx, {
+      uri, did,
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-all-upsert', cid: 'bafyallu2',
+      record: {
+        subject: { type: 'product', name: 'All-Field Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        useCases: ['professional'],
+        lastUsedMs: 2_000_000_000_000,
+        reviewerExperience: 'expert',
+        recommendFor: ['enterprise'],
+        notRecommendFor: ['hobbyist'],
+        alternatives: [{ type: 'product', name: 'Alt B' }],
+        compliance: ['kosher'],
+        accessibility: ['screen-reader'],
+        compat: ['lightning'],
+        price: { low_e7: 5_000_000_000, high_e7: 10_000_000_000, currency: 'EUR', lastSeenMs: 2_000_000_000_000 },
+        availability: { regions: ['GB'], shipsTo: ['GB'], soldAt: ['amazon.co.uk'] },
+        schedule: { leadDays: 30 },
+        namespace: '#namespace_2',
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, uri))
+    expect(rows).toHaveLength(1)
+    const r = rows[0]
+    // Every V2 field MUST reflect VALUE_B, not VALUE_A. If any of
+    // these assertions fails on a future field that was added but
+    // forgotten in the upsert path, this test surfaces it as a
+    // single named failure rather than as silent data corruption
+    // in production.
+    expect(r.useCases).toEqual(['professional'])
+    expect(r.lastUsedAt!.getTime()).toBe(2_000_000_000_000)
+    expect(r.reviewerExperience).toBe('expert')
+    expect(r.recommendFor).toEqual(['enterprise'])
+    expect(r.notRecommendFor).toEqual(['hobbyist'])
+    expect((r.alternativesJson as { name: string }[])[0].name).toBe('Alt B')
+    expect(r.compliance).toEqual(['kosher'])
+    expect(r.accessibility).toEqual(['screen-reader'])
+    expect(r.compat).toEqual(['lightning'])
+    expect(r.priceLowE7).toBe(5_000_000_000)
+    expect(r.priceHighE7).toBe(10_000_000_000)
+    expect(r.priceCurrency).toBe('EUR')
+    expect(r.priceLastSeenAt!.getTime()).toBe(2_000_000_000_000)
+    expect(r.availabilityRegions).toEqual(['GB'])
+    expect(r.availabilityShipsTo).toEqual(['GB'])
+    expect(r.availabilitySoldAt).toEqual(['amazon.co.uk'])
+    expect(r.scheduleJson).toEqual({ leadDays: 30 })
+    expect(r.namespace).toBe('#namespace_2')
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE", "section": "01", "sectionName": "General", "title": "IT-ATT-002j: META-011 — first attestation populates subject.last_active_at"}
+  it('IT-ATT-002j: META-011 — first attestation populates subject.last_active_at', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const created = new Date('2026-04-01T12:00:00.000Z')
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-active-1',
+      did: 'did:plc:authorActive1',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-active-1',
+      cid: 'bafyactive1',
+      record: {
+        subject: { type: 'product', name: 'Active Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: created.toISOString(),
+      },
+    })
+    const subjectRows = await db.select().from(schema.subjects)
+    expect(subjectRows).toHaveLength(1)
+    expect(subjectRows[0].lastActiveAt).toBeInstanceOf(Date)
+    expect(subjectRows[0].lastActiveAt!.getTime()).toBe(created.getTime())
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE-FORWARD", "section": "01", "sectionName": "General", "title": "IT-ATT-002k: META-011 — newer attestation bumps subject.last_active_at forward"}
+  it('IT-ATT-002k: META-011 — newer attestation bumps subject.last_active_at forward', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const olderCreated = new Date('2025-12-01T00:00:00.000Z')
+    const newerCreated = new Date('2026-04-01T00:00:00.000Z')
+
+    // Author A: older attestation
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-active-2a',
+      did: 'did:plc:authorActiveA',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-active-2a',
+      cid: 'bafyactive2a',
+      record: {
+        subject: { type: 'product', name: 'Forward Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: olderCreated.toISOString(),
+      },
+    })
+    // Author B: newer attestation on the same name (Tier 2 author-scoped
+    // resolution would normally split — using `did` subject to share).
+    // Use `did:plc:fwd-shared-subject` so resolver matches Tier 1 by DID.
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-active-2b',
+      did: 'did:plc:authorActiveB',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-active-2b',
+      cid: 'bafyactive2b',
+      record: {
+        subject: { type: 'did', did: 'did:plc:fwd-shared-subject', name: 'Shared' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: olderCreated.toISOString(),
+      },
+    })
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-active-2c',
+      did: 'did:plc:authorActiveC',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-active-2c',
+      cid: 'bafyactive2c',
+      record: {
+        subject: { type: 'did', did: 'did:plc:fwd-shared-subject', name: 'Shared' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: newerCreated.toISOString(),
+      },
+    })
+    const sharedRows = await db.select().from(schema.subjects).where(eq(schema.subjects.did, 'did:plc:fwd-shared-subject'))
+    expect(sharedRows).toHaveLength(1)
+    expect(sharedRows[0].lastActiveAt!.getTime()).toBe(newerCreated.getTime())
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE-BACKDATED", "section": "01", "sectionName": "General", "title": "IT-ATT-002l: META-011 — backdated attestation does NOT roll subject.last_active_at backward"}
+  it('IT-ATT-002l: META-011 — backdated attestation does NOT roll subject.last_active_at backward', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const newerCreated = new Date('2026-04-01T00:00:00.000Z')
+    const olderCreated = new Date('2024-01-01T00:00:00.000Z')
+
+    // First: newer attestation establishes lastActiveAt
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-back-1',
+      did: 'did:plc:authorBack1',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-back-1',
+      cid: 'bafyback1',
+      record: {
+        subject: { type: 'did', did: 'did:plc:back-shared', name: 'Back Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: newerCreated.toISOString(),
+      },
+    })
+    // Second: backdated replay (e.g. firehose backfill) — should NOT
+    // roll the freshness clock backward.
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-back-2',
+      did: 'did:plc:authorBack2',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-back-2',
+      cid: 'bafyback2',
+      record: {
+        subject: { type: 'did', did: 'did:plc:back-shared', name: 'Back Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: olderCreated.toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.subjects).where(eq(schema.subjects.did, 'did:plc:back-shared'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].lastActiveAt!.getTime()).toBe(newerCreated.getTime())
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE-DELETE", "section": "01", "sectionName": "General", "title": "IT-ATT-002m: META-011 — delete does NOT reset subject.last_active_at"}
+  it('IT-ATT-002m: META-011 — delete does NOT reset subject.last_active_at', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const created = new Date('2026-04-01T12:00:00.000Z')
+    const uri = 'at://did:plc:test/com.dina.trust.attestation/v2-active-del'
+    await handler.handleCreate(ctx, {
+      uri,
+      did: 'did:plc:authorActiveDel',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-active-del',
+      cid: 'bafyactivedel',
+      record: {
+        subject: { type: 'did', did: 'did:plc:del-subject', name: 'Del Subject' },
+        category: 'product',
+        sentiment: 'positive',
+        createdAt: created.toISOString(),
+      },
+    })
+    await handler.handleDelete(ctx, {
+      uri,
+      did: 'did:plc:authorActiveDel',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-active-del',
+      cid: 'bafyactivedel',
+      record: {},
+    })
+    const rows = await db.select().from(schema.subjects).where(eq(schema.subjects.did, 'did:plc:del-subject'))
+    expect(rows).toHaveLength(1)
+    // The freshness signal is "any attestation that ever landed",
+    // not "attestations currently live". Retraction doesn't reset
+    // the clock — that's the source-revocation system's job.
+    expect(rows[0].lastActiveAt!.getTime()).toBe(created.getTime())
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-ALT", "section": "01", "sectionName": "General", "title": "IT-ATT-002h: persists alternatives JSONB (TN-V2-REV-005)"}
+  it('IT-ATT-002h: persists alternatives JSONB (TN-V2-REV-005)', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const alternatives = [
+      { type: 'product', name: 'Steelcase Leap' },
+      { type: 'product', name: 'Herman Miller Mirra', identifier: 'asin:B07ABC1234' },
+    ]
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-alt',
+      did: 'did:plc:authorV2a',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-alt',
+      cid: 'bafyv2alt',
+      record: {
+        subject: { type: 'product', name: 'Aeron' },
+        category: 'product',
+        sentiment: 'positive',
+        alternatives,
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-alt'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].alternativesJson).toEqual(alternatives)
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-ALT-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002i: empty alternatives collapses to NULL"}
+  it('IT-ATT-002i: empty alternatives collapses to NULL', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    await handler.handleCreate(ctx, {
+      uri: 'at://did:plc:test/com.dina.trust.attestation/v2-alt-empty',
+      did: 'did:plc:authorV2ae',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-alt-empty',
+      cid: 'bafyv2altempty',
+      record: {
+        subject: { type: 'product', name: 'Empty Alt' },
+        category: 'product',
+        sentiment: 'positive',
+        alternatives: [],
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/v2-alt-empty'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].alternativesJson).toBeNull()
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EXP-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002g: idempotent upsert overwrites reviewerExperience + recommend lists"}
+  it('IT-ATT-002g: idempotent upsert overwrites reviewerExperience + recommend lists', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const uri = 'at://did:plc:test/com.dina.trust.attestation/v2-exp-update'
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorV2xu',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-exp-update', cid: 'bafyv2expu1',
+      record: {
+        subject: { type: 'product', name: 'Updateable Exp' },
+        category: 'tech', sentiment: 'positive',
+        reviewerExperience: 'novice',
+        recommendFor: ['everyday'],
+        notRecommendFor: ['professional'],
+        createdAt: new Date().toISOString(),
+      },
+    })
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorV2xu',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-exp-update', cid: 'bafyv2expu2',
+      record: {
+        subject: { type: 'product', name: 'Updateable Exp' },
+        category: 'tech', sentiment: 'positive',
+        reviewerExperience: 'expert',
+        recommendFor: ['professional'],
+        notRecommendFor: [],  // reviewer dropped the warning
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, uri))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].reviewerExperience).toBe('expert')
+    expect(rows[0].recommendFor).toEqual(['professional'])
+    expect(rows[0].notRecommendFor).toBeNull()  // empty array collapsed
+  })
+
+  // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002d: idempotent upsert overwrites useCases + lastUsedMs"}
+  it('IT-ATT-002d: idempotent upsert overwrites useCases + lastUsedMs', async () => {
+    const handler = routeHandler('com.dina.trust.attestation')!
+    const uri = 'at://did:plc:test/com.dina.trust.attestation/v2-update'
+    const firstLastUsed = Date.now() - 365 * 24 * 60 * 60 * 1000
+    const secondLastUsed = Date.now() - 1 * 24 * 60 * 60 * 1000
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorV2u',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-update', cid: 'bafyv2u1',
+      record: {
+        subject: { type: 'product', name: 'Updateable' },
+        category: 'tech', sentiment: 'positive',
+        useCases: ['everyday'], lastUsedMs: firstLastUsed,
+        createdAt: new Date().toISOString(),
+      },
+    })
+    // Second write — same URI, different values. Upsert path must
+    // overwrite (these are reviewer-declared metadata that can change
+    // on amendments).
+    await handler.handleCreate(ctx, {
+      uri, did: 'did:plc:authorV2u',
+      collection: 'com.dina.trust.attestation',
+      rkey: 'v2-update', cid: 'bafyv2u2',
+      record: {
+        subject: { type: 'product', name: 'Updateable' },
+        category: 'tech', sentiment: 'positive',
+        useCases: ['professional', 'travel'], lastUsedMs: secondLastUsed,
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, uri))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].useCases).toEqual(['professional', 'travel'])
+    expect(rows[0].lastUsedAt!.getTime()).toBe(secondLastUsed)
+  })
+
   // TRACE: {"suite": "APPVIEW", "case": "0298", "section": "01", "sectionName": "General", "title": "IT-ATT-003: subject resolved via Tier 1 (DID)"}
   it('IT-ATT-003: subject resolved via Tier 1 (DID)', async () => {
     const handler = routeHandler('com.dina.trust.attestation')!

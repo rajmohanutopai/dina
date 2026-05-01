@@ -979,6 +979,41 @@ describe('§1.3 Sentiment Aggregation', () => {
     }
   }
 
+  // TRACE: {"suite": "APPVIEW", "case": "RANK006-AGG", "section": "01", "sectionName": "General", "title": "UT-SA-RANK006: aggregateSubjectSentiment uses per-category recency-decay (TN-V2-RANK-006)"}
+  it('UT-SA-RANK006: aggregateSubjectSentiment uses per-category recency-decay (TN-V2-RANK-006)', () => {
+    // Regression guard: this whole sentiment-aggregation path was
+    // missed in the initial RANK-006 wiring (it had a parallel
+    // recency-decay using the global halflife). The fix threads
+    // `category` through `AttestationForAggregation` and uses
+    // halflifeForCategory. Pin the behaviour with a contrastive
+    // test so a future refactor can't silently revert.
+    //
+    // Setup: 1 old negative (5 years ago) + 1 new positive (now).
+    // For tech (180-day halflife) the old negative has decayed to
+    // ~exp(-1825/180) ≈ 5e-5 — score ≈ 1.0 (effectively all positive).
+    // For books (1825-day halflife) the old negative has decayed to
+    // exp(-1) ≈ 0.368 — score noticeably below 1.0.
+    // The difference between the two scores proves `category`
+    // actually flows into the halflife lookup.
+    const fiveYearsAgo = new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000)
+    const now = new Date()
+    const techAtts: AttestationForAggregation[] = [
+      makeAggAttestation({ sentiment: 'negative', recordCreatedAt: fiveYearsAgo, category: 'product:phone' }),
+      makeAggAttestation({ sentiment: 'positive', recordCreatedAt: now, category: 'product:phone' }),
+    ]
+    const bookAtts: AttestationForAggregation[] = [
+      makeAggAttestation({ sentiment: 'negative', recordCreatedAt: fiveYearsAgo, category: 'product:book' }),
+      makeAggAttestation({ sentiment: 'positive', recordCreatedAt: now, category: 'product:book' }),
+    ]
+    const techScore = aggregateSubjectSentiment(techAtts).weightedScore
+    const bookScore = aggregateSubjectSentiment(bookAtts).weightedScore
+    // Both should be positive-leaning, but tech's old negative has
+    // decayed far more than book's, so tech score is closer to 1.
+    expect(techScore).toBeGreaterThan(bookScore)
+    expect(techScore).toBeGreaterThan(0.99)  // old negative effectively gone
+    expect(bookScore).toBeLessThan(0.85)     // old negative still matters
+  })
+
   // TRACE: {"suite": "APPVIEW", "case": "0050", "section": "01", "sectionName": "General", "title": "UT-SA-001: weighted score calculation"}
   it('UT-SA-001: weighted score calculation', () => {
     // Input: 3 positive, 1 negative

@@ -34,8 +34,15 @@ import {
 } from 'react-native';
 
 import { colors, fonts, spacing, radius } from '../../src/theme';
+import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
 import { SubjectCardView } from '../../src/trust/components/subject_card_view';
 import { FacetBarView } from '../../src/trust/components/facet_bar_view';
+import { ViewerFilterChipsView } from '../../src/trust/components/viewer_filter_chips_view';
+import {
+  applicableFilters,
+  applyFilters,
+  type ViewerFilterId,
+} from '../../src/trust/preferences/viewer_filters';
 import { useTrustSearch } from '../../src/trust/runners/use_trust_search';
 
 import type { SubjectCardDisplay } from '../../src/trust/subject_card';
@@ -145,6 +152,30 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
 
   const trimmedQ = q && q.trim().length > 0 ? q.trim() : '';
 
+  // ─── Viewer-profile filter chips (TN-V2-RANK-005 / RANK-016) ────────────
+  // Off by default, opts in per session — `activeFilters` is a session-
+  // local Set, NOT persisted. The user toggles a chip → re-render with
+  // the chip's predicate applied to `results`. Cluster A's keystore-
+  // resident profile is the source of truth; this chip-state is just
+  // ephemeral UI.
+  const { profile: viewerProfile } = useViewerPreferences();
+  const filters = React.useMemo(() => applicableFilters(viewerProfile), [viewerProfile]);
+  const [activeFilters, setActiveFilters] = React.useState<ReadonlySet<ViewerFilterId>>(
+    () => new Set<ViewerFilterId>(),
+  );
+  const onToggleFilter = React.useCallback((id: ViewerFilterId) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const displayedResults = React.useMemo(
+    () => applyFilters(results, viewerProfile, activeFilters),
+    [results, viewerProfile, activeFilters],
+  );
+
   return (
     <View style={styles.container} testID="search-screen">
       {trimmedQ.length > 0 && (
@@ -161,13 +192,18 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
         onTap={onTapFacet}
         onShowMore={onShowMoreFacets}
       />
+      <ViewerFilterChipsView
+        filters={filters}
+        active={activeFilters}
+        onToggle={onToggleFilter}
+      />
 
-      {isLoading && results.length === 0 ? (
+      {isLoading && displayedResults.length === 0 ? (
         <View style={styles.loading} testID="search-loading">
           <ActivityIndicator color={colors.textMuted} />
           <Text style={styles.loadingText}>Searching…</Text>
         </View>
-      ) : results.length === 0 ? (
+      ) : displayedResults.length === 0 ? (
         <View style={styles.empty} testID="search-empty">
           <Ionicons name="search-outline" size={36} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No results</Text>
@@ -207,7 +243,7 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
           contentContainerStyle={styles.resultsContainer}
           testID="search-results"
         >
-          {results.map((r) => (
+          {displayedResults.map((r) => (
             <SubjectCardView
               key={r.subjectId}
               subjectId={r.subjectId}
@@ -216,7 +252,7 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
             />
           ))}
           {/* Subtle in-flight indicator at the bottom for paginated loads */}
-          {isLoading && results.length > 0 && (
+          {isLoading && displayedResults.length > 0 && (
             <View style={styles.paginationLoading} testID="search-pagination-loading">
               <ActivityIndicator color={colors.textMuted} size="small" />
             </View>

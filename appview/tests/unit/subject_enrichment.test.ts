@@ -119,6 +119,95 @@ describe('enrichSubject — product', () => {
     const r = enrichSubject({ type: 'product', name: 'Sony headphones' })
     expect(r.category).toBe('product:electronics')
   })
+
+  // ── TN-V2-META-007: availability.regions enrichment ────────────────
+  describe('availability.regions (TN-V2-META-007)', () => {
+    it('amazon.com URI → metadata.availability.regions = ["US"]', () => {
+      const r = enrichSubject({
+        type: 'product',
+        uri: 'https://www.amazon.com/dp/B07XYZ',
+        name: 'My laptop',
+      })
+      expect(r.metadata.availability).toEqual({ regions: ['US'] })
+    })
+
+    it('amazon.co.uk URI → metadata.availability.regions = ["GB"]', () => {
+      const r = enrichSubject({
+        type: 'product',
+        uri: 'https://www.amazon.co.uk/dp/B07XYZ',
+        name: 'My laptop',
+      })
+      expect(r.metadata.availability).toEqual({ regions: ['GB'] })
+    })
+
+    it('amazon.in URI → metadata.availability.regions = ["IN"]', () => {
+      const r = enrichSubject({ type: 'product', uri: 'https://amazon.in/x' })
+      expect(r.metadata.availability).toEqual({ regions: ['IN'] })
+    })
+
+    it('flipkart.com URI → metadata.availability.regions = ["IN"] (override on `.com`)', () => {
+      const r = enrichSubject({ type: 'product', uri: 'https://flipkart.com/x' })
+      expect(r.metadata.availability).toEqual({ regions: ['IN'] })
+    })
+
+    it('unknown host → no availability set (no greedy default to US)', () => {
+      const r = enrichSubject({
+        type: 'product',
+        uri: 'https://example.com/x',
+        name: 'Test',
+      })
+      expect(r.metadata.availability).toBeUndefined()
+    })
+
+    it('product without URI → no availability set', () => {
+      const r = enrichSubject({ type: 'product', name: 'Aeron chair' })
+      expect(r.metadata.availability).toBeUndefined()
+    })
+
+    // ── TN-V2-META-008: ASIN region detection (subsumed by META-007) ──
+    // META-008's spec is "amazon.com host implies US ASIN; amazon.co.uk
+    // implies UK ASIN, etc. Sets metadata.availability automatically."
+    // The host → region path is fully covered by META-007's
+    // host_to_region. These two tests pin the combined ASIN + amazon
+    // URL scenario explicitly so a future refactor can't quietly drop
+    // ASIN-product coverage by changing the order/conditions of the
+    // enricher steps.
+    it('META-008: ASIN identifier + amazon.com URI → identifier_kind=asin AND regions=["US"]', () => {
+      const r = enrichSubject({
+        type: 'product',
+        uri: 'https://www.amazon.com/dp/B07ABC1234',
+        identifier: 'B07ABC1234',
+        name: 'Laptop',
+      })
+      expect(r.metadata.identifier_kind).toBe('asin')
+      expect(r.metadata.availability).toEqual({ regions: ['US'] })
+    })
+
+    it('META-008: ASIN identifier + amazon.co.uk URI → identifier_kind=asin AND regions=["GB"]', () => {
+      const r = enrichSubject({
+        type: 'product',
+        uri: 'https://www.amazon.co.uk/dp/B07ABC1234',
+        identifier: 'B07ABC1234',
+        name: 'Laptop',
+      })
+      expect(r.metadata.identifier_kind).toBe('asin')
+      expect(r.metadata.availability).toEqual({ regions: ['GB'] })
+    })
+
+    it('META-008: ASIN identifier without URI → identifier_kind set, NO availability inferred', () => {
+      // An ASIN alone doesn't disclose which Amazon storefront it
+      // came from (the same ASIN can exist on amazon.com AND
+      // amazon.co.uk with different prices). META-007/008 are
+      // deliberately conservative — no greedy "default to US" fallback.
+      const r = enrichSubject({
+        type: 'product',
+        identifier: 'B07ABC1234',
+        name: 'Laptop',
+      })
+      expect(r.metadata.identifier_kind).toBe('asin')
+      expect(r.metadata.availability).toBeUndefined()
+    })
+  })
 })
 
 // ─── place ────────────────────────────────────────────────────────────────
@@ -229,6 +318,31 @@ describe('enrichSubject — content', () => {
     const r = enrichSubject({ type: 'content', uri: 'https://random.example/post' })
     expect(r.metadata.host).toBe('random.example')
     expect(r.metadata.media_type).toBeUndefined()
+  })
+
+  // ── TN-V2-META-007: availability.regions for content subjects ──────
+  it('bbc.co.uk URL → metadata.availability.regions = ["GB"]', () => {
+    const r = enrichSubject({
+      type: 'content',
+      uri: 'https://www.bbc.co.uk/news/uk-12345',
+    })
+    expect(r.metadata.availability).toEqual({ regions: ['GB'] })
+  })
+
+  it('lemonde.fr URL → metadata.availability.regions = ["FR"]', () => {
+    const r = enrichSubject({
+      type: 'content',
+      uri: 'https://www.lemonde.fr/article',
+    })
+    expect(r.metadata.availability).toEqual({ regions: ['FR'] })
+  })
+
+  it('youtube.com URL → no availability (`.com` without override)', () => {
+    const r = enrichSubject({
+      type: 'content',
+      uri: 'https://www.youtube.com/watch?v=abc',
+    })
+    expect(r.metadata.availability).toBeUndefined()
   })
 })
 
@@ -488,5 +602,197 @@ describe('enrichSubject — plan §3.6.1 examples', () => {
     expect(enrichSubject({ type: 'organization', uri: 'https://mit.edu/' }).category).toBe(
       'organization:university',
     )
+  })
+})
+
+// ─── TN-V2-TEST-004: HTML-driven enrichment paths ────────────────────────
+//
+// These tests exercise the enricher's `options.html` integration —
+// META-009 (price extraction for product subjects) and META-010
+// (schedule extraction for place subjects). The HTTP fetcher itself
+// is deferred orchestration; the enricher's responsibility is to
+// invoke the parsers correctly when a caller pre-fetches HTML and
+// to no-op cleanly when no HTML is supplied.
+
+describe('enrichSubject — META-009 price (product subjects + html option)', () => {
+  it('OpenGraph product meta on a product URI populates metadata.price', () => {
+    const html = `
+      <head>
+        <meta property="product:price:amount" content="29.99">
+        <meta property="product:price:currency" content="USD">
+      </head>`
+    const r = enrichSubject(
+      { type: 'product', uri: 'https://example.com/widget', name: 'Widget' },
+      { html },
+    )
+    expect(r.metadata.price).toEqual({
+      low_e7: 299_900_000,
+      high_e7: 299_900_000,
+      currency: 'USD',
+      lastSeenMs: expect.any(Number),
+    })
+  })
+
+  it('JSON-LD AggregateOffer populates metadata.price as a range', () => {
+    const ld = JSON.stringify({
+      '@type': 'Product',
+      offers: {
+        '@type': 'AggregateOffer',
+        lowPrice: '99.99',
+        highPrice: '199.99',
+        priceCurrency: 'GBP',
+      },
+    })
+    const html = `<script type="application/ld+json">${ld}</script>`
+    const r = enrichSubject(
+      { type: 'product', uri: 'https://example.co.uk/x', name: 'X' },
+      { html },
+    )
+    const price = r.metadata.price as { low_e7: number; high_e7: number; currency: string }
+    expect(price.low_e7).toBe(999_900_000)
+    expect(price.high_e7).toBe(1_999_900_000)
+    expect(price.currency).toBe('GBP')
+  })
+
+  it('product subject without html option leaves metadata.price absent', () => {
+    const r = enrichSubject({ type: 'product', uri: 'https://example.com/x', name: 'X' })
+    expect(r.metadata.price).toBeUndefined()
+  })
+
+  it('product with html but no price markup leaves metadata.price absent', () => {
+    const r = enrichSubject(
+      { type: 'product', uri: 'https://example.com/x', name: 'X' },
+      { html: '<html><body>just text</body></html>' },
+    )
+    expect(r.metadata.price).toBeUndefined()
+  })
+
+  it('html option does NOT populate price for non-product subjects (place)', () => {
+    // The html-derived price extraction is product-only — a place's
+    // markup might emit Offer JSON-LD (e.g. "free admission") but the
+    // detail surface for places renders schedule, not price. Pin the
+    // type-segregated wiring so a refactor that thread html through
+    // every type doesn't accidentally mix product + place fields.
+    const html = `
+      <meta property="product:price:amount" content="29.99">
+      <meta property="product:price:currency" content="USD">`
+    const r = enrichSubject(
+      { type: 'place', name: 'Some Cafe', uri: 'https://example.com/cafe' },
+      { html },
+    )
+    expect(r.metadata.price).toBeUndefined()
+  })
+
+  it('availability.regions and price coexist on a product (independent paths)', () => {
+    const html = `
+      <meta property="product:price:amount" content="50.00">
+      <meta property="product:price:currency" content="USD">`
+    const r = enrichSubject(
+      { type: 'product', uri: 'https://amazon.com/x', name: 'X' },
+      { html },
+    )
+    // amazon.com → US (host_to_region override) AND OG meta → price.
+    // Both fields populate without interfering.
+    expect(r.metadata.availability).toEqual({ regions: ['US'] })
+    const price = r.metadata.price as { currency: string }
+    expect(price.currency).toBe('USD')
+  })
+})
+
+describe('enrichSubject — META-010 schedule (place subjects + html option)', () => {
+  it('JSON-LD OpeningHours populates metadata.schedule.hours', () => {
+    const ld = JSON.stringify({
+      '@type': 'Restaurant',
+      openingHoursSpecification: [
+        { dayOfWeek: 'Monday', opens: '09:00', closes: '17:00' },
+        { dayOfWeek: 'Saturday', opens: '10:00', closes: '14:00' },
+      ],
+    })
+    const html = `<script type="application/ld+json">${ld}</script>`
+    const r = enrichSubject(
+      { type: 'place', name: 'Restaurant Foo', uri: 'https://example.com/foo' },
+      { html },
+    )
+    expect(r.metadata.schedule).toEqual({
+      hours: {
+        mon: { open: '09:00', close: '17:00' },
+        sat: { open: '10:00', close: '14:00' },
+      },
+    })
+  })
+
+  it('place subject without html option leaves metadata.schedule absent', () => {
+    const r = enrichSubject({ type: 'place', name: 'Cafe', uri: 'https://example.com/cafe' })
+    expect(r.metadata.schedule).toBeUndefined()
+  })
+
+  it('place with html but no OpeningHours markup leaves metadata.schedule absent', () => {
+    const r = enrichSubject(
+      { type: 'place', name: 'Cafe', uri: 'https://example.com/cafe' },
+      { html: '<html><body>just text</body></html>' },
+    )
+    expect(r.metadata.schedule).toBeUndefined()
+  })
+
+  it('html option does NOT populate schedule for non-place subjects (product)', () => {
+    // schedule is place-only — products don't have opening hours.
+    const ld = JSON.stringify({
+      openingHoursSpecification: { dayOfWeek: 'Monday', opens: '09:00', closes: '17:00' },
+    })
+    const html = `<script type="application/ld+json">${ld}</script>`
+    const r = enrichSubject(
+      { type: 'product', uri: 'https://example.com/x', name: 'X' },
+      { html },
+    )
+    expect(r.metadata.schedule).toBeUndefined()
+  })
+
+  it('place_type segment + schedule coexist (independent paths)', () => {
+    const ld = JSON.stringify({
+      openingHoursSpecification: { dayOfWeek: 'Monday', opens: '09:00', closes: '22:00' },
+    })
+    const html = `<script type="application/ld+json">${ld}</script>`
+    const r = enrichSubject(
+      { type: 'place', name: 'Coffee shop' },
+      { html },
+    )
+    expect(r.category).toBe('place:cafe')
+    expect(r.metadata.place_type).toBe('cafe')
+    expect((r.metadata.schedule as { hours: object }).hours).toEqual({
+      mon: { open: '09:00', close: '22:00' },
+    })
+  })
+})
+
+describe('enrichSubject — html option determinism', () => {
+  it('same input + same html → identical metadata structure (modulo lastSeenMs)', () => {
+    const html = `
+      <meta property="product:price:amount" content="10.00">
+      <meta property="product:price:currency" content="USD">`
+    const a = enrichSubject({ type: 'product', uri: 'https://example.com/x', name: 'X' }, { html })
+    const b = enrichSubject({ type: 'product', uri: 'https://example.com/x', name: 'X' }, { html })
+    // category + most metadata is byte-identical.
+    expect(a.category).toBe(b.category)
+    expect(a.metadata.host).toBe(b.metadata.host)
+    expect(a.metadata.availability).toEqual(b.metadata.availability)
+    // The OG price parser uses Date.now() for lastSeenMs by default —
+    // two consecutive calls may differ by a millisecond. Pin the
+    // remaining price fields and the structural equality, but allow
+    // the timestamp to drift. (A future enricher orchestration layer
+    // will pin the fetch time once and pass it down deterministically.)
+    const pa = a.metadata.price as { low_e7: number; high_e7: number; currency: string }
+    const pb = b.metadata.price as { low_e7: number; high_e7: number; currency: string }
+    expect(pa.low_e7).toBe(pb.low_e7)
+    expect(pa.high_e7).toBe(pb.high_e7)
+    expect(pa.currency).toBe(pb.currency)
+  })
+
+  it('output remains frozen with html-derived fields populated', () => {
+    const html = `
+      <meta property="product:price:amount" content="10.00">
+      <meta property="product:price:currency" content="USD">`
+    const r = enrichSubject({ type: 'product', uri: 'https://example.com/x', name: 'X' }, { html })
+    expect(Object.isFrozen(r)).toBe(true)
+    expect(Object.isFrozen(r.metadata)).toBe(true)
   })
 })

@@ -55,6 +55,14 @@ export const PER_METHOD_LIMITS_RPM: Readonly<Record<string, number>> = Object.fr
   'com.dina.trust.search': 60,
   'com.dina.trust.resolve': 60,
   'com.dina.trust.subjectGet': 120,
+  // TN-V2-RANK-009: detail-page strip — rendered alongside subjectGet
+  // so the tier matches.
+  'com.dina.trust.getAlternatives': 120,
+  // TN-V2-RANK-010: negative-space surface — typically rendered once
+  // per category browse, not per detail view, so a lower tier than
+  // subjectGet is fine. Same tier as search since usage frequency is
+  // similar.
+  'com.dina.trust.getNegativeSpace': 60,
   'com.dina.trust.networkFeed': 60,
   'com.dina.trust.attestationStatus': 600, // outbox polls every 5s = 12/min minimum
   'com.dina.trust.cosigList': 60,

@@ -69,3 +69,15 @@ export function useNavigation(): {
 export const Tabs = {
   Screen: () => null,
 };
+
+/**
+ * Stack.Screen stub for unit tests. Real Stack.Screen registers
+ * navigator-level options (header title, etc.) but those have no
+ * effect inside a Jest render — so we mirror the Tabs.Screen shape
+ * and return null. Importantly, the import itself must succeed:
+ * screens commonly do `<Stack.Screen options={{ title: '...' }} />`
+ * for header configuration.
+ */
+export const Stack = {
+  Screen: () => null,
+};

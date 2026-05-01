@@ -14,6 +14,8 @@ import { attestationStatus, AttestationStatusParams } from '@/api/xrpc/attestati
 import { cosigList, CosigListParams } from '@/api/xrpc/cosig-list.js'
 import { networkFeed, NetworkFeedParams } from '@/api/xrpc/network-feed.js'
 import { subjectGet, SubjectGetParams } from '@/api/xrpc/subject-get.js'
+import { getAlternatives, GetAlternativesParams } from '@/api/xrpc/get-alternatives.js'
+import { getNegativeSpace, GetNegativeSpaceParams } from '@/api/xrpc/get-negative-space.js'
 import {
   InjectAttestationBody,
   DeleteAttestationBody,
@@ -63,6 +65,8 @@ const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => P
   'com.dina.trust.cosigList': { params: CosigListParams, handler: cosigList },
   'com.dina.trust.networkFeed': { params: NetworkFeedParams, handler: networkFeed },
   'com.dina.trust.subjectGet': { params: SubjectGetParams, handler: subjectGet },
+  'com.dina.trust.getAlternatives': { params: GetAlternativesParams, handler: getAlternatives },
+  'com.dina.trust.getNegativeSpace': { params: GetNegativeSpaceParams, handler: getNegativeSpace },
 }
 
 const server = http.createServer(async (req, res) => {

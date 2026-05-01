@@ -15,6 +15,62 @@
       "when": 1782700000000,
       "tag": "0001_did_profiles_handle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788393600000,
+      "tag": "0002_attestation_use_case_last_used",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0003_attestation_reviewer_experience_recommend_for",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788405000000,
+      "tag": "0004_attestation_alternatives",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788410000000,
+      "tag": "0005_subject_last_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788415000000,
+      "tag": "0006_attestation_compliance_accessibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788420000000,
+      "tag": "0007_attestation_compat",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788425000000,
+      "tag": "0008_attestation_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788430000000,
+      "tag": "0009_attestation_availability_schedule",
+      "breakpoints": true
     }
   ]
 }

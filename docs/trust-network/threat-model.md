@@ -432,9 +432,138 @@ Do not deploy V1 if any of these matter to your use case:
    anchor, and Dina assumes the user's device is trusted
    (§5.1).
 
+V2 expands this list — see §8.
+
 ---
 
-## 8. Discovered post-V1
+## 8. V2 — what changes
+
+V2 layers an *actionability* layer over V1's *opinion* layer (see
+`V2-actionability.md` for the full design). This introduces a new
+privacy surface — the viewer profile — and new ranking behaviour.
+Each is summarised below; the cluster-by-cluster detail lives in
+the V2-actionability doc.
+
+### 8.1 New privacy promises (V2)
+
+V2 makes ONE explicit privacy promise that V1 didn't:
+
+> **The viewer profile (region, languages, budget, devices, dietary,
+> accessibility) is keystore-resident on the user's device. It is
+> never written to AppView, never embedded in any AT Protocol record,
+> and never sent to any server.**
+
+This is enforced by:
+- **Storage path**: `react-native-keychain` under `service:
+  'dina.user_preferences'`. Encrypted at rest by the OS keychain
+  (Keychain Services on iOS, Keystore on Android). Same trust
+  anchor as the master seed.
+- **Code path**: the only writers are `saveUserPreferences()` and
+  `mutateUserPreferences()` in `apps/mobile/src/services/user_preferences.ts`.
+  Neither imports `fetch` or any HTTP client. Pinned by black-box
+  unit tests that stub `global.fetch` and assert zero calls during
+  load / save / mutate / clear (`__tests__/services/user_preferences.test.ts`).
+- **Architecture**: filtering is client-side. AppView returns
+  un-personalised data; the mobile client applies the lens. The
+  search xRPC accepts NO viewer-preference parameters by design
+  — there's no API surface to leak through.
+
+**Why this matters.** The natural shape of "personalise rankings"
+is server-side: send the viewer's profile to the server, let the
+server compute personalised scores. This is what consumer
+recommendation engines do. It's also how those platforms build
+user fingerprints over time. V2 deliberately doesn't.
+
+### 8.2 V2 trade-offs the operator should know
+
+V2's keystore-resident profile costs:
+
+- **Bandwidth.** The mobile client fetches results that get
+  filtered out client-side. For a viewer with a narrow region +
+  language preference, this can be 70%+ wasted bytes. Acceptable
+  on mobile data plans for the privacy gain; an operator running
+  the AppView at scale is paying egress for un-rendered rows.
+- **Algorithmic ceiling.** The mobile client can't run a
+  server-class recommendation model (collaborative filtering,
+  embedding-based similarity at scale). V2 ranking is rule-based
+  filtering + sort tweaks. Personalised collaborative filtering
+  is deferred to V3+ behind a ZK proof story.
+- **Per-device profile.** Because the profile is keystore-resident,
+  it doesn't sync across the user's devices. A user with an iPhone
+  and an iPad sees their default-locale preferences on the iPad
+  unless they reconfigure. Cross-device sync is fundamentally at
+  odds with "the server doesn't see your profile" — sync would
+  either leak (sync via server) or require a bespoke peer-sync
+  protocol (V3+).
+
+### 8.3 V2's surface under the V1 threat model
+
+The viewer profile is on the same side of the trust boundary as
+V1's master seed:
+
+- **Trust anchor**: the user's device. Same as V1's "Dina assumes
+  the user's device is trusted" (§5.1). A compromised device
+  leaks the profile alongside the seed.
+- **No new key material**: the profile is encrypted by the OS
+  keychain, not by an additional Dina-managed key. A
+  compromised-keychain attacker who can read the seed can also
+  read the profile. The profile doesn't expand the attack
+  surface.
+- **No multi-party state**: the profile is single-author (the
+  user) and single-reader (the user's device). No cosig, no
+  AppView indexing, no cross-account mutation paths.
+
+What V2 does NOT add to the threat-model attack surface:
+1. **Server-side personalisation leakage** — explicitly avoided
+   by client-side filtering. Operators MUST NOT add a
+   server-side personalisation API in a future minor.
+2. **Cross-device fingerprinting via behavioural patterns** — V2
+   chips toggle per-session; toggle state isn't persisted, isn't
+   sent to AppView, and isn't observable across device boundaries.
+
+### 8.4 V2 — additional things V2 does NOT promise
+
+Extends the §7 list:
+
+8. **Collaborative-filtering personalisation** — comparing the
+   viewer's review history to candidate reviewers' histories.
+   The privacy-preserving version needs ZK proofs (V3+).
+9. **Cross-device profile sync** — per-device by design.
+10. **Diacritic-insensitive search in the languages picker** —
+    exact-substring (case-insensitive) only. A V3 i18n pass
+    fixes this everywhere.
+11. **Reverse-geocoded place locations** — V2 surfaces truncated
+    lat/lng on place subjects (`37.77°N, 122.42°W`). Mapping that
+    to "San Francisco, CA" is a Cluster B follow-on weighing
+    bundled-data vs. server-endpoint trade-offs.
+12. **User-defined budget categories** — the Budget screen
+    ships with a curated 10-category list. The ranker only
+    consumes a fixed set anyway, so user-added tags would
+    no-op. Custom categories are V3+ if demand emerges.
+
+### 8.5 Sub-tasks the threat model is watching
+
+Cluster B (server-side metadata enrichment, `TN-V2-META-*`) and
+Cluster D (ranking changes, `TN-V2-RANK-*`) introduce surfaces
+that *could* re-introduce server-side personalisation if not
+implemented carefully. Specifically:
+
+- **TN-V2-RANK-007** (viewer-region boost) must be implemented as
+  a *sort tweak* on the mobile client using locally-stored region
+  + server-returned `availability.regions`, NOT by passing the
+  viewer's region to the search xRPC. The backlog spec is
+  ambiguous; this section pins the privacy-preserving
+  implementation.
+- **TN-V2-RANK-008** (taste-profile personalisation) is the canary
+  for the ZK story. If shipped without ZK proofs, it leaks the
+  viewer's review history to whatever computes the match. The
+  backlog correctly flags this with "defer if ZK story isn't
+  crisp" — operators MUST verify the ZK gate is in place at
+  ship time.
+
+---
+
+## 9. Discovered post-V1
 
 *(Empty at ship time. New attack classes get added here with
 ID, date, mitigation status, and the Plan section that closes

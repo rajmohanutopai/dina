@@ -15,8 +15,8 @@
  *   - onCancel + onPublish wiring.
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
 import WriteScreen from '../../app/trust/write';
 import { emptyWriteFormState } from '../../src/trust/write_form_data';
@@ -228,12 +228,18 @@ describe('WriteScreen — submit + cancel', () => {
     );
     fireEvent.press(getByTestId('write-publish'));
     expect(onPublish).toHaveBeenCalledTimes(1);
-    expect(onPublish).toHaveBeenCalledWith({
-      sentiment: 'positive',
-      headline: 'Great chair',
-      body: 'It is great',
-      confidence: 'high',
-    });
+    // The screen merges incoming `initial` over `emptyWriteFormState()`
+    // to keep partial-shape callers safe (V2 fields default to unset),
+    // so onPublish receives the full WriteFormState. Match only the
+    // fields the test cares about.
+    expect(onPublish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sentiment: 'positive',
+        headline: 'Great chair',
+        body: 'It is great',
+        confidence: 'high',
+      }),
+    );
   });
 
   it('tap Publish on invalid form does NOT fire onPublish', () => {
@@ -332,5 +338,332 @@ describe('WriteScreen — accessibility (TN-TEST-061 surface)', () => {
     expect(getByLabelText('Positive')).toBeTruthy();
     expect(getByLabelText('Neutral')).toBeTruthy();
     expect(getByLabelText('Negative')).toBeTruthy();
+  });
+});
+
+describe('WriteScreen — last-used picker (TN-V2-REV-007)', () => {
+  it('Advanced toggle is rendered (collapsed by default)', () => {
+    const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
+    expect(getByTestId('write-advanced-toggle')).toBeTruthy();
+    // Collapsed-by-default: the section content is NOT rendered.
+    expect(queryByTestId('write-advanced-section')).toBeNull();
+    expect(queryByTestId('write-last-used-today')).toBeNull();
+  });
+
+  it('tapping Advanced expands the section and reveals the bucket buttons', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    expect(getByTestId('write-advanced-section')).toBeTruthy();
+    expect(getByTestId('write-last-used-today')).toBeTruthy();
+    expect(getByTestId('write-last-used-past_week')).toBeTruthy();
+    expect(getByTestId('write-last-used-past_month')).toBeTruthy();
+    expect(getByTestId('write-last-used-past_6_months')).toBeTruthy();
+    expect(getByTestId('write-last-used-past_year')).toBeTruthy();
+    expect(getByTestId('write-last-used-over_a_year')).toBeTruthy();
+  });
+
+  it('tapping Advanced again collapses the section', () => {
+    const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    expect(getByTestId('write-advanced-section')).toBeTruthy();
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    expect(queryByTestId('write-advanced-section')).toBeNull();
+  });
+
+  it('tap-to-select then tap-to-clear on the same bucket (toggle semantic)', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    const todayBtn = getByTestId('write-last-used-today');
+    // Initially: nothing selected.
+    expect(todayBtn.props.accessibilityState).toMatchObject({ selected: false });
+    fireEvent.press(todayBtn);
+    expect(getByTestId('write-last-used-today').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+    // Tap again → clears.
+    fireEvent.press(getByTestId('write-last-used-today'));
+    expect(getByTestId('write-last-used-today').props.accessibilityState).toMatchObject({
+      selected: false,
+    });
+  });
+
+  it('selecting a different bucket replaces the previous selection (radio-like)', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-last-used-today'));
+    expect(getByTestId('write-last-used-today').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+    fireEvent.press(getByTestId('write-last-used-past_month'));
+    expect(getByTestId('write-last-used-today').props.accessibilityState).toMatchObject({
+      selected: false,
+    });
+    expect(getByTestId('write-last-used-past_month').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+  });
+
+  it('Advanced toggle has accessibilityRole=button + expanded state', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    const toggle = getByTestId('write-advanced-toggle');
+    expect(toggle.props.accessibilityRole).toBe('button');
+    expect(toggle.props.accessibilityState).toMatchObject({ expanded: false });
+    fireEvent.press(toggle);
+    expect(getByTestId('write-advanced-toggle').props.accessibilityState).toMatchObject({
+      expanded: true,
+    });
+  });
+});
+
+describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
+  it('renders use-case row inside Advanced section (default vocabulary when no subject)', () => {
+    const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    expect(getByTestId('write-use-case-row')).toBeTruthy();
+    // Default vocabulary: ['everyday', 'professional', 'travel', 'family', 'kids'].
+    expect(getByTestId('write-use-case-everyday')).toBeTruthy();
+    expect(getByTestId('write-use-case-professional')).toBeTruthy();
+    expect(getByTestId('write-use-case-travel')).toBeTruthy();
+    expect(getByTestId('write-use-case-family')).toBeTruthy();
+    expect(getByTestId('write-use-case-kids')).toBeTruthy();
+    // 'gaming' is in the tech vocab but NOT in default — should NOT render.
+    expect(queryByTestId('write-use-case-gaming')).toBeNull();
+  });
+
+  it('tap-to-select then tap-to-clear (toggle semantic)', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    const everyday = getByTestId('write-use-case-everyday');
+    expect(everyday.props.accessibilityState).toMatchObject({ selected: false });
+    fireEvent.press(everyday);
+    expect(getByTestId('write-use-case-everyday').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+    fireEvent.press(getByTestId('write-use-case-everyday'));
+    expect(getByTestId('write-use-case-everyday').props.accessibilityState).toMatchObject({
+      selected: false,
+    });
+  });
+
+  it('multi-select up to 3 tags', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-use-case-everyday'));
+    fireEvent.press(getByTestId('write-use-case-professional'));
+    fireEvent.press(getByTestId('write-use-case-travel'));
+    expect(getByTestId('write-use-case-everyday').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+    expect(getByTestId('write-use-case-professional').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+    expect(getByTestId('write-use-case-travel').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+  });
+
+  it('greys out unselected tags when at the 3-tag cap', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-use-case-everyday'));
+    fireEvent.press(getByTestId('write-use-case-professional'));
+    fireEvent.press(getByTestId('write-use-case-travel'));
+    // Now at cap (3). 'family' is unselected → should be disabled.
+    const familyBtn = getByTestId('write-use-case-family');
+    expect(familyBtn.props.accessibilityState).toMatchObject({ disabled: true });
+    // Selected tags stay enabled (so the user can deselect to free a slot).
+    expect(getByTestId('write-use-case-everyday').props.accessibilityState).toMatchObject({
+      disabled: false,
+    });
+  });
+
+  it('removing a tag while at the cap re-enables disabled tags', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-use-case-everyday'));
+    fireEvent.press(getByTestId('write-use-case-professional'));
+    fireEvent.press(getByTestId('write-use-case-travel'));
+    // Confirm 'family' is disabled.
+    expect(getByTestId('write-use-case-family').props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
+    // Deselect 'travel' (frees a slot).
+    fireEvent.press(getByTestId('write-use-case-travel'));
+    // 'family' should re-enable.
+    expect(getByTestId('write-use-case-family').props.accessibilityState).toMatchObject({
+      disabled: false,
+    });
+  });
+
+  it('use-case picker buttons have a11y role + label', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    const btn = getByTestId('write-use-case-everyday');
+    expect(btn.props.accessibilityRole).toBe('button');
+    expect(btn.props.accessibilityLabel).toBe('Everyday');
+  });
+});
+
+describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
+  it('renders the search input inside Advanced section', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    expect(getByTestId('write-alt-search-input')).toBeTruthy();
+  });
+
+  it('hides chip list when no alternatives are added', () => {
+    const { queryByTestId, getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    expect(queryByTestId('write-alt-chips')).toBeNull();
+  });
+
+  it('typing into search input triggers searchAlternatives prop callback', async () => {
+    const search = jest.fn().mockResolvedValue([
+      { kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' },
+    ]);
+    const { getByTestId, findByTestId } = render(
+      <WriteScreen subjectTitle="X" searchAlternatives={search} />,
+    );
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
+    expect(search).toHaveBeenCalledWith('leap');
+    // Wait for the result row to render after the promise resolves.
+    expect(await findByTestId('write-alt-result-sub-leap')).toBeTruthy();
+  });
+
+  it('tapping a result adds it to the chip list and clears the input', async () => {
+    const search = jest.fn().mockResolvedValue([
+      { kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' },
+    ]);
+    const { getByTestId, findByTestId, queryByTestId } = render(
+      <WriteScreen subjectTitle="X" searchAlternatives={search} />,
+    );
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
+    const row = await findByTestId('write-alt-result-sub-leap');
+    fireEvent.press(row);
+    expect(getByTestId('write-alt-chips')).toBeTruthy();
+    expect(getByTestId('write-alt-chip-0')).toBeTruthy();
+    // Input clears after add (so user can search again easily).
+    expect(getByTestId('write-alt-search-input').props.value).toBe('');
+    // Results list disappears.
+    expect(queryByTestId('write-alt-results')).toBeNull();
+  });
+
+  it('tapping the X on a chip removes the alternative', async () => {
+    const search = jest.fn().mockResolvedValue([
+      { kind: 'product', name: 'A', subjectId: 'sub-a' },
+    ]);
+    const { getByTestId, findByTestId, queryByTestId } = render(
+      <WriteScreen subjectTitle="X" searchAlternatives={search} />,
+    );
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'a');
+    fireEvent.press(await findByTestId('write-alt-result-sub-a'));
+    expect(getByTestId('write-alt-chip-0')).toBeTruthy();
+    fireEvent.press(getByTestId('write-alt-remove-0'));
+    expect(queryByTestId('write-alt-chip-0')).toBeNull();
+  });
+
+  it('search input hides at the cap; cap hint surfaces', async () => {
+    // Pre-populate 5 alternatives via the initial prop, bypassing the
+    // search interaction (faster than 5 round-trips).
+    const initial = {
+      ...emptyWriteFormState(),
+      alternatives: [
+        { kind: 'product', name: 'A1' },
+        { kind: 'product', name: 'A2' },
+        { kind: 'product', name: 'A3' },
+        { kind: 'product', name: 'A4' },
+        { kind: 'product', name: 'A5' },
+      ],
+    } as const;
+    const { getByTestId, queryByTestId } = render(
+      <WriteScreen subjectTitle="X" initial={initial} />,
+    );
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    expect(queryByTestId('write-alt-search-input')).toBeNull();
+    expect(getByTestId('write-alt-cap-hint')).toBeTruthy();
+  });
+
+  it('result row for an already-added alternative is disabled', async () => {
+    const search = jest.fn().mockResolvedValue([
+      { kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' },
+    ]);
+    const initial = {
+      ...emptyWriteFormState(),
+      alternatives: [
+        { kind: 'product' as const, name: 'Steelcase Leap', subjectId: 'sub-leap' },
+      ],
+    };
+    const { getByTestId, findByTestId } = render(
+      <WriteScreen subjectTitle="X" initial={initial} searchAlternatives={search} />,
+    );
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
+    const row = await findByTestId('write-alt-result-sub-leap');
+    expect(row.props.accessibilityState).toMatchObject({ disabled: true });
+  });
+
+  it('search error surfaces when the callback rejects', async () => {
+    const search = jest.fn().mockRejectedValue(new Error('Network down'));
+    const { getByTestId, findByTestId } = render(
+      <WriteScreen subjectTitle="X" searchAlternatives={search} />,
+    );
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
+    expect(await findByTestId('write-alt-search-error')).toBeTruthy();
+  });
+
+  it('with searchAlternatives prop omitted, results list stays empty', () => {
+    const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'anything');
+    expect(queryByTestId('write-alt-results')).toBeNull();
+    expect(queryByTestId('write-alt-search-error')).toBeNull();
+  });
+});
+
+describe('WriteScreen — alternatives picker (TN-V2-REV-008) — stale-response guard', () => {
+  it('a fast typist gets the LATEST query results, not the prior one', async () => {
+    // Simulate a slow-then-fast pair of queries: 'le' resolves slowly
+    // with a "leap" result; 'sea' resolves faster with a "seat"
+    // result. The user changed query in between → only 'sea' results
+    // should win after the slow promise resolves.
+    let resolveSlow: (v: readonly { kind: 'product'; name: string; subjectId: string }[]) => void = () => undefined;
+    const search = jest.fn().mockImplementation((q: string) => {
+      if (q === 'le') {
+        return new Promise<readonly { kind: 'product'; name: string; subjectId: string }[]>(
+          (resolve) => {
+            resolveSlow = resolve;
+          },
+        );
+      }
+      return Promise.resolve([
+        { kind: 'product' as const, name: 'Seat', subjectId: 'sub-seat' },
+      ]);
+    });
+    const { getByTestId, findByTestId, queryByTestId } = render(
+      <WriteScreen subjectTitle="X" searchAlternatives={search} />,
+    );
+    fireEvent.press(getByTestId('write-advanced-toggle'));
+    // Fire the slow query first.
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'le');
+    // Fire the fast query — overwrites the latest-query ref.
+    fireEvent.changeText(getByTestId('write-alt-search-input'), 'sea');
+    // Wait for the fast (seat) result to render.
+    expect(await findByTestId('write-alt-result-sub-seat')).toBeTruthy();
+    // Now resolve the stale (leap) query — should NOT overwrite the
+    // visible results.
+    resolveSlow([
+      { kind: 'product' as const, name: 'Leap', subjectId: 'sub-leap' },
+    ]);
+    // Drain microtasks.
+    await Promise.resolve();
+    await Promise.resolve();
+    // Stale result must not have appeared.
+    expect(queryByTestId('write-alt-result-sub-leap')).toBeNull();
+    // Fast result still visible.
+    expect(getByTestId('write-alt-result-sub-seat')).toBeTruthy();
   });
 });

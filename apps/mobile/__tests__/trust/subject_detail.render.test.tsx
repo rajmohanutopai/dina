@@ -6,12 +6,13 @@
  * grouped review sections + interactions.
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
 import SubjectDetailScreen from '../../app/trust/[subjectId]';
-import type { SubjectDetailInput } from '../../src/trust/subject_detail_data';
+
 import type { SubjectReview } from '../../src/trust/subject_card';
+import type { SubjectDetailInput } from '../../src/trust/subject_detail_data';
 
 function makeReview(overrides: Partial<SubjectReview> = {}): SubjectReview {
   return {
@@ -136,6 +137,330 @@ describe('SubjectDetailScreen — header', () => {
       <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
     );
     expect(getByTestId('subject-detail-write-cta')).toBeTruthy();
+  });
+
+  // ─── TN-V2-P1-004 + RANK-013: header chips (host + language +
+  // place location + price tier)
+  //
+  // The data layer derives + normalises; these tests pin the rendering
+  // contract on the subject detail screen.
+  it('hides the chip row entirely when host + language + location + price are all null', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
+    );
+    expect(queryByTestId('subject-detail-context')).toBeNull();
+    expect(queryByTestId('subject-detail-host')).toBeNull();
+    expect(queryByTestId('subject-detail-language')).toBeNull();
+    expect(queryByTestId('subject-detail-location')).toBeNull();
+    expect(queryByTestId('subject-detail-price')).toBeNull();
+  });
+
+  it('renders only the host chip when language and location are absent', () => {
+    const { getByTestId, queryByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({ host: 'amazon.co.uk' })}
+      />,
+    );
+    expect(getByTestId('subject-detail-context')).toBeTruthy();
+    expect(getByTestId('subject-detail-host')).toBeTruthy();
+    expect(queryByTestId('subject-detail-language')).toBeNull();
+    expect(queryByTestId('subject-detail-location')).toBeNull();
+    expect(getByText('amazon.co.uk')).toBeTruthy();
+  });
+
+  it('renders only the language chip when host and location are absent', () => {
+    const { getByTestId, queryByTestId, getByText } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput({ language: 'pt-br' })} />,
+    );
+    expect(getByTestId('subject-detail-context')).toBeTruthy();
+    expect(queryByTestId('subject-detail-host')).toBeNull();
+    expect(getByTestId('subject-detail-language')).toBeTruthy();
+    expect(queryByTestId('subject-detail-location')).toBeNull();
+    expect(getByText('PT-BR')).toBeTruthy();
+  });
+
+  it('renders only the location chip for a place subject (typical case)', () => {
+    // Places rarely carry host (a venue isn't a URL), so the location
+    // chip stands alone as the geographic anchor.
+    const { getByTestId, queryByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          subjectKind: 'place',
+          coordinates: { lat: 37.7749, lng: -122.4194 },
+        })}
+      />,
+    );
+    expect(getByTestId('subject-detail-context')).toBeTruthy();
+    expect(queryByTestId('subject-detail-host')).toBeNull();
+    expect(queryByTestId('subject-detail-language')).toBeNull();
+    expect(getByTestId('subject-detail-location')).toBeTruthy();
+    expect(getByText('37.77°N, 122.42°W')).toBeTruthy();
+  });
+
+  it('renders all three chips when all signals present', () => {
+    const { getByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          host: 'sfmoma.org',
+          language: 'en',
+          subjectKind: 'place',
+          coordinates: { lat: 37.7857, lng: -122.401 },
+        })}
+      />,
+    );
+    expect(getByTestId('subject-detail-host')).toBeTruthy();
+    expect(getByTestId('subject-detail-language')).toBeTruthy();
+    expect(getByTestId('subject-detail-location')).toBeTruthy();
+    expect(getByText('sfmoma.org')).toBeTruthy();
+    expect(getByText('EN')).toBeTruthy();
+    expect(getByText('37.79°N, 122.40°W')).toBeTruthy();
+  });
+
+  it('drops the location chip when subjectKind is "product" with coords (wire-bug guard)', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          subjectKind: 'product',
+          coordinates: { lat: 37.77, lng: -122.42 },
+        })}
+      />,
+    );
+    expect(queryByTestId('subject-detail-location')).toBeNull();
+  });
+
+  // TN-V2-RANK-013 — price tier chip on detail header.
+  it('renders only the price chip when host + language + location are absent', () => {
+    const { getByTestId, queryByTestId, getByText } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput({ priceTier: '$$' })} />,
+    );
+    expect(getByTestId('subject-detail-context')).toBeTruthy();
+    expect(queryByTestId('subject-detail-host')).toBeNull();
+    expect(queryByTestId('subject-detail-language')).toBeNull();
+    expect(queryByTestId('subject-detail-location')).toBeNull();
+    expect(getByTestId('subject-detail-price')).toBeTruthy();
+    expect(getByText('$$')).toBeTruthy();
+  });
+
+  it.each(['$', '$$', '$$$'] as const)(
+    'renders the price chip text verbatim for tier %s',
+    (tier) => {
+      const { getByTestId, getByText } = render(
+        <SubjectDetailScreen subjectId="sub-1" data={makeInput({ priceTier: tier })} />,
+      );
+      expect(getByTestId('subject-detail-price')).toBeTruthy();
+      expect(getByText(tier)).toBeTruthy();
+    },
+  );
+
+  // TN-V2-RANK-011 — recency badge on detail header.
+  // Tests the END-TO-END wiring: input.lastActiveMs + category →
+  // header.recency derivation → chip render. The default
+  // `Date.now()` fallback in deriveSubjectDetail (when context is
+  // omitted) means we need a deterministic age — a wire-format
+  // lastActiveMs from 2010 is always stale regardless of "now".
+  it('renders the recency chip when subject is stale', () => {
+    const longAgoMs = 1_300_000_000_000; // ~ 2011-03-15 — always stale.
+    const { getByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          category: 'tech/laptop',
+          lastActiveMs: longAgoMs,
+        })}
+      />,
+    );
+    expect(getByTestId('subject-detail-recency')).toBeTruthy();
+    // Don't pin the exact "N years old" string — it depends on the
+    // wall-clock at test-run time. Pin the suffix shape instead.
+    expect(getByText(/\d+ years? old$/)).toBeTruthy();
+  });
+
+  it('hides the recency chip when subject is fresh (within category half-life)', () => {
+    // Use a lastActiveMs guaranteed-recent: now-ish. tech threshold
+    // is 1 year, so a today-ish lastActiveMs is fresh → no badge.
+    const { queryByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          category: 'tech/laptop',
+          lastActiveMs: Date.now() - 24 * 60 * 60 * 1000, // 1 day old
+        })}
+      />,
+    );
+    expect(queryByTestId('subject-detail-recency')).toBeNull();
+  });
+
+  it('hides the recency chip when lastActiveMs is omitted (no signal)', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
+    );
+    expect(queryByTestId('subject-detail-recency')).toBeNull();
+  });
+
+  // TN-V2-RANK-012 — region pill on detail header.
+  //
+  // The detail screen pulls viewerRegion from `useViewerPreferences()`
+  // (keystore-resident; never reaches the wire — Loyalty Law). The
+  // data-layer test in `subject_detail_data.test.ts` pins the
+  // derivation contract; the view-level test on `subject_card_view`
+  // pins the chip render. The screen wiring is a one-line pass-
+  // through (`viewerRegion: viewerProfile?.region`), and exercising
+  // it here would require seeding the keychain mock + the user-
+  // preferences singleton — the integration belongs in
+  // `__tests__/screens/` alongside the existing
+  // `viewer_filter_integration.render.test.tsx` if/when needed.
+
+  // TN-V2-RANK-015 — flag-warning banner on detail header.
+  // The banner is the highest-priority safety surface; pinned that
+  // it (a) renders ABOVE the chip row, (b) uses the warning testID,
+  // (c) hides silently when count is zero or summary missing.
+  it('renders the flag-warning banner when summary has count > 0', () => {
+    const { getByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          flagSummary: { contactsFlaggedCount: 2, scope: 'brand' },
+        })}
+      />,
+    );
+    expect(getByTestId('subject-detail-flag-warning')).toBeTruthy();
+    expect(getByText('2 of your contacts flagged this brand')).toBeTruthy();
+  });
+
+  it('renders the singular-friendly copy for count=1', () => {
+    const { getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          flagSummary: { contactsFlaggedCount: 1, scope: 'category' },
+        })}
+      />,
+    );
+    expect(getByText('1 of your contacts flagged this category')).toBeTruthy();
+  });
+
+  it('hides the banner when count is 0 (no reassurance theatre)', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          flagSummary: { contactsFlaggedCount: 0, scope: 'brand' },
+        })}
+      />,
+    );
+    expect(queryByTestId('subject-detail-flag-warning')).toBeNull();
+  });
+
+  it('hides the banner when flagSummary is omitted', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
+    );
+    expect(queryByTestId('subject-detail-flag-warning')).toBeNull();
+  });
+
+  // TN-V2-RANK-014 — alternatives strip below the review list.
+  it('hides the alternatives strip when alternatives is empty (default)', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
+    );
+    expect(queryByTestId('subject-detail-alternatives')).toBeNull();
+  });
+
+  it('renders the strip with the correct header copy and cards', () => {
+    const { getByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          alternatives: [
+            { subjectId: 'alt-1', title: 'Alt One', subjectTrustScore: 0.85, category: 'tech/laptop' },
+            { subjectId: 'alt-2', title: 'Alt Two', subjectTrustScore: 0.55, category: 'tech/laptop' },
+          ],
+        })}
+      />,
+    );
+    expect(getByTestId('subject-detail-alternatives')).toBeTruthy();
+    expect(getByText('2 trusted alternatives')).toBeTruthy();
+    expect(getByTestId('subject-detail-alternative-alt-1')).toBeTruthy();
+    expect(getByTestId('subject-detail-alternative-alt-2')).toBeTruthy();
+    expect(getByText('Alt One')).toBeTruthy();
+    expect(getByText('Alt Two')).toBeTruthy();
+  });
+
+  it('uses singular header when there is exactly 1 alternative', () => {
+    const { getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          alternatives: [
+            { subjectId: 'alt-1', title: 'Alt One', subjectTrustScore: 0.85 },
+          ],
+        })}
+      />,
+    );
+    expect(getByText('1 trusted alternative')).toBeTruthy();
+  });
+
+  it('renders a band stripe per rated alternative; omits for unrated', () => {
+    const { getByTestId, queryByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          alternatives: [
+            { subjectId: 'alt-1', title: 'Rated', subjectTrustScore: 0.85 },
+            { subjectId: 'alt-2', title: 'Unrated', subjectTrustScore: null },
+          ],
+        })}
+      />,
+    );
+    expect(getByTestId('subject-detail-alternative-band-alt-1')).toBeTruthy();
+    expect(queryByTestId('subject-detail-alternative-band-alt-2')).toBeNull();
+  });
+
+  it('caps the strip at 3 entries even if more come down the wire', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          alternatives: Array.from({ length: 5 }, (_, i) => ({
+            subjectId: `alt-${i}`,
+            title: `Alt ${i}`,
+            subjectTrustScore: 0.8,
+          })),
+        })}
+      />,
+    );
+    expect(queryByTestId('subject-detail-alternative-alt-0')).toBeTruthy();
+    expect(queryByTestId('subject-detail-alternative-alt-1')).toBeTruthy();
+    expect(queryByTestId('subject-detail-alternative-alt-2')).toBeTruthy();
+    expect(queryByTestId('subject-detail-alternative-alt-3')).toBeNull();
+    expect(queryByTestId('subject-detail-alternative-alt-4')).toBeNull();
+  });
+
+  it('renders all four chips when host + language + location + price all present', () => {
+    const { getByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          host: 'sfmoma.org',
+          language: 'en',
+          subjectKind: 'place',
+          coordinates: { lat: 37.7857, lng: -122.401 },
+          priceTier: '$$',
+        })}
+      />,
+    );
+    expect(getByTestId('subject-detail-host')).toBeTruthy();
+    expect(getByTestId('subject-detail-language')).toBeTruthy();
+    expect(getByTestId('subject-detail-location')).toBeTruthy();
+    expect(getByTestId('subject-detail-price')).toBeTruthy();
+    expect(getByText('sfmoma.org')).toBeTruthy();
+    expect(getByText('EN')).toBeTruthy();
+    expect(getByText('37.79°N, 122.40°W')).toBeTruthy();
+    expect(getByText('$$')).toBeTruthy();
   });
 });
 

@@ -63,8 +63,11 @@
 
 import { lookupCategorySegment } from './category_keywords'
 import { lookupHost, normalizeHost } from './host_category'
+import { hostToRegion } from './host_to_region'
 import { parseIdentifier, type ParsedIdentifier } from './identifier_parser'
 import { lookupOrgByDomain, lookupOrgByName, type OrgType } from './known_orgs'
+import { parseJsonLdSchedule } from './parse_json_ld_schedule'
+import { parseOpenGraphPrice } from './parse_open_graph_price'
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -90,6 +93,27 @@ export interface SubjectEnrichment {
   readonly category: string
   /** Type-specific metadata per plan §3.6.2. Always returns an object (possibly empty). */
   readonly metadata: Readonly<Record<string, unknown>>
+}
+
+/**
+ * Optional inputs to the enricher beyond the bare `SubjectRef`.
+ *
+ * Today: pre-fetched HTML for invoking the META-009 (price) +
+ * META-010 (schedule) parsers without making the enricher do its
+ * own network I/O. The HTTP-fetch wrapper is deliberately deferred —
+ * this options surface is the integration point future
+ * orchestration layers (rate-limited fetcher, cache, fallback) plug
+ * into. Callers that don't have HTML pass nothing; the enricher
+ * returns the same shape it always has, just without the HTML-
+ * derived fields.
+ *
+ * Tomorrow: this object is the natural home for any other deferred
+ * input (e.g. pre-resolved DID document, pre-computed identifier
+ * canonical form). Keeping it as an options bag means adding a
+ * field doesn't break call sites.
+ */
+export interface EnrichmentOptions {
+  readonly html?: string
 }
 
 /**
@@ -157,12 +181,12 @@ const CLAIM_DOMAIN_RULES: ReadonlyArray<{ readonly pattern: RegExp; readonly dom
  * (e.g. `'product'`) and `metadata` is `{}`. Best-effort enrichment
  * fills in segment + metadata when the heuristics match.
  */
-export function enrichSubject(ref: SubjectRef): SubjectEnrichment {
+export function enrichSubject(ref: SubjectRef, options?: EnrichmentOptions): SubjectEnrichment {
   switch (ref.type) {
     case 'product':
-      return enrichProduct(ref)
+      return enrichProduct(ref, options)
     case 'place':
-      return enrichPlace(ref)
+      return enrichPlace(ref, options)
     case 'content':
       return enrichContent(ref)
     case 'dataset':
@@ -183,7 +207,7 @@ export function enrichSubject(ref: SubjectRef): SubjectEnrichment {
 
 // ─── Type-specific enrichers ─────────────────────────────────────────────
 
-function enrichProduct(ref: SubjectRef): SubjectEnrichment {
+function enrichProduct(ref: SubjectRef, options?: EnrichmentOptions): SubjectEnrichment {
   const metadata: Record<string, unknown> = {}
 
   // Step 1: identifier-based (highest specificity).
@@ -218,8 +242,29 @@ function enrichProduct(ref: SubjectRef): SubjectEnrichment {
     metadata.host = host
   }
 
+  // Step 2b: URI host → storefront region (TN-V2-META-007). Covers
+  // both ccTLD heuristic (`amazon.co.uk` → GB) and curated
+  // overrides (`amazon.com` → US, `etsy.com` → US). Reviewer-
+  // declared `availability.regions` (META-001) lives on the
+  // ATTESTATION row (`availability_regions text[]`) — the
+  // subject-level merge unifying that with this enricher's
+  // signal is the deferred unified-pipeline work, not the
+  // enricher's job. Today this fills `metadata.availability` on
+  // SUBJECT enrichment; reviewer-declared values per attestation
+  // are persisted independently and merged at score time.
+  applyAvailabilityRegion(metadata, ref.uri)
+
   // Step 3: name keyword — refines the category segment.
   const segment = lookupCategorySegment(ref.name)
+
+  // Step 4: TN-V2-META-009 — OpenGraph / JSON-LD price extraction
+  // when the caller pre-fetched the subject's HTML. Pure parser
+  // path; HTTP fetcher orchestration is deferred. The reviewer-
+  // declared `price` (META-002 wire field) will eventually take
+  // priority at the subject-level merge stage; this enricher only
+  // fills the gap when no reviewer signal is present.
+  applyPrice(metadata, options?.html)
+
   if (segment !== null) {
     return frozenEnrichment(`product:${segment}`, metadata)
   }
@@ -227,7 +272,7 @@ function enrichProduct(ref: SubjectRef): SubjectEnrichment {
   return frozenEnrichment('product', metadata)
 }
 
-function enrichPlace(ref: SubjectRef): SubjectEnrichment {
+function enrichPlace(ref: SubjectRef, options?: EnrichmentOptions): SubjectEnrichment {
   const metadata: Record<string, unknown> = {}
 
   // Step 1: identifier `place_id:...` prefix.
@@ -255,6 +300,11 @@ function enrichPlace(ref: SubjectRef): SubjectEnrichment {
 
   // Step 3: name keyword — place_type + segment.
   const segment = lookupCategorySegment(ref.name)
+
+  // Step 4: TN-V2-META-010 — JSON-LD OpeningHours extraction when
+  // the caller pre-fetched the subject's HTML. Pure parser path.
+  applySchedule(metadata, options?.html)
+
   if (segment !== null) {
     metadata.place_type = segment
     return frozenEnrichment(`place:${segment}`, metadata)
@@ -272,6 +322,13 @@ function enrichContent(ref: SubjectRef): SubjectEnrichment {
   if (hostEntry !== null) {
     metadata.media_type = hostEntry.media_type
   }
+
+  // TN-V2-META-007 — content subjects pick up region from their
+  // host (e.g. `bbc.co.uk` → GB). Newsy/blog content is often
+  // region-bound even when the article itself is global; the
+  // signal is weak but better than null for region-aware ranking.
+  applyAvailabilityRegion(metadata, ref.uri)
+
   return frozenEnrichment('content', metadata)
 }
 
@@ -365,6 +422,71 @@ function frozenEnrichment(category: string, metadata: Record<string, unknown>): 
 function parseIfPresent(input: string | undefined): ParsedIdentifier | null {
   if (typeof input !== 'string' || input.trim().length === 0) return null
   return parseIdentifier(input)
+}
+
+/**
+ * TN-V2-META-007 — set `metadata.availability.regions` from a URL's
+ * host when a curated override or ccTLD heuristic resolves it.
+ * No-op when `hostToRegion` returns null (unknown TLD, missing URI,
+ * etc.) — never overwrites an existing `availability` object.
+ *
+ * The `availability` shape mirrors plan §3.6 META-001:
+ *   { regions?: ISO2[], shipsTo?: ISO2[], soldAt?: host[] }.
+ * This enricher only fills `regions`. Other sub-fields come from
+ * the reviewer-declared META-001 fields on the attestation row
+ * (`availability_ships_to`, `availability_sold_at`); the
+ * subject-level merge across reviewers + this enricher is the
+ * deferred unified-pipeline work.
+ */
+function applyAvailabilityRegion(metadata: Record<string, unknown>, uri: string | undefined): void {
+  if (typeof uri !== 'string') return
+  const region = hostToRegion(uri)
+  if (region === null) return
+  // Don't overwrite a reviewer-declared `availability` object — the
+  // current call sites construct `metadata` fresh, but this stays
+  // forward-compatible with a future caller that pre-fills it.
+  const existing = metadata.availability
+  if (existing && typeof existing === 'object' && 'regions' in (existing as Record<string, unknown>)) {
+    return
+  }
+  metadata.availability = { regions: [region] }
+}
+
+/**
+ * TN-V2-META-009 — set `metadata.price` from OpenGraph product /
+ * JSON-LD Offer markup when caller pre-fetched the subject's HTML.
+ * Pure parser invocation — no HTTP, no I/O. No-op when:
+ *   - `html` is absent / empty
+ *   - The parser returns null (no OG meta + no JSON-LD Offer)
+ *   - `metadata.price` is already set (caller-supplied or
+ *     reviewer-declared at the subject-merge stage takes priority).
+ *
+ * The output object matches the META-002 wire shape exactly so the
+ * subject-level merge (deferred) can union over reviewer-declared
+ * + enricher-declared price without a normalisation step.
+ */
+function applyPrice(metadata: Record<string, unknown>, html: string | undefined): void {
+  if (typeof html !== 'string' || html.length === 0) return
+  if (metadata.price !== undefined) return  // don't overwrite
+  const price = parseOpenGraphPrice(html)
+  if (price === null) return
+  metadata.price = price
+}
+
+/**
+ * TN-V2-META-010 — set `metadata.schedule` from JSON-LD
+ * OpeningHours markup when caller pre-fetched the subject's HTML.
+ * Same no-op conditions as `applyPrice`. The output matches the
+ * META-004 wire shape (subset — `hours` only; `leadDays` /
+ * `seasonal` are reviewer-declared only and don't have a JSON-LD
+ * counterpart).
+ */
+function applySchedule(metadata: Record<string, unknown>, html: string | undefined): void {
+  if (typeof html !== 'string' || html.length === 0) return
+  if (metadata.schedule !== undefined) return  // don't overwrite
+  const schedule = parseJsonLdSchedule(html)
+  if (schedule === null) return
+  metadata.schedule = schedule
 }
 
 function isCommerceHost(host: string): boolean {

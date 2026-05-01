@@ -236,6 +236,9 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
         evidenceJson: attestations.evidenceJson,
         hasCosignature: attestations.hasCosignature,
         authorDid: attestations.authorDid,
+        // TN-V2-RANK-006 — pulled so the scorer can pick the
+        // per-category half-life for each attestation independently.
+        category: attestations.category,
       })
       .from(attestations)
       .where(
@@ -297,6 +300,7 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
       isVerified: verifiedUriSet.has(a.uri),
       authorTrustScore: authorScoreMap.get(a.authorDid) ?? null,
       authorHasInboundVouch: (authorVouchMap.get(a.authorDid) ?? 0) > 0,
+      category: a.category,
     }))
   }
 

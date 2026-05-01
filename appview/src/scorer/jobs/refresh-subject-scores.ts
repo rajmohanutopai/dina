@@ -48,6 +48,9 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
           authorDid: attestations.authorDid,
           dimensionsJson: attestations.dimensionsJson,
           domain: attestations.domain,
+          // TN-V2-RANK-006 — pulled so per-category recency-decay
+          // applies to subject scores symmetrically with author trust.
+          category: attestations.category,
         })
         .from(attestations)
         .where(
@@ -90,6 +93,7 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
         authorHasInboundVouch: vouchedAuthors.has(a.authorDid),
         dimensionsJson: a.dimensionsJson as unknown[] | undefined,
         domain: a.domain,
+        category: a.category,
       }))
 
       const result = aggregateSubjectSentiment(aggregationInput)

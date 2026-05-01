@@ -87,6 +87,131 @@ const attestationSchema = z.object({
   relatedAttestations: z.array(relatedAttestationSchema).max(5).optional(),
   bilateralReview: z.record(z.unknown()).optional(),
   namespace: namespaceFragment.optional(),
+  // TN-V2-REV-001 — per-category use-case tags. Cap at 3 to match the
+  // writer-side mobile cap (`MAX_USE_CASES`) and match `tags`'
+  // per-string bound. Closed-vocabulary discipline lives in the
+  // writer; AppView accepts whatever opaque tag the writer declared.
+  useCases: z.array(z.string().min(1).max(50)).max(3).optional(),
+  // TN-V2-REV-003 — optional ms-since-epoch when reviewer last used
+  // the subject. Bounded the same way `boundedIsoDate` bounds
+  // `createdAt`: ≤ now + 5min skew (since "last used" is past-tense
+  // by definition; future values are clock-skew or malformed). Lower
+  // bound 0 (epoch start) — AT Protocol records are post-1970, and
+  // negative ms would invert recency math downstream.
+  lastUsedMs: z.number().int().min(0).refine(
+    (val) => val <= Date.now() + MAX_CLOCK_SKEW_MS,
+    { message: 'lastUsedMs cannot be more than 5 minutes in the future' },
+  ).optional(),
+  // TN-V2-REV-002 — self-declared reviewer expertise with the
+  // category. Closed enum so the scorer can weight by tier without
+  // string-matching free-form values.
+  reviewerExperience: z.enum(['novice', 'intermediate', 'expert']).optional(),
+  // TN-V2-REV-004 — disjoint endorsement / warning use-case tags.
+  // Same per-string bound as `useCases` (writer-enforced
+  // vocabulary). Cap 5 each — larger lists become noise on the
+  // detail surface that renders them.
+  recommendFor: z.array(z.string().min(1).max(50)).max(5).optional(),
+  notRecommendFor: z.array(z.string().min(1).max(50)).max(5).optional(),
+  // TN-V2-REV-005 — other subjects the reviewer also tried. Same
+  // cap (5) as the mobile writer-side `MAX_REVIEW_ALTERNATIVES`.
+  // Reuses the shared `subjectRefSchema` so the bounds (DID
+  // length, URI length, name/identifier sizes) match the primary
+  // subject — readers navigating an alternative shouldn't run
+  // into a SubjectRef the rest of the system can't render.
+  alternatives: z.array(subjectRefSchema).max(5).optional(),
+  // TN-V2-META-005 — compliance tags. Cap 10; one product can
+  // legitimately be halal AND vegan AND gluten-free AND
+  // CE-marked, and the surfaces that render these (filter chips,
+  // detail-page badges) want all the badges, not a truncated
+  // sample. Per-tag bound matches `tags` / `useCases`.
+  compliance: z.array(z.string().min(1).max(50)).max(10).optional(),
+  // TN-V2-META-006 — accessibility tags. Same shape and cap
+  // rationale as `compliance` — accessibility is additive across
+  // dimensions (wheelchair access AND captions AND audio
+  // description on the same venue is normal).
+  accessibility: z.array(z.string().min(1).max(50)).max(10).optional(),
+  // TN-V2-META-003 — compatibility tags. Cap 15 (vs 10 for
+  // compliance/accessibility) because devices can legitimately
+  // check many compatibility boxes — a modern laptop checks
+  // OS-family + bus + connector + wireless + power + … easily
+  // hitting double digits before any per-platform expansion.
+  compat: z.array(z.string().min(1).max(50)).max(15).optional(),
+  // TN-V2-META-002 — reviewer-declared price range. Coords are
+  // E7-scaled integers (`low_e7 = round(price * 1e7)`) — same
+  // CBOR-int convention as `serviceArea.latE7/lngE7` because AT
+  // Protocol records forbid floats. `currency` is ISO 4217
+  // alpha-3. `lastSeenMs` is when the reviewer observed the
+  // price (distinct from the review's `createdAt` because a
+  // price observed today may be recorded in a review next month).
+  // Bounds:
+  //  - `low_e7` / `high_e7`: non-negative (negative prices are
+  //    nonsensical for the surfaces this powers — RANK-002 range
+  //    overlap, filter chips). Upper bound JS_MAX_SAFE / 1e7 so
+  //    the integer survives both CBOR encode and Postgres
+  //    `bigint`.
+  //  - `low_e7 <= high_e7`: cross-field refine — a reversed range
+  //    is malformed and would silently break range-overlap math
+  //    if persisted (`low <= max AND high >= min` with `low > high`
+  //    matches nothing).
+  //  - `currency`: 3 uppercase ASCII letters (ISO 4217 alpha-3).
+  //    Closed-vocab discipline lives on the writer; AppView
+  //    enforces shape only.
+  //  - `lastSeenMs`: same bounds as `lastUsedMs` — non-negative
+  //    integer ms, ≤ now + 5min skew.
+  price: z.object({
+    low_e7: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    high_e7: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    currency: z.string().regex(/^[A-Z]{3}$/, 'Must be ISO 4217 alpha-3 (uppercase, 3 letters)'),
+    lastSeenMs: z.number().int().min(0).refine(
+      (val) => val <= Date.now() + MAX_CLOCK_SKEW_MS,
+      { message: 'lastSeenMs cannot be more than 5 minutes in the future' },
+    ),
+  }).refine(
+    (val) => val.low_e7 <= val.high_e7,
+    { message: 'price.low_e7 must be less than or equal to price.high_e7' },
+  ).optional(),
+  // TN-V2-META-001 — reviewer-declared availability triple. Each
+  // sub-field independently optional: a reviewer may know "sold
+  // in US" without knowing shipping or retailer set. The
+  // host_to_region enricher (META-007) auto-fills `regions` when
+  // the reviewer hasn't declared.
+  //  - `regions` / `shipsTo`: ISO 3166-1 alpha-2 (uppercase 2
+  //    letters). Cap 30 — global retailers operate in dozens of
+  //    countries; the cap holds an ordering-stable bound for the
+  //    UI rendering pipeline without truncating real-world cases.
+  //  - `soldAt`: hostnames (RFC 1035 — ≤ 253 chars). Cap 20 —
+  //    even the most ubiquitous products aren't sold at more than
+  //    a couple of dozen distinct retailers a reviewer can name.
+  // All three honour the empty-array → NULL handler convention so
+  // the GIN indexes don't carry zero-length rows.
+  availability: z.object({
+    regions: z.array(z.string().regex(/^[A-Z]{2}$/, 'Must be ISO 3166-1 alpha-2 (uppercase, 2 letters)')).max(30).optional(),
+    shipsTo: z.array(z.string().regex(/^[A-Z]{2}$/, 'Must be ISO 3166-1 alpha-2 (uppercase, 2 letters)')).max(30).optional(),
+    soldAt: z.array(z.string().min(1).max(253)).max(20).optional(),
+  }).optional(),
+  // TN-V2-META-004 — reviewer-declared schedule. Heterogeneous
+  // shape (per-day open/close map + scalar leadDays + month
+  // array) so persisted as JSONB. No individual sub-field has a
+  // search predicate that would benefit from a dedicated column.
+  //  - `hours`: keyed by lowercase 3-letter day code; values are
+  //    `{ open: 'HH:MM', close: 'HH:MM' }` 24-hour. Day keys
+  //    bounded by enum so a typo (`'monday'`) is caught at the
+  //    gate, not silently dropped on render.
+  //  - `leadDays`: integer 0–365; lower bound prevents negative
+  //    nonsense, upper bound 365 because anything beyond a year
+  //    advance is a special-event quote, not a schedule.
+  //  - `seasonal`: months 1–12; cap matches calendar.
+  schedule: z.object({
+    hours: z.record(
+      z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']),
+      z.object({
+        open: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:MM 24-hour'),
+        close: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:MM 24-hour'),
+      }),
+    ).optional(),
+    leadDays: z.number().int().min(0).max(365).optional(),
+    seasonal: z.array(z.number().int().min(1).max(12)).max(12).optional(),
+  }).optional(),
   createdAt: boundedIsoDate,
 })
 

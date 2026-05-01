@@ -16,7 +16,12 @@
 
 import { deriveSubjectCard } from '../../src/trust/subject_card';
 import {
+  MAX_ALTERNATIVES,
+  deriveAlternatives,
+  deriveFlagWarning,
   deriveSubjectDetail,
+  type AlternativeInput,
+  type FlagSummary,
   type SubjectDetailInput,
 } from '../../src/trust/subject_detail_data';
 
@@ -100,6 +105,466 @@ describe('deriveSubjectDetail — header', () => {
   it('reviewCount floors fractional values', () => {
     const detail = deriveSubjectDetail(makeInput({ reviewCount: 4.7 }));
     expect(detail.header.reviewCount).toBe(4);
+  });
+});
+
+// ─── V2 actionability layer — header chips ────────────────────────────────
+//
+// TN-V2-P1-004: the detail header mirrors the card surface for the
+// host + language + place-location chips. The data layer here imports
+// the same normalisers from `subject_card.ts` so the chip contracts
+// don't drift between surfaces. Tests below pin only the detail-side
+// glue (field plumbed through, gating on subjectKind, parity with
+// card normalisation). Comprehensive normalisation edge cases live
+// in `subject_card.test.ts` so we don't duplicate them here.
+
+describe('deriveSubjectDetail — header chips (TN-V2-P1-004)', () => {
+  it('host chip mirrors card normalisation (lowercase + trim)', () => {
+    const detail = deriveSubjectDetail(makeInput({ host: '  AMAZON.CO.UK  ' }));
+    expect(detail.header.host).toBe('amazon.co.uk');
+  });
+
+  it('language chip mirrors card normalisation (uppercase + trim)', () => {
+    const detail = deriveSubjectDetail(makeInput({ language: 'pt-br' }));
+    expect(detail.header.language).toBe('PT-BR');
+  });
+
+  it('host + language default to null when omitted', () => {
+    const detail = deriveSubjectDetail(makeInput({}));
+    expect(detail.header.host).toBeNull();
+    expect(detail.header.language).toBeNull();
+    expect(detail.header.location).toBeNull();
+  });
+
+  it('null/empty/whitespace host coerce to null (string | null contract)', () => {
+    expect(deriveSubjectDetail(makeInput({ host: null })).header.host).toBeNull();
+    expect(deriveSubjectDetail(makeInput({ host: '' })).header.host).toBeNull();
+    expect(deriveSubjectDetail(makeInput({ host: '   ' })).header.host).toBeNull();
+  });
+
+  it('renders location chip for place subjects with valid coords', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        subjectKind: 'place',
+        coordinates: { lat: 37.7749, lng: -122.4194 },
+      }),
+    );
+    expect(detail.header.location).toBe('37.77°N, 122.42°W');
+  });
+
+  it('drops the location chip when subjectKind is not "place" (wire bug guard)', () => {
+    // Mirrors the card-side gate: coords on a non-place subject is a
+    // wire-format invariant violation, drop the chip.
+    const detail = deriveSubjectDetail(
+      makeInput({
+        subjectKind: 'product',
+        coordinates: { lat: 37.77, lng: -122.42 },
+      }),
+    );
+    expect(detail.header.location).toBeNull();
+  });
+
+  it('drops the location chip when subjectKind is omitted (legacy callers)', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({ coordinates: { lat: 37.77, lng: -122.42 } }),
+    );
+    expect(detail.header.location).toBeNull();
+  });
+
+  it('drops the location chip for out-of-range or non-finite coords', () => {
+    expect(
+      deriveSubjectDetail(
+        makeInput({ subjectKind: 'place', coordinates: { lat: 91, lng: 0 } }),
+      ).header.location,
+    ).toBeNull();
+    expect(
+      deriveSubjectDetail(
+        makeInput({
+          subjectKind: 'place',
+          coordinates: { lat: Number.NaN, lng: 0 },
+        }),
+      ).header.location,
+    ).toBeNull();
+  });
+
+  it('all three chips can co-exist (place subject with website + language)', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        host: 'sfmoma.org',
+        language: 'en',
+        subjectKind: 'place',
+        coordinates: { lat: 37.7857, lng: -122.401 },
+      }),
+    );
+    expect(detail.header.host).toBe('sfmoma.org');
+    expect(detail.header.language).toBe('EN');
+    expect(detail.header.location).toBe('37.79°N, 122.40°W');
+  });
+
+  it('chip parity — same input produces same chip values on card + detail', () => {
+    // Pinned to catch contract drift between surfaces. The card and
+    // detail share normaliser functions in `subject_card.ts`, but a
+    // future "optimisation" that inlined either could subtly diverge.
+    const cardInput = {
+      title: 'SFMOMA',
+      category: null,
+      subjectTrustScore: 0.7,
+      reviewCount: 10,
+      reviews: [],
+      host: 'SFMOMA.org',
+      language: 'en',
+      subjectKind: 'place' as const,
+      coordinates: { lat: 37.7857, lng: -122.401 },
+    };
+    const card = deriveSubjectCard(cardInput);
+    const detail = deriveSubjectDetail(cardInput);
+    expect(detail.header.host).toBe(card.host);
+    expect(detail.header.language).toBe(card.language);
+    expect(detail.header.location).toBe(card.location);
+  });
+});
+
+// ─── V2 actionability layer — header price chip ────────────────────────────
+//
+// TN-V2-RANK-013: the detail header gains a fourth context chip for
+// the producer's published price tier ($/$$/$$$). Mirrors the card
+// surface: same chip semantics, same normaliser, same null-rendering
+// contract. As with host/language/location, the data layer here pins
+// only the detail-side glue (field plumbed through, parity with
+// card normalisation, default-null behaviour). Comprehensive
+// normalisation edge cases (4-dollar, lowercase, unrelated strings)
+// live in `subject_card.test.ts` so we don't duplicate them.
+
+describe('deriveSubjectDetail — header price chip (TN-V2-RANK-013)', () => {
+  it('passes through valid tiers ($, $$, $$$)', () => {
+    expect(deriveSubjectDetail(makeInput({ priceTier: '$' })).header.priceTier).toBe('$');
+    expect(deriveSubjectDetail(makeInput({ priceTier: '$$' })).header.priceTier).toBe('$$');
+    expect(deriveSubjectDetail(makeInput({ priceTier: '$$$' })).header.priceTier).toBe(
+      '$$$',
+    );
+  });
+
+  it('priceTier defaults to null when omitted', () => {
+    const detail = deriveSubjectDetail(makeInput({}));
+    expect(detail.header.priceTier).toBeNull();
+  });
+
+  it('null / undefined priceTier coerce to null (string | null contract)', () => {
+    expect(deriveSubjectDetail(makeInput({ priceTier: null })).header.priceTier).toBeNull();
+    expect(
+      deriveSubjectDetail(makeInput({ priceTier: undefined })).header.priceTier,
+    ).toBeNull();
+  });
+
+  it('chip parity — same input produces same priceTier on card + detail', () => {
+    // Pinned to catch contract drift between surfaces. Card and
+    // detail share `normalisePriceTier`; a future inline optimisation
+    // could silently diverge — this asserts they MUST agree.
+    const sharedInput = {
+      title: 'Aeron chair',
+      category: null,
+      subjectTrustScore: 0.7,
+      reviewCount: 10,
+      reviews: [],
+      priceTier: '$$' as const,
+    };
+    const card = deriveSubjectCard(sharedInput);
+    const detail = deriveSubjectDetail(sharedInput);
+    expect(detail.header.priceTier).toBe(card.priceTier);
+    expect(detail.header.priceTier).toBe('$$');
+  });
+
+  it('all four chips can co-exist (place subject with website + language + price)', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        host: 'sfmoma.org',
+        language: 'en',
+        subjectKind: 'place',
+        coordinates: { lat: 37.7857, lng: -122.401 },
+        priceTier: '$$',
+      }),
+    );
+    expect(detail.header.host).toBe('sfmoma.org');
+    expect(detail.header.language).toBe('EN');
+    expect(detail.header.location).toBe('37.79°N, 122.40°W');
+    expect(detail.header.priceTier).toBe('$$');
+  });
+});
+
+// ─── V2 actionability layer — recency + region chips ──────────────────────
+//
+// TN-V2-RANK-011 + RANK-012: detail header mirrors the card surface
+// for the recency badge + region pill. Pinned: detail-side glue
+// only (field plumbed through, parity with card normalisation,
+// default-null behaviour). Comprehensive normalisation edge cases
+// (per-category thresholds, future-dated lastActiveMs, multi-region
+// formatting) live in `subject_card.test.ts`.
+
+const NOW_MS = 1_700_000_000_000;
+const MS_PER_YEAR = 365 * 24 * 60 * 60 * 1000;
+
+describe('deriveSubjectDetail — header recency badge (TN-V2-RANK-011)', () => {
+  it('derives recency string when subject is stale', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        category: 'tech/laptop',
+        lastActiveMs: NOW_MS - 3 * MS_PER_YEAR,
+      }),
+      { nowMs: NOW_MS },
+    );
+    expect(detail.header.recency).toBe('3 years old');
+  });
+
+  it('recency is null when subject is fresh', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        category: 'tech/laptop',
+        lastActiveMs: NOW_MS - 6 * 30 * 24 * 60 * 60 * 1000,
+      }),
+      { nowMs: NOW_MS },
+    );
+    expect(detail.header.recency).toBeNull();
+  });
+
+  it('recency defaults to null when lastActiveMs is omitted', () => {
+    const detail = deriveSubjectDetail(makeInput({}), { nowMs: NOW_MS });
+    expect(detail.header.recency).toBeNull();
+  });
+
+  it('recency defaults to null when context is omitted (Date.now() default)', () => {
+    // No context → nowMs falls back to Date.now(); a recent
+    // lastActiveMs is still null.
+    const detail = deriveSubjectDetail(
+      makeInput({
+        category: 'tech/laptop',
+        lastActiveMs: Date.now() - 24 * 60 * 60 * 1000,
+      }),
+    );
+    expect(detail.header.recency).toBeNull();
+  });
+});
+
+describe('deriveSubjectDetail — header region pill (TN-V2-RANK-012)', () => {
+  it('derives region pill when viewer NOT in availability list', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({ availabilityRegions: ['UK'] }),
+      { viewerRegion: 'US' },
+    );
+    expect(detail.header.regionPill).toBe('📍 UK only');
+  });
+
+  it('regionPill is null when viewer IS in availability list', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({ availabilityRegions: ['UK', 'US'] }),
+      { viewerRegion: 'US' },
+    );
+    expect(detail.header.regionPill).toBeNull();
+  });
+
+  it('regionPill defaults to null when context is omitted (no viewer signal)', () => {
+    const detail = deriveSubjectDetail(makeInput({ availabilityRegions: ['UK'] }));
+    expect(detail.header.regionPill).toBeNull();
+  });
+
+  it('regionPill defaults to null when availabilityRegions is omitted', () => {
+    const detail = deriveSubjectDetail(makeInput({}), { viewerRegion: 'US' });
+    expect(detail.header.regionPill).toBeNull();
+  });
+});
+
+// ─── TN-V2-RANK-015: flag-warning banner ──────────────────────────────────
+//
+// Pins the rules of the negative-space banner contract:
+//   1. Null/missing summary → null (no banner — silence on
+//      non-flagged subjects).
+//   2. Zero / negative / non-finite count → null (defensive against
+//      bad wire data; "0 contacts flagged" is reassurance theatre).
+//   3. Scope → noun mapping (subject → "product", brand → "brand",
+//      category → "category").
+//   4. Singular vs plural ("1 contact" vs "N contacts").
+//   5. Defensive ceiling clamp on runaway counts.
+
+describe('deriveFlagWarning — null/missing inputs', () => {
+  it('returns null when summary is null', () => {
+    expect(deriveFlagWarning(null)).toBeNull();
+  });
+
+  it('returns null when summary is undefined', () => {
+    expect(deriveFlagWarning(undefined)).toBeNull();
+  });
+});
+
+describe('deriveFlagWarning — count guards', () => {
+  it('returns null when count is 0 (no signal)', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: 0, scope: 'brand' }),
+    ).toBeNull();
+  });
+
+  it('returns null when count is negative', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: -3, scope: 'brand' }),
+    ).toBeNull();
+  });
+
+  it('returns null when count is NaN / Infinity', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: Number.NaN, scope: 'brand' }),
+    ).toBeNull();
+    expect(
+      deriveFlagWarning({
+        contactsFlaggedCount: Number.POSITIVE_INFINITY,
+        scope: 'brand',
+      }),
+    ).toBeNull();
+  });
+
+  it('clamps non-integer counts to floor (defensive)', () => {
+    const result = deriveFlagWarning({
+      contactsFlaggedCount: 3.7,
+      scope: 'brand',
+    });
+    expect(result).not.toBeNull();
+    expect(result?.count).toBe(3);
+  });
+
+  it('clamps wildly large counts to a defensive ceiling', () => {
+    // The viewer's network cannot realistically have 1B+ flaggers
+    // on one brand — that's a wire-format violation. Cap at 1M
+    // rather than render "1000000000 of your contacts flagged this".
+    const result = deriveFlagWarning({
+      contactsFlaggedCount: 1_000_000_000,
+      scope: 'brand',
+    });
+    expect(result).not.toBeNull();
+    expect(result?.count).toBe(1_000_000);
+  });
+});
+
+describe('deriveFlagWarning — copy', () => {
+  it('singular "1 contact" for count=1', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: 1, scope: 'brand' })?.text,
+    ).toBe('1 of your contacts flagged this brand');
+    // Wait — singular should say "1 of your contact" or "1 of your
+    // contacts"? Standard English uses "contacts" for the prepositional
+    // phrase regardless of count ("1 of your contacts" = "1 contact
+    // out of your contacts"). Pinning the standard reading.
+    //
+    // Actually re-checking: common usage IS "1 of your contacts" —
+    // the preposition keeps the plural. So count=1 still uses
+    // "contacts". Leaving the assertion as-is to pin that reading.
+  });
+
+  it('plural "N contacts" for count > 1', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'brand' })?.text,
+    ).toBe('2 of your contacts flagged this brand');
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: 17, scope: 'brand' })?.text,
+    ).toBe('17 of your contacts flagged this brand');
+  });
+
+  it('uses "product" noun for scope=subject', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'subject' })?.text,
+    ).toBe('2 of your contacts flagged this product');
+  });
+
+  it('uses "brand" noun for scope=brand', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'brand' })?.text,
+    ).toBe('2 of your contacts flagged this brand');
+  });
+
+  it('uses "category" noun for scope=category', () => {
+    expect(
+      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'category' })?.text,
+    ).toBe('2 of your contacts flagged this category');
+  });
+
+  it('preserves the scope in the output for the screen layer', () => {
+    // The screen may want to render different visual treatment based
+    // on scope (e.g., a stronger colour for "brand"-flagged than
+    // "category"-flagged). Pin that the field passes through.
+    const result = deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'category' });
+    expect(result?.scope).toBe('category');
+  });
+
+  it('rejects unknown scope values defensively (wire-format guard)', () => {
+    // Future-incompatible wire data shouldn't crash the banner.
+    // The fallback uses the count + a generic noun.
+    const result = deriveFlagWarning({
+      contactsFlaggedCount: 2,
+      scope: 'unknown_scope' as unknown as FlagSummary['scope'],
+    });
+    // Either return null OR render with a generic noun. We render
+    // with a fallback noun so the safety signal isn't lost — pin
+    // that behaviour here.
+    expect(result?.text).toBe('2 of your contacts flagged this subject');
+  });
+});
+
+describe('deriveSubjectDetail — flag-warning wired through (TN-V2-RANK-015)', () => {
+  it('passes the warning onto the header when summary has count > 0', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        flagSummary: { contactsFlaggedCount: 3, scope: 'brand' },
+      }),
+    );
+    expect(detail.header.flagWarning).not.toBeNull();
+    expect(detail.header.flagWarning?.count).toBe(3);
+    expect(detail.header.flagWarning?.text).toBe(
+      '3 of your contacts flagged this brand',
+    );
+  });
+
+  it('header.flagWarning is null when summary is omitted', () => {
+    const detail = deriveSubjectDetail(makeInput({}));
+    expect(detail.header.flagWarning).toBeNull();
+  });
+
+  it('header.flagWarning is null when count is 0', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        flagSummary: { contactsFlaggedCount: 0, scope: 'brand' },
+      }),
+    );
+    expect(detail.header.flagWarning).toBeNull();
+  });
+});
+
+describe('chip parity — recency + region pill on card vs detail', () => {
+  // Both modules share the helpers from subject_card.ts. This pin
+  // catches drift if a future "optimisation" inlines either side.
+  it('card and detail produce identical recency for the same input', () => {
+    const sharedInput = {
+      title: 'Old laptop',
+      category: 'tech/laptop',
+      subjectTrustScore: 0.6,
+      reviewCount: 10,
+      reviews: [],
+      lastActiveMs: NOW_MS - 5 * MS_PER_YEAR,
+    };
+    const card = deriveSubjectCard(sharedInput, { nowMs: NOW_MS });
+    const detail = deriveSubjectDetail(sharedInput, { nowMs: NOW_MS });
+    expect(card.recency).toBe('5 years old');
+    expect(detail.header.recency).toBe(card.recency);
+  });
+
+  it('card and detail produce identical regionPill for the same input', () => {
+    const sharedInput = {
+      title: 'UK-only product',
+      category: null,
+      subjectTrustScore: 0.6,
+      reviewCount: 10,
+      reviews: [],
+      availabilityRegions: ['UK'],
+    };
+    const card = deriveSubjectCard(sharedInput, { viewerRegion: 'US' });
+    const detail = deriveSubjectDetail(sharedInput, { viewerRegion: 'US' });
+    expect(card.regionPill).toBe('📍 UK only');
+    expect(detail.header.regionPill).toBe(card.regionPill);
   });
 });
 
@@ -506,5 +971,227 @@ describe('deriveSubjectDetail — within-group ordering', () => {
       }),
     );
     expect(detail.friendsReviews.map((r) => r.reviewerName)).toEqual(['Alpha', 'Bravo']);
+  });
+});
+
+// ─── TN-V2-RANK-014: alternatives strip ───────────────────────────────────
+//
+// Pins the four contracts of the alternatives derivation:
+//   1. Bad / missing input → empty array (never null).
+//   2. Cap at MAX_ALTERNATIVES = 3.
+//   3. Filter out the current subject (defensive against bad wire).
+//   4. De-duplicate by subjectId.
+//   5. Band derived from subjectTrustScore — null/non-finite →
+//      'unrated'.
+
+function makeAlternative(overrides: Partial<AlternativeInput> = {}): AlternativeInput {
+  return {
+    subjectId: 'alt-1',
+    title: 'Alt subject',
+    category: null,
+    subjectTrustScore: 0.8,
+    ...overrides,
+  };
+}
+
+describe('deriveAlternatives — null/missing inputs', () => {
+  it('returns empty array when raw is null', () => {
+    expect(deriveAlternatives(null, '')).toEqual([]);
+  });
+
+  it('returns empty array when raw is undefined', () => {
+    expect(deriveAlternatives(undefined, '')).toEqual([]);
+  });
+
+  it('returns empty array when raw is an empty array', () => {
+    expect(deriveAlternatives([], '')).toEqual([]);
+  });
+
+  it('returns empty array when raw is not actually an array (defensive)', () => {
+    type Raws = readonly AlternativeInput[];
+    expect(
+      deriveAlternatives('not-an-array' as unknown as Raws, ''),
+    ).toEqual([]);
+    expect(
+      deriveAlternatives({ length: 3 } as unknown as Raws, ''),
+    ).toEqual([]);
+  });
+});
+
+describe('deriveAlternatives — entry filtering', () => {
+  it('drops entries with empty subjectId', () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: '' }), makeAlternative({ subjectId: 'b' })],
+      '',
+    );
+    expect(out.map((a) => a.subjectId)).toEqual(['b']);
+  });
+
+  it('drops entries with empty title', () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a', title: '' }), makeAlternative({ subjectId: 'b' })],
+      '',
+    );
+    expect(out.map((a) => a.subjectId)).toEqual(['b']);
+  });
+
+  it('drops null / undefined entries (defensive)', () => {
+    type Raws = readonly AlternativeInput[];
+    const out = deriveAlternatives(
+      [
+        null as unknown as AlternativeInput,
+        makeAlternative({ subjectId: 'a' }),
+        undefined as unknown as AlternativeInput,
+      ] as Raws,
+      '',
+    );
+    expect(out.map((a) => a.subjectId)).toEqual(['a']);
+  });
+
+  it('drops the current subject (defensive — server should never include self)', () => {
+    const out = deriveAlternatives(
+      [
+        makeAlternative({ subjectId: 'self', title: 'Self' }),
+        makeAlternative({ subjectId: 'other', title: 'Other' }),
+      ],
+      'self',
+    );
+    expect(out.map((a) => a.subjectId)).toEqual(['other']);
+  });
+
+  it('drops duplicates by subjectId, preserving order', () => {
+    const out = deriveAlternatives(
+      [
+        makeAlternative({ subjectId: 'a', title: 'First' }),
+        makeAlternative({ subjectId: 'b', title: 'Second' }),
+        makeAlternative({ subjectId: 'a', title: 'Duplicate first' }),
+      ],
+      '',
+    );
+    expect(out.map((a) => a.subjectId)).toEqual(['a', 'b']);
+    expect(out[0]?.title).toBe('First');
+  });
+});
+
+describe('deriveAlternatives — capping', () => {
+  it('caps at MAX_ALTERNATIVES (3)', () => {
+    expect(MAX_ALTERNATIVES).toBe(3);
+    const raw = Array.from({ length: 10 }, (_, i) =>
+      makeAlternative({ subjectId: `alt-${i}`, title: `Alt ${i}` }),
+    );
+    const out = deriveAlternatives(raw, '');
+    expect(out).toHaveLength(MAX_ALTERNATIVES);
+    expect(out.map((a) => a.subjectId)).toEqual(['alt-0', 'alt-1', 'alt-2']);
+  });
+
+  it('returns fewer than 3 when input has fewer survivors', () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a' }), makeAlternative({ subjectId: 'b' })],
+      '',
+    );
+    expect(out).toHaveLength(2);
+  });
+});
+
+describe('deriveAlternatives — band derivation', () => {
+  it('high band for score >= 0.7', () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a', subjectTrustScore: 0.85 })],
+      '',
+    );
+    expect(out[0]?.band).toBe('high');
+  });
+
+  it('moderate band for 0.4 <= score < 0.7', () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a', subjectTrustScore: 0.55 })],
+      '',
+    );
+    expect(out[0]?.band).toBe('moderate');
+  });
+
+  it('low band for 0.2 <= score < 0.4', () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a', subjectTrustScore: 0.3 })],
+      '',
+    );
+    expect(out[0]?.band).toBe('low');
+  });
+
+  it("very-low band for score < 0.2", () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a', subjectTrustScore: 0.1 })],
+      '',
+    );
+    expect(out[0]?.band).toBe('very-low');
+  });
+
+  it('unrated when score is null', () => {
+    const out = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a', subjectTrustScore: null })],
+      '',
+    );
+    expect(out[0]?.band).toBe('unrated');
+  });
+
+  it('unrated when score is undefined / non-finite', () => {
+    const a = deriveAlternatives(
+      [makeAlternative({ subjectId: 'a', subjectTrustScore: undefined })],
+      '',
+    );
+    expect(a[0]?.band).toBe('unrated');
+    const b = deriveAlternatives(
+      [makeAlternative({ subjectId: 'b', subjectTrustScore: Number.NaN })],
+      '',
+    );
+    expect(b[0]?.band).toBe('unrated');
+  });
+});
+
+describe('deriveSubjectDetail — alternatives wired through', () => {
+  it('passes alternatives onto the display', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        alternatives: [
+          { subjectId: 'a', title: 'Alt A', subjectTrustScore: 0.8, category: 'tech' },
+          { subjectId: 'b', title: 'Alt B', subjectTrustScore: 0.5, category: null },
+        ],
+      }),
+    );
+    expect(detail.alternatives).toHaveLength(2);
+    expect(detail.alternatives[0]?.subjectId).toBe('a');
+    expect(detail.alternatives[0]?.band).toBe('high');
+    expect(detail.alternatives[0]?.category).toBe('tech');
+  });
+
+  it('alternatives default to empty array when omitted', () => {
+    const detail = deriveSubjectDetail(makeInput({}));
+    expect(detail.alternatives).toEqual([]);
+  });
+
+  it('filters out the current subject when subjectDid matches', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        subjectDid: 'did:plc:self',
+        alternatives: [
+          { subjectId: 'did:plc:self', title: 'Self' },
+          { subjectId: 'did:plc:other', title: 'Other' },
+        ],
+      }),
+    );
+    expect(detail.alternatives.map((a) => a.subjectId)).toEqual(['did:plc:other']);
+  });
+
+  it('filters out the current subject when subjectIdentifier matches', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        subjectIdentifier: 'asin:B07ABC',
+        alternatives: [
+          { subjectId: 'asin:B07ABC', title: 'Self' },
+          { subjectId: 'asin:B08DEF', title: 'Other' },
+        ],
+      }),
+    );
+    expect(detail.alternatives.map((a) => a.subjectId)).toEqual(['asin:B08DEF']);
   });
 });

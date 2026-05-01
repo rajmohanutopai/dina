@@ -19,6 +19,12 @@ function makeDisplay(title: string): SubjectCardDisplay {
   return {
     title,
     subtitle: null,
+    host: null,
+    language: null,
+    location: null,
+    priceTier: null,
+    recency: null,
+    regionPill: null,
     score: {
       score: 60,
       label: '60',

@@ -86,6 +86,12 @@ function makeSubjectCardDisplay(): SubjectCardDisplay {
   return {
     title: 'Aeron chair',
     subtitle: 'Office furniture',
+    host: null,
+    language: null,
+    location: null,
+    priceTier: null,
+    recency: null,
+    regionPill: null,
     score: { score: 80, label: '80', bandName: 'High', band: 'high', colorToken: 'high' },
     showNumericScore: true,
     reviewCount: 5,
@@ -303,8 +309,10 @@ const SCREENS: ReadonlyArray<ScreenFixture> = [
       ),
     // Facet chips are inline affordances inside a horizontal chip-row,
     // not standalone CTAs — they earn the 36pt floor (same reasoning
-    // as the outbox row buttons).
-    inlineAffordancePrefixes: ['facet-chip-'],
+    // as the outbox row buttons). `viewer-filter-chip-` are the
+    // viewer-profile filter chips (TN-V2-RANK-005), same horizontal-
+    // row affordance pattern.
+    inlineAffordancePrefixes: ['facet-chip-', 'viewer-filter-chip-'],
   },
   {
     name: 'SearchScreen (empty)',
@@ -316,6 +324,7 @@ const SCREENS: ReadonlyArray<ScreenFixture> = [
           q="aeron"
         />,
       ),
+    inlineAffordancePrefixes: ['facet-chip-', 'viewer-filter-chip-'],
   },
   {
     name: 'TrustFeedScreen (feed)',

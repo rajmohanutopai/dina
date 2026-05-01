@@ -28,6 +28,12 @@ function makeDisplay(title: string): SubjectCardDisplay {
   return {
     title,
     subtitle: 'Office furniture',
+    host: null,
+    language: null,
+    location: null,
+    priceTier: null,
+    recency: null,
+    regionPill: null,
     score: { score: 80, label: '80', bandName: 'High', band: 'high', colorToken: 'high' },
     showNumericScore: true,
     reviewCount: 5,

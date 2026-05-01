@@ -46,7 +46,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
+import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 import { colors, fonts, spacing, radius } from '../../src/theme';
+import {
+  injectAttestation,
+  isTestPublishConfigured,
+  type SubjectRefBody,
+} from '../../src/trust/appview_runtime';
 import { deriveEditWarning, type EditWarning } from '../../src/trust/edit_flow';
 import {
   enqueueLocal,
@@ -57,23 +63,51 @@ import {
   emptyWriteFormStateWithSubject,
   validateWriteForm,
   describeWriteFormError,
+  serializeFormToV2Extras,
   SENTIMENT_OPTIONS,
   CONFIDENCE_OPTIONS,
   SUBJECT_KIND_OPTIONS,
   SUBJECT_KIND_HINT,
   HEADLINE_MAX_LENGTH,
   BODY_MAX_LENGTH,
+  LAST_USED_BUCKETS,
+  LAST_USED_BUCKET_LABEL,
+  MAX_USE_CASES,
+  MAX_REVIEW_ALTERNATIVES,
+  MAX_COMPLIANCE,
+  MAX_ACCESSIBILITY,
+  MAX_COMPAT,
+  MAX_RECOMMEND_FOR,
+  MAX_AVAILABILITY_REGIONS,
+  MAX_AVAILABILITY_SOLD_AT,
+  USE_CASE_LABEL,
+  REVIEWER_EXPERIENCE_OPTIONS,
+  REVIEWER_EXPERIENCE_LABEL,
+  REVIEWER_EXPERIENCE_HINT,
+  COMPLIANCE_VOCABULARY,
+  COMPLIANCE_LABEL,
+  ACCESSIBILITY_VOCABULARY,
+  ACCESSIBILITY_LABEL,
+  COMPAT_VOCABULARY,
+  COMPAT_LABEL,
+  SEASONAL_MONTH_LABEL,
+  addReviewAlternative,
+  removeReviewAlternative,
+  toggleUseCase,
+  toggleTagInVocabulary,
+  toggleSeasonalMonth,
+  addCountryCode,
+  addHostname,
+  removeAtIndex,
+  useCasesForCategory,
+  type LastUsedBucket,
+  type ReviewAlternative,
+  type ReviewerExperience,
   type WriteFormState,
   type WriteFormError,
   type WriteSubjectState,
   type SubjectKind,
 } from '../../src/trust/write_form_data';
-import {
-  injectAttestation,
-  isTestPublishConfigured,
-  type SubjectRefBody,
-} from '../../src/trust/appview_runtime';
-import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 
 import type { Sentiment, Confidence } from '@dina/protocol';
 
@@ -224,6 +258,16 @@ export interface WriteScreenProps {
   onPublish?: (state: WriteFormState) => void;
   /** Fired when the user taps Cancel — caller pops the screen. */
   onCancel?: () => void;
+  /**
+   * **TN-V2-REV-008.** Search hook for the alternatives picker —
+   * called as the user types in the picker's query input. The
+   * caller (a runner) wraps the actual search xRPC; the screen
+   * stays unaware of network details. Optional: when omitted, the
+   * picker's input + results list still render but searching is a
+   * no-op (the user can't add results, only see "search not
+   * available" hint).
+   */
+  searchAlternatives?: (query: string) => Promise<readonly ReviewAlternative[]>;
 }
 
 export default function WriteScreen(props: WriteScreenProps = {}): React.ReactElement {
@@ -364,6 +408,15 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           const rkey = `mob-${Date.now().toString(36)}-${Math.random()
             .toString(36)
             .slice(2, 8)}`;
+          // V2 wire-field extras (TN-V2-MOBILE-WIRE) — useCases,
+          // lastUsedMs, reviewerExperience, alternatives, compliance,
+          // accessibility, compat, price, availability, schedule.
+          // Every field optional; only ones the reviewer populated
+          // travel to AppView so the empty-array → NULL collapse on
+          // the server stays cheap. The serializer is `null`-safe and
+          // returns `{}` for an unfilled form, so a `{ ...record,
+          // ...v2Extras }` spread is a no-op when nothing is set.
+          const v2Extras = serializeFormToV2Extras(formState);
           await injectAttestation({
             authorDid: node.did,
             rkey,
@@ -376,6 +429,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
               text: composeText(formState.headline, formState.body),
               tags: formState.body.length > 0 ? [] : undefined,
               createdAt: new Date().toISOString(),
+              ...v2Extras,
             },
           });
           if (router.canGoBack()) router.back();
@@ -419,9 +473,19 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     onCancel = () => {
       if (router.canGoBack()) router.back();
     },
+    searchAlternatives,
   } = props;
 
-  const [state, setState] = React.useState<WriteFormState>(initial);
+  // Merge incoming `initial` over an empty form so legacy callers
+  // (controlled-mode tests, edit-mode payloads from older runners,
+  // any caller pre-V2-fields) that pass a partial WriteFormState
+  // shape still work. Defends the validator + render path from
+  // `state.priceLow.trim()`-style undefined access without forcing
+  // every call site to spread `emptyWriteFormState()` first.
+  const [state, setState] = React.useState<WriteFormState>(() => ({
+    ...emptyWriteFormState(),
+    ...initial,
+  }));
   // Reset the form when `defaultInitial` changes — Expo Router does
   // NOT remount the screen when the user navigates to /trust/write
   // again with different `?createKind=…` / `?subjectId=…` params, so
@@ -456,6 +520,193 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   const updateHeadline = (text: string): void =>
     setState((prev) => ({ ...prev, headline: text }));
   const updateBody = (text: string): void => setState((prev) => ({ ...prev, body: text }));
+  // TN-V2-REV-007 — last-used bucket: tap-to-toggle. Tapping the
+  // currently-selected bucket clears the field, returning the form
+  // to "user did not pick".
+  const updateLastUsedBucket = (b: LastUsedBucket): void =>
+    setState((prev) => ({
+      ...prev,
+      lastUsedBucket: prev.lastUsedBucket === b ? null : b,
+    }));
+  // TN-V2-REV-006 — use-case tags: tap-to-toggle multi-select with
+  // cap. The mutator delegates to the pure `toggleUseCase` helper so
+  // the cap + closed-vocabulary discipline live in the data layer,
+  // not the screen.
+  const toggleUseCaseTag = (tag: string, vocabulary: readonly string[]): void =>
+    setState((prev) => ({
+      ...prev,
+      useCases: toggleUseCase(prev.useCases, tag, vocabulary),
+    }));
+  // TN-V2-REV-008 — alternatives mutators. Cap + dedup discipline
+  // lives in the pure helpers; screen just dispatches.
+  const addAlternative = (entry: ReviewAlternative): void =>
+    setState((prev) => ({
+      ...prev,
+      alternatives: addReviewAlternative(prev.alternatives, entry),
+    }));
+  const removeAlternativeAt = (index: number): void =>
+    setState((prev) => ({
+      ...prev,
+      alternatives: removeReviewAlternative(prev.alternatives, index),
+    }));
+
+  // ── V2 mutators (TN-V2-MOBILE-WIRE) ─────────────────────────────────────
+  // All single-field setters keep the cap + closed-vocab discipline in the
+  // pure helpers; the screen just dispatches.
+  const updateReviewerExperience = (level: ReviewerExperience): void =>
+    setState((prev) => ({
+      ...prev,
+      // Tap-to-toggle: tapping the active level clears it.
+      reviewerExperience: prev.reviewerExperience === level ? null : level,
+    }));
+  const updatePriceLow = (text: string): void =>
+    setState((prev) => ({ ...prev, priceLow: text }));
+  const updatePriceHigh = (text: string): void =>
+    setState((prev) => ({ ...prev, priceHigh: text }));
+  const updatePriceCurrency = (text: string): void =>
+    // Uppercase + trim on the way in — matches `normaliseCurrency` so
+    // the input visibly reflects what will land on the wire.
+    setState((prev) => ({
+      ...prev,
+      priceCurrency: text.toUpperCase().slice(0, 3),
+    }));
+  const toggleComplianceTag = (tag: string): void =>
+    setState((prev) => ({
+      ...prev,
+      compliance: toggleTagInVocabulary(prev.compliance, tag, COMPLIANCE_VOCABULARY, MAX_COMPLIANCE),
+    }));
+  const toggleAccessibilityTag = (tag: string): void =>
+    setState((prev) => ({
+      ...prev,
+      accessibility: toggleTagInVocabulary(
+        prev.accessibility,
+        tag,
+        ACCESSIBILITY_VOCABULARY,
+        MAX_ACCESSIBILITY,
+      ),
+    }));
+  const toggleCompatTag = (tag: string): void =>
+    setState((prev) => ({
+      ...prev,
+      compat: toggleTagInVocabulary(prev.compat, tag, COMPAT_VOCABULARY, MAX_COMPAT),
+    }));
+  const toggleRecommendForTag = (tag: string, vocabulary: readonly string[]): void =>
+    setState((prev) => ({
+      ...prev,
+      recommendFor: toggleTagInVocabulary(
+        prev.recommendFor,
+        tag,
+        vocabulary,
+        MAX_RECOMMEND_FOR,
+      ),
+    }));
+  const toggleNotRecommendForTag = (tag: string, vocabulary: readonly string[]): void =>
+    setState((prev) => ({
+      ...prev,
+      notRecommendFor: toggleTagInVocabulary(
+        prev.notRecommendFor,
+        tag,
+        vocabulary,
+        MAX_RECOMMEND_FOR,
+      ),
+    }));
+  const addRegion = (raw: string): void =>
+    setState((prev) => ({
+      ...prev,
+      availabilityRegions: addCountryCode(prev.availabilityRegions, raw, MAX_AVAILABILITY_REGIONS),
+    }));
+  const removeRegionAt = (idx: number): void =>
+    setState((prev) => ({
+      ...prev,
+      availabilityRegions: removeAtIndex(prev.availabilityRegions, idx),
+    }));
+  const addShipsTo = (raw: string): void =>
+    setState((prev) => ({
+      ...prev,
+      availabilityShipsTo: addCountryCode(prev.availabilityShipsTo, raw, MAX_AVAILABILITY_REGIONS),
+    }));
+  const removeShipsToAt = (idx: number): void =>
+    setState((prev) => ({
+      ...prev,
+      availabilityShipsTo: removeAtIndex(prev.availabilityShipsTo, idx),
+    }));
+  const addSoldAt = (raw: string): void =>
+    setState((prev) => ({
+      ...prev,
+      availabilitySoldAt: addHostname(prev.availabilitySoldAt, raw, MAX_AVAILABILITY_SOLD_AT),
+    }));
+  const removeSoldAtAt = (idx: number): void =>
+    setState((prev) => ({
+      ...prev,
+      availabilitySoldAt: removeAtIndex(prev.availabilitySoldAt, idx),
+    }));
+  const updateScheduleLeadDays = (text: string): void =>
+    // Strip non-digit characters as the user types — keeps the form
+    // self-correcting for a numeric field even on platforms where
+    // keyboardType='numeric' is advisory.
+    setState((prev) => ({
+      ...prev,
+      scheduleLeadDays: text.replace(/[^\d]/g, ''),
+    }));
+  const toggleScheduleMonth = (month: number): void =>
+    setState((prev) => ({
+      ...prev,
+      scheduleSeasonal: toggleSeasonalMonth(prev.scheduleSeasonal, month),
+    }));
+
+  // Local UI state for the country-code / hostname adders. The chip-
+  // list shape needs an in-progress text buffer; rather than promote
+  // these into WriteFormState (where they'd serialise into the wire
+  // record), keep them as screen-local refs.
+  const [regionDraft, setRegionDraft] = React.useState('');
+  const [shipsToDraft, setShipsToDraft] = React.useState('');
+  const [soldAtDraft, setSoldAtDraft] = React.useState('');
+  // Local UI state for the alternative search input.
+  const [altQuery, setAltQuery] = React.useState('');
+  const [altResults, setAltResults] = React.useState<readonly ReviewAlternative[]>([]);
+  const [altSearching, setAltSearching] = React.useState(false);
+  const [altSearchError, setAltSearchError] = React.useState<string | null>(null);
+  // Stale-response guard: a fast typist can race the search callback.
+  // Without this, the LAST-RESOLVED response wins, which on a slow
+  // network could leave the user staring at results for an old query.
+  // We track the latest query in a ref and discard responses that no
+  // longer match. Caller-side debouncing is still recommended but
+  // this is the safety net.
+  const altQueryRef = React.useRef('');
+  const performAltSearch = async (q: string): Promise<void> => {
+    const query = q.trim();
+    altQueryRef.current = query;
+    if (query.length === 0 || searchAlternatives === undefined) {
+      setAltResults([]);
+      setAltSearchError(null);
+      setAltSearching(false);
+      return;
+    }
+    setAltSearching(true);
+    setAltSearchError(null);
+    try {
+      const results = await searchAlternatives(query);
+      // Stale-response guard: bail if the query has changed since
+      // this request fired. The newer request's resolution will
+      // overwrite the visible state.
+      if (altQueryRef.current !== query) return;
+      setAltResults(results.slice(0, 10));
+    } catch (err) {
+      if (altQueryRef.current !== query) return; // stale error, discard
+      setAltSearchError(
+        err instanceof Error ? err.message : 'Search failed. Try again.',
+      );
+      setAltResults([]);
+    } finally {
+      if (altQueryRef.current === query) setAltSearching(false);
+    }
+  };
+  // TN-V2-REV-007 — Advanced section open/close state. Local-only;
+  // not part of WriteFormState because it's pure UI (does not
+  // affect publish payload). Reset on every render of the form (no
+  // persistence across navigations) — matches user expectation that
+  // collapsed-by-default advanced sections start collapsed.
+  const [advancedExpanded, setAdvancedExpanded] = React.useState(false);
   // Subject mutators — only meaningful when `state.subject !== null`
   // (the form is in "describe a new subject" mode).
   const updateSubjectKind = (kind: SubjectKind): void =>
@@ -791,6 +1042,549 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         {fieldError(validation.errors, ['confidence_required'], showErrors)}
       </View>
 
+      {/* ─── TN-V2-REV-007: Advanced (collapsed by default) ─────────
+          Casual reviewers don't see this. Power users tap "Advanced"
+          to surface the last-used picker (and any future advanced
+          fields — REV-006 useCase, REV-008 alternatives — will land
+          here too). Collapse-by-default keeps the form tidy; the
+          toggle is a wide pressable so it's discoverable without
+          stealing visual weight from the required fields above. */}
+      <Pressable
+        onPress={() => !isSubmitting && setAdvancedExpanded((open) => !open)}
+        disabled={isSubmitting}
+        style={({ pressed }) => [
+          styles.advancedToggle,
+          pressed && !isSubmitting && styles.advancedTogglePressed,
+        ]}
+        testID="write-advanced-toggle"
+        accessibilityRole="button"
+        accessibilityLabel={
+          advancedExpanded ? 'Hide advanced fields' : 'Show advanced fields'
+        }
+        accessibilityState={{ expanded: advancedExpanded, disabled: isSubmitting }}
+      >
+        <Ionicons
+          name={advancedExpanded ? 'chevron-down' : 'chevron-forward'}
+          size={14}
+          color={colors.textMuted}
+        />
+        <Text style={styles.advancedToggleLabel}>Advanced</Text>
+      </Pressable>
+      {advancedExpanded && (
+        <View testID="write-advanced-section">
+          {/* TN-V2-REV-006 — use-case picker. Per-category
+              vocabulary (resolves from `state.subject?.kind`, falling
+              back to a generic list for the subjectId-based form
+              path). Multi-select capped at MAX_USE_CASES = 3. When at
+              the cap, unselected tags grey out so the user
+              understands why further taps are no-ops. */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>What do you use this for?</Text>
+            <Text style={styles.kindHint}>
+              Optional — pick up to {MAX_USE_CASES}. Helps other readers
+              find reviews from people with the same use-case.
+            </Text>
+            {(() => {
+              // IIFE keeps the vocabulary derivation co-located with
+              // the picker JSX without adding a top-level local that
+              // re-renders unrelated branches.
+              const vocabularyCategory =
+                state.subject != null ? categoryFor(state.subject.kind) : null;
+              const vocabulary = useCasesForCategory(vocabularyCategory);
+              const atCap = state.useCases.length >= MAX_USE_CASES;
+              return (
+                <View style={styles.useCaseRow} testID="write-use-case-row">
+                  {vocabulary.map((tag) => {
+                    const selected = state.useCases.includes(tag);
+                    const disabled = isSubmitting || (atCap && !selected);
+                    return (
+                      <Pressable
+                        key={tag}
+                        onPress={() => !disabled && toggleUseCaseTag(tag, vocabulary)}
+                        disabled={disabled}
+                        style={({ pressed }) => [
+                          styles.useCaseBtn,
+                          selected && styles.useCaseBtnActive,
+                          disabled && !selected && styles.useCaseBtnDisabled,
+                          pressed && !disabled && styles.useCaseBtnPressed,
+                        ]}
+                        testID={`write-use-case-${tag}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={USE_CASE_LABEL[tag] ?? tag}
+                        accessibilityState={{ selected, disabled }}
+                      >
+                        <Text
+                          style={[
+                            styles.useCaseLabel,
+                            selected && styles.useCaseLabelActive,
+                            disabled && !selected && styles.useCaseLabelDisabled,
+                          ]}
+                        >
+                          {USE_CASE_LABEL[tag] ?? tag}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              );
+            })()}
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Last used</Text>
+            <Text style={styles.kindHint}>
+              When did you last interact with this? Optional — helps readers
+              judge how fresh your review still is.
+            </Text>
+            <View style={styles.lastUsedRow}>
+              {LAST_USED_BUCKETS.map((bucket) => (
+                <Pressable
+                  key={bucket}
+                  onPress={() => !isSubmitting && updateLastUsedBucket(bucket)}
+                  disabled={isSubmitting}
+                  style={({ pressed }) => [
+                    styles.lastUsedBtn,
+                    state.lastUsedBucket === bucket && styles.lastUsedBtnActive,
+                    pressed && !isSubmitting && styles.lastUsedBtnPressed,
+                  ]}
+                  testID={`write-last-used-${bucket}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={LAST_USED_BUCKET_LABEL[bucket]}
+                  accessibilityState={{
+                    selected: state.lastUsedBucket === bucket,
+                    disabled: isSubmitting,
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.lastUsedLabel,
+                      state.lastUsedBucket === bucket && styles.lastUsedLabelActive,
+                    ]}
+                  >
+                    {LAST_USED_BUCKET_LABEL[bucket]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          {/* TN-V2-REV-008 — alternatives picker. The reviewer can
+              add up to MAX_REVIEW_ALTERNATIVES = 5 "I also tried"
+              entries via search. Renders three layers:
+                1. Currently-added chips (each with a remove X).
+                2. Search input (debounced search via the
+                   `searchAlternatives` callback prop).
+                3. Search results (compact rows; tap to add).
+              When the search prop is omitted (e.g. tests not wiring
+              a search runner) the input + results stay silent. */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Other things you tried</Text>
+            <Text style={styles.kindHint}>
+              Optional — add up to {MAX_REVIEW_ALTERNATIVES} subjects you
+              also considered. Helps readers compare.
+            </Text>
+            {state.alternatives.length > 0 && (
+              <View style={styles.altChipRow} testID="write-alt-chips">
+                {state.alternatives.map((alt, idx) => (
+                  <View
+                    key={`${alt.kind}:${alt.subjectId ?? alt.name}`}
+                    style={styles.altChip}
+                    testID={`write-alt-chip-${idx}`}
+                  >
+                    <Text style={styles.altChipLabel} numberOfLines={1}>
+                      {alt.name}
+                    </Text>
+                    <Pressable
+                      onPress={() => !isSubmitting && removeAlternativeAt(idx)}
+                      disabled={isSubmitting}
+                      style={styles.altChipRemove}
+                      testID={`write-alt-remove-${idx}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${alt.name}`}
+                    >
+                      <Ionicons name="close" size={14} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            {state.alternatives.length < MAX_REVIEW_ALTERNATIVES && (
+              <View style={styles.altSearchBlock}>
+                <TextInput
+                  style={styles.altSearchInput}
+                  placeholder="Search…"
+                  placeholderTextColor={colors.textMuted}
+                  value={altQuery}
+                  onChangeText={(text) => {
+                    setAltQuery(text);
+                    void performAltSearch(text);
+                  }}
+                  editable={!isSubmitting}
+                  testID="write-alt-search-input"
+                  accessibilityLabel="Search for alternatives"
+                />
+                {altSearching && (
+                  <View style={styles.altSearchHint} testID="write-alt-search-loading">
+                    <ActivityIndicator size="small" color={colors.textMuted} />
+                    <Text style={styles.altSearchHintText}>Searching…</Text>
+                  </View>
+                )}
+                {altSearchError !== null && (
+                  <Text style={styles.altSearchError} testID="write-alt-search-error">
+                    {altSearchError}
+                  </Text>
+                )}
+                {altResults.length > 0 && (
+                  <View style={styles.altResultsList} testID="write-alt-results">
+                    {altResults.map((alt) => {
+                      // Disable rows already in the alternatives list
+                      // (avoids duplicate-add taps that would no-op).
+                      const alreadyAdded = state.alternatives.some((a) =>
+                        a.subjectId !== undefined && alt.subjectId !== undefined
+                          ? a.subjectId === alt.subjectId
+                          : a.kind === alt.kind &&
+                            a.name.trim().toLowerCase() === alt.name.trim().toLowerCase(),
+                      );
+                      const rowKey = `${alt.kind}:${alt.subjectId ?? alt.name}`;
+                      return (
+                        <Pressable
+                          key={rowKey}
+                          onPress={() => {
+                            if (isSubmitting || alreadyAdded) return;
+                            addAlternative(alt);
+                            setAltQuery('');
+                            setAltResults([]);
+                          }}
+                          disabled={isSubmitting || alreadyAdded}
+                          style={({ pressed }) => [
+                            styles.altResultRow,
+                            alreadyAdded && styles.altResultRowDisabled,
+                            pressed && !alreadyAdded && styles.altResultRowPressed,
+                          ]}
+                          testID={`write-alt-result-${alt.subjectId ?? alt.name}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Add ${alt.name}`}
+                          accessibilityState={{ disabled: alreadyAdded }}
+                        >
+                          <Text style={styles.altResultName} numberOfLines={1}>
+                            {alt.name}
+                          </Text>
+                          {alreadyAdded && (
+                            <Text style={styles.altResultMeta}>Added</Text>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            )}
+            {state.alternatives.length >= MAX_REVIEW_ALTERNATIVES && (
+              <Text style={styles.altCapHint} testID="write-alt-cap-hint">
+                Up to {MAX_REVIEW_ALTERNATIVES}. Remove one to add another.
+              </Text>
+            )}
+          </View>
+
+          {/* TN-V2-REV-002 — reviewer experience tier. Single-pick
+              chip row (tap-to-toggle: tapping the active level
+              clears it). Surfaces the same way sentiment + confidence
+              do — pill row above. */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>How experienced are you with this?</Text>
+            <Text style={styles.kindHint}>
+              Optional — readers can prefer reviews from your tier when
+              filtering.
+            </Text>
+            <View style={styles.lastUsedRow} testID="write-experience-row">
+              {REVIEWER_EXPERIENCE_OPTIONS.map((level) => {
+                const selected = state.reviewerExperience === level;
+                return (
+                  <Pressable
+                    key={level}
+                    onPress={() => !isSubmitting && updateReviewerExperience(level)}
+                    disabled={isSubmitting}
+                    style={({ pressed }) => [
+                      styles.lastUsedBtn,
+                      selected && styles.lastUsedBtnActive,
+                      pressed && !isSubmitting && styles.lastUsedBtnPressed,
+                    ]}
+                    testID={`write-experience-${level}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={REVIEWER_EXPERIENCE_LABEL[level]}
+                    accessibilityHint={REVIEWER_EXPERIENCE_HINT[level]}
+                    accessibilityState={{ selected, disabled: isSubmitting }}
+                  >
+                    <Text
+                      style={[
+                        styles.lastUsedLabel,
+                        selected && styles.lastUsedLabelActive,
+                      ]}
+                    >
+                      {REVIEWER_EXPERIENCE_LABEL[level]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* TN-V2-META-002 — price. Three text inputs: low, optional
+              high (range), and currency. When low is empty the entire
+              price block is unset → wire record omits `price`. When
+              low is set + high is empty, point price (low_e7 ==
+              high_e7). When both set, range. */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Price</Text>
+            <Text style={styles.kindHint}>
+              Optional — what you paid (or saw advertised). Helps power
+              price-range filtering.
+            </Text>
+            <View style={styles.priceRow}>
+              <TextInput
+                style={styles.priceInput}
+                placeholder="29.99"
+                placeholderTextColor={colors.textMuted}
+                value={state.priceLow}
+                onChangeText={updatePriceLow}
+                editable={!isSubmitting}
+                keyboardType="decimal-pad"
+                testID="write-price-low"
+                accessibilityLabel="Lower price"
+              />
+              <Text style={styles.priceSeparator}>to</Text>
+              <TextInput
+                style={styles.priceInput}
+                placeholder="(optional)"
+                placeholderTextColor={colors.textMuted}
+                value={state.priceHigh}
+                onChangeText={updatePriceHigh}
+                editable={!isSubmitting}
+                keyboardType="decimal-pad"
+                testID="write-price-high"
+                accessibilityLabel="Upper price (optional)"
+              />
+              <TextInput
+                style={styles.priceCurrencyInput}
+                placeholder="USD"
+                placeholderTextColor={colors.textMuted}
+                value={state.priceCurrency}
+                onChangeText={updatePriceCurrency}
+                editable={!isSubmitting}
+                autoCapitalize="characters"
+                maxLength={3}
+                testID="write-price-currency"
+                accessibilityLabel="Currency code"
+              />
+            </View>
+            {showErrors &&
+              fieldError(validation.errors, [
+                'price_low_invalid',
+                'price_high_invalid',
+                'price_high_below_low',
+                'price_currency_invalid',
+              ])}
+          </View>
+
+          {/* TN-V2-META-005 — compliance. Closed-vocab chip grid.
+              Same UX shape as REV-006 useCases (per-cap grey-out for
+              over-cap unselected entries). */}
+          {renderTagGrid({
+            label: 'Compliance',
+            hint: `Optional — pick up to ${MAX_COMPLIANCE} that apply (halal, vegan, gluten-free, …).`,
+            vocabulary: COMPLIANCE_VOCABULARY,
+            labelMap: COMPLIANCE_LABEL,
+            selected: state.compliance,
+            cap: MAX_COMPLIANCE,
+            disabled: isSubmitting,
+            onToggle: toggleComplianceTag,
+            testIDPrefix: 'write-compliance',
+          })}
+
+          {/* TN-V2-META-006 — accessibility. */}
+          {renderTagGrid({
+            label: 'Accessibility',
+            hint: `Optional — pick up to ${MAX_ACCESSIBILITY} (wheelchair, captions, screen-reader, …).`,
+            vocabulary: ACCESSIBILITY_VOCABULARY,
+            labelMap: ACCESSIBILITY_LABEL,
+            selected: state.accessibility,
+            cap: MAX_ACCESSIBILITY,
+            disabled: isSubmitting,
+            onToggle: toggleAccessibilityTag,
+            testIDPrefix: 'write-accessibility',
+          })}
+
+          {/* TN-V2-META-003 — compatibility. Cap 15 (devices stack
+              compat surfaces). */}
+          {renderTagGrid({
+            label: 'Compatibility',
+            hint: `Optional — pick up to ${MAX_COMPAT} (iOS, USB-C, Bluetooth 5, …).`,
+            vocabulary: COMPAT_VOCABULARY,
+            labelMap: COMPAT_LABEL,
+            selected: state.compat,
+            cap: MAX_COMPAT,
+            disabled: isSubmitting,
+            onToggle: toggleCompatTag,
+            testIDPrefix: 'write-compat',
+          })}
+
+          {/* TN-V2-REV-004 — recommendFor / notRecommendFor. Same
+              vocabulary as useCases (per-category). Two parallel
+              chip grids; cap 5 each. */}
+          {(() => {
+            const vocabularyCategory =
+              state.subject != null ? categoryFor(state.subject.kind) : null;
+            const vocabulary = useCasesForCategory(vocabularyCategory);
+            return (
+              <>
+                {renderTagGrid({
+                  label: 'Recommend for',
+                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you endorse.`,
+                  vocabulary,
+                  labelMap: USE_CASE_LABEL,
+                  selected: state.recommendFor,
+                  cap: MAX_RECOMMEND_FOR,
+                  disabled: isSubmitting,
+                  onToggle: (tag) => toggleRecommendForTag(tag, vocabulary),
+                  testIDPrefix: 'write-recommend-for',
+                })}
+                {renderTagGrid({
+                  label: 'Not recommended for',
+                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you'd warn against.`,
+                  vocabulary,
+                  labelMap: USE_CASE_LABEL,
+                  selected: state.notRecommendFor,
+                  cap: MAX_RECOMMEND_FOR,
+                  disabled: isSubmitting,
+                  onToggle: (tag) => toggleNotRecommendForTag(tag, vocabulary),
+                  testIDPrefix: 'write-not-recommend-for',
+                })}
+              </>
+            );
+          })()}
+
+          {/* TN-V2-META-001 — availability. Three chip-lists: regions
+              (alpha-2 country codes), shipsTo (alpha-2), soldAt
+              (hostnames). Each has its own text-input adder with the
+              shape gate built into the helper (`addCountryCode` +
+              `addHostname`); invalid entries silently drop so the
+              user gets immediate feedback by seeing nothing get
+              added. */}
+          {renderChipListAdder({
+            label: 'Available in (countries)',
+            hint: `Optional — ISO codes (US, GB, DE, …). Up to ${MAX_AVAILABILITY_REGIONS}.`,
+            placeholder: 'US',
+            entries: state.availabilityRegions,
+            cap: MAX_AVAILABILITY_REGIONS,
+            disabled: isSubmitting,
+            draft: regionDraft,
+            setDraft: setRegionDraft,
+            onAdd: (raw) => {
+              addRegion(raw);
+            },
+            onRemoveAt: removeRegionAt,
+            testIDPrefix: 'write-region',
+            inputProps: { autoCapitalize: 'characters', maxLength: 2 },
+          })}
+          {renderChipListAdder({
+            label: 'Ships to (countries)',
+            hint: `Optional — ISO codes the seller ships to.`,
+            placeholder: 'US',
+            entries: state.availabilityShipsTo,
+            cap: MAX_AVAILABILITY_REGIONS,
+            disabled: isSubmitting,
+            draft: shipsToDraft,
+            setDraft: setShipsToDraft,
+            onAdd: (raw) => {
+              addShipsTo(raw);
+            },
+            onRemoveAt: removeShipsToAt,
+            testIDPrefix: 'write-shipsto',
+            inputProps: { autoCapitalize: 'characters', maxLength: 2 },
+          })}
+          {renderChipListAdder({
+            label: 'Sold at (retailers)',
+            hint: `Optional — hostnames (amazon.com, walmart.com, …). Up to ${MAX_AVAILABILITY_SOLD_AT}.`,
+            placeholder: 'amazon.com',
+            entries: state.availabilitySoldAt,
+            cap: MAX_AVAILABILITY_SOLD_AT,
+            disabled: isSubmitting,
+            draft: soldAtDraft,
+            setDraft: setSoldAtDraft,
+            onAdd: (raw) => {
+              addSoldAt(raw);
+            },
+            onRemoveAt: removeSoldAtAt,
+            testIDPrefix: 'write-soldat',
+            inputProps: { autoCapitalize: 'none' },
+          })}
+
+          {/* TN-V2-META-004 — schedule (lead days + seasonal months).
+              Per-day open/close hours intentionally omitted — META-010
+              JSON-LD parser auto-fills hours server-side; a per-day
+              picker would be a much heavier UX commitment. */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Booking lead time</Text>
+            <Text style={styles.kindHint}>
+              Optional — days of advance booking required (0 for walk-ins,
+              14 for a doctor, 365 for a wedding venue).
+            </Text>
+            <TextInput
+              style={styles.priceCurrencyInput}
+              placeholder="0"
+              placeholderTextColor={colors.textMuted}
+              value={state.scheduleLeadDays}
+              onChangeText={updateScheduleLeadDays}
+              editable={!isSubmitting}
+              keyboardType="number-pad"
+              maxLength={3}
+              testID="write-lead-days"
+              accessibilityLabel="Booking lead time in days"
+            />
+            {showErrors &&
+              fieldError(validation.errors, ['schedule_lead_days_invalid'])}
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Seasonal months</Text>
+            <Text style={styles.kindHint}>
+              Optional — months the venue operates. Leave empty for
+              year-round.
+            </Text>
+            <View style={styles.useCaseRow} testID="write-seasonal-row">
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
+                const selected = state.scheduleSeasonal.includes(month);
+                return (
+                  <Pressable
+                    key={month}
+                    onPress={() => !isSubmitting && toggleScheduleMonth(month)}
+                    disabled={isSubmitting}
+                    style={({ pressed }) => [
+                      styles.useCaseBtn,
+                      selected && styles.useCaseBtnActive,
+                      pressed && !isSubmitting && styles.useCaseBtnPressed,
+                    ]}
+                    testID={`write-seasonal-${month}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={SEASONAL_MONTH_LABEL[month]}
+                    accessibilityState={{
+                      selected,
+                      disabled: isSubmitting,
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.useCaseLabel,
+                        selected && styles.useCaseLabelActive,
+                      ]}
+                    >
+                      {SEASONAL_MONTH_LABEL[month]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* ─── Submit error ────────────────────────────────────────── */}
       {submitError !== null && (
         <View style={styles.submitErrorPanel} testID="write-submit-error">
@@ -853,9 +1647,9 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
  * present so the layout stays tight.
  */
 function fieldError(
-  allErrors: ReadonlyArray<WriteFormError>,
-  watch: ReadonlyArray<WriteFormError>,
-  show: boolean = true,
+  allErrors: readonly WriteFormError[],
+  watch: readonly WriteFormError[],
+  show = true,
 ): React.ReactElement | null {
   if (!show) return null;
   const relevant = allErrors.find((e) => watch.includes(e));
@@ -864,6 +1658,166 @@ function fieldError(
     <Text style={styles.fieldError} testID={`write-error-${relevant}`}>
       {describeWriteFormError(relevant)}
     </Text>
+  );
+}
+
+/**
+ * Closed-vocab tag grid renderer (TN-V2-META-005/006/003 + REV-004).
+ * Each tag is a Pressable; selected tags get the active style; over-cap
+ * unselected tags grey out so the user sees why further taps are no-ops.
+ *
+ * Mirrors the REV-006 useCases picker UX so the Advanced section stays
+ * visually coherent across all six closed-vocab fields.
+ */
+function renderTagGrid(props: {
+  label: string;
+  hint: string;
+  vocabulary: readonly string[];
+  labelMap: Readonly<Record<string, string>>;
+  selected: readonly string[];
+  cap: number;
+  disabled: boolean;
+  onToggle: (tag: string) => void;
+  testIDPrefix: string;
+}): React.ReactElement {
+  const atCap = props.selected.length >= props.cap;
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{props.label}</Text>
+      <Text style={styles.kindHint}>{props.hint}</Text>
+      <View style={styles.useCaseRow} testID={`${props.testIDPrefix}-row`}>
+        {props.vocabulary.map((tag) => {
+          const selected = props.selected.includes(tag);
+          const disabled = props.disabled || (atCap && !selected);
+          return (
+            <Pressable
+              key={tag}
+              onPress={() => !disabled && props.onToggle(tag)}
+              disabled={disabled}
+              style={({ pressed }) => [
+                styles.useCaseBtn,
+                selected && styles.useCaseBtnActive,
+                disabled && !selected && styles.useCaseBtnDisabled,
+                pressed && !disabled && styles.useCaseBtnPressed,
+              ]}
+              testID={`${props.testIDPrefix}-${tag}`}
+              accessibilityRole="button"
+              accessibilityLabel={props.labelMap[tag] ?? tag}
+              accessibilityState={{ selected, disabled }}
+            >
+              <Text
+                style={[
+                  styles.useCaseLabel,
+                  selected && styles.useCaseLabelActive,
+                  disabled && !selected && styles.useCaseLabelDisabled,
+                ]}
+              >
+                {props.labelMap[tag] ?? tag}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Free-form chip-list adder (TN-V2-META-001 availability fields). One
+ * text input + an Add button + the chip list. Invalid entries silently
+ * drop (the helper validates shape) — the user notices because no chip
+ * appears, which is gentler than a popup error for short shape-rules.
+ */
+function renderChipListAdder(props: {
+  label: string;
+  hint: string;
+  placeholder: string;
+  entries: readonly string[];
+  cap: number;
+  disabled: boolean;
+  draft: string;
+  setDraft: (text: string) => void;
+  onAdd: (raw: string) => void;
+  onRemoveAt: (idx: number) => void;
+  testIDPrefix: string;
+  inputProps?: { autoCapitalize?: 'none' | 'characters'; maxLength?: number };
+}): React.ReactElement {
+  const atCap = props.entries.length >= props.cap;
+  const submit = (): void => {
+    if (props.draft.trim().length === 0) return;
+    props.onAdd(props.draft);
+    props.setDraft('');
+  };
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{props.label}</Text>
+      <Text style={styles.kindHint}>{props.hint}</Text>
+      {props.entries.length > 0 && (
+        <View style={styles.altChipRow} testID={`${props.testIDPrefix}-chips`}>
+          {props.entries.map((entry, idx) => (
+            <View
+              key={`${entry}-${idx}`}
+              style={styles.altChip}
+              testID={`${props.testIDPrefix}-chip-${idx}`}
+            >
+              <Text style={styles.altChipLabel} numberOfLines={1}>
+                {entry}
+              </Text>
+              <Pressable
+                onPress={() => !props.disabled && props.onRemoveAt(idx)}
+                disabled={props.disabled}
+                style={styles.altChipRemove}
+                testID={`${props.testIDPrefix}-remove-${idx}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${entry}`}
+              >
+                <Ionicons name="close" size={14} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+      {!atCap && (
+        <View style={styles.chipAdderRow}>
+          <TextInput
+            style={[styles.altSearchInput, styles.chipAdderInput]}
+            placeholder={props.placeholder}
+            placeholderTextColor={colors.textMuted}
+            value={props.draft}
+            onChangeText={props.setDraft}
+            onSubmitEditing={submit}
+            editable={!props.disabled}
+            autoCapitalize={props.inputProps?.autoCapitalize ?? 'none'}
+            maxLength={props.inputProps?.maxLength}
+            testID={`${props.testIDPrefix}-input`}
+            accessibilityLabel={props.label}
+          />
+          <Pressable
+            onPress={submit}
+            disabled={props.disabled || props.draft.trim().length === 0}
+            style={({ pressed }) => [
+              styles.chipAddBtn,
+              (props.disabled || props.draft.trim().length === 0) &&
+                styles.chipAddBtnDisabled,
+              pressed &&
+                !props.disabled &&
+                props.draft.trim().length > 0 &&
+                styles.chipAddBtnPressed,
+            ]}
+            testID={`${props.testIDPrefix}-add`}
+            accessibilityRole="button"
+            accessibilityLabel={`Add ${props.label}`}
+          >
+            <Ionicons name="add" size={16} color={colors.bgSecondary} />
+          </Pressable>
+        </View>
+      )}
+      {atCap && (
+        <Text style={styles.altCapHint} testID={`${props.testIDPrefix}-cap`}>
+          Up to {props.cap}. Remove one to add another.
+        </Text>
+      )}
+    </View>
   );
 }
 
@@ -1031,6 +1985,241 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   confidenceLabelActive: { color: colors.bgSecondary },
+  // TN-V2-REV-007 — collapsible "Advanced" toggle. Sits below
+  // Confidence; styled small + muted so casual reviewers' eyes pass
+  // over it. The chevron flips with `expanded` state for an
+  // affordance cue.
+  advancedToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    minHeight: 44,
+  },
+  advancedTogglePressed: { opacity: 0.6 },
+  advancedToggleLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  // TN-V2-REV-007 — last-used picker. Pill-row layout matches the
+  // confidence picker but at slightly smaller scale to read as
+  // optional (the required fields above stay visually dominant).
+  lastUsedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  lastUsedBtn: {
+    backgroundColor: colors.bgCard,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    alignItems: 'center',
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  lastUsedBtnActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  lastUsedBtnPressed: { backgroundColor: colors.bgTertiary },
+  lastUsedLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  lastUsedLabelActive: { color: colors.bgSecondary },
+  // TN-V2-REV-006 — use-case picker. Same pill-row aesthetic as the
+  // last-used row, but the disabled-when-at-cap state visually greys
+  // out unselected pills so the user understands why further taps
+  // don't add a fourth tag.
+  useCaseRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  useCaseBtn: {
+    backgroundColor: colors.bgCard,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    alignItems: 'center',
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  useCaseBtnActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  useCaseBtnDisabled: { opacity: 0.4 },
+  useCaseBtnPressed: { backgroundColor: colors.bgTertiary },
+  useCaseLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  useCaseLabelActive: { color: colors.bgSecondary },
+  useCaseLabelDisabled: { color: colors.textMuted },
+  // TN-V2-REV-008 — alternatives picker layout.
+  altChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  altChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.bgTertiary,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    maxWidth: '100%',
+  },
+  altChipLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 12,
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  altChipRemove: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  altSearchBlock: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  altSearchInput: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  altSearchHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  altSearchHintText: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  altSearchError: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.error,
+    paddingHorizontal: spacing.xs,
+  },
+  altResultsList: {
+    gap: 4,
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: spacing.xs,
+  },
+  altResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 36,
+  },
+  altResultRowPressed: { backgroundColor: colors.bgTertiary },
+  altResultRowDisabled: { opacity: 0.5 },
+  altResultName: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  altResultMeta: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  altCapHint: {
+    marginTop: spacing.sm,
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  // ── V2 styles (TN-V2-MOBILE-WIRE) ──────────────────────────────────────
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  priceInput: {
+    flex: 1,
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  priceCurrencyInput: {
+    width: 72,
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  priceSeparator: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  chipAdderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chipAdderInput: {
+    flex: 1,
+  },
+  chipAddBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+    minWidth: 44,
+  },
+  chipAddBtnDisabled: { backgroundColor: colors.textMuted },
+  chipAddBtnPressed: { backgroundColor: colors.accentHover },
   submitErrorPanel: {
     flexDirection: 'row',
     alignItems: 'flex-start',
