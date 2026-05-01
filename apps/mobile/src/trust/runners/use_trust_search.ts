@@ -87,6 +87,7 @@ function groupHitsToSearchResults(hits: SearchAttestationHit[]): readonly Search
     const title = ref.name ?? ref.did ?? ref.uri ?? subjectId;
     const review: SubjectReview = {
       ring: 'stranger',
+      reviewerDid: hit.authorDid,
       reviewerTrustScore: null,
       // Prefer the resolved handle (`alice.pds.dinakernel.com`)
       // when AppView has backfilled it; fall back to a truncated

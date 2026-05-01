@@ -25,6 +25,7 @@ import type { SubjectReview } from '../../src/trust/subject_card';
 function makeReview(overrides: Partial<SubjectReview> = {}): SubjectReview {
   return {
     ring: 'contact',
+    reviewerDid: 'did:plc:sancho',
     reviewerTrustScore: 0.7,
     reviewerName: 'Sancho',
     headline: 'Worth every penny',

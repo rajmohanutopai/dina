@@ -163,7 +163,7 @@ describe('Reminders Tab Hook (5.6)', () => {
   describe('snoozeReminderBy', () => {
     it('snoozes by 1 hour', () => {
       const r = addReminder('Snooze me', NOW - HOUR);
-      expect(snoozeReminderBy(r.id, 'one_hour')).toBe(true);
+      expect(snoozeReminderBy(r.id, 'one_hour', undefined, NOW)).toBe(true);
 
       // Should no longer be overdue
       expect(getOverdueReminders(NOW)).toHaveLength(0);
@@ -171,7 +171,7 @@ describe('Reminders Tab Hook (5.6)', () => {
 
     it('snoozes by tomorrow', () => {
       const r = addReminder('Tomorrow', NOW - HOUR);
-      expect(snoozeReminderBy(r.id, 'tomorrow')).toBe(true);
+      expect(snoozeReminderBy(r.id, 'tomorrow', undefined, NOW)).toBe(true);
     });
 
     it('returns false for nonexistent', () => {

@@ -50,6 +50,20 @@ import type { TrustBand } from '@dina/protocol';
 export interface SubjectReview {
   /** Reviewer's network position relative to the viewer. */
   readonly ring: 'self' | 'contact' | 'fof' | 'stranger';
+  /**
+   * Reviewer's DID (e.g. `did:plc:zaxxz2vts2umzfk2r5fpzes4`). Drives
+   * the drill-down deep link from a tapped reviewer row to the
+   * reviewer profile screen. `null` only for `ring === 'self'` rows
+   * — those don't drill anywhere (the user is looking at their own
+   * profile they got to faster a different way).
+   *
+   * Required because earlier the row only carried `reviewerName`
+   * (display string), and the screen-side tap handler ended up
+   * pushing `params: { did: reviewerName }`. The reviewer screen's
+   * runner short-circuits on `!did.startsWith('did:')`, so the
+   * profile sat on the loading spinner forever instead of fetching.
+   */
+  readonly reviewerDid: string | null;
   /** Reviewer trust score on the AppView [0, 1] scale, or null. */
   readonly reviewerTrustScore: number | null;
   /** Reviewer display name — the card uses it in the top-reviewer line. */

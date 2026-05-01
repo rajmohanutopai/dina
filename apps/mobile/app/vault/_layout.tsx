@@ -18,32 +18,53 @@ import { Platform, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../../src/theme';
 import { openMenu } from '../../src/navigation/menu_state';
+import { StackIndexHeader } from '../../src/navigation/stack_index_header';
 
-function VaultIndexHamburger(): React.ReactElement {
+// CR-3 fix: see the matching note in `app/trust/_layout.tsx`. The
+// shared `StackIndexHeader` is a JS-rendered View that replaces the
+// native iOS UINavigationBar — Pressable a11y traits propagate to
+// VoiceOver through it (the native nav-bar wrapper strips them).
+function VaultIndexHeader(): React.ReactElement {
+  const router = useRouter();
+  // `?from=/vault` so the help-screen back chevron returns here
+  // rather than the Chat-tab default in `parent_route.ts`. /help is
+  // registered at the global Tabs root, so a bare push escapes this
+  // Stack — same plumbing as `app/trust/_layout.tsx`.
   return (
-    <Pressable
-      onPress={openMenu}
-      hitSlop={8}
-      accessibilityRole="button"
-      accessibilityLabel="Open menu"
-      style={{ paddingHorizontal: 12, paddingVertical: 6 }}
-    >
-      <Ionicons name="menu-outline" size={26} color={colors.tabInactive} />
-    </Pressable>
+    <StackIndexHeader
+      title="Vaults"
+      onMenuPress={openMenu}
+      onHelpPress={() => router.push({ pathname: '/help', params: { from: '/vault' } })}
+    />
   );
 }
 
-function VaultIndexHelp(): React.ReactElement {
+/**
+ * Always-visible back chevron with a `/vault` fallback. Rehydrated
+ * stacks may land directly on `/vault/<name>` without `/vault`
+ * underneath — same trap pattern as Trust. `canGoBack` comes from
+ * the Stack's `headerLeft` callback prop (Stack-scoped truth, not
+ * parent Tabs') so popping doesn't accidentally cross-tab. See
+ * `app/trust/_layout.tsx` for the full rationale.
+ */
+function VaultStackBack({ canGoBack }: { canGoBack: boolean }): React.ReactElement {
   const router = useRouter();
+  const onPress = () => {
+    if (canGoBack) {
+      router.back();
+    } else {
+      router.replace('/vault');
+    }
+  };
   return (
     <Pressable
-      onPress={() => router.push('/help')}
-      hitSlop={8}
+      onPress={onPress}
+      hitSlop={12}
       accessibilityRole="button"
-      accessibilityLabel="Open help"
+      accessibilityLabel="Back"
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}
     >
-      <Ionicons name="help-circle-outline" size={24} color={colors.tabInactive} />
+      <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
     </Pressable>
   );
 }
@@ -63,16 +84,21 @@ export default function VaultStackLayout(): React.ReactElement {
           color: colors.textPrimary,
         },
         headerShadowVisible: false,
-        headerTintColor: colors.tabInactive,
+        headerTintColor: colors.textPrimary,
         headerBackTitle: '',
+        headerLeft: ({ canGoBack }) => (
+          <VaultStackBack canGoBack={canGoBack ?? false} />
+        ),
       }}
     >
       <Stack.Screen
         name="index"
         options={{
           title: 'Vaults',
-          headerLeft: () => <VaultIndexHamburger />,
-          headerRight: () => <VaultIndexHelp />,
+          // CR-3: JS-rendered header so VoiceOver picks up the
+          // hamburger + help. See `app/trust/_layout.tsx`'s matching
+          // note for the rationale.
+          header: () => <VaultIndexHeader />,
         }}
       />
       <Stack.Screen name="[name]" options={{ title: 'Vault' }} />

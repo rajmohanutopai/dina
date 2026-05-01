@@ -238,3 +238,129 @@ describe('ReviewerProfileScreen — accessibility (TN-TEST-061 surface)', () => 
     expect(getByLabelText('1 negative')).toBeTruthy();
   });
 });
+
+describe('ReviewerProfileScreen — Reviews written list', () => {
+  const ROW_A = {
+    uri: 'at://x/1',
+    subjectId: 'sub-aeron',
+    subjectTitle: 'Aeron Chair',
+    category: 'office_furniture/chair',
+    sentiment: 'positive' as const,
+    headline: 'Worth every penny',
+    createdAtMs: NOW - 2 * 60 * 60_000, // 2 hours ago
+  };
+  const ROW_B = {
+    uri: 'at://x/2',
+    subjectId: 'sub-cafe',
+    subjectTitle: 'Bluestone Cafe',
+    category: null,
+    sentiment: 'neutral' as const,
+    headline: '',
+    createdAtMs: NOW - 3 * 24 * 60 * 60_000, // 3 days ago
+  };
+
+  it('hides the section while authoredRows is null (initial load)', () => {
+    const { queryByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={null}
+      />,
+    );
+    expect(queryByTestId('reviewer-authored-section')).toBeNull();
+  });
+
+  it('renders an empty-state line when authoredRows is []', () => {
+    const { getByTestId, getByText } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={[]}
+      />,
+    );
+    expect(getByTestId('reviewer-authored-section')).toBeTruthy();
+    expect(getByTestId('reviewer-authored-empty')).toBeTruthy();
+    expect(getByText('No reviews written yet.')).toBeTruthy();
+  });
+
+  it('renders one row per authored attestation', () => {
+    const { getByTestId, getAllByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={[ROW_A, ROW_B]}
+      />,
+    );
+    expect(getByTestId('reviewer-authored-section')).toBeTruthy();
+    expect(getAllByTestId(/^reviewer-authored-row-/)).toHaveLength(2);
+    expect(getByTestId(`reviewer-authored-row-${ROW_A.uri}`)).toBeTruthy();
+    expect(getByTestId(`reviewer-authored-row-${ROW_B.uri}`)).toBeTruthy();
+  });
+
+  it('row carries subject title, sentiment chip, and relative-time label', () => {
+    const { getByText, getByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={[ROW_A]}
+      />,
+    );
+    expect(getByText('Aeron Chair')).toBeTruthy();
+    expect(getByText('“Worth every penny”')).toBeTruthy();
+    expect(getByText('office_furniture/chair')).toBeTruthy();
+    expect(getByText('2h ago')).toBeTruthy();
+    expect(getByTestId('reviewer-authored-sentiment-positive')).toBeTruthy();
+  });
+
+  it('omits the headline line when text is empty', () => {
+    const { queryByText } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={[ROW_B]}
+      />,
+    );
+    // No quoted line because headline === ''
+    expect(queryByText(/“.*”/)).toBeNull();
+  });
+
+  it('omits the category slot when category is null', () => {
+    // ROW_B has category=null. The relative-time label should still
+    // render (3d ago). We assert the time label present and that no
+    // text matches the category-style slash path.
+    const { getByText, queryByText } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={[ROW_B]}
+      />,
+    );
+    expect(getByText('3d ago')).toBeTruthy();
+    expect(queryByText(/\//)).toBeNull(); // no `office_furniture/chair`-style category
+  });
+
+  it('tap on a row fires onSelectAuthoredSubject with subjectId', () => {
+    const onSelect = jest.fn();
+    const { getByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={[ROW_A]}
+        onSelectAuthoredSubject={onSelect}
+      />,
+    );
+    fireEvent.press(getByTestId(`reviewer-authored-row-${ROW_A.uri}`));
+    expect(onSelect).toHaveBeenCalledWith('sub-aeron');
+  });
+
+  it('row exposes a descriptive accessibilityLabel', () => {
+    const { getByLabelText } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        nowMs={NOW}
+        authoredRows={[ROW_A]}
+      />,
+    );
+    expect(getByLabelText('Positive review of Aeron Chair')).toBeTruthy();
+  });
+});

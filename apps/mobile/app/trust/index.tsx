@@ -59,6 +59,8 @@ import { FacetBarView } from '../../src/trust/components/facet_bar_view';
 import { FirstRunModalView } from '../../src/trust/components/first_run_modal_view';
 import { SubjectCardView } from '../../src/trust/components/subject_card_view';
 import { useNetworkFeed } from '../../src/trust/runners/use_network_feed';
+import { useReviewerProfile } from '../../src/trust/runners/use_reviewer_profile';
+import { deriveReviewerProfileDisplay } from '../../src/trust/reviewer_profile_data';
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 
 import type { FacetBar } from '../../src/trust/facets';
@@ -117,6 +119,44 @@ export interface TrustFeedScreenProps {
    * undefined onDismiss).
    */
   onDismissFirstRun?: () => void;
+  /**
+   * Pre-derived self-profile bundle for the "My trust profile" card
+   * at the top of the screen. When omitted, the screen runs its own
+   * `useReviewerProfile` against the booted DID. Tests pass an
+   * explicit value (or `null` for the unbooted state) to keep the
+   * screen presentational.
+   */
+  selfDisplay?: SelfProfileCardData | null;
+  /**
+   * Fired when the user taps the self-profile card. Default
+   * implementation pushes `/trust/reviewer/<myDid>`.
+   */
+  onOpenMyProfile?: () => void;
+}
+
+/**
+ * Data the self-profile card displays.
+ *
+ * Reddit-style framing: neutral counts only. We deliberately omit
+ * the trust band ("VERY LOW" / "HIGH" / colour-coded badge) for the
+ * SELF surface — a fresh account naturally lands in the lowest
+ * band, and surfacing that as a red verdict on the user's own
+ * landing screen reads as a personal judgment rather than
+ * information. The full band display + score lives one tap away on
+ * the reviewer profile screen, where it's a tool rather than a
+ * verdict.
+ */
+export interface SelfProfileCardData {
+  readonly handle: string | null;
+  /**
+   * Numeric trust score on `[0, 100]`, or `null` when unrated
+   * (fewer than the cold-start threshold of attestations). Rendered
+   * as "—" when null. NOT colour-coded — see component header.
+   */
+  readonly scoreDisplay: number | null;
+  readonly reviewsWritten: number;
+  readonly vouchCount: number;
+  readonly endorsementCount: number;
 }
 
 export default function TrustFeedScreen(
@@ -149,6 +189,16 @@ export default function TrustFeedScreen(
     enabled: !isFeedControlled && viewerDid !== '',
     retryNonce: feedNonce,
   });
+  // Self-profile fetch — fuels the "your trust profile" card at the
+  // top of the screen. Same xRPC call the reviewer-profile screen
+  // uses, just pointed at the viewer's own DID. Disabled when
+  // controlled (tests inject their own header) or pre-boot.
+  const isSelfControlled = props.selfDisplay !== undefined;
+  const self = useReviewerProfile({
+    did: viewerDid,
+    enabled: !isSelfControlled && viewerDid !== '',
+    retryNonce: feedNonce,
+  });
   // Refetch on focus so a freshly-published attestation by a contact
   // shows up the next time the user lands here — same pattern as the
   // other trust runners (search / subject detail / reviewer profile).
@@ -158,6 +208,26 @@ export default function TrustFeedScreen(
       setFeedNonce((n) => n + 1);
     }, [isFeedControlled, viewerDid]),
   );
+  // Project the runner's `TrustProfile` into the card's display shape.
+  // The full `deriveReviewerProfileDisplay` result has lots of fields
+  // the card doesn't need (per-sentiment counts, helpful ratio, etc.);
+  // we project to the minimal `SelfProfileCardData` shape so the
+  // controlled-prop path and the auto-runner path produce the same
+  // type. `null` means "no card" — pre-boot or unknown profile.
+  const autoSelfDisplay: SelfProfileCardData | null = React.useMemo(() => {
+    if (self.profile === null) return null;
+    const d = deriveReviewerProfileDisplay(self.profile);
+    return {
+      handle: d.handle,
+      // Surface the numeric score only when the cold-start threshold
+      // is met (`hasNumericScore`); otherwise render as `null` →
+      // em-dash. Doesn't colour-code or label-shame either way.
+      scoreDisplay: d.hasNumericScore ? d.scoreDisplay : null,
+      reviewsWritten: d.reviewsWritten,
+      vouchCount: d.vouchCount,
+      endorsementCount: d.endorsementCount,
+    };
+  }, [self.profile]);
   const {
     q = isSearchControlled ? '' : localQ,
     onQChange = isSearchControlled ? undefined : setLocalQ,
@@ -177,10 +247,76 @@ export default function TrustFeedScreen(
     onShowMoreFacets,
     firstRunVisible = false,
     onDismissFirstRun,
+    selfDisplay = autoSelfDisplay,
+    onOpenMyProfile = () => {
+      if (viewerDid === '' || !viewerDid.startsWith('did:')) return;
+      router.push({
+        pathname: '/trust/reviewer/[did]',
+        params: { did: viewerDid },
+      });
+    },
   } = props;
 
   return (
     <View style={styles.container} testID="trust-feed-screen">
+      {/* ─── Self-profile card ───────────────────────────────────────
+          Tappable card at the top of the trust tab showing the
+          viewer's own neutral counts (Reddit-style: "90 Karma · 33
+          Contributions" framing). Deliberately NO band badge or
+          colour-coded score — a fresh account naturally falls in
+          the lowest band and a red "VERY LOW" pill on the user's
+          own landing screen reads as a personal verdict, not
+          information. Tap drills into the full reviewer profile
+          where the band display lives behind another tap. */}
+      {selfDisplay !== null && selfDisplay !== undefined ? (
+        <Pressable
+          onPress={onOpenMyProfile}
+          style={({ pressed }) => [
+            styles.selfCard,
+            pressed && styles.selfCardPressed,
+          ]}
+          testID="trust-feed-self-card"
+          accessibilityRole="button"
+          accessibilityLabel={
+            `Your trust profile — ${selfDisplay.reviewsWritten} reviews written, ` +
+            `${selfDisplay.vouchCount} vouches, ${selfDisplay.endorsementCount} endorsements`
+          }
+        >
+          <View style={styles.selfCardHeader}>
+            <Text style={styles.selfCardHeading}>
+              {selfDisplay.handle ?? 'Your trust profile'}
+            </Text>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={colors.textMuted}
+            />
+          </View>
+          <View style={styles.selfCardStats} testID="trust-feed-self-stats">
+            <SelfStat
+              value={selfDisplay.scoreDisplay !== null ? String(selfDisplay.scoreDisplay) : '—'}
+              label="Trust score"
+              testKey="score"
+            />
+            <SelfStat
+              value={String(selfDisplay.reviewsWritten)}
+              label={selfDisplay.reviewsWritten === 1 ? 'Review' : 'Reviews'}
+              testKey="reviews"
+            />
+            <SelfStat
+              value={String(selfDisplay.vouchCount)}
+              label={selfDisplay.vouchCount === 1 ? 'Vouch' : 'Vouches'}
+              testKey="vouches"
+            />
+            <SelfStat
+              value={String(selfDisplay.endorsementCount)}
+              label={selfDisplay.endorsementCount === 1 ? 'Endorsement' : 'Endorsements'}
+              testKey="endorsements"
+            />
+          </View>
+        </Pressable>
+      ) : null}
+
       {/* ─── Search bar ─────────────────────────────────────────────── */}
       <View style={styles.searchBarContainer}>
         <View style={styles.searchBar}>
@@ -284,8 +420,83 @@ export default function TrustFeedScreen(
   );
 }
 
+/**
+ * Reddit-style stat cell: large neutral number above a small label.
+ * No colour, no badge — neutral counts only. The display chrome
+ * lives in `styles.*` so all four cells render identically.
+ */
+function SelfStat(props: {
+  value: string;
+  label: string;
+  testKey: string;
+}): React.ReactElement {
+  return (
+    <View style={styles.selfStatCell} testID={`trust-feed-self-stat-${props.testKey}`}>
+      <Text style={styles.selfStatValue}>{props.value}</Text>
+      <Text style={styles.selfStatLabel}>{props.label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
+  selfCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    minHeight: 64,
+    gap: spacing.sm,
+  },
+  selfCardPressed: { opacity: 0.7 },
+  selfCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  selfCardHeading: {
+    flex: 1,
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  // 2-column wrapped grid (Reddit-style). Four stats laid out as
+  // a single row collapsed "Endorsements" to a second line on
+  // narrow phones; the 2-column form gives each label ~half the
+  // card width which fits the longest copy ("Endorsements") without
+  // wrap. `gap` provides both row + column spacing in a single
+  // declaration, so the second row aligns under the first.
+  selfCardStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: spacing.sm,
+    columnGap: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  selfStatCell: {
+    // `(50% - half of column gap)` keeps two cells per row with the
+    // gap respected; on the iOS RN runtime `flexBasis: '48%'` is the
+    // robust equivalent (slightly conservative — RN's percentage
+    // sizing is fussy with borders + paddingHorizontal).
+    flexBasis: '47%',
+    flexGrow: 1,
+    alignItems: 'flex-start',
+    gap: 2,
+  },
+  selfStatValue: {
+    fontFamily: fonts.heading,
+    fontSize: 20,
+    color: colors.textPrimary,
+  },
+  selfStatLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
   searchBarContainer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

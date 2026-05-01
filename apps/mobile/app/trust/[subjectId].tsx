@@ -73,10 +73,26 @@ export interface SubjectDetailScreenProps {
   error?: string | null;
   /** Fired when the user taps Retry on the error state. */
   onRetry?: () => void;
-  /** Fired when the user taps a reviewer row — drills into reviewer profile. */
-  onSelectReviewer?: (reviewerName: string) => void;
+  /**
+   * Fired when the user taps a reviewer row — drills into reviewer
+   * profile. Receives the reviewer's DID (not the display name).
+   * Earlier this took the display name and the page handler pushed
+   * `params: { did: reviewerName }`, which left the reviewer screen
+   * stuck on its loading spinner because the runner's
+   * `startsWith('did:')` guard short-circuited.
+   */
+  onSelectReviewer?: (reviewerDid: string) => void;
   /** Fired when the user taps the "Write a review" CTA. */
   onWriteReview?: (subjectId: string) => void;
+  /**
+   * Viewer's DID — used to detect self-authored review rows so they
+   * suppress the trust band badge ("VERY LOW" red verdict) and show
+   * "Your review" instead. Optional: when omitted the screen reads
+   * the booted-node DID via `getBootedNode()`. Tests pass it
+   * explicitly to verify the band-shame suppression without booting
+   * a real node.
+   */
+  viewerDid?: string;
 }
 
 export default function SubjectDetailScreen(
@@ -132,10 +148,13 @@ export default function SubjectDetailScreen(
       setAutoError(null);
       setRetryNonce((n) => n + 1);
     },
-    onSelectReviewer = (reviewerName: string) => {
+    onSelectReviewer = (reviewerDid: string) => {
+      // The path param is the reviewer's DID — not the display name.
+      // expo-router URL-encodes the colons in `did:plc:…`; the screen
+      // decodes via `safelyDecode` before handing off to the runner.
       router.push({
         pathname: '/trust/reviewer/[did]',
-        params: { did: reviewerName },
+        params: { did: reviewerDid },
       });
     },
     onWriteReview = (id: string) => {
@@ -151,6 +170,7 @@ export default function SubjectDetailScreen(
       if (data?.subjectDid) writeParams.subjectDid = data.subjectDid;
       router.push({ pathname: '/trust/write', params: writeParams });
     },
+    viewerDid: viewerDidProp = viewerDid,
   } = props;
 
   // Auto-timeout: only meaningful when the runner can't engage (no
@@ -264,6 +284,7 @@ export default function SubjectDetailScreen(
         emptyHint={null}
         testIdPrefix="friends"
         onSelectReviewer={onSelectReviewer}
+        viewerDid={viewerDidProp}
       />
       <ReviewSection
         title="Friends of friends"
@@ -272,6 +293,7 @@ export default function SubjectDetailScreen(
         emptyHint={null}
         testIdPrefix="fof"
         onSelectReviewer={onSelectReviewer}
+        viewerDid={viewerDidProp}
       />
       <ReviewSection
         title="Strangers"
@@ -286,6 +308,7 @@ export default function SubjectDetailScreen(
         }
         testIdPrefix="strangers"
         onSelectReviewer={onSelectReviewer}
+        viewerDid={viewerDidProp}
       />
     </ScrollView>
   );
@@ -298,11 +321,21 @@ interface ReviewSectionProps {
   /** Hint shown when ALL sections are empty. `null` for the per-section silent-empty case. */
   emptyHint: string | null;
   testIdPrefix: 'friends' | 'fof' | 'strangers';
-  onSelectReviewer?: (reviewerName: string) => void;
+  onSelectReviewer?: (reviewerDid: string) => void;
+  /** Threaded down so each row can self-detect the viewer's own review. */
+  viewerDid?: string;
 }
 
 function ReviewSection(props: ReviewSectionProps): React.ReactElement | null {
-  const { title, subtitle, reviews, emptyHint, testIdPrefix, onSelectReviewer } = props;
+  const {
+    title,
+    subtitle,
+    reviews,
+    emptyHint,
+    testIdPrefix,
+    onSelectReviewer,
+    viewerDid,
+  } = props;
   if (reviews.length === 0 && emptyHint === null) return null;
 
   return (
@@ -325,6 +358,7 @@ function ReviewSection(props: ReviewSectionProps): React.ReactElement | null {
               review={review}
               testID={`subject-detail-review-${testIdPrefix}-${idx}`}
               onPress={onSelectReviewer}
+              viewerDid={viewerDid}
             />
           ))}
         </View>
@@ -336,24 +370,50 @@ function ReviewSection(props: ReviewSectionProps): React.ReactElement | null {
 interface ReviewRowProps {
   review: SubjectReview;
   testID: string;
-  onPress?: (reviewerName: string) => void;
+  onPress?: (reviewerDid: string) => void;
+  /**
+   * Viewer's DID. When the row's DID matches, the band badge is
+   * suppressed and the row reads "Your review" — same self-detection
+   * AppView's `reviewers.self` bucket should produce, but applied
+   * mobile-side as a belt-and-braces guard against AppView putting
+   * the user's review into `strangers` (which historically rendered
+   * a "VERY LOW" red badge against the user's own name).
+   */
+  viewerDid?: string;
 }
 
 function ReviewRow(props: ReviewRowProps): React.ReactElement {
-  const { review, testID, onPress } = props;
+  const { review, testID, onPress, viewerDid } = props;
   // Use the canonical band derivation rather than hand-coding the
   // threshold ladder — keeps the screen in lockstep with score_helpers
   // when the bands ever change (currently 0.8 / 0.5 / 0.3, but those
   // are tunable in `@dina/protocol`'s `score_bands.ts`).
   const band: TrustBand = trustBandFor(review.reviewerTrustScore);
-  // For the user's own review, the trust band is their OWN band — which
-  // reads as a self-judgement next to their own headline. Suppress the
-  // badge for ring='self' and use a friendly "Your review" label.
-  const isSelf = review.ring === 'self';
+  // Self-detection: prefer the wire ring, but ALSO treat any row whose
+  // DID matches the viewer as self. AppView's `subjectGet` bucketing
+  // has been observed putting the viewer's own review into `strangers`
+  // (when the viewerDid handshake misses), which used to surface the
+  // user's own band ("VERY LOW" red badge) against their own name —
+  // exactly the shame mechanic we removed from the self-card on the
+  // Trust landing. Belt-and-braces here so the wire-bucketing fix
+  // lands later without needing another mobile pass.
+  const isSelf =
+    review.ring === 'self' ||
+    (typeof viewerDid === 'string' &&
+      viewerDid.length > 0 &&
+      review.reviewerDid === viewerDid);
+
+  // Capture the DID into a local so the closure below sees the
+  // narrowed `string` type without an `as` cast.
+  const reviewerDid = review.reviewerDid;
+  const handlePress =
+    onPress && !isSelf && reviewerDid !== null
+      ? () => onPress(reviewerDid)
+      : undefined;
 
   return (
     <Pressable
-      onPress={onPress && !isSelf ? () => onPress(review.reviewerName) : undefined}
+      onPress={handlePress}
       style={({ pressed }) => [styles.reviewRow, pressed && onPress && !isSelf && styles.reviewRowPressed]}
       testID={testID}
       accessibilityRole={isSelf ? 'text' : 'button'}

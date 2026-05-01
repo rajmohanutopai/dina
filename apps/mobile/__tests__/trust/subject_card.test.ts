@@ -25,6 +25,7 @@ import {
 function review(partial: Partial<SubjectReview> = {}): SubjectReview {
   return {
     ring: 'stranger',
+    reviewerDid: 'did:plc:reviewer',
     reviewerTrustScore: 0.5,
     reviewerName: 'reviewer',
     headline: 'headline',

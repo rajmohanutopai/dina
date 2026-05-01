@@ -2,9 +2,18 @@
  * Add Contact — form to append a peer to the core contact directory.
  *
  * Accepts a DID directly, or a handle (e.g.
- * `busdriver.test-pds.dinakernel.com`) which we resolve via the PDS's
- * `com.atproto.identity.resolveHandle` endpoint. The resolved DID
- * flows into `addContact` and the screen pops back to People on save.
+ * `busdriver.test-pds.dinakernel.com`). For handle input, we resolve
+ * to a DID via AT Protocol's standard methods — `.well-known/atproto-
+ * did` on the handle's host, falling back to the PDS xrpc endpoint
+ * with the host inferred from the handle (strip the leftmost label).
+ * The resolved DID flows into `addContact` and the screen pops back
+ * to People on save.
+ *
+ * **No separate PDS URL field**: the handle's host IS the PDS, so
+ * asking the user to type both was redundant friction. The fallback
+ * chain handles the rare case where well-known fails (e.g. local
+ * dev PDS without TLS / well-known not served), inferring the PDS
+ * URL from the handle automatically.
  *
  * Trust defaults to `verified` — it's an explicit user action, not
  * an auto-discovery, so the default lets the peer's inbound messages
@@ -29,18 +38,10 @@ import { addContact, getContact } from '@dina/core/src/contacts/directory';
 import { getProfile as getTrustProfile } from '../src/trust/appview_runtime';
 import { colors, fonts, spacing, radius } from '../src/theme';
 
-// Shown as a placeholder hint, not a pre-filled value — pre-filling
-// the field made the dev PDS URL look like a hard-coded production
-// dependency to first-time users. The fallback below still uses this
-// when the field is left blank, so handle-only input keeps working
-// out of the box on the test network.
-const DEFAULT_PDS_URL = 'https://test-pds.dinakernel.com';
-
 export default function AddContactScreen() {
   const router = useRouter();
   const [didOrHandle, setDidOrHandle] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [pdsUrl, setPdsUrl] = useState('');
   const [status, setStatus] = useState<'idle' | 'resolving' | 'saving' | 'error'>('idle');
   const [errorText, setErrorText] = useState('');
 
@@ -57,7 +58,7 @@ export default function AddContactScreen() {
     if (!raw.startsWith('did:')) {
       setStatus('resolving');
       try {
-        did = await resolveHandle(raw, pdsUrl.trim() || DEFAULT_PDS_URL);
+        did = await resolveHandle(raw);
       } catch (err) {
         setStatus('error');
         setErrorText(
@@ -115,17 +116,18 @@ export default function AddContactScreen() {
             helper line carries the actual instruction the user reads
             first. */}
         <Text style={styles.sub}>
-          Paste a DID (did:plc:… or did:key:…) or a handle (busdriver.test-pds.dinakernel.com).
+          Paste a handle (alice.test-pds.dinakernel.com) or a DID (did:plc:…).
+          Just the handle is enough — the host is the PDS.
         </Text>
 
-        <Text style={styles.label}>DID or handle</Text>
+        <Text style={styles.label}>Handle or DID</Text>
         <TextInput
           value={didOrHandle}
           onChangeText={setDidOrHandle}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
-          placeholder="did:plc:… or alice.handle"
+          placeholder="alice.test-pds.dinakernel.com"
           placeholderTextColor={colors.textMuted}
           style={styles.input}
           editable={!busy}
@@ -135,19 +137,7 @@ export default function AddContactScreen() {
         <TextInput
           value={displayName}
           onChangeText={setDisplayName}
-          placeholder="e.g. Bus Driver"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          editable={!busy}
-        />
-
-        <Text style={styles.label}>PDS URL (for handle resolution)</Text>
-        <TextInput
-          value={pdsUrl}
-          onChangeText={setPdsUrl}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder={DEFAULT_PDS_URL}
+          placeholder="e.g. Alice"
           placeholderTextColor={colors.textMuted}
           style={styles.input}
           editable={!busy}
@@ -186,18 +176,83 @@ export default function AddContactScreen() {
   );
 }
 
-async function resolveHandle(handle: string, pdsUrl: string): Promise<string> {
-  const base = pdsUrl.replace(/\/$/, '');
-  const url = `${base}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`;
-  const res = await fetch(url);
+/**
+ * Resolve a handle (e.g. `alice.test-pds.dinakernel.com`) to a DID.
+ *
+ * Two strategies, tried in order — both per the AT Protocol spec
+ * (atproto.com/specs/handle):
+ *
+ *   1. **Well-known HTTPS** — GET `https://<handle>/.well-known/atproto-did`.
+ *      Returns the DID as plain text. Canonical method; the handle's
+ *      host serves it directly. Works for hosted PDS where users get
+ *      subdomains and the PDS routes well-known correctly.
+ *
+ *   2. **PDS xrpc resolve** — POST to
+ *      `https://<inferred-host>/xrpc/com.atproto.identity.resolveHandle`
+ *      with the inferred host being everything after the leftmost
+ *      label of the handle (`alice.test-pds.dinakernel.com` →
+ *      `test-pds.dinakernel.com`). Fallback for dev environments
+ *      where well-known isn't wired up yet.
+ *
+ * The DNS TXT method (the third spec'd path, `_atproto.<handle>`) is
+ * intentionally skipped — React Native has no built-in DNS resolver
+ * and the well-known + xrpc paths cover the deployments we care
+ * about (hosted PDS with TLS).
+ *
+ * Throws on resolution failure with a message that names which path
+ * failed last so the user can recover (e.g. typo'd handle vs.
+ * unreachable PDS).
+ */
+async function resolveHandle(handle: string): Promise<string> {
+  const trimmed = handle.trim().toLowerCase();
+  // Path 1: well-known. Bypasses any need for the user to know the
+  // PDS URL — the handle IS the host.
+  try {
+    const wkDid = await resolveViaWellKnown(trimmed);
+    if (wkDid !== null) return wkDid;
+  } catch {
+    // Fall through to xrpc path; the well-known endpoint can be
+    // missing on dev PDS deployments without affecting xrpc.
+  }
+
+  // Path 2: xrpc on the inferred PDS host. Strip the leftmost label
+  // — `alice.test-pds.dinakernel.com` → `test-pds.dinakernel.com`.
+  const dot = trimmed.indexOf('.');
+  if (dot < 0) {
+    throw new Error('Handle must include a domain (e.g. alice.test-pds.dinakernel.com)');
+  }
+  const pdsHost = trimmed.slice(dot + 1);
+  if (pdsHost === '') {
+    throw new Error('Handle must include a domain');
+  }
+  const xrpcUrl = `https://${pdsHost}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(trimmed)}`;
+  const res = await fetch(xrpcUrl);
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+    throw new Error(`PDS ${pdsHost} returned HTTP ${res.status}`);
   }
   const body = (await res.json()) as { did?: string };
   if (typeof body.did !== 'string' || !body.did.startsWith('did:')) {
-    throw new Error('PDS returned no DID');
+    throw new Error(`PDS ${pdsHost} returned no DID`);
   }
   return body.did;
+}
+
+/**
+ * Try the AT Protocol well-known method. Returns the DID on success,
+ * `null` if the endpoint exists but returns no usable body, throws
+ * on transport error.
+ */
+async function resolveViaWellKnown(handle: string): Promise<string | null> {
+  const url = `https://${handle}/.well-known/atproto-did`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    // 404 / 503 / etc are not errors at this layer — the caller falls
+    // back to xrpc. Throwing here would short-circuit the fallback.
+    return null;
+  }
+  const text = (await res.text()).trim();
+  if (!text.startsWith('did:')) return null;
+  return text;
 }
 
 function prettyNameFromDid(did: string, originalInput: string): string {

@@ -295,3 +295,125 @@ describe('TrustFeedScreen — first-run modal (TN-MOB-022 / TN-MOB-027)', () => 
     ).not.toThrow();
   });
 });
+
+describe('TrustFeedScreen — self-profile card', () => {
+  it('does NOT render the self card when selfDisplay is null (pre-boot / unknown)', () => {
+    const { queryByTestId } = render(
+      <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} selfDisplay={null} />,
+    );
+    expect(queryByTestId('trust-feed-self-card')).toBeNull();
+  });
+
+  it('renders Reddit-style neutral counts (score, reviews, vouches, endorsements)', () => {
+    // Pin the visual: each stat appears as `<value>` over `<label>`.
+    // Critically there is NO band-coloured pill / "VERY LOW" copy —
+    // the self-card shows neutral counts only.
+    const { getByTestId, getByText } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        selfDisplay={{
+          handle: 'alice.pds.dinakernel.com',
+          scoreDisplay: 82,
+          reviewsWritten: 14,
+          vouchCount: 3,
+          endorsementCount: 5,
+        }}
+      />,
+    );
+    expect(getByTestId('trust-feed-self-card')).toBeTruthy();
+    // Header is the handle when resolved (else falls back to "Your
+    // trust profile").
+    expect(getByText('alice.pds.dinakernel.com')).toBeTruthy();
+    // Each stat value renders as a plain string in its own cell.
+    expect(getByTestId('trust-feed-self-stat-score')).toBeTruthy();
+    expect(getByTestId('trust-feed-self-stat-reviews')).toBeTruthy();
+    expect(getByTestId('trust-feed-self-stat-vouches')).toBeTruthy();
+    expect(getByTestId('trust-feed-self-stat-endorsements')).toBeTruthy();
+    expect(getByText('82')).toBeTruthy();
+    expect(getByText('14')).toBeTruthy();
+    expect(getByText('3')).toBeTruthy();
+    expect(getByText('5')).toBeTruthy();
+    // Plural labels at >1.
+    expect(getByText('Reviews')).toBeTruthy();
+    expect(getByText('Vouches')).toBeTruthy();
+    expect(getByText('Endorsements')).toBeTruthy();
+  });
+
+  it('uses singular labels when count is exactly 1', () => {
+    const { getByText } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        selfDisplay={{
+          handle: null,
+          scoreDisplay: null,
+          reviewsWritten: 1,
+          vouchCount: 1,
+          endorsementCount: 1,
+        }}
+      />,
+    );
+    expect(getByText('Review')).toBeTruthy();
+    expect(getByText('Vouch')).toBeTruthy();
+    expect(getByText('Endorsement')).toBeTruthy();
+  });
+
+  it('renders em-dash for trust score when scoreDisplay is null (no band shaming)', () => {
+    // The pre-N=3 cold-start state must NOT label the user "VERY
+    // LOW" / red. Em-dash is the agreed neutral placeholder.
+    const { getByText, queryByText } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        selfDisplay={{
+          handle: null,
+          scoreDisplay: null,
+          reviewsWritten: 1,
+          vouchCount: 0,
+          endorsementCount: 0,
+        }}
+      />,
+    );
+    expect(getByText('—')).toBeTruthy();
+    expect(queryByText('VERY LOW')).toBeNull();
+    expect(queryByText('LOW')).toBeNull();
+  });
+
+  it('falls back to "Your trust profile" header when handle is null', () => {
+    const { getByText } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        selfDisplay={{
+          handle: null,
+          scoreDisplay: 42,
+          reviewsWritten: 2,
+          vouchCount: 0,
+          endorsementCount: 0,
+        }}
+      />,
+    );
+    expect(getByText('Your trust profile')).toBeTruthy();
+  });
+
+  it('tap on the self card fires onOpenMyProfile', () => {
+    const onOpen = jest.fn();
+    const { getByTestId } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        selfDisplay={{
+          handle: null,
+          scoreDisplay: 60,
+          reviewsWritten: 5,
+          vouchCount: 0,
+          endorsementCount: 0,
+        }}
+        onOpenMyProfile={onOpen}
+      />,
+    );
+    fireEvent.press(getByTestId('trust-feed-self-card'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+});

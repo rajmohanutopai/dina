@@ -268,32 +268,146 @@ function ItemCard({
   item: VaultItemUI;
   onDelete: () => void;
 }): React.ReactElement {
+  const [expanded, setExpanded] = useState(false);
+  const hasMoreBody =
+    item.bodyPreview.length > 0 && item.bodyPreview !== item.headline;
+  // Tap toggles expanded state — when collapsed, headline + body are
+  // truncated; when expanded, they wrap fully. This is the "drill-in"
+  // affordance: vault rows used to be plain Views with no tap target,
+  // so users couldn't see the full content of long items or know the
+  // row was interactive at all.
+  const onTogglePress = () => setExpanded((prev) => !prev);
+  // Suppress the press handler when there's nothing to expand (item
+  // headline === bodyPreview, no overflow). Otherwise the row reads
+  // as tappable but yields no visual change.
+  const isPressable = hasMoreBody;
+
   return (
-    <View style={styles.itemCard}>
+    <Pressable
+      onPress={isPressable ? onTogglePress : undefined}
+      style={({ pressed }) => [
+        styles.itemCard,
+        pressed && isPressable && styles.itemCardPressed,
+      ]}
+      accessibilityRole={isPressable ? 'button' : 'text'}
+      accessibilityLabel={
+        isPressable
+          ? `${item.headline}, tap to ${expanded ? 'collapse' : 'expand'}`
+          : item.headline
+      }
+      accessibilityState={isPressable ? { expanded } : undefined}
+    >
       <View style={styles.itemHeader}>
-        <Text style={styles.itemHeadline} numberOfLines={2}>
+        <Text
+          style={styles.itemHeadline}
+          numberOfLines={expanded ? 0 : 2}
+        >
           {item.headline}
         </Text>
-        <Pressable onPress={onDelete} hitSlop={10}>
+        <Pressable onPress={onDelete} hitSlop={10} accessibilityLabel="Delete item">
           <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
         </Pressable>
       </View>
-      {item.bodyPreview && item.bodyPreview !== item.headline ? (
-        <Text style={styles.itemBody} numberOfLines={3}>
+      {hasMoreBody ? (
+        <Text
+          style={styles.itemBody}
+          numberOfLines={expanded ? 0 : 3}
+        >
           {item.bodyPreview}
         </Text>
       ) : null}
       <Text style={styles.itemMeta}>
-        {item.type} · {item.source || 'unknown'} · {formatTimestamp(item.createdAt)}
+        {humaniseVaultMeta(item)} · {formatTimestamp(item.createdAt)}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
+/**
+ * Humanise the `type` + `source` combo for the meta line. The raw
+ * fields are internal storage labels (`user_memory`, `user_remember`,
+ * `gmail`, `d2d`, …) that read as jargon in the UI. Map known values
+ * to friendly copy and fall back to title-cased text for unknowns.
+ *
+ * When type and source describe the same thing (e.g. `user_memory` +
+ * `user_remember` — both mean "the user told Dina to remember this"),
+ * collapse to a single label rather than printing redundant "Memory ·
+ * Saved by you · 9:05 AM".
+ */
+function humaniseVaultMeta(item: VaultItemUI): string {
+  const typeLabel = humaniseType(item.type);
+  const sourceLabel = humaniseSource(item.source);
+  if (sourceLabel === '' || sourceLabel === typeLabel) {
+    return typeLabel;
+  }
+  return `${typeLabel} · ${sourceLabel}`;
+}
+
+function humaniseType(t: string): string {
+  switch (t) {
+    case 'user_memory':
+      return 'Memory';
+    case 'note':
+      return 'Note';
+    case 'email':
+      return 'Email';
+    case 'calendar_event':
+      return 'Calendar';
+    case 'reminder':
+      return 'Reminder';
+    case 'document':
+      return 'Document';
+    default:
+      return titleCase(t);
+  }
+}
+
+function humaniseSource(s: string): string {
+  switch (s) {
+    case '':
+    case 'unknown':
+      return '';
+    case 'user_remember':
+    case 'user_memory':
+      return 'Saved by you';
+    case 'gmail':
+      return 'Gmail';
+    case 'd2d':
+      return 'From contact';
+    case 'connector':
+      return 'Connector';
+    default:
+      return titleCase(s);
+  }
+}
+
+function titleCase(s: string): string {
+  if (s.length === 0) return s;
+  return s
+    .split(/[_\s]+/)
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Locale-safe date format. The previous `toLocaleDateString()` call
+ * deferred to the device locale, which surfaces `29/4/2026` on en-GB
+ * builds and is parsed as malformed by US readers. The explicit
+ * `{ month: 'short', day: 'numeric', year: 'numeric' }` options
+ * produce `Apr 29, 2026` everywhere and reads unambiguously
+ * regardless of the device's date-format preference.
+ */
 function formatTimestamp(ms: number): string {
   if (!ms || !Number.isFinite(ms)) return '—';
   const d = new Date(ms);
-  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  const date = d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `${date} ${time}`;
 }
 
 const styles = StyleSheet.create({
@@ -469,6 +583,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     ...shadows.sm,
   },
+  itemCardPressed: { opacity: 0.7 },
   itemHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',

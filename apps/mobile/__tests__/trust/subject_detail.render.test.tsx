@@ -16,6 +16,7 @@ import type { SubjectReview } from '../../src/trust/subject_card';
 function makeReview(overrides: Partial<SubjectReview> = {}): SubjectReview {
   return {
     ring: 'contact',
+    reviewerDid: 'did:plc:sancho',
     reviewerTrustScore: 0.7,
     reviewerName: 'Sancho',
     headline: 'Great chair',
@@ -214,19 +215,21 @@ describe('SubjectDetailScreen — interactions', () => {
     expect(onWrite).toHaveBeenCalledWith('sub-99');
   });
 
-  it('tap on a review row fires onSelectReviewer with reviewer name', () => {
+  it('tap on a review row fires onSelectReviewer with reviewer DID', () => {
     const onSelect = jest.fn();
     const { getByTestId } = render(
       <SubjectDetailScreen
         subjectId="sub-1"
         data={makeInput({
-          reviews: [makeReview({ reviewerName: 'Sancho' })],
+          reviews: [
+            makeReview({ reviewerName: 'Sancho', reviewerDid: 'did:plc:sancho' }),
+          ],
         })}
         onSelectReviewer={onSelect}
       />,
     );
     fireEvent.press(getByTestId('subject-detail-review-friends-0'));
-    expect(onSelect).toHaveBeenCalledWith('Sancho');
+    expect(onSelect).toHaveBeenCalledWith('did:plc:sancho');
   });
 
   it('tap on Retry fires onRetry', () => {
@@ -272,5 +275,90 @@ describe('SubjectDetailScreen — accessibility (TN-TEST-061 surface)', () => {
       />,
     );
     expect(getByLabelText('Write a review')).toBeTruthy();
+  });
+});
+
+describe('SubjectDetailScreen — self-review band suppression', () => {
+  // AppView's `subjectGet` is supposed to bucket the viewer's own
+  // review into `reviewers.self`. When the viewerDid handshake
+  // misses (observed in production via idb on 2026-05-01), the
+  // review lands in `strangers` instead — and the row would surface
+  // the user's own trust band (e.g. "VERY LOW" red badge) against
+  // their own name, exactly the shame mechanic we suppressed on the
+  // self-card. The mobile-side fix detects self by DID match
+  // regardless of the bucket the wire chose.
+  it('renders "Your review" + no band badge when row.reviewerDid matches viewerDid (even with ring=stranger)', () => {
+    const { getByText, queryByText, getByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({
+              ring: 'stranger',
+              reviewerDid: 'did:plc:rajmohanddc9',
+              reviewerName: 'rajmohanddc9',
+              reviewerTrustScore: 0.05, // would render VERY LOW
+              headline: 'Comfortable',
+            }),
+          ],
+        })}
+        viewerDid="did:plc:rajmohanddc9"
+      />,
+    );
+    // Row reads "Your review" — name is suppressed.
+    expect(getByText('Your review')).toBeTruthy();
+    expect(queryByText('rajmohanddc9')).toBeNull();
+    // Band badge ("VERY LOW") is suppressed too.
+    expect(queryByText('VERY LOW')).toBeNull();
+    // Row is rendered in the expected section (strangers since wire said so).
+    expect(getByTestId('subject-detail-section-strangers')).toBeTruthy();
+  });
+
+  it('does NOT suppress the band when viewerDid is empty (degraded pre-boot path)', () => {
+    // Defensive: an empty `viewerDid` (no booted node) must not
+    // accidentally match against another reviewer's empty DID. The
+    // band stays visible in this case.
+    const { getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({
+              ring: 'stranger',
+              reviewerDid: 'did:plc:somebody',
+              reviewerName: 'Somebody',
+              reviewerTrustScore: 0.05,
+            }),
+          ],
+        })}
+        viewerDid=""
+      />,
+    );
+    expect(getByText('VERY LOW')).toBeTruthy();
+    expect(getByText('Somebody')).toBeTruthy();
+  });
+
+  it('still respects ring=self when wire correctly buckets the viewer (regression guard)', () => {
+    // Belt-and-braces: even when the wire correctly puts the user
+    // in `reviewers.self`, the row should suppress the band.
+    const { getByText, queryByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({
+              ring: 'self',
+              reviewerDid: null,
+              reviewerName: 'You',
+              reviewerTrustScore: 0.05,
+            }),
+          ],
+        })}
+        // Intentionally NOT passing viewerDid — ring='self' alone
+        // should already trigger the suppression.
+      />,
+    );
+    expect(getByText('Your review')).toBeTruthy();
+    expect(queryByText('VERY LOW')).toBeNull();
   });
 });

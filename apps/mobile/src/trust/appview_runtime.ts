@@ -146,6 +146,27 @@ export async function searchAttestations(q: string, limit = 25): Promise<SearchR
   });
 }
 
+/**
+ * Fetch attestations authored by `authorDid` — the "reviews I (or
+ * they) wrote" surface used by the reviewer profile screen.
+ *
+ * Reuses the same `com.dina.trust.search` xRPC: `q` is optional on
+ * that endpoint, and supplying `authorDid` alone returns every
+ * (non-revoked) attestation by the author. Sort defaults to `recent`
+ * because there's no FTS query to rank against — the natural
+ * ordering for an "I wrote" list is reverse chronological anyway.
+ */
+export async function searchAttestationsByAuthor(
+  authorDid: string,
+  limit = 25,
+): Promise<SearchResponse> {
+  return getJSON<SearchResponse>('/xrpc/com.dina.trust.search', {
+    authorDid,
+    sort: 'recent',
+    limit: String(limit),
+  });
+}
+
 export async function getProfile(did: string): Promise<TrustProfile | null> {
   // AppView returns 200 OK + literal `null` body for DIDs without a
   // `did_profiles` row — caller must handle null (no profile yet).

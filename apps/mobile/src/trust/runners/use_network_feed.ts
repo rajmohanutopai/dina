@@ -100,6 +100,7 @@ function mapToFeedItems(rows: ReadonlyArray<NetworkFeedAttestation>): FeedItem[]
     const title = ref.name ?? ref.did ?? ref.uri ?? row.subjectId;
     const review: SubjectReview = {
       ring: 'contact', // 1-hop authors ARE the user's contacts.
+      reviewerDid: row.authorDid,
       reviewerTrustScore: null,
       // Prefer the resolved handle (`alice.pds.dinakernel.com`) over
       // the raw DID. `displayName` falls back to a truncated DID when

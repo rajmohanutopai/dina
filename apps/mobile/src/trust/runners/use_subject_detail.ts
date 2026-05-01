@@ -130,6 +130,11 @@ function toReview(
 ): SubjectReview {
   return {
     ring,
+    // Self rows don't drill (the user is on their own profile a
+    // faster way), so we deliberately drop the DID. Every other row
+    // carries the wire DID through to the screen so the tap handler
+    // has the proper identifier to push to /trust/reviewer/[did].
+    reviewerDid: ring === 'self' ? null : r.did,
     // Self reviews carry the user's own DID on the wire — surface it as
     // "You" so the detail screen reads "Your review" rather than
     // staring back at the viewer's full DID. Other rings prefer the

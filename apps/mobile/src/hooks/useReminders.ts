@@ -115,11 +115,19 @@ export function dismissReminder(id: string): { dismissed: boolean; nextId?: stri
 
 /**
  * Snooze a reminder by a preset duration.
+ *
+ * `now` is forwarded to the underlying `snoozeReminder` so tests can
+ * pin a deterministic "now". Otherwise the call uses real wall-clock
+ * time, which makes assertions around the snoozed `due_at` flake when
+ * the test runs near the anchor time (e.g. running before noon vs
+ * after noon shifts whether `Math.max(due_at, Date.now())` selects
+ * the reminder's stored due_at or the wall clock).
  */
 export function snoozeReminderBy(
   id: string,
   preset: 'one_hour' | 'three_hours' | 'tomorrow' | 'custom',
   customMs?: number,
+  now?: number,
 ): boolean {
   const durations: Record<string, number> = {
     one_hour: MS_HOUR,
@@ -130,7 +138,7 @@ export function snoozeReminderBy(
   const snoozeMs = preset === 'custom' ? (customMs ?? MS_HOUR) : durations[preset];
 
   try {
-    snoozeReminder(id, snoozeMs);
+    snoozeReminder(id, snoozeMs, now);
     return true;
   } catch {
     return false;

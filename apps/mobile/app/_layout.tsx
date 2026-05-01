@@ -12,7 +12,7 @@
 
 import '../src/polyfills';
 import React, { useEffect, useSyncExternalStore } from 'react';
-import { Tabs, useRouter, usePathname } from 'expo-router';
+import { Tabs, useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
@@ -134,6 +134,13 @@ function HeaderMenuButton({ onPress }: { onPress: () => void }) {
  *   logical parent from the pathname and navigate there directly.
  *   Detailed rationale + the section-parent map live in
  *   `src/navigation/parent_route.ts`.
+ *
+ * Source-aware override: when the incoming route carries `?from=<path>`,
+ * the back button honours that over the static parent-route map. Used
+ * by the per-section help launcher (Trust's `(?)` button pushes
+ * `/help?from=/trust`) so back from Help returns to the section the
+ * user opened it from rather than the Chat default. The parent-route
+ * map remains the fallback when no `from` is present.
  */
 function HeaderBackButton({
   onMenuFallback: _onMenuFallback,
@@ -142,12 +149,22 @@ function HeaderBackButton({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const params = useLocalSearchParams<{ from?: string | string[] }>();
   const onPress = () => {
-    const parent = parentRouteFor(pathname);
+    const fromRaw = params.from;
+    const from = typeof fromRaw === 'string' ? fromRaw : null;
+    // Validate `from` is a same-origin path. Anything that doesn't
+    // start with `/` (or starts with `//` — protocol-relative) falls
+    // through to the parent-route map. Defensive against a malformed
+    // deep link planting an absolute URL into history.
+    const target =
+      from !== null && from.startsWith('/') && !from.startsWith('//')
+        ? from
+        : parentRouteFor(pathname);
     // `replace` rather than `push` so a user repeatedly bouncing
     // between a section's root and a drill-down doesn't grow the
     // navigation stack indefinitely.
-    router.replace(parent as never);
+    router.replace(target as never);
   };
   return (
     <Pressable
@@ -217,8 +234,28 @@ function NavMenuSheet({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={navMenuStyles.backdrop} onPress={onClose}>
-        <Pressable style={navMenuStyles.sheet} onPress={() => undefined}>
+      <Pressable
+        style={navMenuStyles.backdrop}
+        onPress={onClose}
+        // Backdrop is a tap-to-dismiss surface; it must NOT claim
+        // the AX role for the whole subtree, otherwise iOS collapses
+        // everything into a single AXGenericElement labelled with
+        // the rows' joined text — VoiceOver users can't pick a row.
+        // `accessible=false` (iOS) + `importantForAccessibility=
+        // 'no-hide-descendants'` (Android) makes the parent
+        // transparent to AX without hiding its children.
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+      >
+        <Pressable
+          style={navMenuStyles.sheet}
+          onPress={() => undefined}
+          // Same reasoning as the backdrop — the sheet container
+          // is a no-op tap sink (its onPress prevents close-on-card-
+          // tap). Let the row TouchableOpacities own AX exposure.
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+        >
           {items.map((item) => (
             <TouchableOpacity
               key={item.href}

@@ -33,7 +33,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { getBootedNode } from '../../../src/hooks/useNodeBootstrap';
 
@@ -58,10 +58,12 @@ import {
   formatLastActive,
 } from '../../../src/trust/reviewer_profile_data';
 import { BAND_COLOUR, BAND_LABEL } from '../../../src/trust/band_theme';
+import { useAuthoredAttestations } from '../../../src/trust/runners/use_authored_attestations';
 import { useReviewerProfile } from '../../../src/trust/runners/use_reviewer_profile';
 import { IdentityModal } from '../../../src/components/identity/identity_modal';
 import { shortHandle } from '../../../src/trust/handle_display';
 
+import type { AuthoredAttestationRow } from '../../../src/trust/authored_attestations_data';
 import type { TrustProfile } from '@dina/core';
 
 export interface ReviewerProfileScreenProps {
@@ -89,6 +91,18 @@ export interface ReviewerProfileScreenProps {
    * tests pin exact outputs; production passes `Date.now()`.
    */
   nowMs?: number;
+  /**
+   * Pre-fetched list of reviews this DID has written. When omitted,
+   * the screen runs `useAuthoredAttestations` against the resolved
+   * DID. Tests pass an explicit array (or `null` for the loading /
+   * unbooted state) to keep the screen presentational.
+   */
+  authoredRows?: readonly AuthoredAttestationRow[] | null;
+  /**
+   * Fired when the user taps a review row in the "Reviews written"
+   * list. Default implementation drills into `/trust/<subjectId>`.
+   */
+  onSelectAuthoredSubject?: (subjectId: string) => void;
 }
 
 
@@ -128,6 +142,17 @@ export default function ReviewerProfileScreen(
     enabled: !isControlled,
     retryNonce,
   });
+  // Authored-attestations list. Disabled when the parent supplied
+  // `authoredRows` (controlled mode for tests) OR before we know the
+  // DID. Same retry nonce as the profile fetch so a focus-refresh
+  // re-fetches both.
+  const isAuthoredControlled = props.authoredRows !== undefined;
+  const authored = useAuthoredAttestations({
+    authorDid: paramDid ?? '',
+    enabled: !isAuthoredControlled && Boolean(paramDid),
+    retryNonce,
+  });
+  const router = useRouter();
   // Refresh on focus so a recently-vouched / recently-revoked
   // attestation moves the reviewer's score the next time the user lands
   // here — the runner's deps are stable on a steady DID otherwise.
@@ -151,6 +176,10 @@ export default function ReviewerProfileScreen(
       setRetryNonce((n) => n + 1);
     },
     nowMs = Date.now(),
+    authoredRows = authored.rows,
+    onSelectAuthoredSubject = (subjectId: string) => {
+      router.push({ pathname: '/trust/[subjectId]', params: { subjectId } });
+    },
   } = props;
 
   React.useEffect(() => {
@@ -373,9 +402,118 @@ export default function ReviewerProfileScreen(
           </View>
         </View>
       )}
+
+      {/* ─── Reviews written ────────────────────────────────────────
+          Lists the actual attestations this DID has authored.
+          Each row drills into the subject. Hidden during the initial
+          load (`null`) so the screen doesn't flash an empty section,
+          and replaced with a "no reviews yet" line for genuinely
+          empty results. */}
+      {authoredRows !== null && (
+        <View style={styles.section} testID="reviewer-authored-section">
+          <Text style={styles.sectionTitle}>
+            {isSelf ? 'Reviews you wrote' : 'Reviews written'}
+          </Text>
+          {authoredRows.length === 0 ? (
+            <Text style={styles.authoredEmpty} testID="reviewer-authored-empty">
+              {isSelf
+                ? "You haven't written any reviews yet."
+                : "No reviews written yet."}
+            </Text>
+          ) : (
+            <View style={styles.authoredList}>
+              {authoredRows.map((row) => (
+                <AuthoredAttestationRowView
+                  key={row.uri}
+                  row={row}
+                  nowMs={nowMs}
+                  onPress={onSelectAuthoredSubject}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      )}
     </ScrollView>
   );
 }
+
+interface AuthoredAttestationRowViewProps {
+  row: AuthoredAttestationRow;
+  nowMs: number;
+  onPress?: (subjectId: string) => void;
+}
+
+function AuthoredAttestationRowView(
+  props: AuthoredAttestationRowViewProps,
+): React.ReactElement {
+  const { row, nowMs, onPress } = props;
+  const sentimentColour =
+    row.sentiment === 'positive'
+      ? colors.success
+      : row.sentiment === 'negative'
+      ? colors.warning
+      : colors.textMuted;
+  const sentimentLabel =
+    row.sentiment === 'positive'
+      ? 'Positive'
+      : row.sentiment === 'negative'
+      ? 'Negative'
+      : 'Neutral';
+  // `createdAtMs <= 0` means the wire shipped a malformed timestamp
+  // and the data layer fell back to 0; "long ago" is a more honest
+  // label than "60 months ago" (which is what formatLastActive
+  // would compute against the unix epoch).
+  const relative =
+    row.createdAtMs > 0 ? formatLastActive(row.createdAtMs, nowMs) : 'long ago';
+  const handlePress = onPress ? () => onPress(row.subjectId) : undefined;
+  return (
+    <Pressable
+      onPress={handlePress}
+      style={({ pressed }) => [
+        styles.authoredRow,
+        pressed && handlePress && styles.authoredRowPressed,
+      ]}
+      testID={`reviewer-authored-row-${row.uri}`}
+      accessibilityRole={handlePress ? 'button' : 'text'}
+      accessibilityLabel={`${sentimentLabel} review of ${row.subjectTitle}`}
+    >
+      <View style={styles.authoredHeader}>
+        <Text
+          style={styles.authoredTitle}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {row.subjectTitle}
+        </Text>
+        <View
+          style={[styles.authoredSentiment, { backgroundColor: sentimentColour }]}
+          testID={`reviewer-authored-sentiment-${row.sentiment}`}
+        >
+          <Text style={styles.authoredSentimentText}>{sentimentLabel}</Text>
+        </View>
+      </View>
+      {row.headline.length > 0 && (
+        <Text
+          style={styles.authoredHeadline}
+          numberOfLines={2}
+          ellipsizeMode="tail"
+        >
+          “{row.headline}”
+        </Text>
+      )}
+      <View style={styles.authoredFooter}>
+        {row.category !== null && (
+          <Text style={styles.authoredCategory} numberOfLines={1}>
+            {row.category}
+          </Text>
+        )}
+        <Text style={styles.authoredAge}>{relative}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 
 interface StatCellProps {
   label: string;
@@ -621,5 +759,69 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  authoredEmpty: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textMuted,
+    paddingVertical: spacing.md,
+  },
+  authoredList: { gap: spacing.sm },
+  authoredRow: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
+    gap: spacing.xs,
+  },
+  authoredRowPressed: { opacity: 0.7 },
+  authoredHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  authoredTitle: {
+    flex: 1,
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  authoredSentiment: {
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+  },
+  authoredSentimentText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 11,
+    color: colors.bgSecondary,
+  },
+  authoredHeadline: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  authoredFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  authoredCategory: {
+    flex: 1,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  authoredAge: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
   },
 });
