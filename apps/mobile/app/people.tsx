@@ -182,7 +182,7 @@ function OwnIdentityCard(): React.ReactElement | null {
     <View style={styles.identityCard}>
       <View style={styles.identityText}>
         <Text style={styles.identityLabel}>YOUR HANDLE</Text>
-        <Text style={styles.identityValue} numberOfLines={1}>
+        <Text style={styles.identityValue} numberOfLines={2} ellipsizeMode="middle">
           {primary}
         </Text>
         {identity.handle === null && (

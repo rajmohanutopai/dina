@@ -382,7 +382,9 @@ export default function SettingsScreen() {
           from "Paired Devices" because first-time users read that
           as "another phone running Dina"; see paired-devices.tsx
           for the full rationale. */}
-      <SettingsSection title="AGENTS">
+      {/* MORE collapses Agents + Admin into one section header so two
+          single-row sections don't read as a layout bug. */}
+      <SettingsSection title="MORE">
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/paired-devices')}
@@ -392,13 +394,8 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Agents</Text>
           <Text style={styles.rowValue}>{'\u203A'}</Text>
         </TouchableOpacity>
-      </SettingsSection>
-
-      {/* Admin — the dina-admin mirror. Drill-down into identity,
-          security, diagnostics, and the danger-zone wipe action. Kept
-          under its own section so returning users can find it without
-          scrolling past BYOK + service-sharing. */}
-      <SettingsSection title="ADMIN">
+        {/* Admin folded into MORE; used to be its own
+            single-row section, which read as a layout bug. */}
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/admin')}
@@ -410,19 +407,14 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </SettingsSection>
 
-      {/* Security */}
+      {/* Security + storage. The old DATA section was a single row
+          ("Storage: On device only") under its own header; folded
+          here so the user sees one tidy block of "what protects
+          your data". */}
       <SettingsSection title="SECURITY">
         <SettingsRow label="Encryption" value="AES-256-GCM" />
         <SettingsRow label="Key derivation" value="SLIP-0010 + HKDF" />
         <SettingsRow label="Key storage" value="Device Keychain" />
-      </SettingsSection>
-
-      {/* Stats — the legacy in-memory memory counter was removed; the
-          real vault/staging count lives in Core and surfaces via the
-          Vault tab once the Core-side "list items" endpoint is wired.
-          Showing a misleading zero in the meantime is worse than
-          showing nothing (issue #16). */}
-      <SettingsSection title="DATA">
         <SettingsRow label="Storage" value="On device only" />
       </SettingsSection>
 

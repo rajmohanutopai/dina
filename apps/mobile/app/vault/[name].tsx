@@ -167,7 +167,10 @@ export default function VaultDetail(): React.ReactElement {
         options={{ title: formatPersonaDisplayName(persona.name), headerShown: true }}
       />
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-        {/* Header card — name + tier + lock state */}
+        {/* Header card — lock state + tier. The persona name lives
+          * in the Stack title above, so don't duplicate it here.
+          * Showing "General" twice (page title + this card) read as
+          * a layout bug. */}
         <View style={styles.headerCard}>
           <View style={styles.headerRow}>
             <Ionicons
@@ -175,9 +178,8 @@ export default function VaultDetail(): React.ReactElement {
               size={20}
               color={persona.isOpen ? colors.accent : colors.textMuted}
             />
-            <Text style={styles.headerTitle}>{formatPersonaDisplayName(persona.name)}</Text>
+            <Text style={styles.tierLabel}>{persona.tierLabel}</Text>
           </View>
-          <Text style={styles.tierLabel}>{persona.tierLabel}</Text>
         </View>
 
         {/* Description (editable) */}
@@ -261,6 +263,31 @@ export default function VaultDetail(): React.ReactElement {
   );
 }
 
+/**
+ * Strip the L0 enricher's `(unverified sender)` suffix from a
+ * vault-item headline and surface it as a separate signal. The
+ * enricher (brain/src/enrichment/l0_deterministic.ts) appends the
+ * literal " (unverified sender)" to the headline when an item came
+ * in from a sender Dina doesn't recognise. Rendering it inline with
+ * the title made the suffix read like part of the subject's name —
+ * "Sarah likes hibiscus tea (unverified sender)" — visually
+ * confusing and accessibility-hostile. Splitting here lets the row
+ * render a clean title plus a small badge.
+ */
+const UNVERIFIED_SUFFIX_RE = /\s*\(unverified sender\)\s*$/i;
+function splitUnverifiedSuffix(headline: string): {
+  cleanHeadline: string;
+  hasUnverifiedSuffix: boolean;
+} {
+  if (!UNVERIFIED_SUFFIX_RE.test(headline)) {
+    return { cleanHeadline: headline, hasUnverifiedSuffix: false };
+  }
+  return {
+    cleanHeadline: headline.replace(UNVERIFIED_SUFFIX_RE, '').trimEnd(),
+    hasUnverifiedSuffix: true,
+  };
+}
+
 function ItemCard({
   item,
   onDelete,
@@ -269,8 +296,9 @@ function ItemCard({
   onDelete: () => void;
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
+  const { cleanHeadline, hasUnverifiedSuffix } = splitUnverifiedSuffix(item.headline);
   const hasMoreBody =
-    item.bodyPreview.length > 0 && item.bodyPreview !== item.headline;
+    item.bodyPreview.length > 0 && item.bodyPreview !== cleanHeadline;
   // Tap toggles expanded state — when collapsed, headline + body are
   // truncated; when expanded, they wrap fully. This is the "drill-in"
   // affordance: vault rows used to be plain Views with no tap target,
@@ -292,8 +320,8 @@ function ItemCard({
       accessibilityRole={isPressable ? 'button' : 'text'}
       accessibilityLabel={
         isPressable
-          ? `${item.headline}, tap to ${expanded ? 'collapse' : 'expand'}`
-          : item.headline
+          ? `${cleanHeadline}${hasUnverifiedSuffix ? ', unverified sender' : ''}, tap to ${expanded ? 'collapse' : 'expand'}`
+          : `${cleanHeadline}${hasUnverifiedSuffix ? ', unverified sender' : ''}`
       }
       accessibilityState={isPressable ? { expanded } : undefined}
     >
@@ -302,12 +330,18 @@ function ItemCard({
           style={styles.itemHeadline}
           numberOfLines={expanded ? 0 : 2}
         >
-          {item.headline}
+          {cleanHeadline}
         </Text>
         <Pressable onPress={onDelete} hitSlop={10} accessibilityLabel="Delete item">
           <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
         </Pressable>
       </View>
+      {hasUnverifiedSuffix && (
+        <View style={styles.unverifiedBadge} testID="vault-item-unverified-badge">
+          <Ionicons name="alert-circle-outline" size={12} color={colors.warning} />
+          <Text style={styles.unverifiedText}>Unverified sender</Text>
+        </View>
+      )}
       {hasMoreBody ? (
         <Text
           style={styles.itemBody}
@@ -595,6 +629,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: colors.textPrimary,
+  },
+  unverifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  unverifiedText: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.warning,
   },
   itemBody: {
     fontFamily: fonts.sans,

@@ -330,7 +330,7 @@ export function deriveSubjectCard(
 
   return {
     title: input.title,
-    subtitle: deriveCardSubtitle(input.category),
+    subtitle: deriveCardSubtitle(input.category, input.subjectKind),
     score,
     showNumericScore: reviewCount >= MIN_REVIEWS_FOR_NUMERIC && score.score !== null,
     reviewCount,
@@ -419,13 +419,61 @@ function toTopReviewerLine(r: SubjectReview): TopReviewerLine {
  * extending the same single-source pattern to the subtitle removes
  * the inconsistency.)
  */
-export function deriveCardSubtitle(category: string | null | undefined): string | null {
-  if (category === null || category === undefined) return null;
-  const trimmed = category.trim();
-  if (trimmed.length === 0) return null;
+/**
+ * Subject-kind labels used as a fallback when the category's first
+ * segment is too generic to be useful (`commerce/`, `claim/`,
+ * `identity/`, anything with a `general` leaf). Without this the
+ * subtitle on an `Aeron Chair` typed `product` with category
+ * `commerce/product` reads "Commerce" — accurate but useless. The
+ * subject-kind label ("Product") is what the user actually wants
+ * to see.
+ */
+const SUBJECT_KIND_LABEL: Record<string, string> = {
+  product: 'Product',
+  place: 'Place',
+  organization: 'Organization',
+  content: 'Content',
+  did: 'Person',
+  dataset: 'Dataset',
+  claim: 'Claim',
+};
 
-  const [first] = trimmed.split('/').filter((s) => s.length > 0);
-  if (first === undefined) return null;
+/**
+ * Generic top-level category buckets that pair with a default
+ * `<kind>/general` or `commerce/product` placeholder. When we see
+ * one of these, the user-typed subject kind ("Product", "Place")
+ * is more meaningful than the category bucket.
+ */
+const GENERIC_CATEGORY_PREFIX = new Set<string>(['commerce', 'claim', 'identity']);
+
+export function deriveCardSubtitle(
+  category: string | null | undefined,
+  subjectKind?: string | null | undefined,
+): string | null {
+  // Prefer category when it carries a specific top-level segment
+  // (e.g. `office_furniture/chair` → "Office furniture"). Fall back
+  // to humanised subject-kind only when the category is missing or
+  // generic.
+  const fromKind =
+    subjectKind != null && SUBJECT_KIND_LABEL[subjectKind] !== undefined
+      ? SUBJECT_KIND_LABEL[subjectKind]
+      : null;
+
+  if (category === null || category === undefined) return fromKind;
+  const trimmed = category.trim();
+  if (trimmed.length === 0) return fromKind;
+
+  const segments = trimmed.split('/').filter((s) => s.length > 0);
+  const [first, second] = segments;
+  if (first === undefined) return fromKind;
+
+  // Generic top-level → defer to subject-kind label when available.
+  // `xxx/general` is the default placeholder the publish path emits
+  // for un-categorised subjects (`categoryFor` in write.tsx); show
+  // the kind there too.
+  if (GENERIC_CATEGORY_PREFIX.has(first) || second === 'general') {
+    if (fromKind !== null) return fromKind;
+  }
 
   // Plan §8.3: "Office furniture" appears as the subtitle for an
   // Aeron chair, which has category `office_furniture/chair`.
@@ -433,7 +481,7 @@ export function deriveCardSubtitle(category: string | null | undefined): string 
   // is too narrow to use as the at-a-glance "what kind of subject"
   // subtitle.
   const result = humanise(first);
-  return result.length === 0 ? null : result;
+  return result.length === 0 ? fromKind : result;
 }
 
 function humanise(segment: string): string {

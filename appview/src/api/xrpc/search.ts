@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { eq, and, desc, gte, lte, lt, or, sql, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { attestations, subjects, subjectScores, didProfiles } from '@/db/schema/index.js'
+import { computeGraphContext } from '@/db/queries/graph.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
 import type { SearchResponse } from '@/shared/types/api-types.js'
 
@@ -106,6 +107,13 @@ export const SearchParams = z
     // Tracked as a follow-up; the schema accepts it so mobile clients
     // can already serialise the param without breaking.
     reviewersInNetwork: z.enum(['any', 'one_plus', 'majority']).optional(),
+    // TN-TEST-080 / Plan §7 friend-boost — when set, attestations
+    // authored by DIDs in the viewer's 1-hop trust graph (vouches +
+    // direct attestations) sort above attestations from strangers.
+    // Boost is a flag, not a per-overlap multiplier (the helper in
+    // `scorer/algorithms/friend-boost.ts` documents why). The
+    // viewer's OWN attestations are excluded — `computeGraphContext`
+    // marks the root with depth=0 and we filter to depth=1.
     viewerDid: z.string().max(2048).regex(/^did:[a-z]+:/).optional(),
     // TN-V2-RANK-001 — ISO 3166-1 alpha-2 region. Excludes subjects
     // whose `metadata.availability.regions` exists, is non-empty,
@@ -179,6 +187,7 @@ export async function search(
     minConfidence, since, until, sort, limit, cursor,
     language, location, metadataFilters, minReviewCount, viewerRegion,
     dietaryTags, accessibilityTags, compatTags, priceMinE7, priceMaxE7,
+    viewerDid,
   } = params
 
   const conditions: any[] = [eq(attestations.isRevoked, false)]
@@ -470,6 +479,36 @@ export async function search(
     const regionPayload = JSON.stringify({ availability: { regions: [viewerRegion] } })
     orderClause = [
       sql`CASE WHEN ${subjects.metadata} @> ${regionPayload}::jsonb THEN 1 ELSE 0 END DESC`,
+      ...orderClause,
+    ]
+  }
+
+  // TN-TEST-080 / Plan §7 line 885 — friend-boost. When `viewerDid`
+  // is set, attestations authored by DIDs in the viewer's 1-hop
+  // trust graph (vouches + direct attestations) sort above
+  // attestations from strangers. Same primary-key sort-bump shape
+  // as the viewerRegion boost, applied as an OUTER bucket so the
+  // friend signal dominates region match (a friend's review
+  // outside-region beats a stranger's review in-region — the V1
+  // hierarchy of trust signals).
+  //
+  // Empty 1-hop graph short-circuits to no-op so a brand-new viewer
+  // with no contacts gets the un-boosted baseline (matches the pure
+  // helper's symmetric-empty-set semantics — see friend-boost.ts).
+  // The viewer's own DID is the BFS root with depth=0 and is
+  // explicitly excluded by the `n.depth === 1` filter, mirroring
+  // network-feed.ts:87-89.
+  let oneHopDids: string[] = []
+  if (viewerDid) {
+    const graph = await computeGraphContext(db, viewerDid, 1)
+    oneHopDids = graph.nodes.filter((n) => n.depth === 1).map((n) => n.did)
+  }
+  if (oneHopDids.length > 0) {
+    // `inArray` would generate `author_did IN ($1, $2, ...)` which
+    // works inside a CASE WHEN. The Drizzle-emitted parameters keep
+    // user input bound (no SQL injection through DID strings).
+    orderClause = [
+      sql`CASE WHEN ${attestations.authorDid} IN (${sql.join(oneHopDids.map((d) => sql`${d}`), sql`, `)}) THEN 1 ELSE 0 END DESC`,
       ...orderClause,
     ]
   }

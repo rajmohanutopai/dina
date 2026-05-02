@@ -333,6 +333,10 @@ function makeStubDb(): { db: DrizzleDB; capture: CapturedQuery } {
           limit: async () => [],
         }
       },
+      // TN-TEST-080 — `computeGraphContext` BFS uses `select().from()
+      // .where().limit()` (no orderBy). The stub graph traversal
+      // resolves to empty edges so the friend-boost branch no-ops.
+      limit: async () => [],
     }
   }
   // TN-V2-RANK-007 — when viewerRegion is set, the handler chains
@@ -350,6 +354,15 @@ function makeStubDb(): { db: DrizzleDB; capture: CapturedQuery } {
         where: buildWhere,
       }),
     }),
+    // TN-TEST-080 — `computeGraphContext` BFS runs inside a
+    // transaction. The stub passes the same db through so the BFS
+    // uses the same `select(...)` chain — which resolves to empty
+    // arrays, so the friend-boost branch no-ops. The single
+    // `tx.execute()` for SET LOCAL statement_timeout is a no-op.
+    // The non-empty-graph SQL shape is pinned by a separate test
+    // that stubs `computeGraphContext` directly via vi.mock.
+    transaction: async (fn: (tx: any) => Promise<unknown>) => fn(db),
+    execute: async () => ({ rows: [] }),
   }
   return { db: db as DrizzleDB, capture }
 }
@@ -720,5 +733,76 @@ describe('search handler — TN-API-001 WHERE-clause assembly', () => {
     const sqlText = capture.sqlFragments.join('').toLowerCase()
     expect(sqlText).not.toMatch(/network/)
     expect(sqlText).not.toMatch(/contacts/)
+  })
+
+  // ── TN-TEST-080 — friend-boost sort bump (SQL shape pin) ──
+  // The integration test pins the ORDERING SEMANTICS (a friend's
+  // attestation surfaces above a stranger's). This unit test pins
+  // the SQL SHAPE — when `viewerDid` resolves a non-empty 1-hop
+  // graph, the ORDER BY chain gains a CASE-WHEN-IN-list bucket on
+  // `attestations.author_did`. A regression that emits the wrong
+  // operator (e.g. accidentally sorting ASC, or referencing the
+  // wrong column) would fail this even when the integration env
+  // isn't running.
+  //
+  // We mock `computeGraphContext` directly (rather than wiring the
+  // BFS through the stub-db) because the BFS is a separate concern
+  // owned by `db/queries/graph.ts` and has its own unit tests; the
+  // search xRPC's contract here is "if the BFS returns N >= 1
+  // 1-hop DIDs, the ORDER BY gains a CASE bucket on author_did".
+  it('viewerDid with non-empty 1-hop graph adds CASE-IN-list to ORDER BY (TN-TEST-080)', async () => {
+    vi.resetModules()
+    vi.doMock('@/db/queries/graph.js', () => ({
+      computeGraphContext: async () => ({
+        rootDid: 'did:plc:sancho',
+        depth: 1,
+        nodes: [
+          { did: 'did:plc:sancho', trustScore: null, depth: 0 },
+          { did: 'did:plc:alonso', trustScore: null, depth: 1 },
+          { did: 'did:plc:albert', trustScore: null, depth: 1 },
+        ],
+        edges: [],
+      }),
+    }))
+    const { search: searchWithMock } = await import('@/api/xrpc/search')
+    const { db, capture } = makeStubDb()
+    await searchWithMock(db, {
+      viewerDid: 'did:plc:sancho',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('').toLowerCase()
+    // CASE-WHEN bucket present.
+    expect(sqlText).toMatch(/case when/)
+    // The two 1-hop DIDs ride along as bound parameters; the stub's
+    // captureWhere serialises bound params as `<param:VALUE>`.
+    expect(sqlText).toContain('did:plc:alonso')
+    expect(sqlText).toContain('did:plc:albert')
+    // The viewer's own DID (BFS root, depth=0) is excluded from the
+    // 1-hop bucket — must NOT appear in the ORDER BY.
+    expect(sqlText).not.toContain('did:plc:sancho')
+    // DESC keyword present (boost-bucket-1 sorts above boost-bucket-0).
+    expect(sqlText).toMatch(/desc/)
+    vi.doUnmock('@/db/queries/graph.js')
+  })
+
+  it('viewerDid with empty 1-hop graph does NOT emit CASE-IN-list on author_did (TN-TEST-080)', async () => {
+    // Lonely viewer — empty 1-hop set short-circuits the boost.
+    // Pin: no `author_did` reference in the ORDER BY. The stub's
+    // default behaviour already returns empty edges from the
+    // BFS subqueries, so we can use it directly.
+    const { db, capture } = makeStubDb()
+    await search(db, {
+      viewerDid: 'did:plc:lonely',
+      sort: 'recent',
+      limit: 25,
+    } as never)
+    const sqlText = capture.sqlFragments.join('').toLowerCase()
+    // The friend-boost CASE references attestations.author_did; if
+    // the empty-graph short-circuit is wrong, the column would
+    // appear in the captured ORDER BY fragments. The recency-DESC
+    // ordering doesn't reference author_did so its absence here is
+    // a load-bearing pin.
+    expect(sqlText).not.toMatch(/author_did/)
   })
 })

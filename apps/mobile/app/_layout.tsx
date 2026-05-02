@@ -13,7 +13,9 @@
 import '../src/polyfills';
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { Tabs, useRouter, usePathname, useLocalSearchParams } from 'expo-router';
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import {
@@ -53,6 +55,7 @@ import { markNotificationRead } from '@dina/brain/src/notifications/inbox';
 import { handleNotificationTap } from '../src/notifications/deep_link';
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
+import { bootstrapInferredPreferences } from '../src/services/preferences_bootstrap';
 import { isTrustTabHidden } from '../src/trust/flags';
 import { parentRouteFor } from '../src/navigation/parent_route';
 import {
@@ -498,6 +501,22 @@ export default function RootLayout() {
     };
   }, [unlocked]);
 
+  // Viewer-preferences inference (region / languages / devices /
+  // dietary). Runs ONCE on first launch — `bootstrapInferredPreferences`
+  // delegates to `hydrateUserPreferences()` which short-circuits when
+  // the keychain row already exists. The point: Dina shouldn't ask
+  // the user to data-enter info she already has access to (device
+  // locale, platform, vault). This effect runs after unlock so the
+  // General-persona vault is open and the dietary keyword scan can
+  // see real text.
+  useEffect(() => {
+    if (!unlocked) return;
+    void bootstrapInferredPreferences().catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('[preferences] inference failed:', err);
+    });
+  }, [unlocked]);
+
   // Push-tap deep link (5.68). Two paths:
   //   (1) Foreground / background — `addNotificationResponseReceivedListener`
   //   (2) Cold start (app was killed) — `getLastNotificationResponseAsync()`
@@ -649,31 +668,89 @@ export default function RootLayout() {
             />
             <Tabs.Screen
               name="trust"
-              options={{
-                title: 'Trust',
-                tabBarIcon: ({ focused }) => <TabIcon name="Trust" focused={focused} />,
-                // The trust folder has its own Stack layout
-                // (`app/trust/_layout.tsx`) that scopes back-navigation
-                // properly: search → subject → reviewer → back goes
-                // to subject. With the Stack in place, every nested
-                // `trust/...` route is a Stack child rather than its
-                // own Tabs entry, so this single declaration covers
-                // the whole tab.
-                //
-                // `headerShown: false` here delegates ALL header rendering
-                // to the Stack — the Stack provides the hamburger header
-                // for the index, and the auto back-chevron header for
-                // drill-downs. Letting both render produces a duplicate
-                // header band on every screen.
-                headerShown: false,
-                //
-                // Hide the tab when AppView's `trust_v1_enabled` flag is
-                // explicitly false (TN-FLAG-005 + TN-MOB-051). Default
-                // visible — `null` from `getCachedTrustV1Enabled` (i.e.
-                // unloaded / expired) does NOT hide so dev workflows
-                // before the AppView config endpoint lands stay usable.
-                href: isTrustTabHidden() ? null : undefined,
+              options={({ route }) => {
+                // Hide the bottom tab bar on focused-flow Trust screens
+                // (compose / edit / outbox). Two reasons:
+                //   1. The fixed-bottom Publish CTA on `/trust/write`
+                //      sits in the same vertical band as the tab bar
+                //      (CTA y=801-852, tab bar y=795-840). Tapping the
+                //      Publish edit centre lands on a tab and pops the
+                //      half-completed compose — the worst possible UX
+                //      regression.
+                //   2. Compose / edit / outbox are focused secondary
+                //      flows. A user in the middle of writing a review
+                //      doesn't need a one-tap escape into Chat or
+                //      Notifications — that's a distraction at best
+                //      and an accidental data-loss at worst. Standard
+                //      mobile pattern (Twitter compose, Instagram
+                //      compose, etc.) hides the tab bar in these
+                //      flows.
+                const focused = getFocusedRouteNameFromRoute(route);
+                const hideTabBar = focused === 'write' || focused === 'outbox';
+                return {
+                  title: 'Trust',
+                  tabBarIcon: ({ focused: f }: { focused: boolean }) => (
+                    <TabIcon name="Trust" focused={f} />
+                  ),
+                  // The trust folder has its own Stack layout
+                  // (`app/trust/_layout.tsx`) that scopes back-navigation
+                  // properly: search → subject → reviewer → back goes
+                  // to subject. With the Stack in place, every nested
+                  // `trust/...` route is a Stack child rather than its
+                  // own Tabs entry, so this single declaration covers
+                  // the whole tab.
+                  //
+                  // `headerShown: false` here delegates ALL header rendering
+                  // to the Stack — the Stack provides the hamburger header
+                  // for the index, and the auto back-chevron header for
+                  // drill-downs. Letting both render produces a duplicate
+                  // header band on every screen.
+                  headerShown: false,
+                  //
+                  // Hide the tab when AppView's `trust_v1_enabled` flag is
+                  // explicitly false (TN-FLAG-005 + TN-MOB-051). Default
+                  // visible — `null` from `getCachedTrustV1Enabled` (i.e.
+                  // unloaded / expired) does NOT hide so dev workflows
+                  // before the AppView config endpoint lands stay usable.
+                  href: isTrustTabHidden() ? null : undefined,
+                  tabBarStyle: hideTabBar
+                    ? { display: 'none' }
+                    : undefined,
+                };
               }}
+            />
+            {/* Trust preferences sub-screens — reached from Settings,
+              * never their own tab. Without `href: null` Expo Router
+              * file-based routing auto-registers each as a bottom-bar
+              * entry, blowing out the tab bar with `Bud…`, `Diet…`,
+              * `Acc…` and three raw paths (`trust-preferences/region`,
+              * `…/devices`, `…/languages`) that don't even have a
+              * friendly title. Six leaks on a four-tab bar — the worst
+              * UX regression in the app. Each entry below mirrors the
+              * pattern used for `settings`, `help`, etc. above. */}
+            <Tabs.Screen
+              name="trust-preferences/region"
+              options={{ title: 'Region', href: null, headerLeft: renderHeaderBackButton }}
+            />
+            <Tabs.Screen
+              name="trust-preferences/budget"
+              options={{ title: 'Budget', href: null, headerLeft: renderHeaderBackButton }}
+            />
+            <Tabs.Screen
+              name="trust-preferences/devices"
+              options={{ title: 'Devices', href: null, headerLeft: renderHeaderBackButton }}
+            />
+            <Tabs.Screen
+              name="trust-preferences/languages"
+              options={{ title: 'Languages', href: null, headerLeft: renderHeaderBackButton }}
+            />
+            <Tabs.Screen
+              name="trust-preferences/dietary"
+              options={{ title: 'Dietary', href: null, headerLeft: renderHeaderBackButton }}
+            />
+            <Tabs.Screen
+              name="trust-preferences/accessibility"
+              options={{ title: 'Accessibility', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen
               name="reminders"
@@ -813,10 +890,19 @@ function BootBanner({
   const bg = kind === 'error' ? '#FDE8E8' : kind === 'warning' ? '#FFF4DB' : '#EBF4FF';
   const border = kind === 'error' ? '#DC2626' : kind === 'warning' ? '#D97706' : '#2563EB';
   const hasDetails = details.length > 0;
+  // Push the banner below the iOS dynamic island / notch. Without
+  // this, the primary line gets clipped mid-word ("Runtime warnings
+  // act…") on every iPhone since the X. `useSafeAreaInsets` reads
+  // the device's actual safe-area top so we don't hardcode a 47-px
+  // assumption that breaks on iPhone SE / Android.
+  const insets = useSafeAreaInsets();
   return (
     <Pressable
       onPress={() => hasDetails && setExpanded((v) => !v)}
-      style={[bannerStyles.wrap, { backgroundColor: bg, borderBottomColor: border }]}
+      style={[
+        bannerStyles.wrap,
+        { backgroundColor: bg, borderBottomColor: border, paddingTop: insets.top + 8 },
+      ]}
       accessibilityRole={hasDetails ? 'button' : undefined}
       accessibilityLabel={`${primary}${hasDetails ? ` (${details.length} item${details.length === 1 ? '' : 's'})` : ''}`}
     >

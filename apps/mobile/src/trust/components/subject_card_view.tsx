@@ -37,6 +37,39 @@ import { BAND_COLOUR, BAND_LABEL } from '../band_theme';
 
 import type { SubjectCardDisplay } from '../subject_card';
 
+/**
+ * Maturity-badge fallback used when the wire didn't include a
+ * subject score (search results today). Single review = "New",
+ * 2–5 = "Some", 6+ = "Established". The labels read as freshness
+ * rather than trust per se — honest about what we can infer
+ * without scoring, and still gives the user a glanceable signal
+ * on every card. When AppView starts shipping subject scores in
+ * the search response, the band branch wins and this fallback
+ * stays out of the way.
+ */
+function maturityLabel(reviewCount: number): string {
+  if (reviewCount <= 0) return 'NEW';
+  if (reviewCount === 1) return 'NEW';
+  if (reviewCount <= 5) return 'SOME';
+  return 'ESTABLISHED';
+}
+
+function maturityStyleFor(reviewCount: number): {
+  borderColor: string;
+  backgroundColor: string;
+} {
+  // Three calm tints. Avoid traffic-light red/green so the badge
+  // can't be misread as a trust verdict — that's what the proper
+  // BAND_COLOUR is for once scoring is wired.
+  if (reviewCount <= 1) {
+    return { borderColor: '#D1D5DB', backgroundColor: '#F3F4F6' };
+  }
+  if (reviewCount <= 5) {
+    return { borderColor: '#BFDBFE', backgroundColor: '#EFF6FF' };
+  }
+  return { borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' };
+}
+
 export interface SubjectCardViewProps {
   /** Stable identifier used by callers for navigation + testID. */
   subjectId: string;
@@ -145,20 +178,30 @@ export function SubjectCardView(props: SubjectCardViewProps): React.ReactElement
       )}
 
       {/* Score badge + review count.
-          Hide the badge for unrated subjects — search returns
-          attestation hits without subject-score data, so every
-          card-on-search would otherwise show a meaningless "—" badge
-          that contradicts the band the detail page renders. When the
-          score IS known (network feed, future score-enriched search)
-          the badge stays. */}
+          When AppView returned a subject-level score (network feed,
+          future score-enriched search) we render the canonical band.
+          Otherwise we fall back to a maturity badge derived from the
+          review count alone — so every card has SOME glanceable
+          trust signal. The fallback labels read as freshness
+          ("New" / "Some" / "Established") rather than trust per se,
+          which is honest about what we can infer without scoring. */}
       <View style={styles.scoreRow}>
-        {display.score.band !== 'unrated' && (
+        {display.score.band !== 'unrated' ? (
           <View
             style={[styles.scoreBadge, { backgroundColor: BAND_COLOUR[display.score.band] }]}
             testID={`subject-card-band-${subjectId}`}
           >
             <Text style={styles.scoreText}>
               {display.showNumericScore ? display.score.label : BAND_LABEL[display.score.band]}
+            </Text>
+          </View>
+        ) : (
+          <View
+            style={[styles.maturityBadge, maturityStyleFor(display.reviewCount)]}
+            testID={`subject-card-maturity-${subjectId}`}
+          >
+            <Text style={styles.maturityText}>
+              {maturityLabel(display.reviewCount)}
             </Text>
           </View>
         )}
@@ -316,6 +359,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  maturityBadge: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    minWidth: 48,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  maturityText: {
+    fontFamily: fonts.heading,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.4,
   },
   friendsPill: {
     flexDirection: 'row',

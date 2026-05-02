@@ -278,6 +278,123 @@ describe('WriteScreen — submit + cancel', () => {
   });
 });
 
+describe('WriteScreen — URL-param-driven edit mode', () => {
+  // The reviewer screen's "Edit" affordance pushes /trust/write with
+  // a bag of `editing*` URL params. WriteScreen lifts those into its
+  // edit-mode context + initial form state. Locks the contract
+  // between the two screens so a future rename (subjectName →
+  // subject_name etc.) breaks loudly here, not silently in the field.
+  let useLocalSearchParamsSpy: jest.SpyInstance | undefined;
+  afterEach(() => {
+    useLocalSearchParamsSpy?.mockRestore();
+    useLocalSearchParamsSpy = undefined;
+  });
+
+  function mockParams(params: Record<string, string>): void {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const expoRouter = require('expo-router');
+    useLocalSearchParamsSpy = jest
+      .spyOn(expoRouter, 'useLocalSearchParams')
+      .mockReturnValue(params);
+  }
+
+  it('flips into edit mode when editingUri is in URL params', () => {
+    mockParams({
+      editingUri: 'at://did:plc:author/com.dina.trust.attestation/abc',
+      editingCosigCount: '0',
+      editingSentiment: 'positive',
+      editingConfidence: 'high',
+      editingHeadline: 'Worth every penny',
+      editingBody: 'Best chair I have owned.',
+    });
+    const { getByText, getByTestId } = render(<WriteScreen />);
+    expect(getByText('Edit review')).toBeTruthy();
+    expect(getByTestId('write-publish').props.accessibilityLabel).toBe('Publish edit');
+  });
+
+  it('seeds the form from editing* params (sentiment, confidence, headline, body)', () => {
+    mockParams({
+      editingUri: 'at://x/y/z',
+      editingCosigCount: '0',
+      editingSentiment: 'negative',
+      editingConfidence: 'speculative',
+      editingHeadline: 'Stay away',
+      editingBody: 'It broke after a week.',
+    });
+    const { getByTestId } = render(<WriteScreen />);
+    expect(getByTestId('write-headline-input').props.value).toBe('Stay away');
+    expect(getByTestId('write-body-input').props.value).toBe('It broke after a week.');
+    expect(getByTestId('write-sentiment-negative').props.accessibilityState).toMatchObject({
+      selected: true,
+    });
+    expect(
+      getByTestId('write-confidence-speculative').props.accessibilityState,
+    ).toMatchObject({ selected: true });
+  });
+
+  it('surfaces the cosig warning when editingCosigCount > 0', () => {
+    mockParams({
+      editingUri: 'at://x/y/z',
+      editingCosigCount: '3',
+      editingSentiment: 'positive',
+      editingHeadline: 'h',
+    });
+    const { getByTestId } = render(<WriteScreen />);
+    expect(getByTestId('write-edit-warning')).toBeTruthy();
+  });
+
+  it('non-numeric / negative cosig counts coerce to 0 (no warning)', () => {
+    // Defensive against a malformed deep link / a future runner
+    // that passes garbage. Better to under-warn than to crash.
+    mockParams({
+      editingUri: 'at://x/y/z',
+      editingCosigCount: 'banana',
+      editingSentiment: 'positive',
+      editingHeadline: 'h',
+    });
+    const { queryByTestId } = render(<WriteScreen />);
+    expect(queryByTestId('write-edit-warning')).toBeNull();
+  });
+
+  it('omits cosig warning when editingCosigCount param is absent', () => {
+    mockParams({
+      editingUri: 'at://x/y/z',
+      editingSentiment: 'positive',
+      editingHeadline: 'h',
+    });
+    const { queryByTestId } = render(<WriteScreen />);
+    expect(queryByTestId('write-edit-warning')).toBeNull();
+  });
+
+  it('unknown editingSentiment / editingConfidence values fall back to null (no selection)', () => {
+    mockParams({
+      editingUri: 'at://x/y/z',
+      editingCosigCount: '0',
+      editingSentiment: 'banana',
+      editingConfidence: 'lukewarm',
+      editingHeadline: 'h',
+    });
+    const { getByTestId } = render(<WriteScreen />);
+    // None of the sentiment / confidence buttons should report `selected`.
+    for (const s of ['positive', 'neutral', 'negative']) {
+      expect(getByTestId(`write-sentiment-${s}`).props.accessibilityState).toMatchObject({
+        selected: false,
+      });
+    }
+    for (const c of ['certain', 'high', 'moderate', 'speculative']) {
+      expect(getByTestId(`write-confidence-${c}`).props.accessibilityState).toMatchObject({
+        selected: false,
+      });
+    }
+  });
+
+  it('compose mode (no editingUri) leaves the screen as a fresh write', () => {
+    mockParams({});
+    const { getByText } = render(<WriteScreen subjectTitle="Aeron chair" />);
+    expect(getByText('Write a review')).toBeTruthy();
+  });
+});
+
 describe('WriteScreen — initial state seeding', () => {
   it('renders empty form when no initial provided', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);

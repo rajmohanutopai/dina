@@ -466,8 +466,12 @@ describe('SubjectCardView — band colour', () => {
     },
   );
 
-  it('hides the band badge entirely when the subject is unrated', () => {
-    const { queryByTestId } = render(
+  it('shows a maturity-fallback badge instead of the score band when the subject is unrated', () => {
+    // Search results today don't carry subject scores. Rather than
+    // showing a card with no glanceable trust signal at all, the
+    // fallback renders a maturity tier (NEW / SOME / ESTABLISHED)
+    // derived from the review count. The score band stays hidden.
+    const { queryByTestId, getByTestId, getByText } = render(
       <SubjectCardView
         subjectId="sub-1"
         display={makeDisplay({
@@ -479,10 +483,39 @@ describe('SubjectCardView — band colour', () => {
             colorToken: 'unrated' as 'high',
           },
           showNumericScore: false,
+          reviewCount: 3,
         })}
       />,
     );
     expect(queryByTestId('subject-card-band-sub-1')).toBeNull();
+    expect(getByTestId('subject-card-maturity-sub-1')).toBeTruthy();
+    expect(getByText('SOME')).toBeTruthy();
+  });
+
+  it('maturity fallback labels: 0/1 → NEW, 2-5 → SOME, 6+ → ESTABLISHED', () => {
+    const make = (reviewCount: number) =>
+      render(
+        <SubjectCardView
+          subjectId="sub-1"
+          display={makeDisplay({
+            score: {
+              score: null,
+              label: '—',
+              bandName: 'x',
+              band: 'unrated',
+              colorToken: 'unrated' as 'high',
+            },
+            showNumericScore: false,
+            reviewCount,
+          })}
+        />,
+      );
+    expect(make(0).getByText('NEW')).toBeTruthy();
+    expect(make(1).getByText('NEW')).toBeTruthy();
+    expect(make(2).getByText('SOME')).toBeTruthy();
+    expect(make(5).getByText('SOME')).toBeTruthy();
+    expect(make(6).getByText('ESTABLISHED')).toBeTruthy();
+    expect(make(50).getByText('ESTABLISHED')).toBeTruthy();
   });
 });
 

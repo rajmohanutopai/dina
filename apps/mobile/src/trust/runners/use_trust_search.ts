@@ -12,7 +12,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import { listContacts } from '@dina/core/src/contacts/directory';
 import { searchAttestations, type SearchAttestationHit } from '../appview_runtime';
+import { annotateReviewRing, compareCards } from '../contact_rerank';
 import { displayName } from '../handle_display';
 import { deriveSubjectCard, type SubjectCardInput, type SubjectReview } from '../subject_card';
 import type { SearchResult } from '../../../app/trust/search';
@@ -48,10 +50,21 @@ export function useTrustSearch(opts: UseTrustSearchOptions): TrustSearchState {
     }
     let cancelled = false;
     setState({ results: EMPTY, isLoading: true, error: null });
+    // Read the keystore-resident contact directory at search time
+    // (sync — the directory hydrates once during persona unlock and
+    // stays in memory). Snapshot a Set<DID> so the per-review lookup
+    // inside `groupHitsToSearchResults` is O(1). Loyalty Law: this
+    // set NEVER leaves the device — the AppView call above runs
+    // un-personalised; the local re-rank happens on the response.
+    const contactDids = new Set(
+      listContacts()
+        .map((c) => c.did)
+        .filter((did): did is string => typeof did === 'string' && did.length > 0),
+    );
     searchAttestations(trimmed, 50)
       .then((response) => {
         if (cancelled) return;
-        const grouped = groupHitsToSearchResults(response.results);
+        const grouped = groupHitsToSearchResults(response.results, contactDids);
         setState({ results: grouped, isLoading: false, error: null });
       })
       .catch((err: unknown) => {
@@ -74,10 +87,24 @@ export function useTrustSearch(opts: UseTrustSearchOptions): TrustSearchState {
 
 /**
  * Group a flat list of attestation hits by subject, then derive one
- * card display per subject. Cards are ordered by review count (desc),
- * then alphabetically on title for deterministic output.
+ * card display per subject.
+ *
+ * **Contact-aware re-rank** (Loyalty-Law-clean): when a hit's
+ * `authorDid` matches a DID in `contactDids` (the local keystore
+ * contact directory), the review's ring flips from `'stranger'`
+ * to `'contact'`. The subject_card's existing `friendsPill`
+ * derivation already buckets `'self' | 'contact'` as friends and
+ * everything else as strangers, so the count surfaces naturally.
+ * Cards are then sorted so any-contact cards rank above no-contact
+ * cards (within each bucket: review count DESC, title alphabetical).
+ *
+ * Why "boost is a flag, not a multiplier" matches the V1 plan §7
+ * server-side semantic and is documented in `contact_rerank.ts`.
  */
-function groupHitsToSearchResults(hits: SearchAttestationHit[]): readonly SearchResult[] {
+function groupHitsToSearchResults(
+  hits: SearchAttestationHit[],
+  contactDids: ReadonlySet<string>,
+): readonly SearchResult[] {
   if (hits.length === 0) return EMPTY;
   const buckets = new Map<string, { input: SubjectCardInput; reviews: SubjectReview[] }>();
   for (const hit of hits) {
@@ -86,7 +113,7 @@ function groupHitsToSearchResults(hits: SearchAttestationHit[]): readonly Search
     const ref = hit.subjectRefRaw ?? {};
     const title = ref.name ?? ref.did ?? ref.uri ?? subjectId;
     const review: SubjectReview = {
-      ring: 'stranger',
+      ring: annotateReviewRing(hit.authorDid, contactDids, 'stranger'),
       reviewerDid: hit.authorDid,
       reviewerTrustScore: null,
       // Prefer the resolved handle (`alice.pds.dinakernel.com`)
@@ -113,6 +140,11 @@ function groupHitsToSearchResults(hits: SearchAttestationHit[]): readonly Search
         subjectTrustScore: null,
         reviewCount: 1,
         reviews,
+        // Forward the wire's subject kind so the card subtitle
+        // can show "Product" instead of "Commerce" for the
+        // generic `commerce/product` category fallback. Without
+        // this the card label reads as the wrong taxonomy level.
+        subjectKind: ref.type ?? null,
       };
       buckets.set(subjectId, { input, reviews });
     }
@@ -122,10 +154,9 @@ function groupHitsToSearchResults(hits: SearchAttestationHit[]): readonly Search
   for (const [subjectId, { input }] of buckets) {
     out.push({ subjectId, display: deriveSubjectCard(input) });
   }
-  out.sort((a, b) => {
-    const dr = b.display.reviewCount - a.display.reviewCount;
-    if (dr !== 0) return dr;
-    return a.display.title.localeCompare(b.display.title);
-  });
+  // Contact-aware re-rank: any-contact cards rank above no-contact
+  // cards; within each bucket, V1's review-count-DESC + title-asc
+  // tiebreak. Pure helper exported for tests.
+  out.sort(compareCards);
   return out;
 }

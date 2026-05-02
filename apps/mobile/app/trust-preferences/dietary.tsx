@@ -28,11 +28,11 @@ import type { DietaryTag } from '../../src/services/user_preferences';
 const OPTIONS: ReadonlyArray<MultiSelectOption<DietaryTag>> = [
   { value: 'vegan', label: 'Vegan', description: 'No animal products' },
   { value: 'vegetarian', label: 'Vegetarian', description: 'No meat or fish' },
-  { value: 'halal', label: 'Halal' },
-  { value: 'kosher', label: 'Kosher' },
-  { value: 'gluten-free', label: 'Gluten-free' },
-  { value: 'dairy-free', label: 'Dairy-free' },
-  { value: 'nut-free', label: 'Nut-free' },
+  { value: 'halal', label: 'Halal', description: 'Permitted under Islamic dietary law' },
+  { value: 'kosher', label: 'Kosher', description: 'Permitted under Jewish dietary law' },
+  { value: 'gluten-free', label: 'Gluten-free', description: 'No wheat, barley, or rye' },
+  { value: 'dairy-free', label: 'Dairy-free', description: 'No milk, cheese, or butter' },
+  { value: 'nut-free', label: 'Nut-free', description: 'No tree nuts or peanuts' },
 ];
 
 export default function DietaryScreen(): React.ReactElement {

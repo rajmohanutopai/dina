@@ -38,7 +38,73 @@ describe('deriveAuthoredAttestationRows', () => {
     expect(r.category).toBe('office_furniture/chair');
     expect(r.sentiment).toBe('positive');
     expect(r.headline).toBe('Worth every penny');
+    expect(r.body).toBe('');
+    expect(r.confidence).toBe('high');
     expect(r.createdAtMs).toBe(Date.parse('2026-04-30T12:00:00.000Z'));
+  });
+
+  it('splits a multi-paragraph text into headline + body on the first blank line', () => {
+    // Mirrors `composeText` from the publish path: round-tripping
+    // through publish → search → edit-prefill rebuilds the same
+    // headline/body pair.
+    const rows = deriveAuthoredAttestationRows([
+      makeHit({ text: 'Worth every penny\n\nMy back stopped hurting in week 2.' }),
+    ]);
+    expect(rows[0].headline).toBe('Worth every penny');
+    expect(rows[0].body).toBe('My back stopped hurting in week 2.');
+  });
+
+  it('keeps subsequent blank lines inside the body (only first separator splits)', () => {
+    // The composeText join uses a single \n\n; if a reviewer wrote
+    // a body with its own blank lines we mustn't shred them.
+    const rows = deriveAuthoredAttestationRows([
+      makeHit({ text: 'Lede\n\nFirst para.\n\nSecond para.' }),
+    ]);
+    expect(rows[0].headline).toBe('Lede');
+    expect(rows[0].body).toBe('First para.\n\nSecond para.');
+  });
+
+  it('forwards subjectKind / subjectUri / subjectDid for edit-publish round-trip', () => {
+    // Edit publish needs the SubjectRef tuple to reproduce the same
+    // `subject_id` hash. Without these fields the publish path bails
+    // and the edit silently never lands.
+    const r = deriveAuthoredAttestationRows([
+      makeHit({
+        subjectRefRaw: {
+          type: 'content',
+          name: 'A blog post',
+          uri: 'https://example.com/post-1',
+          did: 'did:plc:author',
+        },
+      }),
+    ])[0];
+    expect(r.subjectKind).toBe('content');
+    expect(r.subjectUri).toBe('https://example.com/post-1');
+    expect(r.subjectDid).toBe('did:plc:author');
+  });
+
+  it('subjectUri / subjectDid collapse to null when absent or blank on the wire', () => {
+    const r = deriveAuthoredAttestationRows([
+      makeHit({ subjectRefRaw: { type: 'product', name: 'Aeron Chair' } }),
+    ])[0];
+    expect(r.subjectKind).toBe('product');
+    expect(r.subjectUri).toBeNull();
+    expect(r.subjectDid).toBeNull();
+  });
+
+  it('confidence forwards from the wire when present, null when absent', () => {
+    expect(
+      deriveAuthoredAttestationRows([makeHit({ confidence: 'speculative' })])[0]
+        .confidence,
+    ).toBe('speculative');
+    expect(
+      deriveAuthoredAttestationRows([makeHit({ confidence: null })])[0]
+        .confidence,
+    ).toBeNull();
+    expect(
+      deriveAuthoredAttestationRows([makeHit({ confidence: undefined })])[0]
+        .confidence,
+    ).toBeNull();
   });
 
   it('preserves wire order (recent-first comes from the xRPC sort)', () => {
@@ -129,6 +195,7 @@ describe('deriveAuthoredAttestationRows', () => {
   it('null text becomes empty string headline (screen hides on empty)', () => {
     const rows = deriveAuthoredAttestationRows([makeHit({ text: null })]);
     expect(rows[0].headline).toBe('');
+    expect(rows[0].body).toBe('');
   });
 
   it('malformed createdAt falls back to 0 instead of NaN', () => {

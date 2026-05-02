@@ -283,6 +283,21 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     subjectDid?: string | string[];
     createKind?: string | string[];
     initialName?: string | string[];
+    /**
+     * Edit-mode params (TN-MOB-013 follow-up). When `editingUri` is
+     * present the screen flips into edit mode: header copy switches
+     * to "Edit review", the publish CTA reads "Publish edit", and
+     * the cosignature-release warning surfaces if `editingCosigCount`
+     * is > 0. Pre-fill params (sentiment, headline, body, confidence)
+     * are picked up by `defaultInitial` below — none are required;
+     * any missing field falls back to its empty/null default.
+     */
+    editingUri?: string | string[];
+    editingCosigCount?: string | string[];
+    editingSentiment?: string | string[];
+    editingConfidence?: string | string[];
+    editingHeadline?: string | string[];
+    editingBody?: string | string[];
   }>();
   const readParam = (raw: string | string[] | undefined): string | undefined =>
     Array.isArray(raw) ? raw[0] : raw;
@@ -297,6 +312,35 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       ? (paramSubjectKindRaw as SubjectKind)
       : null;
   const paramInitialName = readParam(params.initialName);
+  // Edit-mode params. `editingUri` is the gate — without it none of
+  // the other edit fields apply.
+  const paramEditingUri = readParam(params.editingUri);
+  const paramEditingCosigCountRaw = readParam(params.editingCosigCount);
+  const paramEditingSentimentRaw = readParam(params.editingSentiment);
+  const paramEditingConfidenceRaw = readParam(params.editingConfidence);
+  const paramEditingHeadline = readParam(params.editingHeadline);
+  const paramEditingBody = readParam(params.editingBody);
+  const paramEditingSentiment: Sentiment | null =
+    paramEditingSentimentRaw === 'positive' ||
+    paramEditingSentimentRaw === 'neutral' ||
+    paramEditingSentimentRaw === 'negative'
+      ? paramEditingSentimentRaw
+      : null;
+  const paramEditingConfidence: Confidence | null =
+    paramEditingConfidenceRaw === 'certain' ||
+    paramEditingConfidenceRaw === 'high' ||
+    paramEditingConfidenceRaw === 'moderate' ||
+    paramEditingConfidenceRaw === 'speculative'
+      ? paramEditingConfidenceRaw
+      : null;
+  // Cosig count parses leniently — anything non-numeric falls back to
+  // 0, which suppresses the warning. Better to under-warn than crash
+  // on a bad URL.
+  const paramEditingCosigCount: number = (() => {
+    if (paramEditingCosigCountRaw === undefined) return 0;
+    const n = Number.parseInt(paramEditingCosigCountRaw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  })();
   // `?createKind=product|place|organization|content|did|dataset|claim`
   // flips the form into "describe a new subject" mode. Without this
   // signal the form stays review-only — backwards compatible with the
@@ -335,6 +379,20 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   //   3. neither → review-only with no subject. Empty form.
   const defaultInitial = React.useMemo(
     () => {
+      // Edit mode wins over both review-mode and create-mode: when
+      // we have a record to edit, every other URL-driven branch is
+      // background context, and the form should land pre-filled
+      // from the existing record. The user is editing a review
+      // OF a known subject, so describe-mode never applies.
+      if (paramEditingUri !== undefined && paramEditingUri.length > 0) {
+        return {
+          ...emptyWriteFormState(),
+          sentiment: paramEditingSentiment,
+          confidence: paramEditingConfidence,
+          headline: paramEditingHeadline ?? '',
+          body: paramEditingBody ?? '',
+        };
+      }
       if (paramSubjectId !== undefined && paramSubjectId.length > 0) {
         return emptyWriteFormState();
       }
@@ -347,7 +405,31 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       }
       return emptyWriteFormState();
     },
-    [paramSubjectId, createKind, paramInitialName],
+    [
+      paramSubjectId,
+      createKind,
+      paramInitialName,
+      paramEditingUri,
+      paramEditingSentiment,
+      paramEditingConfidence,
+      paramEditingHeadline,
+      paramEditingBody,
+    ],
+  );
+  // Edit context is derived from the same params. Memoised so the
+  // useFocusEffect dep array stays stable across renders that don't
+  // change the editing record.
+  const defaultEditing = React.useMemo<WriteScreenEditContext | undefined>(
+    () => {
+      if (paramEditingUri === undefined || paramEditingUri.length === 0) {
+        return undefined;
+      }
+      return {
+        originalUri: paramEditingUri,
+        cosigCount: paramEditingCosigCount,
+      };
+    },
+    [paramEditingUri, paramEditingCosigCount],
   );
   // Title shown in the header — defaults to the subject name when the
   // form was launched from subject detail (?subjectName=...). Without a
@@ -360,7 +442,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   const {
     subjectTitle = defaultSubjectTitle,
     initial = defaultInitial,
-    editing = undefined,
+    editing = defaultEditing,
     isSubmitting = localSubmitting,
     submitError = localError,
     onPublish = async (formState: WriteFormState) => {

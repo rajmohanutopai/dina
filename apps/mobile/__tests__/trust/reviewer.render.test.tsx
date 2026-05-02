@@ -18,6 +18,16 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 
+// Mock the booted-node singleton: tests pin a known DID so the
+// reviewer screen's `isSelf` branch (which gates the Edit affordance
+// on authored rows) is reachable. Real production keeps the singleton
+// `null` until onboarding completes; in tests we want both branches.
+const MOCK_BOOTED_DID = 'did:plc:bootedaaaaaaaaaaaaaaaa';
+jest.mock('../../src/hooks/useNodeBootstrap', () => ({
+  getBootedNode: jest.fn(() => ({ did: MOCK_BOOTED_DID })),
+  getBootDegradations: jest.fn(() => []),
+}));
+
 import ReviewerProfileScreen from '../../app/trust/reviewer/[did]';
 
 import type { TrustProfile } from '@dina/core';
@@ -243,19 +253,29 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
   const ROW_A = {
     uri: 'at://x/1',
     subjectId: 'sub-aeron',
+    subjectKind: 'product' as const,
+    subjectUri: null,
+    subjectDid: null,
     subjectTitle: 'Aeron Chair',
     category: 'office_furniture/chair',
     sentiment: 'positive' as const,
     headline: 'Worth every penny',
+    body: 'Best chair I have owned.',
+    confidence: 'high' as const,
     createdAtMs: NOW - 2 * 60 * 60_000, // 2 hours ago
   };
   const ROW_B = {
     uri: 'at://x/2',
     subjectId: 'sub-cafe',
+    subjectKind: 'place' as const,
+    subjectUri: null,
+    subjectDid: null,
     subjectTitle: 'Bluestone Cafe',
     category: null,
     sentiment: 'neutral' as const,
     headline: '',
+    body: '',
+    confidence: null,
     createdAtMs: NOW - 3 * 24 * 60 * 60_000, // 3 days ago
   };
 
@@ -362,5 +382,77 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
       />,
     );
     expect(getByLabelText('Positive review of Aeron Chair')).toBeTruthy();
+  });
+});
+
+describe('ReviewerProfileScreen — Edit affordance on own reviews', () => {
+  const ROW = {
+    uri: 'at://did:plc:owner/com.dina.trust.attestation/1',
+    subjectId: 'sub-aeron',
+    subjectKind: 'product' as const,
+    subjectUri: null,
+    subjectDid: null,
+    subjectTitle: 'Aeron Chair',
+    category: 'office_furniture/chair',
+    sentiment: 'positive' as const,
+    headline: 'Worth every penny',
+    body: 'Best chair I have owned.',
+    confidence: 'high' as const,
+    createdAtMs: NOW - 60_000,
+  };
+
+  // The reviewer screen pulls `isSelf` from `getBootedNode()` —
+  // mocked at the top of this file to return a known DID. When the
+  // profile's DID matches the booted DID, `isSelf` is true and the
+  // Edit pill should appear on every authored row.
+  const SELF_DID = MOCK_BOOTED_DID;
+
+  it('renders the Edit pill on every authored row when viewing your own profile', () => {
+    const { getByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile({ did: SELF_DID })}
+        nowMs={NOW}
+        authoredRows={[ROW]}
+      />,
+    );
+    expect(getByTestId(`reviewer-authored-edit-${ROW.uri}`)).toBeTruthy();
+  });
+
+  it('hides the Edit pill on other reviewers profiles', () => {
+    const { queryByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile({ did: 'did:plc:somebody-else' })}
+        nowMs={NOW}
+        authoredRows={[ROW]}
+      />,
+    );
+    expect(queryByTestId(`reviewer-authored-edit-${ROW.uri}`)).toBeNull();
+  });
+
+  it('Edit pill exposes a descriptive accessibilityLabel including subject + sentiment', () => {
+    const { getByLabelText } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile({ did: SELF_DID })}
+        nowMs={NOW}
+        authoredRows={[ROW]}
+      />,
+    );
+    expect(
+      getByLabelText('Edit your positive review of Aeron Chair'),
+    ).toBeTruthy();
+  });
+
+  it('tapping the Edit pill fires onEditAuthored with the full row payload', () => {
+    const onEdit = jest.fn();
+    const { getByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile({ did: SELF_DID })}
+        nowMs={NOW}
+        authoredRows={[ROW]}
+        onEditAuthored={onEdit}
+      />,
+    );
+    fireEvent.press(getByTestId(`reviewer-authored-edit-${ROW.uri}`));
+    expect(onEdit).toHaveBeenCalledWith(ROW);
   });
 });

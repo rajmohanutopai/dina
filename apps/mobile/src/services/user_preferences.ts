@@ -212,23 +212,51 @@ function notify(): void {
  * read used by hooks, use `getUserPreferencesSnapshot()`.
  */
 export async function loadUserPreferences(): Promise<UserPreferences> {
+  const result = await loadUserPreferencesWithStatus();
+  return result.profile;
+}
+
+/**
+ * Same as `loadUserPreferences()` but reports whether the keychain
+ * row existed before the read. Used by `hydrateUserPreferences()` to
+ * detect first-launch and trigger inference. The two are split so
+ * the public single-return surface stays simple — every caller other
+ * than hydrate uses `loadUserPreferences()`.
+ */
+export async function loadUserPreferencesWithStatus(): Promise<{
+  /** Resolved preferences (defaults if no row / corrupted). */
+  readonly profile: UserPreferences;
+  /**
+   * `true` when no keychain row existed (first launch on this device,
+   * or after a `clearUserPreferences()`). False when a row was
+   * present, regardless of whether it parsed cleanly.
+   */
+  readonly isFirstLaunch: boolean;
+}> {
   let row: false | { username: string; password: string };
   try {
     row = await Keychain.getGenericPassword({ service: SERVICE });
   } catch {
     // Keychain unavailable (rare — e.g., in a degraded simulator).
-    // Behaviour is the same as "row not found": defaults.
-    return defaultPreferences();
+    // Behaviour is the same as "row not found": defaults. Treat as
+    // first-launch so inference runs and seeds the snapshot in
+    // memory; the next save attempt will fail (keychain still
+    // unavailable) but the user gets a sensible profile in the
+    // meantime.
+    return { profile: defaultPreferences(), isFirstLaunch: true };
   }
-  if (!row) return defaultPreferences();
+  if (!row) return { profile: defaultPreferences(), isFirstLaunch: true };
   try {
     const parsed: unknown = JSON.parse(row.password);
-    return parsePreferences(parsed);
+    return { profile: parsePreferences(parsed), isFirstLaunch: false };
   } catch {
     // Stored blob isn't valid JSON. Treat as corrupted → defaults.
     // Don't try to repair: a write of new prefs from the settings
-    // screen will overwrite the corrupted row.
-    return defaultPreferences();
+    // screen will overwrite the corrupted row. Not first-launch —
+    // we don't want to overwrite a corrupted row with inferred
+    // values (the user might have legitimate state in there that a
+    // later parser version recovers).
+    return { profile: defaultPreferences(), isFirstLaunch: false };
   }
 }
 
@@ -316,13 +344,61 @@ export async function clearUserPreferences(): Promise<void> {
  * than leaving the app un-hydrated forever — preferences are not
  * load-bearing.
  */
-export async function hydrateUserPreferences(): Promise<void> {
+export async function hydrateUserPreferences(opts?: {
+  /**
+   * Inference hook — invoked on first launch (no stored row in the
+   * keychain) to seed the profile from vault + device context.
+   * Returns the values it inferred; the hydrate path merges those
+   * over `defaultPreferences()` and persists.
+   *
+   * Optional: callers that don't want inference (tests, headless
+   * tooling, the install path before the vault is open) can omit
+   * it. When omitted, behaviour is the legacy "device-locale
+   * defaults only" path.
+   *
+   * Async because real callers will read the vault on a worker
+   * thread; the hydrate path awaits the result before notifying
+   * subscribers so the first render sees inferred values.
+   *
+   * Errors from the inferer are swallowed: a vault read that fails
+   * is not worth blocking app boot. We fall back to plain defaults
+   * in that case.
+   */
+  readonly infer?: () => Promise<Partial<UserPreferences>> | Partial<UserPreferences>;
+}): Promise<void> {
   if (hydrated) return;
-  let next: UserPreferences;
+  let loaded: { profile: UserPreferences; isFirstLaunch: boolean };
   try {
-    next = await loadUserPreferences();
+    loaded = await loadUserPreferencesWithStatus();
   } catch {
-    next = defaultPreferences();
+    loaded = { profile: defaultPreferences(), isFirstLaunch: true };
+  }
+  let next = loaded.profile;
+  // First launch + caller supplied an inferer → merge inferred fields
+  // over the device-locale defaults and persist. The inferer returns
+  // `Partial<UserPreferences>` and we only overwrite fields it
+  // declared, so a caller that can't determine (say) `dietary` leaves
+  // the default empty array intact.
+  if (loaded.isFirstLaunch && opts?.infer !== undefined) {
+    let inferred: Partial<UserPreferences> = {};
+    try {
+      inferred = await opts.infer();
+    } catch {
+      inferred = {};
+    }
+    next = { ...next, ...inferred };
+    // Persist immediately so the next launch reads the same values
+    // and inference doesn't re-run. Failures here are non-fatal —
+    // the in-memory snapshot is correct for this session, and the
+    // next user-driven save will retry the keychain write.
+    try {
+      await mutateUserPreferences(() => next);
+      // mutateUserPreferences sets hydrated=true and updates snapshot,
+      // so we can return now.
+      return;
+    } catch {
+      // Fall through to the manual snapshot set below.
+    }
   }
   // Re-check the hydrated flag — a concurrent `saveUserPreferences()`
   // during the keystore read would have already set it. In that case

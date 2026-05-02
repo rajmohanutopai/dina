@@ -103,6 +103,16 @@ export interface ReviewerProfileScreenProps {
    * list. Default implementation drills into `/trust/<subjectId>`.
    */
   onSelectAuthoredSubject?: (subjectId: string) => void;
+  /**
+   * Fired when the user taps the "Edit" pill on a row that belongs
+   * to them. Default implementation pushes `/trust/write` with the
+   * row's seed fields as URL params so the WriteScreen lands in
+   * edit mode pre-filled. Caller may inject for tests / for screens
+   * that want to host the editor inline. The reviewer screen is
+   * responsible for only passing `onEdit` through to rows that
+   * belong to the booted node — see `isSelf` below.
+   */
+  onEditAuthored?: (row: AuthoredAttestationRow) => void;
 }
 
 
@@ -180,6 +190,42 @@ export default function ReviewerProfileScreen(
     onSelectAuthoredSubject = (subjectId: string) => {
       router.push({ pathname: '/trust/[subjectId]', params: { subjectId } });
     },
+    onEditAuthored = (row: AuthoredAttestationRow) => {
+      // Default edit handler — push WriteScreen in edit mode with
+      // the row's content as URL params. The screen reads
+      // `editingUri` to flip into edit mode and uses the rest to
+      // seed the form so the user starts from their existing
+      // review (not a blank form).
+      //
+      // We forward the full SubjectRef tuple (kind / name / did /
+      // identifier-via-uri) so the publish path's
+      // `buildSubjectRefFromParams` reconstructs the SAME
+      // `subject_id` hash the original review carried. Without these
+      // the publish path bails ("subjectKind null → no SubjectRef")
+      // and the edit silently never lands.
+      //
+      // `editingCosigCount` defaults to 0: the search wire shape
+      // doesn't surface cosig counts today, so the edit warning
+      // stays silent until the count is fetched. A future runner
+      // can resolve and forward the real count via the prop, or we
+      // extend SearchAttestationHit to include it.
+      const params: Record<string, string> = {
+        subjectId: row.subjectId,
+        subjectName: row.subjectTitle,
+        subjectKind: row.subjectKind,
+        editingUri: row.uri,
+        editingCosigCount: '0',
+        editingSentiment: row.sentiment,
+        editingHeadline: row.headline,
+        editingBody: row.body,
+      };
+      if (row.subjectDid !== null) params.subjectDid = row.subjectDid;
+      if (row.subjectUri !== null) params.subjectIdentifier = row.subjectUri;
+      if (row.confidence !== null) {
+        params.editingConfidence = row.confidence;
+      }
+      router.push({ pathname: '/trust/write', params });
+    },
   } = props;
 
   React.useEffect(() => {
@@ -201,6 +247,49 @@ export default function ReviewerProfileScreen(
   // Rules of Hooks: every useState must run on every render or React
   // throws "Rendered more hooks than during the previous render".
   const [identityOpen, setIdentityOpen] = React.useState(false);
+
+  // Per-sentiment counts on this screen describe the DID's *authored*
+  // reviews ("how often does this reviewer rate things positively?").
+  // The API's `attestationSummary` is the wrong source — it counts
+  // reviews ABOUT the DID-as-subject, which on a reviewer profile is
+  // always zero unless someone separately reviewed this person.
+  //
+  // Compute from `authoredRows` once they're loaded with data. The
+  // runner initializes `rows` to `[]` before/while fetching, which we
+  // can't distinguish from "loaded with zero results" from this scope
+  // alone. Compromise: fall back to the API summary whenever the
+  // authored list is empty. That keeps the chips meaningful during the
+  // initial load AND in the degraded case where the runner is
+  // disabled (paramDid unknown, controlled-test mode without an
+  // explicit array).
+  //
+  // Lifted above the loading/error early returns: Rules of Hooks
+  // require every hook call to run on every render, so this useMemo
+  // can't sit below the `profile === null` short-circuit. We read the
+  // attestation summary off the raw profile here (the fallback path),
+  // which means we don't depend on `deriveReviewerProfileDisplay` —
+  // and we tolerate `profile === null` by returning zeros.
+  const authoredCounts = React.useMemo(() => {
+    if (Array.isArray(authoredRows) && authoredRows.length > 0) {
+      let positive = 0;
+      let neutral = 0;
+      let negative = 0;
+      for (const row of authoredRows) {
+        if (row.sentiment === 'positive') positive++;
+        else if (row.sentiment === 'negative') negative++;
+        else neutral++;
+      }
+      return { positive, neutral, negative };
+    }
+    if (profile === null) {
+      return { positive: 0, neutral: 0, negative: 0 };
+    }
+    return {
+      positive: profile.attestationSummary.positive,
+      neutral: profile.attestationSummary.neutral,
+      negative: profile.attestationSummary.negative,
+    };
+  }, [authoredRows, profile]);
 
   if (error !== null) {
     return (
@@ -382,21 +471,23 @@ export default function ReviewerProfileScreen(
         />
       </View>
 
-      {/* ─── Sentiment breakdown ────────────────────────────────── */}
+      {/* ─── Sentiment breakdown — computed from authored reviews ──
+          Counts describe THIS reviewer's authored attestations, not
+          reviews about them. See `authoredCounts` above for why. */}
       <View style={styles.sentimentRow} testID="reviewer-sentiment-row">
         <SentimentChip
           label="Positive"
-          count={display.positiveCount}
+          count={authoredCounts.positive}
           colour={colors.success}
         />
         <SentimentChip
           label="Neutral"
-          count={display.neutralCount}
+          count={authoredCounts.neutral}
           colour={colors.textMuted}
         />
         <SentimentChip
           label="Negative"
-          count={display.negativeCount}
+          count={authoredCounts.negative}
           colour={colors.warning}
         />
       </View>
@@ -440,6 +531,7 @@ export default function ReviewerProfileScreen(
                   row={row}
                   nowMs={nowMs}
                   onPress={onSelectAuthoredSubject}
+                  onEdit={isSelf ? onEditAuthored : undefined}
                 />
               ))}
             </View>
@@ -454,12 +546,29 @@ interface AuthoredAttestationRowViewProps {
   row: AuthoredAttestationRow;
   nowMs: number;
   onPress?: (subjectId: string) => void;
+  /**
+   * Per-row edit handler. Reviewer screen passes this only when the
+   * row belongs to the booted node ("Reviews you wrote") so the
+   * affordance never lands on someone else's review. Omitting the
+   * prop hides the Edit pill — that's the negative space test for
+   * non-self profiles.
+   */
+  onEdit?: (row: AuthoredAttestationRow) => void;
 }
 
 function AuthoredAttestationRowView(
   props: AuthoredAttestationRowViewProps,
 ): React.ReactElement {
-  const { row, nowMs, onPress } = props;
+  const { row, nowMs, onPress, onEdit } = props;
+  // When the row exposes an Edit affordance, the outer Pressable
+  // drops its `accessibilityRole="button"` + label so iOS
+  // VoiceOver doesn't aggregate the row into a single AX element
+  // and swallow the inner Edit pill's traits. With the role/label
+  // unset, VoiceOver descends into the children and finds the
+  // Edit pill as its own focusable element. (Verified via
+  // `idb ui describe-all` 2026-05-02 — the inner pill was missing
+  // from the AX tree before this change.)
+  const showEdit = onEdit !== undefined;
   const sentimentColour =
     row.sentiment === 'positive'
       ? colors.success
@@ -487,8 +596,10 @@ function AuthoredAttestationRowView(
         pressed && handlePress && styles.authoredRowPressed,
       ]}
       testID={`reviewer-authored-row-${row.uri}`}
-      accessibilityRole={handlePress ? 'button' : 'text'}
-      accessibilityLabel={`${sentimentLabel} review of ${row.subjectTitle}`}
+      accessibilityRole={showEdit ? undefined : handlePress ? 'button' : 'text'}
+      accessibilityLabel={
+        showEdit ? undefined : `${sentimentLabel} review of ${row.subjectTitle}`
+      }
     >
       <View style={styles.authoredHeader}>
         <Text
@@ -521,6 +632,21 @@ function AuthoredAttestationRowView(
           </Text>
         )}
         <Text style={styles.authoredAge}>{relative}</Text>
+        {onEdit !== undefined && (
+          <Pressable
+            onPress={() => onEdit(row)}
+            style={({ pressed }) => [
+              styles.authoredEditPill,
+              pressed && styles.authoredEditPillPressed,
+            ]}
+            testID={`reviewer-authored-edit-${row.uri}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit your ${sentimentLabel.toLowerCase()} review of ${row.subjectTitle}`}
+            hitSlop={8}
+          >
+            <Text style={styles.authoredEditPillText}>Edit</Text>
+          </Pressable>
+        )}
       </View>
     </Pressable>
   );
@@ -835,5 +961,22 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 11,
     color: colors.textMuted,
+  },
+  authoredEditPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  authoredEditPillPressed: {
+    backgroundColor: colors.bgTertiary,
+  },
+  authoredEditPillText: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });

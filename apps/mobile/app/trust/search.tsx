@@ -93,6 +93,23 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
   const paramQ = Array.isArray(params.q) ? params.q[0] : params.q;
   const router = useRouter();
   const q = props.q ?? paramQ ?? '';
+  // Redirect to /trust home when the screen is opened without a
+  // query. The screen is meant for results, not entry — the search
+  // input lives on the home feed, and /trust/search rendered with
+  // q==='' was showing copy ("Try a search above") that pointed at
+  // an input the screen doesn't have. Skip the redirect in
+  // controlled-mode (tests pass results/isLoading/error explicitly
+  // and want to render against an empty q).
+  const isControlledForRedirect =
+    props.q !== undefined ||
+    props.results !== undefined ||
+    props.isLoading !== undefined ||
+    props.error !== undefined;
+  React.useEffect(() => {
+    if (isControlledForRedirect) return;
+    if (q.length > 0) return;
+    router.replace('/trust');
+  }, [isControlledForRedirect, q, router]);
   // Auto-runner: fire the AppView search round-trip when the caller
   // didn't provide any controlled state (tests always pass at least
   // one of `results`/`isLoading`/`error`, so they keep the screen pure).
