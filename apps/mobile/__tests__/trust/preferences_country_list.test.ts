@@ -104,17 +104,25 @@ describe('getCountryName — localisation + fallback', () => {
     expect(name.length).toBeGreaterThan(2);
   });
 
-  it('falls back to the raw code when Intl.DisplayNames is unavailable', () => {
-    // Stub Intl.DisplayNames to throw — simulates the older-Hermes
-    // environments without ICU data.
+  it('falls back to the static en-name table when Intl.DisplayNames is unavailable', () => {
+    // Stub Intl.DisplayNames to throw — simulates Hermes (iOS/Android)
+    // where the constructor exists but the locale data is stripped, OR
+    // older runtimes where the constructor itself is missing.
+    //
+    // Behaviour change (TN-V2-CTX-002 fix): the static fallback now
+    // returns the English name for the most common codes so the
+    // picker is readable on Hermes. Less-common codes still fall to
+    // the raw code (asserted separately).
     const original = (Intl as any).DisplayNames;
     delete (Intl as any).DisplayNames;
     try {
-      // Cache must be cleared so the fallback path runs (cached value
-      // from a previous test would short-circuit).
       clearCountryListCacheForTest();
-      const name = getCountryName('DE');
-      expect(name).toBe('DE');
+      expect(getCountryName('DE')).toBe('Germany');
+      expect(getCountryName('US')).toBe('United States');
+      expect(getCountryName('XK')).toBe('Kosovo');
+      // A code that's not even in ISO 3166-1 falls through to itself —
+      // graceful degrade for stored stale data.
+      expect(getCountryName('ZZ')).toBe('ZZ');
     } finally {
       (Intl as any).DisplayNames = original;
       clearCountryListCacheForTest();

@@ -99,13 +99,18 @@ describe('getLanguageName — localisation + fallback', () => {
     expect(name).not.toBe('pt-BR');
   });
 
-  it('falls back to the raw tag when Intl.DisplayNames is unavailable', () => {
+  it('falls back to the static en-name table when Intl.DisplayNames is unavailable', () => {
+    // Hermes ships the constructor without the locale data — the
+    // static fallback covers every tag in BCP47_LANGUAGE_TAGS so the
+    // picker stays readable. Behaviour change paired with the
+    // country fallback (TN-V2-CTX-004 fix).
     const original = (Intl as any).DisplayNames;
     delete (Intl as any).DisplayNames;
     try {
       clearLanguageListCacheForTest();
-      const name = getLanguageName('de');
-      expect(name).toBe('de');
+      expect(getLanguageName('de')).toBe('German');
+      expect(getLanguageName('en')).toBe('English');
+      expect(getLanguageName('zh-Hans')).toBe('Chinese (Simplified)');
     } finally {
       (Intl as any).DisplayNames = original;
       clearLanguageListCacheForTest();

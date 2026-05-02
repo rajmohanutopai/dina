@@ -93,6 +93,28 @@ export function getCountryName(code: string, locale?: string): string {
   return name;
 }
 
+/**
+ * Static English-name fallback for ISO 3166-1 alpha-2 codes. Loaded
+ * from a sibling JSON file so the long table stays out of the TS
+ * source. Generated once from Node's `Intl.DisplayNames({type:'region'})`
+ * data — the same data the JS engine on desktop / browsers ship.
+ *
+ * Why this exists: the iOS/Android JS engine in this Expo build does
+ * NOT include `Intl.DisplayNames` locale data — the constructor
+ * succeeds but `names.of(code)` returns the input code unchanged,
+ * leaving the country picker unreadable. Node + browsers DO ship the
+ * data, so the test environment + bundler looked fine while
+ * production rendered raw codes.
+ *
+ * The proper long-term fix is shipping Intl locale data with the
+ * mobile build (e.g. via `expo-localization`'s ICU pin); this static
+ * table is the bridge until that lands.
+ */
+import EN_REGION_NAMES_JSON from './region_names_en.json';
+const EN_REGION_NAMES: Readonly<Record<string, string>> = Object.freeze(
+  EN_REGION_NAMES_JSON as Record<string, string>,
+);
+
 function resolveCountryName(code: string, locale: string | undefined): string {
   // Try the requested locale first (or the runtime default).
   try {
@@ -115,7 +137,11 @@ function resolveCountryName(code: string, locale: string | undefined): string {
       /* fall through */
     }
   }
-  // Final fallback — raw code. Better than blank rows.
+  // Static en-name fallback — covers the most common codes when
+  // Hermes Intl data isn't shipped. Less-common codes still fall
+  // through to the raw code below.
+  const fallback = EN_REGION_NAMES[code];
+  if (typeof fallback === 'string') return fallback;
   return code;
 }
 

@@ -61,7 +61,7 @@ import { BAND_COLOUR, BAND_LABEL } from '../../../src/trust/band_theme';
 import { useAuthoredAttestations } from '../../../src/trust/runners/use_authored_attestations';
 import { useReviewerProfile } from '../../../src/trust/runners/use_reviewer_profile';
 import { IdentityModal } from '../../../src/components/identity/identity_modal';
-import { shortHandle } from '../../../src/trust/handle_display';
+import { shortHandle, truncateDid } from '../../../src/trust/handle_display';
 
 import type { AuthoredAttestationRow } from '../../../src/trust/authored_attestations_data';
 import type { TrustProfile } from '@dina/core';
@@ -291,14 +291,26 @@ export default function ReviewerProfileScreen(
                 </Text>
               </>
             ) : (
-              <Text
-                style={styles.headerDid}
-                numberOfLines={1}
-                ellipsizeMode="middle"
-                accessibilityLabel={`Reviewer ${display.did}`}
-              >
-                {display.did}
-              </Text>
+              // No resolved handle — render a truncated DID + a clarifying
+              // hint so the screen doesn't read like raw machine output.
+              // The truncation matches every other peer-row in the app
+              // (`did:plc:abc1…7890`); the hint explains *why* there's no
+              // name (handle not yet backfilled, or this DID never
+              // published an `alsoKnownAs[0]`).
+              <>
+                <Text
+                  style={styles.headerDid}
+                  numberOfLines={1}
+                  ellipsizeMode="middle"
+                  accessibilityLabel={`Reviewer ${display.did}`}
+                  testID="reviewer-handle"
+                >
+                  {truncateDid(display.did)}
+                </Text>
+                <Text style={styles.headerHint} testID="reviewer-handle-hint">
+                  Anonymous identity — no handle published
+                </Text>
+              </>
             )}
             {namespace && (
               <Text style={styles.headerNamespace} testID="reviewer-namespace">

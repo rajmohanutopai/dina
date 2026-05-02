@@ -144,6 +144,42 @@ export function getLanguageName(tag: string, locale?: string): string {
   return name;
 }
 
+/**
+ * Static English-name fallback table — covers every tag in
+ * {@link BCP47_LANGUAGE_TAGS}. Keep in sync if the tag list changes.
+ *
+ * Why this exists: Hermes (the JS engine on iOS / Android Expo
+ * builds) does NOT ship `Intl.DisplayNames` data — the constructor
+ * succeeds but `names.of(tag)` returns the input tag unchanged. Node
+ * + most browsers DO ship the data, so the test environment looked
+ * fine while production rendered raw codes. Falling through to this
+ * table when `Intl.DisplayNames` returns the input keeps the picker
+ * readable everywhere.
+ */
+const EN_LANGUAGE_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  af: 'Afrikaans', am: 'Amharic', ar: 'Arabic', az: 'Azerbaijani',
+  be: 'Belarusian', bg: 'Bulgarian', bn: 'Bengali', bs: 'Bosnian',
+  ca: 'Catalan', cs: 'Czech', da: 'Danish', de: 'German',
+  el: 'Greek', en: 'English', es: 'Spanish', et: 'Estonian',
+  eu: 'Basque', fa: 'Persian', fi: 'Finnish', fil: 'Filipino',
+  fr: 'French', ga: 'Irish', gl: 'Galician', gu: 'Gujarati',
+  he: 'Hebrew', hi: 'Hindi', hr: 'Croatian', hu: 'Hungarian',
+  hy: 'Armenian', id: 'Indonesian', is: 'Icelandic', it: 'Italian',
+  ja: 'Japanese', jv: 'Javanese', ka: 'Georgian', kk: 'Kazakh',
+  km: 'Khmer', kn: 'Kannada', ko: 'Korean', lo: 'Lao',
+  lt: 'Lithuanian', lv: 'Latvian', mk: 'Macedonian', ml: 'Malayalam',
+  mn: 'Mongolian', mr: 'Marathi', ms: 'Malay', my: 'Burmese',
+  nb: 'Norwegian Bokmål', ne: 'Nepali', nl: 'Dutch', nn: 'Norwegian Nynorsk',
+  pa: 'Punjabi', pl: 'Polish', 'pt-BR': 'Portuguese (Brazil)',
+  'pt-PT': 'Portuguese (Portugal)', ro: 'Romanian', ru: 'Russian',
+  si: 'Sinhala', sk: 'Slovak', sl: 'Slovenian', so: 'Somali',
+  sq: 'Albanian', sr: 'Serbian', sv: 'Swedish', sw: 'Swahili',
+  ta: 'Tamil', te: 'Telugu', th: 'Thai', tr: 'Turkish',
+  uk: 'Ukrainian', ur: 'Urdu', uz: 'Uzbek', vi: 'Vietnamese',
+  'zh-Hans': 'Chinese (Simplified)', 'zh-Hant': 'Chinese (Traditional)',
+  zu: 'Zulu',
+});
+
 function resolveLanguageName(tag: string, locale: string | undefined): string {
   try {
     const names = new (Intl as any).DisplayNames(locale ? [locale] : undefined, {
@@ -163,6 +199,10 @@ function resolveLanguageName(tag: string, locale: string | undefined): string {
       /* fall through */
     }
   }
+  // Static en-name fallback — Hermes path. Better than rendering the
+  // raw tag when neither device-locale nor en Intl data is shipped.
+  const fallback = EN_LANGUAGE_NAMES[tag];
+  if (typeof fallback === 'string') return fallback;
   return tag;
 }
 
