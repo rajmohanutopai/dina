@@ -34,7 +34,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import {
   View,
@@ -44,6 +44,7 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
@@ -53,7 +54,12 @@ import {
   isTestPublishConfigured,
   type SubjectRefBody,
 } from '../../src/trust/appview_runtime';
+import { SubjectAnchorView } from '../../src/trust/components/subject_anchor_view';
+import { useComposeContext } from '../../src/trust/runners/use_compose_context';
+import { listPersonas, isPersonaOpen } from '@dina/core/src/persona/service';
 import { deriveEditWarning, type EditWarning } from '../../src/trust/edit_flow';
+import { findMessageByDraftId, readLifecycle } from '@dina/brain/src/chat/thread';
+import { setReviewDraftStatus } from '../../src/trust/review_draft';
 import {
   enqueueLocal,
   type AttestationDraftBody,
@@ -65,7 +71,6 @@ import {
   describeWriteFormError,
   serializeFormToV2Extras,
   SENTIMENT_OPTIONS,
-  CONFIDENCE_OPTIONS,
   SUBJECT_KIND_OPTIONS,
   SUBJECT_KIND_HINT,
   HEADLINE_MAX_LENGTH,
@@ -78,8 +83,6 @@ import {
   MAX_ACCESSIBILITY,
   MAX_COMPAT,
   MAX_RECOMMEND_FOR,
-  MAX_AVAILABILITY_REGIONS,
-  MAX_AVAILABILITY_SOLD_AT,
   USE_CASE_LABEL,
   REVIEWER_EXPERIENCE_OPTIONS,
   REVIEWER_EXPERIENCE_LABEL,
@@ -90,15 +93,10 @@ import {
   ACCESSIBILITY_LABEL,
   COMPAT_VOCABULARY,
   COMPAT_LABEL,
-  SEASONAL_MONTH_LABEL,
   addReviewAlternative,
   removeReviewAlternative,
   toggleUseCase,
   toggleTagInVocabulary,
-  toggleSeasonalMonth,
-  addCountryCode,
-  addHostname,
-  removeAtIndex,
   useCasesForCategory,
   type LastUsedBucket,
   type ReviewAlternative,
@@ -223,13 +221,6 @@ const SENTIMENT_ICON: Record<Sentiment, 'thumbs-up' | 'remove' | 'thumbs-down'> 
   negative: 'thumbs-down',
 };
 
-const CONFIDENCE_LABEL: Record<Confidence, string> = {
-  certain: 'Certain',
-  high: 'High',
-  moderate: 'Moderate',
-  speculative: 'Speculative',
-};
-
 export interface WriteScreenEditContext {
   /** AT-URI of the original record being edited. */
   readonly originalUri: string;
@@ -268,6 +259,27 @@ export interface WriteScreenProps {
    * available" hint).
    */
   searchAlternatives?: (query: string) => Promise<readonly ReviewAlternative[]>;
+  /**
+   * Compose-context (Dina prefill) gate. Defaults to `true` in
+   * production. Tests pass `false` to keep the screen pure (no vault
+   * read, no inferred prefill). The runner's own `enabled` flag
+   * mirrors this — see `useComposeContext`.
+   */
+  composeContextEnabled?: boolean;
+  /**
+   * Test-only LLM injection. Production omits this and the runner
+   * resolves the user's BYOK provider on its own. Tests pass a stub
+   * `LLMProvider` (or `null` to simulate "no provider configured")
+   * so the prefill path can be exercised without the keychain.
+   */
+  composeLLMProvider?: import('@dina/brain/src/llm/adapters/provider').LLMProvider | null;
+  /**
+   * Test-only override for the persona list the prefill runner
+   * searches. Production reads from `listPersonas()` + `isPersonaOpen`
+   * (every currently-open persona). Tests pass a fixed list because
+   * the persona service in jsdom returns empty (no Core boot).
+   */
+  composePersonas?: readonly string[];
 }
 
 export default function WriteScreen(props: WriteScreenProps = {}): React.ReactElement {
@@ -298,6 +310,17 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     editingConfidence?: string | string[];
     editingHeadline?: string | string[];
     editingBody?: string | string[];
+    /**
+     * Chat-driven review-draft handoff. When the user taps
+     * "Edit in form" on an `InlineReviewDraftCard`, the card pushes
+     * `/trust/write?draftId=…&threadId=…` so the form can pull the
+     * lifecycle from the brain thread store and seed every field
+     * (sentiment, headline, body, plus any V2 extras the LLM drafted).
+     * Without this, the form opened blank and the user lost the
+     * card's progress (the bug this branch was added for).
+     */
+    draftId?: string | string[];
+    threadId?: string | string[];
   }>();
   const readParam = (raw: string | string[] | undefined): string | undefined =>
     Array.isArray(raw) ? raw[0] : raw;
@@ -341,6 +364,8 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     const n = Number.parseInt(paramEditingCosigCountRaw, 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   })();
+  const paramDraftId = readParam(params.draftId);
+  const paramThreadId = readParam(params.threadId);
   // `?createKind=product|place|organization|content|did|dataset|claim`
   // flips the form into "describe a new subject" mode. Without this
   // signal the form stays review-only — backwards compatible with the
@@ -379,6 +404,32 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   //   3. neither → review-only with no subject. Empty form.
   const defaultInitial = React.useMemo(
     () => {
+      // Chat-draft handoff wins over everything: the user typed
+      // "/ask write a review of <X>", got an inline draft card with
+      // LLM-drafted fields, then tapped "Edit in form". Pull the
+      // lifecycle's `values` blob and use it verbatim — sentiment,
+      // headline, body, AND any V2 extras (use_cases, last_used,
+      // etc.) the inferer drafted. Falls through to the next branch
+      // when the draft isn't found (stale link, app restart, thread
+      // reset) so the form still opens, just blank.
+      if (
+        paramDraftId !== undefined &&
+        paramDraftId.length > 0 &&
+        paramThreadId !== undefined &&
+        paramThreadId.length > 0
+      ) {
+        const msg = findMessageByDraftId(paramThreadId, paramDraftId);
+        if (msg !== null) {
+          const lc = readLifecycle(msg);
+          if (lc !== null && lc.kind === 'review_draft' && lc.values !== null) {
+            const draftValues = lc.values as Partial<WriteFormState>;
+            return {
+              ...emptyWriteFormState(),
+              ...draftValues,
+            };
+          }
+        }
+      }
       // Edit mode wins over both review-mode and create-mode: when
       // we have a record to edit, every other URL-driven branch is
       // background context, and the form should land pre-filled
@@ -414,6 +465,8 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       paramEditingConfidence,
       paramEditingHeadline,
       paramEditingBody,
+      paramDraftId,
+      paramThreadId,
     ],
   );
   // Edit context is derived from the same params. Memoised so the
@@ -499,10 +552,11 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           // returns `{}` for an unfilled form, so a `{ ...record,
           // ...v2Extras }` spread is a no-op when nothing is set.
           const v2Extras = serializeFormToV2Extras(formState);
-          await injectAttestation({
+          const cidPlaceholder = `bafyreim${Date.now().toString(36)}`;
+          const result = await injectAttestation({
             authorDid: node.did,
             rkey,
-            cid: `bafyreim${Date.now().toString(36)}`,
+            cid: cidPlaceholder,
             record: {
               subject: subjectRef,
               category: categoryFor(subjectKindForCategory),
@@ -514,6 +568,28 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
               ...v2Extras,
             },
           });
+          // Chat-draft handoff: if the form was opened from an inline
+          // draft card, flip its lifecycle to `published` so the card
+          // collapses to the receipt instead of leaving a stale
+          // editable card in the chat thread. Also redirect the user
+          // back to chat (the place they came from) instead of
+          // popping into trust home — the form was pushed onto the
+          // trust stack from a different tab, so plain back() ends
+          // up at trust home.
+          if (
+            paramDraftId !== undefined &&
+            paramDraftId.length > 0 &&
+            paramThreadId !== undefined &&
+            paramThreadId.length > 0
+          ) {
+            setReviewDraftStatus(paramThreadId, paramDraftId, 'published', {
+              attestation: { uri: result.uri, cid: result.cid },
+              values: formState,
+              content: `Published your review of ${formState.subject?.name ?? subjectTitle}.`,
+            });
+            router.replace('/');
+            return;
+          }
           if (router.canGoBack()) router.back();
           else router.replace('/trust');
           return;
@@ -553,6 +629,19 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       else router.replace('/trust/outbox');
     },
     onCancel = () => {
+      // Chat-draft handoff: the form was pushed inside the trust
+      // stack but the user came from the chat tab. A plain
+      // `router.back()` pops to trust home — wrong destination. Send
+      // them home to chat where their draft card still lives.
+      if (
+        paramDraftId !== undefined &&
+        paramDraftId.length > 0 &&
+        paramThreadId !== undefined &&
+        paramThreadId.length > 0
+      ) {
+        router.replace('/');
+        return;
+      }
       if (router.canGoBack()) router.back();
     },
     searchAlternatives,
@@ -611,36 +700,179 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       setShowErrors(false);
     }, [defaultInitial, props.initial, editing]),
   );
+
+  // Stack header title flips between "Write a review" and "Edit
+  // review". `<Stack.Screen>` is rendered inline so it overrides the
+  // layout's static `options={{ title: 'Write a review' }}` reactively
+  // — `useNavigation().setOptions()` doesn't reliably win against
+  // a layout-defined option (the layout re-applies on focus, racing
+  // with the route's effect). The inline JSX form is the canonical
+  // expo-router pattern for runtime header overrides.
+  const headerTitle = editing ? 'Edit review' : 'Write a review'
   const validation = React.useMemo(() => validateWriteForm(state), [state]);
   const editWarning = React.useMemo<EditWarning | null>(
     () => (editing ? deriveEditWarning(editing.cosigCount) : null),
     [editing],
   );
 
+  // ── Compose-context: Dina pre-fills advanced fields from vault ─────────
+  // Heuristic-on-mobile inferer over the keystore-resident vault.
+  // Loyalty Law-clean — no network, no leak. The runner reads vault
+  // items relevant to the subject, scans for use-case vocabulary
+  // tokens + computes the freshest-item recency bucket. When the
+  // brain-server's LLM wiring matures, this hook gets swapped for an
+  // HTTP call to /api/v1/compose/context — same return shape.
+  //
+  // `prefilledFields` tracks which advanced fields hold Dina's
+  // suggestion (vs the user's typed value). Mutators clear the entry
+  // for their field on user touch — ✨ chip marker disappears as soon
+  // as the user takes ownership of the value.
+  //
+  // Persona is hardcoded to 'general' for V1 — mobile doesn't yet
+  // surface an "active persona" selector for the trust write surface.
+  // When that lands, thread the active persona through here.
+  // Subject name source priority for compose-context:
+  //   1. URL param (deep-linked from subject detail / reviewer screen)
+  //   2. Form-state subject (user typed in describe-mode)
+  //   3. `subjectTitle` prop, ONLY when not the default `'New review'`
+  //      string (which means "compose without subject context" — no
+  //      meaningful vault search target).
+  const composeSubjectName =
+    paramSubjectName !== undefined && paramSubjectName.length > 0
+      ? paramSubjectName
+      : state.subject?.name ??
+        (props.subjectTitle !== undefined && props.subjectTitle !== 'New review'
+          ? props.subjectTitle
+          : null);
+  const composeCategory =
+    paramSubjectKind !== null
+      ? categoryFor(paramSubjectKind)
+      : state.subject?.kind != null
+        ? categoryFor(state.subject.kind)
+        : null;
+  // Enumerate every currently-open persona for the prefill search.
+  // Inside the mobile app the user IS the principal, so Dina is
+  // entitled to read across whatever compartments the user has
+  // unlocked (closed compartments stay sealed by the absent DEK —
+  // the persona wall is enforced cryptographically, not by this
+  // list). The closed-vocab inferer + visible ✨ markers + explicit
+  // Publish step keep the user in control of what reaches the wire.
+  // Memoised on the unlock-revision so the runner's stable-key dep
+  // doesn't churn every render.
+  const composePersonasFromProp = props.composePersonas;
+  const composePersonas = React.useMemo(
+    () =>
+      composePersonasFromProp !== undefined
+        ? [...composePersonasFromProp]
+        : listPersonas().filter((p) => isPersonaOpen(p.name)).map((p) => p.name),
+    // listPersonas / isPersonaOpen are sync reads from in-memory
+    // module state; we'd need a subscription to react to unlocks
+    // mid-form. The form re-mounts on navigation though, so the
+    // typical flow (open form → see prefill from-then-open personas)
+    // is already covered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [composePersonasFromProp],
+  );
+  const composeCtx = useComposeContext({
+    subjectName: composeSubjectName,
+    persona: composePersonas,
+    category: composeCategory,
+    enabled: props.composeContextEnabled ?? true,
+    llmProvider: props.composeLLMProvider,
+  });
+  const [prefilledFields, setPrefilledFields] = React.useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  // Merge inferred values into form state — only for fields that are
+  // currently empty AND haven't already been prefilled (i.e. don't
+  // re-prefill after the user cleared a value, and don't clobber an
+  // explicit `initial` prop or already-typed value). One-shot per
+  // form open via `mergedRef`.
+  //
+  // Decision is computed OUTSIDE the setState callback (which may run
+  // later under React batching) so `setPrefilledFields` synchronises
+  // correctly with the value merge — otherwise the prefill markers
+  // would be empty even when values landed.
+  const mergedRef = React.useRef(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- state intentionally NOT in deps; mergedRef gates re-fire
+  React.useEffect(() => {
+    if (composeCtx.result === null) return;
+    if (mergedRef.current) return; // one-shot per form open
+    const result = composeCtx.result;
+    const newPrefilled = new Set<string>();
+    if (
+      result.values.use_cases !== undefined &&
+      result.values.use_cases.length > 0 &&
+      state.useCases.length === 0
+    ) {
+      newPrefilled.add('use_cases');
+    }
+    if (
+      result.values.last_used_bucket !== undefined &&
+      state.lastUsedBucket === null
+    ) {
+      newPrefilled.add('last_used_bucket');
+    }
+    if (newPrefilled.size === 0) {
+      mergedRef.current = true;
+      return;
+    }
+    setState((prev) => {
+      const next = { ...prev };
+      if (newPrefilled.has('use_cases') && result.values.use_cases !== undefined) {
+        next.useCases = [...result.values.use_cases];
+      }
+      if (
+        newPrefilled.has('last_used_bucket') &&
+        result.values.last_used_bucket !== undefined
+      ) {
+        next.lastUsedBucket = result.values.last_used_bucket;
+      }
+      return next;
+    });
+    setPrefilledFields(newPrefilled);
+    mergedRef.current = true;
+  }, [composeCtx.result]);
+
+  /**
+   * Drop a field from the prefilled set when the user takes ownership.
+   * Wraps every advanced-field mutator below.
+   */
+  const clearPrefilled = (fieldId: string): void => {
+    setPrefilledFields((prev) => {
+      if (!prev.has(fieldId)) return prev;
+      const next = new Set(prev);
+      next.delete(fieldId);
+      return next;
+    });
+  };
+
   const updateSentiment = (s: Sentiment): void =>
     setState((prev) => ({ ...prev, sentiment: prev.sentiment === s ? null : s }));
-  const updateConfidence = (c: Confidence): void =>
-    setState((prev) => ({ ...prev, confidence: prev.confidence === c ? null : c }));
   const updateHeadline = (text: string): void =>
     setState((prev) => ({ ...prev, headline: text }));
   const updateBody = (text: string): void => setState((prev) => ({ ...prev, body: text }));
   // TN-V2-REV-007 — last-used bucket: tap-to-toggle. Tapping the
   // currently-selected bucket clears the field, returning the form
   // to "user did not pick".
-  const updateLastUsedBucket = (b: LastUsedBucket): void =>
+  const updateLastUsedBucket = (b: LastUsedBucket): void => {
     setState((prev) => ({
       ...prev,
       lastUsedBucket: prev.lastUsedBucket === b ? null : b,
     }));
+    clearPrefilled('last_used_bucket');
+  };
   // TN-V2-REV-006 — use-case tags: tap-to-toggle multi-select with
   // cap. The mutator delegates to the pure `toggleUseCase` helper so
   // the cap + closed-vocabulary discipline live in the data layer,
   // not the screen.
-  const toggleUseCaseTag = (tag: string, vocabulary: readonly string[]): void =>
+  const toggleUseCaseTag = (tag: string, vocabulary: readonly string[]): void => {
     setState((prev) => ({
       ...prev,
       useCases: toggleUseCase(prev.useCases, tag, vocabulary),
     }));
+    clearPrefilled('use_cases');
+  };
   // TN-V2-REV-008 — alternatives mutators. Cap + dedup discipline
   // lives in the pure helpers; screen just dispatches.
   const addAlternative = (entry: ReviewAlternative): void =>
@@ -714,57 +946,6 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         MAX_RECOMMEND_FOR,
       ),
     }));
-  const addRegion = (raw: string): void =>
-    setState((prev) => ({
-      ...prev,
-      availabilityRegions: addCountryCode(prev.availabilityRegions, raw, MAX_AVAILABILITY_REGIONS),
-    }));
-  const removeRegionAt = (idx: number): void =>
-    setState((prev) => ({
-      ...prev,
-      availabilityRegions: removeAtIndex(prev.availabilityRegions, idx),
-    }));
-  const addShipsTo = (raw: string): void =>
-    setState((prev) => ({
-      ...prev,
-      availabilityShipsTo: addCountryCode(prev.availabilityShipsTo, raw, MAX_AVAILABILITY_REGIONS),
-    }));
-  const removeShipsToAt = (idx: number): void =>
-    setState((prev) => ({
-      ...prev,
-      availabilityShipsTo: removeAtIndex(prev.availabilityShipsTo, idx),
-    }));
-  const addSoldAt = (raw: string): void =>
-    setState((prev) => ({
-      ...prev,
-      availabilitySoldAt: addHostname(prev.availabilitySoldAt, raw, MAX_AVAILABILITY_SOLD_AT),
-    }));
-  const removeSoldAtAt = (idx: number): void =>
-    setState((prev) => ({
-      ...prev,
-      availabilitySoldAt: removeAtIndex(prev.availabilitySoldAt, idx),
-    }));
-  const updateScheduleLeadDays = (text: string): void =>
-    // Strip non-digit characters as the user types — keeps the form
-    // self-correcting for a numeric field even on platforms where
-    // keyboardType='numeric' is advisory.
-    setState((prev) => ({
-      ...prev,
-      scheduleLeadDays: text.replace(/[^\d]/g, ''),
-    }));
-  const toggleScheduleMonth = (month: number): void =>
-    setState((prev) => ({
-      ...prev,
-      scheduleSeasonal: toggleSeasonalMonth(prev.scheduleSeasonal, month),
-    }));
-
-  // Local UI state for the country-code / hostname adders. The chip-
-  // list shape needs an in-progress text buffer; rather than promote
-  // these into WriteFormState (where they'd serialise into the wire
-  // record), keep them as screen-local refs.
-  const [regionDraft, setRegionDraft] = React.useState('');
-  const [shipsToDraft, setShipsToDraft] = React.useState('');
-  const [soldAtDraft, setSoldAtDraft] = React.useState('');
   // Local UI state for the alternative search input.
   const [altQuery, setAltQuery] = React.useState('');
   const [altResults, setAltResults] = React.useState<readonly ReviewAlternative[]>([]);
@@ -807,10 +988,29 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   };
   // TN-V2-REV-007 — Advanced section open/close state. Local-only;
   // not part of WriteFormState because it's pure UI (does not
-  // affect publish payload). Reset on every render of the form (no
-  // persistence across navigations) — matches user expectation that
-  // collapsed-by-default advanced sections start collapsed.
-  const [advancedExpanded, setAdvancedExpanded] = React.useState(false);
+  // Wizard step. Step 1 is the required gate (sentiment + headline);
+  // Steps 2 + 3 are optional and can be skipped — Publish is shown on
+  // every step. We keep the field categorisation in the JSX rather
+  // than driving it from a config table because the rendering logic
+  // for each section is heterogeneous (chip rows / text inputs / tag
+  // grids / search-and-pick) and a config-driven approach would add
+  // more complexity than it removes for three steps.
+  const [step, setStep] = React.useState<1 | 2 | 3>(1);
+  // Step 1 is the publish gate. Pull the canPublish check out so the
+  // step-nav logic and the Publish CTA share one source of truth.
+  const step1Ready =
+    state.sentiment !== null &&
+    state.headline.trim().length > 0 &&
+    state.headline.length <= HEADLINE_MAX_LENGTH &&
+    state.body.length <= BODY_MAX_LENGTH;
+  const goNext = (): void => {
+    if (step === 1) setStep(2);
+    else if (step === 2) setStep(3);
+  };
+  const goBack = (): void => {
+    if (step === 3) setStep(2);
+    else if (step === 2) setStep(1);
+  };
   // Subject mutators — only meaningful when `state.subject !== null`
   // (the form is in "describe a new subject" mode).
   const updateSubjectKind = (kind: SubjectKind): void =>
@@ -838,21 +1038,65 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     onPublish(state);
   };
 
+  // Chat-draft handoff: we were pushed onto the trust stack from a
+  // different tab (chat). The Stack header's default back arrow
+  // would pop to trust home, not chat. Override `headerLeft` to send
+  // the user back where they came from — same destination Cancel
+  // and post-publish use.
+  const fromChatDraft =
+    paramDraftId !== undefined &&
+    paramDraftId.length > 0 &&
+    paramThreadId !== undefined &&
+    paramThreadId.length > 0;
+  const stackOptions = fromChatDraft
+    ? {
+        title: headerTitle,
+        headerLeft: () => (
+          <Pressable
+            onPress={() => router.replace('/')}
+            accessibilityRole="button"
+            accessibilityLabel="Back to chat"
+            hitSlop={8}
+            style={{ paddingHorizontal: spacing.sm }}
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </Pressable>
+        ),
+      }
+    : { title: headerTitle };
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      testID="write-screen"
-      keyboardShouldPersistTaps="handled"
-    >
+    <>
+      <Stack.Screen options={stackOptions} />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        testID="write-screen"
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
-          {editing ? 'Edit review' : 'Write a review'}
-        </Text>
-        <Text style={styles.headerSubtitle} numberOfLines={1}>
-          About: <Text style={styles.headerSubject}>{subjectTitle}</Text>
+          {headerTitle}
         </Text>
       </View>
+
+      {/* (Top stepper removed: Step 1 is now the canonical surface and
+          the "Add additional data" pill below the Body field opens the
+          modal-style wizard for Steps 2+3. Publish stays on Step 1.) */}
+
+      {/* Subject anchor card: visible when the form has subject
+          context — either edit mode, deep-linked compose with
+          ?subjectName=..., or an explicit `subjectTitle` prop. The
+          fallback default is the literal "New review" string used by
+          the compose-without-subject flow; suppressing on that
+          string keeps the anchor hidden until the user picks a kind. */}
+      {subjectTitle !== 'New review' && (
+        <SubjectAnchorView
+          title={subjectTitle}
+          kind={paramSubjectKind}
+          category={paramSubjectKind !== null ? categoryFor(paramSubjectKind) : null}
+        />
+      )}
 
       {editWarning && (
         <View style={styles.warningPanel} testID="write-edit-warning">
@@ -864,6 +1108,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         </View>
       )}
 
+      {/* ─── STEP 1: Verdict ─────────────────────────────────────────
+          Subject + Sentiment + Headline + Body. Sentiment + Headline
+          are the publish gate; Body is optional. Step 2/3 are only
+          reachable AFTER Step 1 validates. */}
+      {step === 1 && (
+        <>
       {/* ─── Subject (only when we're creating a new one) ─────────── */}
       {state.subject != null && (
         <View style={styles.field} testID="write-subject-section">
@@ -1113,69 +1363,144 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         )}
       </View>
 
-      {/* ─── Confidence ──────────────────────────────────────────── */}
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Confidence</Text>
-        <View style={styles.confidenceRow}>
-          {CONFIDENCE_OPTIONS.map((c) => (
-            <Pressable
-              key={c}
-              onPress={() => !isSubmitting && updateConfidence(c)}
-              disabled={isSubmitting}
-              style={({ pressed }) => [
-                styles.confidenceBtn,
-                state.confidence === c && styles.confidenceBtnActive,
-                pressed && !isSubmitting && styles.confidenceBtnPressed,
-              ]}
-              testID={`write-confidence-${c}`}
-              accessibilityRole="button"
-              accessibilityLabel={CONFIDENCE_LABEL[c]}
-              accessibilityState={{ selected: state.confidence === c, disabled: isSubmitting }}
-            >
-              <Text
-                style={[
-                  styles.confidenceLabel,
-                  state.confidence === c && styles.confidenceLabelActive,
-                ]}
-              >
-                {CONFIDENCE_LABEL[c]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        {fieldError(validation.errors, ['confidence_required'], showErrors)}
-      </View>
+      {/* Confidence used to be a required pill row here. We dropped
+          the surface — casual reviewers don't think in
+          speculative/moderate/high/certain ladders and the field was
+          only consumed by the AppView search filter `minConfidence`
+          (not by any trust-score weight). The form now seeds
+          `confidence: 'moderate'` so the wire record still carries
+          a value; edit mode keeps the original confidence via the
+          `editingConfidence` URL param, so amending an old review
+          doesn't silently downgrade it. */}
 
-      {/* ─── TN-V2-REV-007: Advanced (collapsed by default) ─────────
-          Casual reviewers don't see this. Power users tap "Advanced"
-          to surface the last-used picker (and any future advanced
-          fields — REV-006 useCase, REV-008 alternatives — will land
-          here too). Collapse-by-default keeps the form tidy; the
-          toggle is a wide pressable so it's discoverable without
-          stealing visual weight from the required fields above. */}
+      {/* ─── Prefill banner (Step 1 only) ────────────────────────────
+          When Dina prefilled fields from the user's vault, show a
+          subtle banner so the user knows the deeper steps are worth
+          the tap. Silent when nothing prefilled — Silence First. */}
+      {prefilledFields.size > 0 && (
+        <View style={styles.prefillBanner} testID="write-prefill-banner">
+          <Text style={styles.prefillBannerText}>
+            {`✨ Dina prefilled ${prefilledFields.size} field${
+              prefilledFields.size === 1 ? '' : 's'
+            } in additional details from your vault.`}
+          </Text>
+        </View>
+      )}
+
+      {/* "Add additional data" pill — opens the wizard modal for
+          Steps 2 + 3 (Your experience + Recommendations). The pill
+          is the ONLY entry point to the optional fields; without
+          tapping it the user just publishes the verdict. Phrased
+          neutrally so users feel no pressure to engage. */}
       <Pressable
-        onPress={() => !isSubmitting && setAdvancedExpanded((open) => !open)}
+        onPress={() => !isSubmitting && setStep(2)}
         disabled={isSubmitting}
         style={({ pressed }) => [
-          styles.advancedToggle,
-          pressed && !isSubmitting && styles.advancedTogglePressed,
+          styles.additionalDataPill,
+          pressed && !isSubmitting && styles.additionalDataPillPressed,
         ]}
-        testID="write-advanced-toggle"
+        testID="write-additional-data-pill"
         accessibilityRole="button"
-        accessibilityLabel={
-          advancedExpanded ? 'Hide advanced fields' : 'Show advanced fields'
-        }
-        accessibilityState={{ expanded: advancedExpanded, disabled: isSubmitting }}
+        accessibilityLabel="Add additional details"
+        accessibilityState={{ disabled: isSubmitting }}
       >
-        <Ionicons
-          name={advancedExpanded ? 'chevron-down' : 'chevron-forward'}
-          size={14}
-          color={colors.textMuted}
-        />
-        <Text style={styles.advancedToggleLabel}>Advanced</Text>
+        <Ionicons name="add-circle-outline" size={16} color={colors.textSecondary} />
+        <Text style={styles.additionalDataPillLabel}>Add additional details (optional)</Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
       </Pressable>
-      {advancedExpanded && (
-        <View testID="write-advanced-section">
+        </>
+      )}
+
+      {/* ─── Modal wizard for Steps 2 + 3 (Your experience +
+          Recommendations) ──────────────────────────────────────────
+          Renders as a full-page modal pop-over the form. Form state
+          lives in the parent component, so the modal just shows a
+          different view of the same state — closing it preserves
+          everything. The modal's own action row carries Back / Next
+          / Done navigation; Publish stays on the main form behind
+          the modal so users always know how to commit. */}
+      <Modal
+        visible={step !== 1}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setStep(1)}
+      >
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.modalContent}
+          testID="write-additional-data-modal"
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Additional details</Text>
+            <Pressable
+              onPress={() => setStep(1)}
+              disabled={isSubmitting}
+              style={({ pressed }) => [
+                styles.modalCloseBtn,
+                pressed && !isSubmitting && styles.modalCloseBtnPressed,
+              ]}
+              testID="write-additional-data-close"
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={20} color={colors.textPrimary} />
+            </Pressable>
+          </View>
+
+          {/* In-modal stepper — 2 dots for the two sub-steps. */}
+          <View style={styles.stepperRow} testID="write-stepper">
+            {([2, 3] as const).map((n) => {
+              const labels = { 2: 'Your experience', 3: 'Recommendations' };
+              const isActive = step === n;
+              return (
+                <Pressable
+                  key={n}
+                  onPress={() => setStep(n)}
+                  disabled={isSubmitting}
+                  style={({ pressed }) => [
+                    styles.stepperDotWrap,
+                    pressed && !isSubmitting && styles.stepperDotWrapPressed,
+                  ]}
+                  testID={`write-stepper-${n}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Step: ${labels[n]}`}
+                  accessibilityState={{ selected: isActive }}
+                >
+                  <View
+                    style={[
+                      styles.stepperDot,
+                      isActive && styles.stepperDotActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.stepperDotText,
+                        isActive && styles.stepperDotTextActive,
+                      ]}
+                    >
+                      {n - 1}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.stepperLabel,
+                      isActive && styles.stepperLabelActive,
+                    ]}
+                  >
+                    {labels[n]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+      {/* ─── STEP 2: Your experience ─────────────────────────────────
+          What YOU did — use-cases you put it through, when you last
+          touched it, your expertise tier, what you paid. All optional
+          (a user can publish from Step 1 alone). */}
+      {step === 2 && (
+        <View testID="write-step-2">
           {/* TN-V2-REV-006 — use-case picker. Per-category
               vocabulary (resolves from `state.subject?.kind`, falling
               back to a generic list for the subjectId-based form
@@ -1183,10 +1508,13 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
               the cap, unselected tags grey out so the user
               understands why further taps are no-ops. */}
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>What do you use this for?</Text>
+            <Text style={styles.fieldLabel}>
+              {prefilledFields.has('use_cases') ? '✨ ' : ''}What do you use this for?
+            </Text>
             <Text style={styles.kindHint}>
-              Optional — pick up to {MAX_USE_CASES}. Helps other readers
-              find reviews from people with the same use-case.
+              {prefilledFields.has('use_cases')
+                ? `Dina noted these from your vault. Tap to change.`
+                : `Optional — pick up to ${MAX_USE_CASES}. Helps other readers find reviews from people with the same use-case.`}
             </Text>
             {(() => {
               // IIFE keeps the vocabulary derivation co-located with
@@ -1234,40 +1562,56 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             })()}
           </View>
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Last used</Text>
-            <Text style={styles.kindHint}>
-              When did you last interact with this? Optional — helps readers
-              judge how fresh your review still is.
+            <Text style={styles.fieldLabel}>
+              {prefilledFields.has('last_used_bucket') ? '✨ ' : ''}Last used
             </Text>
-            <View style={styles.lastUsedRow}>
-              {LAST_USED_BUCKETS.map((bucket) => (
-                <Pressable
-                  key={bucket}
-                  onPress={() => !isSubmitting && updateLastUsedBucket(bucket)}
-                  disabled={isSubmitting}
-                  style={({ pressed }) => [
-                    styles.lastUsedBtn,
-                    state.lastUsedBucket === bucket && styles.lastUsedBtnActive,
-                    pressed && !isSubmitting && styles.lastUsedBtnPressed,
-                  ]}
-                  testID={`write-last-used-${bucket}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={LAST_USED_BUCKET_LABEL[bucket]}
-                  accessibilityState={{
-                    selected: state.lastUsedBucket === bucket,
-                    disabled: isSubmitting,
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.lastUsedLabel,
-                      state.lastUsedBucket === bucket && styles.lastUsedLabelActive,
+            <Text style={styles.kindHint}>
+              {prefilledFields.has('last_used_bucket')
+                ? `Dina inferred this from when you last mentioned it. Tap a different bucket to change.`
+                : `When did you last interact with this? Optional — helps readers judge how fresh your review still is.`}
+            </Text>
+            {/* Vertical row list — single-select with checkmark.
+                Replaces the chip pill row. Single-select fields read
+                more clearly as a stacked list of options than as a
+                wrapping pill grid (the user explicitly noted the chip
+                wrap looked cramped); this also visually distinguishes
+                single-select fields from the multi-select chip rows
+                elsewhere on the form. */}
+            <View style={styles.rowList} testID="write-last-used-rowlist">
+              {LAST_USED_BUCKETS.map((bucket, idx) => {
+                const isSelected = state.lastUsedBucket === bucket;
+                const isLast = idx === LAST_USED_BUCKETS.length - 1;
+                return (
+                  <Pressable
+                    key={bucket}
+                    onPress={() => !isSubmitting && updateLastUsedBucket(bucket)}
+                    disabled={isSubmitting}
+                    style={({ pressed }) => [
+                      styles.rowListRow,
+                      !isLast && styles.rowListRowDivider,
+                      pressed && !isSubmitting && styles.rowListRowPressed,
                     ]}
+                    testID={`write-last-used-${bucket}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={LAST_USED_BUCKET_LABEL[bucket]}
+                    accessibilityState={{
+                      selected: isSelected,
+                      disabled: isSubmitting,
+                    }}
                   >
-                    {LAST_USED_BUCKET_LABEL[bucket]}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text style={styles.rowListLabel}>
+                      {LAST_USED_BUCKET_LABEL[bucket]}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons
+                        name="checkmark"
+                        size={18}
+                        color={colors.accent}
+                      />
+                    )}
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
           {/* TN-V2-REV-008 — alternatives picker. The reviewer can
@@ -1388,28 +1732,33 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             )}
           </View>
 
-          {/* TN-V2-REV-002 — reviewer experience tier. Single-pick
-              chip row (tap-to-toggle: tapping the active level
-              clears it). Surfaces the same way sentiment + confidence
-              do — pill row above. */}
+          {/* TN-V2-REV-002 — reviewer experience tier. Three-option
+              segmented control (single-select, tap-active-to-clear).
+              Replaces the previous chip row: with a small fixed
+              option count, a segmented control reads as a single
+              decision rather than a pill grid. */}
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>How experienced are you with this?</Text>
             <Text style={styles.kindHint}>
               Optional — readers can prefer reviews from your tier when
               filtering.
             </Text>
-            <View style={styles.lastUsedRow} testID="write-experience-row">
-              {REVIEWER_EXPERIENCE_OPTIONS.map((level) => {
+            <View style={styles.segmentedControl} testID="write-experience-row">
+              {REVIEWER_EXPERIENCE_OPTIONS.map((level, idx) => {
                 const selected = state.reviewerExperience === level;
+                const isFirst = idx === 0;
+                const isLast = idx === REVIEWER_EXPERIENCE_OPTIONS.length - 1;
                 return (
                   <Pressable
                     key={level}
                     onPress={() => !isSubmitting && updateReviewerExperience(level)}
                     disabled={isSubmitting}
                     style={({ pressed }) => [
-                      styles.lastUsedBtn,
-                      selected && styles.lastUsedBtnActive,
-                      pressed && !isSubmitting && styles.lastUsedBtnPressed,
+                      styles.segmentedSegment,
+                      isFirst && styles.segmentedSegmentFirst,
+                      isLast && styles.segmentedSegmentLast,
+                      selected && styles.segmentedSegmentActive,
+                      pressed && !isSubmitting && !selected && styles.segmentedSegmentPressed,
                     ]}
                     testID={`write-experience-${level}`}
                     accessibilityRole="button"
@@ -1419,8 +1768,8 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
                   >
                     <Text
                       style={[
-                        styles.lastUsedLabel,
-                        selected && styles.lastUsedLabelActive,
+                        styles.segmentedLabel,
+                        selected && styles.segmentedLabelActive,
                       ]}
                     >
                       {REVIEWER_EXPERIENCE_LABEL[level]}
@@ -1487,6 +1836,50 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
                 'price_currency_invalid',
               ])}
           </View>
+        </View>
+      )}
+
+      {/* ─── STEP 3: Recommendations ─────────────────────────────────
+          What you'd recommend / warn about, plus observable subject
+          facts (compliance, accessibility, compat). Optional. */}
+      {step === 3 && (
+        <View testID="write-step-3">
+          {/* TN-V2-REV-004 — recommendFor / notRecommendFor. Same
+              vocabulary as useCases (per-category). Two parallel
+              chip grids; cap 5 each. Front-loaded in Step 3 because
+              "would you recommend it?" is the strongest summary
+              signal a reader can pull from the review. */}
+          {(() => {
+            const vocabularyCategory =
+              state.subject != null ? categoryFor(state.subject.kind) : null;
+            const vocabulary = useCasesForCategory(vocabularyCategory);
+            return (
+              <>
+                {renderTagGrid({
+                  label: 'Recommend for',
+                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you endorse.`,
+                  vocabulary,
+                  labelMap: USE_CASE_LABEL,
+                  selected: state.recommendFor,
+                  cap: MAX_RECOMMEND_FOR,
+                  disabled: isSubmitting,
+                  onToggle: (tag) => toggleRecommendForTag(tag, vocabulary),
+                  testIDPrefix: 'write-recommend-for',
+                })}
+                {renderTagGrid({
+                  label: 'Not recommended for',
+                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you'd warn against.`,
+                  vocabulary,
+                  labelMap: USE_CASE_LABEL,
+                  selected: state.notRecommendFor,
+                  cap: MAX_RECOMMEND_FOR,
+                  disabled: isSubmitting,
+                  onToggle: (tag) => toggleNotRecommendForTag(tag, vocabulary),
+                  testIDPrefix: 'write-not-recommend-for',
+                })}
+              </>
+            );
+          })()}
 
           {/* TN-V2-META-005 — compliance. Closed-vocab chip grid.
               Same UX shape as REV-006 useCases (per-cap grey-out for
@@ -1530,164 +1923,72 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             testIDPrefix: 'write-compat',
           })}
 
-          {/* TN-V2-REV-004 — recommendFor / notRecommendFor. Same
-              vocabulary as useCases (per-category). Two parallel
-              chip grids; cap 5 each. */}
-          {(() => {
-            const vocabularyCategory =
-              state.subject != null ? categoryFor(state.subject.kind) : null;
-            const vocabulary = useCasesForCategory(vocabularyCategory);
-            return (
-              <>
-                {renderTagGrid({
-                  label: 'Recommend for',
-                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you endorse.`,
-                  vocabulary,
-                  labelMap: USE_CASE_LABEL,
-                  selected: state.recommendFor,
-                  cap: MAX_RECOMMEND_FOR,
-                  disabled: isSubmitting,
-                  onToggle: (tag) => toggleRecommendForTag(tag, vocabulary),
-                  testIDPrefix: 'write-recommend-for',
-                })}
-                {renderTagGrid({
-                  label: 'Not recommended for',
-                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you'd warn against.`,
-                  vocabulary,
-                  labelMap: USE_CASE_LABEL,
-                  selected: state.notRecommendFor,
-                  cap: MAX_RECOMMEND_FOR,
-                  disabled: isSubmitting,
-                  onToggle: (tag) => toggleNotRecommendForTag(tag, vocabulary),
-                  testIDPrefix: 'write-not-recommend-for',
-                })}
-              </>
-            );
-          })()}
-
-          {/* TN-V2-META-001 — availability. Three chip-lists: regions
-              (alpha-2 country codes), shipsTo (alpha-2), soldAt
-              (hostnames). Each has its own text-input adder with the
-              shape gate built into the helper (`addCountryCode` +
-              `addHostname`); invalid entries silently drop so the
-              user gets immediate feedback by seeing nothing get
-              added. */}
-          {renderChipListAdder({
-            label: 'Available in (countries)',
-            hint: `Optional — ISO codes (US, GB, DE, …). Up to ${MAX_AVAILABILITY_REGIONS}.`,
-            placeholder: 'US',
-            entries: state.availabilityRegions,
-            cap: MAX_AVAILABILITY_REGIONS,
-            disabled: isSubmitting,
-            draft: regionDraft,
-            setDraft: setRegionDraft,
-            onAdd: (raw) => {
-              addRegion(raw);
-            },
-            onRemoveAt: removeRegionAt,
-            testIDPrefix: 'write-region',
-            inputProps: { autoCapitalize: 'characters', maxLength: 2 },
-          })}
-          {renderChipListAdder({
-            label: 'Ships to (countries)',
-            hint: `Optional — ISO codes the seller ships to.`,
-            placeholder: 'US',
-            entries: state.availabilityShipsTo,
-            cap: MAX_AVAILABILITY_REGIONS,
-            disabled: isSubmitting,
-            draft: shipsToDraft,
-            setDraft: setShipsToDraft,
-            onAdd: (raw) => {
-              addShipsTo(raw);
-            },
-            onRemoveAt: removeShipsToAt,
-            testIDPrefix: 'write-shipsto',
-            inputProps: { autoCapitalize: 'characters', maxLength: 2 },
-          })}
-          {renderChipListAdder({
-            label: 'Sold at (retailers)',
-            hint: `Optional — hostnames (amazon.com, walmart.com, …). Up to ${MAX_AVAILABILITY_SOLD_AT}.`,
-            placeholder: 'amazon.com',
-            entries: state.availabilitySoldAt,
-            cap: MAX_AVAILABILITY_SOLD_AT,
-            disabled: isSubmitting,
-            draft: soldAtDraft,
-            setDraft: setSoldAtDraft,
-            onAdd: (raw) => {
-              addSoldAt(raw);
-            },
-            onRemoveAt: removeSoldAtAt,
-            testIDPrefix: 'write-soldat',
-            inputProps: { autoCapitalize: 'none' },
-          })}
-
-          {/* TN-V2-META-004 — schedule (lead days + seasonal months).
-              Per-day open/close hours intentionally omitted — META-010
-              JSON-LD parser auto-fills hours server-side; a per-day
-              picker would be a much heavier UX commitment. */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Booking lead time</Text>
-            <Text style={styles.kindHint}>
-              Optional — days of advance booking required (0 for walk-ins,
-              14 for a doctor, 365 for a wedding venue).
-            </Text>
-            <TextInput
-              style={styles.priceCurrencyInput}
-              placeholder="0"
-              placeholderTextColor={colors.textMuted}
-              value={state.scheduleLeadDays}
-              onChangeText={updateScheduleLeadDays}
-              editable={!isSubmitting}
-              keyboardType="number-pad"
-              maxLength={3}
-              testID="write-lead-days"
-              accessibilityLabel="Booking lead time in days"
-            />
-            {showErrors &&
-              fieldError(validation.errors, ['schedule_lead_days_invalid'])}
-          </View>
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Seasonal months</Text>
-            <Text style={styles.kindHint}>
-              Optional — months the venue operates. Leave empty for
-              year-round.
-            </Text>
-            <View style={styles.useCaseRow} testID="write-seasonal-row">
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
-                const selected = state.scheduleSeasonal.includes(month);
-                return (
-                  <Pressable
-                    key={month}
-                    onPress={() => !isSubmitting && toggleScheduleMonth(month)}
-                    disabled={isSubmitting}
-                    style={({ pressed }) => [
-                      styles.useCaseBtn,
-                      selected && styles.useCaseBtnActive,
-                      pressed && !isSubmitting && styles.useCaseBtnPressed,
-                    ]}
-                    testID={`write-seasonal-${month}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={SEASONAL_MONTH_LABEL[month]}
-                    accessibilityState={{
-                      selected,
-                      disabled: isSubmitting,
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.useCaseLabel,
-                        selected && styles.useCaseLabelActive,
-                      ]}
-                    >
-                      {SEASONAL_MONTH_LABEL[month]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
+          {/* Availability (regions / shipsTo / soldAt) and schedule
+              (leadDays / seasonal) used to live here. They're
+              subject-owner facts, not opinion — they belong on a
+              future "Add subject" surface. */}
         </View>
       )}
+
+          {/* Modal action row — Back / Next / Done. Mirrors the
+              wizard's internal-step cadence: Step 2 has Next (to
+              Step 3), Step 3 has only Done. Back appears on Step 3.
+              Publish stays on the main form (behind the modal); the
+              user closes the wizard with Done and publishes from
+              the verdict screen. */}
+          <View style={styles.actionRow}>
+            {step === 3 && (
+              <Pressable
+                onPress={goBack}
+                disabled={isSubmitting}
+                style={({ pressed }) => [
+                  styles.cancelBtn,
+                  pressed && !isSubmitting && styles.cancelBtnPressed,
+                ]}
+                testID="write-back"
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                accessibilityState={{ disabled: isSubmitting }}
+              >
+                <Ionicons name="chevron-back" size={14} color={colors.textPrimary} />
+                <Text style={styles.cancelLabel}>Back</Text>
+              </Pressable>
+            )}
+            {step === 2 ? (
+              <Pressable
+                onPress={goNext}
+                disabled={isSubmitting}
+                style={({ pressed }) => [
+                  styles.nextBtn,
+                  isSubmitting && styles.publishBtnDisabled,
+                  pressed && !isSubmitting && styles.nextBtnPressed,
+                ]}
+                testID="write-next"
+                accessibilityRole="button"
+                accessibilityLabel="Next"
+                accessibilityState={{ disabled: isSubmitting }}
+              >
+                <Text style={styles.nextLabel}>Next</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.textPrimary} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => setStep(1)}
+              disabled={isSubmitting}
+              style={({ pressed }) => [
+                styles.modalDoneBtn,
+                pressed && !isSubmitting && styles.modalDoneBtnPressed,
+              ]}
+              testID="write-additional-data-done"
+              accessibilityRole="button"
+              accessibilityLabel="Done"
+              accessibilityState={{ disabled: isSubmitting }}
+            >
+              <Text style={styles.modalDoneLabel}>Done</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </Modal>
 
       {/* ─── Submit error ────────────────────────────────────────── */}
       {submitError !== null && (
@@ -1697,7 +1998,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         </View>
       )}
 
-      {/* ─── Actions ─────────────────────────────────────────────── */}
+      {/* ─── Main action row: Cancel | Publish ─────────────────────
+          The wizard for additional details lives behind the
+          "Add additional data" pill above; it does NOT bubble
+          Back/Next buttons up to the main row. Publish is always
+          visible here so a user who only filled the verdict can
+          ship without opening the wizard. */}
       <View style={styles.actionRow}>
         {onCancel && (
           <Pressable
@@ -1741,7 +2047,8 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           )}
         </Pressable>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </>
   );
 }
 
@@ -1826,105 +2133,6 @@ function renderTagGrid(props: {
   );
 }
 
-/**
- * Free-form chip-list adder (TN-V2-META-001 availability fields). One
- * text input + an Add button + the chip list. Invalid entries silently
- * drop (the helper validates shape) — the user notices because no chip
- * appears, which is gentler than a popup error for short shape-rules.
- */
-function renderChipListAdder(props: {
-  label: string;
-  hint: string;
-  placeholder: string;
-  entries: readonly string[];
-  cap: number;
-  disabled: boolean;
-  draft: string;
-  setDraft: (text: string) => void;
-  onAdd: (raw: string) => void;
-  onRemoveAt: (idx: number) => void;
-  testIDPrefix: string;
-  inputProps?: { autoCapitalize?: 'none' | 'characters'; maxLength?: number };
-}): React.ReactElement {
-  const atCap = props.entries.length >= props.cap;
-  const submit = (): void => {
-    if (props.draft.trim().length === 0) return;
-    props.onAdd(props.draft);
-    props.setDraft('');
-  };
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{props.label}</Text>
-      <Text style={styles.kindHint}>{props.hint}</Text>
-      {props.entries.length > 0 && (
-        <View style={styles.altChipRow} testID={`${props.testIDPrefix}-chips`}>
-          {props.entries.map((entry, idx) => (
-            <View
-              key={`${entry}-${idx}`}
-              style={styles.altChip}
-              testID={`${props.testIDPrefix}-chip-${idx}`}
-            >
-              <Text style={styles.altChipLabel} numberOfLines={1}>
-                {entry}
-              </Text>
-              <Pressable
-                onPress={() => !props.disabled && props.onRemoveAt(idx)}
-                disabled={props.disabled}
-                style={styles.altChipRemove}
-                testID={`${props.testIDPrefix}-remove-${idx}`}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${entry}`}
-              >
-                <Ionicons name="close" size={14} color={colors.textMuted} />
-              </Pressable>
-            </View>
-          ))}
-        </View>
-      )}
-      {!atCap && (
-        <View style={styles.chipAdderRow}>
-          <TextInput
-            style={[styles.altSearchInput, styles.chipAdderInput]}
-            placeholder={props.placeholder}
-            placeholderTextColor={colors.textMuted}
-            value={props.draft}
-            onChangeText={props.setDraft}
-            onSubmitEditing={submit}
-            editable={!props.disabled}
-            autoCapitalize={props.inputProps?.autoCapitalize ?? 'none'}
-            maxLength={props.inputProps?.maxLength}
-            testID={`${props.testIDPrefix}-input`}
-            accessibilityLabel={props.label}
-          />
-          <Pressable
-            onPress={submit}
-            disabled={props.disabled || props.draft.trim().length === 0}
-            style={({ pressed }) => [
-              styles.chipAddBtn,
-              (props.disabled || props.draft.trim().length === 0) &&
-                styles.chipAddBtnDisabled,
-              pressed &&
-                !props.disabled &&
-                props.draft.trim().length > 0 &&
-                styles.chipAddBtnPressed,
-            ]}
-            testID={`${props.testIDPrefix}-add`}
-            accessibilityRole="button"
-            accessibilityLabel={`Add ${props.label}`}
-          >
-            <Ionicons name="add" size={16} color={colors.bgSecondary} />
-          </Pressable>
-        </View>
-      )}
-      {atCap && (
-        <Text style={styles.altCapHint} testID={`${props.testIDPrefix}-cap`}>
-          Up to {props.cap}. Remove one to add another.
-        </Text>
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.lg },
@@ -1965,7 +2173,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 17,
   },
-  field: { gap: spacing.sm },
+  // Each form field is a card surface with breathing room — gives
+  // visual separation between sections so labels don't collide with
+  // the previous section's controls (the chip-grid wrap previously
+  // ran "Kids" right up against the next section's "Last used"
+  // header). The outer ScrollView's `gap` keeps cards apart.
+  field: {
+    gap: spacing.sm,
+    backgroundColor: colors.bgCard,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
   fieldHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2060,52 +2280,211 @@ const styles = StyleSheet.create({
   },
   headlineInput: {},
   bodyInput: { minHeight: 120 },
-  confidenceRow: {
+  // ─── Wizard stepper (top of form) ─────────────────────────────────
+  stepperRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     gap: spacing.sm,
   },
-  confidenceBtn: {
-    flexBasis: '47%',
-    flexGrow: 1,
+  stepperDotWrap: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  stepperDotWrapPressed: { opacity: 0.6 },
+  stepperDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: colors.bgCard,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.full,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     alignItems: 'center',
-    minHeight: 44,
     justifyContent: 'center',
   },
-  confidenceBtnActive: {
+  stepperDotActive: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
-  confidenceBtnPressed: { backgroundColor: colors.bgTertiary },
-  confidenceLabel: {
+  stepperDotComplete: {
+    backgroundColor: colors.bgTertiary,
+  },
+  stepperDotText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  stepperDotTextActive: { color: colors.bgSecondary },
+  stepperLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  stepperLabelActive: { color: colors.textPrimary },
+  // "Add additional details (optional)" pill — opens the wizard
+  // modal. Styled as a card-row with a subtle plus icon to read as
+  // optional/secondary action, not a primary CTA.
+  additionalDataPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bgCard,
+  },
+  additionalDataPillPressed: { backgroundColor: colors.bgTertiary },
+  additionalDataPillLabel: {
+    flex: 1,
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  // Modal scaffolding for the wizard.
+  modalContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.lg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.md,
+  },
+  modalTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 20,
+    color: colors.textPrimary,
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseBtnPressed: { backgroundColor: colors.bgTertiary },
+  modalDoneBtn: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  modalDoneBtnPressed: { backgroundColor: colors.accentHover },
+  modalDoneLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.bgSecondary,
+  },
+  // Subtle banner under Step 1 nudging the user toward Step 2 when
+  // Dina prefilled fields. Small + muted — Silence First.
+  prefillBanner: {
+    backgroundColor: colors.bgTertiary,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  prefillBannerText: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  // Wizard "Next" button — shares the cancel/back footprint but
+  // accentuated slightly so it reads as the forward action.
+  nextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bgCard,
+    minHeight: 44,
+  },
+  nextBtnPressed: { backgroundColor: colors.bgTertiary },
+  nextLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  // ─── Row list (single-select with checkmark) ─────────────────────
+  // Used by the Last used picker. iOS-style rows: full-width
+  // Pressable, label on the left, checkmark on the right when
+  // selected. Hairline divider between rows; the outer card shell
+  // (styles.field) provides the card chrome.
+  rowList: {
+    marginTop: spacing.xs,
+  },
+  rowListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    minHeight: 40,
+  },
+  rowListRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  rowListRowPressed: { backgroundColor: colors.bgTertiary },
+  rowListLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  // ─── Segmented control (single-select, ≤5 options) ───────────────
+  // Used by the Reviewer experience picker. Single horizontal pill
+  // with N segments; the active segment gets the accent background
+  // and white label, others stay neutral. Bookend segments get
+  // rounded outer corners; middle segments stay square so they
+  // visually merge.
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    marginTop: spacing.xs,
+    minHeight: 40,
+  },
+  segmentedSegment: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.border,
+  },
+  segmentedSegmentFirst: { borderLeftWidth: 0 },
+  segmentedSegmentLast: {},
+  segmentedSegmentActive: {
+    backgroundColor: colors.accent,
+  },
+  segmentedSegmentPressed: { backgroundColor: colors.bgTertiary },
+  segmentedLabel: {
     fontFamily: fonts.sansMedium,
     fontSize: 13,
     color: colors.textSecondary,
   },
-  confidenceLabelActive: { color: colors.bgSecondary },
-  // TN-V2-REV-007 — collapsible "Advanced" toggle. Sits below
-  // Confidence; styled small + muted so casual reviewers' eyes pass
-  // over it. The chevron flips with `expanded` state for an
-  // affordance cue.
-  advancedToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    minHeight: 44,
-  },
-  advancedTogglePressed: { opacity: 0.6 },
-  advancedToggleLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  segmentedLabelActive: { color: colors.bgSecondary },
   // TN-V2-REV-007 — last-used picker. Pill-row layout matches the
   // confidence picker but at slightly smaller scale to read as
   // optional (the required fields above stay visually dominant).
@@ -2304,26 +2683,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
   },
-  chipAdderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  chipAdderInput: {
-    flex: 1,
-  },
-  chipAddBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 36,
-    minWidth: 44,
-  },
-  chipAddBtnDisabled: { backgroundColor: colors.textMuted },
-  chipAddBtnPressed: { backgroundColor: colors.accentHover },
   submitErrorPanel: {
     flexDirection: 'row',
     alignItems: 'flex-start',

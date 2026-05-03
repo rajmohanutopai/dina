@@ -199,8 +199,8 @@ describe('Publish wire body — REV-002 reviewerExperience', () => {
 
   it('UI tap toggles reviewerExperience and reflects in publish body', async () => {
     const { getByTestId } = render(<WriteScreen initial={publishableInitial()} />);
-    // Open Advanced section so the experience picker renders.
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    // Navigate to Step 2 ("Your experience") where the picker lives.
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.press(getByTestId('write-experience-novice'));
     fireEvent.press(getByTestId('write-publish'));
     await Promise.resolve();
@@ -232,7 +232,11 @@ describe('Publish wire body — META-005/006/003 closed-vocab tags', () => {
 
   it('UI taps toggle compliance and reflect in publish body', async () => {
     const { getByTestId } = render(<WriteScreen initial={publishableInitial()} />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    // Compliance lives in Step 3 ("Recommendations") inside the
+    // additional-data wizard modal — open the modal first, then jump
+    // to Step 3 via its in-modal stepper.
+    fireEvent.press(getByTestId('write-additional-data-pill'));
+    fireEvent.press(getByTestId('write-stepper-3'));
     fireEvent.press(getByTestId('write-compliance-halal'));
     fireEvent.press(getByTestId('write-compliance-vegan'));
     fireEvent.press(getByTestId('write-publish'));
@@ -262,116 +266,14 @@ describe('Publish wire body — REV-004 recommendFor / notRecommendFor', () => {
   });
 });
 
-describe('Publish wire body — META-001 availability', () => {
-  it('emits availability with only the populated sub-fields', async () => {
-    const { getByTestId } = render(
-      <WriteScreen
-        initial={publishableInitial({
-          availabilityRegions: ['US', 'GB'],
-          availabilityShipsTo: [],
-          availabilitySoldAt: ['amazon.com'],
-        })}
-      />,
-    );
-    fireEvent.press(getByTestId('write-publish'));
-    await Promise.resolve();
-    await Promise.resolve();
-    const record = injectMock.mock.calls[0]?.[0]?.record as Record<string, unknown>;
-    expect(record.availability).toEqual({
-      regions: ['US', 'GB'],
-      soldAt: ['amazon.com'],
-    });
-  });
+// META-001 availability and META-004 schedule used to be captured by
+// the form. They were dropped because they're subject-owner facts,
+// not reviewer opinion (see WriteFormState comment + the form-data
+// test file). The wire schema still accepts them on inbound for
+// older clients; the form just no longer emits them.
 
-  it('UI region adder normalises + dedups + caps in the wire body', async () => {
-    const { getByTestId } = render(<WriteScreen initial={publishableInitial()} />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
-    const regionInput = getByTestId('write-region-input');
-    // Lowercase typed → uppercased on the wire.
-    fireEvent.changeText(regionInput, 'us');
-    fireEvent.press(getByTestId('write-region-add'));
-    fireEvent.changeText(regionInput, 'gb');
-    fireEvent.press(getByTestId('write-region-add'));
-    // Dedup: re-add 'us' → still one chip.
-    fireEvent.changeText(regionInput, 'us');
-    fireEvent.press(getByTestId('write-region-add'));
-    fireEvent.press(getByTestId('write-publish'));
-    await Promise.resolve();
-    await Promise.resolve();
-    const record = injectMock.mock.calls[0]?.[0]?.record as Record<string, unknown>;
-    const availability = record.availability as { regions: string[] };
-    expect(availability.regions).toEqual(['US', 'GB']);
-  });
-
-  it('UI hostname adder lowercases + rejects URLs/labels-only', async () => {
-    const { getByTestId, queryByTestId } = render(<WriteScreen initial={publishableInitial()} />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
-    const soldAtInput = getByTestId('write-soldat-input');
-    fireEvent.changeText(soldAtInput, 'AMAZON.COM');
-    fireEvent.press(getByTestId('write-soldat-add'));
-    // URL with scheme — silently rejected.
-    fireEvent.changeText(soldAtInput, 'https://walmart.com');
-    fireEvent.press(getByTestId('write-soldat-add'));
-    // Single label — also rejected.
-    fireEvent.changeText(soldAtInput, 'localhost');
-    fireEvent.press(getByTestId('write-soldat-add'));
-    fireEvent.press(getByTestId('write-publish'));
-    await Promise.resolve();
-    await Promise.resolve();
-    const record = injectMock.mock.calls[0]?.[0]?.record as Record<string, unknown>;
-    const availability = record.availability as { soldAt?: string[] };
-    expect(availability.soldAt).toEqual(['amazon.com']);
-    // The cap-hint chip should not be visible (we only added one).
-    expect(queryByTestId('write-soldat-cap')).toBeNull();
-  });
-});
-
-describe('Publish wire body — META-004 schedule', () => {
-  it('emits leadDays + seasonal when populated', async () => {
-    const { getByTestId } = render(
-      <WriteScreen
-        initial={publishableInitial({
-          scheduleLeadDays: '14',
-          scheduleSeasonal: [4, 5, 6],
-        })}
-      />,
-    );
-    fireEvent.press(getByTestId('write-publish'));
-    await Promise.resolve();
-    await Promise.resolve();
-    const record = injectMock.mock.calls[0]?.[0]?.record as Record<string, unknown>;
-    expect(record.schedule).toEqual({ leadDays: 14, seasonal: [4, 5, 6] });
-  });
-
-  it('UI lead-days strips non-digit input', async () => {
-    const { getByTestId } = render(<WriteScreen initial={publishableInitial()} />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
-    // Type a value that includes garbage; the screen filters non-digits.
-    fireEvent.changeText(getByTestId('write-lead-days'), '14abc');
-    fireEvent.press(getByTestId('write-publish'));
-    await Promise.resolve();
-    await Promise.resolve();
-    const record = injectMock.mock.calls[0]?.[0]?.record as Record<string, unknown>;
-    expect(record.schedule).toEqual({ leadDays: 14 });
-  });
-
-  it('UI seasonal-month chips toggle + sort by calendar order', async () => {
-    const { getByTestId } = render(<WriteScreen initial={publishableInitial()} />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
-    // Tap in non-calendar order — serializer must emit sorted.
-    fireEvent.press(getByTestId('write-seasonal-12'));
-    fireEvent.press(getByTestId('write-seasonal-3'));
-    fireEvent.press(getByTestId('write-seasonal-7'));
-    fireEvent.press(getByTestId('write-publish'));
-    await Promise.resolve();
-    await Promise.resolve();
-    const record = injectMock.mock.calls[0]?.[0]?.record as Record<string, unknown>;
-    expect(record.schedule).toEqual({ seasonal: [3, 7, 12] });
-  });
-});
-
-describe('Publish wire body — full V2 stack', () => {
-  it('round-trips every V2 field together (single record carrying all fields)', async () => {
+describe('Publish wire body — full reviewer-opinion stack', () => {
+  it('round-trips every reviewer-opinion field together (single record)', async () => {
     const { getByTestId } = render(
       <WriteScreen
         initial={publishableInitial({
@@ -388,10 +290,6 @@ describe('Publish wire body — full V2 stack', () => {
           compat: ['ios', 'usb_c'],
           priceLow: '29.99',
           priceCurrency: 'USD',
-          availabilityRegions: ['US'],
-          availabilitySoldAt: ['amazon.com'],
-          scheduleLeadDays: '7',
-          scheduleSeasonal: [6, 7, 8],
         })}
       />,
     );
@@ -401,7 +299,7 @@ describe('Publish wire body — full V2 stack', () => {
     expect(injectMock).toHaveBeenCalledTimes(1);
     const record = injectMock.mock.calls[0]?.[0]?.record as Record<string, unknown>;
 
-    // Every V2 field present in expected wire shape.
+    // Every reviewer-opinion field present in expected wire shape.
     expect(record.useCases).toEqual(['everyday']);
     expect(typeof record.lastUsedMs).toBe('number');
     expect(record.reviewerExperience).toBe('expert');
@@ -418,10 +316,8 @@ describe('Publish wire body — full V2 stack', () => {
       high_e7: 299_900_000,
       currency: 'USD',
     });
-    expect(record.availability).toEqual({
-      regions: ['US'],
-      soldAt: ['amazon.com'],
-    });
-    expect(record.schedule).toEqual({ leadDays: 7, seasonal: [6, 7, 8] });
+    // availability + schedule deliberately omitted — see top comment.
+    expect(record.availability).toBeUndefined();
+    expect(record.schedule).toBeUndefined();
   });
 });

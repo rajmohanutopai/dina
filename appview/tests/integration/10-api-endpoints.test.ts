@@ -27,6 +27,7 @@ import { getGraph } from '@/api/xrpc/get-graph'
 import { getAlternatives, GetAlternativesParams } from '@/api/xrpc/get-alternatives'
 import { getNegativeSpace, GetNegativeSpaceParams } from '@/api/xrpc/get-negative-space'
 import { clearCache } from '@/api/middleware/swr-cache'
+import { clearGraphContextCache } from '@/api/middleware/graph-context-cache'
 import { CONSTANTS } from '@/config/constants'
 
 let db: TestDB
@@ -35,6 +36,7 @@ beforeEach(async () => {
   db = getTestDb()
   await cleanAllTables(db)
   clearCache()
+  clearGraphContextCache()
 })
 
 afterAll(async () => {
@@ -391,6 +393,8 @@ describe('10.1 Resolve Endpoint', () => {
     })
 
     clearCache()
+
+    clearGraphContextCache()
 
     const txResult = await resolve(db, {
       subject: JSON.stringify({ type: 'did', did }),

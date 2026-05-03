@@ -93,7 +93,11 @@ export type OutboxRejectReason =
   | 'signature_invalid'
   | 'schema_invalid'
   | 'namespace_disabled'
-  | 'feature_off';
+  | 'feature_off'
+  // TN-OPS-003 — author's PDS host is on AppView's suspension list
+  // (operator abuse-response action). Mirrored from the server's
+  // `RejectionReason` in `appview/src/ingester/rejection-writer.ts`.
+  | 'pds_suspended';
 
 export interface OutboxRejection {
   readonly reason: OutboxRejectReason;

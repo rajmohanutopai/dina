@@ -305,6 +305,16 @@ export interface SubjectDetailContext {
   readonly viewerRegion?: string | null;
   /** Current time for the recency badge; defaults to `Date.now()`. */
   readonly nowMs?: number;
+  /**
+   * Viewer's own DID. Same belt-and-braces guard as
+   * `SubjectCardContext.viewerDid`: any review whose `reviewerDid`
+   * matches this is reclassified as `ring='self'` regardless of the
+   * wire's bucketing. Without this, AppView's `subjectGet` has been
+   * observed putting self-authored reviews into the `strangers`
+   * bucket, which then renders the user's own band ("VERY LOW")
+   * against their own name + drops them out of the friends count.
+   */
+  readonly viewerDid?: string | null;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────
@@ -334,7 +344,21 @@ export function deriveSubjectDetail(
   const fof: SubjectReview[] = [];
   const strangers: SubjectReview[] = [];
 
-  for (const r of input.reviews) {
+  // Override the wire `ring` to `'self'` for self-authored rows when
+  // the viewer's DID is known. Mirrors the same guard in
+  // `deriveSubjectCard` so the friends-vs-strangers split agrees
+  // across surfaces.
+  const viewerDid =
+    typeof context?.viewerDid === 'string' && context.viewerDid.length > 0
+      ? context.viewerDid
+      : null;
+  const reclassify = (r: SubjectReview): SubjectReview =>
+    viewerDid !== null && r.reviewerDid === viewerDid && r.ring !== 'self'
+      ? { ...r, ring: 'self' }
+      : r;
+
+  for (const raw of input.reviews) {
+    const r = reclassify(raw);
     if (r.ring === 'self' || r.ring === 'contact') friends.push(r);
     else if (r.ring === 'fof') fof.push(r);
     else strangers.push(r);

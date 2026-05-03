@@ -90,14 +90,67 @@ export interface AskPendingLifecycle {
 }
 
 /**
- * Discriminated union for `metadata.lifecycle`. Two kinds today:
+ * Terminal states for a `/ask write a review of <X>` draft. The mobile
+ * chat handler posts the card at `drafting`, flips to `ready` once the
+ * inferer settles, and `published` / `discarded` are terminal.
+ * `failed` covers inferer errors so the user sees something other than
+ * a perpetual spinner.
+ */
+export type ReviewDraftStatus =
+  | 'drafting'
+  | 'ready'
+  | 'publishing'
+  | 'published'
+  | 'discarded'
+  | 'failed';
+
+/**
+ * `review_draft` lifecycle metadata. Posted by the mobile chat layer
+ * (not the brain orchestrator) when the user types
+ * `/ask write a review of <X>` — the brain stays a thread-and-text
+ * orchestrator, the mobile owns the BYOK LLM key + vault access for
+ * drafting. Renderer dispatches on `metadata.lifecycle.kind`, same as
+ * the service_query / ask_pending cards. Keyed by `draftId` so the
+ * card can be patched in place as the user edits / publishes.
+ *
+ * `subject` mirrors the form's SubjectRef shape (kept loose as
+ * `Record<string, unknown>` so brain doesn't depend on mobile's
+ * subject types). `values` carries the LLM-drafted fields the inline
+ * card renders; `null` while drafting. `attestation` is set once the
+ * record is published — used to deep-link to the published review.
+ */
+export interface ReviewDraftLifecycle {
+  kind: 'review_draft';
+  status: ReviewDraftStatus;
+  draftId: string;
+  /** Free-text headline shown when the card is in `published` /
+   *  `failed` terminal state — the message body becomes the user's
+   *  receipt. */
+  /** Subject reference (`{kind, name, did?, identifier?}`). Kept as a
+   *  generic object so this type stays free of mobile-side imports. */
+  subject: Record<string, unknown>;
+  /** Drafted form-state snapshot — the inline card renders editable
+   *  fields off this. `null` while still drafting / on error. */
+  values: Record<string, unknown> | null;
+  /** AT-Protocol attestation reference set once the user publishes. */
+  attestation?: { uri: string; cid: string };
+  /** Error explanation — present on `failed`. */
+  error?: string;
+}
+
+/**
+ * Discriminated union for `metadata.lifecycle`. Three kinds today:
  *   - `service_query` — workflow tasks for D2D capability calls.
  *   - `ask_pending`   — async `/ask` deferrals (coordinator fast-path
  *                      timeout + pending_approval flows).
+ *   - `review_draft`  — chat-driven `/ask write a review of <X>` flow.
  * Future kinds (long vault search, peer pairing) extend by adding
  * members and a discriminator branch in `readLifecycle`.
  */
-export type MessageLifecycle = ServiceQueryLifecycle | AskPendingLifecycle;
+export type MessageLifecycle =
+  | ServiceQueryLifecycle
+  | AskPendingLifecycle
+  | ReviewDraftLifecycle;
 
 export interface ChatMessage {
   id: string;
@@ -393,9 +446,21 @@ export function addLifecycleMessage(
 ): ChatMessage {
   // Use the discriminator to pick the natural identity key for the
   // sources index — taskId for service queries, askId for ask
-  // placeholders. Surfacing the key in `sources` keeps it
-  // greppable in repository rows even if metadata indexing changes.
-  const key = lifecycle.kind === 'service_query' ? lifecycle.taskId : lifecycle.askId;
+  // placeholders, draftId for review drafts. Surfacing the key in
+  // `sources` keeps it greppable in repository rows even if metadata
+  // indexing changes.
+  let key: string;
+  switch (lifecycle.kind) {
+    case 'service_query':
+      key = lifecycle.taskId;
+      break;
+    case 'ask_pending':
+      key = lifecycle.askId;
+      break;
+    case 'review_draft':
+      key = lifecycle.draftId;
+      break;
+  }
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
     sources: [key, ...extraSources],
@@ -420,6 +485,10 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
   if (lc.kind === 'ask_pending') {
     if (typeof lc.askId !== 'string' || lc.askId === '') return null;
     return lc as unknown as AskPendingLifecycle;
+  }
+  if (lc.kind === 'review_draft') {
+    if (typeof lc.draftId !== 'string' || lc.draftId === '') return null;
+    return lc as unknown as ReviewDraftLifecycle;
   }
   return null;
 }
@@ -521,6 +590,62 @@ export function updateAskLifecycle(
   const oldLc = readLifecycle(old);
   if (oldLc === null || oldLc.kind !== 'ask_pending') return null;
   const newLc: AskPendingLifecycle = { ...oldLc, ...patch, kind: 'ask_pending', askId };
+
+  const newMsg: ChatMessage = {
+    ...old,
+    content: newContent ?? old.content,
+    metadata: {
+      ...(old.metadata ?? {}),
+      lifecycle: newLc as unknown as Record<string, unknown>,
+    },
+  };
+  thread[idx] = newMsg;
+  persistMessage(newMsg);
+  fireSubscribers(newMsg);
+  return newMsg;
+}
+
+/**
+ * Find a thread message keyed by `draftId` on its lifecycle metadata
+ * (only `review_draft` kind has a draftId). Returns `null` when no
+ * matching message is present. Used by the inline review-draft card
+ * to patch its own message in place when the user edits / publishes.
+ */
+export function findMessageByDraftId(threadId: string, draftId: string): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  for (const msg of thread) {
+    const lc = readLifecycle(msg);
+    if (lc !== null && lc.kind === 'review_draft' && lc.draftId === draftId) return msg;
+  }
+  return null;
+}
+
+/**
+ * Patch the `review_draft` lifecycle of the message identified by
+ * `draftId`, optionally rewriting `content` (e.g. swapping the
+ * "Drafting…" line for the published receipt). Mirrors
+ * `updateMessageLifecycle` / `updateAskLifecycle`. Returns the patched
+ * message, or `null` if no matching draft exists.
+ */
+export function updateReviewDraftLifecycle(
+  threadId: string,
+  draftId: string,
+  patch: Partial<Omit<ReviewDraftLifecycle, 'kind' | 'draftId'>>,
+  newContent?: string,
+): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  const idx = thread.findIndex((msg) => {
+    const lc = readLifecycle(msg);
+    return lc !== null && lc.kind === 'review_draft' && lc.draftId === draftId;
+  });
+  if (idx === -1) return null;
+
+  const old = thread[idx];
+  const oldLc = readLifecycle(old);
+  if (oldLc === null || oldLc.kind !== 'review_draft') return null;
+  const newLc: ReviewDraftLifecycle = { ...oldLc, ...patch, kind: 'review_draft', draftId };
 
   const newMsg: ChatMessage = {
     ...old,

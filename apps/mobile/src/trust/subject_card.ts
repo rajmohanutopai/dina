@@ -72,6 +72,30 @@ export interface SubjectReview {
   readonly headline: string;
   /** Recency timestamp (ms since epoch) for tie-breaking. */
   readonly createdAtMs: number;
+  /**
+   * AT-URI of the underlying attestation record. Used by the
+   * subject-detail self-row's Edit pill to deep-link straight into
+   * `/trust/write` in edit mode (the screen reads `editingUri` to
+   * flip into edit mode and pre-fills from the params it gets here).
+   * `null` when the wire didn't carry it (older AppView builds, or
+   * synthetic test data) — the Edit pill stays inert in that case.
+   */
+  readonly attestationUri?: string | null;
+  /**
+   * Long-form body — everything after the first blank line in the
+   * attestation's `text` field. Empty string when only a headline
+   * was written. Carried so the subject-detail Edit pill can
+   * pre-seed the body field in `/trust/write`, matching the
+   * reviewer-profile Edit affordance.
+   */
+  readonly body?: string;
+  /**
+   * Review sentiment. Carried so the Edit pill can pre-select the
+   * correct sentiment chip in `/trust/write` instead of defaulting
+   * to neutral. `null` only on legacy synthetic rows where the
+   * wire didn't include it.
+   */
+  readonly sentiment?: 'positive' | 'neutral' | 'negative' | null;
 }
 
 /**
@@ -195,6 +219,18 @@ export interface SubjectCardContext {
    * but tests should always pin a value.
    */
   readonly nowMs?: number;
+  /**
+   * The viewer's own DID. Used as a belt-and-braces guard against
+   * AppView shipping a self-authored attestation tagged
+   * `ring='stranger'` — which renders as "— rajmohana843 · stranger
+   * · trust —" against the user's own name, exactly the shame
+   * mechanic we removed elsewhere. When this DID matches a review's
+   * `reviewerDid`, we override the ring to `'self'` for both the
+   * friends-pill count and the top-reviewer attribution. Optional:
+   * tests + pre-V2 callers can omit it; the wire ring then survives
+   * unchanged (i.e. exactly the old behaviour).
+   */
+  readonly viewerDid?: string | null;
 }
 
 export interface FriendsPill {
@@ -311,7 +347,25 @@ export function deriveSubjectCard(
   let strangers = 0;
   let top: SubjectReview | null = null;
 
-  for (const r of input.reviews) {
+  // Override the wire `ring` to `'self'` for the viewer's own
+  // attestations. Without this guard, AppView's bucketing has been
+  // observed shipping `ring='stranger'` for self-authored rows when
+  // the viewerDid handshake misses, which renders the user's own
+  // handle as "— <handle> · stranger · trust —" on the spotlight
+  // line. Same belt-and-braces fix that the [subjectId] ReviewRow
+  // applies — pulled into the data layer so the friends pill, top-
+  // reviewer line, and downstream counts all stay in lockstep.
+  const viewerDid =
+    typeof context?.viewerDid === 'string' && context.viewerDid.length > 0
+      ? context.viewerDid
+      : null;
+  const reclassify = (r: SubjectReview): SubjectReview =>
+    viewerDid !== null && r.reviewerDid === viewerDid && r.ring !== 'self'
+      ? { ...r, ring: 'self' }
+      : r;
+
+  for (const raw of input.reviews) {
+    const r = reclassify(raw);
     // Friend pill: contact-or-self counts as a friend; everyone else
     // is a stranger. fof (friend-of-friend) is "stranger" for this
     // pill — the plan's mock copy is "★ 2 friends · 12 strangers"

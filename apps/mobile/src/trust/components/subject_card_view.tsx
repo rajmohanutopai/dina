@@ -47,11 +47,19 @@ import type { SubjectCardDisplay } from '../subject_card';
  * the search response, the band branch wins and this fallback
  * stays out of the way.
  */
+// Maturity labels use title case ("Some", "Established") rather than
+// the ALL-CAPS used by canonical trust bands ("HIGH", "MODERATE",
+// "LOW"). This visually separates "we don't have enough signal yet"
+// from "we have a real trust verdict" — without the case difference,
+// a search-result card showing "SOME" looks like a band tier (it
+// isn't), and the same subject's detail page rendering "MODERATE"
+// reads as an inconsistency to the user even though both are correct
+// for their own surface.
 function maturityLabel(reviewCount: number): string {
-  if (reviewCount <= 0) return 'NEW';
-  if (reviewCount === 1) return 'NEW';
-  if (reviewCount <= 5) return 'SOME';
-  return 'ESTABLISHED';
+  if (reviewCount <= 0) return 'New';
+  if (reviewCount === 1) return 'New';
+  if (reviewCount <= 5) return 'Some';
+  return 'Established';
 }
 
 function maturityStyleFor(reviewCount: number): {

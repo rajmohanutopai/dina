@@ -2,10 +2,11 @@ import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { subjectScores, didProfiles, flags } from '@/db/schema/index.js'
-import { computeGraphContext } from '@/db/queries/graph.js'
 import { resolveSubject } from '@/db/queries/subjects.js'
 import { computeRecommendation } from '@/scorer/algorithms/recommendation.js'
 import { withSWR, resolveKey, CACHE_TTLS } from '../middleware/swr-cache.js'
+import { getCachedGraphContext } from '../middleware/graph-context-cache.js'
+import { CONSTANTS } from '@/config/constants.js'
 import type { ResolveResponse, GraphContext } from '@/shared/types/api-types.js'
 
 export const ResolveParams = z.object({
@@ -85,7 +86,10 @@ async function computeResolveResponse(
 
   let graphContext: GraphContext | null = null
   if (requesterDid && subjectRef.type === 'did' && subjectRef.did) {
-    const graph = await computeGraphContext(db, requesterDid)
+    // Pass MAX_GRAPH_DEPTH explicitly so the cache key matches
+    // subjectGet's depth=2 entry — a `resolve` call after a
+    // `subjectGet` for the same viewer reuses the cached graph.
+    const graph = await getCachedGraphContext(db, requesterDid, CONSTANTS.MAX_GRAPH_DEPTH)
     const targetNode = graph.nodes.find(n => n.did === subjectRef.did)
     graphContext = {
       shortestPath: targetNode?.depth ?? null,

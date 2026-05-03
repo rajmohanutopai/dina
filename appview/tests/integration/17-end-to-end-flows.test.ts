@@ -25,6 +25,7 @@ import { search } from '@/api/xrpc/search'
 import { getGraph } from '@/api/xrpc/get-graph'
 import { getAttestations } from '@/api/xrpc/get-attestations'
 import { clearCache } from '@/api/middleware/swr-cache'
+import { clearGraphContextCache } from '@/api/middleware/graph-context-cache'
 
 const db = getTestDb()
 const ctx = createTestHandlerContext(db)
@@ -32,6 +33,7 @@ const ctx = createTestHandlerContext(db)
 beforeEach(async () => {
   await cleanAllTables(db)
   clearCache()
+  clearGraphContextCache()
 })
 
 afterAll(async () => {

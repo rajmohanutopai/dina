@@ -27,6 +27,8 @@ import {
   type MessageType,
 } from '@dina/brain/src/chat/thread';
 import { handleChat, type ChatResponse } from '@dina/brain/src/chat/orchestrator';
+import { addUserMessage } from '@dina/brain/src/chat/thread';
+import { parseReviewDraftIntent, startReviewDraft } from '../trust/review_draft';
 
 const DEFAULT_THREAD = 'main';
 
@@ -95,6 +97,30 @@ export async function sendMessage(text: string, threadId?: string): Promise<Chat
   typingState.set(tid, true);
 
   try {
+    // Mobile pre-empt: detect "/ask write a review of <X>" and route to
+    // the in-process review-draft flow instead of the agentic /ask
+    // loop. Brain stays a pure thread orchestrator; mobile owns this
+    // because the BYOK LLM key + persona vault DEKs are device-side.
+    // The card lands as a `'review_draft'` lifecycle message — patched
+    // in place as the inferer settles, the user edits, and they
+    // publish.
+    const intent = parseReviewDraftIntent(text);
+    if (intent.matched) {
+      addUserMessage(tid, text);
+      const { draftId } = await startReviewDraft({
+        subjectPhrase: intent.subjectPhrase,
+        threadId: tid,
+      });
+      lastDinaResponseAt.set(tid, Date.now());
+      return {
+        intent: 'ask',
+        response: '',
+        sources: [draftId],
+        messageId: '',
+        typed: { text: '', kind: 'plain' },
+      };
+    }
+
     // Route through Brain orchestrator
     const response = await handleChat(text, tid);
 

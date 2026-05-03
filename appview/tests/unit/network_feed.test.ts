@@ -11,7 +11,7 @@
  *   - Pagination via (recordCreatedAt, uri) — hasMore detection
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const computeGraphContextMock = vi.fn()
 
@@ -20,7 +20,17 @@ vi.mock('@/db/queries/graph.js', () => ({
 }))
 
 import { networkFeed, NetworkFeedParams } from '@/api/xrpc/network-feed'
+import { clearGraphContextCache } from '@/api/middleware/graph-context-cache'
 import type { DrizzleDB } from '@/db/connection'
+
+// Clear the graph-context cache between tests — `networkFeed` now
+// goes through the cache-aware wrapper, so stale entries from one
+// test would leak into the next when viewer DIDs are reused. The
+// integration suite's `clearCache + clearGraphContextCache` pair
+// in beforeEach is the canonical pattern; mirror it here.
+beforeEach(() => {
+  clearGraphContextCache()
+})
 
 interface AttestationRow {
   uri: string

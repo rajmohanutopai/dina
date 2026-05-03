@@ -118,6 +118,20 @@ describe('OutboxScreen — render states', () => {
     expect(getByText(/Rate limit exceeded/)).toBeTruthy();
   });
 
+  it('renders the pds_suspended reason text (TN-OPS-003)', () => {
+    const rows: OutboxRow<DraftBody>[] = [
+      makeRow({
+        clientId: 'r1',
+        status: 'rejected',
+        atUri: 'at://x/y/r1',
+        submittedAt: NOW_ISO,
+        rejection: { reason: 'pds_suspended', rejectedAt: NOW_ISO },
+      }),
+    ];
+    const { getByText } = render(<OutboxScreen rows={rows} />);
+    expect(getByText(/PDS host is suspended by the operator/)).toBeTruthy();
+  });
+
   it('falls back to a generic "Rejected: <reason>" when reason is unknown', () => {
     const rows: OutboxRow<DraftBody>[] = [
       makeRow({

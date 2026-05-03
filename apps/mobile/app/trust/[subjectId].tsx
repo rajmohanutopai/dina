@@ -89,6 +89,27 @@ export interface SubjectDetailScreenProps {
   /** Fired when the user taps the "Write a review" CTA. */
   onWriteReview?: (subjectId: string) => void;
   /**
+   * Fired when the user taps their OWN review row in any of the
+   * three sections. The default handler pushes to the user's own
+   * reviewer profile (`/trust/reviewer/[did]`) — that screen has the
+   * Edit affordance per row, which is the cleanest path to amend a
+   * review without extending `SubjectReview` with all the editable
+   * fields. Tests can stub this to assert the routing.
+   */
+  onPressOwnReview?: () => void;
+  /**
+   * Fired when the user taps the visible "Edit" pill on their OWN
+   * review row. Distinct from `onPressOwnReview` (the row body):
+   * the pill deep-links straight into `/trust/write` in edit mode
+   * with the original review's fields pre-filled, so the user lands
+   * on the editor rather than bouncing through the reviewer-profile
+   * intermediate screen. Default handler builds the route from the
+   * tapped review's `attestationUri` + sentiment + headline + body.
+   * No-op when the review didn't carry an `attestationUri` (e.g. a
+   * legacy wire shape without it) — the pill is rendered but inert.
+   */
+  onPressOwnReviewEdit?: (review: SubjectReview) => void;
+  /**
    * Viewer's DID — used to detect self-authored review rows so they
    * suppress the trust band badge ("VERY LOW" red verdict) and show
    * "Your review" instead. Optional: when omitted the screen reads
@@ -179,6 +200,40 @@ export default function SubjectDetailScreen(
       if (data?.subjectDid) writeParams.subjectDid = data.subjectDid;
       router.push({ pathname: '/trust/write', params: writeParams });
     },
+    onPressOwnReview = () => {
+      // Row-body tap drops the user on their own reviewer profile
+      // (where the full authored-reviews list lives). The Edit pill
+      // bypasses this and goes straight to the editor — see
+      // `onPressOwnReviewEdit` below.
+      if (viewerDid === '') return;
+      router.push({
+        pathname: '/trust/reviewer/[did]',
+        params: { did: viewerDid },
+      });
+    },
+    onPressOwnReviewEdit = (review: SubjectReview) => {
+      // Build the same `editingUri`-led params shape the reviewer
+      // profile screen uses (see `onEditAuthored` in
+      // `trust/reviewer/[did].tsx`) so both Edit affordances land on
+      // the SAME pre-filled form. We need the subject context too —
+      // SubjectRef has to reconstruct to the same hash on republish
+      // or the publish path mints a new subject row.
+      if (!review.attestationUri) return;
+      const params: Record<string, string> = {
+        subjectId,
+        editingUri: review.attestationUri,
+        editingCosigCount: '0',
+        editingHeadline: review.headline,
+        editingBody: review.body ?? '',
+      };
+      if (review.sentiment) params.editingSentiment = review.sentiment;
+      if (data?.title) params.subjectName = data.title;
+      if (data?.subjectKind) params.subjectKind = data.subjectKind;
+      if (data?.subjectIdentifier)
+        params.subjectIdentifier = data.subjectIdentifier;
+      if (data?.subjectDid) params.subjectDid = data.subjectDid;
+      router.push({ pathname: '/trust/write', params });
+    },
     viewerDid: viewerDidProp = viewerDid,
   } = props;
 
@@ -237,6 +292,12 @@ export default function SubjectDetailScreen(
   // it never reaches the network, only the local lens.
   const detail = deriveSubjectDetail(data, {
     viewerRegion: viewerProfile?.region,
+    // Pin self-authored "stranger" rows back into the friends bucket
+    // when the wire bucketing missed. The same belt-and-braces guard
+    // already lives in `ReviewRow` for the band-suppression UI; this
+    // wires the data-layer counterpart so the section split + the
+    // header's `ringCounts` agree with the row visual.
+    viewerDid: viewerDidProp !== '' ? viewerDidProp : null,
   });
   const { header } = detail;
 
@@ -382,6 +443,8 @@ export default function SubjectDetailScreen(
         emptyHint={null}
         testIdPrefix="friends"
         onSelectReviewer={onSelectReviewer}
+        onPressOwnReview={onPressOwnReview}
+        onPressOwnReviewEdit={onPressOwnReviewEdit}
         viewerDid={viewerDidProp}
       />
       <ReviewSection
@@ -391,6 +454,8 @@ export default function SubjectDetailScreen(
         emptyHint={null}
         testIdPrefix="fof"
         onSelectReviewer={onSelectReviewer}
+        onPressOwnReview={onPressOwnReview}
+        onPressOwnReviewEdit={onPressOwnReviewEdit}
         viewerDid={viewerDidProp}
       />
       <ReviewSection
@@ -406,6 +471,8 @@ export default function SubjectDetailScreen(
         }
         testIdPrefix="strangers"
         onSelectReviewer={onSelectReviewer}
+        onPressOwnReview={onPressOwnReview}
+        onPressOwnReviewEdit={onPressOwnReviewEdit}
         viewerDid={viewerDidProp}
       />
       {/* TN-V2-RANK-014 — alternatives strip below the reviews. The
@@ -479,6 +546,10 @@ interface ReviewSectionProps {
   emptyHint: string | null;
   testIdPrefix: 'friends' | 'fof' | 'strangers';
   onSelectReviewer?: (reviewerDid: string) => void;
+  /** Fired when the user taps their own review row. */
+  onPressOwnReview?: () => void;
+  /** Fired when the user taps the Edit pill on their own review row. */
+  onPressOwnReviewEdit?: (review: SubjectReview) => void;
   /** Threaded down so each row can self-detect the viewer's own review. */
   viewerDid?: string;
 }
@@ -491,6 +562,8 @@ function ReviewSection(props: ReviewSectionProps): React.ReactElement | null {
     emptyHint,
     testIdPrefix,
     onSelectReviewer,
+    onPressOwnReview,
+    onPressOwnReviewEdit,
     viewerDid,
   } = props;
   if (reviews.length === 0 && emptyHint === null) return null;
@@ -515,6 +588,8 @@ function ReviewSection(props: ReviewSectionProps): React.ReactElement | null {
               review={review}
               testID={`subject-detail-review-${testIdPrefix}-${idx}`}
               onPress={onSelectReviewer}
+              onPressOwnReview={onPressOwnReview}
+              onPressOwnReviewEdit={onPressOwnReviewEdit}
               viewerDid={viewerDid}
             />
           ))}
@@ -529,6 +604,23 @@ interface ReviewRowProps {
   testID: string;
   onPress?: (reviewerDid: string) => void;
   /**
+   * Fired when the user taps their OWN review row. Self rows used to
+   * be `accessibilityRole='text'` with no tap action, leaving the
+   * user with no way to amend a review from the subject page; this
+   * callback opens whatever path the parent screen routes to (default:
+   * the user's own reviewer profile).
+   */
+  onPressOwnReview?: () => void;
+  /**
+   * Fired when the user taps the visible "Edit" pill on their OWN
+   * review row. The pill is its own Pressable nested inside the row;
+   * RN's gesture system delivers the tap to the inner Pressable and
+   * does NOT also fire the row's `onPress`. Without this split the
+   * pill inherited the row's "go to reviewer profile" behaviour, so
+   * tapping Edit silently bounced the user to the wrong screen.
+   */
+  onPressOwnReviewEdit?: (review: SubjectReview) => void;
+  /**
    * Viewer's DID. When the row's DID matches, the band badge is
    * suppressed and the row reads "Your review" — same self-detection
    * AppView's `reviewers.self` bucket should produce, but applied
@@ -540,7 +632,14 @@ interface ReviewRowProps {
 }
 
 function ReviewRow(props: ReviewRowProps): React.ReactElement {
-  const { review, testID, onPress, viewerDid } = props;
+  const {
+    review,
+    testID,
+    onPress,
+    onPressOwnReview,
+    onPressOwnReviewEdit,
+    viewerDid,
+  } = props;
   // Use the canonical band derivation rather than hand-coding the
   // threshold ladder — keeps the screen in lockstep with score_helpers
   // when the bands ever change (currently 0.8 / 0.5 / 0.3, but those
@@ -563,32 +662,91 @@ function ReviewRow(props: ReviewRowProps): React.ReactElement {
   // Capture the DID into a local so the closure below sees the
   // narrowed `string` type without an `as` cast.
   const reviewerDid = review.reviewerDid;
-  const handlePress =
-    onPress && !isSelf && reviewerDid !== null
+  const handlePress = isSelf
+    ? onPressOwnReview
+    : onPress && reviewerDid !== null
       ? () => onPress(reviewerDid)
       : undefined;
+  const isInteractive = handlePress !== undefined;
+
+  // Self-row needs TWO independent tap targets:
+  //   - body (name + headline) → reviewer profile (`onPressOwnReview`)
+  //   - "Edit" pill            → editor (`onPressOwnReviewEdit`)
+  // Earlier we tried nested Pressables. iOS's accessibility system
+  // collapsed the inner pill into the parent's accessible button (the
+  // outer Pressable's `accessible=true` default merges descendants),
+  // and the touch hit-test followed AX — so taps on the pill ran the
+  // OUTER handler and bounced the user to the reviewer profile. The
+  // structural fix is siblings, not nesting: the row is a plain View;
+  // the body and pill are independent Pressables side-by-side.
+  if (isSelf) {
+    const editEnabled =
+      onPressOwnReviewEdit !== undefined && review.attestationUri != null;
+    return (
+      <View style={styles.reviewRow} testID={testID}>
+        <View style={styles.reviewHeader}>
+          <Pressable
+            onPress={onPressOwnReview}
+            style={({ pressed }) => [
+              styles.selfBodyTouchable,
+              pressed && onPressOwnReview ? styles.selfBodyTouchablePressed : null,
+            ]}
+            accessibilityRole={onPressOwnReview ? 'button' : 'text'}
+            accessibilityLabel="Your review — tap to edit"
+            testID={`${testID}-body`}
+          >
+            <Text style={styles.reviewerName}>Your review</Text>
+          </Pressable>
+          <Pressable
+            onPress={
+              editEnabled
+                ? () => onPressOwnReviewEdit!(review)
+                : undefined
+            }
+            style={({ pressed }) => [
+              styles.editPill,
+              pressed && editEnabled ? styles.editPillPressed : null,
+            ]}
+            testID="subject-detail-self-edit-pill"
+            accessibilityRole="button"
+            accessibilityLabel="Edit your review"
+          >
+            <Text style={styles.editPillText}>Edit</Text>
+          </Pressable>
+        </View>
+        <Pressable
+          onPress={onPressOwnReview}
+          style={({ pressed }) => [
+            styles.selfBodyTouchable,
+            pressed && onPressOwnReview ? styles.selfBodyTouchablePressed : null,
+          ]}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
+          <Text style={styles.headline} numberOfLines={3}>
+            “{review.headline}”
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <Pressable
       onPress={handlePress}
-      style={({ pressed }) => [styles.reviewRow, pressed && onPress && !isSelf && styles.reviewRowPressed]}
+      style={({ pressed }) => [
+        styles.reviewRow,
+        pressed && isInteractive && styles.reviewRowPressed,
+      ]}
       testID={testID}
-      accessibilityRole={isSelf ? 'text' : 'button'}
-      accessibilityLabel={
-        isSelf
-          ? `Your review`
-          : `Review by ${review.reviewerName}, trust ${BAND_LABEL[band]}`
-      }
+      accessibilityRole={isInteractive ? 'button' : 'text'}
+      accessibilityLabel={`Review by ${review.reviewerName}, trust ${BAND_LABEL[band]}`}
     >
       <View style={styles.reviewHeader}>
-        <Text style={styles.reviewerName}>
-          {isSelf ? 'Your review' : review.reviewerName}
-        </Text>
-        {!isSelf && (
-          <View style={[styles.miniBand, { backgroundColor: BAND_COLOUR[band] }]}>
-            <Text style={styles.miniBandText}>{BAND_LABEL[band]}</Text>
-          </View>
-        )}
+        <Text style={styles.reviewerName}>{review.reviewerName}</Text>
+        <View style={[styles.miniBand, { backgroundColor: BAND_COLOUR[band] }]}>
+          <Text style={styles.miniBandText}>{BAND_LABEL[band]}</Text>
+        </View>
       </View>
       <Text style={styles.headline} numberOfLines={3}>
         “{review.headline}”
@@ -796,6 +954,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   reviewRowPressed: { backgroundColor: colors.bgTertiary },
+  // The two halves of a self-row are independent Pressables. The
+  // body fills the row but stays visually flat (no card chrome —
+  // the outer View owns the border + background). Pressed state
+  // only mutates background so the affordance reads.
+  selfBodyTouchable: { flex: 1 },
+  selfBodyTouchablePressed: { backgroundColor: colors.bgTertiary },
   reviewHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -815,6 +979,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.headingBold,
     fontSize: 10,
     color: colors.bgSecondary,
+  },
+  editPill: {
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgSecondary,
+  },
+  editPillPressed: { backgroundColor: colors.bgTertiary },
+  editPillText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 11,
+    color: colors.textPrimary,
   },
   headline: {
     fontFamily: fonts.serif,

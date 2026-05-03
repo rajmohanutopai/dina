@@ -17,6 +17,7 @@ import { searchAttestations, type SearchAttestationHit } from '../appview_runtim
 import { annotateReviewRing, compareCards } from '../contact_rerank';
 import { displayName } from '../handle_display';
 import { deriveSubjectCard, type SubjectCardInput, type SubjectReview } from '../subject_card';
+import { getBootedNode } from '../../hooks/useNodeBootstrap';
 import type { SearchResult } from '../../../app/trust/search';
 
 export interface TrustSearchState {
@@ -61,10 +62,16 @@ export function useTrustSearch(opts: UseTrustSearchOptions): TrustSearchState {
         .map((c) => c.did)
         .filter((did): did is string => typeof did === 'string' && did.length > 0),
     );
+    // Pull the booted-node DID so the data layer can flag self-
+    // authored attestations even if the wire `ring` came back as
+    // 'stranger' (AppView bucketing miss). Empty string is safe — the
+    // override in `deriveSubjectCard` short-circuits when viewerDid
+    // is falsy.
+    const viewerDid = getBootedNode()?.did ?? null;
     searchAttestations(trimmed, 50)
       .then((response) => {
         if (cancelled) return;
-        const grouped = groupHitsToSearchResults(response.results, contactDids);
+        const grouped = groupHitsToSearchResults(response.results, contactDids, viewerDid);
         setState({ results: grouped, isLoading: false, error: null });
       })
       .catch((err: unknown) => {
@@ -104,6 +111,7 @@ export function useTrustSearch(opts: UseTrustSearchOptions): TrustSearchState {
 function groupHitsToSearchResults(
   hits: SearchAttestationHit[],
   contactDids: ReadonlySet<string>,
+  viewerDid: string | null,
 ): readonly SearchResult[] {
   if (hits.length === 0) return EMPTY;
   const buckets = new Map<string, { input: SubjectCardInput; reviews: SubjectReview[] }>();
@@ -152,7 +160,7 @@ function groupHitsToSearchResults(
 
   const out: SearchResult[] = [];
   for (const [subjectId, { input }] of buckets) {
-    out.push({ subjectId, display: deriveSubjectCard(input) });
+    out.push({ subjectId, display: deriveSubjectCard(input, { viewerDid }) });
   }
   // Contact-aware re-rank: any-contact cards rank above no-contact
   // cards; within each bucket, V1's review-count-DESC + title-asc

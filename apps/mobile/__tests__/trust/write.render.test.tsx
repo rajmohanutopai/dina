@@ -97,21 +97,20 @@ describe('WriteScreen — sentiment selector', () => {
   });
 });
 
-describe('WriteScreen — confidence selector', () => {
-  it('tap on confidence selects it', () => {
-    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-confidence-high'));
-    expect(getByTestId('write-confidence-high').props.accessibilityState).toMatchObject({
-      selected: true,
-    });
-  });
-
-  it('all four confidence levels are rendered', () => {
-    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    expect(getByTestId('write-confidence-certain')).toBeTruthy();
-    expect(getByTestId('write-confidence-high')).toBeTruthy();
-    expect(getByTestId('write-confidence-moderate')).toBeTruthy();
-    expect(getByTestId('write-confidence-speculative')).toBeTruthy();
+describe('WriteScreen — confidence (no longer surfaced)', () => {
+  // The Confidence pill row was dropped from the form: casual
+  // reviewers don't think in speculative/high/certain ladders, and
+  // the field was only consumed by the AppView search filter
+  // `minConfidence` (no trust-score weight). The form now seeds
+  // `confidence: 'moderate'` silently. Pin both that the UI is gone
+  // AND that the seeded value still flows through to the wire so an
+  // empty form's publish payload carries `confidence: 'moderate'`.
+  it('does NOT render the confidence pill row anywhere on the form', () => {
+    const { queryByTestId } = render(<WriteScreen subjectTitle="X" />);
+    expect(queryByTestId('write-confidence-certain')).toBeNull();
+    expect(queryByTestId('write-confidence-high')).toBeNull();
+    expect(queryByTestId('write-confidence-moderate')).toBeNull();
+    expect(queryByTestId('write-confidence-speculative')).toBeNull();
   });
 });
 
@@ -123,18 +122,16 @@ describe('WriteScreen — Publish CTA disabled state', () => {
     });
   });
 
-  it('Publish disabled until all required fields are filled', () => {
+  it('Publish disabled until headline + sentiment are filled (confidence auto-seeded)', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
     fireEvent.changeText(getByTestId('write-headline-input'), 'Great chair');
     expect(getByTestId('write-publish').props.accessibilityState).toMatchObject({
       disabled: true,
     });
+    // Tapping sentiment is the LAST required action — confidence is
+    // pre-seeded to 'moderate' by the form, so the Publish CTA
+    // unlocks here without a separate confidence step.
     fireEvent.press(getByTestId('write-sentiment-positive'));
-    expect(getByTestId('write-publish').props.accessibilityState).toMatchObject({
-      disabled: true,
-    });
-    fireEvent.press(getByTestId('write-confidence-high'));
-    // Now all required fields are present.
     expect(getByTestId('write-publish').props.accessibilityState).toMatchObject({
       disabled: false,
     });
@@ -312,7 +309,7 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
     expect(getByTestId('write-publish').props.accessibilityLabel).toBe('Publish edit');
   });
 
-  it('seeds the form from editing* params (sentiment, confidence, headline, body)', () => {
+  it('seeds the form from editing* params (sentiment, headline, body) — confidence is plumbed silently', () => {
     mockParams({
       editingUri: 'at://x/y/z',
       editingCosigCount: '0',
@@ -321,15 +318,17 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
       editingHeadline: 'Stay away',
       editingBody: 'It broke after a week.',
     });
-    const { getByTestId } = render(<WriteScreen />);
+    const { getByTestId, queryByTestId } = render(<WriteScreen />);
     expect(getByTestId('write-headline-input').props.value).toBe('Stay away');
     expect(getByTestId('write-body-input').props.value).toBe('It broke after a week.');
     expect(getByTestId('write-sentiment-negative').props.accessibilityState).toMatchObject({
       selected: true,
     });
-    expect(
-      getByTestId('write-confidence-speculative').props.accessibilityState,
-    ).toMatchObject({ selected: true });
+    // editingConfidence still reaches state.confidence so a republish
+    // preserves the original value, but the form no longer renders
+    // pills for it. Pin the silent absence so a regression that
+    // re-adds the UI gets caught.
+    expect(queryByTestId('write-confidence-speculative')).toBeNull();
   });
 
   it('surfaces the cosig warning when editingCosigCount > 0', () => {
@@ -374,17 +373,18 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
       editingConfidence: 'lukewarm',
       editingHeadline: 'h',
     });
-    const { getByTestId } = render(<WriteScreen />);
-    // None of the sentiment / confidence buttons should report `selected`.
+    const { getByTestId, queryByTestId } = render(<WriteScreen />);
+    // None of the sentiment buttons should report `selected`.
     for (const s of ['positive', 'neutral', 'negative']) {
       expect(getByTestId(`write-sentiment-${s}`).props.accessibilityState).toMatchObject({
         selected: false,
       });
     }
+    // Confidence has no UI surface anymore; the unknown
+    // `editingConfidence: 'lukewarm'` simply falls through to the
+    // form's seeded default ('moderate') without rendering pills.
     for (const c of ['certain', 'high', 'moderate', 'speculative']) {
-      expect(getByTestId(`write-confidence-${c}`).props.accessibilityState).toMatchObject({
-        selected: false,
-      });
+      expect(queryByTestId(`write-confidence-${c}`)).toBeNull();
     }
   });
 
@@ -419,9 +419,9 @@ describe('WriteScreen — initial state seeding', () => {
     expect(getByTestId('write-sentiment-positive').props.accessibilityState).toMatchObject({
       selected: true,
     });
-    expect(getByTestId('write-confidence-high').props.accessibilityState).toMatchObject({
-      selected: true,
-    });
+    // Confidence is no longer surfaced in the form — the seeded
+    // 'high' value carries through silently to the wire on republish
+    // (see write_form_data.test.ts for the validator-level pin).
   });
 });
 
@@ -458,19 +458,22 @@ describe('WriteScreen — accessibility (TN-TEST-061 surface)', () => {
   });
 });
 
-describe('WriteScreen — last-used picker (TN-V2-REV-007)', () => {
-  it('Advanced toggle is rendered (collapsed by default)', () => {
-    const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
-    expect(getByTestId('write-advanced-toggle')).toBeTruthy();
-    // Collapsed-by-default: the section content is NOT rendered.
-    expect(queryByTestId('write-advanced-section')).toBeNull();
+describe('WriteScreen — last-used picker (TN-V2-REV-007, in Step 2)', () => {
+  // The form is now a 3-step wizard. Step 2 ("Your experience") owns
+  // the last-used bucket picker. Tests navigate via the stepper; the
+  // step-1 publish gate does NOT block stepper navigation (users are
+  // free to peek at later steps; the Publish CTA's disabled state
+  // remains the load-bearing gate).
+  it('last-used picker is NOT rendered on Step 1 (the default)', () => {
+    const { queryByTestId } = render(<WriteScreen subjectTitle="X" />);
+    expect(queryByTestId('write-step-2')).toBeNull();
     expect(queryByTestId('write-last-used-today')).toBeNull();
   });
 
-  it('tapping Advanced expands the section and reveals the bucket buttons', () => {
+  it('navigating to Step 2 reveals the bucket buttons', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
-    expect(getByTestId('write-advanced-section')).toBeTruthy();
+    fireEvent.press(getByTestId('write-additional-data-pill'));
+    expect(getByTestId('write-step-2')).toBeTruthy();
     expect(getByTestId('write-last-used-today')).toBeTruthy();
     expect(getByTestId('write-last-used-past_week')).toBeTruthy();
     expect(getByTestId('write-last-used-past_month')).toBeTruthy();
@@ -479,25 +482,26 @@ describe('WriteScreen — last-used picker (TN-V2-REV-007)', () => {
     expect(getByTestId('write-last-used-over_a_year')).toBeTruthy();
   });
 
-  it('tapping Advanced again collapses the section', () => {
+  it('Done closes the wizard modal and the picker is no longer reachable', () => {
     const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
-    expect(getByTestId('write-advanced-section')).toBeTruthy();
-    fireEvent.press(getByTestId('write-advanced-toggle'));
-    expect(queryByTestId('write-advanced-section')).toBeNull();
+    fireEvent.press(getByTestId('write-additional-data-pill'));
+    expect(getByTestId('write-step-2')).toBeTruthy();
+    // The wizard's "Done" button closes the modal, returning to
+    // Step 1. After it closes, Step 2 content is no longer in the
+    // tree (Modal `visible={false}` unmounts its children).
+    fireEvent.press(getByTestId('write-additional-data-done'));
+    expect(queryByTestId('write-step-2')).toBeNull();
   });
 
   it('tap-to-select then tap-to-clear on the same bucket (toggle semantic)', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     const todayBtn = getByTestId('write-last-used-today');
-    // Initially: nothing selected.
     expect(todayBtn.props.accessibilityState).toMatchObject({ selected: false });
     fireEvent.press(todayBtn);
     expect(getByTestId('write-last-used-today').props.accessibilityState).toMatchObject({
       selected: true,
     });
-    // Tap again → clears.
     fireEvent.press(getByTestId('write-last-used-today'));
     expect(getByTestId('write-last-used-today').props.accessibilityState).toMatchObject({
       selected: false,
@@ -506,7 +510,7 @@ describe('WriteScreen — last-used picker (TN-V2-REV-007)', () => {
 
   it('selecting a different bucket replaces the previous selection (radio-like)', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.press(getByTestId('write-last-used-today'));
     expect(getByTestId('write-last-used-today').props.accessibilityState).toMatchObject({
       selected: true,
@@ -520,22 +524,35 @@ describe('WriteScreen — last-used picker (TN-V2-REV-007)', () => {
     });
   });
 
-  it('Advanced toggle has accessibilityRole=button + expanded state', () => {
+  it('Add additional data pill exposes accessibilityRole=button', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    const toggle = getByTestId('write-advanced-toggle');
-    expect(toggle.props.accessibilityRole).toBe('button');
-    expect(toggle.props.accessibilityState).toMatchObject({ expanded: false });
-    fireEvent.press(toggle);
-    expect(getByTestId('write-advanced-toggle').props.accessibilityState).toMatchObject({
-      expanded: true,
-    });
+    const pill = getByTestId('write-additional-data-pill');
+    expect(pill.props.accessibilityRole).toBe('button');
+    expect(pill.props.accessibilityLabel).toBe('Add additional details');
+  });
+});
+
+describe('WriteScreen — subject anchor card', () => {
+  it('renders the anchor card when subjectTitle is provided', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="Aeron chair" />);
+    expect(getByTestId('subject-anchor')).toBeTruthy();
+  });
+
+  it('subject anchor surfaces the subject title in the header (replaces "About:" line)', () => {
+    const { getByTestId, queryByText } = render(
+      <WriteScreen subjectTitle="Aeron chair" />,
+    );
+    expect(getByTestId('subject-anchor')).toBeTruthy();
+    // The old "About: Aeron chair" line is gone — pin against
+    // resurrection. The anchor renders the title in its own card.
+    expect(queryByText(/About:/)).toBeNull();
   });
 });
 
 describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
   it('renders use-case row inside Advanced section (default vocabulary when no subject)', () => {
     const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     expect(getByTestId('write-use-case-row')).toBeTruthy();
     // Default vocabulary: ['everyday', 'professional', 'travel', 'family', 'kids'].
     expect(getByTestId('write-use-case-everyday')).toBeTruthy();
@@ -549,7 +566,7 @@ describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
 
   it('tap-to-select then tap-to-clear (toggle semantic)', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     const everyday = getByTestId('write-use-case-everyday');
     expect(everyday.props.accessibilityState).toMatchObject({ selected: false });
     fireEvent.press(everyday);
@@ -564,7 +581,7 @@ describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
 
   it('multi-select up to 3 tags', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.press(getByTestId('write-use-case-everyday'));
     fireEvent.press(getByTestId('write-use-case-professional'));
     fireEvent.press(getByTestId('write-use-case-travel'));
@@ -581,7 +598,7 @@ describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
 
   it('greys out unselected tags when at the 3-tag cap', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.press(getByTestId('write-use-case-everyday'));
     fireEvent.press(getByTestId('write-use-case-professional'));
     fireEvent.press(getByTestId('write-use-case-travel'));
@@ -596,7 +613,7 @@ describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
 
   it('removing a tag while at the cap re-enables disabled tags', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.press(getByTestId('write-use-case-everyday'));
     fireEvent.press(getByTestId('write-use-case-professional'));
     fireEvent.press(getByTestId('write-use-case-travel'));
@@ -614,7 +631,7 @@ describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
 
   it('use-case picker buttons have a11y role + label', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     const btn = getByTestId('write-use-case-everyday');
     expect(btn.props.accessibilityRole).toBe('button');
     expect(btn.props.accessibilityLabel).toBe('Everyday');
@@ -624,13 +641,13 @@ describe('WriteScreen — use-case picker (TN-V2-REV-006)', () => {
 describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
   it('renders the search input inside Advanced section', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     expect(getByTestId('write-alt-search-input')).toBeTruthy();
   });
 
   it('hides chip list when no alternatives are added', () => {
     const { queryByTestId, getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     expect(queryByTestId('write-alt-chips')).toBeNull();
   });
 
@@ -641,7 +658,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
     const { getByTestId, findByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
     expect(search).toHaveBeenCalledWith('leap');
     // Wait for the result row to render after the promise resolves.
@@ -655,7 +672,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
     const { getByTestId, findByTestId, queryByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
     const row = await findByTestId('write-alt-result-sub-leap');
     fireEvent.press(row);
@@ -674,7 +691,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
     const { getByTestId, findByTestId, queryByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.changeText(getByTestId('write-alt-search-input'), 'a');
     fireEvent.press(await findByTestId('write-alt-result-sub-a'));
     expect(getByTestId('write-alt-chip-0')).toBeTruthy();
@@ -698,7 +715,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
     const { getByTestId, queryByTestId } = render(
       <WriteScreen subjectTitle="X" initial={initial} />,
     );
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     expect(queryByTestId('write-alt-search-input')).toBeNull();
     expect(getByTestId('write-alt-cap-hint')).toBeTruthy();
   });
@@ -716,7 +733,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
     const { getByTestId, findByTestId } = render(
       <WriteScreen subjectTitle="X" initial={initial} searchAlternatives={search} />,
     );
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
     const row = await findByTestId('write-alt-result-sub-leap');
     expect(row.props.accessibilityState).toMatchObject({ disabled: true });
@@ -727,14 +744,14 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
     const { getByTestId, findByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.changeText(getByTestId('write-alt-search-input'), 'leap');
     expect(await findByTestId('write-alt-search-error')).toBeTruthy();
   });
 
   it('with searchAlternatives prop omitted, results list stays empty', () => {
     const { getByTestId, queryByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     fireEvent.changeText(getByTestId('write-alt-search-input'), 'anything');
     expect(queryByTestId('write-alt-results')).toBeNull();
     expect(queryByTestId('write-alt-search-error')).toBeNull();
@@ -763,7 +780,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008) — stale-response
     const { getByTestId, findByTestId, queryByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
-    fireEvent.press(getByTestId('write-advanced-toggle'));
+    fireEvent.press(getByTestId('write-additional-data-pill'));
     // Fire the slow query first.
     fireEvent.changeText(getByTestId('write-alt-search-input'), 'le');
     // Fire the fast query — overwrites the latest-query ref.
@@ -782,5 +799,80 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008) — stale-response
     expect(queryByTestId('write-alt-result-sub-leap')).toBeNull();
     // Fast result still visible.
     expect(getByTestId('write-alt-result-sub-seat')).toBeTruthy();
+  });
+});
+
+describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
+  // The InlineReviewDraftCard pushes /trust/write?draftId=…&threadId=…
+  // when the user taps "Edit in form". WriteScreen reads those params,
+  // looks up the lifecycle in the brain thread store, and uses the
+  // drafted values as initial form state. Pins the contract between
+  // the chat card and the form so the hand-off doesn't drop the user's
+  // progress (the bug this branch was added for).
+  let useLocalSearchParamsSpy: jest.SpyInstance | undefined;
+  afterEach(() => {
+    useLocalSearchParamsSpy?.mockRestore();
+    useLocalSearchParamsSpy = undefined;
+  });
+
+  function mockParams(params: Record<string, string>): void {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const expoRouter = require('expo-router');
+    useLocalSearchParamsSpy = jest
+      .spyOn(expoRouter, 'useLocalSearchParams')
+      .mockReturnValue(params);
+  }
+
+  it('pre-fills the form from a review-draft lifecycle', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const thread = require('@dina/brain/src/chat/thread');
+    thread.resetThreads();
+    const lifecycle = {
+      kind: 'review_draft' as const,
+      status: 'ready' as const,
+      draftId: 'draft-abc',
+      subject: {
+        kind: 'product',
+        name: 'Aeron Chair',
+        did: '',
+        uri: '',
+        identifier: '',
+      },
+      values: {
+        ...emptyWriteFormState(),
+        subject: {
+          kind: 'product',
+          name: 'Aeron Chair',
+          did: '',
+          uri: '',
+          identifier: '',
+        },
+        sentiment: 'positive',
+        headline: 'Comfortable for daily work',
+        body: 'I sit in this every day for 8 hours.',
+        useCases: ['professional'],
+      },
+    };
+    thread.addLifecycleMessage(
+      'main',
+      'Drafted a review of Aeron Chair.',
+      lifecycle,
+    );
+
+    mockParams({ draftId: 'draft-abc', threadId: 'main' });
+    const { getByDisplayValue } = render(<WriteScreen />);
+    expect(getByDisplayValue('Comfortable for daily work')).toBeTruthy();
+    expect(getByDisplayValue('I sit in this every day for 8 hours.')).toBeTruthy();
+  });
+
+  it('falls through to the empty form when the draft id is unknown', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const thread = require('@dina/brain/src/chat/thread');
+    thread.resetThreads();
+    mockParams({ draftId: 'draft-missing', threadId: 'main' });
+    // Form opens — its render assertions live elsewhere; this spec only
+    // pins that a stale link doesn't crash.
+    const { getByTestId } = render(<WriteScreen />);
+    expect(getByTestId('write-publish')).toBeTruthy();
   });
 });

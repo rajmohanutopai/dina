@@ -13,16 +13,25 @@ import * as Keychain from 'react-native-keychain';
 import { AISDKAdapter } from '@dina/brain/src/llm/adapters/aisdk';
 import { GeminiGenaiAdapter } from '@dina/brain/src/llm/adapters/gemini_genai';
 import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
+import { getProviderTiers } from '@dina/brain/src/llm/provider_config';
 
 export type ProviderType = 'openai' | 'gemini';
+
+/**
+ * Model tier for a given provider — primary (default for chat / agentic
+ * /ask), lite (cheap classification calls: compose-context, intent,
+ * guard-scan), heavy (multi-step reasoning). Tier values are sourced
+ * from `@dina/brain`'s `getProviderTiers`, which mirrors home-node
+ * `models.json` (single source of truth across stacks). Callers that
+ * just want chat semantics can omit `tier` — defaults to 'primary'.
+ */
+export type LLMTier = 'primary' | 'lite' | 'heavy';
 
 export interface ProviderInfo {
   type: ProviderType;
   label: string;
   description: string;
   keyPrefix: string;
-  defaultModel: string;
-  models: string[];
 }
 
 export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
@@ -31,42 +40,39 @@ export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
     label: 'OpenAI',
     description: 'GPT-5.4, GPT-5 mini',
     keyPrefix: 'sk-',
-    // Aligned with home-node `models.json` (primary=gpt-5.4, lite=gpt-5-mini).
-    defaultModel: 'gpt-5.4',
-    models: ['gpt-5.4', 'gpt-5-mini'],
   },
   gemini: {
     type: 'gemini',
     label: 'Google Gemini',
     description: 'Gemini 3.1 Pro',
     keyPrefix: 'AIza',
-    // Default: `gemini-3.1-pro-preview` — the production target, aligned
-    // with the home-node `models.json`. It's a **thinking** model so
-    // tool-use responses include a `thought_signature` that MUST be
-    // echoed back verbatim on the next turn, or the API rejects with
-    // "Function call is missing a thought_signature". The
-    // `@ai-sdk/google` adapter has been landing round-trip fixes for
-    // this over several 3.0.x releases; if the agentic loop here
-    // drops the signature at the ChatResponse → next-turn boundary,
-    // that's a bug we should fix (task 452's fake-LLM test makes the
-    // round-trip visible to Jest).
-    //
-    // Fallbacks kept for operator override via the Settings UI:
-    // `gemini-3.1-pro-preview-customtools` is the tool-use variant
-    // that waives thought-signature round-trip (use if the plain
-    // 3.1-pro-preview hits the round-trip bug); flash/lite previews
-    // + 2.5 for older-but-stable routes.
-    defaultModel: 'gemini-3.1-pro-preview',
-    models: [
-      'gemini-3.1-pro-preview',
-      'gemini-3.1-pro-preview-customtools',
-      'gemini-3.1-flash-preview',
-      'gemini-3.1-flash-lite-preview',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-    ],
   },
 };
+
+export interface CreateProviderOptions {
+  /** Tier to pick from `getProviderTiers(provider)`. Defaults to 'primary'. */
+  readonly tier?: LLMTier;
+  /**
+   * Explicit model id override. Wins over `tier` when set — preserves
+   * the Settings-side per-user model preference path. Undefined falls
+   * back to the tier lookup.
+   */
+  readonly modelId?: string;
+}
+
+/**
+ * Resolve the model id for a provider call. Explicit `modelId` wins;
+ * otherwise look up `getProviderTiers(provider)[tier]`. Centralises the
+ * tier→model mapping so `createModel` and `createLLMProvider` stay in
+ * sync and the rest of the app never hardcodes a model string.
+ */
+function resolveModelId(provider: ProviderType, opts: CreateProviderOptions): string {
+  if (typeof opts.modelId === 'string' && opts.modelId.length > 0) {
+    return opts.modelId;
+  }
+  const tier = opts.tier ?? 'primary';
+  return getProviderTiers(provider)[tier];
+}
 
 const KEYCHAIN_SERVICE_PREFIX = 'dina.llm.';
 
@@ -160,13 +166,12 @@ export function validateKeyFormat(provider: ProviderType, key: string): string |
  *  For multi-turn tool-use, use `createLLMProvider` instead. */
 export async function createModel(
   provider: ProviderType,
-  modelId?: string,
+  opts: CreateProviderOptions = {},
 ): Promise<LanguageModel | null> {
   const apiKey = await getApiKey(provider);
   if (!apiKey) return null;
 
-  const info = PROVIDERS[provider];
-  const model = modelId ?? info.defaultModel;
+  const model = resolveModelId(provider, opts);
 
   switch (provider) {
     case 'openai': {
@@ -202,13 +207,12 @@ export async function createModel(
  */
 export async function createLLMProvider(
   provider: ProviderType,
-  modelId?: string,
+  opts: CreateProviderOptions = {},
 ): Promise<LLMProvider | null> {
   const apiKey = await getApiKey(provider);
   if (!apiKey) return null;
 
-  const info = PROVIDERS[provider];
-  const model = modelId ?? info.defaultModel;
+  const model = resolveModelId(provider, opts);
 
   switch (provider) {
     case 'openai': {

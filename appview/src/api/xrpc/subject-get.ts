@@ -7,7 +7,7 @@ import {
   subjects,
   subjectScores,
 } from '@/db/schema/index.js'
-import { computeGraphContext } from '@/db/queries/graph.js'
+import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
 
 /**
@@ -270,7 +270,7 @@ export async function subjectGet(
 
   // Phase 3 — viewer's graph (depth ≤ 2 covers contacts + extended).
   // Strangers are inferred as anyone outside the graph.
-  const graph = await computeGraphContext(db, viewerDid, 2)
+  const graph = await getCachedGraphContext(db, viewerDid, 2)
   const depthByDid = new Map<string, number>()
   for (const node of graph.nodes) {
     if (node.did === viewerDid) continue // root, not a reviewer band

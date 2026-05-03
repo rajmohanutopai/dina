@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { eq, and, desc, gte, lte, lt, or, sql, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { attestations, subjects, subjectScores, didProfiles } from '@/db/schema/index.js'
-import { computeGraphContext } from '@/db/queries/graph.js'
+import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
 import type { SearchResponse } from '@/shared/types/api-types.js'
 
@@ -500,7 +500,7 @@ export async function search(
   // network-feed.ts:87-89.
   let oneHopDids: string[] = []
   if (viewerDid) {
-    const graph = await computeGraphContext(db, viewerDid, 1)
+    const graph = await getCachedGraphContext(db, viewerDid, 1)
     oneHopDids = graph.nodes.filter((n) => n.depth === 1).map((n) => n.did)
   }
   if (oneHopDids.length > 0) {

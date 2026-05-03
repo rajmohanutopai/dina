@@ -58,7 +58,9 @@ import { colors, fonts, spacing, radius } from '../../src/theme';
 import { FacetBarView } from '../../src/trust/components/facet_bar_view';
 import { FirstRunModalView } from '../../src/trust/components/first_run_modal_view';
 import { SubjectCardView } from '../../src/trust/components/subject_card_view';
+import { shortHandle } from '../../src/trust/handle_display';
 import { useNetworkFeed } from '../../src/trust/runners/use_network_feed';
+import { useAuthoredAttestations } from '../../src/trust/runners/use_authored_attestations';
 import { useReviewerProfile } from '../../src/trust/runners/use_reviewer_profile';
 import { deriveReviewerProfileDisplay } from '../../src/trust/reviewer_profile_data';
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
@@ -132,6 +134,20 @@ export interface TrustFeedScreenProps {
    * implementation pushes `/trust/reviewer/<myDid>`.
    */
   onOpenMyProfile?: () => void;
+  /**
+   * Fired when the user taps the "Outbox" footer link. Default
+   * implementation pushes `/trust/outbox`. The screen is otherwise
+   * unreachable from anywhere else in the app — neither the global
+   * hamburger menu (Vault / Reminders / Settings / Help) nor any
+   * drill-down surfaces it.
+   */
+  onOpenOutbox?: () => void;
+  /**
+   * Fired when the user taps the "Namespaces" footer link. Default
+   * implementation pushes `/trust/namespace`. Same reachability
+   * argument as `onOpenOutbox`.
+   */
+  onOpenNamespaces?: () => void;
 }
 
 /**
@@ -199,6 +215,20 @@ export default function TrustFeedScreen(
     enabled: !isSelfControlled && viewerDid !== '',
     retryNonce: feedNonce,
   });
+  // Authored attestations — same source the reviewer profile screen
+  // uses to render the "Reviews you wrote" list. We fetch it here so
+  // the self-card's "Reviews" stat tracks the count of *displayable*
+  // rows rather than the API's unfiltered `reviewerStats.totalAttestationsBy`.
+  // Pre-F9 the two diverged whenever an authored hit had a missing
+  // subjectId (dropped by `deriveAuthoredAttestationRows`) — the API
+  // said 6, the reviewer profile (post-F1) said 5, but the self-card
+  // here still showed 6 because it wasn't on the F1 fix path. Same
+  // pattern, same data source, count consistency restored.
+  const selfAuthored = useAuthoredAttestations({
+    authorDid: viewerDid,
+    enabled: !isSelfControlled && viewerDid !== '',
+    retryNonce: feedNonce,
+  });
   // Refetch on focus so a freshly-published attestation by a contact
   // shows up the next time the user lands here — same pattern as the
   // other trust runners (search / subject detail / reviewer profile).
@@ -217,17 +247,24 @@ export default function TrustFeedScreen(
   const autoSelfDisplay: SelfProfileCardData | null = React.useMemo(() => {
     if (self.profile === null) return null;
     const d = deriveReviewerProfileDisplay(self.profile);
+    // Prefer the displayable-rows count for `reviewsWritten` once
+    // the authored list has loaded (rows.length > 0). Same fallback
+    // pattern as `reviewer/[did].tsx` — when the rows are still
+    // loading or genuinely zero, use the API summary so the stat
+    // doesn't flash "0".
+    const reviewsWrittenDisplay =
+      selfAuthored.rows.length > 0 ? selfAuthored.rows.length : d.reviewsWritten;
     return {
       handle: d.handle,
       // Surface the numeric score only when the cold-start threshold
       // is met (`hasNumericScore`); otherwise render as `null` →
       // em-dash. Doesn't colour-code or label-shame either way.
       scoreDisplay: d.hasNumericScore ? d.scoreDisplay : null,
-      reviewsWritten: d.reviewsWritten,
+      reviewsWritten: reviewsWrittenDisplay,
       vouchCount: d.vouchCount,
       endorsementCount: d.endorsementCount,
     };
-  }, [self.profile]);
+  }, [self.profile, selfAuthored.rows]);
   const {
     q = isSearchControlled ? '' : localQ,
     onQChange = isSearchControlled ? undefined : setLocalQ,
@@ -254,6 +291,12 @@ export default function TrustFeedScreen(
         pathname: '/trust/reviewer/[did]',
         params: { did: viewerDid },
       });
+    },
+    onOpenOutbox = () => {
+      router.push('/trust/outbox');
+    },
+    onOpenNamespaces = () => {
+      router.push('/trust/namespace');
     },
   } = props;
 
@@ -284,7 +327,9 @@ export default function TrustFeedScreen(
         >
           <View style={styles.selfCardHeader}>
             <Text style={styles.selfCardHeading}>
-              {selfDisplay.handle ?? 'Your trust profile'}
+              {selfDisplay.handle !== null
+                ? shortHandle(selfDisplay.handle)
+                : 'Your trust profile'}
             </Text>
             <Ionicons
               name="chevron-forward"
@@ -424,6 +469,36 @@ export default function TrustFeedScreen(
           ))}
         </ScrollView>
       )}
+
+      {/* ─── Footer links — Outbox + Namespaces ────────────────────────
+          Trust-specific routes that aren't reachable from anywhere
+          else in the app. The global hamburger menu carries cross-
+          surface destinations (Vault / Reminders / Settings / Help)
+          and shouldn't be polluted with per-tab affordances; instead
+          we surface them as a small footer row pinned to the bottom
+          of the Trust home so the user always has a path in.
+          Light visual weight: muted text, no chrome. */}
+      <View style={styles.footerRow} testID="trust-feed-footer">
+        <Pressable
+          onPress={onOpenOutbox}
+          hitSlop={8}
+          accessibilityRole="link"
+          accessibilityLabel="Open outbox"
+          testID="trust-feed-footer-outbox"
+        >
+          <Text style={styles.footerLink}>Outbox</Text>
+        </Pressable>
+        <Text style={styles.footerSeparator}>·</Text>
+        <Pressable
+          onPress={onOpenNamespaces}
+          hitSlop={8}
+          accessibilityRole="link"
+          accessibilityLabel="Open namespaces"
+          testID="trust-feed-footer-namespaces"
+        >
+          <Text style={styles.footerLink}>Namespaces</Text>
+        </Pressable>
+      </View>
 
       {/* ─── First-run orientation modal (absolute overlay) ───────── */}
       <FirstRunModalView
@@ -594,5 +669,24 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
     gap: spacing.md,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  footerLink: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  footerSeparator: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textMuted,
   },
 });

@@ -62,7 +62,7 @@ export function useNetworkFeed(opts: UseNetworkFeedOptions): NetworkFeedState {
     networkFeed(viewerDid, 25)
       .then((response) => {
         if (cancelled) return;
-        const items = mapToFeedItems(response.attestations);
+        const items = mapToFeedItems(response.attestations, viewerDid);
         setState({ feed: items, isLoading: false, error: null });
       })
       .catch((err: unknown) => {
@@ -92,7 +92,10 @@ export function useNetworkFeed(opts: UseNetworkFeedOptions): NetworkFeedState {
  * doesn't carry it), so the card renders without a band badge —
  * matches the search-result card behaviour.
  */
-function mapToFeedItems(rows: ReadonlyArray<NetworkFeedAttestation>): FeedItem[] {
+function mapToFeedItems(
+  rows: ReadonlyArray<NetworkFeedAttestation>,
+  viewerDid: string,
+): FeedItem[] {
   const out: FeedItem[] = [];
   for (const row of rows) {
     if (row.subjectId === null) continue;
@@ -116,7 +119,10 @@ function mapToFeedItems(rows: ReadonlyArray<NetworkFeedAttestation>): FeedItem[]
       reviewCount: 1,
       reviews: [review],
     };
-    out.push({ subjectId: row.subjectId, display: deriveSubjectCard(input) });
+    out.push({
+      subjectId: row.subjectId,
+      display: deriveSubjectCard(input, { viewerDid }),
+    });
   }
   return out;
 }

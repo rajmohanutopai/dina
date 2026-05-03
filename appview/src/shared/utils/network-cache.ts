@@ -60,6 +60,22 @@ export interface NetworkCacheOptions {
   max?: number
   /** Override the default 60-second TTL (ms). Tests use shorter values. */
   ttlMs?: number
+  /**
+   * Cache-hit callback. Fires synchronously on every `getOrFetch` call
+   * that finds a fresh entry. Domain-namespaced metrics (e.g.
+   * `ingester.graph_cache.hit`) live in the consumer; this primitive
+   * stays domain-agnostic. Argument is the full cache key — useful
+   * for per-viewer hit-rate dashboards if the consumer wants to
+   * derive labels from the structured prefix. Defaults to a no-op.
+   */
+  onHit?: (key: string) => void
+  /**
+   * Cache-miss callback. Fires synchronously on every `getOrFetch`
+   * call that misses (the underlying `fetcher` is about to run).
+   * Same shape as `onHit` — consumer namespaces the metric. Defaults
+   * to a no-op.
+   */
+  onMiss?: (key: string) => void
 }
 
 /**
@@ -133,12 +149,19 @@ export function createNetworkCache<V extends {}>(
   // entry that was already gone", which is a no-op.
   const viewerKeys = new Map<string, Set<string>>()
 
+  const onHit = options.onHit
+  const onMiss = options.onMiss
+
   return {
     cache,
     async getOrFetch(viewerDid, maxDepth, domain, fetcher) {
       const key = cacheKey(viewerDid, maxDepth, domain)
       const cached = cache.get(key)
-      if (cached !== undefined) return cached
+      if (cached !== undefined) {
+        if (onHit !== undefined) onHit(key)
+        return cached
+      }
+      if (onMiss !== undefined) onMiss(key)
       const fresh = await fetcher()
       cache.set(key, fresh)
       let keys = viewerKeys.get(viewerDid)

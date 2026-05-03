@@ -33,6 +33,7 @@ import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
+import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 
 // Render message shape used by the screen's bubble logic. The chat UI
@@ -49,6 +50,7 @@ type UiMessage = ChatMessage & {
     | 'service-approval'
     | 'service-query'
     | 'ask-pending'
+    | 'review-draft'
     | 'nudge'
     | 'reminder'
     | 'briefing';
@@ -82,6 +84,14 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
     lifecycle.status === 'pending'
   ) {
     return 'ask-pending';
+  }
+  // review_draft card — chat-driven `/ask write a review of <X>`
+  // flow. Renders editable sentiment / headline / body + Publish.
+  // No status gate: every state has a card variant (drafting →
+  // ready → publishing → published / discarded / failed) so the
+  // dispatch always lands on the inline component.
+  if (m.type === 'dina' && lifecycle?.kind === 'review_draft') {
+    return 'review-draft';
   }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
@@ -206,6 +216,14 @@ export default function ChatScreen() {
     // LLM-narrative + workflow-event-push double message.
     if (item.displayType === 'service-query') {
       return <InlineServiceQueryCard message={item} />;
+    }
+    // review_draft card — chat-driven `/ask write a review of <X>`
+    // flow. Editable sentiment / headline / body inline; Publish
+    // calls injectAttestation directly. State machine drafting →
+    // ready → publishing → published / discarded / failed lives on
+    // the lifecycle metadata, the card renders the matching variant.
+    if (item.displayType === 'review-draft') {
+      return <InlineReviewDraftCard message={item} />;
     }
     // ask_pending placeholder — Dina hasn't returned the answer in
     // the fast-path window. Render as animated typing dots inside a

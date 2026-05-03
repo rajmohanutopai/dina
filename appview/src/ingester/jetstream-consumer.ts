@@ -25,6 +25,10 @@ import {
   verifyNamespaceSignature,
   type NamespaceGateContext,
 } from './namespace-signature-gate.js'
+import {
+  checkPdsSuspension,
+  type PdsSuspensionGateContext,
+} from './pds-suspension-gate.js'
 import { env } from '@/config/env.js'
 import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
 import { ingesterCursor } from '@/db/schema/index.js'
@@ -166,6 +170,17 @@ export class JetstreamConsumer {
    */
   private namespaceGate: NamespaceGateContext | null = null
 
+  /**
+   * PDS-suspension gate context (TN-OPS-003 ingester hookup).
+   * Same DI shape as `namespaceGate` — null when no PLC resolver
+   * is configured (gate skipped, V1 fresh-deployment posture).
+   * Production deployments inject the gate during boot via
+   * `setPdsSuspensionGate()`. The gate runs on every record-bearing
+   * commit AFTER the feature-flag gate and BEFORE rate-limit, so
+   * suspended hosts don't even consume rate-limit budget.
+   */
+  private pdsSuspensionGate: PdsSuspensionGateContext | null = null
+
   constructor(private db: DrizzleDB) {}
 
   /**
@@ -178,6 +193,17 @@ export class JetstreamConsumer {
    */
   setNamespaceGate(gate: NamespaceGateContext | null): void {
     this.namespaceGate = gate
+  }
+
+  /**
+   * Inject the PDS-suspension gate's context (TN-OPS-003 ingester
+   * hookup). Same DI shape as `setNamespaceGate`. Production
+   * deployments wire this with the same DID-doc cache + resolver
+   * the namespace gate uses; both gates share the cache so a record
+   * pays at most one DID-doc resolution per ingest event.
+   */
+  setPdsSuspensionGate(gate: PdsSuspensionGateContext | null): void {
+    this.pdsSuspensionGate = gate
   }
 
   /**
@@ -381,6 +407,24 @@ export class JetstreamConsumer {
         detail: { operation: commit.operation },
       })
       return
+    }
+
+    // PDS-suspension gate (TN-OPS-003 hookup). Runs AFTER the
+    // global feature-flag gate (the kill-switch wins) and BEFORE
+    // the per-DID rate-limit (suspended hosts shouldn't consume
+    // rate-limit budget). Skipped entirely when no PLC resolver
+    // has been wired — V1 fresh-deployment posture.
+    if (this.pdsSuspensionGate !== null) {
+      const result = await checkPdsSuspension(this.pdsSuspensionGate, did)
+      if (!result.ok) {
+        await recordRejection(rejectionCtx, {
+          atUri,
+          did,
+          reason: result.reason,
+          detail: result.detail,
+        })
+        return
+      }
     }
 
     if (isRateLimited(did)) {

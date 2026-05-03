@@ -291,6 +291,21 @@ export default function ReviewerProfileScreen(
     };
   }, [authoredRows, profile]);
 
+  // Reviews-written count: prefer the displayable row count once
+  // they're loaded so the stat agrees with the list and sentiment
+  // chips. The API's `reviewerStats.totalAttestationsBy` is unfiltered,
+  // but `deriveAuthoredAttestationRows` drops hits with a missing
+  // `subjectId` (a row pointing nowhere is worse than no row), so the
+  // raw API count can exceed what the user actually sees. Same
+  // fall-back pattern as `authoredCounts` above.
+  const reviewsWrittenDisplay = React.useMemo<number>(() => {
+    if (Array.isArray(authoredRows) && authoredRows.length > 0) {
+      return authoredRows.length;
+    }
+    if (profile === null) return 0;
+    return profile.reviewerStats.totalAttestationsBy;
+  }, [authoredRows, profile]);
+
   if (error !== null) {
     return (
       <View style={styles.container} testID="reviewer-profile-error">
@@ -443,7 +458,7 @@ export default function ReviewerProfileScreen(
         <StatCell
           label="Reviews written"
           testKey="attestations"
-          value={display.reviewsWritten}
+          value={reviewsWrittenDisplay}
         />
         <StatCell label="Vouches" testKey="vouches" value={display.vouchCount} />
         <StatCell

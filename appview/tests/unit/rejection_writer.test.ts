@@ -136,6 +136,7 @@ describe('recordRejection — TN-ING-005', () => {
       'schema_invalid',
       'namespace_disabled',
       'feature_off',
+      'pds_suspended',
     ]
     const { ctx, captures } = stubCtx()
     for (const reason of reasons) {

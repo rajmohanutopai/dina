@@ -41,11 +41,15 @@ describe('11.1 Schema Correctness', () => {
     expect(result.rows[0].ok).toBe(1)
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0539", "section": "01", "sectionName": "General", "title": "IT-DB-002: all 31 tables exist"}
-  it('IT-DB-002: all 31 tables exist', async () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0539", "section": "01", "sectionName": "General", "title": "IT-DB-002: all 34 tables exist"}
+  it('IT-DB-002: all 34 tables exist', async () => {
     // Description: Query information_schema for all expected tables
-    // Expected: 27 baseline + ingest_rejections (TN-DB-005) + cosig_requests (TN-DB-003)
-    //           + trust_v1_params (TN-DB-004) + appview_config (TN-FLAG-001).
+    // Expected: 27 baseline + ingest_rejections (TN-DB-005) + cosig_requests
+    //           (TN-DB-003) + trust_v1_params (TN-DB-004) + appview_config
+    //           (TN-FLAG-001) + reviewer_namespace_scores (TN-DB-012 / Plan
+    //           §3.5 — per-(did, namespace) reviewer trust) + services
+    //           (TN-V2 service catalog) + suspended_pds_hosts (HIGH-13
+    //           PDS-suspension mechanism).
     const expectedTables = [
       'attestations', 'vouches', 'endorsements', 'flags', 'replies',
       'reactions', 'report_records', 'revocations', 'delegations', 'collections',
@@ -54,6 +58,7 @@ describe('11.1 Schema Correctness', () => {
       'mention_edges', 'tombstones', 'trust_edges', 'anomaly_events',
       'ingester_cursor', 'did_profiles', 'subject_scores', 'domain_scores',
       'ingest_rejections', 'cosig_requests', 'trust_v1_params', 'appview_config',
+      'reviewer_namespace_scores', 'services', 'suspended_pds_hosts',
     ]
 
     const result = await db.execute(sql`
@@ -66,7 +71,7 @@ describe('11.1 Schema Correctness', () => {
     for (const expected of expectedTables) {
       expect(tableNames).toContain(expected)
     }
-    expect(tableNames.length).toBe(31)
+    expect(tableNames.length).toBe(34)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0540", "section": "01", "sectionName": "General", "title": "IT-DB-003: attestations -- primary key on uri"}

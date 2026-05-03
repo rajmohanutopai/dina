@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { and, eq, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { flags, subjects } from '@/db/schema/index.js'
-import { computeGraphContext } from '@/db/queries/graph.js'
+import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 
 /**
  * `com.dina.trust.getNegativeSpace` (TN-V2-RANK-010 / Plan §6.X).
@@ -103,7 +103,7 @@ export async function getNegativeSpace(
 
   // Phase 1 — viewer's 1-hop contacts. Depth 1 covers everyone the
   // viewer has directly vouched / endorsed / positively attested.
-  const graph = await computeGraphContext(db, viewerDid, 1)
+  const graph = await getCachedGraphContext(db, viewerDid, 1)
   const oneHopDids = new Set<string>()
   for (const node of graph.nodes) {
     if (node.depth === 1 && node.did !== viewerDid) {

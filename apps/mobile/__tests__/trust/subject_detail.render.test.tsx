@@ -635,8 +635,15 @@ describe('SubjectDetailScreen — self-review band suppression', () => {
     expect(queryByText('rajmohanddc9')).toBeNull();
     // Band badge ("VERY LOW") is suppressed too.
     expect(queryByText('VERY LOW')).toBeNull();
-    // Row is rendered in the expected section (strangers since wire said so).
-    expect(getByTestId('subject-detail-section-strangers')).toBeTruthy();
+    // After the F4 fix the data layer reclassifies a self-authored
+    // ring='stranger' row back into the friends bucket when viewerDid
+    // matches, so the row lands in "Your network" — not "Strangers".
+    // The pre-fix behaviour rendered the row in `strangers` with the
+    // row-level isSelf guard masking the band visually; that left the
+    // section header + the `ringCounts` summary stating "1 from
+    // strangers" while the only row was the user's own. The data-layer
+    // guard fixes that header inconsistency too.
+    expect(getByTestId('subject-detail-section-friends')).toBeTruthy();
   });
 
   it('does NOT suppress the band when viewerDid is empty (degraded pre-boot path)', () => {
@@ -685,5 +692,186 @@ describe('SubjectDetailScreen — self-review band suppression', () => {
     );
     expect(getByText('Your review')).toBeTruthy();
     expect(queryByText('VERY LOW')).toBeNull();
+  });
+});
+
+describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
+  // Pre-fix: own-review rows had `accessibilityRole='text'` and no
+  // onPress, so the only path to amend was to back-navigate to the
+  // reviewer profile and use that screen's Edit button. Now self-rows
+  // are buttons that fire `onPressOwnReview` (default routes to the
+  // user's own reviewer profile).
+  it('fires onPressOwnReview when the user taps their own review row', () => {
+    const onPressOwnReview = jest.fn();
+    const { getByLabelText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({
+              ring: 'self',
+              reviewerDid: null,
+              reviewerName: 'You',
+              reviewerTrustScore: 0.05,
+              headline: 'Comfortable',
+            }),
+          ],
+        })}
+        viewerDid="did:plc:viewer"
+        onPressOwnReview={onPressOwnReview}
+      />,
+    );
+    fireEvent.press(getByLabelText('Your review — tap to edit'));
+    expect(onPressOwnReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('own review row carries accessibilityRole="button" so screen readers announce it', () => {
+    const { getByLabelText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' }),
+          ],
+        })}
+        viewerDid="did:plc:viewer"
+        onPressOwnReview={() => undefined}
+      />,
+    );
+    expect(getByLabelText('Your review — tap to edit').props.accessibilityRole).toBe('button');
+  });
+
+  it('row stays as text when onPressOwnReview is not provided (graceful)', () => {
+    const { getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' }),
+          ],
+        })}
+        viewerDid="did:plc:viewer"
+      />,
+    );
+    // The default-supplied `onPressOwnReview` from the screen
+    // wrapper IS provided in production routing, so the row is a
+    // button; this test pins that the screen falls back gracefully
+    // (button visible, headline still rendered) even with the test-
+    // injected handler explicitly stubbed away.
+    expect(getByText('Your review')).toBeTruthy();
+  });
+
+  // Pre-fix: the self-row was tappable (F2) but had no visible
+  // affordance — sighted users couldn't tell. The pill is a
+  // discoverability cue; the row's own Pressable is still the tap
+  // target (no nested Pressable) so we don't get tap-target
+  // ambiguity. Pin both: pill present on self, NOT present on
+  // other reviews (otherwise it'd suggest you can edit other
+  // people's reviews).
+  it('renders a visible "Edit" pill on the self-row so sighted users see the affordance', () => {
+    const { getByTestId, getByText } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' }),
+          ],
+        })}
+        viewerDid="did:plc:viewer"
+        onPressOwnReview={() => undefined}
+      />,
+    );
+    expect(getByTestId('subject-detail-self-edit-pill')).toBeTruthy();
+    expect(getByText('Edit')).toBeTruthy();
+  });
+
+  it('does NOT render the Edit pill on other reviewers\' rows', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({
+              ring: 'contacts',
+              reviewerDid: 'did:plc:someone-else',
+              reviewerName: 'Sancho',
+            }),
+          ],
+        })}
+        viewerDid="did:plc:viewer"
+        onPressOwnReview={() => undefined}
+      />,
+    );
+    expect(queryByTestId('subject-detail-self-edit-pill')).toBeNull();
+  });
+
+  // Pre-fix (F2 follow-up): the Edit pill was a non-interactive View;
+  // tapping it bubbled up to the row's own Pressable, which routed to
+  // the reviewer profile (not the editor). User reported "tap edit ->
+  // doesn't go to edit screen". The pill is now its own Pressable
+  // that fires `onPressOwnReviewEdit` with the tapped review, AND the
+  // row's `onPressOwnReview` does NOT also fire (RN's gesture
+  // responder delivers the touch to the innermost Pressable only).
+  it('fires onPressOwnReviewEdit (NOT onPressOwnReview) when the Edit pill is tapped', () => {
+    const onPressOwnReview = jest.fn();
+    const onPressOwnReviewEdit = jest.fn();
+    const { getByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({
+              ring: 'self',
+              reviewerDid: null,
+              reviewerName: 'You',
+              headline: 'Comfortable',
+              attestationUri: 'at://did:plc:viewer/com.dina.trust.attestation/abc',
+              body: 'Long form body text',
+              sentiment: 'positive',
+            }),
+          ],
+        })}
+        viewerDid="did:plc:viewer"
+        onPressOwnReview={onPressOwnReview}
+        onPressOwnReviewEdit={onPressOwnReviewEdit}
+      />,
+    );
+    fireEvent.press(getByTestId('subject-detail-self-edit-pill'));
+    expect(onPressOwnReviewEdit).toHaveBeenCalledTimes(1);
+    expect(onPressOwnReview).not.toHaveBeenCalled();
+    // Verify the callback receives the full review (including the
+    // editing fields the route handler needs to seed /trust/write).
+    const call = onPressOwnReviewEdit.mock.calls[0][0];
+    expect(call.attestationUri).toBe(
+      'at://did:plc:viewer/com.dina.trust.attestation/abc',
+    );
+    expect(call.headline).toBe('Comfortable');
+    expect(call.body).toBe('Long form body text');
+    expect(call.sentiment).toBe('positive');
+  });
+
+  it('Edit pill is inert (no callback) when the wire didn\'t carry an attestationUri', () => {
+    const onPressOwnReviewEdit = jest.fn();
+    const { getByTestId } = render(
+      <SubjectDetailScreen
+        subjectId="sub-1"
+        data={makeInput({
+          reviews: [
+            makeReview({
+              ring: 'self',
+              reviewerDid: null,
+              reviewerName: 'You',
+              headline: 'Comfortable',
+              // No attestationUri — synthetic / legacy wire shape.
+            }),
+          ],
+        })}
+        viewerDid="did:plc:viewer"
+        onPressOwnReview={() => undefined}
+        onPressOwnReviewEdit={onPressOwnReviewEdit}
+      />,
+    );
+    fireEvent.press(getByTestId('subject-detail-self-edit-pill'));
+    expect(onPressOwnReviewEdit).not.toHaveBeenCalled();
   });
 });

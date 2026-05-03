@@ -974,3 +974,50 @@ describe('deriveSubjectCard — region pill wired through (TN-V2-RANK-012)', () 
     expect(display.regionPill).toBeNull();
   });
 });
+
+describe('deriveSubjectCard — viewerDid override (F4 fix)', () => {
+  // Pin: when AppView ships a self-authored attestation tagged
+  // ring='stranger' (a known bucketing miss), the data layer must
+  // reclassify it to ring='self' so the friends pill, top-reviewer
+  // line, and the strangers count all stay correct. Without this
+  // guard the user's own handle renders as "— me · stranger · trust"
+  // on their own card.
+  const VIEWER = 'did:plc:viewer-self';
+
+  it('reclassifies ring="stranger" to "self" when reviewerDid matches viewerDid', () => {
+    const r = review({ ring: 'stranger', reviewerDid: VIEWER, reviewerName: 'me' });
+    const display = deriveSubjectCard(input({ reviews: [r] }), { viewerDid: VIEWER });
+    expect(display.topReviewer?.ring).toBe('self');
+  });
+
+  it('counts a self-authored "stranger" as a friend, not a stranger', () => {
+    const r = review({ ring: 'stranger', reviewerDid: VIEWER });
+    const display = deriveSubjectCard(input({ reviews: [r] }), { viewerDid: VIEWER });
+    expect(display.friendsPill?.friendsCount).toBe(1);
+    expect(display.friendsPill?.strangersCount).toBe(0);
+  });
+
+  it('leaves ring untouched when context omitted (pre-V2 caller)', () => {
+    const r = review({ ring: 'stranger', reviewerDid: VIEWER });
+    const display = deriveSubjectCard(input({ reviews: [r] }));
+    expect(display.topReviewer?.ring).toBe('stranger');
+  });
+
+  it('leaves ring untouched when viewerDid is empty string', () => {
+    const r = review({ ring: 'stranger', reviewerDid: VIEWER });
+    const display = deriveSubjectCard(input({ reviews: [r] }), { viewerDid: '' });
+    expect(display.topReviewer?.ring).toBe('stranger');
+  });
+
+  it('does not touch other reviewers when viewerDid is set', () => {
+    const r = review({ ring: 'stranger', reviewerDid: 'did:plc:other' });
+    const display = deriveSubjectCard(input({ reviews: [r] }), { viewerDid: VIEWER });
+    expect(display.topReviewer?.ring).toBe('stranger');
+  });
+
+  it('preserves ring when wire already says self (idempotent)', () => {
+    const r = review({ ring: 'self', reviewerDid: VIEWER });
+    const display = deriveSubjectCard(input({ reviews: [r] }), { viewerDid: VIEWER });
+    expect(display.topReviewer?.ring).toBe('self');
+  });
+});

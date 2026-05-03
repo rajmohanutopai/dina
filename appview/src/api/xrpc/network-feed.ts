@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { and, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { attestations, didProfiles } from '@/db/schema/index.js'
-import { computeGraphContext } from '@/db/queries/graph.js'
+import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
 
 /**
@@ -83,7 +83,7 @@ export async function networkFeed(
   // Phase 1 — compute the viewer's 1-hop trust graph. Depth=1 only;
   // we don't need the full graph for the feed surface and a deeper
   // traversal would inflate latency for highly-connected viewers.
-  const graph = await computeGraphContext(db, params.viewerDid, 1)
+  const graph = await getCachedGraphContext(db, params.viewerDid, 1)
   const oneHopDids = graph.nodes
     .filter((n) => n.depth === 1)
     .map((n) => n.did)

@@ -156,43 +156,16 @@ export interface WriteFormState {
    */
   readonly recommendFor: readonly string[];
   readonly notRecommendFor: readonly string[];
-  /**
-   * **TN-V2-META-001.** Reviewer-declared availability:
-   *   - `availabilityRegions`: ISO 3166-1 alpha-2 country codes the
-   *     subject is available / sold in (e.g. `['US', 'GB']`). Cap
-   *     {@link MAX_AVAILABILITY_REGIONS} = 30.
-   *   - `availabilityShipsTo`: ISO codes the seller ships to. Same
-   *     cap as `regions`.
-   *   - `availabilitySoldAt`: hostnames (RFC 1035 — ≤ 253 chars) of
-   *     retailers carrying the subject. Cap
-   *     {@link MAX_AVAILABILITY_SOLD_AT} = 20.
-   *
-   * Each independently optional — a reviewer might know the regions
-   * without the shipping or retailer set. The host_to_region
-   * enricher (META-007) auto-fills `regions` server-side from the
-   * subject's URL TLD when the reviewer hasn't declared.
-   */
-  readonly availabilityRegions: readonly string[];
-  readonly availabilityShipsTo: readonly string[];
-  readonly availabilitySoldAt: readonly string[];
-  /**
-   * **TN-V2-META-004.** Schedule fields:
-   *   - `scheduleLeadDays`: integer days of advance booking required
-   *     (0 for walk-ins; 14 for a doctor; 365 for a wedding venue).
-   *     Kept as a string so the input is round-trippable while
-   *     typing; resolved to int at publish time. Empty string = unset.
-   *   - `scheduleSeasonal`: months (1-12) the venue operates. Empty
-   *     array = year-round (the wire record omits the field).
-   *
-   * Per-day open/close (`hours`) is intentionally NOT captured here:
-   * the META-010 JSON-LD `OpeningHoursSpecification` parser
-   * auto-fills it server-side, and a per-day picker on mobile would
-   * be a much bigger UX commitment than the rest of the V2 fields.
-   * Reviewers who want to override server-extracted hours can do so
-   * via a future advanced surface.
-   */
-  readonly scheduleLeadDays: string;
-  readonly scheduleSeasonal: readonly number[];
+  // **Dropped from review form (subject-attribute, not opinion):**
+  // availabilityRegions, availabilityShipsTo, availabilitySoldAt,
+  // scheduleLeadDays, scheduleSeasonal. A reviewer in the UK can't
+  // authoritatively enumerate which 50 countries a product ships to,
+  // and "lead time" / "seasonal months" are facts about the venue, not
+  // the reviewer's experience. These belong on a future "Add subject"
+  // surface (subject-owner / curator declares; reviewer attests). The
+  // wire record continues to accept them — older clients publishing
+  // them stay valid, the AppView keeps indexing — but the mobile form
+  // no longer prompts for them.
   /**
    * **TN-V2-REV-006.** Optional self-declared use-case tags from a
    * per-category vocabulary (see {@link USE_CASE_BY_CATEGORY}). Up
@@ -1029,8 +1002,7 @@ export type WriteFormError =
   | 'subject_uri_invalid'
   | 'subject_identifier_required'
   | 'subject_identifier_too_long'
-  | PriceFormError
-  | 'schedule_lead_days_invalid';
+  | PriceFormError;
 
 export interface WriteFormValidation {
   /** True when the form's current state can be published. */
@@ -1058,7 +1030,14 @@ export function emptyWriteFormState(): WriteFormState {
     sentiment: null,
     headline: '',
     body: '',
-    confidence: null,
+    // Confidence is no longer surfaced in the form. We silently default
+    // to 'moderate' so the wire record still carries a value (the
+    // AppView search filter `minConfidence` and the legacy edit-mode
+    // pre-fill path both expect a non-null value, and 'moderate' is
+    // the neutral midpoint of the four-tier ladder). If a future
+    // power-user surface re-introduces confidence as an opt-in, it
+    // can override this default just like any other state field.
+    confidence: 'moderate',
     subject: null,
     useCases: [],
     alternatives: [],
@@ -1072,11 +1051,6 @@ export function emptyWriteFormState(): WriteFormState {
     compat: [],
     recommendFor: [],
     notRecommendFor: [],
-    availabilityRegions: [],
-    availabilityShipsTo: [],
-    availabilitySoldAt: [],
-    scheduleLeadDays: '',
-    scheduleSeasonal: [],
   };
 }
 
@@ -1115,6 +1089,11 @@ export function validateWriteForm(state: WriteFormState): WriteFormValidation {
   if (state.headline.length > HEADLINE_MAX_LENGTH) errors.push('headline_too_long');
   if (state.body.length > BODY_MAX_LENGTH) errors.push('body_too_long');
   if (state.sentiment === null) errors.push('sentiment_required');
+  // Confidence is no longer required from the user; the form seeds it
+  // to 'moderate'. The validator still flags `null` (defensive: a
+  // mock state, an edit-mode pre-fill that explicitly clears it, or a
+  // future power-user toggle that lets the field be cleared) so the
+  // publish path's `confidence !== null` invariant stays load-bearing.
   if (state.confidence === null) errors.push('confidence_required');
 
   // Subject validation — only fires when the form is in
@@ -1146,15 +1125,9 @@ export function validateWriteForm(state: WriteFormState): WriteFormValidation {
     if (resolved.kind === 'invalid') errors.push(resolved.error);
   }
 
-  // V2 schedule.leadDays validation — same opt-in rule: only fires
-  // when the user has typed something. Empty string = unset → wire
-  // record omits the field.
-  const leadDaysRaw = state.scheduleLeadDays ?? '';
-  if (leadDaysRaw.trim().length > 0) {
-    if (parseLeadDays(leadDaysRaw) === null) {
-      errors.push('schedule_lead_days_invalid');
-    }
-  }
+  // (scheduleLeadDays was dropped from the form — see WriteFormState
+  // comment. The validator no longer fires `schedule_lead_days_invalid`
+  // because there's no input that could carry an invalid value.)
 
   return {
     canPublish: errors.length === 0,
@@ -1258,8 +1231,6 @@ export function describeWriteFormError(error: WriteFormError): string {
       return 'Upper price must be at least as much as the lower price.';
     case 'price_currency_invalid':
       return 'Currency must be a 3-letter code (e.g. USD, EUR, GBP).';
-    case 'schedule_lead_days_invalid':
-      return `Lead days must be a whole number between 0 and ${SCHEDULE_LEAD_DAYS_MAX}.`;
   }
 }
 
@@ -1359,25 +1330,11 @@ export function serializeFormToV2Extras(
     if (resolved.kind === 'ok') out.price = resolved.price;
   }
 
-  const availability: { regions?: string[]; shipsTo?: string[]; soldAt?: string[] } = {};
-  if (state.availabilityRegions.length > 0) {
-    availability.regions = [...state.availabilityRegions];
-  }
-  if (state.availabilityShipsTo.length > 0) {
-    availability.shipsTo = [...state.availabilityShipsTo];
-  }
-  if (state.availabilitySoldAt.length > 0) {
-    availability.soldAt = [...state.availabilitySoldAt];
-  }
-  if (Object.keys(availability).length > 0) out.availability = availability;
-
-  const schedule: { leadDays?: number; seasonal?: number[] } = {};
-  const leadDays = parseLeadDays(state.scheduleLeadDays);
-  if (leadDays !== null) schedule.leadDays = leadDays;
-  if (state.scheduleSeasonal.length > 0) {
-    schedule.seasonal = [...state.scheduleSeasonal];
-  }
-  if (Object.keys(schedule).length > 0) out.schedule = schedule;
+  // availability + schedule are subject-owner facts, no longer
+  // captured by the review form. The wire shape continues to accept
+  // them (older records validate, AppView keeps indexing), but
+  // serializeFormToV2Extras emits no `availability` / `schedule`
+  // block because the form state has no fields to source them from.
 
   return out;
 }

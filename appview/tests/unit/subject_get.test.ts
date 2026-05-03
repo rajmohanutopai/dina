@@ -15,7 +15,7 @@
  *   - band derived from score via 0.8/0.5/0.3 thresholds
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const computeGraphContextMock = vi.fn()
 
@@ -24,6 +24,15 @@ vi.mock('@/db/queries/graph.js', () => ({
 }))
 
 import { subjectGet, SubjectGetParams } from '@/api/xrpc/subject-get'
+import { clearGraphContextCache } from '@/api/middleware/graph-context-cache'
+
+// Clear the graph-context cache between tests — same rationale as
+// network_feed.test.ts: subjectGet now flows through the cache
+// wrapper, and stale entries leak across tests when viewer DIDs
+// are reused.
+beforeEach(() => {
+  clearGraphContextCache()
+})
 import {
   attestations,
   didProfiles,

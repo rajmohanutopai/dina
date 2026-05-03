@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, within } from '@testing-library/react-native';
 
 // Mock the booted-node singleton: tests pin a known DID so the
 // reviewer screen's `isSelf` branch (which gates the Edit affordance
@@ -191,6 +191,69 @@ describe('ReviewerProfileScreen — stats grid', () => {
     const { getAllByText } = render(<ReviewerProfileScreen profile={profile} nowMs={NOW} />);
     // Both percent cells render '—'.
     expect(getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
+  // F1 fix: when authoredRows is loaded with data the reviews-written
+  // count reflects the displayable row count, not the API's
+  // unfiltered `totalAttestationsBy`. Pre-fix the API said "6" while
+  // `deriveAuthoredAttestationRows` had silently dropped a hit with a
+  // missing subjectId, leaving the user staring at 5 rows under a
+  // "6 Reviews written" stat. Same fall-back pattern as the sentiment
+  // chips: use the API summary while the list is still loading, swap
+  // to the displayable length once it's ready.
+  it('reviews-written count tracks the loaded authoredRows length, not API summary', () => {
+    const profile = makeProfile({
+      reviewerStats: {
+        totalAttestationsBy: 99, // API claims 99
+        corroborationRate: 0,
+        evidenceRate: 0,
+        helpfulRatio: 0,
+      },
+    });
+    const ROW = {
+      uri: 'at://x/1',
+      subjectId: 'sub-1',
+      subjectKind: 'product' as const,
+      subjectUri: null,
+      subjectDid: null,
+      subjectTitle: 'A subject',
+      category: null,
+      sentiment: 'positive' as const,
+      headline: 'h',
+      body: '',
+      confidence: null,
+      createdAtMs: NOW - 60_000,
+    };
+    const { getByTestId, queryByText } = render(
+      <ReviewerProfileScreen
+        profile={profile}
+        nowMs={NOW}
+        authoredRows={[ROW, { ...ROW, uri: 'at://x/2', subjectId: 'sub-2' }]}
+      />,
+    );
+    // Two displayable rows → "2", not the API's "99". Use `within`
+    // to scope the search to the stat cell (multiple "2"s elsewhere
+    // on the screen — e.g. sentiment chip counts).
+    const cell = getByTestId('reviewer-stat-attestations');
+    expect(within(cell).getByText('2')).toBeTruthy();
+    expect(queryByText('99')).toBeNull();
+  });
+
+  it('reviews-written count falls back to API summary while authoredRows is loading (null)', () => {
+    const profile = makeProfile({
+      reviewerStats: {
+        totalAttestationsBy: 7,
+        corroborationRate: 0,
+        evidenceRate: 0,
+        helpfulRatio: 0,
+      },
+    });
+    const { getByTestId } = render(
+      <ReviewerProfileScreen profile={profile} nowMs={NOW} authoredRows={null} />,
+    );
+    // Loading state → use API summary so the stat doesn't flash 0.
+    const cell = getByTestId('reviewer-stat-attestations');
+    expect(within(cell).getByText('7')).toBeTruthy();
   });
 });
 

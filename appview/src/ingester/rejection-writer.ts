@@ -48,6 +48,11 @@ export type RejectionReason =
   | 'schema_invalid'
   | 'namespace_disabled'
   | 'feature_off'
+  // TN-OPS-003 — author's PDS host is on the operator's suspension
+  // list. Distinct from `namespace_disabled` (per-author, per-key)
+  // and `feature_off` (global kill-switch); this is per-host.
+  // Mirrored on mobile in `OutboxRejectReason`.
+  | 'pds_suspended'
 
 /** Subset of HandlerContext — the pieces a rejection writer actually needs. */
 export interface RejectionContext {

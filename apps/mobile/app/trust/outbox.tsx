@@ -100,6 +100,7 @@ const REJECT_REASON_LABEL: Record<string, string> = {
   schema_invalid: 'Record format rejected — recompose required',
   namespace_disabled: 'Namespace not declared in your DID document',
   feature_off: 'Trust Network temporarily unavailable',
+  pds_suspended: 'Your PDS host is suspended by the operator',
 };
 
 function rejectReasonText<DraftBody>(row: OutboxRow<DraftBody>): string {

@@ -198,7 +198,7 @@ export async function autoSelectProvider(): Promise<ProviderType | null> {
 async function getModel(): Promise<LanguageModel | null> {
   const provider = await autoSelectProvider();
   if (!provider) return null;
-  return createModel(provider, activeModelId ?? undefined);
+  return createModel(provider, { modelId: activeModelId ?? undefined });
 }
 
 /** Process a user message and return a response. */

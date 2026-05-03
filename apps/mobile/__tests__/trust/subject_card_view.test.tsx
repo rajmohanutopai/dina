@@ -489,10 +489,13 @@ describe('SubjectCardView — band colour', () => {
     );
     expect(queryByTestId('subject-card-band-sub-1')).toBeNull();
     expect(getByTestId('subject-card-maturity-sub-1')).toBeTruthy();
-    expect(getByText('SOME')).toBeTruthy();
+    // Title-case labels distinguish maturity ("Some") from canonical
+    // ALL-CAPS trust bands ("MODERATE") so a search-result card and a
+    // subject-detail card can't be misread as the same kind of badge.
+    expect(getByText('Some')).toBeTruthy();
   });
 
-  it('maturity fallback labels: 0/1 → NEW, 2-5 → SOME, 6+ → ESTABLISHED', () => {
+  it('maturity fallback labels: 0/1 → New, 2-5 → Some, 6+ → Established', () => {
     const make = (reviewCount: number) =>
       render(
         <SubjectCardView
@@ -510,12 +513,12 @@ describe('SubjectCardView — band colour', () => {
           })}
         />,
       );
-    expect(make(0).getByText('NEW')).toBeTruthy();
-    expect(make(1).getByText('NEW')).toBeTruthy();
-    expect(make(2).getByText('SOME')).toBeTruthy();
-    expect(make(5).getByText('SOME')).toBeTruthy();
-    expect(make(6).getByText('ESTABLISHED')).toBeTruthy();
-    expect(make(50).getByText('ESTABLISHED')).toBeTruthy();
+    expect(make(0).getByText('New')).toBeTruthy();
+    expect(make(1).getByText('New')).toBeTruthy();
+    expect(make(2).getByText('Some')).toBeTruthy();
+    expect(make(5).getByText('Some')).toBeTruthy();
+    expect(make(6).getByText('Established')).toBeTruthy();
+    expect(make(50).getByText('Established')).toBeTruthy();
   });
 });
 

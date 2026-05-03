@@ -67,12 +67,14 @@ function withState(overrides: Partial<WriteFormState> = {}): WriteFormState {
 }
 
 describe('emptyWriteFormState', () => {
-  it('returns null sentiment + confidence and empty strings', () => {
+  it('returns null sentiment, default confidence=moderate, and empty strings', () => {
     expect(emptyWriteFormState()).toEqual({
       sentiment: null,
       headline: '',
       body: '',
-      confidence: null,
+      // Confidence is no longer a user-facing field; the form seeds
+      // `moderate` so the wire record always carries a value.
+      confidence: 'moderate',
       // `subject: null` marks the form as "review-only" — backed by an
       // existing AppView subjectId. The describe-a-new-subject path
       // uses `emptyWriteFormStateWithSubject()` instead.
@@ -99,37 +101,49 @@ describe('emptyWriteFormState', () => {
       compat: [],
       recommendFor: [],
       notRecommendFor: [],
-      availabilityRegions: [],
-      availabilityShipsTo: [],
-      availabilitySoldAt: [],
-      scheduleLeadDays: '',
-      scheduleSeasonal: [],
     });
   });
 });
 
 describe('validateWriteForm — required fields', () => {
-  it('empty form has all four errors and canPublish=false', () => {
+  it('empty form fails on headline + sentiment (confidence is auto-seeded so does NOT error)', () => {
     const v = validateWriteForm(emptyWriteFormState());
     expect(v.canPublish).toBe(false);
     expect(v.errors).toEqual(
-      expect.arrayContaining([
-        'headline_empty',
-        'sentiment_required',
-        'confidence_required',
-      ]),
+      expect.arrayContaining(['headline_empty', 'sentiment_required']),
     );
+    // Confidence is silently seeded to 'moderate' by the form; the
+    // empty state is no longer null. The validator's
+    // `confidence_required` rule still fires when a caller explicitly
+    // sets confidence to null (defensive — see the dedicated spec
+    // below) but emptyWriteFormState shouldn't surface it.
+    expect(v.errors).not.toContain('confidence_required');
   });
 
-  it('headline + body filled but no sentiment/confidence still fails', () => {
+  it('headline + body filled but no sentiment still fails on sentiment alone', () => {
     const v = validateWriteForm(
       withState({ headline: 'Great chair', body: '' }),
     );
     expect(v.canPublish).toBe(false);
-    expect(v.errors).toEqual(
-      expect.arrayContaining(['sentiment_required', 'confidence_required']),
-    );
+    expect(v.errors).toEqual(expect.arrayContaining(['sentiment_required']));
     expect(v.errors).not.toContain('headline_empty');
+    expect(v.errors).not.toContain('confidence_required');
+  });
+
+  it('confidence_required still fires defensively when state.confidence is explicitly null', () => {
+    // Empty form is now valid w.r.t. confidence (it seeds moderate),
+    // but legacy callers / mocks / a future power-user toggle may
+    // still set it to null. Pin that the validator catches that case
+    // so the publish path's non-null invariant remains load-bearing.
+    const v = validateWriteForm(
+      withState({
+        headline: 'Great chair',
+        sentiment: 'positive',
+        confidence: null,
+      }),
+    );
+    expect(v.canPublish).toBe(false);
+    expect(v.errors).toContain('confidence_required');
   });
 
   it('all four fields valid → canPublish=true, errors empty', () => {
@@ -1175,28 +1189,12 @@ describe('toggleSeasonalMonth', () => {
   });
 });
 
-describe('validateWriteForm — V2 schedule', () => {
-  it('flags schedule_lead_days_invalid for unparseable input', () => {
-    const state = withState({
-      sentiment: 'positive',
-      headline: 'Great',
-      confidence: 'high',
-      scheduleLeadDays: 'abc',
-    });
-    expect(validateWriteForm(state).errors).toContain('schedule_lead_days_invalid');
-  });
-
-  it('valid leadDays + seasonal does not block publish', () => {
-    const state = withState({
-      sentiment: 'positive',
-      headline: 'Great',
-      confidence: 'high',
-      scheduleLeadDays: '14',
-      scheduleSeasonal: [3, 4, 5],
-    });
-    expect(validateWriteForm(state).canPublish).toBe(true);
-  });
-});
+// Note: schedule.leadDays + schedule.seasonal + the three
+// availability sub-fields used to be captured by the form. They were
+// dropped because they're subject-owner facts, not reviewer opinion.
+// The pure helpers (`parseLeadDays`, `toggleSeasonalMonth`,
+// `addCountryCode`, `addHostname`, `removeAtIndex`) are kept for the
+// future "Add subject" surface and are still tested as helpers above.
 
 // ─── V2: serializer ───────────────────────────────────────────────────────
 
@@ -1284,37 +1282,15 @@ describe('serializeFormToV2Extras — populated', () => {
     expect(out.compat).toEqual(['ios', 'android']);
   });
 
-  it('includes availability with only the populated sub-fields', () => {
-    const state = withState({
-      availabilityRegions: ['US', 'GB'],
-      availabilityShipsTo: [],
-      availabilitySoldAt: ['amazon.com'],
-    });
-    const out = serializeFormToV2Extras(state, now);
-    expect(out.availability).toEqual({
-      regions: ['US', 'GB'],
-      soldAt: ['amazon.com'],
-    });
-    // shipsTo absent because the sub-array was empty
-    expect(out.availability?.shipsTo).toBeUndefined();
-  });
-
-  it('omits availability entirely when all sub-fields are empty', () => {
+  it('never emits availability — the form no longer captures it', () => {
+    // Defensive pin: even if a caller smuggles availability fields into
+    // `withState` via Partial<WriteFormState>, the serializer drops
+    // them because the form state's typed shape no longer carries them.
     expect(serializeFormToV2Extras(emptyWriteFormState(), now).availability).toBeUndefined();
   });
 
-  it('includes schedule with leadDays and seasonal', () => {
-    const state = withState({
-      scheduleLeadDays: '14',
-      scheduleSeasonal: [4, 5, 6],
-    });
-    const out = serializeFormToV2Extras(state, now);
-    expect(out.schedule).toEqual({ leadDays: 14, seasonal: [4, 5, 6] });
-  });
-
-  it('omits schedule entirely when leadDays is unparseable + seasonal is empty', () => {
-    const state = withState({ scheduleLeadDays: 'abc' });
-    expect(serializeFormToV2Extras(state, now).schedule).toBeUndefined();
+  it('never emits schedule — the form no longer captures it', () => {
+    expect(serializeFormToV2Extras(emptyWriteFormState(), now).schedule).toBeUndefined();
   });
 
   it('includes alternatives in wire shape (kind→type, trims fields)', () => {

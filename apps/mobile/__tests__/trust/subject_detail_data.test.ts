@@ -1195,3 +1195,62 @@ describe('deriveSubjectDetail — alternatives wired through', () => {
     expect(detail.alternatives.map((a) => a.subjectId)).toEqual(['asin:B08DEF']);
   });
 });
+
+// ─── viewerDid override (F4 fix mirror) ──────────────────────────────────
+//
+// Same belt-and-braces guard as `deriveSubjectCard`: when AppView ships
+// a self-authored attestation tagged ring='stranger' (a known bucketing
+// miss in `subjectGet`), the data layer reclassifies it as ring='self'
+// so the friends count stays correct + the row lands in the "Your
+// network" section instead of the "Strangers" section.
+describe('deriveSubjectDetail — viewerDid override', () => {
+  const VIEWER = 'did:plc:viewer-self';
+
+  it('routes a self-authored "stranger" into friends, not strangers', () => {
+    const r = makeReview({
+      ring: 'stranger',
+      reviewerDid: VIEWER,
+      reviewerName: 'me',
+    });
+    const detail = deriveSubjectDetail(makeInput({ reviews: [r] }), {
+      viewerDid: VIEWER,
+    });
+    expect(detail.friendsReviews.length).toBe(1);
+    expect(detail.strangerReviews.length).toBe(0);
+  });
+
+  it('reclassified review carries ring="self" downstream', () => {
+    const r = makeReview({ ring: 'stranger', reviewerDid: VIEWER });
+    const detail = deriveSubjectDetail(makeInput({ reviews: [r] }), {
+      viewerDid: VIEWER,
+    });
+    expect(detail.friendsReviews[0]?.ring).toBe('self');
+  });
+
+  it('leaves rings untouched when context omitted', () => {
+    const r = makeReview({ ring: 'stranger', reviewerDid: VIEWER });
+    const detail = deriveSubjectDetail(makeInput({ reviews: [r] }));
+    expect(detail.strangerReviews.length).toBe(1);
+  });
+
+  it('does not touch other reviewers when viewerDid is set', () => {
+    const r = makeReview({ ring: 'stranger', reviewerDid: 'did:plc:other' });
+    const detail = deriveSubjectDetail(makeInput({ reviews: [r] }), {
+      viewerDid: VIEWER,
+    });
+    expect(detail.strangerReviews.length).toBe(1);
+    expect(detail.friendsReviews.length).toBe(0);
+  });
+
+  it('ring counts on the header reflect the reclassification', () => {
+    const reviews = [
+      makeReview({ ring: 'stranger', reviewerDid: VIEWER }),
+      makeReview({ ring: 'stranger', reviewerDid: 'did:plc:other' }),
+    ];
+    const detail = deriveSubjectDetail(makeInput({ reviews }), {
+      viewerDid: VIEWER,
+    });
+    expect(detail.header.ringCounts.friends).toBe(1);
+    expect(detail.header.ringCounts.strangers).toBe(1);
+  });
+});

@@ -148,7 +148,24 @@ function toReview(
     reviewerTrustScore: ring === 'self' ? null : r.trustScore,
     reviewerName:
       ring === 'self' ? 'You' : displayName(r.handle, r.did),
-    headline: r.attestation.text ?? '',
+    headline: splitWireText(r.attestation.text).headline,
     createdAtMs: Date.parse(r.attestation.createdAt) || Date.now(),
+    attestationUri: r.attestation.uri,
+    body: splitWireText(r.attestation.text).body,
+    sentiment: r.attestation.sentiment,
   };
+}
+
+/**
+ * Split AppView's combined `text` field (`${headline}\n\n${body}`)
+ * back into its original parts. Mirrors the splitter used by the
+ * reviewer-profile path (`authored_attestations_data.ts`) so
+ * Edit-mode pre-fill is consistent regardless of which surface
+ * launched the editor.
+ */
+function splitWireText(raw: string | null): { headline: string; body: string } {
+  if (raw === null) return { headline: '', body: '' };
+  const idx = raw.indexOf('\n\n');
+  if (idx === -1) return { headline: raw, body: '' };
+  return { headline: raw.slice(0, idx), body: raw.slice(idx + 2) };
 }

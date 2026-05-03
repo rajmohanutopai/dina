@@ -389,9 +389,12 @@ describe('TrustFeedScreen — self-profile card', () => {
       />,
     );
     expect(getByTestId('trust-feed-self-card')).toBeTruthy();
-    // Header is the handle when resolved (else falls back to "Your
-    // trust profile").
-    expect(getByText('alice.pds.dinakernel.com')).toBeTruthy();
+    // Header shortens the resolved handle to the first DNS label
+    // (`alice.pds.dinakernel.com` → `alice`) — same `shortHandle`
+    // convention used on every other reviewer surface so the trust
+    // tab doesn't read like an email-address page. Falls back to
+    // "Your trust profile" when the handle is null.
+    expect(getByText('alice')).toBeTruthy();
     // Each stat value renders as a plain string in its own cell.
     expect(getByTestId('trust-feed-self-stat-score')).toBeTruthy();
     expect(getByTestId('trust-feed-self-stat-reviews')).toBeTruthy();
@@ -482,5 +485,51 @@ describe('TrustFeedScreen — self-profile card', () => {
     );
     fireEvent.press(getByTestId('trust-feed-self-card'));
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('TrustFeedScreen — footer links (F7 fix)', () => {
+  // Pre-fix: `/trust/outbox` and `/trust/namespace` had no surfacing
+  // anywhere in the app — the global hamburger menu lists Vault /
+  // Reminders / Settings / Help (none of which would be the right
+  // home for a trust-specific affordance), and no other drill-down
+  // exposed them. The Trust home now renders a small footer with
+  // muted-text links so the routes are reachable without polluting
+  // the global menu.
+  it('renders the footer row with Outbox + Namespaces links', () => {
+    const { getByTestId, getByText } = render(
+      <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} />,
+    );
+    expect(getByTestId('trust-feed-footer')).toBeTruthy();
+    expect(getByTestId('trust-feed-footer-outbox')).toBeTruthy();
+    expect(getByTestId('trust-feed-footer-namespaces')).toBeTruthy();
+    expect(getByText('Outbox')).toBeTruthy();
+    expect(getByText('Namespaces')).toBeTruthy();
+  });
+
+  it('Outbox tap fires onOpenOutbox', () => {
+    const onOpenOutbox = jest.fn();
+    const { getByTestId } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        onOpenOutbox={onOpenOutbox}
+      />,
+    );
+    fireEvent.press(getByTestId('trust-feed-footer-outbox'));
+    expect(onOpenOutbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('Namespaces tap fires onOpenNamespaces', () => {
+    const onOpenNamespaces = jest.fn();
+    const { getByTestId } = render(
+      <TrustFeedScreen
+        feed={[]}
+        facets={EMPTY_FACETS}
+        onOpenNamespaces={onOpenNamespaces}
+      />,
+    );
+    fireEvent.press(getByTestId('trust-feed-footer-namespaces'));
+    expect(onOpenNamespaces).toHaveBeenCalledTimes(1);
   });
 });
