@@ -58,6 +58,8 @@ import {
 } from '@dina/brain/src/llm/router_dispatch';
 import type { ProviderName } from '@dina/brain/src/llm/router';
 import { buildAgenticAskPipeline } from '@dina/brain/src/composition/agentic_ask';
+import { setReviewDraftStarter } from '@dina/brain/src/reasoning/draft_review_tool';
+import { startReviewDraft } from '../trust/review_draft';
 import {
   buildAgenticExecuteFn,
   createAskCoordinator,
@@ -498,6 +500,23 @@ async function tryBuildAgenticAsk(opts: {
   // unused: the approval-manager singleton outlives the boot scope and
   // a re-boot replaces the listener via `resetApprovalManager`.
   installApprovalInboxBridge(approvalManager);
+
+  // Wire the brain's `draft_review` tool to the mobile-side
+  // `startReviewDraft` runner. The agentic loop's LLM picks the tool
+  // when the user asks to write / draft / publish a review of a
+  // subject — no regex pre-empt, no English-only intent block-list.
+  // The starter posts the inline lifecycle card into the main chat
+  // thread, runs the inferer, and patches the card to `'ready'` when
+  // the draft is done. The tool returns the draftId to the agent so
+  // its narrative reply can stay short ("the draft is ready in the
+  // chat") without re-stating the drafted text.
+  setReviewDraftStarter(async (subjectPhrase: string) => {
+    const { draftId } = await startReviewDraft({
+      subjectPhrase,
+      threadId: 'main',
+    });
+    return { draftId };
+  });
 
   const pipeline = buildAgenticAskPipeline({
     llm,

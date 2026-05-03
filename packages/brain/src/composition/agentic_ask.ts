@@ -53,6 +53,8 @@ import {
 } from '../reasoning/bus_driver_tools';
 import { createGuardScanner } from '../reasoning/guard_scanner';
 import { IntentClassifier } from '../reasoning/intent_classifier';
+import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
+import { createDraftReviewTool } from '../reasoning/draft_review_tool';
 import { ToolRegistry } from '../reasoning/tool_registry';
 import { createSearchTrustNetworkTool } from '../reasoning/trust_tool';
 import {
@@ -274,6 +276,18 @@ export function buildAgenticAskPipeline(
         logger: input.logger,
       }),
     );
+    // `classify_intent` — lets the agent re-evaluate routing when the
+    // plan has shifted mid-loop (gathered new context, found unexpected
+    // results). Pre-loop classification still runs as the soft prime;
+    // this tool is the "called multiple times" path.
+    reg.register(createClassifyIntentTool({ classifier: intentClassifier }));
+    // `draft_review` — LLM-decided trigger for the inline review-draft
+    // card flow. Replaces the regex pre-empt that previously short-
+    // circuited "/ask write a review of <X>". The actual lifecycle
+    // card creation runs in the host (mobile wires
+    // `setReviewDraftStarter` at boot); without a registered starter
+    // this tool fails soft.
+    reg.register(createDraftReviewTool());
     return reg;
   };
 

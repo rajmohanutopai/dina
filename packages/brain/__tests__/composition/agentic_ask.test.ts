@@ -133,12 +133,18 @@ describe('buildAgenticAskPipeline', () => {
     expect(pipeline.provider.name).toContain('reason');
   });
 
-  it('registers all 9 agentic tools on the tool registry', () => {
+  it('registers all 11 agentic tools on the tool registry', () => {
+    // 9 substrate / discovery tools + classify_intent (re-routing
+    // mid-loop) + draft_review (LLM-decided trigger for the inline
+    // review-draft card flow). The full set is documented in
+    // composition/agentic_ask.ts.
     const pipeline = buildAgenticAskPipeline(makeBuilderInput());
     const names = pipeline.tools.toDefinitions().map((t) => t.name).sort();
     expect(names).toEqual(
       [
         'browse_vault',
+        'classify_intent',
+        'draft_review',
         'find_preferred_provider',
         'geocode',
         'get_full_content',
@@ -149,7 +155,7 @@ describe('buildAgenticAskPipeline', () => {
         'vault_search',
       ].sort(),
     );
-    expect(pipeline.tools.size()).toBe(9);
+    expect(pipeline.tools.size()).toBe(11);
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {
@@ -196,7 +202,7 @@ describe('buildAgenticAskPipeline', () => {
       expect(typeof pipeline.buildToolsForAsk).toBe('function');
     });
 
-    it('per-ask registry has the same 9 tools as the static one', () => {
+    it('per-ask registry has the same 11 tools as the static one', () => {
       const { ApprovalManager } = require('../../../core/src/approval/manager');
       const pipeline = buildAgenticAskPipeline({
         ...makeBuilderInput(),

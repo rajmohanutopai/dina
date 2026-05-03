@@ -1,17 +1,25 @@
 /**
- * Chat-driven review draft — the `/ask write a review of <X>` flow.
+ * Chat-driven review draft runner — used by the agentic `/ask` loop's
+ * `draft_review` tool (registered in
+ * `packages/brain/src/reasoning/draft_review_tool.ts`).
  *
- * Pattern: user types `/ask write a review of Aeron chair` (or variants
- * — see `parseReviewDraftIntent`). Mobile pre-empts the agentic loop,
- * fans out across every open persona vault, runs the
- * `inferComposeContext` LLM call in `draftFreeform: true` mode, then
- * posts a `'review_draft'` lifecycle message into the chat thread.
+ * The agent's LLM picks the tool when the user asks to write / draft /
+ * publish a review of a subject. The tool calls `startReviewDraft`
+ * (mobile, this module) which:
  *
- * **Why mobile owns this, not Brain.** The BYOK LLM key + persona DEKs
- * live on the device; brain stays a pure thread-and-text orchestrator.
- * Posting the lifecycle through brain's `addLifecycleMessage` keeps the
- * thread state authoritative without leaking mobile concerns into
- * brain.
+ *   1. Posts a `'review_draft'` lifecycle card into the chat thread at
+ *      `'drafting'` status — synchronous, so the user sees an
+ *      acknowledgement immediately.
+ *   2. Fans out across every currently-open persona vault, runs the
+ *      `inferComposeContext` LLM call in `draftFreeform: true` mode,
+ *      and patches the lifecycle to `'ready'` with the drafted
+ *      sentiment / headline / body when the call settles.
+ *
+ * **Why mobile owns the runner, not Brain.** The BYOK LLM key +
+ * persona DEKs live on the device; brain stays a thread-and-text
+ * orchestrator + tool registry. Brain's tool factory is a thin
+ * wrapper that calls into this runner via `setReviewDraftStarter`
+ * (registered at mobile boot in `boot_capabilities.ts`).
  *
  * **Loyalty Law.** The card never auto-publishes. The user reads it,
  * edits in place (sentiment / headline / body / draft details), and
@@ -43,88 +51,11 @@ import {
   type WriteFormState,
 } from './write_form_data';
 
-// ─── Intent parsing ────────────────────────────────────────────────────
-
-/**
- * Match patterns the chat layer recognises as a review-draft intent.
- * Designed lenient — every variant the user is likely to type without
- * hand-holding. Captures the subject phrase in group 1.
- *
- * Examples that match:
- *   "/ask write a review of Aeron chair"
- *   "/ask draft a review of Aeron Chairs"
- *   "/ask publish a review of Aeron chair I bought"
- *   "/ask review the Aeron chair"
- *   "/ask create a review of Aeron"
- *   "write a review of Aeron"            (no /ask prefix)
- *
- * Examples that don't match (fall through to agentic /ask):
- *   "/ask what reviews exist for Aeron"
- *   "/ask is the Aeron chair worth it"
- *
- * The regex stays anchored at the start so ambiguous mid-sentence
- * patterns don't accidentally trigger.
- */
-// Two patterns. The first covers verb-led phrasing
-// ("write a review of X"); the second covers the bare "review (of) X"
-// shorthand. Splitting them avoids a single mega-regex where the
-// optional groups stack badly when the user types
-// "review of the X" — the verb branch would otherwise consume "review"
-// without consuming the trailing "of", leaving "of the X" in the
-// capture.
-const INTENT_REGEX_VERB =
-  /^\s*(?:\/ask\s+)?(?:please\s+)?(?:write|draft|publish|create|compose|start)\s+(?:(?:a|the|an|my)\s+)?review(?:\s+(?:of|for|on|about))?\s+(.+?)\s*$/i;
-const INTENT_REGEX_BARE =
-  /^\s*(?:\/ask\s+)?(?:please\s+)?review\s+(?:(?:of|for|on|about)\s+)?(?:(?:a|the|an|my)\s+)?(.+?)\s*$/i;
-
-const NON_INTENT_LEADERS = /^\s*(?:\/ask\s+)?(?:what|when|where|which|who|why|how|is|are|do|does|can|could|will|would|should|find|search|show|list|tell\s+me)\b/i;
-
-export interface ReviewDraftIntent {
-  /** True if the input looks like "write a review of <X>". */
-  readonly matched: boolean;
-  /** Subject phrase the user named, trimmed of leading articles + the
-   *  noise-word "I bought" tail that doesn't belong in a SubjectRef. */
-  readonly subjectPhrase: string;
-}
-
-/**
- * Decide whether `text` is asking for a review draft. Return `matched:
- * true` + the cleaned subject phrase when so. The chat caller routes to
- * the draft flow on a positive match and falls through to the regular
- * `handleChat` path otherwise.
- */
-export function parseReviewDraftIntent(text: string): ReviewDraftIntent {
-  if (typeof text !== 'string') return { matched: false, subjectPhrase: '' };
-  const trimmed = text.trim();
-  if (trimmed.length === 0) return { matched: false, subjectPhrase: '' };
-  // Question / search words rule out review intent — the regex below
-  // would otherwise false-positive on "review the latest emails" by
-  // matching the leading "review" verb against the noun "the latest
-  // emails".
-  if (NON_INTENT_LEADERS.test(trimmed)) {
-    return { matched: false, subjectPhrase: '' };
-  }
-  // Require the literal word "review" somewhere in the input — the
-  // verb pattern alone ("write" / "draft") would otherwise trigger on
-  // "write a note about my chair", which isn't a review.
-  if (!/\breview\b/i.test(trimmed)) {
-    return { matched: false, subjectPhrase: '' };
-  }
-  const m = trimmed.match(INTENT_REGEX_VERB) ?? trimmed.match(INTENT_REGEX_BARE);
-  if (m === null) return { matched: false, subjectPhrase: '' };
-  let phrase = (m[1] ?? '').trim();
-  // Strip the common conversational tail "I bought / I have / I use
-  // for X". These are signals for the LLM about HOW the user used the
-  // subject, but they do NOT belong in `subject.name` (which has to
-  // round-trip through AppView's lexicon validators). The LLM still
-  // sees the original text via the vault items, so dropping these
-  // here doesn't lose information.
-  phrase = phrase
-    .replace(/\s+(?:i|that\s+i|which\s+i)\s+(?:bought|have|use|got|own|tried|purchased|installed).*$/i, '')
-    .trim();
-  if (phrase.length === 0) return { matched: false, subjectPhrase: '' };
-  return { matched: true, subjectPhrase: phrase };
-}
+// Intent detection used to live here as a regex pair. It was deleted
+// once the agentic `/ask` loop's `draft_review` tool took over —
+// the LLM picks the tool from the user's natural-language query,
+// no scenario enumeration / hand-coded "if X do Y" rules. See
+// `packages/brain/src/reasoning/draft_review_tool.ts`.
 
 // ─── Subject construction ──────────────────────────────────────────────
 

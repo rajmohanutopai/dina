@@ -1,22 +1,24 @@
 /**
- * Unit tests for `apps/mobile/src/trust/review_draft.ts` —
- * the chat-driven `/ask write a review of <X>` flow.
+ * Unit tests for `apps/mobile/src/trust/review_draft.ts` — the runner
+ * the brain's `draft_review` tool calls into when the agentic `/ask`
+ * loop picks the tool.
  *
  * Pins:
- *   - `parseReviewDraftIntent` matches the variants we expect, rejects
- *     question / search forms, strips conversational tails, and stays
- *     anchored at the start (no mid-sentence false positives).
  *   - `startReviewDraft` posts a `'drafting'` lifecycle card
  *     synchronously, runs the (stubbed) inferer, and patches the card
  *     to `'ready'` with merged WriteFormState values.
  *   - `mergeDraftIntoFormState` only overrides fields the LLM emitted
  *     (omitted fields → form defaults).
+ *
+ * Intent detection moved out of this module — the agentic loop's
+ * `draft_review` tool is what decides when to call `startReviewDraft`,
+ * and the brain-side tool tests live in
+ * `packages/brain/src/reasoning/draft_review_tool.test.ts`.
  */
 
 import { describe, expect, it, jest, beforeEach, afterEach } from '@jest/globals';
 
 import {
-  parseReviewDraftIntent,
   startReviewDraft,
   mergeDraftIntoFormState,
 } from '../../src/trust/review_draft';
@@ -114,57 +116,6 @@ function stubLLM(content: string): LLMProvider {
     }),
   };
 }
-
-// ─── Intent parsing ────────────────────────────────────────────────────
-describe('parseReviewDraftIntent', () => {
-  it.each([
-    ['/ask write a review of Aeron chair', 'Aeron chair'],
-    ['/ask draft a review of Aeron Chairs', 'Aeron Chairs'],
-    ['/ask publish a review of Aeron chair', 'Aeron chair'],
-    ['/ask review the Aeron chair', 'Aeron chair'],
-    ['/ask create a review of Aeron', 'Aeron'],
-    ['/ask compose a review of Steelcase Leap', 'Steelcase Leap'],
-    ['write a review of Aeron', 'Aeron'],
-    ['Write a Review of Aeron', 'Aeron'],
-  ])('matches %s → subject "%s"', (input, expected) => {
-    const intent = parseReviewDraftIntent(input);
-    expect(intent.matched).toBe(true);
-    expect(intent.subjectPhrase).toBe(expected);
-  });
-
-  it('strips conversational "I bought" tail from subject', () => {
-    expect(parseReviewDraftIntent('/ask write a review of Aeron chair I bought').subjectPhrase).toBe(
-      'Aeron chair',
-    );
-    expect(parseReviewDraftIntent('/ask review of the Aeron chair that I bought last year').subjectPhrase).toBe(
-      'Aeron chair',
-    );
-    expect(parseReviewDraftIntent('/ask write a review of Steelcase Leap which I have owned for 5 years').subjectPhrase).toBe(
-      'Steelcase Leap',
-    );
-  });
-
-  it.each([
-    '/ask what reviews exist for Aeron',
-    '/ask is the Aeron chair worth it',
-    '/ask find reviews of Aeron',
-    '/ask show me reviews',
-    '/ask how does the Aeron compare',
-    '/ask when did I buy the Aeron',
-  ])('does NOT match question form: %s', (input) => {
-    expect(parseReviewDraftIntent(input).matched).toBe(false);
-  });
-
-  it('does NOT match without the literal word "review"', () => {
-    expect(parseReviewDraftIntent('/ask write a note about my chair').matched).toBe(false);
-    expect(parseReviewDraftIntent('/ask write a thought about my chair').matched).toBe(false);
-  });
-
-  it('handles empty / whitespace input cleanly', () => {
-    expect(parseReviewDraftIntent('').matched).toBe(false);
-    expect(parseReviewDraftIntent('   ').matched).toBe(false);
-  });
-});
 
 // ─── mergeDraftIntoFormState ──────────────────────────────────────────
 describe('mergeDraftIntoFormState', () => {
