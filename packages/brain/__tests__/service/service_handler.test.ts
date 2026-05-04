@@ -785,6 +785,114 @@ describe('ServiceHandler.handleQuery — review path', () => {
   });
 });
 
+describe('ServiceHandler.handleQuery — inboundNotifier (provider-side chat visibility)', () => {
+  it('fires for the auto path with kind="execution" after task creation', async () => {
+    const core = stubCore();
+    const seen: Array<Record<string, unknown>> = [];
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => baseConfig,
+      inboundNotifier: (n) => {
+        seen.push(n);
+      },
+      generateUUID: () => 'u1',
+    });
+
+    await handler.handleQuery(REQUESTER, validQuery);
+
+    expect(core.createCalls).toHaveLength(1);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual({
+      kind: 'execution',
+      taskId: 'svc-exec-u1',
+      fromDID: REQUESTER,
+      capability: 'eta_query',
+      serviceName: 'Bus 42',
+    });
+  });
+
+  it('fires for the review path with kind="approval"', async () => {
+    const core = stubCore();
+    const seen: Array<Record<string, unknown>> = [];
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => baseConfig,
+      inboundNotifier: (n) => {
+        seen.push(n);
+      },
+      generateUUID: () => 'u1',
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      ...validQuery,
+      capability: 'route_info',
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      kind: 'approval',
+      taskId: 'approval-u1',
+      capability: 'route_info',
+    });
+  });
+
+  it('does NOT fire when the query is rejected (unknown capability)', async () => {
+    const core = stubCore();
+    const seen: Array<Record<string, unknown>> = [];
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => baseConfig,
+      inboundNotifier: (n) => {
+        seen.push(n);
+      },
+      generateUUID: () => 'u1',
+    });
+
+    await handler.handleQuery(REQUESTER, { ...validQuery, capability: 'unknown_cap' });
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(seen).toHaveLength(0);
+  });
+
+  it('does NOT fire when the query is rejected for schema hash mismatch', async () => {
+    const core = stubCore();
+    const seen: Array<Record<string, unknown>> = [];
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => baseConfig,
+      inboundNotifier: (n) => {
+        seen.push(n);
+      },
+      generateUUID: () => 'u1',
+    });
+
+    await handler.handleQuery(REQUESTER, { ...validQuery, schema_hash: 'stale' });
+
+    expect(seen).toHaveLength(0);
+  });
+
+  it('isolates inboundNotifier errors — task creation still succeeds, error is logged', async () => {
+    const core = stubCore();
+    const logs: Array<Record<string, unknown>> = [];
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => baseConfig,
+      inboundNotifier: () => {
+        throw new Error('chat-thread broke');
+      },
+      logger: (e) => {
+        logs.push(e);
+      },
+      generateUUID: () => 'u1',
+    });
+
+    await handler.handleQuery(REQUESTER, validQuery);
+
+    expect(core.createCalls).toHaveLength(1);
+    expect(logs.some((l) => l.event === 'service.query.inbound_notifier_threw')).toBe(true);
+  });
+});
+
 describe('ServiceHandler.executeAndRespond', () => {
   const approvalTaskId = 'approval-test';
   const payload = {

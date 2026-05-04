@@ -11,6 +11,8 @@ import {
   resetChatDefaults,
   setRememberDrainHook,
   resetRememberDrainHook,
+  setAskCommandHandler,
+  resetAskCommandHandler,
 } from '../../src/chat/orchestrator';
 import { getThread, resetThreads } from '../../src/chat/thread';
 import { storeItem, clearVaults } from '../../../core/src/vault/crud';
@@ -111,6 +113,58 @@ describe('Chat Orchestrator', () => {
     it('empty query asks what to know', async () => {
       const result = await handleChat('/ask');
       expect(result.response).toContain('What would you like');
+    });
+  });
+
+  describe('/task', () => {
+    afterEach(() => resetAskCommandHandler());
+
+    it('routes to the agentic-loop handler with a delegate-to-agent directive', async () => {
+      // Capture the query the handler received so we can assert the
+      // directive was prepended. The handler stub returns a synthetic
+      // reply — the real agentic loop calls `delegate_to_agent`, but
+      // that's covered in the tool's own unit tests.
+      const seen: string[] = [];
+      setAskCommandHandler(async (query) => {
+        seen.push(query);
+        return { response: 'agent dispatched', sources: [], serviceQueries: [] };
+      });
+
+      const result = await handleChat('/task fetch my unread email');
+      expect(result.intent).toBe('task');
+      expect(result.response).toBe('agent dispatched');
+      expect(seen).toHaveLength(1);
+      // Directive must contain the tool name + the original payload.
+      expect(seen[0]).toMatch(/delegate_to_agent/);
+      expect(seen[0]).toMatch(/TASK MODE/);
+      expect(seen[0]).toMatch(/fetch my unread email/);
+    });
+
+    it('empty payload asks what to do (does not invoke the handler)', async () => {
+      const seen: string[] = [];
+      setAskCommandHandler(async (query) => {
+        seen.push(query);
+        return { response: 'unexpected', sources: [], serviceQueries: [] };
+      });
+      const result = await handleChat('/task');
+      expect(result.intent).toBe('task');
+      expect(result.response).toMatch(/paired agent/i);
+      expect(seen).toHaveLength(0);
+    });
+
+    it('user-visible message in the thread is the original (no directive leak)', async () => {
+      setAskCommandHandler(async () => ({
+        response: 'ok',
+        sources: [],
+        serviceQueries: [],
+      }));
+      await handleChat('/task list my pull requests', 'task-thread');
+      const thread = getThread('task-thread');
+      const userMsg = thread.find((m) => m.type === 'user');
+      // The thread shows what the user typed — never the wrapped
+      // directive — so the chat UI stays clean.
+      expect(userMsg?.content).toBe('/task list my pull requests');
+      expect(userMsg?.content ?? '').not.toMatch(/TASK MODE/);
     });
   });
 

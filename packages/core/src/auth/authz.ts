@@ -100,6 +100,12 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   { prefix: '/v1/workflow/tasks/', allowed: new Set(['brain', 'admin', 'agent']) },
   { prefix: '/v1/workflow/', allowed: new Set(['brain', 'admin']) },
 
+  // Session lifecycle — paired dina-agent opens a session before
+  // claiming a delegation task (vault scoping) and ends it after
+  // completion. Brain + Admin orchestrate session lifecycle from the
+  // app side.
+  { prefix: '/v1/session/', allowed: new Set(['brain', 'admin', 'agent']) },
+
   // Agent intent validation — `dina validate` from OpenClaw + sample
   // agents. Wire-compatible with Go Core: paired agents POST
   // /v1/agent/validate (the submit endpoint) and poll

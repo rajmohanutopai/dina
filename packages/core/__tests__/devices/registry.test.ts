@@ -15,8 +15,12 @@ import {
   touchDevice,
   deviceCount,
   getDeviceByDID,
+  hydrateDeviceRegistry,
   resetDeviceRegistry,
+  type PairedDevice,
 } from '../../src/devices/registry';
+import { setDeviceRepository, type DeviceRepository } from '../../src/devices/repository';
+import { isDevice, resetCallerTypeState } from '../../src/auth/caller_type';
 
 describe('Device Registry', () => {
   beforeEach(() => resetDeviceRegistry());
@@ -214,6 +218,67 @@ describe('Device Registry', () => {
 
     it('returns false for unknown device (not an error)', () => {
       expect(revokeDevice('dev-nonexistent')).toBe(false);
+    });
+  });
+
+  describe('hydrateDeviceRegistry', () => {
+    beforeEach(() => resetCallerTypeState());
+    afterEach(() => {
+      setDeviceRepository(null);
+      resetCallerTypeState();
+    });
+
+    it('rehydrates the in-memory Map from the SQL repository', async () => {
+      // Simulates a Metro reload: the JS-side Map is empty but the
+      // SQLite-backed repo still has the previously-paired device.
+      // Before hydrate: getDeviceByDID returns null → auth role
+      // resolver returns null → every paired-agent claim 403s.
+      // After hydrate: lookup returns the device + role.
+      const persisted: PairedDevice = {
+        deviceId: 'dev-openclaw-001',
+        did: 'did:key:z6MkPairedAgent',
+        publicKeyMultibase: 'z6MkPairedAgent',
+        deviceName: 'openclaw-provider',
+        role: 'agent',
+        authType: 'ed25519',
+        lastSeen: 1_700_000_000_000,
+        createdAt: 1_699_900_000_000,
+        revoked: false,
+      };
+      const fakeRepo: DeviceRepository = {
+        register: async () => undefined,
+        get: async () => null,
+        getByPublicKey: async () => null,
+        getByDID: async () => null,
+        list: async () => [persisted],
+        revoke: async () => false,
+        touch: async () => undefined,
+      };
+      setDeviceRepository(fakeRepo);
+
+      // Both Maps empty before hydrate. The auth-side `deviceDIDs` Map
+      // (consulted by `resolveCallerType` first) starts empty too —
+      // without re-registering it, the role resolver never fires.
+      expect(getDeviceByDID(persisted.did)).toBeNull();
+      expect(isDevice(persisted.did)).toBe(false);
+
+      const added = await hydrateDeviceRegistry();
+      expect(added).toBe(1);
+      expect(getDeviceByDID(persisted.did)?.role).toBe('agent');
+      expect(getByPublicKey(persisted.publicKeyMultibase)?.deviceId).toBe(persisted.deviceId);
+      // Critical for paired-agent claims: `auth/caller_type` MUST also
+      // know about this DID, otherwise the workflow-claim path 403s.
+      expect(isDevice(persisted.did)).toBe(true);
+
+      // Idempotent: second call adds nothing.
+      const added2 = await hydrateDeviceRegistry();
+      expect(added2).toBe(0);
+      expect(isDevice(persisted.did)).toBe(true);
+    });
+
+    it('returns 0 with no repository wired', async () => {
+      setDeviceRepository(null);
+      expect(await hydrateDeviceRegistry()).toBe(0);
     });
   });
 });

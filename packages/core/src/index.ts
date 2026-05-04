@@ -39,6 +39,21 @@ export type {
   PickerOptions,
   PickHandleResult,
 } from './identity/handle_picker';
+// Generic PLC update composer — add/replace verificationMethods,
+// services, rotationKeys, alsoKnownAs in one ceremony. Used by mobile
+// onboarding (PDS-first flow → PDS mints DID → update adds
+// `dina_signing` VM + `dina-messaging` service) and by the admin CLI.
+export {
+  buildUpdateOperation,
+  updateDIDPLC,
+  buildSigningKeyRotation,
+  secp256k1ToDidKeyMultibase,
+} from './identity/plc_update';
+export type {
+  PLCUpdateParams,
+  PLCUpdateResult,
+  SigningKeyRotationParams,
+} from './identity/plc_update';
 // PLC namespace update composer (TN-IDENT-005 / TN-IDENT-008).
 // Pure-functional composers — add a namespace key, or remove one.
 // Submission to the PLC directory is the concern of TN-IDENT-006.

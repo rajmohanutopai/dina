@@ -340,6 +340,14 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
   const toolLog = state.toolLog;
   let answer = '';
 
+  // eslint-disable-next-line no-console
+  console.log('[agentic_loop] start', {
+    iteration,
+    maxIterations,
+    toolCount: toolDefs.length,
+    toolNames: toolDefs.map((t) => t.name),
+  });
+
   for (; iteration < maxIterations; iteration++) {
     if (options.signal?.aborted) {
       return done('cancelled');
@@ -365,6 +373,12 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     inputTokens += resp.usage.inputTokens;
     outputTokens += resp.usage.outputTokens;
 
+    // eslint-disable-next-line no-console
+    console.log('[agentic_loop] iter', iteration, {
+      contentSnippet: resp.content.slice(0, 200),
+      toolCalls: resp.toolCalls.map((c) => ({ name: c.name, args: c.arguments })),
+    });
+
     if (resp.toolCalls.length === 0) {
       answer = resp.content;
       transcript = [...transcript, { role: 'assistant', content: resp.content }];
@@ -388,6 +402,12 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       }
       toolCallCount++;
       const outcome = await tools.execute(call.name, call.arguments);
+      // eslint-disable-next-line no-console
+      console.log('[agentic_loop] tool', call.name, {
+        args: call.arguments,
+        outcomeKind: outcome.kind ?? typeof outcome,
+        outcomeSnippet: JSON.stringify(outcome).slice(0, 400),
+      });
       toolLog.push(buildToolLogEntry(call.name, call.arguments, outcome));
 
       if (isApprovalRequired(outcome)) {
@@ -417,6 +437,12 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     }
   }
 
+  // eslint-disable-next-line no-console
+  console.log('[agentic_loop] HIT max_iterations', {
+    iterations: iteration,
+    toolCallCount,
+    lastTranscriptSnippet: JSON.stringify(transcript.slice(-3)).slice(0, 600),
+  });
   return done('max_iterations');
 
   function done(finishReason: AgenticFinishReason): AgenticLoopResult {

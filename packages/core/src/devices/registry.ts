@@ -15,7 +15,10 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
-import { unregisterDevice as unregisterDeviceAuth } from '../auth/caller_type';
+import {
+  registerDevice as registerDeviceAuth,
+  unregisterDevice as unregisterDeviceAuth,
+} from '../auth/caller_type';
 import { getDeviceRepository } from './repository';
 
 export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent';
@@ -216,4 +219,41 @@ export function resetDeviceRegistry(): void {
   devices.clear();
   keyIndex.clear();
   didIndex.clear();
+}
+
+/**
+ * Rehydrate the in-memory device registry from the SQL repository.
+ *
+ * `getDeviceByDID` and friends only read the in-memory Map. On a cold
+ * boot (or Metro reload in dev) the Map starts empty, so a previously
+ * paired device's DID can't be resolved to a role — the auth middleware
+ * sees `device` instead of `agent` and every `/v1/workflow/tasks/claim`
+ * 403s. This mirrors the `hydrateContactDirectory` /
+ * `hydrateRemindersFromRepo` recovery wired in `mobile/src/storage/init.ts`.
+ *
+ * Idempotent: existing entries with matching IDs are kept (no-op).
+ */
+export async function hydrateDeviceRegistry(): Promise<number> {
+  const sqlRepo = getDeviceRepository();
+  if (!sqlRepo) return 0;
+  const all = await sqlRepo.list();
+  let added = 0;
+  for (const d of all) {
+    if (!devices.has(d.deviceId)) {
+      devices.set(d.deviceId, d);
+      if (d.publicKeyMultibase !== '') keyIndex.set(d.publicKeyMultibase, d.deviceId);
+      if (d.did !== '') didIndex.set(d.did, d.deviceId);
+      added += 1;
+    }
+    // Always re-register the auth-side mapping. The pairing ceremony
+    // calls `registerDeviceAuth(did, name)` which populates a SEPARATE
+    // Map (`deviceDIDs` in auth/caller_type.ts). Without this every
+    // boot, `resolveCallerType` won't recognize the DID as a paired
+    // device, the role resolver never fires, and the agent gets
+    // `callerType: 'unknown'` → 403 on every workflow claim.
+    if (!d.revoked && d.did !== '') {
+      registerDeviceAuth(d.did, d.deviceName);
+    }
+  }
+  return added;
 }

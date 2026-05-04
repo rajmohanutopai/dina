@@ -264,8 +264,14 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
 
     // eslint-disable-next-line no-console
     console.log(
-      `[RPC] in from=${env.from_did.slice(0, 30)} path=${inner.path} pair=${isPairPath}`,
+      `[RPC] in from=${env.from_did.slice(0, 30)} path=${inner.path} pair=${isPairPath} method=${inner.method}`,
     );
+    if (isPairPath) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PAIR] inbound ${inner.path} from=${env.from_did} body=${JSON.stringify(inner.body ?? {}).slice(0, 200)}`,
+      );
+    }
 
     if (isPairPath) {
       // Pair path: skip isDevice (agent isn't registered yet) but
@@ -368,6 +374,12 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       console.log(
         `[RPC] out status=${response.status} nonce=${nonceScheme} body=${response.body?.slice(0, 200)}`,
       );
+      if (isPairPath) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[PAIR] outbound ${inner.path} → status=${response.status} body=${response.body?.slice(0, 200) ?? ''}`,
+        );
+      }
       await sendRPCResponse(env, myDID, privateKey, response, nonceScheme);
       appendAudit(
         env.from_did,

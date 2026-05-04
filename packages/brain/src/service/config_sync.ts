@@ -80,6 +80,9 @@ export function toPublisherConfig(cfg: ServiceConfig): ServicePublisherConfig {
   if (cfg.capabilitySchemas !== undefined) {
     out.capabilitySchemas = cfg.capabilitySchemas;
   }
+  if (cfg.serviceArea !== undefined) {
+    out.serviceArea = cfg.serviceArea;
+  }
   return out;
 }
 

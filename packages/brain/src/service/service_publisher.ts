@@ -56,6 +56,8 @@ export interface ServicePublisherConfig {
   responsePolicy?: Record<string, 'auto' | 'review'>;
   /** Per-capability JSON Schemas. Added in commit 9b1c4a4. */
   capabilitySchemas?: Record<string, PublishedCapabilitySchema>;
+  /** Geographic service area for AppView geo-filter search. */
+  serviceArea?: { lat: number; lng: number; radiusKm: number };
 }
 
 /** Options for `ServicePublisher`. */
@@ -224,6 +226,16 @@ export function buildRecord(
   }
   if (config.capabilitySchemas !== undefined && Object.keys(config.capabilitySchemas).length > 0) {
     record.capabilitySchemas = serialiseSchemas(config.capabilitySchemas, log);
+  }
+  if (config.serviceArea !== undefined) {
+    // AT Protocol CBOR records forbid floats — encode coordinates as
+    // scaled integers (latE7 = round(lat * 1e7)). The ingester divides
+    // back when writing to Postgres. radiusKm stays integer.
+    record.serviceArea = {
+      latE7: Math.round(config.serviceArea.lat * 1e7),
+      lngE7: Math.round(config.serviceArea.lng * 1e7),
+      radiusKm: Math.round(config.serviceArea.radiusKm),
+    };
   }
   return record;
 }

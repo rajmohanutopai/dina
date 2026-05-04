@@ -58,6 +58,18 @@ export interface CreateAccountParams {
    * managed did:plc itself.
    */
   did?: string;
+  /**
+   * `did:key:z…` form of the client's secp256k1 rotation key. When
+   * supplied (and `did` is omitted), the PDS registers this key as a
+   * rotation key on the genesis PLC op alongside the PDS's own
+   * rotation key — so the client retains independent authority to
+   * issue PLC updates (add services, rotate signing keys) without
+   * needing the PDS's cooperation.
+   *
+   * Mirrors Go core (`core/internal/adapter/pds/plc_client.go`'s
+   * `CreateDIDOptions.RecoveryKey`).
+   */
+  recoveryKey?: string;
 }
 
 export interface CreateSessionParams {
@@ -116,6 +128,7 @@ export class PDSAccountClient {
     if (params.email !== undefined) body.email = params.email;
     if (params.inviteCode !== undefined) body.inviteCode = params.inviteCode;
     if (params.did !== undefined) body.did = params.did;
+    if (params.recoveryKey !== undefined) body.recoveryKey = params.recoveryKey;
     const url = `${this.pdsUrl}/xrpc/com.atproto.server.createAccount`;
     const resp = await this.fetchWithTimeout(url, {
       method: 'POST',
@@ -176,6 +189,7 @@ export class PDSAccountClient {
     email?: string;
     inviteCode?: string;
     existingDID?: string;
+    recoveryKey?: string;
   }): Promise<{ session: PDSSession; created: boolean }> {
     try {
       const session = await this.createSession({
@@ -193,6 +207,7 @@ export class PDSAccountClient {
         email: params.email,
         inviteCode: params.inviteCode,
         did: params.existingDID,
+        recoveryKey: params.recoveryKey,
       });
       return { session, created: true };
     }

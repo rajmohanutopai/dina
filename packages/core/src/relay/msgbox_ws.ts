@@ -98,6 +98,7 @@ let currentURL: string | null = null;
 let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let shouldReconnect = true;
+let stateHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 // Identity for auth handshake
 let homeNodeDID: string = '';
@@ -366,8 +367,20 @@ function doConnect(url: string): void {
     reconnectAttempt = 0; // reset backoff on successful connect
     // Healthy connect — trace, not error (see sendEnvelope OK comment).
     // eslint-disable-next-line no-console
-    console.log(`[WS] onopen url=${url}`);
+    console.log(`[WS] onopen url=${url} did=${homeNodeDID.slice(0, 30)}`);
     // Wait for auth_challenge from server — handled in onmessage
+
+    // Start a 15s heartbeat trace so we can see at-a-glance whether
+    // the socket is alive AND authenticated. Without this the only
+    // signal of liveness is inbound traffic — and a relay that's
+    // silently buffered our subscribe gives no signal at all.
+    if (stateHeartbeatTimer !== null) clearInterval(stateHeartbeatTimer);
+    stateHeartbeatTimer = setInterval(() => {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[WS] state did=${homeNodeDID.slice(0, 30)} ws=${ws !== null} ready=${ws?.readyState ?? '-'} conn=${connected} auth=${authenticated}`,
+      );
+    }, 15000);
   };
 
   ws.onmessage = (event) => {
@@ -400,12 +413,16 @@ function doConnect(url: string): void {
     // logic below handles any actually-needed recovery.
     // eslint-disable-next-line no-console
     console.log(
-      `[WS] onclose code=${ev?.code ?? '-'} reason=${ev?.reason ?? '-'} wasAuth=${authenticated}`,
+      `[WS] onclose did=${homeNodeDID.slice(0, 30)} code=${ev?.code ?? '-'} reason=${ev?.reason ?? '-'} wasAuth=${authenticated} willReconnect=${shouldReconnect}`,
     );
     connected = false;
     authenticated = false;
     authChallengeSeen = false;
     ws = null;
+    if (stateHeartbeatTimer !== null) {
+      clearInterval(stateHeartbeatTimer);
+      stateHeartbeatTimer = null;
+    }
     if (shouldReconnect) scheduleReconnect();
   };
 

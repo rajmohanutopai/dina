@@ -83,6 +83,26 @@ export type ApprovalNotifier = (notice: {
 }) => void | Promise<void>;
 
 /**
+ * Provider-side feedback hook fired when an inbound `service.query` is
+ * accepted and a task has been created. Used by the mobile UI to post a
+ * system message into the operator's chat thread so they have visible
+ * evidence that an external request landed and how it was handled.
+ *
+ * Fires AFTER successful task creation (once per accepted query). Does
+ * NOT fire on rejected queries — those already produce structured logs
+ * and an error `service.response`. Errors thrown by the notifier are
+ * logged and swallowed (mirrors the `ApprovalNotifier` contract).
+ */
+export type ServiceInboundNotifier = (notice: {
+  /** Either an execution (auto-policy) or an approval (review-policy). */
+  kind: 'execution' | 'approval';
+  taskId: string;
+  fromDID: string;
+  capability: string;
+  serviceName: string;
+}) => void | Promise<void>;
+
+/**
  * Callback that sends an ad-hoc `service.response` D2D envelope. Used by
  * `ServiceHandler.sendError` when a query fails BEFORE any workflow
  * task exists (unknown capability, schema mismatch, bad params). Issue
@@ -117,6 +137,13 @@ export interface ServiceHandlerOptions {
    */
   notifier?: ApprovalNotifier;
   /**
+   * Optional: fires once per accepted inbound query (either an execution
+   * task for auto policy, or an approval task for review policy). Wire to
+   * the operator's chat thread so they see who is asking what. No-op
+   * when absent.
+   */
+  inboundNotifier?: ServiceInboundNotifier;
+  /**
    * Optional: sends a `service.response` D2D when the handler rejects
    * an inbound query before a workflow task is created. When absent the
    * handler only logs the rejection; the requester waits out its TTL.
@@ -138,6 +165,7 @@ export class ServiceHandler {
   private readonly core: ServiceHandlerCoreClient;
   private readonly readConfig: () => ServiceConfig | null;
   private readonly notifier: ApprovalNotifier | null;
+  private readonly inboundNotifier: ServiceInboundNotifier | null;
   private readonly rejectResponder: ServiceRejectResponder | null;
   private readonly log: (entry: Record<string, unknown>) => void;
   private readonly nowSecFn: () => number;
@@ -149,6 +177,7 @@ export class ServiceHandler {
     this.core = options.coreClient;
     this.readConfig = options.readConfig;
     this.notifier = options.notifier ?? null;
+    this.inboundNotifier = options.inboundNotifier ?? null;
     this.rejectResponder = options.rejectResponder ?? null;
     this.log =
       options.logger ??
@@ -303,6 +332,7 @@ export class ServiceHandler {
   ): Promise<void> {
     const taskId = `svc-exec-${this.generateUUID()}`;
     const config = this.readConfig();
+    const serviceName = config?.name ?? '';
     await this.createExecutionTaskRaw({
       fromDID,
       queryId: query.query_id,
@@ -311,9 +341,16 @@ export class ServiceHandler {
       ttlSeconds: query.ttl_seconds,
       schemaHash: query.schema_hash,
       mcpTool: cap.mcpTool,
-      serviceName: config?.name ?? '',
+      serviceName,
       schemaSnapshot: snapshotForCapability(config, query.capability),
       taskId,
+    });
+    await this.fireInboundNotifier({
+      kind: 'execution',
+      taskId,
+      fromDID,
+      capability: query.capability,
+      serviceName,
     });
   }
 
@@ -427,6 +464,13 @@ export class ServiceHandler {
       capability: query.capability,
       query_id: query.query_id,
     });
+    await this.fireInboundNotifier({
+      kind: 'approval',
+      taskId,
+      fromDID,
+      capability: query.capability,
+      serviceName,
+    });
     if (this.notifier !== null) {
       try {
         await this.notifier({
@@ -443,6 +487,30 @@ export class ServiceHandler {
           error: (err as Error).message ?? String(err),
         });
       }
+    }
+  }
+
+  /**
+   * Best-effort: notify the operator that a query was accepted. Errors
+   * are logged + swallowed — chat-thread plumbing must never block task
+   * creation that already succeeded.
+   */
+  private async fireInboundNotifier(notice: {
+    kind: 'execution' | 'approval';
+    taskId: string;
+    fromDID: string;
+    capability: string;
+    serviceName: string;
+  }): Promise<void> {
+    if (this.inboundNotifier === null) return;
+    try {
+      await this.inboundNotifier(notice);
+    } catch (err) {
+      this.log({
+        event: 'service.query.inbound_notifier_threw',
+        task_id: notice.taskId,
+        error: (err as Error).message ?? String(err),
+      });
     }
   }
 

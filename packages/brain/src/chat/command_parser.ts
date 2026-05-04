@@ -18,6 +18,7 @@
 export type ChatIntent =
   | 'remember'
   | 'ask'
+  | 'task'
   | 'search'
   | 'service'
   | 'service_approve'
@@ -112,6 +113,8 @@ function parseSlashCommand(text: string): ParsedCommand {
       return { intent: 'remember', payload, explicit: true, originalText: text };
     case 'ask':
       return { intent: 'ask', payload, explicit: true, originalText: text };
+    case 'task':
+      return { intent: 'task', payload, explicit: true, originalText: text };
     case 'search':
       return { intent: 'search', payload, explicit: true, originalText: text };
     case 'service':

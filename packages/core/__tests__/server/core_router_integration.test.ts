@@ -127,13 +127,17 @@ describe('CoreRouter integration', () => {
     });
     registerService(brain.did, 'brain');
     registerDeviceDID(agent.did, 'agent-1');
-    setDeviceRoleResolver((d) => (d === agent.did ? 'agent' : null));
-
     const repo = new InMemoryWorkflowRepository();
     setWorkflowRepository(repo);
     setWorkflowService(new WorkflowService({ repository: repo }));
 
     router = createCoreRouter();
+    // `createCoreRouter` wires its own device-role resolver (reads from
+    // `devices/registry`). Override it AFTER router construction so the
+    // test's lightweight test-only resolver wins — without this the
+    // production resolver returns null for the test agent (it uses the
+    // caller_type registry, not devices/registry) and every claim 403s.
+    setDeviceRoleResolver((d) => (d === agent.did ? 'agent' : null));
   });
 
   afterAll(() => {
@@ -257,7 +261,11 @@ describe('CoreRouter integration', () => {
         signedReq('POST', '/v1/workflow/tasks/claim', { lease_ms: leaseMs }, agent),
       );
       expect(resp.status).toBe(200);
-      return (resp.body as { task: WorkflowTask }).task;
+      // Claim returns the flat task body (no `task` envelope) so the
+      // Python dina-agent daemon can read `body.id` directly when forming
+      // its follow-up `POST /v1/workflow/tasks/{id}/running` URL. See
+      // workflow.ts `claimTask`.
+      return resp.body as WorkflowTask;
     }
 
     it('agent-role device can claim queued delegation', async () => {
@@ -280,13 +288,67 @@ describe('CoreRouter integration', () => {
         signedReq('POST', '/v1/workflow/tasks/claim', { lease_ms: 30_000 }, agent),
       );
       expect(resp.status).toBe(200);
-      expect((resp.body as { task: WorkflowTask }).task.id).toBe('del-1');
-      expect((resp.body as { task: WorkflowTask }).task.agent_did).toBe(agent.did);
+      const claimed = resp.body as WorkflowTask & { payload_type: string };
+      expect(claimed.id).toBe('del-1');
+      expect(claimed.agent_did).toBe(agent.did);
+      // Go-Core parity: `payload_type` is lifted out of the JSON-encoded
+      // payload and exposed at the top level on the wire. The Python
+      // dina-agent's `build_task_prompt` reads this to decide whether to
+      // augment the LLM prompt with structured capability/params; without
+      // it, OpenClaw never gets the `mcp_tool` binding and the LLM
+      // wanders. Empty string is the correct value when payload has no
+      // `type` field — but the field MUST always be present.
+      expect(claimed.payload_type).toBe('');
     });
 
     it('claim returns 204 when no queued delegation exists', async () => {
       const resp = await router.handle(signedReq('POST', '/v1/workflow/tasks/claim', {}, agent));
       expect(resp.status).toBe(204);
+    });
+
+    it('claim lifts payload.type to payload_type for service_query_execution', async () => {
+      // Real BusDriver-shaped payload: the brain stores `type`,
+      // `capability`, `params`, `mcp_tool` etc. as a JSON string in the
+      // task's `payload` column. Core MUST surface `type` as a sibling
+      // top-level `payload_type` field on every wire response or the
+      // Python daemon's `build_task_prompt` falls back to the abstract
+      // description and OpenClaw never gets `transit__get_eta` bound.
+      const payload = JSON.stringify({
+        type: 'service_query_execution',
+        capability: 'eta_query',
+        params: { route_id: '42', location: { lat: 37.762, lng: -122.435 } },
+        mcp_tool: 'transit__get_eta',
+      });
+      await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks',
+          {
+            id: 'svc-exec-1',
+            kind: 'delegation',
+            description: 'Execute service query: eta_query',
+            payload,
+            initial_state: 'queued',
+          },
+          brain,
+        ),
+      );
+      const resp = await router.handle(
+        signedReq('POST', '/v1/workflow/tasks/claim', { lease_ms: 30_000 }, agent),
+      );
+      expect(resp.status).toBe(200);
+      const claimed = resp.body as WorkflowTask & { payload_type: string };
+      expect(claimed.id).toBe('svc-exec-1');
+      expect(claimed.payload_type).toBe('service_query_execution');
+      expect(claimed.payload).toBe(payload); // unchanged
+
+      // The same field must also appear on GET (used by /running echo +
+      // admin/diagnostic reads).
+      const getResp = await router.handle(
+        signedReq('GET', '/v1/workflow/tasks/svc-exec-1', undefined, brain),
+      );
+      const getTask = (getResp.body as { task: WorkflowTask & { payload_type: string } }).task;
+      expect(getTask.payload_type).toBe('service_query_execution');
     });
 
     it('holder agent can heartbeat to extend the lease', async () => {
@@ -387,6 +449,37 @@ describe('CoreRouter integration', () => {
         ),
       );
       expect(resp.status).toBe(409);
+    });
+
+    it('complete accepts result-only body (Python dina-agent parity)', async () => {
+      // The Python `dina-agent` MCP `dina_task_complete(task_id, result)`
+      // posts only `{ result }` — no `result_summary`. Go-Core derives
+      // the summary from `result`; the TS port must too. Without this
+      // every paired-OpenClaw completion 400s and the response bridge
+      // never fires.
+      await seedAndClaim('del-result-only');
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks/del-result-only/complete',
+          {
+            result:
+              '{"eta_minutes":12,"stop_name":"Castro Station","map_url":"https://maps.example/x"}',
+            agent_did: agent.did,
+          },
+          agent,
+        ),
+      );
+      expect(resp.status).toBe(200);
+      const fetched = await router.handle(
+        signedReq('GET', '/v1/workflow/tasks/del-result-only', undefined, brain),
+      );
+      const task = (fetched.body as { task: WorkflowTask }).task;
+      expect(task.status).toBe('completed');
+      expect(task.result).toContain('Castro Station');
+      // Summary derived from the first 200 chars of `result` so the
+      // admin UI / `dina /taskstatus` view still has display text.
+      expect(task.result_summary).toContain('Castro Station');
     });
 
     it('claim → heartbeat → progress → complete end-to-end', async () => {

@@ -22,7 +22,32 @@ import {
   WorkflowValidationError,
   getWorkflowService,
 } from '../../workflow/service';
-import type { WorkflowTaskState } from '../../workflow/domain';
+import type { WorkflowTask, WorkflowTaskState } from '../../workflow/domain';
+
+/**
+ * Lift `payload.type` to a top-level `payload_type` wire field. Go-Core
+ * persists this as an indexed column; the Python daemon's
+ * `build_task_prompt` reads `task.payload_type` to decide whether to
+ * inject structured capability/params into the LLM prompt. Without this
+ * field the daemon falls back to the abstract description and the
+ * LLM never sees the params or the bound MCP tool.
+ *
+ * Derived at read time so we don't need a schema migration.
+ */
+function withPayloadType(task: WorkflowTask): Record<string, unknown> {
+  const out = task as unknown as Record<string, unknown>;
+  if (typeof out.payload_type === 'string' && out.payload_type !== '') return out;
+  let payloadType = '';
+  if (typeof task.payload === 'string' && task.payload !== '') {
+    try {
+      const parsed = JSON.parse(task.payload) as { type?: unknown };
+      if (typeof parsed.type === 'string') payloadType = parsed.type;
+    } catch {
+      // Non-JSON payloads (rare, kind-specific) — leave empty.
+    }
+  }
+  return { ...out, payload_type: payloadType };
+}
 
 export function registerWorkflowRoutes(router: CoreRouter): void {
   router.post('/v1/workflow/tasks', createTask);
@@ -31,6 +56,18 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
   router.post('/v1/workflow/tasks/claim', claimTask);
   router.post('/v1/workflow/tasks/:id/heartbeat', heartbeatTask);
   router.post('/v1/workflow/tasks/:id/progress', progressTask);
+  // dina-agent calls /running after claim to confirm task ownership;
+  // TS Core's claim already transitions to running, so this is an
+  // idempotent no-op that just echoes the current task.
+  router.post('/v1/workflow/tasks/:id/running', async (req: CoreRequest): Promise<CoreResponse> => {
+    const service = getWorkflowService();
+    if (service === null) return j(503, { error: 'workflow service not wired' });
+    const id = req.params.id ?? '';
+    if (id === '') return j(400, { error: 'id required' });
+    const task = service.store().getById(id);
+    if (task === null) return j(404, { error: 'task not found' });
+    return j(200, withPayloadType(task));
+  });
   router.post('/v1/workflow/tasks/:id/approve', (req) =>
     runAction(req, (id, _body, s) => s.approve(id)),
   );
@@ -40,14 +77,22 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
   router.post('/v1/workflow/tasks/:id/complete', (req) =>
     runAction(req, (id, body, s) => {
       const result = strField(body?.result);
-      const summary = strField(body?.result_summary);
       const agentDID = strField(body?.agent_did);
-      if (result === '' || summary === '') {
-        throw new WorkflowValidationError(
-          'result and result_summary are required',
-          result === '' ? 'result' : 'result_summary',
-        );
+      if (result === '') {
+        throw new WorkflowValidationError('result is required', 'result');
       }
+      // Go-Core parity: `result_summary` is the human-readable display
+      // line on the admin/diagnostics surface; `result` is the
+      // structured payload (JSON for service-query bridging). The
+      // Python `dina-agent` MCP `dina_task_complete(task_id, result)`
+      // only sends `result` — Go-Core derives the summary from the
+      // first ~200 chars when omitted. Match that behaviour so paired
+      // OpenClaw runs don't 400 on every completion. Callers that
+      // pass an explicit `result_summary` are honoured verbatim.
+      const explicitSummary = strField(body?.result_summary);
+      const summary = explicitSummary !== ''
+        ? explicitSummary
+        : result.slice(0, 200);
       return s.complete(id, result, summary, agentDID);
     }),
   );
@@ -94,7 +139,7 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
   };
   try {
     const task = service.create(input);
-    return j(201, { task });
+    return j(201, { task: withPayloadType(task) });
   } catch (err) {
     if (err instanceof WorkflowValidationError) {
       return j(400, { error: err.message, field: err.field });
@@ -106,7 +151,7 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
         input.idempotencyKey !== ''
       ) {
         const existing = service.store().getActiveByIdempotencyKey(input.idempotencyKey);
-        if (existing !== null) return j(200, { task: existing, deduped: true });
+        if (existing !== null) return j(200, { task: withPayloadType(existing), deduped: true });
       }
       return j(409, { error: err.message, code: err.code });
     }
@@ -121,7 +166,7 @@ async function getTask(req: CoreRequest): Promise<CoreResponse> {
   if (id === '') return j(400, { error: 'id required' });
   const task = service.store().getById(id);
   if (task === null) return j(404, { error: 'task not found' });
-  return j(200, { task });
+  return j(200, { task: withPayloadType(task) });
 }
 
 async function listTasks(req: CoreRequest): Promise<CoreResponse> {
@@ -135,7 +180,7 @@ async function listTasks(req: CoreRequest): Promise<CoreResponse> {
   const requested = Number(req.query.limit ?? 100);
   const limit = clampLimit(requested);
   const tasks = service.store().listByKindAndState(kind, stateRaw as WorkflowTaskState, limit);
-  return j(200, { tasks, count: tasks.length });
+  return j(200, { tasks: tasks.map(withPayloadType), count: tasks.length });
 }
 
 async function claimTask(req: CoreRequest): Promise<CoreResponse> {
@@ -146,7 +191,15 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
   const leaseMs = extractLeaseMs(req.body);
   const task = service.store().claimDelegationTask(agentDID, Date.now(), leaseMs);
   if (task === null) return j(204, undefined);
-  return j(200, { task });
+  // dina-agent (Python) reads `body.id` / `body.payload` directly off
+  // the response body — no `task` envelope. Match Go-Core's wire shape
+  // so the daemon's URL formation (e.g. POST /v1/workflow/tasks/{id}/...)
+  // doesn't end up with an empty id and produce `tasks//running`.
+  // `withPayloadType` lifts `payload.type` to top-level `payload_type`
+  // (Go-Core parity) so the daemon's `build_task_prompt` augments the
+  // LLM prompt with structured capability/params instead of falling
+  // back to the abstract description.
+  return j(200, withPayloadType(task));
 }
 
 async function heartbeatTask(req: CoreRequest): Promise<CoreResponse> {
@@ -285,8 +338,8 @@ async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResp
     body = req.body as Record<string, unknown>;
   }
   try {
-    const task = action(id, body, service);
-    return j(200, { task });
+    const task = action(id, body, service) as WorkflowTask;
+    return j(200, { task: withPayloadType(task) });
   } catch (err) {
     if (err instanceof WorkflowValidationError) {
       const status = err.field === 'id' ? 404 : 400;

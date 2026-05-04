@@ -34,6 +34,16 @@ import { loadOrGenerateSeeds } from './identity_store';
 import { loadPersistedDid } from './identity_record';
 import { loadRolePreference } from './role_preference';
 import { AppViewStub, busDriverDemoProfile } from './appview_stub';
+import { AppViewClient } from '@dina/brain/src/appview_client/http';
+import {
+  EtaQueryParamsSchema,
+  EtaQueryResultSchema,
+} from '@dina/brain/src/service/capabilities/eta_query';
+import { computeSchemaHash } from '@dina/brain/src/service/capabilities/registry';
+import { PDSAccountClient } from '@dina/brain/src/pds/account';
+import { PDSPublisher } from '@dina/brain/src/pds/publisher';
+import { loadInfraPreferences } from './infra_preferences';
+import type { ServiceConfig } from '@dina/protocol';
 import { getIdentityAdapter } from '../storage/init';
 import { getPublicKey } from '@dina/core/src/crypto/ed25519';
 import { deriveDIDKey } from '@dina/core/src/identity/did';
@@ -59,6 +69,7 @@ import {
 import type { ProviderName } from '@dina/brain/src/llm/router';
 import { buildAgenticAskPipeline } from '@dina/brain/src/composition/agentic_ask';
 import { setReviewDraftStarter } from '@dina/brain/src/reasoning/draft_review_tool';
+import type { createDelegateToAgentTool } from '@dina/brain/src/reasoning/delegate_agent_tool';
 import { startReviewDraft } from '../trust/review_draft';
 import {
   buildAgenticExecuteFn,
@@ -79,11 +90,13 @@ import {
 import { DIDResolver } from '@dina/core/src/d2d/resolver';
 import { multibaseToPublicKey } from '@dina/core/src/identity/did';
 import { sendD2D as coreSendD2D } from '@dina/core/src/d2d/send';
+import { AppViewServiceResolver } from '@dina/core/src/appview/service_resolver';
 import type { ServiceType } from '@dina/core/src/transport/delivery';
 import {
   addContactIfNotExists,
   hydrateContactDirectory,
 } from '@dina/core/src/contacts/directory';
+import { hydrateDeviceRegistry } from '@dina/core/src/devices/registry';
 
 /**
  * Dev-only seed: EXPO_PUBLIC_DINA_DEV_CONTACT=`did:method:id|Display Name`.
@@ -106,6 +119,136 @@ function seedDevContact(): void {
   } catch {
     /* malformed params — silent */
   }
+}
+
+/**
+ * Parse `EXPO_PUBLIC_DINA_ROLE` into a NodeRole. Accepts the three valid
+ * values; anything else returns undefined so the caller falls through to
+ * the persisted role preference.
+ */
+function parseRoleEnv(raw: string | undefined): NodeRole | undefined {
+  if (raw === 'requester' || raw === 'provider' || raw === 'both') return raw;
+  return undefined;
+}
+
+/**
+ * Build an `initialServiceConfig` from `EXPO_PUBLIC_DINA_PROVIDER_CAPABILITY`
+ * (currently only `eta_query` is recognised — extend by name as more
+ * capabilities ship). Returns undefined when the env var is unset, in which
+ * case the node boots invisible (no profile published).
+ *
+ * `responsePolicy` defaults to `auto` — inbound queries become delegation
+ * tasks immediately, ready for the paired dina-agent to claim. Set
+ * `EXPO_PUBLIC_DINA_PROVIDER_REVIEW=1` to flip to operator-review mode.
+ */
+/**
+ * Construct a `PDSPublisher` for the provider node. Resolution priority:
+ *   1. persisted preference (Service Sharing UI / first-run gate),
+ *   2. EXPO_PUBLIC_DINA_PDS_* env vars (bench / CI),
+ *   3. built-in defaults (`https://test-pds.dinakernel.com`).
+ *
+ * Behavior:
+ *   - Onboarding (`provisionIdentity`) creates the PDS account and
+ *     persists `pdsHandle` + `pdsPassword` to keychain. By the time
+ *     boot runs, the account already exists.
+ *   - Boot just calls `createSession` to obtain JWTs. No
+ *     `createAccount` fallback — that path was only needed under the
+ *     old "mobile mints DID directly, hopes PDS will adopt it" flow,
+ *     which the PDS-first onboarding replaced. If `createSession`
+ *     fails we surface the error and degrade to `publisher.stub`,
+ *     which is the right signal: the operator should re-onboard or
+ *     fix the PDS pref rather than have boot silently mint a second
+ *     identity.
+ *
+ * Returns undefined on any failure (handle/password missing, network,
+ * auth) — boot continues with `publisher.stub` degradation rather
+ * than failing outright.
+ */
+async function tryBuildPdsPublisher(
+  _did: string,
+  infra: { pdsUrl: string | null; pdsHandle: string | null; pdsPassword: string | null; pdsEmail: string | null },
+): Promise<PDSPublisher | undefined> {
+  const pdsUrl =
+    infra.pdsUrl ??
+    process.env.EXPO_PUBLIC_DINA_PDS_URL ??
+    'https://test-pds.dinakernel.com';
+  const handle = infra.pdsHandle ?? process.env.EXPO_PUBLIC_DINA_PDS_HANDLE ?? '';
+  const password = infra.pdsPassword ?? process.env.EXPO_PUBLIC_DINA_PDS_PASSWORD ?? '';
+  if (handle === '' || password === '') return undefined;
+  const account = new PDSAccountClient({ pdsUrl });
+  try {
+    await account.createSession({ identifier: handle, password });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      '[dina:boot] PDS createSession failed — re-onboard or check infra prefs',
+      (err as Error).message,
+    );
+    return undefined;
+  }
+  return new PDSPublisher({ pdsUrl, handle, password });
+}
+
+function buildEnvServiceConfig(): ServiceConfig | undefined {
+  const cap = process.env.EXPO_PUBLIC_DINA_PROVIDER_CAPABILITY ?? '';
+  if (cap === '') return undefined;
+  const policy: 'auto' | 'review' =
+    process.env.EXPO_PUBLIC_DINA_PROVIDER_REVIEW === '1' ? 'review' : 'auto';
+  const name = process.env.EXPO_PUBLIC_DINA_PROVIDER_NAME ?? 'BusDriver';
+  const description =
+    process.env.EXPO_PUBLIC_DINA_PROVIDER_DESCRIPTION ??
+    'Demo transit-ETA provider — answers `eta_query` via paired dina-agent.';
+
+  if (cap === 'eta_query') {
+    const schemaHash = computeSchemaHash({
+      params: EtaQueryParamsSchema,
+      result: EtaQueryResultSchema,
+      description,
+    });
+    return {
+      isDiscoverable: true,
+      name,
+      description,
+      capabilities: {
+        eta_query: {
+          mcpServer: 'transit',
+          mcpTool: 'get_eta',
+          responsePolicy: policy,
+          schemaHash,
+        },
+      },
+      capabilitySchemas: {
+        eta_query: {
+          params: EtaQueryParamsSchema,
+          result: EtaQueryResultSchema,
+          schemaHash,
+          description,
+          defaultTtlSeconds: 60,
+        },
+      },
+      ...(buildEnvServiceArea() !== undefined ? { serviceArea: buildEnvServiceArea() } : {}),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Optional `serviceArea` from env. All three vars must be set; we don't
+ * hardcode a default location because the demo's SF coords would falsely
+ * advertise every unconfigured provider as serving San Francisco.
+ */
+function buildEnvServiceArea(): { lat: number; lng: number; radiusKm: number } | undefined {
+  const lat = process.env.EXPO_PUBLIC_DINA_PROVIDER_LAT;
+  const lng = process.env.EXPO_PUBLIC_DINA_PROVIDER_LNG;
+  const radius = process.env.EXPO_PUBLIC_DINA_PROVIDER_RADIUS_KM;
+  if (lat === undefined || lng === undefined || radius === undefined) return undefined;
+  const latN = Number(lat);
+  const lngN = Number(lng);
+  const radiusN = Number(radius);
+  if (!Number.isFinite(latN) || !Number.isFinite(lngN) || !Number.isFinite(radiusN)) {
+    return undefined;
+  }
+  return { lat: latN, lng: lngN, radiusKm: radiusN };
 }
 
 export interface BuiltBootInputs extends BootServiceInputs {
@@ -161,7 +304,11 @@ export async function buildBootInputs(
   options: BuildBootInputsOptions = {},
 ): Promise<BuiltBootInputs> {
   const { did, signingKeypair } = await resolveIdentity(options.didOverride);
-  const role = options.roleOverride ?? (await loadRolePreference());
+  // Role priority: explicit caller > EXPO_PUBLIC_DINA_ROLE env > persisted preference.
+  // The env override lets bench builds run as `provider` / `both` without
+  // tapping through the Service Sharing UI.
+  const envRole = parseRoleEnv(process.env.EXPO_PUBLIC_DINA_ROLE);
+  const role = options.roleOverride ?? envRole ?? (await loadRolePreference());
 
   // Restore persisted contacts from SQL so a restart doesn't silently
   // drop every peer. hydrateContactDirectory also mirrors into the
@@ -170,16 +317,42 @@ export async function buildBootInputs(
   // Safe when no SQL repo is wired (returns 0).
   hydrateContactDirectory();
 
+  // Same pattern, applied to paired devices. The auth role resolver
+  // reads `getDeviceByDID(did)?.role` from the in-memory Map; that
+  // Map is JS-side state and resets every Metro reload. SQL persists
+  // the row (write-through in `registerDevice`), but without this
+  // rehydrate the resolver returns null on the next boot, the paired
+  // OpenClaw agent's DID gets `device` callerType instead of `agent`,
+  // and every `/v1/workflow/tasks/claim` 403s. Lives here (not behind
+  // `initializePersistence`'s first-boot gate) because Metro reloads
+  // skip that gate but always re-run `buildBootInputs`.
+  await hydrateDeviceRegistry();
+
   // Dev-only contact seed: when EXPO_PUBLIC_DINA_DEV_CONTACT is set,
   // pre-populate the in-memory directory at boot so end-to-end smoke
   // runs don't depend on clean keyboard input through the Add Contact
   // form. Format: `did:plc:...:DisplayName` (single colon-separated
   // pair). Off in production because the env var is bundle-time only.
   seedDevContact();
-  // AppView client: explicit caller-supplied > demo-mode stub > undefined
-  // (which makes bootAppNode emit `discovery.no_appview`).
+
+  // Infra URLs — priority: persisted preference > env var > built-in.
+  // The Service Sharing UI writes these; env var is a fallback for
+  // bench builds and CI.
+  const infra = await loadInfraPreferences();
+  const appViewURL = infra.appViewURL ?? process.env.EXPO_PUBLIC_DINA_APPVIEW_URL ?? '';
+
+  // AppView client priority:
+  //   1. explicit caller-supplied (tests / programmatic boots),
+  //   2. resolved AppView URL (preference or env) → real AppViewClient,
+  //   3. demoMode → in-memory stub seeded with the bus42demo profile,
+  //   4. undefined → bootAppNode records `discovery.no_appview`.
   const appViewClient =
-    options.appViewClient ?? (options.demoMode === true ? demoAppView() : undefined);
+    options.appViewClient ??
+    (appViewURL !== ''
+      ? new AppViewClient({ appViewURL })
+      : options.demoMode === true
+        ? demoAppView()
+        : undefined);
   const databaseAdapter = getIdentityAdapter() ?? undefined;
 
   const agenticAskBundle = await tryBuildAgenticAsk({
@@ -301,6 +474,17 @@ export async function buildBootInputs(
     return null;
   };
 
+  // Resolver consulted by `service.query` egress to skip the contact gate
+  // when the recipient is a publicly-discoverable service. Without this
+  // every cross-Dina service.query (incl. the bus-ETA demo) is denied
+  // at contact even though the recipient advertises the capability on
+  // AppView. Provider-side service.response replies use the
+  // provider-window path and don't need the resolver.
+  const providerServiceResolver =
+    appViewURL !== ''
+      ? new AppViewServiceResolver({ appViewURL })
+      : undefined;
+
   const sendD2D: BootServiceInputs['sendD2D'] = async (to, type, body) => {
     const resolved = await didResolver.resolve(to);
     // ATProto PLC docs list the secp256k1 rotation key first
@@ -331,6 +515,7 @@ export async function buildBootInputs(
       recipientPublicKey,
       serviceType,
       endpoint,
+      providerServiceResolver,
     });
 
     if (!result.sent) {
@@ -339,6 +524,29 @@ export async function buildBootInputs(
       );
     }
   };
+
+  // Provider-mode env overrides (only honoured when role is provider/both).
+  // - EXPO_PUBLIC_DINA_HAS_PAIRED_AGENT=1 → declares an external dina-agent
+  //   will claim delegation tasks via the workflow API. Suppresses the
+  //   `execution.no_runner` degradation; mobile Brain still creates the
+  //   delegation tasks but never executes them locally.
+  // - EXPO_PUBLIC_DINA_PROVIDER_CAPABILITY (e.g. `eta_query`) seeds the
+  //   ServiceConfig at boot so the node publishes a profile + accepts
+  //   inbound `service.query` for that capability without manual UI setup.
+  const hasPairedAgent =
+    role === 'provider' || role === 'both'
+      ? process.env.EXPO_PUBLIC_DINA_HAS_PAIRED_AGENT === '1'
+      : undefined;
+  const initialServiceConfig =
+    role === 'provider' || role === 'both' ? buildEnvServiceConfig() : undefined;
+
+  // PDS publisher — required for providers to publish their service profile
+  // to AppView. We construct it from preference > env (PDS URL + handle +
+  // password) and call `ensureAccount` once before boot to auto-register
+  // the handle on first run. Without this, a provider node boots with
+  // `publisher.stub` degradation and the profile never reaches AppView.
+  const pdsPublisher =
+    role === 'provider' || role === 'both' ? await tryBuildPdsPublisher(did, infra) : undefined;
 
   return {
     did,
@@ -354,6 +562,9 @@ export async function buildBootInputs(
     wsFactory,
     resolveSender,
     sendD2D,
+    hasPairedAgent,
+    initialServiceConfig,
+    pdsPublisher,
     // PDS publisher stays unset — only providers that need discoverable
     // profiles need one; the boot service records `publisher.stub` if
     // role === 'provider' and it's missing.
@@ -524,6 +735,7 @@ async function tryBuildAgenticAsk(opts: {
     appViewClient: searchClient,
     orchestratorHandle: lazyOrchestratorHandle(),
     coreClient: lazyCoreClient(),
+    workflowClient: lazyWorkflowClient(),
     logger: opts.logger,
     approvalManager,
   });
@@ -637,6 +849,37 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
         return [];
       }
       return node.coreClient.findContactsByPreference(category);
+    },
+  };
+}
+
+/**
+ * Lazy workflow client for `delegate_to_agent`. Same lazy pattern as
+ * `lazyCoreClient` — DinaNode is constructed AFTER the agentic
+ * pipeline is built, so the tool dereferences the booted node at
+ * call time. When no node is booted (cold path) the create call
+ * throws, which the registry surfaces as `execution_failed` to the
+ * LLM — no silent no-op (would mask an unpaired-agent setup mistake).
+ */
+function lazyWorkflowClient(): Parameters<typeof createDelegateToAgentTool>[0]['core'] {
+  return {
+    async createWorkflowTask(input) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getBootedNode } =
+        require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
+      const node = getBootedNode();
+      if (node === null) {
+        throw new Error('delegate_to_local_agent: DinaNode not booted yet');
+      }
+      return node.coreClient.createWorkflowTask(input);
+    },
+    async getWorkflowTask(id) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getBootedNode } =
+        require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
+      const node = getBootedNode();
+      if (node === null) return null;
+      return node.coreClient.getWorkflowTask(id);
     },
   };
 }

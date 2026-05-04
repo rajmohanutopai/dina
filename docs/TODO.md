@@ -18,6 +18,12 @@ Remaining follow-ups:
 - `docker/openclaw/` needs to be copied/vendored into `dina-mobile` —
   standalone by design, pins `dina-agent==0.13.0` from PyPI.
 
+#Add an item in trust network
+⏺ You're right — the current model is weak on dedup precisely because the SubjectRef tuple hash is identity. "Aeron chair" / "aeron chair" / "Herman Miller Aeron" all mint separate subjects, and there's no        
+  remediation flow once they exist. Two-tier fix worth considering: for subjects with a canonical identifier (URL, DID, UPC/ASIN, YouTube video id) make that the dedup key and ignore the display name; for
+  free-text product/place subjects, do a fuzzy-match check at write-time and surface "did you mean one of these?" before allowing a new mint. The "add subject explicitly" UI then falls out naturally as the same   
+  search-or-create flow, just without the review attached — but the real win is the search-or-create gate, not the standalone entry point.
+
 
 # OpenAPI Issue
 OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used

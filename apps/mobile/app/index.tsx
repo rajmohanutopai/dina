@@ -105,11 +105,13 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
 // can send \u2014 keeps Dina from sliding into open-ended chatbot territory
 // (Anti-Her principle: every interaction is transactional).
 //
-// Task currently routes through `/ask ` because the orchestrator's
-// /ask path already handles delegation via the agentic tool-use loop
-// (an agent is invoked through the loop when paired). A dedicated
-// `/task` command may be introduced later \u2014 when it lands, only the
-// `prefix` on this entry needs to change.
+// Task routes through `/task ` (chat orchestrator now has its own
+// intent for it). Task mode reuses the agentic-loop pipeline but
+// prepends a directive so the LLM routes the user's request through
+// the `delegate_to_agent` tool instead of answering itself \u2014 i.e. it
+// hands the work off to a paired `dina-agent`. Same composition as
+// /ask so context enrichment (vault search, contacts, geocode)
+// still runs before the delegation; the difference is the destination.
 const ACTIONS = [
   {
     key: 'ask',
@@ -129,7 +131,7 @@ const ACTIONS = [
     key: 'task',
     label: 'Task',
     description: 'Hand work to an agent \u2014 fetch email, run a workflow, \u2026',
-    prefix: '/ask ',
+    prefix: '/task ',
     placeholder: 'e.g. Fetch my new email',
   },
 ] as const;

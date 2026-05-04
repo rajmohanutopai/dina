@@ -106,6 +106,24 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       ({ typed, sources, serviceQueries } = await handleAsk(parsed.payload, thread));
       break;
 
+    case 'task':
+      // Task mode = "delegate this to a paired agent". Reuses the
+      // agentic-loop pipeline (so context enrichment via vault_search /
+      // contacts / etc. still runs) but prepends a directive so the
+      // LLM routes through `delegate_to_agent` instead of answering
+      // itself. The user-facing thread already stored the original
+      // text above (`addUserMessage`); the directive only travels
+      // with the LLM round-trip.
+      if (parsed.payload.trim() === '') {
+        typed = plainResponse('What would you like the paired agent to do?');
+      } else {
+        ({ typed, sources, serviceQueries } = await handleAsk(
+          wrapAsTaskPrompt(parsed.payload),
+          thread,
+        ));
+      }
+      break;
+
     case 'search':
       ({ typed, sources } = await handleSearch(parsed.payload));
       break;
@@ -351,6 +369,32 @@ async function handleAsk(
     provider: defaultProvider,
   });
   return { typed: plainResponse(result.answer), sources: result.sources, serviceQueries: [] };
+}
+
+/**
+ * Wrap a `/task` payload with an inline directive that pushes the
+ * agentic loop's LLM toward the `delegate_to_agent` tool instead of
+ * answering directly. Caller is responsible for short-circuiting empty
+ * payloads — this helper assumes a non-empty trimmed payload.
+ *
+ * Why an inline preamble (not a system-prompt edit): the system prompt
+ * is a long, vault-aware document set up at boot. Editing it per-turn
+ * means threading flags through `AskCommandHandler`. An inline preamble
+ * is local to this call site and the LLM treats it with the same
+ * obedience as a system instruction in practice. The user-visible
+ * chat message is unchanged — `addUserMessage` already stored the
+ * original text before this transform runs.
+ */
+function wrapAsTaskPrompt(payload: string): string {
+  return [
+    '[TASK MODE — the user invoked /task. You MUST call the `delegate_to_agent` tool',
+    'with a `task_description` that captures their request. Resolve any contact names',
+    'or vault references using the read tools FIRST, then pass an enriched',
+    'description to the agent. Do NOT answer the user directly even if you think',
+    'you can — Task mode means the user expects an agent to do this work.]',
+    '',
+    `User request: ${payload.trim()}`,
+  ].join('\n');
 }
 
 // ---------------------------------------------------------------------------

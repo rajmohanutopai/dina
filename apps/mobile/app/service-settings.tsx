@@ -32,8 +32,18 @@ import {
   ServiceConfigNotConfiguredError,
   ServiceConfigValidationError,
 } from '../src/hooks/useServiceConfigForm';
-import { getBootDegradations } from '../src/hooks/useNodeBootstrap';
+import { getBootDegradations, getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
+import { saveRolePreference } from '../src/services/role_preference';
+import {
+  loadInfraPreferences,
+  savePdsUrl,
+  savePdsHandle,
+  savePdsPassword,
+  savePdsEmail,
+  saveAppViewURL,
+} from '../src/services/infra_preferences';
+import type { NodeRole } from '../src/services/bootstrap';
 import type { ServiceConfig } from '@dina/core/src/service/service_config';
 
 /**
@@ -83,6 +93,42 @@ export default function ServiceSettingsScreen() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [capabilities, setCapabilities] = useState<Array<{ key: string; policy: Policy }>>([]);
+  const bootedNode = getBootedNode();
+  const [role, setRole] = useState<NodeRole>(
+    bootedNode !== null ? (bootedNode.role as NodeRole) : 'requester',
+  );
+
+  // Infra URLs (PDS / AppView). Loaded from preferences once per mount;
+  // saved field-by-field on blur via the corresponding setters below.
+  const [pdsUrl, setPdsUrlState] = useState('');
+  const [pdsHandle, setPdsHandleState] = useState('');
+  const [pdsPassword, setPdsPasswordState] = useState('');
+  const [pdsEmail, setPdsEmailState] = useState('');
+  const [appViewURLState, setAppViewURLState] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      const infra = await loadInfraPreferences();
+      setPdsUrlState(infra.pdsUrl ?? '');
+      setPdsHandleState(infra.pdsHandle ?? '');
+      setPdsPasswordState(infra.pdsPassword ?? '');
+      setPdsEmailState(infra.pdsEmail ?? '');
+      setAppViewURLState(infra.appViewURL ?? '');
+    })();
+  }, []);
+
+  const onChangeRole = useCallback(async (next: NodeRole) => {
+    setRole(next);
+    try {
+      await saveRolePreference(next);
+      Alert.alert(
+        'Role updated',
+        `Saved as ${next}. Force-quit and reopen Dina to apply (boot wires ServicePublisher + ServiceHandler from this preference).`,
+      );
+    } catch (err) {
+      Alert.alert('Error', (err as Error).message ?? 'Failed to save role');
+    }
+  }, []);
 
   // Pull the boot-time degradations so the "make discoverable" toggle
   // can tell the truth: without a PDS publisher + MsgBox transport the
@@ -221,6 +267,112 @@ export default function ServiceSettingsScreen() {
         </View>
       ) : null}
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ROLE — let a fresh requester-only node self-promote to
+            provider. The boot path reads this on next launch and wires
+            ServicePublisher + ServiceHandler accordingly. Without this
+            toggle, role stays 'requester' forever (no other UI path). */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>ROLE</Text>
+          <View style={styles.card}>
+            {(['requester', 'provider', 'both'] as NodeRole[]).map((opt) => (
+              <Pressable
+                key={opt}
+                style={[styles.row, role === opt ? styles.rowSelected : null]}
+                onPress={() => onChangeRole(opt)}
+                accessibilityRole="button"
+                accessibilityLabel={`Set role to ${opt}`}
+              >
+                <Text style={styles.rowTitle}>{labelForRole(opt)}</Text>
+                {role === opt ? <Text style={styles.rowValue}>{'✓'}</Text> : null}
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* INFRA — user-editable PDS + AppView endpoints. Persisted via
+            infra_preferences (Keychain) so a fresh boot reads the user's
+            choice over env defaults. PDS handle + password become the
+            account this node publishes its service-profile under. The
+            "Save" button below commits all five fields atomically; we
+            don't auto-save on blur because adb-driven keyboard input
+            doesn't always emit a reliable blur event. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>INFRASTRUCTURE</Text>
+          <View style={styles.card}>
+            <Text style={styles.label}>AppView URL</Text>
+            <TextInput
+              value={appViewURLState}
+              onChangeText={setAppViewURLState}
+              placeholder="https://test-appview.dinakernel.com"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+            <View style={styles.inputDivider} />
+            <Text style={styles.label}>PDS URL</Text>
+            <TextInput
+              value={pdsUrl}
+              onChangeText={setPdsUrlState}
+              placeholder="https://test-pds.dinakernel.com"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+            <View style={styles.inputDivider} />
+            <Text style={styles.label}>PDS handle</Text>
+            <TextInput
+              value={pdsHandle}
+              onChangeText={setPdsHandleState}
+              placeholder="yourhandle.test-pds.dinakernel.com"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+            <View style={styles.inputDivider} />
+            <Text style={styles.label}>PDS password</Text>
+            <TextInput
+              value={pdsPassword}
+              onChangeText={setPdsPasswordState}
+              placeholder="account password"
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              style={styles.input}
+            />
+            <View style={styles.inputDivider} />
+            <Text style={styles.label}>PDS email (optional)</Text>
+            <TextInput
+              value={pdsEmail}
+              onChangeText={setPdsEmailState}
+              placeholder="you@example.com"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              style={styles.input}
+            />
+          </View>
+          <Pressable
+            style={styles.infraSaveButton}
+            onPress={async () => {
+              await Promise.all([
+                saveAppViewURL(appViewURLState),
+                savePdsUrl(pdsUrl),
+                savePdsHandle(pdsHandle),
+                savePdsPassword(pdsPassword),
+                savePdsEmail(pdsEmail),
+              ]);
+              Alert.alert(
+                'Infrastructure saved',
+                'Force-quit and reopen Dina to apply (boot wires AppView client + PDS publisher from these values).',
+              );
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Save infrastructure URLs"
+          >
+            <Text style={styles.infraSaveButtonText}>Save infrastructure</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>PUBLIC</Text>
           <View style={styles.card}>
@@ -354,6 +506,12 @@ export default function ServiceSettingsScreen() {
   );
 }
 
+function labelForRole(r: NodeRole): string {
+  if (r === 'requester') return 'Requester only — ask others, never serve';
+  if (r === 'provider') return 'Provider — accept inbound service queries';
+  return 'Both — provider + requester';
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -396,6 +554,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchLabel: { flex: 1, marginRight: spacing.sm },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  rowSelected: {
+    backgroundColor: colors.bgPrimary,
+    borderRadius: radius.sm,
+    borderBottomWidth: 0,
+  },
+  rowValue: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 16,
+    color: colors.accent,
+  },
   rowTitle: {
     fontFamily: fonts.sansMedium,
     fontSize: 15,
@@ -436,6 +613,30 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 48,
     textAlignVertical: 'top',
+  },
+  inputDivider: {
+    height: 1,
+    backgroundColor: colors.borderLight,
+    marginVertical: spacing.sm,
+  },
+  helpText: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  infraSaveButton: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  infraSaveButtonText: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 15,
+    color: colors.white,
   },
   capabilityRow: {
     flexDirection: 'row',

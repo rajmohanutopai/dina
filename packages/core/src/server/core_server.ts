@@ -29,6 +29,9 @@ import { registerContactsRoutes } from './routes/contacts';
 import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerIntentRoutes } from './routes/intent';
+import { registerSessionRoutes } from './routes/session';
+import { setDeviceRoleResolver } from '../auth/caller_type';
+import { getDeviceByDID } from '../devices/registry';
 
 import { CORE_DEFAULT_PORT } from '../constants';
 export const DEFAULT_PORT = CORE_DEFAULT_PORT;
@@ -97,6 +100,21 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // resolves from the mobile Approvals tab. See
   // `packages/core/src/server/routes/intent.ts` for the full pipeline.
   registerIntentRoutes(router);
+
+  // Session lifecycle — paired dina-agent opens a session before each
+  // delegation-task claim. Stub for now; full persona-pinning is a
+  // Go-Core port still pending in TS. See `routes/session.ts`.
+  registerSessionRoutes(router);
+
+  // Wire the device-role resolver so `resolveCallerType` can map paired
+  // agent DIDs (role='agent') to `callerType='agent'` for authz on the
+  // workflow-task pull endpoints (`/v1/workflow/tasks/claim`, heartbeat,
+  // complete). Without this, the resolver returns `null` for the role
+  // and every paired agent gets the generic `device` callerType — which
+  // is NOT in the workflow-tasks allow-list, so claim returns 403 with
+  // "Access denied: device not authorized for POST /v1/workflow/tasks/
+  // claim". The registry lookup is O(1) via the DID index.
+  setDeviceRoleResolver((did) => getDeviceByDID(did)?.role ?? null);
 
   return router;
 }

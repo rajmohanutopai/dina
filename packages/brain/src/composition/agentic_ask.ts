@@ -55,6 +55,7 @@ import { createGuardScanner } from '../reasoning/guard_scanner';
 import { IntentClassifier } from '../reasoning/intent_classifier';
 import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
 import { createDraftReviewTool } from '../reasoning/draft_review_tool';
+import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
 import { ToolRegistry } from '../reasoning/tool_registry';
 import { createSearchTrustNetworkTool } from '../reasoning/trust_tool';
 import {
@@ -93,6 +94,14 @@ export interface BuildAgenticAskPipelineInput {
   orchestratorHandle: Parameters<typeof createQueryServiceTool>[0]['orchestrator'];
   /** Lazy core client for `find_preferred_provider`. */
   coreClient: Parameters<typeof createFindPreferredProviderTool>[0]['core'];
+  /**
+   * Workflow surface for `delegate_to_agent` — narrower than the full
+   * `BrainCoreClient` so a host that hasn't paired any agents can omit
+   * the tool by passing `undefined`. When omitted the agentic loop
+   * simply lacks the delegation tool; the rest of the read-path tools
+   * still work.
+   */
+  workflowClient?: Parameters<typeof createDelegateToAgentTool>[0]['core'];
   /** Structured-log sink — propagated to the WM-BRAIN-06d telemetry path. */
   logger?: (entry: Record<string, unknown>) => void;
   /**
@@ -288,6 +297,16 @@ export function buildAgenticAskPipeline(
     // `setReviewDraftStarter` at boot); without a registered starter
     // this tool fails soft.
     reg.register(createDraftReviewTool());
+    // `delegate_to_agent` — hand a self-contained task to a paired
+    // agent (a separate device running `dina-agent`; the agent's
+    // runtime owns execution choice, Brain stays unaware). Closes the
+    // do-something gap in the existing tool surface (the others are
+    // all read paths). Skipped when no workflow client is provided
+    // (host has no paired agents). See
+    // `reasoning/delegate_agent_tool.ts`.
+    if (input.workflowClient !== undefined) {
+      reg.register(createDelegateToAgentTool({ core: input.workflowClient }));
+    }
     return reg;
   };
 

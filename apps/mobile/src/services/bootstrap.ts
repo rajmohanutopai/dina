@@ -97,7 +97,11 @@ import type { PDSPublisher } from '@dina/brain/src/pds/publisher';
 import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
 import type { PDSSession } from '@dina/brain/src/pds/account';
 import type { ServiceConfig } from '@dina/core/src/service/service_config';
-import { ServiceHandler, type ApprovalNotifier } from '@dina/brain/src/service/service_handler';
+import {
+  ServiceHandler,
+  type ApprovalNotifier,
+  type ServiceInboundNotifier,
+} from '@dina/brain/src/service/service_handler';
 import {
   ServiceQueryOrchestrator,
   type OrchestratorAppView,
@@ -142,6 +146,7 @@ import {
   addApprovalMessage,
   addMessage,
   addLifecycleMessage,
+  addSystemMessage,
   hydrateThread,
   findMessageByTaskId,
   updateMessageLifecycle,
@@ -518,8 +523,22 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const responseBridgeSender = makeServiceResponseBridgeSender({
     // ResponseBridge is service.response-only; inject the type so the
     // app's single sendD2D keeps one signature across all call sites.
-    sendResponse: (to, body) =>
-      options.sendD2D(to, 'service.response', body as unknown as Record<string, unknown>),
+    // After a successful send, post a system message into the operator's
+    // chat so the BusDriver/provider sees evidence the response went out
+    // (matches the inbound notification posted on receive — closes the
+    // visibility loop end-to-end).
+    sendResponse: async (to, body) => {
+      await options.sendD2D(to, 'service.response', body as unknown as Record<string, unknown>);
+      addSystemMessage(
+        threadId,
+        formatResponseSentLine({
+          toDID: to,
+          capability: body.capability,
+          status: body.status,
+          error: body.error,
+        }),
+      );
+    },
     // GAP-SH-05: wire brain's minimal draft-07 validator so the bridge
     // checks runner output against the frozen `schema_snapshot.result`.
     // A violation becomes a `result_schema_violation` error response
@@ -566,6 +585,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     coreClient: options.coreClient,
     readConfig,
     notifier: options.approvalNotifier ?? defaultApprovalNotifier(threadId),
+    inboundNotifier: defaultInboundNotifier(threadId),
     rejectResponder: async (to, body) => {
       await options.sendD2D(to, 'service.response', {
         query_id: body.query_id,
@@ -1341,4 +1361,39 @@ function defaultApprovalNotifier(threadId: string): ApprovalNotifier {
       approveCommand,
     });
   };
+}
+
+/**
+ * Provider-side chat visibility hook. When an external Home Node sends a
+ * `service.query` and ServiceHandler accepts it, post a system line into
+ * the operator's chat so they see the inbound traffic. Pairs with the
+ * `sendResponse` wrapper above (which posts a follow-up line when the
+ * bridge sends the `service.response`).
+ */
+function defaultInboundNotifier(threadId: string): ServiceInboundNotifier {
+  return ({ kind, fromDID, capability }) => {
+    const peer = shortDID(fromDID);
+    const verb = kind === 'approval' ? 'awaiting approval' : 'handling';
+    addSystemMessage(threadId, `Incoming ${capability} from ${peer} — ${verb}.`);
+  };
+}
+
+function formatResponseSentLine(args: {
+  toDID: string;
+  capability: string;
+  status: string;
+  error?: string;
+}): string {
+  const peer = shortDID(args.toDID);
+  if (args.status === 'success') {
+    return `Sent ${args.capability} response to ${peer}.`;
+  }
+  const reason = args.error !== undefined && args.error !== '' ? ` (${args.error})` : '';
+  return `Sent ${args.capability} ${args.status} to ${peer}${reason}.`;
+}
+
+/** Compress a `did:plc:abcdef…` to `did:plc:abcdef` for chat display. */
+function shortDID(did: string): string {
+  if (did.length <= 24) return did;
+  return `${did.slice(0, 20)}…`;
 }

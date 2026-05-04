@@ -276,7 +276,19 @@ export class AppViewClient {
     const body = await this.get('/xrpc/com.dina.service.search', query);
     const services = (body as { services?: unknown }).services;
     if (!Array.isArray(services)) return [];
-    return services.filter((s): s is ServiceProfile => isServiceProfile(s)).map(normalizeProfile);
+    // AppView's search xRPC publishes `operatorDid` (matches the AT-Proto
+    // record metadata convention) and omits `isDiscoverable` because the
+    // search index already filters by it. Coerce to the local
+    // `ServiceProfile` shape (`did`, `isDiscoverable: true`) so the
+    // downstream validator + LLM tools see the expected wire format.
+    const coerced: unknown[] = services.map((s) => {
+      if (!s || typeof s !== 'object') return s;
+      const r = s as Record<string, unknown>;
+      const did = typeof r.did === 'string' ? r.did : (r.operatorDid as string | undefined);
+      const isDiscoverable = typeof r.isDiscoverable === 'boolean' ? r.isDiscoverable : true;
+      return { ...r, did, isDiscoverable };
+    });
+    return coerced.filter((s): s is ServiceProfile => isServiceProfile(s)).map(normalizeProfile);
   }
 
   /**

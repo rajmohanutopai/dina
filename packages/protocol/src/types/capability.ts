@@ -67,4 +67,10 @@ export interface ServiceConfig {
   capabilities: Record<string, ServiceCapabilityConfig>;
   /** JSON Schemas per capability. Omit to leave params unvalidated. */
   capabilitySchemas?: Record<string, ServiceCapabilitySchemas>;
+  /**
+   * Geographic service area. AppView's `com.dina.service.search` filters
+   * candidates by `lat/lng` against this area before returning hits;
+   * profiles without it are invisible to geo-scoped searches.
+   */
+  serviceArea?: { lat: number; lng: number; radiusKm: number };
 }

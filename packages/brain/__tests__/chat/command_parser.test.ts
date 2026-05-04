@@ -22,6 +22,13 @@ describe('Chat Command Parser', () => {
       expect(cmd.explicit).toBe(true);
     });
 
+    it('/task routes to task intent (delegate-to-agent)', () => {
+      const cmd = parseCommand('/task fetch my unread email');
+      expect(cmd.intent).toBe('task');
+      expect(cmd.payload).toBe('fetch my unread email');
+      expect(cmd.explicit).toBe(true);
+    });
+
     it('/search routes to search intent', () => {
       const cmd = parseCommand('/search meeting notes');
       expect(cmd.intent).toBe('search');

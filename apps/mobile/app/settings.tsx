@@ -291,7 +291,12 @@ export default function SettingsScreen() {
         const runningAsProvider =
           node !== null && (node.role === 'provider' || node.role === 'both');
         const blocked = getBootDegradations().some((d) => PROVIDER_BLOCKERS.has(d.code));
-        if (!runningAsProvider || blocked) return null;
+        // Always show the Service Sharing entry. A non-provider node
+        // can still tap through to the Service Sharing screen, where
+        // the role toggle lives \u2014 without that path the role stays
+        // 'requester' forever. The runningAsProvider/blocked checks
+        // now only adjust the chevron copy.
+        const blockedLabel = blocked ? '\u2014 blocked' : '';
         return (
           <SettingsSection title="SERVICE SHARING">
             <TouchableOpacity
@@ -300,7 +305,10 @@ export default function SettingsScreen() {
               accessibilityRole="button"
               accessibilityLabel="Open Service Sharing settings"
             >
-              <Text style={styles.rowLabel}>Configure service profile</Text>
+              <Text style={styles.rowLabel}>
+                {runningAsProvider ? 'Configure service profile' : 'Become a provider'}
+                {blockedLabel}
+              </Text>
               <Text style={styles.rowValue}>{'\u203A'}</Text>
             </TouchableOpacity>
           </SettingsSection>

@@ -113,6 +113,19 @@ describe('PDSAccountClient.createAccount', () => {
     expect(sentBody.did).toBe('did:plc:alice-self-managed');
   });
 
+  it('forwards recoveryKey when supplied — Go-core mirror, lets PDS mint a DID with our K256 as a rotation key', async () => {
+    const fetchFn = mockFetch(() => okJson(VALID_SESSION));
+    const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
+    await client.createAccount({
+      handle: 'busdriver.test-pds',
+      password: 'p',
+      recoveryKey: 'did:key:zQ3sh-our-secp256k1-rotation-key',
+    });
+    const sentBody = JSON.parse(fetchFn.mock.calls[0][1]!.body as string);
+    expect(sentBody.recoveryKey).toBe('did:key:zQ3sh-our-secp256k1-rotation-key');
+    expect(sentBody.did).toBeUndefined();
+  });
+
   it('rejects missing handle / password before making a request', async () => {
     const fetchFn = mockFetch(() => okJson({}));
     const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });

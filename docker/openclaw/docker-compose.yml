@@ -37,6 +37,7 @@ services:
       OPENCLAW_MCP_COMMAND:     ${PROVIDER_MCP_COMMAND:-python3}
       OPENCLAW_MCP_ARGS:        ${PROVIDER_MCP_ARGS:-["-m","demo.transit"]}
       OPENCLAW_MCP_PYTHONPATH:  ${PROVIDER_MCP_PYTHONPATH:-/app}
+      DINA_MSGBOX_TRACE:        ${DINA_MSGBOX_TRACE:-}
       PYTHONPATH: /app
     volumes:
       # Bind-mount the provider MCP source. Override PROVIDER_MCP_PATH in .env
