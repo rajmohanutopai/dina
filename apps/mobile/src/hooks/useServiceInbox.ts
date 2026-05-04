@@ -6,7 +6,7 @@
  * approve or deny each.
  *
  * The inbox is client-injected: the app-layer bootstrap installs a
- * `BrainCoreClient` once via `setInboxCoreClient`; the hook then calls
+ * `CoreClient` once via `setInboxCoreClient`; the hook then calls
  * through it. Tests inject a fake client.
  *
  * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-008.
@@ -23,10 +23,16 @@ import type { CoreClient, WorkflowTask } from '@dina/core';
  *   agents. Approval gates an agent action (send_email, transfer_money,
  *   etc.); the agent polls `/v1/intent/:id/status`. Deny is a plain
  *   workflow cancel — there is no service.query requester to notify.
- * - `unknown` — payload doesn't match either shape; render with what
+ * - `staging_persona_access` — `/remember` wants to store into a locked
+ *   persona; approve drains the staged memory, deny drops it.
+ * - `unknown` — payload doesn't match a known shape; render with what
  *   we can read and surface a generic deny.
  */
-export type InboxEntryKind = 'service_query' | 'intent_validation' | 'unknown';
+export type InboxEntryKind =
+  | 'service_query'
+  | 'intent_validation'
+  | 'staging_persona_access'
+  | 'unknown';
 
 export interface InboxEntry {
   id: string;
@@ -123,14 +129,16 @@ export async function approvePending(taskId: string): Promise<WorkflowTask> {
  *     service.query waiting on a D2D response. Just cancel the task
  *     — the agent's next poll sees `cancelled → status='denied'`.
  *
+ *   - `staging_persona_access`: this is a local `/remember` gate. Just
+ *     cancel the workflow task; Core marks the staged row denied.
+ *
  *   - `unknown`: fall back to the service_query path. Worst case the
  *     respond fails because the requester DID is missing/malformed
  *     and we cancel anyway.
  *
  * Caller passes the entry's `kind` so we don't have to re-fetch the
- * task to inspect the payload. When omitted (legacy callers / tests
- * that pre-date this change) we default to `service_query` so the
- * existing behaviour is preserved.
+ * task to inspect the payload. When omitted, default to the service
+ * query flow because it is the only variant with a D2D requester.
  */
 export async function denyPending(
   taskId: string,
@@ -140,9 +148,10 @@ export async function denyPending(
   const core = requireClient();
   const denyReason = reason.trim() === '' ? 'denied_by_operator' : reason.trim();
 
-  if (kind === 'intent_validation') {
+  if (kind === 'intent_validation' || kind === 'staging_persona_access') {
     // Plain cancel — no service.respond peer to notify. The agent
-    // observes the new state via its `/v1/intent/:id/status` poll.
+    // observes intent_validation through polling; staging approvals are
+    // local and Core handles the pending_unlock denial.
     return core.cancelWorkflowTask(taskId, denyReason);
   }
 
@@ -197,6 +206,24 @@ function toEntry(task: WorkflowTask): InboxEntry {
       requesterDID: agentDID,
       paramsPreview: target,
       ...(riskLevel !== undefined ? { riskLevel } : {}),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'staging_persona_access') {
+    const persona = typeof parsed.persona === 'string' ? parsed.persona : '';
+    const source = typeof parsed.source === 'string' ? parsed.source : '';
+    const sourceId = typeof parsed.source_id === 'string' ? parsed.source_id : '';
+    const preview = typeof parsed.preview === 'string' ? parsed.preview : '';
+    return {
+      id: task.id,
+      kind: 'staging_persona_access',
+      capability: persona,
+      serviceName: 'Memory access',
+      description: task.description ?? '',
+      requesterDID: source !== '' ? source : sourceId,
+      paramsPreview: preview,
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

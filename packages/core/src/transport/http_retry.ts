@@ -1,7 +1,7 @@
 /**
  * Shared HTTP retry logic — exponential backoff with error classification.
  *
- * Extracted from CoreHTTPClient and BrainCoreClient to eliminate duplication.
+ * Shared by Core HTTP transports to eliminate duplication.
  *
  * Retry semantics:
  *   - 5xx responses: retryable

@@ -17,7 +17,7 @@
 
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import type { ChatMessage } from '@dina/brain/src/chat/thread';
+import type { ChatMessage } from '@dina/brain/chat';
 import { actOnNudge, dismissNudge, type NudgeKind } from '../hooks/useChatNudges';
 import { colors, fonts, radius, spacing } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';

@@ -40,7 +40,7 @@
  * tryBuildAgenticAsk).
  */
 
-import { getMemoryService } from '../../../core/src/memory/service';
+import { getMemoryService } from '@dina/core';
 import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
@@ -71,7 +71,7 @@ import { createPersonaGuard } from './persona_guard';
 import type { LLMProvider } from '../llm/adapters/provider';
 import type { ProviderName , TaskType } from '../llm/router';
 import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
-import type { ApprovalManager } from '@dina/core/src/approval/manager';
+import type { ApprovalManager } from '@dina/core';
 
 
 /**

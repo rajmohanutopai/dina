@@ -3,7 +3,7 @@
  * into a `DinaNode` handle. One call on app unlock.
  *
  * The factory's contract:
- *   - Caller supplies pre-built clients (`BrainCoreClient`, `AppViewClient`,
+ *   - Caller supplies pre-built clients (`CoreClient`, `AppViewClient`,
  *     optional `PDSPublisher`) + a storage backend (`WorkflowRepository`)
  *     + a `ServiceConfig` accessor.
  *   - Bootstrap owns: constructing `WorkflowService` with the Response
@@ -19,52 +19,58 @@
  * + starts the polling runners. `stop()` halts them in reverse order.
  */
 
-import type { WorkflowRepository } from '@dina/core/src/workflow/repository';
-import { setWorkflowRepository } from '@dina/core/src/workflow/repository';
-import type { CoreRouter } from '@dina/core/src/server/router';
-import { WorkflowService, setWorkflowService } from '@dina/core/src/workflow/service';
+import type { HomeNodeLifecycle } from '@dina/home-node';
 import {
-  setServiceConfigRepository,
-  type ServiceConfigRepository,
-} from '@dina/core/src/service/service_config_repository';
-import {
-  setServiceConfig,
-  resetServiceConfigState,
-  onServiceConfigChanged,
-  getServiceConfig,
-} from '@dina/core/src/service/service_config';
-import {
-  registerService,
-  registerDevice as registerDeviceDID,
-  setDeviceRoleResolver,
-  resetCallerTypeState,
-} from '@dina/core/src/auth/caller_type';
-import { registerPublicKeyResolver, resetMiddlewareState } from '@dina/core/src/auth/middleware';
-import { setNodeDID } from '@dina/core/src/pairing/ceremony';
-import { bootstrapMsgBox, type MsgBoxBootConfig } from '@dina/core/src/relay/msgbox_boot';
-import { D2DDispatcher } from '@dina/brain/src/guardian/d2d_dispatcher';
-import type { DinaMessage } from '@dina/core/src/d2d/envelope';
-import { setD2DSender } from '@dina/core/src/server/routes/d2d_msg';
-import { TaskExpirySweeper } from '@dina/core/src/workflow/task_expiry_sweeper';
-import { LeaseExpirySweeper } from '@dina/core/src/workflow/lease_expiry_sweeper';
-import { BridgePendingSweeper } from '@dina/core/src/workflow/bridge_pending_sweeper';
-import { StagingDrainScheduler } from '@dina/brain/src/staging/scheduler';
-import type { StagingDrainOptions } from '@dina/brain/src/staging/drain';
-import { installWorkflowApprovalInboxBridge } from '@dina/brain/src/notifications/bridges';
-import {
+  BridgePendingSweeper,
+  LeaseExpirySweeper,
   LocalDelegationRunner,
+  MsgTypeCoordinationRequest,
+  MsgTypeCoordinationResponse,
+  MsgTypeSafetyAlert,
+  MsgTypeSocialUpdate,
+  MsgTypeTrustVouchRequest,
+  MsgTypeTrustVouchResponse,
+  TaskExpirySweeper,
+  WorkflowService,
+  bootstrapMsgBox,
+  disconnectMsgBox,
+  getServiceConfig,
+  isMsgBoxAuthenticated,
+  makeServiceResponseBridgeSender,
+  onServiceConfigChanged,
+  registerDevice as registerDeviceDID,
+  registerPublicKeyResolver,
+  registerService,
+  resetCallerTypeState,
+  resetMiddlewareState,
+  resetServiceConfigState,
+  setD2DSender,
+  setDeviceRoleResolver,
+  setNodeDID,
+  setServiceConfig,
+  setServiceConfigRepository,
+  setServiceQuerySender,
+  setServiceRespondSender,
+  setWorkflowRepository,
+  setWorkflowService,
+  setWSDeliverFn,
+  type CoreClient,
+  type CoreRouter,
+  type DinaMessage,
   type LocalCapabilityRunner,
-} from '@dina/core/src/workflow/local_delegation_runner';
-import { setServiceQuerySender } from '@dina/core/src/server/routes/service_query';
-import { setServiceRespondSender } from '@dina/core/src/server/routes/service_respond';
-import { isAuthenticated as isMsgBoxAuthenticated } from '@dina/core/src/relay/msgbox_ws';
-import type {
-  ServiceQueryBody,
-  ServiceResponseBody,
-} from '@dina/core/src/d2d/service_bodies';
-import { disconnect as disconnectMsgBox, type WSFactory } from '@dina/core/src/relay/msgbox_ws';
-import { setWSDeliverFn } from '@dina/core/src/transport/delivery';
-import { makeServiceResponseBridgeSender } from '@dina/core/src/workflow/response_bridge_sender';
+  type MsgBoxBootConfig,
+  type ServiceConfig,
+  type ServiceConfigRepository,
+  type ServiceQueryBody,
+  type ServiceResponseBody,
+  type WorkflowRepository,
+  type WSFactory,
+} from '@dina/core/runtime';
+import {
+  installWorkflowApprovalInboxBridge,
+  StagingDrainScheduler,
+  type StagingDrainOptions,
+} from '@dina/brain/runtime';
 import { emitRuntimeWarning } from './runtime_warnings';
 
 function emitMsgboxOfflineWarning(detail: string): void {
@@ -90,29 +96,35 @@ export type AppD2DSender = (
   messageType: string,
   body: Record<string, unknown>,
 ) => Promise<void>;
-import { validateAgainstSchema } from '@dina/brain/src/service/capabilities/schema_validator';
-import type { CoreClient } from '@dina/core/src/client/core-client';
-import type { AppViewClient } from '@dina/brain/src/appview_client/http';
-import type { PDSPublisher } from '@dina/brain/src/pds/publisher';
-import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
-import type { PDSSession } from '@dina/brain/src/pds/account';
-import type { ServiceConfig } from '@dina/core/src/service/service_config';
 import {
+  ApprovalReconciler,
+  createCoordinatorAskHandler,
+  D2DDispatcher,
+  makeAgenticAskHandler,
+  makeServiceApproveHandler,
+  makeServiceDenyHandler,
   ServiceHandler,
-  type ApprovalNotifier,
-  type ServiceInboundNotifier,
-} from '@dina/brain/src/service/service_handler';
-import {
+  ServicePublisher,
   ServiceQueryOrchestrator,
-  type OrchestratorAppView,
-} from '@dina/brain/src/service/service_query_orchestrator';
-import {
+  toPublisherConfig,
+  validateAgainstSchema,
+  wireServiceOrchestrator,
   WorkflowEventConsumer,
-  type WorkflowEventDeliverer,
+  type AgenticAskHandlerOptions,
   type ApprovalEventDispatcher,
-} from '@dina/brain/src/service/workflow_event_consumer';
-import { ApprovalReconciler } from '@dina/brain/src/service/approval_reconciliation';
-import { wireServiceOrchestrator } from '@dina/brain/src/service/service_wiring';
+  type ApprovalNotifier,
+  type AskCoordinator,
+  type CreateCoordinatorAskHandlerOptions,
+  type LLMProvider,
+  type OrchestratorAppView,
+  type PDSPublisher,
+  type PDSSession,
+  type ServiceInboundNotifier,
+  type ToolRegistry,
+  type WorkflowEventDeliverer,
+} from '@dina/brain';
+import type { AppViewClient } from '@dina/brain';
+import type { IdentityKeypair } from '@dina/core';
 import {
   setServiceApproveCommandHandler,
   resetServiceApproveCommandHandler,
@@ -120,27 +132,11 @@ import {
   resetServiceDenyCommandHandler,
   setAskCommandHandler,
   resetAskCommandHandler,
+  setRememberCoreClient,
+  resetRememberCoreClient,
   setRememberDrainHook,
   resetRememberDrainHook,
-} from '@dina/brain/src/chat/orchestrator';
-import { getItem as getStagingItem } from '@dina/core/src/staging/service';
-import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
-import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
-import {
-  makeAgenticAskHandler,
-  type AgenticAskHandlerOptions,
-} from '@dina/brain/src/reasoning/ask_handler';
-import {
-  createCoordinatorAskHandler,
-  type CreateCoordinatorAskHandlerOptions,
-} from '@dina/brain/src/composition/coordinator_ask_handler';
-import type { AskCoordinator } from '@dina/brain/src/composition/ask_coordinator';
-import {
-  makeServiceApproveHandler,
-  makeServiceDenyHandler,
-} from '@dina/brain/src/service/approve_command';
-import { ServicePublisher } from '@dina/brain/src/service/service_publisher';
-import { toPublisherConfig } from '@dina/brain/src/service/config_sync';
+} from '@dina/brain/chat';
 import {
   addDinaResponse,
   addApprovalMessage,
@@ -152,20 +148,13 @@ import {
   updateMessageLifecycle,
   readLifecycle,
   type ServiceQueryStatus,
-} from '@dina/brain/src/chat/thread';
-import {
-  MsgTypeCoordinationRequest,
-  MsgTypeCoordinationResponse,
-  MsgTypeSocialUpdate,
-  MsgTypeTrustVouchRequest,
-  MsgTypeTrustVouchResponse,
-  MsgTypeSafetyAlert,
-} from '@dina/core/src/d2d/families';
-import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
+} from '@dina/brain/chat';
+
 import {
   setServiceConfigCoreClient,
   resetServiceConfigCoreClient,
 } from '../hooks/useServiceConfigForm';
+import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
 
 export type NodeRole = 'requester' | 'provider' | 'both';
 
@@ -204,11 +193,8 @@ export interface CreateNodeOptions {
    * wires against this. Mobile boot passes `InProcessTransport(router)`;
    * home-node-lite's brain-server passes `HttpCoreTransport`. Both
    * implement the same `CoreClient` interface so bootstrap code never
-   * branches on runtime. (Earlier iterations had a transitional
-   * `coreClient: BrainCoreClient` + `coreTransport: CoreClient`
-   * dual-wiring; task 1.32 finished migrating every consumer onto
-   * CoreClient + the hooks onto `Pick<CoreClient, ...>` slices, so
-   * the two fields collapse to one.)
+   * branches on runtime. The normal runtime exposes one Core client;
+   * there is no parallel Brain-owned Core client surface.
    */
   coreClient: CoreClient;
   appViewClient: Pick<AppViewClient, 'searchServices'>;
@@ -221,8 +207,8 @@ export interface CreateNodeOptions {
    */
   serviceConfigRepository?: ServiceConfigRepository;
   /**
-   * Accessor for the node's ServiceConfig. Kept for backward-compatible
-   * injection in tests. When omitted, bootstrap falls back to Core's
+   * Accessor for the node's ServiceConfig. Kept for injection in tests.
+   * When omitted, bootstrap falls back to Core's
    * global `getServiceConfig` (driven by `setServiceConfig` / the config
    * repository).
    */
@@ -257,10 +243,9 @@ export interface CreateNodeOptions {
    * event + task themselves. Return `null` to fall back to
    * `chatThreadId`.
    *
-   * Review #6 (partial): previously every async response routed to
-   * one fixed `chatThreadId`. Once multiple threads exist (per-
-   * persona chats, a separate Service Inbox thread, etc.) the
-   * caller supplies this resolver to route by origin.
+   * Once multiple threads exist (per-persona chats, a separate
+   * Service Inbox thread, etc.) the caller supplies this resolver to
+   * route by origin.
    */
   threadResolver?: (ctx: {
     originChannel: string;
@@ -368,7 +353,7 @@ export interface CreateNodeOptions {
   logger?: (entry: Record<string, unknown>) => void;
 }
 
-export interface DinaNode {
+export interface DinaNode extends HomeNodeLifecycle {
   did: string;
   /**
    * The role this node started under. The UI reads this to decide
@@ -679,7 +664,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // `queryId` isn't present on the event details — recover it from
       // the task payload (the requester stamped it there at dispatch
       // time). Falls back to empty when the payload is malformed.
-      const lifecycle: import('@dina/brain/src/chat/thread').ServiceQueryLifecycle = {
+      const lifecycle: import('@dina/brain/chat').ServiceQueryLifecycle = {
         kind: 'service_query',
         status,
         taskId: task.id,
@@ -698,7 +683,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       return;
     }
 
-    // Non-service_query workflow events keep the legacy dina-bubble path.
+    // Non-service_query workflow events keep the normal dina-bubble path.
     addDinaResponse(target, text, sources.length > 0 ? sources : undefined);
   };
   const onApproved: ApprovalEventDispatcher = async ({ task, payload }) => {
@@ -811,7 +796,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       : null;
 
   // Chat-orchestrator globals are also deferred to start(). Issue #8.
-  const globalDisposers: Array<() => void> = [];
+  const globalDisposers: (() => void)[] = [];
   const installChatGlobals = (): void => {
     if (!globalWiring) return;
     const disposeWire = wireServiceOrchestrator({ orchestrator });
@@ -824,6 +809,8 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     globalDisposers.push(resetInboxCoreClient);
     setServiceConfigCoreClient(options.coreClient);
     globalDisposers.push(resetServiceConfigCoreClient);
+    setRememberCoreClient(options.coreClient);
+    globalDisposers.push(resetRememberCoreClient);
     // Pattern A coordinator wins over the simpler agenticAsk path —
     // coordinator subsumes the tool-loop and adds the suspend/resume
     // chain. Tests / minimal nodes that don't need approval gating
@@ -873,12 +860,12 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         // so each tick is sub-second.
         const MAX_ATTEMPTS = 5;
         for (let i = 0; i < MAX_ATTEMPTS; i++) {
-          await stagingDrain.runTick();
-          const item = getStagingItem(stagingId);
-          if (item !== null && item.status === 'stored' && item.persona) {
+          const tick = await stagingDrain.runTick();
+          const item = tick.results.find((r) => r.itemId === stagingId);
+          if (item?.status === 'stored' && item.persona) {
             return { persona: item.persona };
           }
-          if (item === null || item.status === 'failed') break;
+          if (item?.status === 'failed') break;
         }
         return { persona: null };
       });
@@ -1071,10 +1058,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       if (stagingDrain !== null) stagingDrain.start();
       if (localRunner !== null) localRunner.start();
 
-      // Only flip the idempotency flag once every boot step has landed.
-      // Previously this was set at the top, so a throw mid-boot left
-      // the node half-wired AND rejected subsequent start() calls as
-      // "already started". Issue #9.
+      // Only flip the idempotency flag once every boot step has landed
+      // so a throw mid-boot does not leave the node half-wired while
+      // rejecting subsequent start() calls as "already started".
       started = true;
       log({ event: 'node.started', did: options.did });
     },
@@ -1083,10 +1069,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       if (!started) return;
       started = false;
       // Stop scheduling new ticks, then wait for any in-flight ticks
-      // to drain before callers can assume shutdown completed. Issue
-      // #10 — previously stop() returned while events/approvals/
-      // runner ticks were still mid-flight, leading to reset-globals-
-      // while-still-running races.
+      // to drain before callers can assume shutdown completed.
       if (localRunner !== null) localRunner.stop();
       if (stagingDrain !== null) stagingDrain.stop();
       bridgeRetry.stop();

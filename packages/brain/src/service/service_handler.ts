@@ -40,16 +40,6 @@ import { validateAgainstSchema } from './capabilities/schema_validator';
  *   - `cancelWorkflowTask` is called on the approval task once the
  *     delegation has spun up — keeps the approval from sitting in
  *     `pending_approval` after the downstream work already started.
- *
- * Task 1.32-H: used to be `Pick<BrainCoreClient, ...>` with a third
- * `sendServiceRespond` method that was unused on `this.core` (the
- * reject-responder path routes through the injected
- * `rejectResponder` option instead, not through CoreClient — the
- * responder builds the D2D envelope outside Core's service-respond
- * route because `service_handler` rejects BEFORE creating a task,
- * so there's no task-id yet for the Core bridge to attach the send
- * to, issue #9). Migration narrows the Pick to what's actually used
- * on the client — smaller contract, easier to satisfy in tests.
  */
 export type ServiceHandlerCoreClient = Pick<
   CoreClient,
@@ -558,7 +548,8 @@ export class ServiceHandler {
    * Match the provider's advertised schema hash against what the
    * requester pinned. Rules (GAP-SH-01, matches main-dina):
    *   - No published schema  → pass (provider can't commit what it hasn't advertised).
-   *   - Published schema present but `schemaHash` empty → pass (legacy).
+   *   - Published schema present but `schemaHash` empty → pass; the
+   *     provider has not committed to a versioned schema yet.
    *   - Requester MUST supply a non-empty `schema_hash` once the provider
    *     publishes one — missing / empty is rejected as `schema_hash_required`.
    *     Without this, a stale requester could bypass version safety.
@@ -661,10 +652,9 @@ function findCapabilityConfig(
 
 /**
  * Extract a plain-object snapshot of the published schema for
- * `capability`. Returns `undefined` when no schema is published — the
- * task payload then simply omits `schema_snapshot` and the response
- * bridge falls back to its legacy behaviour (pass-through without
- * result-schema validation). Exported for tests.
+ * `capability`. Returns `undefined` when no schema is published, so
+ * the task payload omits `schema_snapshot` and response validation uses
+ * the capability registry only. Exported for tests.
  */
 export function snapshotForCapability(
   config: ServiceConfig | null,

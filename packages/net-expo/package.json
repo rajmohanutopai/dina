@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dina/core": "*"
+    "@dina/core": "*",
+    "@dina/home-node": "*"
   },
   "peerDependencies": {
     "react-native": ">=0.72"

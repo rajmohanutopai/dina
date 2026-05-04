@@ -45,7 +45,7 @@ import {
   type PersonaGateOutcome,
   type PersonaGateTier,
 } from './persona_gate';
-import type { ApprovalManager } from '@dina/core/src/approval/manager';
+import type { ApprovalManager } from '@dina/core';
 
 /** Persona shape the gate cares about. */
 export interface PersonaInfo {

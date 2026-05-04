@@ -2,9 +2,7 @@
  * Bridge between the Settings-side BYOK provider and Brain's chat
  * orchestrator.
  *
- * Issue #2 — previously the Settings screen only mutated the legacy
- * `src/ai/chat.ts` state, which the live chat path never consulted. The
- * live path is `useChatThread → handleChat → reason()` in
+ * The live path is `useChatThread → handleChat → reason()` in
  * `packages/brain/src/chat/orchestrator.ts`; it picks up reasoning via
  * `registerReasoningLLM` and picks up its provider label from
  * `setDefaultProvider`. This module is the single call site the Settings
@@ -12,8 +10,7 @@
  * together.
  *
  * Safety properties (review findings #6, #11): the registered
- * reasoning function mirrors the legacy path's belt-and-suspenders
- * scrub/rehydrate behaviour:
+ * reasoning function uses belt-and-suspenders scrub/rehydrate behaviour:
  *
  *   1. Brain's `reason()` pipeline passes an already-scrubbed context
  *      (via `checkCloudGate`) AND scans the rehydrated answer
@@ -35,19 +32,22 @@
  * stalled cloud request can't hang the chat UI indefinitely.
  */
 
-import type { LanguageModel } from 'ai';
 import { generateText } from 'ai';
-import { createModel } from './provider';
-import type { ProviderType } from './provider';
-import { scrubPII, rehydratePII } from '@dina/core/src/pii/patterns';
+
+import { setDefaultProvider, resetChatDefaults } from '@dina/brain/chat';
 import {
   registerReasoningLLM,
   resetReasoningLLM,
-} from '@dina/brain/src/pipeline/chat_reasoning';
-import { setDefaultProvider, resetChatDefaults } from '@dina/brain/src/chat/orchestrator';
+} from '@dina/brain/llm';
+import { scrubPII, rehydratePII } from '@dina/core';
 
-/** LLM call timeout — matches legacy path. Exported so tests can
- *  assert on the exact window instead of hard-coding a magic number. */
+import { createModel } from './provider';
+
+import type { ProviderType } from './provider';
+import type { LanguageModel } from 'ai';
+
+/** LLM call timeout. Exported so tests can assert on the exact window
+ *  instead of hard-coding a magic number. */
 export const LLM_TIMEOUT_MS = 60_000;
 
 /**

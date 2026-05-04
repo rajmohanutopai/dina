@@ -18,7 +18,7 @@ import {
   listContacts,
   resetContactDirectory,
   type Contact,
-} from '@dina/core/src/contacts/directory';
+} from '@dina/core';
 
 export interface PhoneContact {
   id: string;

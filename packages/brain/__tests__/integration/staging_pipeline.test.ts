@@ -118,21 +118,24 @@ describe('Staging Pipeline End-to-End Integration', () => {
     });
   });
 
-  describe('locked persona → pending_unlock → drain', () => {
-    it('item resolved to locked persona, then drained on unlock', () => {
+  describe('locked persona → pending_unlock → approval drain', () => {
+    it('item resolved to locked persona, then drained on approval', () => {
       const { id } = ingest({
         source: 'gmail',
         source_id: 'health-item',
         data: { summary: 'Lab results' },
       });
       claim(10);
-      resolve(id, 'health', false); // health is locked
+      resolve(id, 'health', false, {
+        id: 'health-item-vault',
+        type: 'note',
+        summary: 'Lab results',
+      }); // health is locked
       expect(getItem(id)!.status).toBe('pending_unlock');
 
-      // User unlocks health persona
-      openPersona('health', true);
-      const { drainForPersona } = require('../../../core/src/staging/service');
-      const drained = drainForPersona('health');
+      const approvalId = getItem(id)!.approval_id!;
+      const { drainForApproval } = require('../../../core/src/staging/service');
+      const drained = drainForApproval(approvalId).drained;
       expect(drained).toBe(1);
       expect(getItem(id)!.status).toBe('stored');
     });
@@ -164,10 +167,9 @@ describe('Staging Pipeline End-to-End Integration', () => {
       resolve(id, 'health', false, vaultItem); // health is locked
       expect(getItem(id)!.status).toBe('pending_unlock');
 
-      // Unlock and drain
-      openPersona('health', true);
-      const { drainForPersona } = require('../../../core/src/staging/service');
-      drainForPersona('health');
+      const approvalId = getItem(id)!.approval_id!;
+      const { drainForApproval } = require('../../../core/src/staging/service');
+      drainForApproval(approvalId);
 
       // Verify vault item has enriched content
       const vaultResults = queryVault('health', { mode: 'fts5', text: 'blood', limit: 10 });

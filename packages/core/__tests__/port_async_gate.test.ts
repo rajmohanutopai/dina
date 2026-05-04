@@ -34,7 +34,6 @@ const CONVERTED_PORTS: readonly { file: string; interfaceName: string }[] = [
   { file: 'chat/repository.ts', interfaceName: 'ChatMessageRepository' },
   { file: 'reminders/repository.ts', interfaceName: 'ReminderRepository' },
   { file: 'service/service_config_repository.ts', interfaceName: 'ServiceConfigRepository' },
-  { file: 'staging/repository.ts', interfaceName: 'StagingRepository' },
   { file: 'vault/repository.ts', interfaceName: 'VaultRepository' },
   { file: 'storage/db_provider.ts', interfaceName: 'DBProvider' },
 ];
@@ -72,13 +71,19 @@ const EXEMPTED_PORTS: readonly { file: string; interfaceName: string; reason: st
     file: 'contacts/repository.ts',
     interfaceName: 'ContactRepository',
     reason:
-      'Thin wrapper over the EXEMPT sync DatabaseAdapter. The in-memory contact directory enforces GAP-PERSIST-01 — SQL write MUST happen before in-memory mutation so a failed write leaves memory consistent with disk. That ordering contract requires sync semantics: an async repo would force in-memory state to either lag the resolved promise (stale reads) or commit before the disk write succeeds (split-brain on failure). 167 call-sites read from the directory synchronously; converting would propagate awaits with zero I/O benefit. Source comment in repository.ts pins the rationale.',
+      'Small adapter over the EXEMPT sync DatabaseAdapter. The in-memory contact directory enforces GAP-PERSIST-01 — SQL write MUST happen before in-memory mutation so a failed write leaves memory consistent with disk. That ordering contract requires sync semantics: an async repo would force in-memory state to either lag the resolved promise (stale reads) or commit before the disk write succeeds (split-brain on failure). 167 call-sites read from the directory synchronously; converting would propagate awaits with zero I/O benefit. Source comment in repository.ts pins the rationale.',
   },
   {
     file: 'workflow/repository.ts',
     interfaceName: 'WorkflowRepository',
     reason:
-      'Thin wrapper over the EXEMPT sync DatabaseAdapter. Atomic state transitions (transition, claimDelegationTask, claimApprovalForExecution, heartbeatTask, completeWithEvent) compose multiple statements inside db.transaction(fn) where the callback body must run to completion synchronously before COMMIT. Wrapping in Promise<T> would force the transaction to resolve before COMMIT (breaking atomicity) or block on an inner promise the sync DB does not support. Source comment in repository.ts pins the rationale.',
+      'Small adapter over the EXEMPT sync DatabaseAdapter. Atomic state transitions (transition, claimDelegationTask, claimApprovalForExecution, heartbeatTask, completeWithEvent) compose multiple statements inside db.transaction(fn) where the callback body must run to completion synchronously before COMMIT. Wrapping in Promise<T> would force the transaction to resolve before COMMIT (breaking atomicity) or block on an inner promise the sync DB does not support. Source comment in repository.ts pins the rationale.',
+  },
+  {
+    file: 'staging/repository.ts',
+    interfaceName: 'StagingRepository',
+    reason:
+      'Small adapter over the EXEMPT sync DatabaseAdapter. Staging claim/resolve/fail must write SQLite before mutating the in-memory cache so restart recovery and dedup stay authoritative. A Promise facade forced fire-and-forget writes, adding a microtask split that made SQLite a best-effort mirror rather than the source of truth. Source comment in repository.ts pins the rationale.',
   },
 ];
 
@@ -213,7 +218,7 @@ describe('Port async gate (task 2.8)', () => {
   it('pending ports are enumerated with a reason (doc / gate sync)', () => {
     // Sanity check: each pending port has a non-empty reason — future
     // iterations that move a port from PENDING to CONVERTED should
-    // update this file. If reason is empty, the migration is stale.
+    // update this file. If reason is empty, the audit entry is stale.
     for (const { interfaceName, reason } of PENDING_PORTS) {
       expect(reason.length).toBeGreaterThan(20);
       expect(interfaceName).toMatch(/^[A-Z]\w+(Repository|Adapter|Provider)$/);
@@ -298,8 +303,8 @@ describe('Port async gate (task 2.8)', () => {
         // point is to DISALLOW a situation where a sync method
         // silently replaces what would otherwise be an async one.
         if (names.has(asyncPeer)) {
-          const peerReturn = methods.find((x) => x.name === asyncPeer)!.returnType;
-          expect(peerReturn.startsWith('Promise<')).toBe(true);
+          const peer = methods.find((x) => x.name === asyncPeer);
+          expect(peer?.returnType.startsWith('Promise<')).toBe(true);
         }
       }
     }

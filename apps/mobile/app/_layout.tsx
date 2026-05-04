@@ -51,7 +51,7 @@ import {
   rescheduleAllReminders,
   requestPushPermission,
 } from '../src/notifications/local';
-import { markNotificationRead } from '@dina/brain/src/notifications/inbox';
+import { markNotificationRead } from '@dina/brain/notifications';
 import { handleNotificationTap } from '../src/notifications/deep_link';
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';

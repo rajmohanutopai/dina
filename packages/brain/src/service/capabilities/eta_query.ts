@@ -41,7 +41,7 @@ export interface EtaQueryResult {
   current_location?: Location;
 
   // Optional extension fields. Senders should include these when available;
-  // receivers must tolerate their absence (backward compatibility contract).
+  // receivers must tolerate their absence while the capability schema evolves.
   stop_name?: string;
   stop_distance_m?: number;
   map_url?: string;

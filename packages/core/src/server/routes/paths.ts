@@ -155,9 +155,8 @@ export const MEMORY_TOC = '/v1/memory/toc';
 // ---------------------------------------------------------------
 // Scratchpad — cognitive checkpoints for multi-step reasoning
 // (nudge pipeline, agent-action approvals, crash-report staging).
-// Port of Python's /v1/scratchpad routes in brain-side crash-
-// recovery. Matches the BrainCoreClient client methods already in
-// place (writeScratchpad/readScratchpad).
+// Scratchpad routes used by brain-side crash recovery. Matches the
+// CoreClient client methods already in place (writeScratchpad/readScratchpad).
 // ---------------------------------------------------------------
 
 export const SCRATCHPAD = '/v1/scratchpad';

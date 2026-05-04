@@ -24,7 +24,7 @@ import {
   subscribeNotifications,
   type NotificationItem,
   type NotificationKind,
-} from '@dina/brain/src/notifications/inbox';
+} from '@dina/brain/notifications';
 import { applyNotificationFilter, type FilterKey } from '../src/notifications/screen_filter';
 import { colors, fonts, radius, spacing } from '../src/theme';
 

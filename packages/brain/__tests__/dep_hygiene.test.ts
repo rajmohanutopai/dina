@@ -31,6 +31,9 @@ const BRAIN_SRC = resolve(__dirname, '..', 'src');
  *
  * `node:http` / `node:https` / `node:net` — raw Node network stdlib is
  *   not available in RN; Brain must never depend on it directly.
+ * `node:async_hooks` / `node:crypto` — Node-only diagnostics/randomness
+ *   belong in Node-specific subpaths or adapters. Portable Brain uses
+ *   injected trace storage and `globalThis.crypto.getRandomValues`.
  * `undici` — Node's bundled HTTP client. Not available in RN.
  * `ws` / `isomorphic-ws` — WebSocket client libs. Brain uses CoreClient
  *   which owns the transport, or relies on host/platform WebSocket.
@@ -44,6 +47,8 @@ const FORBIDDEN_SPECIFIERS: readonly string[] = [
   'node:https',
   'node:net',
   'node:tls',
+  'node:async_hooks',
+  'node:crypto',
   'undici',
   'ws',
   'isomorphic-ws',
@@ -132,6 +137,8 @@ describe('@dina/brain dependency hygiene (task 1.33)', () => {
       { spec: 'ws', snippet: `import WebSocket from 'ws';` },
       { spec: 'node:http', snippet: `import http from 'node:http';` },
       { spec: 'node:https', snippet: `import https from 'node:https';` },
+      { spec: 'node:async_hooks', snippet: `import { AsyncLocalStorage } from 'node:async_hooks';` },
+      { spec: 'node:crypto', snippet: `import { randomBytes } from 'node:crypto';` },
       { spec: '@fastify/cors', snippet: `import cors from '@fastify/cors';` },
       { spec: 'fastify', snippet: `import Fastify from 'fastify';` },
       { spec: 'node-fetch', snippet: `import fetch from 'node-fetch';` },

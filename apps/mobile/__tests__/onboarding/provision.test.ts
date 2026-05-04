@@ -373,18 +373,18 @@ describe('hasCompletedOnboarding', () => {
 
 describe('deriveHandle', () => {
   it('sanitises + clamps owner names to 12 chars', () => {
-    const h = deriveHandle('  Raj_Mohan!!!', 'wss://test-mailbox.dinakernel.com');
+    const h = deriveHandle('  Raj_Mohan!!!', 'test-pds.dinakernel.com');
     expect(h.startsWith('rajmohan')).toBe(true);
     expect(h).toContain('.test-pds.dinakernel.com');
   });
 
   it('falls back to "dina" for empty / too-short names', () => {
-    const h = deriveHandle('r', 'wss://test-mailbox.dinakernel.com');
+    const h = deriveHandle('r', 'test-pds.dinakernel.com');
     expect(h.startsWith('dina')).toBe(true);
   });
 
-  it('picks prod PDS host when msgboxEndpoint is prod', () => {
-    const h = deriveHandle('Test', 'wss://mailbox.dinakernel.com');
+  it('uses the selected PDS host directly', () => {
+    const h = deriveHandle('Test', 'pds.dinakernel.com');
     expect(h).toContain('.pds.dinakernel.com');
     expect(h).not.toContain('test-pds');
   });

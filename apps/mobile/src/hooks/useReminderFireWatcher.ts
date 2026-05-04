@@ -11,7 +11,7 @@
  * chat tab catches up the moment the user opens it.
  *
  * **Why a hook + setInterval, not a service-layer subscription**:
- * `@dina/core/src/reminders/service.ts` exposes `fireMissedReminders`
+ * `@dina/core/reminders` exposes `fireMissedReminders`
  * as a pull function — no event stream. Driving it on a 30 s tick
  * inside the chat tab's lifecycle keeps the dependency one-way
  * (UI → core, not the reverse) and stays cheap (the function is a
@@ -25,9 +25,9 @@
  */
 
 import { useEffect } from 'react';
-import { fireMissedReminders, type Reminder } from '@dina/core/src/reminders/service';
-import { addMessage } from '@dina/brain/src/chat/thread';
-import { appendNotification } from '@dina/brain/src/notifications/inbox';
+import { fireMissedReminders, type Reminder } from '@dina/core/reminders';
+import { addMessage } from '@dina/brain/chat';
+import { appendNotification } from '@dina/brain/notifications';
 
 const DEFAULT_TICK_MS = 30_000;
 const FALLBACK_THREAD_ID = 'main';

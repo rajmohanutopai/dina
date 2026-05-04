@@ -6,7 +6,7 @@ import {
   wireServiceThreadDelivery,
   type DeliveryCoreClient,
 } from '../../src/hooks/useServiceThreadDelivery';
-import type { WorkflowEvent, WorkflowTask } from '../../../brain/src/core_client/http';
+import type { WorkflowEvent, WorkflowTask } from '@dina/core';
 import { getThread, resetThreads } from '../../../brain/src/chat/thread';
 
 function makeEvent(overrides: Partial<WorkflowEvent> = {}): WorkflowEvent {

@@ -56,9 +56,9 @@ import {
 } from '../../src/trust/appview_runtime';
 import { SubjectAnchorView } from '../../src/trust/components/subject_anchor_view';
 import { useComposeContext } from '../../src/trust/runners/use_compose_context';
-import { listPersonas, isPersonaOpen } from '@dina/core/src/persona/service';
+import { listPersonas, isPersonaOpen } from '@dina/core';
 import { deriveEditWarning, type EditWarning } from '../../src/trust/edit_flow';
-import { findMessageByDraftId, readLifecycle } from '@dina/brain/src/chat/thread';
+import { findMessageByDraftId, readLifecycle } from '@dina/brain/chat';
 import { setReviewDraftStatus } from '../../src/trust/review_draft';
 import {
   enqueueLocal,
@@ -272,7 +272,7 @@ export interface WriteScreenProps {
    * `LLMProvider` (or `null` to simulate "no provider configured")
    * so the prefill path can be exercised without the keychain.
    */
-  composeLLMProvider?: import('@dina/brain/src/llm/adapters/provider').LLMProvider | null;
+  composeLLMProvider?: import('@dina/brain/llm').LLMProvider | null;
   /**
    * Test-only override for the persona list the prefill runner
    * searches. Production reads from `listPersonas()` + `isPersonaOpen`

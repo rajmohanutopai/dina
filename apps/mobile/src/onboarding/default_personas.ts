@@ -33,8 +33,8 @@ import {
   createPersona,
   personaExists,
   setPersonaDescription,
-} from '@dina/core/src/persona/service';
-import type { PersonaTier } from '@dina/core/src/vault/lifecycle';
+  type PersonaTier,
+} from '@dina/core';
 
 export interface DefaultPersonaSpec {
   name: string;

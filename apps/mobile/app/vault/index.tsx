@@ -33,7 +33,7 @@ import {
   type PersonaUIState,
 } from '../../src/hooks/usePersonas';
 import { countVaultItems } from '../../src/hooks/useVaultItems';
-import type { PersonaTier } from '@dina/core/src/vault/lifecycle';
+import type { PersonaTier } from '@dina/core';
 
 interface VaultRow extends PersonaUIState {
   itemCount: number;

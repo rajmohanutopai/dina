@@ -26,7 +26,7 @@ import {
   Alert,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import type { ChatMessage } from '@dina/brain/src/chat/thread';
+import type { ChatMessage } from '@dina/brain/chat';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
 import { getProfile as getTrustProfile } from '../../src/trust/appview_runtime';
 import { displayName as displayNameOf } from '../../src/trust/handle_display';

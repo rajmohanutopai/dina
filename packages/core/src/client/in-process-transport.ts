@@ -21,7 +21,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.30.
  */
 
-import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
+import { WorkflowConflictError } from './core-client';
+
 import type {
   CoreClient,
   CoreHealth,
@@ -46,6 +47,8 @@ import type {
   ServiceQueryResult,
   MemoryToCOptions,
   MemoryToCResult,
+  StagingIngestRequest,
+  StagingIngestResult,
   StagingClaimResult,
   StagingResolveRequest,
   StagingResolveResult,
@@ -70,7 +73,7 @@ import type {
   UpdateContactParams,
   Contact,
 } from './core-client';
-import { WorkflowConflictError } from './core-client';
+import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
 
 /**
  * Default CoreRequest skeleton — most InProcessTransport calls reuse
@@ -341,6 +344,25 @@ export class InProcessTransport implements CoreClient {
 
   // ─── Staging inbox ────────────────────────────────────────────────────
 
+  async stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult> {
+    const body: Record<string, unknown> = {
+      source: req.source,
+      source_id: req.sourceId,
+    };
+    if (req.producerId !== undefined) body.producer_id = req.producerId;
+    if (req.data !== undefined) body.data = req.data;
+    if (req.expiresAt !== undefined) body.expires_at = req.expiresAt;
+
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/staging/ingest', body }),
+    );
+    const raw = expectOk<{ id: string; duplicate: boolean; status: string }>(
+      res,
+      `stagingIngest(source=${req.source}, sourceId=${req.sourceId})`,
+    );
+    return { itemId: raw.id, duplicate: raw.duplicate, status: raw.status };
+  }
+
   async stagingClaim(limit: number): Promise<StagingClaimResult> {
     // Limit rides on the query string so the route's clampInt helper
     // sees a canonical string — matches the HTTP transport's shape.
@@ -355,17 +377,16 @@ export class InProcessTransport implements CoreClient {
   }
 
   async stagingResolve(req: StagingResolveRequest): Promise<StagingResolveResult> {
-    // Wire shape:  { id, persona | personas[], data, persona_open? }.
+    // Wire shape:  { id, persona | personas[], data, persona_open? | persona_access? }.
     // Single-persona string → `persona`; array → `personas` (GAP-MULTI-01).
-    // `persona_open` omitted when undefined so the server's
-    // `body.persona_open !== false` guard sees the default `true`.
     const body: Record<string, unknown> = { id: req.itemId, data: req.data };
     if (Array.isArray(req.persona)) {
       body.personas = req.persona;
+      if (req.personaAccess !== undefined) body.persona_access = req.personaAccess;
     } else {
       body.persona = req.persona;
+      if (req.personaOpen !== undefined) body.persona_open = req.personaOpen;
     }
-    if (req.personaOpen !== undefined) body.persona_open = req.personaOpen;
 
     const res = await this.router.handle(
       blankRequest({ method: 'POST', path: '/v1/staging/resolve', body }),
@@ -528,7 +549,7 @@ export class InProcessTransport implements CoreClient {
       }),
     );
     // 404 = unknown / already-acked event. Return `false` (not throw) so
-    // callers can retry idempotently — matches BrainCoreClient's shape.
+    // callers can retry idempotently — matches the CoreClient shape.
     if (res.status === 404) return false;
     expectOk<{ ok: boolean }>(res, `acknowledgeWorkflowEvent(id=${eventId})`);
     return true;
@@ -710,8 +731,8 @@ export class InProcessTransport implements CoreClient {
       topic: params.topic,
       kind: params.kind,
     };
-    // Route ignores empty `sample_item_id`; omit for parity with the
-    // legacy BrainCoreClient wire shape.
+    // Route ignores empty `sample_item_id`; omit it so the request body
+    // stays canonical.
     if (params.sampleItemId !== undefined && params.sampleItemId !== '') {
       body.sample_item_id = params.sampleItemId;
     }
@@ -733,7 +754,7 @@ export class InProcessTransport implements CoreClient {
   }
 
   async findContactsByPreference(category: string): Promise<Contact[]> {
-    // Client-side short-circuit matches BrainCoreClient's contract —
+    // Client-side short-circuit matches the CoreClient contract —
     // empty/whitespace category never reaches the server.
     const clean = typeof category === 'string' ? category.trim() : '';
     if (clean === '') return [];

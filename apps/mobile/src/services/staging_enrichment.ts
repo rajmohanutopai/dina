@@ -28,17 +28,15 @@
  */
 
 import type { CoreClient } from '@dina/core';
-import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
 import {
+  PreferenceExtractor,
   TopicExtractor,
-  type TopicExtractorLLM,
-} from '@dina/brain/src/enrichment/topic_extractor';
-import { PreferenceExtractor } from '@dina/brain/src/enrichment/preference_extractor';
-import type {
-  TopicTouchPipelineOptions,
   ContactResolver,
-} from '@dina/brain/src/enrichment/topic_touch_pipeline';
-import { resolveByName } from '@dina/core/src/contacts/directory';
+  TopicExtractorLLM,
+  TopicTouchPipelineOptions,
+} from '@dina/brain/enrichment';
+import type { LLMProvider } from '@dina/brain/llm';
+import { resolveByName } from '@dina/core';
 
 export interface BuildStagingEnrichmentOptions {
   /**

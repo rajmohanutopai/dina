@@ -2,8 +2,8 @@
  * Mobile /remember → drain → /ask end-to-end, wired exactly like the
  * iOS app does:
  *
- *   submitRemember
- *     → stagingIngest (staging inbox)
+ *   ingestRemember
+ *     → CoreClient.stagingIngest (staging inbox)
  *   StagingDrainScheduler tick
  *     → BrainCoreClient.claimStagingItems   → CoreRouter /v1/staging/claim
  *     → classify + enrich (drain.ts)
@@ -30,26 +30,22 @@
  * "I don't have any relevant information".
  */
 
+import { configureRateLimiter } from '@dina/core/src/auth/middleware';
 import { createCoreRouter } from '@dina/core/src/server/core_server';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
-import {
-  ingest as stagingIngest,
-  resetStagingState,
-} from '@dina/core/src/staging/service';
+import { resetStagingState } from '@dina/core/src/staging/service';
 import {
   clearVaults,
   queryVault,
 } from '@dina/core/src/vault/crud';
+
+import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import {
   setAccessiblePersonas,
   assembleContext,
   resetReasoningProvider,
 } from '../../src/vault_context/assembly';
-import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import {
-  configureRateLimiter,
-  registerPublicKeyResolver,
-} from '@dina/core/src/auth/middleware';
+
 import {
   openSQLiteVault,
   closeSQLiteVault,
@@ -100,8 +96,8 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
   afterEach(() => {
     scheduler?.stop();
     while (openHandles.length > 0) {
-      const handle = openHandles.pop()!;
-      closeSQLiteVault(handle);
+      const handle = openHandles.pop();
+      if (handle !== undefined) closeSQLiteVault(handle);
     }
   });
 
@@ -117,14 +113,14 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
     return new InProcessTransport(router);
   }
 
-  /** Reproduces `apps/mobile/src/hooks/useChatRemember.ts::submitRemember`
+  /** Reproduces the production `/remember` transport boundary
    *  WITHOUT the UI / chat-thread side effects. Returns the staging id
-   *  the ingest produced so the test can correlate. */
-  function submitRemember(text: string): string {
-    const { id, duplicate } = stagingIngest({
+   *  the CoreClient ingest produced so the test can correlate. */
+  async function ingestRemember(core: InProcessTransport, text: string): Promise<string> {
+    const { itemId, duplicate } = await core.stagingIngest({
       source: 'user_remember',
-      source_id: text,
-      producer_id: 'user',
+      sourceId: text,
+      producerId: 'user',
       data: {
         summary: text,
         type: 'user_memory',
@@ -132,23 +128,23 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
       },
     });
     expect(duplicate).toBe(false);
-    return id;
+    return itemId;
   }
 
   it('Scenario 1 + 2: /remember stores, drain claims + resolves, /ask finds the item', async () => {
     const core = buildCoreClient();
 
     // 1. /remember — ingest into staging inbox
-    const stagingId = submitRemember("Emma's birthday is March 15");
+    const stagingId = await ingestRemember(core, "Emma's birthday is March 15");
     expect(stagingId).toMatch(/^stg-/);
 
     // Sanity: the module-global inbox has the item before the drain
-    // scheduler fires. If this ever fails, submitRemember's ingest
-    // path regressed.
+    // scheduler fires. If this ever fails, ingestRemember's CoreClient
+    // ingest path regressed.
     const { listByStatus } = await import('@dina/core/src/staging/service');
     const received = listByStatus('received');
     expect(received.length).toBe(1);
-    expect(received[0]!.id).toBe(stagingId);
+    expect(received[0]?.id).toBe(stagingId);
 
     // 2. Drain scheduler tick — claim → classify → enrich → resolve.
     //    A single runTick() is enough because the drain processes the
@@ -204,7 +200,7 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
       limit: 10,
     });
     expect(direct.length).toBeGreaterThanOrEqual(1);
-    expect(direct[0]!.summary).toBe("Emma's birthday is March 15");
+    expect(direct[0]?.summary).toBe("Emma's birthday is March 15");
 
     // 5. /ask's assembleContext — walks accessiblePersonas + FTS5 each
     const context = await assembleContext('When is Emma birthday');
@@ -218,10 +214,10 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
 
     // Health + family content — classifyPersonas should return BOTH
     // `health` and (given keyword matches) the family-adjacent persona.
-    stagingIngest({
+    await core.stagingIngest({
       source: 'clinic',
-      source_id: 'vx-1',
-      producer_id: 'user',
+      sourceId: 'vx-1',
+      producerId: 'user',
       data: {
         summary: "Emma's pediatric vaccination — MMR dose scheduled",
         type: 'note',
@@ -250,6 +246,6 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
       limit: 10,
     });
     expect(healthHits.length).toBeGreaterThanOrEqual(1);
-    expect(healthHits[0]!.summary).toMatch(/Emma/i);
+    expect(healthHits[0]?.summary).toMatch(/Emma/i);
   });
 });

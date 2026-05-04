@@ -2,10 +2,9 @@
  * Task 3.52 — Brain + Node adapters + InProcessTransport smoke.
  *
  * Composition proof for the mobile / in-process deployment shape: Brain,
- * Node adapters, and `InProcessTransport` plug together such that a
- * reasoning-style round-trip (healthz → vaultStore → vaultQuery) completes
- * through the typed `CoreClient` surface — no HTTP hop, no signing (Brain
- * and Core share the JS VM on the mobile target).
+ * Node adapters, and `InProcessTransport` plug together through the
+ * typed `CoreClient` surface — no HTTP hop, no BrainCoreClient-era
+ * compatibility layer.
  *
  * What this test actually exercises:
  *
@@ -14,19 +13,19 @@
  *      Brain's reasoning pipeline calls against. The transport dispatches
  *      the typed method calls through the router.
  *
- *   2. **Brain's `CircuitBreaker` wraps the transport call.** Brain's
- *      core-client uses a circuit breaker to fail-fast when Core is
- *      unreachable. We assert it transitions open/closed the same way
- *      whether the wrapped call hits HTTP or the in-process dispatch.
+ *   2. **Brain's production staging drain runs on `CoreClient`.** A
+ *      staged `/remember` item is claimed and resolved through
+ *      `InProcessTransport`, proving Brain depends on the same typed
+ *      transport surface mobile boots with.
  *
  *   3. **Adapters-node `Crypto` + signer stay useful on the mobile path.**
  *      Brain still signs outbound D2D envelopes (messages to OTHER Dinas'
  *      Cores), so the Ed25519 signer is part of the composition even when
  *      Brain → own Core uses `InProcessTransport`.
  *
- * **Not a deep test.** Exhaustive CoreClient / CircuitBreaker behavior
+ * **Not a deep test.** Exhaustive CoreClient and staging-drain behavior
  * lives in `@dina/core` and `@dina/brain` own test suites. This smoke
- * proves the imports compose cleanly and the happy path works.
+ * proves the imports compose cleanly and the greenfield happy path works.
  */
 
 import {
@@ -36,7 +35,7 @@ import {
   type VaultQuery,
   type VaultItemInput,
 } from '@dina/core';
-import { CircuitBreaker } from '@dina/brain';
+import { runStagingDrainTick } from '@dina/brain';
 import { Crypto, createCanonicalRequestSigner } from '@dina/adapters-node';
 
 jest.setTimeout(10_000);
@@ -141,52 +140,112 @@ describe('brain × adapters-node × InProcessTransport — Phase 3g smoke (task 
     expect(empty.count).toBe(0);
   });
 
-  it('Brain CircuitBreaker wraps an InProcessTransport call and trips on repeated failures', async () => {
-    // Dedicated router whose vaultQuery always throws — simulates a
-    // degraded Core. The breaker should open after N failures.
+  it('Brain staging drain claims and resolves through the typed CoreClient surface', async () => {
     const router = new CoreRouter();
+    let claimed = false;
+    let resolvedBody: Record<string, unknown> | null = null;
+
     router.get(
       '/healthz',
       () => ({ status: 200, body: { status: 'ok', did: 'x', version: 'x' } }),
       { auth: 'public' },
     );
     router.post(
-      '/v1/vault/query',
+      '/v1/staging/claim',
       () => {
-        throw new Error('injected failure');
+        if (claimed) return { status: 200, body: { items: [], count: 0 } };
+        claimed = true;
+        return {
+          status: 200,
+          body: {
+            items: [
+              {
+                id: 'stage-1',
+                source: 'mobile',
+                source_id: 'note-1',
+                data: {
+                  type: 'note',
+                  source: 'self',
+                  sender: 'Raj',
+                  summary: 'Adapter smoke runtime note',
+                  body: 'Confirm Brain drain talks to Core through the typed transport.',
+                },
+              },
+            ],
+            count: 1,
+          },
+        };
+      },
+      { auth: 'public' },
+    );
+    router.post(
+      '/v1/staging/resolve',
+      (req) => {
+        resolvedBody = req.body as Record<string, unknown>;
+        return {
+          status: 200,
+          body: {
+            id: resolvedBody.id,
+            status: 'stored',
+            personas: resolvedBody.personas,
+          },
+        };
+      },
+      { auth: 'public' },
+    );
+    router.post(
+      '/v1/staging/fail',
+      (req) => {
+        const body = req.body as { id?: string };
+        return { status: 200, body: { id: body.id ?? 'unknown', retry_count: 1 } };
+      },
+      { auth: 'public' },
+    );
+    router.post(
+      '/v1/staging/extend-lease',
+      (req) => {
+        const body = req.body as { id?: string; seconds?: number };
+        return {
+          status: 200,
+          body: { id: body.id ?? 'unknown', extended_by: body.seconds ?? 0 },
+        };
       },
       { auth: 'public' },
     );
 
     const transport: CoreClient = new InProcessTransport(router);
-    const breaker = new CircuitBreaker({
-      failureThreshold: 2,
-      cooldownMs: 50,
-    });
-
-    // Two failures → breaker opens. The handler throws; InProcessTransport
-    // wraps that into a 500 response, and `expectOk` re-throws with a
-    // "failed 500 — handler threw" message.
-    for (let i = 0; i < 2; i++) {
-      expect(breaker.allowRequest()).toBe(true);
-      try {
-        await transport.vaultQuery('general', { q: 'x' });
-        throw new Error('expected the handler to fail');
-      } catch (err) {
-        expect((err as Error).message).toMatch(/failed 500/);
-        breaker.recordFailure();
-      }
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let result: Awaited<ReturnType<typeof runStagingDrainTick>>;
+    try {
+      result = await runStagingDrainTick(transport, {
+        limit: 1,
+        setInterval: () => 'heartbeat',
+        clearInterval: () => undefined,
+      });
+    } finally {
+      warnSpy.mockRestore();
     }
 
-    // Breaker should now be open — third call is blocked without even
-    // invoking the transport.
-    expect(breaker.allowRequest()).toBe(false);
-    expect(breaker.getStatus().state).toBe('open');
+    expect(result.claimed).toBe(1);
+    expect(result.stored).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(resolvedBody).not.toBeNull();
+    if (resolvedBody === null) {
+      throw new Error('expected staging resolve to run');
+    }
 
-    // healthz still works — circuit breaker is per-call-site, not
-    // per-transport.
-    const health = await transport.healthz();
-    expect(health.status).toBe('ok');
+    const resolved = resolvedBody as {
+      id?: string;
+      personas?: unknown;
+      data?: Record<string, unknown>;
+      persona_access?: unknown;
+    };
+    expect(resolved.id).toBe('stage-1');
+    expect(Array.isArray(resolved.personas)).toBe(true);
+    expect((resolved.personas as unknown[]).length).toBeGreaterThan(0);
+    expect(resolved.data?.staging_id).toBe('stage-1');
+    expect(typeof resolved.data?.content_l0).toBe('string');
+    expect(resolved.persona_access).toBeTruthy();
   });
 
   it('adapters-node Crypto still composes the D2D signer path on the mobile target', async () => {

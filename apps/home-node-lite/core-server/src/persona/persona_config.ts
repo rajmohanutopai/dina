@@ -3,9 +3,9 @@
  *
  * At boot the Home Node needs to know which personas exist and
  * which tier each one occupies. That map lives at
- * `${vaultDir}/config.json`. This module loads + validates it and
- * runs legacy tier values through `migrateTier` (task 4.74) so old
- * installs upgrade transparently.
+ * `${vaultDir}/config.json`. This greenfield loader accepts canonical
+ * tier values only. Old tier names are invalid configuration, not a
+ * runtime migration path.
  *
  * **Shape**:
  *
@@ -20,11 +20,6 @@
  *   }
  * }
  * ```
- *
- * **Legacy compatibility**: `tier` values of `open` / `restricted`
- * are silently migrated via `migrateTier`. Every migration is
- * recorded in the returned `migrations` array so the boot log can
- * tell the operator exactly what was rewritten.
  *
  * **Fail-loud philosophy** (inherited from `src/config.ts`): any
  * validation failure throws `PersonaConfigError` before the server
@@ -41,13 +36,6 @@
 
 import { z } from 'zod';
 import type { PersonaTier } from '@dina/core';
-
-import {
-  isCanonicalTier,
-  isLegacyTier,
-  migrateTier,
-  type MigrateTierResult,
-} from './tier_migration';
 
 // ---------------------------------------------------------------------------
 // Schema — structural validation only. Tier values are validated separately
@@ -83,19 +71,8 @@ export interface PersonaDefinition {
 export interface LoadedPersonaConfig {
   /** Schema version read from disk. */
   version: number;
-  /** Personas keyed by name, with tiers already migrated to canonical form. */
+  /** Personas keyed by name, with canonical tier values. */
   personas: Map<string, PersonaDefinition>;
-  /**
-   * Migrations applied during load. Empty when the file was already
-   * canonical. Each entry identifies the persona + what changed.
-   */
-  migrations: ReadonlyArray<PersonaMigration>;
-}
-
-export interface PersonaMigration {
-  persona: string;
-  from: string;
-  to: PersonaTier;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,13 +113,13 @@ export interface LoadPersonaConfigOptions {
 }
 
 /**
- * Load + validate + migrate a persona config.json.
+ * Load and validate a persona config.json.
  *
- * Returns `LoadedPersonaConfig` on success. Throws
- * `PersonaConfigError` on any failure mode (missing file, bad JSON,
- * invalid shape, unknown tier, duplicate persona — though duplicates
- * are impossible via JSON object keys, we still guard against
- * hand-edited files with case-only differences).
+ * Returns `LoadedPersonaConfig` on success. Throws `PersonaConfigError`
+ * on any failure mode (missing file, bad JSON, invalid shape,
+ * non-canonical tier, duplicate persona — though duplicates are
+ * impossible via JSON object keys, we still guard against hand-edited
+ * files with case-only differences).
  */
 export function loadPersonaConfig(opts: LoadPersonaConfigOptions): LoadedPersonaConfig {
   let raw: string;
@@ -193,7 +170,6 @@ export function loadPersonaConfig(opts: LoadPersonaConfigOptions): LoadedPersona
 
   const file = structural.data;
   const personas = new Map<string, PersonaDefinition>();
-  const migrations: PersonaMigration[] = [];
 
   for (const [name, entry] of Object.entries(file.personas)) {
     if (personas.has(name)) {
@@ -207,35 +183,17 @@ export function loadPersonaConfig(opts: LoadPersonaConfigOptions): LoadedPersona
       );
     }
 
-    let migrated: MigrateTierResult;
-    try {
-      migrated = migrateTier(entry.tier, name);
-    } catch (err) {
+    if (!isCanonicalTier(entry.tier)) {
       throw new PersonaConfigError(
         'invalid_tier',
-        `persona ${JSON.stringify(name)} has unknown tier ${JSON.stringify(entry.tier)}`,
-        { persona: name, tier: entry.tier, cause: (err as Error).message },
+        `persona ${JSON.stringify(name)} has non-canonical tier ${JSON.stringify(entry.tier)}`,
+        { persona: name, tier: entry.tier },
       );
-    }
-
-    // Sanity: migrateTier must either pass-through a canonical value
-    // unchanged, or return a canonical value after migration. Defensive
-    // guard in case someone edits migrateTier and breaks the contract.
-    if (!isCanonicalTier(migrated.tier)) {
-      throw new PersonaConfigError(
-        'invalid_tier',
-        `migrateTier returned non-canonical tier ${JSON.stringify(migrated.tier)} for persona ${JSON.stringify(name)}`,
-        { persona: name, tier: migrated.tier },
-      );
-    }
-
-    if (migrated.migrated) {
-      migrations.push({ persona: name, from: migrated.original, to: migrated.tier });
     }
 
     const def: PersonaDefinition = {
       name,
-      tier: migrated.tier,
+      tier: entry.tier,
       ...(entry.description !== undefined ? { description: entry.description } : {}),
     };
     personas.set(name, def);
@@ -244,7 +202,6 @@ export function loadPersonaConfig(opts: LoadPersonaConfigOptions): LoadedPersona
   return {
     version: file.version,
     personas,
-    migrations,
   };
 }
 
@@ -254,8 +211,7 @@ export function loadPersonaConfig(opts: LoadPersonaConfigOptions): LoadedPersona
 
 /**
  * Render a loaded persona config back to the on-disk shape. The
- * output is canonical (tier values are always new-model names),
- * so writing this back to disk "heals" a legacy config file.
+ * output is canonical because non-canonical tier values never load.
  */
 export function serializePersonaConfig(loaded: LoadedPersonaConfig): PersonaConfigFile {
   const personas: Record<string, { tier: string; description?: string }> = {};
@@ -268,7 +224,8 @@ export function serializePersonaConfig(loaded: LoadedPersonaConfig): PersonaConf
   return { version: loaded.version, personas };
 }
 
-// Re-export legacy checks for callers that want to decide at runtime
-// whether a given string is a legacy value without reaching back into
-// the migration module.
-export { isLegacyTier, isCanonicalTier };
+export function isCanonicalTier(tier: string): tier is PersonaTier {
+  return (
+    tier === 'default' || tier === 'standard' || tier === 'sensitive' || tier === 'locked'
+  );
+}

@@ -2,11 +2,9 @@
  * MockCoreClient — test double for the `CoreClient` transport-agnostic
  * interface defined in `@dina/core`.
  *
- * Brain tests (Phase 1c task 1.35) that used to depend on the legacy
- * `BrainCoreClient` class (full HTTP stack + signing) now depend on
- * `CoreClient`. Real Brain code gets `InProcessTransport` on mobile
- * and `HttpCoreTransport` on server; Brain tests get `MockCoreClient`
- * here — zero I/O, zero crypto, call-recording + configurable canned
+ * Real Brain code gets `InProcessTransport` on mobile and
+ * `HttpCoreTransport` on server; Brain tests get `MockCoreClient`
+ * here: zero I/O, zero crypto, call-recording + configurable canned
  * responses per method.
  *
  * Pattern matches the rest of `@dina/test-harness/src/mocks/`:
@@ -20,6 +18,8 @@
  *
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.34.
  */
+
+import { WorkflowConflictError } from '@dina/core';
 
 import type {
   CoreClient,
@@ -45,6 +45,8 @@ import type {
   ServiceQueryResult,
   MemoryToCOptions,
   MemoryToCResult,
+  StagingIngestRequest,
+  StagingIngestResult,
   StagingClaimResult,
   StagingResolveRequest,
   StagingResolveResult,
@@ -69,7 +71,6 @@ import type {
   UpdateContactParams,
   Contact,
 } from '@dina/core';
-import { WorkflowConflictError } from '@dina/core';
 
 /** One captured call — method name + positional args passed. */
 export interface RecordedCall {
@@ -146,6 +147,11 @@ export class MockCoreClient implements CoreClient {
     queryId: 'mock-query-id',
   };
   memoryToCResult: MemoryToCResult = { entries: [], limit: 50 };
+  stagingIngestResult: StagingIngestResult = {
+    itemId: 'mock-staging-item',
+    duplicate: false,
+    status: 'received',
+  };
   stagingClaimResult: StagingClaimResult = { items: [], count: 0 };
   stagingResolveResult: StagingResolveResult = {
     itemId: 'mock-staging-item',
@@ -204,7 +210,7 @@ export class MockCoreClient implements CoreClient {
    */
   memoryTouchResult?: MemoryTouchResult;
   /** Per-contact updates — tests assert `{did, preferredFor}` binds fired. */
-  readonly contactUpdates: Array<{ did: string; updates: UpdateContactParams }> = [];
+  readonly contactUpdates: { did: string; updates: UpdateContactParams }[] = [];
   /** Per-category canned result for `findContactsByPreference` — tests
    *  seed `{'dental': [...Dr Carl...]}` before the reasoning agent
    *  triggers the role-match branch. Keys are compared after
@@ -328,6 +334,13 @@ export class MockCoreClient implements CoreClient {
 
   async memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult> {
     return this.dispatch('memoryToC', [opts], () => this.memoryToCResult);
+  }
+
+  async stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult> {
+    return this.dispatch('stagingIngest', [req], () => ({
+      ...this.stagingIngestResult,
+      itemId: this.stagingIngestResult.itemId || `mock-${req.sourceId}`,
+    }));
   }
 
   async stagingClaim(limit: number): Promise<StagingClaimResult> {

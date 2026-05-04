@@ -1,9 +1,9 @@
 /**
  * Production staging drain loop (GAP-RT-01).
  *
- * `processPendingItems` in `processor.ts` is a test-harness primitive —
+ * `processPendingItems` in `processor.ts` is a test-harness primitive:
  * it operates on an in-memory queue populated by `addPendingItem`. The
- * real ingest path lives in Core's SQLite `staging_inbox`, filled by
+ * production ingest path lives in Core's SQLite `staging_inbox`, filled by
  * `POST /v1/staging/ingest`. Python's home node polls
  * `/v1/staging/claim` on a timer; the mobile app needs the same loop.
  *
@@ -15,13 +15,13 @@
  *
  * Pipeline matches `processPendingItems` so L0/L1 enrichment + persona
  * fanout + the optional WM-BRAIN-03 topic-touch hook behave identically
- * to the test path. The only difference is the claim + resolve edges,
+ * to the direct processor path. The only difference is the claim + resolve edges,
  * which talk to Core instead of the in-memory queue.
  */
 
 import { listContacts, getContact } from '../../../core/src/contacts/directory';
 import { isVaultItemType } from '../../../core/src/vault/validation';
-import { generateL0 } from '../enrichment/l0_deterministic';
+import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,
   type TopicTouchPipelineOptions,
@@ -31,6 +31,7 @@ import { handlePostPublish } from '../pipeline/post_publish';
 import { classifyDomain, classifyPersonas } from '../routing/domain';
 import { selectPersonaRich } from '../routing/persona_selector';
 import { scoreSender } from '../trust/scorer';
+import { getAccessiblePersonas } from '../vault_context/assembly';
 
 import type { StagingProcessResult } from './processor';
 import type { VaultItemType } from '../../../core/src/vault/validation';
@@ -39,12 +40,8 @@ import type { CoreClient } from '@dina/core';
 /**
  * Minimal subset of `CoreClient` the drain needs.
  *
- * Task 1.32 migration — the drain historically took a `BrainCoreClient`
- * Pick. Switching to the transport-agnostic `CoreClient` surface means
- * a drain scheduler can be wired against either `InProcessTransport`
- * (mobile) or `HttpCoreTransport` (server) without a second import
- * path. Mobile bootstraps that still hold a legacy `BrainCoreClient`
- * pass a thin per-method adapter — see `apps/mobile/src/services/bootstrap.ts`.
+ * The drain depends on the transport-agnostic `CoreClient` surface so
+ * mobile and server home nodes share the same claim/resolve contract.
  */
 export type StagingDrainCoreClient = Pick<
   CoreClient,
@@ -66,6 +63,10 @@ const LEASE_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
  * workers on the same inbox stay consistent.
  */
 const LEASE_HEARTBEAT_EXTENSION_SECONDS = 15 * 60;
+
+function vectorToJsonArray(vector: Float32Array | undefined): number[] | undefined {
+  return vector === undefined ? undefined : Array.from(vector);
+}
 
 /**
  * Shape of the D2D-arrival notification the drain hands to the outer
@@ -216,13 +217,9 @@ export async function runStagingDrainTick(
     // The staging inbox shape nests payload fields (summary, body, type,
     // source, sender, timestamp) inside `item.data` — see
     // `StagingItem.data: Record<string, unknown>` in
-    // `packages/core/src/staging/service.ts`. Previously this loop read
-    // `item.summary` / `item.body` at the top level, which is always
-    // undefined — the classifier + enrichment then saw empty strings,
-    // storeItem persisted a vault row with `summary="" body=""`, and
-    // `/ask` FTS searches never matched anything. Pull from `item.data`
-    // with a top-level fallback so legacy callers that pre-flattened
-    // still work.
+    // `packages/core/src/staging/service.ts`. Pull from `item.data`
+    // first so classifier/enrichment see the actual remember body;
+    // the fallback keeps narrow unit-test fixtures readable.
     const data = (item.data as Record<string, unknown> | undefined) ?? {};
     const pick = (key: string): unknown => data[key] ?? item[key];
     const pickString = (key: string): string => {
@@ -335,15 +332,6 @@ export async function runStagingDrainTick(
         if (typeof topTs === 'number' && topTs > 0) originalTimestamp = topTs;
       }
 
-      const l0 = generateL0({
-        type: pickString('type'),
-        source: pickString('source'),
-        sender: pickString('sender'),
-        timestamp: originalTimestamp,
-        summary: pick('summary') !== undefined ? pickString('summary') : undefined,
-        sender_trust: senderScore.sender_trust,
-      });
-
       // D2D contact_did — when the item came in over D2D, the sender's
       // DID is already known (it's the `origin_did` Core stamped).
       // Thread it onto the row so downstream lookups can find the
@@ -364,17 +352,37 @@ export async function runStagingDrainTick(
         reason: rich?.reason ?? '',
         method: rich !== null ? 'llm' : 'keyword',
       };
+
+      const enrichment = await enrichVaultItem({
+        type: pickString('type') || 'note',
+        source: pickString('source'),
+        sender: pickString('sender'),
+        timestamp: originalTimestamp,
+        summary: pick('summary') !== undefined ? pickString('summary') : undefined,
+        body: pickString('body'),
+        sender_trust: senderScore.sender_trust,
+      });
+      const embedding = vectorToJsonArray(enrichment.embedding);
+      const enrichmentMeta = {
+        status: enrichment.enrichment_status,
+        version: enrichment.enrichment_version,
+        stages: enrichment.stages,
+        confidence: enrichment.confidence,
+        has_l1: enrichment.content_l1.trim() !== '',
+        has_embedding: embedding !== undefined,
+      };
       let mergedMetadata = metaRaw;
       if (typeof mergedMetadata === 'string' && mergedMetadata !== '') {
         try {
           const parsed = JSON.parse(mergedMetadata) as Record<string, unknown>;
           parsed.routing = routingMeta;
+          parsed.enrichment = enrichmentMeta;
           mergedMetadata = JSON.stringify(parsed);
         } catch {
-          mergedMetadata = JSON.stringify({ routing: routingMeta });
+          mergedMetadata = JSON.stringify({ routing: routingMeta, enrichment: enrichmentMeta });
         }
       } else {
-        mergedMetadata = JSON.stringify({ routing: routingMeta });
+        mergedMetadata = JSON.stringify({ routing: routingMeta, enrichment: enrichmentMeta });
       }
 
       // Build the vault row with fields flattened from data so storeItem
@@ -403,25 +411,44 @@ export async function runStagingDrainTick(
         // Lineage — staging id so vault-side diagnostics can trace
         // back to the original staging row.
         staging_id: itemId,
-        content_l0: l0,
-        content_l1: pick('content_l1') ?? '',
-        enrichment_status: 'l0_complete',
-        enrichment_version: 'deterministic-v1',
+        content_l0: enrichment.content_l0,
+        content_l1: enrichment.content_l1,
+        enrichment_status: enrichment.enrichment_status,
+        enrichment_version: JSON.stringify(enrichment.enrichment_version),
+        ...(embedding !== undefined ? { embedding } : {}),
       };
 
-      // GAP-MULTI-01: resolve under EVERY persona the classifier
-      // flagged, not just the primary. Main-dina's
-      // `staging_resolve_multi` writes a vault row per persona so a
-      // pediatric-vaccination note lands on both `health` and
-      // `family`. When only one persona matched, this is equivalent
-      // to the legacy single-persona path — CoreClient's
-      // `stagingResolve` handles array-vs-string routing internally
-      // (array → `personas` wire field; string → `persona`).
-      await core.stagingResolve({
+      // GAP-MULTI-01 + STG-004: resolve under every persona the
+      // classifier flagged, with explicit access for each target.
+      // Core must never infer "open" for a secondary persona just
+      // because Brain routed to it.
+      const accessiblePersonas = new Set(getAccessiblePersonas());
+      const personaAccess = Object.fromEntries(
+        personas.map((persona) => [persona, accessiblePersonas.has(persona)]),
+      );
+      const resolveResult = await core.stagingResolve({
         itemId,
         persona: personas,
+        personaAccess,
         data: enriched,
       });
+      if (resolveResult.status !== 'stored') {
+        const result: StagingProcessResult = {
+          itemId,
+          persona: classification.persona,
+          status: resolveResult.status === 'pending_unlock' ? 'pending_unlock' : 'failed',
+          enriched: true,
+        };
+        results.push(result);
+        log({
+          event: 'staging.drain.deferred',
+          item_id: itemId,
+          personas,
+          status: resolveResult.status,
+        });
+        continue;
+      }
+
       stored++;
       log({
         event: 'staging.drain.resolved',

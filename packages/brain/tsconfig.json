@@ -12,5 +12,14 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "__tests__"]
+  "include": [
+    "src",
+    "__tests__",
+    "chat.ts",
+    "enrichment.ts",
+    "llm.ts",
+    "node-trace-storage.ts",
+    "notifications.ts",
+    "runtime.ts"
+  ]
 }

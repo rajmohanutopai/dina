@@ -17,6 +17,8 @@
   "dependencies": {
     "@dina/adapters-node": "*",
     "@dina/brain": "*",
+    "@dina/core": "*",
+    "@dina/home-node": "*",
     "@dina/protocol": "*",
     "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.3.0",

@@ -22,18 +22,7 @@ import type { CoreClient, ServiceQueryResult } from '@dina/core';
 import { pickTopCandidate, type Location, type RankOptions } from './candidate_ranker';
 import { getCapability, getTTL, computeSchemaHash } from './capabilities/registry';
 
-/**
- * Minimal slice of `CoreClient` the orchestrator needs — just
- * `sendServiceQuery`. Task 1.32-J migration: used to be
- * `Pick<BrainCoreClient, 'sendServiceQuery'>`; swapped to `CoreClient`
- * alongside the `serviceQuery` → `sendServiceQuery` rename that
- * symmetry-aligned the method with `sendServiceRespond`. Result shape
- * (`ServiceQueryResult` from `@dina/core`) is structurally compatible
- * with the legacy `SendServiceQueryResult` — same `{taskId, queryId,
- * deduped?}`. The orchestrator's call sites never relied on deduped
- * always being `boolean` (they only check `deduped === true`), so the
- * optional-`deduped` shape on CoreClient is a strict widening.
- */
+/** Minimal slice of `CoreClient` the orchestrator needs. */
 export type OrchestratorCoreClient = Pick<CoreClient, 'sendServiceQuery'>;
 
 /** Minimal subset of `AppViewClient` the orchestrator needs. */

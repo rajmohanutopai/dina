@@ -174,7 +174,7 @@ export function linksToExtractionResult(
   const results: ExtractionPersonLink[] = [];
   for (const link of links) {
     const name = link.name?.trim() ?? '';
-    const rolePhrase = (link.role_phrase ?? link.role ?? '').trim();
+    const rolePhrase = (link.role_phrase ?? '').trim();
     if (name === '' && rolePhrase === '') continue;
 
     const confidence: SurfaceConfidence =

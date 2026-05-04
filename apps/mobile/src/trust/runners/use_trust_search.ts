@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { listContacts } from '@dina/core/src/contacts/directory';
+import { listContacts } from '@dina/core';
 import { searchAttestations, type SearchAttestationHit } from '../appview_runtime';
 import { annotateReviewRing, compareCards } from '../contact_rerank';
 import { displayName } from '../handle_display';

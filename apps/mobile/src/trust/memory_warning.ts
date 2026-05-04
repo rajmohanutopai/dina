@@ -4,7 +4,7 @@
  * Subscribes to React Native's `AppState.memoryWarning` event and
  * evicts the in-memory trust cache down to `MEMORY_WARNING_TARGET`
  * entries when the OS signals pressure. The eviction itself lives
- * in `@dina/core/src/trust/cache.evictTrustCacheTo()` — this file
+ * in `@dina/core.evictTrustCacheTo()` — this file
  * just owns the platform glue.
  *
  * Notes on platform behaviour:
@@ -20,7 +20,7 @@
  */
 
 import { AppState } from 'react-native';
-import { evictTrustCacheTo, MEMORY_WARNING_TARGET } from '@dina/core/src/trust/cache';
+import { evictTrustCacheTo, MEMORY_WARNING_TARGET } from '@dina/core';
 
 /** What `AppState.addEventListener` returns — a tiny disposable. */
 export interface MemoryWarningSubscription {

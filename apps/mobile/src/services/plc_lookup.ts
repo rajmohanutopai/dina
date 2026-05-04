@@ -2,8 +2,9 @@
  * PLC document fetcher — used by the IdentityModal to render the full
  * DID document (alsoKnownAs, verification methods, services) on tap.
  *
- * Reads directly from `https://plc.directory/{did}`. The resolver in
- * `@dina/core` already does this for D2D routing, but its return shape
+ * Reads from the PLC directory selected by the shared Home Node endpoint
+ * policy. The resolver in `@dina/core` already does this for D2D routing,
+ * but its return shape
  * is wrapped in a `ResolvedDID` envelope and its cache lifetime is
  * tuned for routing — too long for a "show me what's published right
  * now" UI surface.
@@ -13,7 +14,8 @@
  * value never lingers across screens.
  */
 
-const PLC_DIRECTORY = 'https://plc.directory';
+import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+
 const TTL_MS = 60_000;
 
 export interface PlcLookupResult {
@@ -64,7 +66,8 @@ export async function lookupPlc(
   options?: { fetchFn?: typeof globalThis.fetch; plcDirectory?: string },
 ): Promise<PlcLookupResult> {
   const fetchFn = options?.fetchFn ?? globalThis.fetch;
-  const directory = (options?.plcDirectory ?? PLC_DIRECTORY).replace(/\/$/, '');
+  const directory = (options?.plcDirectory ?? resolveMobileHostedDinaEndpoints().plcDirectoryUrl)
+    .replace(/\/$/, '');
 
   const cached = cache.get(did);
   if (cached !== undefined && cached.expiresAt > Date.now()) {
@@ -75,15 +78,16 @@ export async function lookupPlc(
     headers: { Accept: 'application/json' },
   });
   if (!res.ok) {
+    const directoryHost = new URL(directory).host;
     throw new Error(
       res.status === 404
-        ? `${did} is not registered on plc.directory`
-        : `plc.directory returned HTTP ${res.status}`,
+        ? `${did} is not registered on ${directoryHost}`
+        : `${directoryHost} returned HTTP ${res.status}`,
     );
   }
   const doc = (await res.json()) as Record<string, unknown>;
   if (typeof doc.id !== 'string' || doc.id !== did) {
-    throw new Error('plc.directory returned a document for a different DID');
+    throw new Error('PLC directory returned a document for a different DID');
   }
 
   const result = projectDoc(did, doc);

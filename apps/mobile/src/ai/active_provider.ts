@@ -1,26 +1,19 @@
 /**
  * Active AI provider — single source of truth, durable across launches.
  *
- * Previously split between `src/ai/chat.ts` (in-memory `activeProvider`
- * module state) and Settings screen mutations. That left two control
- * planes in the AI layer (review finding #16), and it also meant a
- * reboot didn't remember which provider the user had selected — the
- * composer picked the first keychain-ordered configured provider,
- * which isn't necessarily what the user last chose (finding #5).
- *
  * This module is the only thing that writes / reads the selection:
  *   - Settings calls `saveActiveProvider(p)` on selection.
  *   - `buildBootInputs` calls `loadActiveProvider()` so the agentic
  *     loop uses whatever the user picked.
- *   - Legacy `src/ai/chat.ts` re-exports a synchronous peek helper so
- *     its `processMessage` can still gate the LLM path.
  *
  * The in-memory cache mirrors the keychain so synchronous consumers
  * (render-time reads in Settings) don't need to await every time.
  */
 
 import * as Keychain from 'react-native-keychain';
+
 import { PROVIDERS } from './provider';
+
 import type { ProviderType } from './provider';
 
 const SERVICE = 'dina.active_provider';

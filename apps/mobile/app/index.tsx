@@ -26,7 +26,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { colors, spacing, radius, shadows } from '../src/theme';
 import { useLiveThread } from '../src/hooks/useChatThread';
-import type { ChatMessage } from '@dina/brain/src/chat/thread';
+import type { ChatMessage } from '@dina/brain/chat';
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';

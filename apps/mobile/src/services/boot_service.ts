@@ -26,37 +26,36 @@
  * proceed, warn, or block.
  */
 
-import { configureRateLimiter } from '@dina/core/src/auth/middleware';
-import { createCoreRouter } from '@dina/core/src/server/core_server';
-import { createInProcessDispatch } from '@dina/core/src/server/in_process_dispatch';
-import { InProcessTransport } from '@dina/core/src/client/in-process-transport';
 import {
-  InMemoryWorkflowRepository,
-  SQLiteWorkflowRepository,
-  type WorkflowRepository,
-} from '@dina/core/src/workflow/repository';
-import {
+  MemoryService,
   InMemoryServiceConfigRepository,
+  InMemoryWorkflowRepository,
+  InProcessTransport,
   SQLiteServiceConfigRepository,
-  type ServiceConfigRepository,
-} from '@dina/core/src/service/service_config_repository';
-import { MemoryService, setMemoryService } from '@dina/core/src/memory/service';
-import {
+  SQLiteWorkflowRepository,
+  configureRateLimiter,
+  createCoreRouter,
+  createInProcessDispatch,
   getTopicRepository,
   listTopicRepositoryPersonas,
-} from '@dina/core/src/memory/repository';
-import type { ServiceResponseBody } from '@dina/core/src/d2d/service_bodies';
-import type { AppViewClient } from '@dina/brain/src/appview_client/http';
-import type { PDSPublisher } from '@dina/brain/src/pds/publisher';
-import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
-import type { PDSSession } from '@dina/brain/src/pds/account';
-import type { DatabaseAdapter } from '@dina/core/src/storage/db_adapter';
-import type { WSFactory } from '@dina/core/src/relay/msgbox_ws';
-import type { CoreRouter } from '@dina/core/src/server/router';
-import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
-import type { AgenticAskHandlerOptions } from '@dina/brain/src/reasoning/ask_handler';
-import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
-import type { LocalCapabilityRunner } from '@dina/core/src/workflow/local_delegation_runner';
+  setMemoryService,
+  type CoreRouter,
+  type DatabaseAdapter,
+  type LocalCapabilityRunner,
+  type ServiceConfigRepository,
+  type ServiceResponseBody,
+  type WorkflowRepository,
+  type WSFactory,
+} from '@dina/core/runtime';
+import type {
+  AgenticAskHandlerOptions,
+  AppViewClient,
+  LLMProvider,
+  PDSPublisher,
+  PDSSession,
+  ToolRegistry,
+} from '@dina/brain';
+import type { IdentityKeypair } from '@dina/core';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { buildStagingEnrichment } from './staging_enrichment';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
@@ -220,11 +219,8 @@ export interface BootServiceInputs {
   /**
    * Explicit "a paired dina-agent is wired and will claim delegations"
    * flag. The app sets this when onboarding has registered a real
-   * agent DID that can log in over RPC and claim tasks. Previously
-   * the code inferred this from `peerPublicKeys.size > 0 ||
-   * deviceRoleResolver !== undefined`, which passed for ANY paired
-   * device — friend contacts, other home nodes — not just agents.
-   * Review #12.
+   * agent DID that can log in over RPC and claim tasks. Pairing with
+   * a friend contact or another home node is not enough.
    */
   hasPairedAgent?: boolean;
 
@@ -323,12 +319,9 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   // home-node-lite brain-server will wire `HttpCoreTransport` against
   // the same router state when that build target lands.
   //
-  // Earlier iterations had a transitional `BrainCoreClient` alongside
-  // the transport (task 1.14.7 dual-wiring); the A+ cleanup migrated
-  // all 4 mobile hooks + the 5 brain subsystems to CoreClient slices,
-  // then retired BrainCoreClient entirely. `signedDispatch` stays
-  // local because `bootstrap.ts` still forwards it into the MsgBox
-  // ingress adapter for the sender-side signed-response path.
+  // `signedDispatch` stays local because `bootstrap.ts` still forwards
+  // it into the MsgBox ingress adapter for the sender-side
+  // signed-response path. Normal Brain/Core calls use CoreClient.
   const coreClient = new InProcessTransport(router);
   void signedDispatch; // kept in scope for MsgBox / response-bridge wiring below
 
@@ -441,7 +434,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   }
 
   // --- Agentic /ask (issue #5) ------------------------------------------
-  // The coordinator path (Pattern A) supersedes the legacy agenticAsk
+  // The coordinator path (Pattern A) is preferred over the agenticAsk
   // tools-only path. Either is fine; only flag the degradation when
   // BOTH are missing.
   if (inputs.agenticAsk === undefined && inputs.askCoordinator === undefined) {

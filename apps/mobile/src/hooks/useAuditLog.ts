@@ -18,7 +18,7 @@ import {
   auditCount,
   latestEntry,
   resetAuditState,
-} from '@dina/core/src/audit/service';
+} from '@dina/core/audit';
 import type { AuditEntry } from '@dina/test-harness';
 
 export interface AuditUIEntry {

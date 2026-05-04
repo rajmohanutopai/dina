@@ -47,8 +47,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-E.
  */
 
-import type { ApprovalManager } from '@dina/core/src/approval/manager';
-import { getPersona } from '../../../core/src/persona/service';
+import { getPersona, type ApprovalManager } from '@dina/core';
 
 /**
  * The guard returned here is synchronous — `ApprovalManager` is

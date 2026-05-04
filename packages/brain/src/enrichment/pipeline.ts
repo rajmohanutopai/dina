@@ -23,7 +23,7 @@ import {
   ENRICHMENT_LOW_TRUST_INSTRUCTION,
   PII_PRESERVE_INSTRUCTION,
 } from '../llm/prompts';
-import { detectSponsored, tagSponsored, type SponsoredResult } from './sponsored';
+import { detectSponsored, tagSponsored } from './sponsored';
 
 /** Injectable LLM call function for L1 generation. */
 export type LLMCallFn = (system: string, prompt: string) => Promise<string>;
@@ -49,6 +49,17 @@ export interface EnrichmentResult {
   confidence: 'high' | 'medium' | 'low';
   /** Whether this item was detected as sponsored/promotional content. */
   isSponsored: boolean;
+  stages: EnrichmentStageReport;
+}
+
+export interface EnrichmentStageReport {
+  l0: 'ready';
+  l1: 'ready' | 'skipped_no_llm' | 'failed';
+  embedding: 'ready' | 'skipped_no_provider' | 'failed';
+  pii: 'scrubbed' | 'not_needed';
+  low_trust_instruction: boolean;
+  sponsored: boolean;
+  fallback_reasons: string[];
 }
 
 /**
@@ -82,6 +93,19 @@ export async function enrichItem(
 
   // Tag L0 headline with [Sponsored] if detected
   const l0Text = sponsored.isSponsored ? tagSponsored(l0Result.text) : l0Result.text;
+  const stages: EnrichmentStageReport = {
+    l0: 'ready',
+    l1: llmCallFn ? 'failed' : 'skipped_no_llm',
+    embedding: isEmbeddingAvailable() ? 'failed' : 'skipped_no_provider',
+    pii: 'not_needed',
+    low_trust_instruction: false,
+    sponsored: sponsored.isSponsored,
+    fallback_reasons: [],
+  };
+  if (!llmCallFn) stages.fallback_reasons.push('llm_unavailable');
+  if (stages.embedding === 'skipped_no_provider') {
+    stages.fallback_reasons.push('embedding_unavailable');
+  }
 
   const result: EnrichmentResult = {
     content_l0: l0Text,
@@ -90,6 +114,7 @@ export async function enrichItem(
     enrichment_version: l0Result.enrichment_version,
     confidence: l0Result.confidence,
     isSponsored: sponsored.isSponsored,
+    stages,
   };
 
   // Step 2: L1 via LLM (if available)
@@ -102,6 +127,9 @@ export async function enrichItem(
       const vault = new EntityVault();
       const scrubbedBody = vault.scrub(bodyForLLM);
       const scrubbedSummary = vault.scrub(input.summary ?? '');
+      if (vault.entries().length > 0) {
+        stages.pii = 'scrubbed';
+      }
 
       // Build the enrichment prompt
       let prompt = renderPrompt(CONTENT_ENRICH, {
@@ -120,6 +148,7 @@ export async function enrichItem(
       const trust = input.sender_trust ?? '';
       if (trust === 'unknown' || trust === 'marketing') {
         prompt = prompt + '\n\n' + ENRICHMENT_LOW_TRUST_INSTRUCTION;
+        stages.low_trust_instruction = true;
       }
 
       // Call LLM
@@ -136,9 +165,17 @@ export async function enrichItem(
         result.content_l0 = vault.rehydrate(rawL0) || l0Result.text;
         result.content_l1 = vault.rehydrate(rawL1);
         result.enrichment_version.prompt_v = 'llm-v1';
+        if (result.content_l1.trim() !== '') {
+          stages.l1 = 'ready';
+        } else {
+          stages.fallback_reasons.push('llm_empty_l1');
+        }
+      } else {
+        stages.fallback_reasons.push('llm_no_json');
       }
     } catch {
       // LLM failed — keep L0-only (graceful degradation)
+      stages.fallback_reasons.push('llm_failed');
     }
   }
 
@@ -149,8 +186,10 @@ export async function enrichItem(
       const embeddingResult = await generateEmbedding(textForEmbedding);
       result.embedding = embeddingResult.vector;
       result.enrichment_version.embed_model = embeddingResult.model;
+      stages.embedding = 'ready';
     } catch {
       // Embedding failed — continue without it
+      stages.fallback_reasons.push('embedding_failed');
     }
   }
 

@@ -25,8 +25,8 @@ import {
   subscribeToThread,
   type ChatMessage,
   type MessageType,
-} from '@dina/brain/src/chat/thread';
-import { handleChat, type ChatResponse } from '@dina/brain/src/chat/orchestrator';
+} from '@dina/brain/chat';
+import { handleChat, type ChatResponse } from '@dina/brain/chat';
 
 const DEFAULT_THREAD = 'main';
 

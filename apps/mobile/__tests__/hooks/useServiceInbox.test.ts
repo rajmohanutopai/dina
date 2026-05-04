@@ -11,7 +11,7 @@ import {
   setInboxCoreClient,
   type InboxCoreClient,
 } from '../../src/hooks/useServiceInbox';
-import type { WorkflowTask } from '../../../brain/src/core_client/http';
+import type { WorkflowTask } from '@dina/core';
 
 function makeTask(overrides: Partial<WorkflowTask> & { id: string }): WorkflowTask {
   return {
@@ -203,6 +203,34 @@ describe('useServiceInbox', () => {
     expect(entry.serviceName).toBe('');
   });
 
+  it('classifies staging persona approvals with kind=staging_persona_access', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'approval-staging-stg-1-health',
+          description: 'Remember access for health',
+          payload: JSON.stringify({
+            type: 'staging_persona_access',
+            approval_id: 'approval-staging-stg-1-health',
+            staging_id: 'stg-1',
+            persona: 'health',
+            source: 'chat',
+            source_id: 'msg-1',
+            producer_id: '',
+            preview: 'Allergist is Dr Rao',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.kind).toBe('staging_persona_access');
+    expect(entry.capability).toBe('health');
+    expect(entry.serviceName).toBe('Memory access');
+    expect(entry.requesterDID).toBe('chat');
+    expect(entry.paramsPreview).toBe('Allergist is Dr Rao');
+  });
+
   it('denyPending(intent_validation) cancels the task without service.respond', async () => {
     // Agents poll /v1/intent/:id/status, not a D2D inbox — there is
     // no requester to notify, so we skip sendServiceRespond entirely
@@ -213,6 +241,20 @@ describe('useServiceInbox', () => {
     expect(calls.responded).toEqual([]);
     expect(calls.cancelled).toEqual([
       { id: 'prop-intent-1', reason: 'denied_by_operator' },
+    ]);
+  });
+
+  it('denyPending(staging_persona_access) cancels without service.respond', async () => {
+    const { client, calls } = stubClient({});
+    setInboxCoreClient(client);
+    await denyPending(
+      'approval-staging-stg-1-health',
+      'denied_by_operator',
+      'staging_persona_access',
+    );
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled).toEqual([
+      { id: 'approval-staging-stg-1-health', reason: 'denied_by_operator' },
     ]);
   });
 

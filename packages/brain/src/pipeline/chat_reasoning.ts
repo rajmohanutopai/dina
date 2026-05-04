@@ -31,7 +31,7 @@ export interface ReasoningRequest {
   /** Contact names to suggest when Anti-Her redirect triggers. */
   contactSuggestions?: string[];
   /**
-   * Optional BrainCoreClient for request-ID threading.
+   * Optional CoreClient for request-ID threading.
    * When provided, the trace's requestId is bound to the client's
    * X-Request-ID header before any downstream HTTP calls to Core.
    */
@@ -82,7 +82,7 @@ export function resetReasoningLLM(): void {
 export async function reason(req: ReasoningRequest): Promise<ReasoningResult> {
   const trace = new TraceBuilder();
 
-  // Bind trace requestId to BrainCoreClient for HTTP header threading
+  // Bind trace requestId to CoreClient for HTTP header threading.
   if (req.coreClient) {
     req.coreClient.setRequestId(trace.getRequestId());
   }

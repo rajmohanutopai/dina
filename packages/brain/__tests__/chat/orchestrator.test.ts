@@ -4,26 +4,30 @@
  * Source: ARCHITECTURE.md Tasks 4.7–4.9
  */
 
+import { makeVaultItem, resetFactoryCounters, MockCoreClient } from '@dina/test-harness';
+
+import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
+import { resetStagingState, inboxSize } from '../../../core/src/staging/service';
+import { storeItem, clearVaults } from '../../../core/src/vault/crud';
 import {
   handleChat,
-  setDefaultPersona,
-  setDefaultProvider,
   resetChatDefaults,
   setRememberDrainHook,
   resetRememberDrainHook,
   setAskCommandHandler,
   resetAskCommandHandler,
+  setRememberCoreClient,
 } from '../../src/chat/orchestrator';
 import { getThread, resetThreads } from '../../src/chat/thread';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
-import { resetStagingState, inboxSize } from '../../../core/src/staging/service';
-import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 import { resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
-import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
-import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+import { setAccessiblePersonas } from '../../src/vault_context/assembly';
+
 
 describe('Chat Orchestrator', () => {
+  let rememberCore: MockCoreClient;
+
   beforeEach(() => {
+    rememberCore = new MockCoreClient();
     resetChatDefaults();
     resetThreads();
     clearVaults();
@@ -33,14 +37,29 @@ describe('Chat Orchestrator', () => {
     resetRememberDrainHook();
     resetReminderState();
     setAccessiblePersonas(['general']);
+    setRememberCoreClient(rememberCore);
   });
 
   describe('/remember', () => {
-    it('stores memory via staging ingest', async () => {
+    it('stores memory through CoreClient staging ingest', async () => {
       const result = await handleChat("/remember Emma's birthday is March 15");
       expect(result.intent).toBe('remember');
       expect(result.response).toContain('remember');
-      expect(inboxSize()).toBe(1);
+      expect(rememberCore.calls[0]).toEqual({
+        method: 'stagingIngest',
+        args: [
+          {
+            source: 'user_remember',
+            sourceId: expect.stringMatching(/^remember-\d+$/),
+            data: {
+              summary: "Emma's birthday is March 15",
+              type: 'user_memory',
+              body: "Emma's birthday is March 15",
+            },
+          },
+        ],
+      });
+      expect(inboxSize()).toBe(0);
     });
 
     it('empty payload asks what to remember', async () => {
@@ -92,7 +111,7 @@ describe('Chat Orchestrator', () => {
       expect(result.response).not.toContain('Reminders set:');
     });
 
-    it('drain-hook returning null persona: legacy "Got it" ack (drain not resolved yet)', async () => {
+    it('drain-hook returning null persona: staged "Got it" ack (drain not resolved yet)', async () => {
       setRememberDrainHook(async () => ({ persona: null }));
 
       const result = await handleChat('/remember edge case');

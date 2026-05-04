@@ -6,10 +6,10 @@
  *   1. Stays `idle` until `enabled` flips true (the layout ties this to
  *      `isUnlocked()`).
  *   2. On enable, builds a `BootServiceInputs` bundle via
- *      `buildBootInputs()` (persisted DID, DB adapter, AppView stub,
+ *      `buildBootInputs()` (persisted DID, DB adapter, AppView client,
  *      agenticAsk LLM when BYOK is set, role preference) and calls
- *      `bootAppNode`. Whatever is missing surfaces as a `BootDegradation`
- *      the layout banner renders.
+ *      `bootAppNode`. Whatever is missing surfaces as a
+ *      `BootDegradation` the layout banner renders.
  *   3. On success, a module-level singleton is set so screens that read
  *      Core globals (approvals, service-settings) work normally. The hook
  *      also caches the degradations list so consumers joining after the

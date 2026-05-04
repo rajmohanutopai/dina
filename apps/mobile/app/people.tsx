@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import { listContacts, deleteContact, type Contact } from '@dina/core/src/contacts/directory';
+import { listContacts, deleteContact, type Contact } from '@dina/core';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/trust/appview_runtime';

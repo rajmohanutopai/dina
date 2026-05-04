@@ -26,15 +26,15 @@
  * taps Publish — same explicit gate as the form-driven review path.
  */
 
-import { queryVault } from '@dina/core/src/vault/crud';
-import { listPersonas, isPersonaOpen } from '@dina/core/src/persona/service';
+import { queryVault } from '@dina/core';
+import { listPersonas, isPersonaOpen } from '@dina/core';
 import {
   addLifecycleMessage,
   updateReviewDraftLifecycle,
   type ReviewDraftLifecycle,
   type ReviewDraftStatus,
-} from '@dina/brain/src/chat/thread';
-import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
+} from '@dina/brain/chat';
+import type { LLMProvider } from '@dina/brain/llm';
 
 import { loadActiveProvider } from '../ai/active_provider';
 import { createLLMProvider } from '../ai/provider';

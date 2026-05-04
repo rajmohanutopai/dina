@@ -10,14 +10,14 @@
  * Source: ARCHITECTURE.md Task 9.12
  */
 
-import { listPersonas, isPersonaOpen, type PersonaState } from '@dina/core/src/persona/service';
+import { listPersonas, isPersonaOpen, type PersonaState } from '@dina/core';
 import {
-  queryVault,
-  getItem,
-  storeItem,
   clearVaults,
+  getItem,
+  queryVault,
+  storeItem,
   vaultItemCount,
-} from '@dina/core/src/vault/crud';
+} from '@dina/core';
 import type { VaultItem, SearchQuery } from '@dina/test-harness';
 
 export interface PersonaListItem {

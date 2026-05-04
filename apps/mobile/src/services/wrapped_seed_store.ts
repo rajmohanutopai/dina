@@ -19,7 +19,7 @@
 
 import * as Keychain from 'react-native-keychain';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import type { WrappedSeed } from '@dina/core/src/crypto/aesgcm';
+import type { WrappedSeed } from '@dina/core';
 
 const SERVICE = 'dina.vault.wrapped_seed';
 const USERNAME = 'dina_vault';

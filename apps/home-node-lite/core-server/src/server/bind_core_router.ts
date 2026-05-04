@@ -14,18 +14,15 @@
  *
  * **Handler adapter.** Fastify's `(req, reply)` shape differs from
  * CoreRouter's `(coreReq) → coreRes`. We adapt at the boundary:
- * collect the raw body bytes + headers + query + params into a
- * `CoreRequest`, invoke the router's dispatch (which runs the handler
- * AND any auth the handler's `auth` mode requires), and render the
- * response onto the Fastify reply.
+ * collect the raw body bytes + headers + query into a `CoreRequest`,
+ * dispatch through `CoreRouter.handle()` (which runs auth, path
+ * matching, param extraction, and handler error normalisation), and
+ * render the response onto the Fastify reply.
  *
- * **Auth handoff.** The CoreRouter's own `handle()` runs the
- * `signed` auth pipeline when `auth === 'signed'`. In the Fastify
- * deployment, the auth middleware (tasks 4.19-4.26, pending
- * composition) runs BEFORE we reach CoreRouter dispatch — so we
- * re-register signed routes with `auth: 'public'` at the Core layer
- * (the Fastify middleware has already done auth) to avoid double-
- * authenticating. That swap is intentional and centralised here.
+ * **Auth handoff.** The CoreRouter's own `handle()` runs the `signed`
+ * auth pipeline when `auth === 'signed'`. This adapter never calls raw
+ * route handlers directly and never accepts the in-process trust marker
+ * from HTTP input. HTTP auth remains fail-closed at the Core boundary.
  *
  * **Raw body handoff.** Auth verification needs the raw request
  * bytes (SHA-256 input for the canonical signing payload). Fastify's
@@ -37,12 +34,12 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4b task 4.13.
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
 import type {
   CoreRouter,
   CoreRequest,
   CoreResponse,
 } from '@dina/core';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Augment Fastify's request type surface with our raw-body field. */
 declare module 'fastify' {
@@ -55,6 +52,12 @@ declare module 'fastify' {
 export interface BindCoreRouterOptions {
   /** The assembled `CoreRouter` with all handlers registered. */
   coreRouter: CoreRouter;
+  /**
+   * Routes already owned by the Fastify shell. Boot uses this to keep
+   * `/healthz` as the process liveness route while binding the rest of
+   * CoreRouter's API surface.
+   */
+  skipRoutes?: ReadonlyArray<{ method: CoreRequest['method']; path: string }>;
   /** The Fastify instance to bind onto. Any instance returned by `createServer()`. */
   app: {
     get(path: string, handler: FastifyHandler): unknown;
@@ -90,11 +93,14 @@ export function bindCoreRouter(opts: BindCoreRouterOptions): number {
 
   let count = 0;
   for (const route of opts.coreRouter.list()) {
+    if (shouldSkipRoute(route, opts.skipRoutes)) {
+      continue;
+    }
     const fastifyPath = route.path; // `:param` is shared syntax between CoreRouter + Fastify
 
     const handler: FastifyHandler = async (req, reply) => {
-      const coreReq = buildCoreRequest(req, route.path);
-      const coreRes = await route.handler(coreReq);
+      const coreReq = buildCoreRequest(req);
+      const coreRes = await opts.coreRouter.handle(coreReq);
       renderCoreResponse(coreRes, reply);
     };
 
@@ -123,6 +129,14 @@ export function bindCoreRouter(opts: BindCoreRouterOptions): number {
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+function shouldSkipRoute(
+  route: { method: CoreRequest['method']; path: string },
+  skipRoutes: BindCoreRouterOptions['skipRoutes'],
+): boolean {
+  if (skipRoutes === undefined || skipRoutes.length === 0) return false;
+  return skipRoutes.some((skip) => skip.method === route.method && skip.path === route.path);
+}
 
 function installRawBodyParser(app: BindCoreRouterOptions['app']): void {
   if (!app.addContentTypeParser) return; // test doubles don't always provide it
@@ -155,7 +169,7 @@ function installRawBodyParser(app: BindCoreRouterOptions['app']): void {
   );
 }
 
-function buildCoreRequest(req: FastifyRequest, registeredPath: string): CoreRequest {
+function buildCoreRequest(req: FastifyRequest): CoreRequest {
   // Fastify lowercases header names already.
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.headers)) {
@@ -173,24 +187,22 @@ function buildCoreRequest(req: FastifyRequest, registeredPath: string): CoreRequ
     }
   }
 
-  // Params (`:id`) — Fastify populates from the matched route.
-  const params: Record<string, string> = {};
-  const p = req.params as Record<string, unknown> | undefined;
-  if (p && typeof p === 'object') {
-    for (const [k, v] of Object.entries(p)) {
-      if (typeof v === 'string') params[k] = v;
-    }
-  }
+  const path = splitPathFromURL(req.url);
 
   return {
-    method: req.method as CoreRequest['method'],
-    path: registeredPath,
+    method: req.method === 'HEAD' ? 'GET' : (req.method as CoreRequest['method']),
+    path,
     query,
     headers,
     body: req.body,
     rawBody: req.rawBody ?? new Uint8Array(0),
-    params,
+    params: {},
   };
+}
+
+function splitPathFromURL(url: string): string {
+  const path = url.split('?')[0];
+  return path.length > 0 ? path : '/';
 }
 
 function renderCoreResponse(res: CoreResponse, reply: FastifyReply): void {

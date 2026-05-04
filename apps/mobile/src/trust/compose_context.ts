@@ -37,7 +37,7 @@ import type {
   ChatMessage,
   ChatOptions,
   LLMProvider,
-} from '@dina/brain/src/llm/adapters/provider';
+} from '@dina/brain/llm';
 import type { Sentiment } from '@dina/protocol';
 
 import type { LastUsedBucket } from './write_form_data';

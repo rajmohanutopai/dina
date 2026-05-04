@@ -13,9 +13,9 @@
  * Source: ARCHITECTURE.md Task 4.12
  */
 
-import { respectsSilenceTier } from '@dina/brain/src/nudge/whisper';
-import { addMessage } from '@dina/brain/src/chat/thread';
-import { appendNotification } from '@dina/brain/src/notifications/inbox';
+import { respectsSilenceTier } from '@dina/brain';
+import { addMessage } from '@dina/brain/chat';
+import { appendNotification } from '@dina/brain/notifications';
 
 export type NudgeKind =
   | 'reconnection'

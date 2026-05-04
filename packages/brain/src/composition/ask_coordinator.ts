@@ -35,7 +35,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-F.
  */
 
-import type { ApprovalManager } from '@dina/core/src/approval/manager';
+import type { ApprovalManager } from '@dina/core';
 import {
   AskApprovalGateway,
   type ApprovalSource,

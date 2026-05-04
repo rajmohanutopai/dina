@@ -247,8 +247,50 @@ export type { PIIMatch } from './pii/patterns';
 export { scrubTier1, rehydrate, scrubProcessRehydrate } from './pii/scrub';
 export { evaluateIntent, isBrainDenied, getDefaultRiskLevel } from './gatekeeper/intent';
 export type { RiskLevel as GatekeeperRiskLevel, IntentDecision } from './gatekeeper/intent';
-export { checkSharingPolicy, getSharingTier, filterByTier } from './gatekeeper/sharing';
+export { checkSharingPolicy, filterByTier, getSharingTier, setSharingPolicy } from './gatekeeper/sharing';
 export type { SharingTier, SharingDecision } from './gatekeeper/sharing';
+export {
+  MNEMONIC_DISPLAY_TTL_MS,
+  ONBOARDING_VERIFY_WORD_COUNT,
+  PASSPHRASE_MAX_LENGTH,
+  PASSPHRASE_MIN_LENGTH,
+  SYSTEM_MESSAGE_HISTORY_MAX,
+} from './constants';
+export {
+  addContact,
+  addContactIfNotExists,
+  addAlias,
+  deleteContact,
+  findByAlias,
+  findByPreferredFor,
+  getContact,
+  getContactsByTrust,
+  getTrustLevel,
+  hydrateContactDirectory,
+  isContact,
+  listContacts,
+  removeAlias,
+  resetContactDirectory,
+  resolveByName,
+  updateContact,
+} from './contacts/directory';
+export type { Relationship, DataResponsibility } from './contacts/directory';
+export {
+  createPersona,
+  getPersona,
+  getPersonaTier,
+  isPersonaOpen,
+  listPersonas,
+  openBootPersonas,
+  openPersona,
+  personaExists,
+  resetPersonaState,
+  setPersonaDescription,
+  validatePersonaName,
+} from './persona/service';
+export type { PersonaState } from './persona/service';
+export { DATA_CATEGORIES } from './persona/names';
+export type { DataCategory } from './persona/names';
 export * from './vault/lifecycle';
 export * from './vault/tiered_content';
 export type { TieredItem, TieredLoadConfig } from './vault/tiered_content';
@@ -325,6 +367,15 @@ export * from './trust/pds_publish';
 export type { Attestation, SignedAttestation } from './trust/pds_publish';
 export * from './approval/pending_reason';
 export type { PendingReasonRecord } from './approval/pending_reason';
+export {
+  ApprovalManager,
+  getApprovalManager,
+  resetApprovalManager,
+} from './approval/manager';
+export type {
+  ApprovalRequest,
+  ApprovalRequestListener,
+} from './approval/manager';
 export * from './schema/identity';
 export * from './schema/persona';
 export * from './cli/session';
@@ -444,6 +495,8 @@ export type {
   MemoryToCOptions,
   MemoryToCResult,
   TocEntry,
+  StagingIngestRequest,
+  StagingIngestResult,
   StagingClaimResult,
   StagingResolveRequest,
   StagingResolveResult,
@@ -567,6 +620,8 @@ export { runPersonStoreContract } from './people/contract';
 // `./server/router` subpaths.
 export { CoreRouter } from './server/router';
 export type { CoreRequest, CoreResponse, CoreHandler, RouteRegistration, AuthMode } from './server/router';
+export { createCoreRouter, HEALTHZ_PATH } from './server/core_server';
+export type { CoreRouterOptions } from './server/core_server';
 export type {
   HttpClient,
   HttpRequestInit,

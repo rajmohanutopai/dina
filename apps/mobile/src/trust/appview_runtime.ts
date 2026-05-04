@@ -1,10 +1,9 @@
 /**
  * Mobile-side AppView runtime.
  *
- * Reads `EXPO_PUBLIC_DINA_APPVIEW_URL` (mirrors the Go Core's
- * `DINA_APPVIEW_URL` config knob — see `core/internal/config/config.go`)
- * and exposes typed fetchers for the `com.dina.trust.*` xRPC surface
- * the Trust screens consume.
+ * Resolves AppView through the shared TypeScript Home Node endpoint
+ * policy and exposes typed fetchers for the `com.dina.trust.*` xRPC
+ * surface the Trust screens consume.
  *
  * Why a focused fetcher rather than `TrustQueryClient` from
  * `@dina/core`: the screens need three endpoints the upstream client
@@ -14,24 +13,17 @@
  * pure HTTP boundary. When `TrustQueryClient` adopts these endpoints
  * we can switch over without touching the screen-side hooks.
  *
- * URL precedence (highest first):
- *   1. `EXPO_PUBLIC_DINA_APPVIEW_URL` (build-time bundled into app)
- *   2. `https://test-appview.dinakernel.com` (test fleet default)
- *
- * If neither resolves to a usable URL the runtime stays in a "not
- * configured" state — hooks return `{ error: 'not_configured' }` and
- * never make network calls.
+ * URL precedence comes from `@dina/home-node`: mobile env overrides
+ * may replace specific endpoints, otherwise endpoint mode selects the
+ * hosted test or release fleet as one unit.
  */
 
-const FALLBACK_URL = 'https://test-appview.dinakernel.com';
+import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 function configuredURL(): string {
-  const raw = process.env.EXPO_PUBLIC_DINA_APPVIEW_URL;
-  if (typeof raw === 'string' && raw.trim().length > 0) {
-    return raw.trim().replace(/\/$/, '');
-  }
-  return FALLBACK_URL;
+  return resolveMobileHostedDinaEndpoints().appViewBaseUrl;
 }
 
 const APPVIEW_URL = configuredURL();

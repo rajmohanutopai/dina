@@ -119,8 +119,11 @@ export default function ApprovalsScreen() {
           ? ` · expires in ${Math.max(0, item.expiresAt - Math.floor(Date.now() / 1000))}s`
           : '';
       const isIntent = item.kind === 'intent_validation';
+      const isStagingAccess = item.kind === 'staging_persona_access';
       const headline = isIntent
         ? 'Agent action approval'
+        : isStagingAccess
+          ? 'Memory access approval'
         : item.serviceName || 'Unnamed service';
       const tagText = isIntent && item.riskLevel !== undefined ? item.riskLevel : item.capability;
       const tagStyle =
@@ -129,7 +132,7 @@ export default function ApprovalsScreen() {
           : isIntent && item.riskLevel === 'MODERATE'
             ? [styles.capability, styles.riskModerate]
             : styles.capability;
-      const requesterPrefix = isIntent ? 'agent' : 'from';
+      const requesterPrefix = isIntent ? 'agent' : isStagingAccess ? 'source' : 'from';
       return (
         <View style={styles.card}>
           <View style={styles.cardHeader}>

@@ -187,7 +187,7 @@ export async function executeToolSearch(
  *
  * @param requestId — optional trace requestId, propagated to tool calls for audit correlation.
  *   Currently used for trace annotation; in production, callers should also
- *   bind this ID to BrainCoreClient via setRequestId() for HTTP header threading.
+ *   bind this ID to CoreClient via setRequestId() for HTTP header threading.
  */
 export async function assembleContext(
   query: string,

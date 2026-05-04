@@ -13,31 +13,32 @@
  * Source: ARCHITECTURE.md Tasks 4.7–4.9
  */
 
-import { parseCommand, getAvailableCommands, type ChatIntent } from './command_parser';
-import {
-  addUserMessage,
-  addDinaResponse,
-  addSystemMessage,
-  addLifecycleMessage,
-} from './thread';
-import type { ServiceQueryDispatch } from '../reasoning/ask_handler';
-import { reason } from '../pipeline/chat_reasoning';
-import { executeToolSearch } from '../vault_context/assembly';
-import { ingest } from '../../../core/src/staging/service';
 import { listByPersona as listRemindersByPersona, type Reminder } from '../../../core/src/reminders/service';
 import { CoreHttpError } from '../errors';
+import { reason } from '../pipeline/chat_reasoning';
+import { executeToolSearch } from '../vault_context/assembly';
+
+import { parseCommand, getAvailableCommands, type ChatIntent } from './command_parser';
 import {
   plainResponse,
   richResponse,
   errorResponse,
   type BotResponse,
 } from './response_types';
+import {
+  addUserMessage,
+  addDinaResponse,
+  addLifecycleMessage,
+} from './thread';
+
+import type { ServiceQueryDispatch } from '../reasoning/ask_handler';
+import type { CoreClient } from '@dina/core';
 
 export interface ChatResponse {
   intent: ChatIntent;
   /**
    * Plain-language rendering of the response. Every channel gets this
-   * — text-only transports (CLI, legacy chat UIs) display it verbatim.
+   * — text-only transports display it verbatim.
    * For typed kinds, `response` is the same as `typed.text`.
    */
   response: string;
@@ -46,8 +47,8 @@ export interface ChatResponse {
   /**
    * Structured envelope carrying the `kind` discriminator + per-kind
    * payload (trust score, contact list, confirmation dialog, etc.).
-   * Mobile UI reads this to render native card components; legacy
-   * readers that only know the plain string ignore it.
+   * Mobile UI reads this to render native card components; text-only
+   * readers can use the plain string above.
    *
    * Always populated — at minimum it carries `kind: 'plain'` with the
    * same `text` as `response`. Port of Python's `domain/response.py`.
@@ -238,6 +239,25 @@ export function resetRememberDrainHook(): void {
   rememberDrainHook = null;
 }
 
+export type RememberCoreClient = Pick<CoreClient, 'stagingIngest'>;
+
+let rememberCoreClient: RememberCoreClient | null = null;
+
+/**
+ * Install the Core transport used by `/remember`. Mobile passes its
+ * `InProcessTransport`; home-node-lite brain-server passes
+ * `HttpCoreTransport`. The orchestrator must not import Core staging
+ * internals directly, otherwise server and mobile remember paths drift.
+ */
+export function setRememberCoreClient(client: RememberCoreClient | null): void {
+  rememberCoreClient = client;
+}
+
+/** Reset for tests / node disposal. */
+export function resetRememberCoreClient(): void {
+  rememberCoreClient = null;
+}
+
 /**
  * Format a persona name for user-facing reply text — capitalise +
  * replace underscores with spaces. Internal storage stays lowercase
@@ -257,7 +277,7 @@ function formatPersonaDisplayName(name: string): string {
   return name
     .split('_')
     .filter((part) => part.length > 0)
-    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
 
@@ -287,17 +307,21 @@ function formatReminder(r: Reminder): string {
 async function handleRemember(text: string): Promise<BotResponse> {
   if (!text) return plainResponse('What would you like me to remember?');
 
-  const { id, duplicate } = ingest({
+  if (rememberCoreClient === null) {
+    return plainResponse('Remember is still starting. Please try again in a moment.');
+  }
+
+  const { itemId, duplicate } = await rememberCoreClient.stagingIngest({
     source: 'user_remember',
-    source_id: `remember-${Date.now()}`,
+    sourceId: `remember-${Date.now()}`,
     data: { summary: text, type: 'user_memory', body: text },
   });
 
   if (duplicate) return plainResponse('I already have that stored.');
 
-  // Without a drain hook (test harnesses, early boot) keep the legacy
-  // ack — the drain still runs on its own cadence and reminders land
-  // a few seconds later.
+  // Without a drain hook (test harnesses, early boot) acknowledge the
+  // staged write — the drain still runs on its own cadence and
+  // reminders land a few seconds later.
   if (rememberDrainHook === null) {
     return plainResponse(`Got it — I'll remember that.`);
   }
@@ -307,10 +331,10 @@ async function handleRemember(text: string): Promise<BotResponse> {
   // reminder list (when the item carried a temporal event).
   let drainResult: RememberDrainResult = { persona: null };
   try {
-    drainResult = await rememberDrainHook(id);
+    drainResult = await rememberDrainHook(itemId);
   } catch {
     // Drain failures shouldn't break the user round-trip — fall back
-    // to the legacy ack so the user knows the item is staged.
+    // to a staged ack so the user knows the item was accepted.
     return plainResponse(`Got it — I'll remember that.`);
   }
 
@@ -326,7 +350,7 @@ async function handleRemember(text: string): Promise<BotResponse> {
   // so we can filter by the staging id we already have — no need to
   // dig the published vault-item id out of the tick result.
   const reminders = listRemindersByPersona(persona)
-    .filter((r) => r.source_item_id === id)
+    .filter((r) => r.source_item_id === itemId)
     .sort((a, b) => a.due_at - b.due_at);
   if (reminders.length > 0) {
     lines.push('');
@@ -407,8 +431,8 @@ function wrapAsTaskPrompt(payload: string): string {
  * Context the orchestrator passes through to an installed
  * `AskCommandHandler` so the handler can route deferred / late-arriving
  * answers back to the correct chat thread (multi-thread chat tabs,
- * per-persona threads, Service Inbox, etc.). Optional for backward
- * compatibility with handlers that ignore late delivery.
+ * per-persona threads, Service Inbox, etc.). Optional for handlers that
+ * do not need late delivery.
  */
 export interface AskCommandContext {
   /**
@@ -603,7 +627,7 @@ async function handleServiceApprove(taskId: string): Promise<BotResponse> {
 
 /**
  * Translate a Core HTTP error into an operator-friendly explanation.
- * `BrainCoreClient` surfaces non-2xx statuses as `CoreHttpError` with a
+ * Core transports surface non-2xx statuses as `CoreHttpError` with a
  * `.status` field (CORE-P4-F03 — no more error-message string matching).
  *
  * `verb` is the user-visible action name — "approve" or "deny" — so the

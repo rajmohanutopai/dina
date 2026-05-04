@@ -23,7 +23,7 @@ import {
   getReminder,
   resetReminderState,
   type Reminder,
-} from '@dina/core/src/reminders/service';
+} from '@dina/core/reminders';
 
 export interface ReminderUIItem {
   id: string;

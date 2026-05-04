@@ -8,10 +8,10 @@
  *   `/v1/vault/query` → Core `/v1/pii/scrub` → external LLM → back.
  *
  * Without a trace context, logs + metrics can't correlate these into
- * one story. This primitive threads a `request_id` through every
- * downstream call + log line via Node's `AsyncLocalStorage`, so any
- * code running under `withTrace()` can read the current trace
- * without passing a parameter through six function boundaries.
+ * one story. This primitive owns the portable trace contract. Runtime
+ * hosts that need ambient async propagation install a
+ * `TraceScopeStorage` adapter, for example the Node AsyncLocalStorage
+ * adapter exposed by `@dina/brain/node-trace-storage`.
  *
  * **Contract** (pinned by tests):
  *   - `withTrace(trace, fn)` — run `fn` inside a scope where
@@ -35,21 +35,17 @@
  *     `fetch` options: `{ 'x-request-id': <id>, 'x-parent-id'?:
  *     <parent> }`. Parent omitted when absent.
  *
- * **Why AsyncLocalStorage** and not an explicit parameter:
- *   - Explicit threading breaks at every LLM adapter boundary + at
- *     every helper. Forgetting one drops the trace silently.
- *   - AsyncLocalStorage is the Node-native pattern for this; logs
- *     (pino child bindings), metrics (otel), outbound clients all
- *     pick it up from a common context.
+ * **Why an injected storage port** and not a direct Node import:
+ *   - Brain runs in Node and React Native, so portable source cannot
+ *     import `node:async_hooks` or `node:crypto`.
+ *   - Node installs an AsyncLocalStorage-backed adapter; other hosts can
+ *     install their own adapter when the platform offers one.
  *
  * **Never mutate the trace object** — it's a frozen value. A caller
  * that wants to add a tag creates a child or a new trace.
  *
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 5h task 5.58.
  */
-
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomBytes } from 'node:crypto';
 
 export interface TraceContext {
   /** 32-char hex request id. Unique per user-facing request. */
@@ -60,14 +56,38 @@ export interface TraceContext {
   startedAtMs: number;
 }
 
-const storage = new AsyncLocalStorage<TraceContext>();
+export interface TraceScopeStorage {
+  run<T>(trace: TraceContext, fn: () => Promise<T>): Promise<T>;
+  getStore(): TraceContext | null | undefined;
+}
+
+let storage: TraceScopeStorage | null = null;
+
+/**
+ * Install the host-provided async context adapter. Pass `null` to
+ * disable ambient propagation. Without storage, `withTrace` still runs
+ * the callback, but `currentTrace()` returns null; this avoids unsafe
+ * cross-request mis-correlation on platforms without an async-context
+ * primitive.
+ */
+export function setTraceScopeStorage(next: TraceScopeStorage | null): void {
+  storage = next;
+}
+
+export function getTraceScopeStorage(): TraceScopeStorage | null {
+  return storage;
+}
+
+export function resetTraceScopeStorage(): void {
+  storage = null;
+}
 
 /**
  * 16-byte random hex — 32 characters. Collision-resistant enough
  * for a request-id even at high throughput (birthday bound ≈ 2^64).
  */
 export function newRequestId(): string {
-  return randomBytes(16).toString('hex');
+  return bytesToHex(randomBytes(16));
 }
 
 /** Build a root trace with a fresh id. */
@@ -100,7 +120,7 @@ export async function withTrace<T>(trace: TraceContext, fn: () => Promise<T>): P
   if (!isValidTrace(trace)) {
     throw new TypeError('withTrace: invalid trace context');
   }
-  return storage.run(trace, fn);
+  return storage ? storage.run(trace, fn) : fn();
 }
 
 /**
@@ -111,14 +131,14 @@ export async function withChildTrace<T>(
   fn: () => Promise<T>,
   nowMsFn: () => number = () => Date.now(),
 ): Promise<T> {
-  const parent = storage.getStore();
+  const parent = currentTrace();
   const trace = parent ? newChildTrace(parent, nowMsFn) : newRootTrace(nowMsFn);
-  return storage.run(trace, fn);
+  return storage ? storage.run(trace, fn) : fn();
 }
 
 /** Read the active trace. Returns null when called outside any scope. */
 export function currentTrace(): TraceContext | null {
-  return storage.getStore() ?? null;
+  return storage?.getStore() ?? null;
 }
 
 /**
@@ -182,4 +202,20 @@ function isValidTrace(t: unknown): t is TraceContext {
     return false;
   }
   return true;
+}
+
+function randomBytes(length: number): Uint8Array {
+  const crypto = globalThis.crypto;
+  if (!crypto || typeof crypto.getRandomValues !== 'function') {
+    throw new Error('newRequestId: globalThis.crypto.getRandomValues is unavailable');
+  }
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (const byte of bytes) out += byte.toString(16).padStart(2, '0');
+  return out;
 }
