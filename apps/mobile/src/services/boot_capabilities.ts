@@ -34,14 +34,13 @@ import { loadOrGenerateSeeds } from './identity_store';
 import { loadPersistedDid } from './identity_record';
 import { loadRolePreference } from './role_preference';
 import { AppViewStub, busDriverDemoProfile } from './appview_stub';
-import { AppViewClient } from '@dina/brain/src/appview_client/http';
 import {
   EtaQueryParamsSchema,
   EtaQueryResultSchema,
-} from '@dina/brain/src/service/capabilities/eta_query';
-import { computeSchemaHash } from '@dina/brain/src/service/capabilities/registry';
-import { PDSAccountClient } from '@dina/brain/src/pds/account';
-import { PDSPublisher } from '@dina/brain/src/pds/publisher';
+  PDSAccountClient,
+  PDSPublisher,
+  computeSchemaHash,
+} from '@dina/brain';
 import { loadInfraPreferences } from './infra_preferences';
 import type { ServiceConfig } from '@dina/protocol';
 import { getIdentityAdapter } from '../storage/init';
@@ -50,7 +49,6 @@ import {
   deriveDIDKey,
   getApprovalManager,
   getPublicKey,
-  multibaseToPublicKey,
   type IdentityKeypair,
 } from '@dina/core';
 import { createLLMProvider, getConfiguredProviders } from '../ai/provider';
@@ -485,8 +483,8 @@ export async function buildBootInputs(
   // AppView. Provider-side service.response replies use the
   // provider-window path and don't need the resolver.
   const providerServiceResolver =
-    appViewURL !== ''
-      ? new AppViewServiceResolver({ appViewURL })
+    appViewURLOverride !== ''
+      ? new AppViewServiceResolver({ appViewURL: appViewURLOverride })
       : undefined;
 
   const sendD2D: BootServiceInputs['sendD2D'] = async (to, type, body) => {

@@ -46,7 +46,7 @@ describe('Persona Classifier Factory', () => {
       const provider = mockProvider(
         'gemini',
         JSON.stringify({
-          persona: 'health',
+          primary: 'health',
           confidence: 0.92,
           reason: 'Medical content',
         }),
@@ -68,7 +68,7 @@ describe('Persona Classifier Factory', () => {
       const provider = mockProvider(
         'openai',
         JSON.stringify({
-          persona: 'financial',
+          primary: 'financial',
           confidence: 0.85,
           reason: 'Money topics',
         }),
@@ -87,7 +87,7 @@ describe('Persona Classifier Factory', () => {
       const provider = mockProvider(
         'claude',
         JSON.stringify({
-          persona: 'work',
+          primary: 'work',
           confidence: 0.88,
           reason: 'Professional',
         }),
@@ -103,7 +103,7 @@ describe('Persona Classifier Factory', () => {
       const provider = mockProvider(
         'local-llama',
         JSON.stringify({
-          persona: 'general',
+          primary: 'general',
           confidence: 0.7,
           reason: 'Generic',
         }),
@@ -136,7 +136,7 @@ describe('Persona Classifier Factory', () => {
       const provider = mockProvider(
         'gemini',
         JSON.stringify({
-          persona: 'health',
+          primary: 'health',
           confidence: 0.9,
           reason: 'Medical',
         }),

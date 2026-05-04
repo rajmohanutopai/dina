@@ -405,7 +405,10 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       // eslint-disable-next-line no-console
       console.log('[agentic_loop] tool', call.name, {
         args: call.arguments,
-        outcomeKind: outcome.kind ?? typeof outcome,
+        outcomeKind:
+          outcome.success === true
+            ? 'success'
+            : (outcome as { code?: string }).code ?? 'failure',
         outcomeSnippet: JSON.stringify(outcome).slice(0, 400),
       });
       toolLog.push(buildToolLogEntry(call.name, call.arguments, outcome));

@@ -217,7 +217,6 @@ const KNOWN_860_GAPS: readonly string[] = [
   '/v1/reminder/fire',
   '/v1/reminders/pending',
   '/v1/service/agents',
-  '/v1/staging/ingest',
   '/v1/staging/status/:param',
   '/v1/task/ack',
   '/v1/vault/kv/:param',

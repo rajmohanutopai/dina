@@ -177,6 +177,11 @@ export type {
 } from './reasoning/bus_driver_tools';
 export { runAgenticTurn } from './reasoning/agentic_loop';
 export type { AgenticLoopOptions, AgenticLoopResult } from './reasoning/agentic_loop';
+export { createDelegateToAgentTool } from './reasoning/delegate_agent_tool';
+export type {
+  DelegateOutcome,
+  DelegateToAgentToolOptions,
+} from './reasoning/delegate_agent_tool';
 export { makeAgenticAskHandler, DEFAULT_ASK_SYSTEM_PROMPT } from './reasoning/ask_handler';
 export type { AgenticAskHandlerOptions } from './reasoning/ask_handler';
 export { buildAgenticAskPipeline } from './composition/agentic_ask';
