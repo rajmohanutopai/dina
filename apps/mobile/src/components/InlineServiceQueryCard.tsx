@@ -26,7 +26,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { readLifecycle, type ChatMessage } from '@dina/brain/src/chat/thread';
+import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
 import { colors, fonts, radius, spacing } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 

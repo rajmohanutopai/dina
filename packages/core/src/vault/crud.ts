@@ -120,8 +120,8 @@ function applyOffset<T>(results: T[], offset?: number): T[] {
  * Default in-memory test personas installed by `clearVaults()`.
  *
  * Production never calls `clearVaults()` — only test code does — so
- * pre-seeding these is safe for production while keeping ~300 legacy
- * test callsites working without explicit `setVaultRepository()`
+ * pre-seeding these is safe for production while keeping existing
+ * tests working without explicit `setVaultRepository()`
  * calls. SQLite-backed harness tests (`openSQLiteVault`) override
  * specific personas after `clearVaults()` runs, which is fine — the
  * latest `setVaultRepository(p, …)` wins.
@@ -164,12 +164,38 @@ export function clearVaults(personas: string[] = DEFAULT_TEST_PERSONAS): void {
   }
 }
 
+type VaultItemWrite = Omit<Partial<VaultItem>, 'embedding'> & {
+  /**
+   * In-process callers may pass raw Float32 bytes, while the HTTP
+   * CoreClient boundary must pass JSON number arrays. Normalize both
+   * forms to the repository's Float32-byte blob.
+   */
+  embedding?: Uint8Array | Float32Array | readonly number[];
+};
+
+function normalizeEmbedding(
+  embedding: Uint8Array | Float32Array | readonly number[] | undefined,
+): Uint8Array | undefined {
+  if (embedding === undefined) return undefined;
+  if (embedding instanceof Uint8Array) {
+    return embedding.byteLength === 0 ? undefined : embedding;
+  }
+  if (embedding instanceof Float32Array) {
+    return embedding.byteLength === 0
+      ? undefined
+      : new Uint8Array(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+  }
+  if (embedding.length === 0) return undefined;
+  const vector = new Float32Array(embedding);
+  return new Uint8Array(vector.buffer, vector.byteOffset, vector.byteLength);
+}
+
 /**
  * Store an item in a persona vault. Returns the item ID.
  *
  * Auto-generates an ID if the item's id field is empty or missing.
  */
-export function storeItem(persona: string, item: Partial<VaultItem>): string {
+export function storeItem(persona: string, item: VaultItemWrite): string {
   // Validate enum fields before storage (defense-in-depth)
   const validationError = validateVaultItem(item);
   if (validationError) {
@@ -179,6 +205,7 @@ export function storeItem(persona: string, item: Partial<VaultItem>): string {
   const repo = requireRepo(persona);
   const id = item.id && item.id.length > 0 ? item.id : `vi-${bytesToHex(randomBytes(8))}`;
   const now = Date.now();
+  const embedding = normalizeEmbedding(item.embedding);
 
   const stored: VaultItem = {
     id,
@@ -204,7 +231,7 @@ export function storeItem(persona: string, item: Partial<VaultItem>): string {
     contradicts: item.contradicts ?? '',
     enrichment_status: item.enrichment_status ?? 'pending',
     enrichment_version: item.enrichment_version ?? '',
-    ...(item.embedding ? { embedding: item.embedding } : {}),
+    ...(embedding ? { embedding } : {}),
   };
 
   repo.storeItemSync(stored);
@@ -221,7 +248,7 @@ export function storeItem(persona: string, item: Partial<VaultItem>): string {
  * If any item fails validation, none are stored (matching Go's
  * single TX with rollback behavior).
  */
-export function storeBatch(persona: string, items: Partial<VaultItem>[]): string[] {
+export function storeBatch(persona: string, items: VaultItemWrite[]): string[] {
   if (items.length > MAX_BATCH_SIZE) {
     throw new Error(`vault: batch size ${items.length} exceeds maximum ${MAX_BATCH_SIZE}`);
   }
@@ -618,7 +645,7 @@ export function updateEnrichment(
     content_l1?: string;
     enrichment_status?: string;
     enrichment_version?: string;
-    embedding?: Uint8Array;
+    embedding?: Uint8Array | Float32Array | readonly number[];
     confidence?: string;
   },
 ): boolean {
@@ -635,7 +662,10 @@ export function updateEnrichment(
   if (updates.enrichment_status !== undefined) merged.enrichment_status = updates.enrichment_status;
   if (updates.enrichment_version !== undefined)
     merged.enrichment_version = updates.enrichment_version;
-  if (updates.embedding !== undefined) merged.embedding = updates.embedding;
+  if (updates.embedding !== undefined) {
+    const embedding = normalizeEmbedding(updates.embedding);
+    if (embedding !== undefined) merged.embedding = embedding;
+  }
   if (updates.confidence !== undefined) merged.confidence = updates.confidence;
   merged.updated_at = Date.now();
   repo.storeItemSync(merged);

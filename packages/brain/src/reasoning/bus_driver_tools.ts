@@ -466,9 +466,8 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
 // ---------------------------------------------------------------------------
 
 /**
- * Minimal core-client surface needed by this tool — keeps the tool
- * decoupled from the rest of `BrainCoreClient` so tests can inject
- * a one-method fake.
+ * Minimal CoreClient surface needed by this tool — keeps the tool
+ * decoupled from the rest of Core so tests can inject a one-method fake.
  */
 export interface PreferredContactsClient {
   findContactsByPreference(category: string): Promise<Contact[]>;

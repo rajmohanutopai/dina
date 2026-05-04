@@ -1,10 +1,9 @@
 /**
  * Task 4.68 — persona config.json loader tests.
  *
- * Covers: happy-path loading, legacy-tier migration (via 4.74),
- * missing file, malformed JSON, schema violations, unknown tier,
- * duplicate-persona defense, description pass-through, serializer
- * round-trip.
+ * Covers: happy-path loading, canonical-tier enforcement, missing file,
+ * malformed JSON, schema violations, duplicate-persona defense,
+ * description pass-through, serializer round-trip.
  */
 
 import {
@@ -52,7 +51,6 @@ describe('loadPersonaConfig (task 4.68)', () => {
         tier: 'standard',
         description: 'Work comms',
       });
-      expect(loaded.migrations).toEqual([]);
     });
 
     it('does not include a `description` key when the source omits it', () => {
@@ -66,68 +64,6 @@ describe('loadPersonaConfig (task 4.68)', () => {
       });
       const entry = loaded.personas.get('a')!;
       expect(Object.keys(entry).sort()).toEqual(['name', 'tier']);
-    });
-  });
-
-  describe('legacy migration on load', () => {
-    it('migrates `open` + home-bucket name → `default`', () => {
-      const file = JSON.stringify({
-        version: 1,
-        personas: { personal: { tier: 'open' } },
-      });
-      const loaded = loadPersonaConfig({
-        path: '/x/config.json',
-        readFile: readerReturning(file),
-      });
-      expect(loaded.personas.get('personal')!.tier).toBe('default');
-      expect(loaded.migrations).toEqual([
-        { persona: 'personal', from: 'open', to: 'default' },
-      ]);
-    });
-
-    it('migrates `open` + other name → `standard`', () => {
-      const file = JSON.stringify({
-        version: 1,
-        personas: { work: { tier: 'open' } },
-      });
-      const loaded = loadPersonaConfig({
-        path: '/x/config.json',
-        readFile: readerReturning(file),
-      });
-      expect(loaded.personas.get('work')!.tier).toBe('standard');
-      expect(loaded.migrations).toEqual([{ persona: 'work', from: 'open', to: 'standard' }]);
-    });
-
-    it('migrates `restricted` → `sensitive`', () => {
-      const file = JSON.stringify({
-        version: 1,
-        personas: { health: { tier: 'restricted' } },
-      });
-      const loaded = loadPersonaConfig({
-        path: '/x/config.json',
-        readFile: readerReturning(file),
-      });
-      expect(loaded.personas.get('health')!.tier).toBe('sensitive');
-      expect(loaded.migrations).toEqual([
-        { persona: 'health', from: 'restricted', to: 'sensitive' },
-      ]);
-    });
-
-    it('emits migrations only for entries that actually changed', () => {
-      const file = JSON.stringify({
-        version: 1,
-        personas: {
-          general: { tier: 'default' }, // already canonical
-          work: { tier: 'open' }, // migrates
-          health: { tier: 'restricted' }, // migrates
-          financial: { tier: 'locked' }, // already canonical
-        },
-      });
-      const loaded = loadPersonaConfig({
-        path: '/x/config.json',
-        readFile: readerReturning(file),
-      });
-      expect(loaded.migrations.map((m) => m.persona).sort()).toEqual(['health', 'work']);
     });
   });
 
@@ -203,6 +139,23 @@ describe('loadPersonaConfig (task 4.68)', () => {
       expect(err!.detail?.tier).toBe('admin');
     });
 
+    it.each(['open', 'restricted'])(
+      'throws invalid_tier on non-canonical tier %s',
+      (tier) => {
+        const err = catchErr(() =>
+          loadPersonaConfig({
+            path: '/x.json',
+            readFile: readerReturning(
+              JSON.stringify({ version: 1, personas: { p: { tier } } }),
+            ),
+          }),
+        );
+        expect(err!.code).toBe('invalid_tier');
+        expect(err!.detail?.persona).toBe('p');
+        expect(err!.detail?.tier).toBe(tier);
+      },
+    );
+
     it('invalid_tier error preserves the raw input for the operator', () => {
       const err = catchErr(() =>
         loadPersonaConfig({
@@ -235,23 +188,6 @@ describe('loadPersonaConfig (task 4.68)', () => {
       expect(back).toEqual(file);
     });
 
-    it('serializer output heals a legacy file (open → standard persisted)', () => {
-      const legacy = {
-        version: 1,
-        personas: {
-          work: { tier: 'open' },
-          health: { tier: 'restricted' },
-        },
-      };
-      const loaded = loadPersonaConfig({
-        path: '/x.json',
-        readFile: readerReturning(JSON.stringify(legacy)),
-      });
-      const healed = serializePersonaConfig(loaded);
-      expect(healed.personas.work!.tier).toBe('standard');
-      expect(healed.personas.health!.tier).toBe('sensitive');
-    });
-
     it('drops undefined descriptions in serialized output', () => {
       const file = {
         version: 1,
@@ -275,7 +211,6 @@ describe('loadPersonaConfig (task 4.68)', () => {
         readFile: readerReturning(file),
       });
       expect(loaded.personas.size).toBe(0);
-      expect(loaded.migrations).toEqual([]);
     });
   });
 });

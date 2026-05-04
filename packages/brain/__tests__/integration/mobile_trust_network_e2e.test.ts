@@ -21,7 +21,7 @@
  *   - Local-vs-network source counting
  *   - Graceful degradation when AppView returns 404 / times out
  *
- * What simulator still catches: real AppView xRPC wire compat.
+ * What simulator still catches: real AppView xRPC wire contract.
  */
 
 import {
@@ -95,6 +95,7 @@ describe('mobile Scenario 4 — Trust Network query', () => {
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',
+        handle: 'chair-maker.test',
         overallTrustScore: 0.87,
         attestationSummary: { total: 42, positive: 36, neutral: 4, negative: 2 },
         vouchCount: 8,
@@ -132,6 +133,7 @@ describe('mobile Scenario 4 — Trust Network query', () => {
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',
+        handle: 'chair-maker.test',
         overallTrustScore: 0.5,
         attestationSummary: { total: 5, positive: 3, neutral: 1, negative: 1 },
         vouchCount: 1,
@@ -188,6 +190,7 @@ describe('mobile Scenario 4 — Trust Network query', () => {
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',
+        handle: 'chair-maker.test',
         // A non-zero attestation total + a non-null score is REQUIRED
         // for profileToReviews to synthesize a review row — an unscored
         // (null) profile or zero total returns []. This pin surfaces a

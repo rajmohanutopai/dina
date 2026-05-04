@@ -16,12 +16,12 @@
  * Source: ARCHITECTURE.md Task 9.14
  */
 
-import { listPersonas, isPersonaOpen } from '@dina/core/src/persona/service';
+import { listPersonas, isPersonaOpen } from '@dina/core';
 import {
   isProviderAvailable,
   getBestProvider,
   type ProviderName,
-} from '@dina/brain/src/llm/provider_config';
+} from '@dina/brain/llm';
 
 export type CheckStatus = 'pass' | 'fail' | 'warn' | 'skip';
 export type OverallStatus = 'healthy' | 'degraded' | 'unhealthy';

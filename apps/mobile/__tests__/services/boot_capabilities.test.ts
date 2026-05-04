@@ -8,7 +8,7 @@
  *
  * Test strategy: pure module contract. No React render, no op-sqlite
  * (the composer reads the identity DB through a getter that returns
- * null in tests), no network.
+ * null in tests), and AppView network calls are stubbed explicitly.
  */
 
 import { buildBootInputs } from '../../src/services/boot_capabilities';
@@ -18,10 +18,31 @@ import { clearIdentitySeeds } from '../../src/services/identity_store';
 import { AppViewStub } from '../../src/services/appview_stub';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
+const originalFetch = globalThis.fetch;
+const originalEndpointMode = process.env.EXPO_PUBLIC_DINA_ENDPOINT_MODE;
+const originalAppViewURL = process.env.EXPO_PUBLIC_DINA_APPVIEW_URL;
+
 beforeEach(async () => {
   resetKeychainMock();
   await clearIdentitySeeds();
   await clearPersistedDid();
+  process.env.EXPO_PUBLIC_DINA_ENDPOINT_MODE = 'test';
+  delete process.env.EXPO_PUBLIC_DINA_APPVIEW_URL;
+  globalThis.fetch = originalFetch;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  if (originalEndpointMode === undefined) {
+    delete process.env.EXPO_PUBLIC_DINA_ENDPOINT_MODE;
+  } else {
+    process.env.EXPO_PUBLIC_DINA_ENDPOINT_MODE = originalEndpointMode;
+  }
+  if (originalAppViewURL === undefined) {
+    delete process.env.EXPO_PUBLIC_DINA_APPVIEW_URL;
+  } else {
+    process.env.EXPO_PUBLIC_DINA_APPVIEW_URL = originalAppViewURL;
+  }
 });
 
 describe('buildBootInputs — identity resolution (#3)', () => {
@@ -71,13 +92,20 @@ describe('buildBootInputs — role preference (#8)', () => {
 });
 
 describe('buildBootInputs — AppView seeding (#1, #6, #15, #18)', () => {
-  it('leaves appViewClient undefined by default (demo mode OFF)', async () => {
-    // Production default: no AppView client is seeded. The boot
-    // service's `discovery.no_appview` degradation then fires, which
-    // surfaces in the banner instead of the app silently answering
-    // from fake data. Findings #1 + #15.
+  it('builds a real test AppView client by default (demo mode OFF)', async () => {
+    const fetchFn = jest.fn(async () => new Response(JSON.stringify({ services: [] })));
+    globalThis.fetch = fetchFn as unknown as typeof globalThis.fetch;
+
     const inputs = await buildBootInputs({ activeProvider: 'none' });
-    expect(inputs.appViewClient).toBeUndefined();
+    expect(inputs.appViewClient).toBeDefined();
+    expect(inputs.appViewClient).not.toBeInstanceOf(AppViewStub);
+
+    await inputs.appViewClient!.searchServices({ capability: 'eta_query' });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    const [url] = fetchFn.mock.calls[0] as [string];
+    expect(url).toBe(
+      'https://test-appview.dinakernel.com/xrpc/com.dina.service.search?capability=eta_query',
+    );
   });
 
   it('seeds the Bus 42 demo profile when demoMode is explicitly ON', async () => {

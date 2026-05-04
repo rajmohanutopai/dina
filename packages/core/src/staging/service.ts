@@ -13,18 +13,26 @@
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { STAGING_LEASE_DURATION_S, STAGING_ITEM_TTL_S, STAGING_MAX_RETRIES } from '../constants';
 import { storeItem } from '../vault/crud';
-import { getStagingRepository } from './repository';
+import {
+  WorkflowTaskKind,
+  WorkflowTaskPriority,
+  WorkflowTaskState,
+  isTerminal as isTerminalWorkflowState,
+} from '../workflow/domain';
+import { WorkflowConflictError, getWorkflowService } from '../workflow/service';
+
+import { getStagingRepository, type StagingRepository } from './repository';
 import {
   type StagingStatus,
-  isValidTransition,
   shouldRetry,
   isLeaseExpired,
   isItemExpired,
 } from './state_machine';
-import { STAGING_LEASE_DURATION_S, STAGING_ITEM_TTL_S } from '../constants';
 
 export interface StagingItem {
   id: string;
@@ -48,6 +56,27 @@ export interface StagingItem {
   approval_id?: string;
 }
 
+export const STAGING_PERSONA_ACCESS_APPROVAL_TYPE = 'staging_persona_access';
+
+export interface StagingPersonaAccessApprovalPayload {
+  type: typeof STAGING_PERSONA_ACCESS_APPROVAL_TYPE;
+  approval_id: string;
+  staging_id: string;
+  persona: string;
+  source: string;
+  source_id: string;
+  producer_id: string;
+  preview: string;
+}
+
+export interface StagingApprovalActionResult {
+  approvalId: string;
+  matched: number;
+  drained: number;
+  alreadyStored: number;
+  denied: number;
+}
+
 const LEASE_DURATION_S = STAGING_LEASE_DURATION_S;
 const ITEM_TTL_S = STAGING_ITEM_TTL_S;
 
@@ -60,15 +89,56 @@ const ITEM_TTL_S = STAGING_ITEM_TTL_S;
 // leaving the staging drain tick permanently empty. Jest + Node-side
 // tests are unaffected — they load one module instance anyway, and the
 // globalThis indirection is free.
-type StagingGlobals = { inbox: Map<string, StagingItem>; dedupIndex: Map<string, string> };
+interface StagingGlobals {
+  inbox: Map<string, StagingItem>;
+  dedupIndex: Map<string, string>;
+}
 const globalWithStaging = globalThis as unknown as { __dinaStagingState?: StagingGlobals };
 const _stagingState: StagingGlobals =
   globalWithStaging.__dinaStagingState ??
   (globalWithStaging.__dinaStagingState = { inbox: new Map(), dedupIndex: new Map() });
 const inbox = _stagingState.inbox;
 
-/** Dedup index: "source|source_id" → staging ID. */
+/** Dedup index: "producer_id|source|source_id" → staging ID. */
 const dedupIndex = _stagingState.dedupIndex;
+
+function dedupKey(producerId: string, source: string, sourceId: string): string {
+  return `${producerId}|${source}|${sourceId}`;
+}
+
+function cacheItem(item: StagingItem): void {
+  inbox.set(item.id, item);
+  dedupIndex.set(dedupKey(item.producer_id, item.source, item.source_id), item.id);
+}
+
+function removeCachedItem(item: StagingItem): void {
+  inbox.delete(item.id);
+  dedupIndex.delete(dedupKey(item.producer_id, item.source, item.source_id));
+}
+
+function loadItem(id: string): StagingItem | null {
+  const repo = getStagingRepository();
+  if (repo) {
+    const item = repo.get(id);
+    if (item) cacheItem(item);
+    else inbox.delete(id);
+    return item;
+  }
+  return inbox.get(id) ?? null;
+}
+
+function replaceCacheFromRepository(repo: StagingRepository): number {
+  inbox.clear();
+  dedupIndex.clear();
+  const items = repo.listAll();
+  for (const item of items) cacheItem(item);
+  return items.length;
+}
+
+export function hydrateStagingFromRepository(): number {
+  const repo = getStagingRepository();
+  return repo ? replaceCacheFromRepository(repo) : 0;
+}
 
 /**
  * Injectable OnDrain callback — invoked for each item written to vault
@@ -92,6 +162,96 @@ function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+function stagingApprovalId(stagingId: string, persona: string): string {
+  const safePersona = persona.replace(/[^A-Za-z0-9_.-]/g, '_');
+  return `approval-staging-${stagingId}-${safePersona}`;
+}
+
+function previewForApproval(
+  item: StagingItem,
+  classifiedItem?: Record<string, unknown>,
+): string {
+  const candidates = [
+    classifiedItem?.summary,
+    classifiedItem?.title,
+    classifiedItem?.text,
+    item.data.summary,
+    item.data.subject,
+    item.data.body,
+  ];
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed !== '') return trimmed.length <= 180 ? trimmed : `${trimmed.slice(0, 180)}...`;
+  }
+  return '';
+}
+
+function createPersonaAccessApproval(
+  item: StagingItem,
+  persona: string,
+  classifiedItem?: Record<string, unknown>,
+): string {
+  const service = getWorkflowService();
+  if (service === null) {
+    throw new Error(
+      'staging: workflow service must be wired before parking locked persona targets',
+    );
+  }
+
+  const approvalId = stagingApprovalId(item.id, persona);
+  const existing = service.store().getById(approvalId);
+  if (existing !== null) {
+    if (isTerminalWorkflowState(existing.status as WorkflowTaskState)) {
+      throw new Error(
+        `staging: approval task "${approvalId}" is already terminal while target is still locked`,
+      );
+    }
+    return approvalId;
+  }
+
+  const payload: StagingPersonaAccessApprovalPayload = {
+    type: STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
+    approval_id: approvalId,
+    staging_id: item.id,
+    persona,
+    source: item.source,
+    source_id: item.source_id,
+    producer_id: item.producer_id,
+    preview: previewForApproval(item, classifiedItem),
+  };
+
+  try {
+    service.create({
+      id: approvalId,
+      kind: WorkflowTaskKind.Approval,
+      description: `Remember access for ${persona}`,
+      payload: JSON.stringify(payload),
+      expiresAtSec: item.expires_at,
+      priority: WorkflowTaskPriority.UserBlocking,
+      origin: 'system',
+      idempotencyKey: approvalId,
+      initialState: WorkflowTaskState.PendingApproval,
+    });
+  } catch (err) {
+    if (err instanceof WorkflowConflictError) {
+      const duplicate = service.store().getById(approvalId);
+      if (duplicate !== null && !isTerminalWorkflowState(duplicate.status as WorkflowTaskState)) {
+        return approvalId;
+      }
+    }
+    throw err;
+  }
+
+  return approvalId;
+}
+
+function itemsByApprovalId(approvalId: string): StagingItem[] {
+  const repo = getStagingRepository();
+  const items = repo ? repo.listAll() : Array.from(inbox.values());
+  return items.filter((item) => item.approval_id === approvalId);
+}
+
 /**
  * Ingest a new item into the staging inbox.
  *
@@ -108,10 +268,20 @@ export function ingest(input: {
   expires_at?: number;
 }): { id: string; duplicate: boolean } {
   const producer = input.producer_id ?? '';
-  const dk = `${producer}|${input.source}|${input.source_id}`;
-  const existingId = dedupIndex.get(dk);
-  if (existingId && inbox.has(existingId)) {
-    return { id: existingId, duplicate: true };
+  const repo = getStagingRepository();
+  const dk = dedupKey(producer, input.source, input.source_id);
+
+  if (repo) {
+    const existing = repo.findByDedup(producer, input.source, input.source_id);
+    if (existing) {
+      cacheItem(existing);
+      return { id: existing.id, duplicate: true };
+    }
+  } else {
+    const existingId = dedupIndex.get(dk);
+    if (existingId && inbox.has(existingId)) {
+      return { id: existingId, duplicate: true };
+    }
   }
 
   const id = `stg-${bytesToHex(randomBytes(8))}`;
@@ -133,22 +303,18 @@ export function ingest(input: {
     source_hash: computeSourceHash(data),
   };
 
-  inbox.set(id, item);
-  dedupIndex.set(dk, id);
-  // SQL write-through — fire-and-forget since Phase 2.3 (task 2.3).
-  // Double-guarded: outer try/catch for sync-throw variants (test
-  // mocks), inner .catch for async rejection. `inbox` Map is
-  // authoritative for reads within the process.
-  const sqlRepo = getStagingRepository();
-  if (sqlRepo) {
-    try {
-      void sqlRepo.ingest(item).catch(() => {
-        /* fail-safe — transient SQL write loss is acceptable */
-      });
-    } catch {
-      /* fail-safe — sync-throw variant */
+  if (repo) {
+    const inserted = repo.ingest(item);
+    if (!inserted) {
+      const existing = repo.findByDedup(producer, input.source, input.source_id);
+      if (existing) {
+        cacheItem(existing);
+        return { id: existing.id, duplicate: true };
+      }
+      throw new Error('staging: repository rejected ingest without an existing dedup row');
     }
   }
+  cacheItem(item);
   return { id, duplicate: false };
 }
 
@@ -162,9 +328,16 @@ export function ingest(input: {
  * @param limit - Max items to claim (default 10)
  * @param leaseDurationSeconds - Lease duration in seconds (default 900s, matching Go)
  */
-export function claim(limit: number = 10, leaseDurationSeconds?: number): StagingItem[] {
+export function claim(limit = 10, leaseDurationSeconds?: number): StagingItem[] {
   const now = nowSeconds();
   const leaseDuration = leaseDurationSeconds ?? LEASE_DURATION_S;
+  const repo = getStagingRepository();
+  if (repo) {
+    const claimed = repo.claim(limit, leaseDuration, now);
+    for (const item of claimed) cacheItem(item);
+    return claimed;
+  }
+
   const claimed: StagingItem[] = [];
 
   for (const item of inbox.values()) {
@@ -196,33 +369,38 @@ export function resolve(
   personaOpen: boolean,
   classifiedItem?: Record<string, unknown>,
 ): void {
-  // eslint-disable-next-line no-console
-  console.log(
-    `[staging/service] resolve id=${id} persona=${persona} open=${personaOpen} hasClassified=${classifiedItem !== undefined} summary="${(classifiedItem?.summary as string | undefined) ?? ''}"`,
-  );
-  const item = inbox.get(id);
+  const repo = getStagingRepository();
+  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
+
+  const approvalId = personaOpen
+    ? undefined
+    : createPersonaAccessApproval(item, persona, classifiedItem);
 
   item.persona = persona;
   item.status = personaOpen ? 'stored' : 'pending_unlock';
   if (classifiedItem) {
     item.classified_item = classifiedItem;
   }
+  if (approvalId !== undefined) {
+    item.approval_id = approvalId;
+  }
 
   // Vault write path: when persona is open AND classified data exists,
   // write the enriched item to the vault. This completes the staging→vault
   // pipeline — matching Go's storeToVault() call in Resolve.
-  // Fail-safe: vault write errors don't block staging resolution.
+  let storedOpenPersona: string | null = null;
   if (personaOpen && classifiedItem) {
     try {
       storeItem(persona, classifiedItem);
-    } catch {
-      // Vault validation may reject incomplete enrichment data — not fatal
+      storedOpenPersona = persona;
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`staging: vault store failed for persona "${persona}": ${reason}`);
     }
-    if (onDrainCallback) onDrainCallback(item, persona);
   }
 
   // Clear raw body from data after classification (privacy protection).
@@ -232,6 +410,17 @@ export function resolve(
   if (item.data.body !== undefined) {
     item.data = { ...item.data, body: '' };
   }
+
+  if (repo) {
+    repo.updateStatus(id, item.status, {
+      persona: item.persona,
+      data: item.data,
+      ...(item.classified_item ? { classified_item: item.classified_item } : {}),
+      ...(item.approval_id ? { approval_id: item.approval_id } : {}),
+    });
+  }
+  cacheItem(item);
+  if (storedOpenPersona && onDrainCallback) onDrainCallback(item, storedOpenPersona);
 }
 
 /**
@@ -246,10 +435,11 @@ export function resolve(
  */
 export function resolveMulti(
   id: string,
-  targets: Array<{ persona: string; personaOpen: boolean }>,
+  targets: { persona: string; personaOpen: boolean }[],
   classifiedItem?: Record<string, unknown>,
 ): number {
-  const item = inbox.get(id);
+  const repo = getStagingRepository();
+  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
@@ -257,35 +447,57 @@ export function resolveMulti(
   if (targets.length === 0) {
     throw new Error('staging: resolveMulti requires at least one target persona');
   }
+  const primary = targets[0];
+  if (!primary) {
+    throw new Error('staging: resolveMulti requires at least one target persona');
+  }
 
   if (classifiedItem) {
     item.classified_item = classifiedItem;
   }
 
-  // Write to each open persona vault immediately.
-  // For locked personas, create a separate pending_unlock staging record
-  // so drainForPersona can find each one independently.
-  // Fix: Codex #4 — previously only stored targets[0].persona, losing locked secondaries.
-  const lockedTargets: string[] = [];
+  // Create durable approvals before any open-persona writes. If Core
+  // cannot persist the approval record, the resolve fails without
+  // partially storing the open side of a multi-persona item.
+  const lockedTargets = targets
+    .filter((target) => !target.personaOpen)
+    .map((target) => target.persona);
+  const approvalIds = new Map<string, string>();
+  for (const lockedPersona of lockedTargets) {
+    const approvalItem =
+      lockedPersona === primary.persona
+        ? item
+        : ({
+            ...item,
+            id: `${id}-${lockedPersona}`,
+            source_id: `${item.source_id}:${lockedPersona}`,
+            persona: lockedPersona,
+            status: 'pending_unlock',
+            classified_item: classifiedItem,
+          } satisfies StagingItem);
+    approvalIds.set(
+      lockedPersona,
+      createPersonaAccessApproval(approvalItem, lockedPersona, classifiedItem),
+    );
+  }
 
   // Track which personas actually got a vault row. A persona that
   // fails to store (validation reject, adapter error) must not
   // advance to the drain callback — otherwise post-publish hooks
   // fire against a row that doesn't exist.
   const storedPersonas: string[] = [];
-  const failures: Array<{ persona: string; reason: string }> = [];
+  const failures: { persona: string; reason: string }[] = [];
 
   for (const target of targets) {
     if (target.personaOpen && classifiedItem) {
       try {
         storeItem(target.persona, classifiedItem);
         storedPersonas.push(target.persona);
-        if (onDrainCallback) onDrainCallback(item, target.persona);
       } catch (err) {
         // Surface the reason so the drain / ops can see WHY the vault
         // rejected the write (invalid type, missing required field,
-        // adapter failure). Previously this was a silent catch — the
-        // drain would report `stored: 1` even though no vault row
+        // adapter failure). A silent catch here would make the drain
+        // report `stored: 1` even though no vault row
         // existed, making `/remember` appear to work but `/ask` find
         // nothing. The per-persona failure is still non-fatal: we
         // continue the loop so other targets can still store.
@@ -296,8 +508,6 @@ export function resolveMulti(
           `[staging/resolveMulti] vault store failed persona=${target.persona} reason=${reason}`,
         );
       }
-    } else if (!target.personaOpen) {
-      lockedTargets.push(target.persona);
     }
   }
 
@@ -305,28 +515,35 @@ export function resolveMulti(
   // total loss — re-throw the first failure so the drain can mark
   // the staging item failed instead of silently moving on.
   if (storedPersonas.length === 0 && lockedTargets.length === 0 && failures.length > 0) {
+    const firstFailure = failures[0];
     throw new Error(
-      `staging: resolveMulti wrote 0 vault rows (all ${failures.length} targets failed): ${failures[0]!.reason}`,
+      `staging: resolveMulti wrote 0 vault rows (all ${failures.length} targets failed): ${firstFailure?.reason ?? 'unknown'}`,
     );
   }
 
   // Create separate pending_unlock records for each locked secondary persona
   for (const lockedPersona of lockedTargets) {
-    if (lockedPersona === targets[0].persona) continue; // primary handled below
+    if (lockedPersona === primary.persona) continue; // primary handled below
     const copyId = `${id}-${lockedPersona}`;
     const copy: StagingItem = {
       ...item,
       id: copyId,
+      source_id: `${item.source_id}:${lockedPersona}`,
       persona: lockedPersona,
       status: 'pending_unlock',
       classified_item: classifiedItem,
     };
-    inbox.set(copyId, copy);
+    copy.approval_id = approvalIds.get(lockedPersona);
+    if (repo) repo.ingest(copy);
+    cacheItem(copy);
   }
 
   // Primary persona tracks on the original item
-  item.persona = targets[0].persona;
-  const primaryOpen = targets[0].personaOpen;
+  item.persona = primary.persona;
+  const primaryOpen = primary.personaOpen;
+  if (!primaryOpen) {
+    item.approval_id = approvalIds.get(primary.persona);
+  }
   item.status = primaryOpen ? 'stored' : 'pending_unlock';
 
   // Clear raw body
@@ -334,6 +551,18 @@ export function resolveMulti(
     item.data = { ...item.data, body: '' };
   }
 
+  if (repo) {
+    repo.updateStatus(id, item.status, {
+      persona: item.persona,
+      data: item.data,
+      ...(item.classified_item ? { classified_item: item.classified_item } : {}),
+      ...(item.approval_id ? { approval_id: item.approval_id } : {}),
+    });
+  }
+  cacheItem(item);
+  if (onDrainCallback) {
+    for (const storedPersona of storedPersonas) onDrainCallback(item, storedPersona);
+  }
   return targets.length;
 }
 
@@ -344,7 +573,8 @@ export function resolveMulti(
  * (matching Go's error column in staging inbox).
  */
 export function fail(id: string, errorMessage?: string): void {
-  const item = inbox.get(id);
+  const repo = getStagingRepository();
+  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot fail item in status "${item.status}"`);
@@ -355,6 +585,13 @@ export function fail(id: string, errorMessage?: string): void {
   if (errorMessage) {
     item.error = errorMessage;
   }
+  if (repo) {
+    repo.updateStatus(id, item.status, {
+      retry_count: item.retry_count,
+      ...(item.error ? { error: item.error } : {}),
+    });
+  }
+  cacheItem(item);
 }
 
 /**
@@ -367,7 +604,8 @@ export function fail(id: string, errorMessage?: string): void {
  * Matching Go's MarkPendingApproval in the staging handler.
  */
 export function markPendingApproval(id: string, approvalId: string): void {
-  const item = inbox.get(id);
+  const repo = getStagingRepository();
+  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot mark pending_approval from status "${item.status}"`);
@@ -375,6 +613,8 @@ export function markPendingApproval(id: string, approvalId: string): void {
 
   item.status = 'pending_approval';
   item.approval_id = approvalId;
+  if (repo) repo.updateStatus(id, item.status, { approval_id: approvalId });
+  cacheItem(item);
 }
 
 /**
@@ -384,7 +624,8 @@ export function markPendingApproval(id: string, approvalId: string): void {
  * re-processed (resolve to vault).
  */
 export function resumeAfterApprovalGranted(id: string): void {
-  const item = inbox.get(id);
+  const repo = getStagingRepository();
+  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
   if (item.status !== 'pending_approval') {
     throw new Error(`staging: cannot resume from status "${item.status}"`);
@@ -392,6 +633,8 @@ export function resumeAfterApprovalGranted(id: string): void {
 
   item.status = 'classifying';
   item.lease_until = nowSeconds() + LEASE_DURATION_S;
+  if (repo) repo.updateStatus(id, item.status, { lease_until: item.lease_until });
+  cacheItem(item);
 }
 
 /**
@@ -402,7 +645,8 @@ export function resumeAfterApprovalGranted(id: string): void {
  * ExtendLease which computes from max(lease_until, current_time).
  */
 export function extendLease(id: string, extensionSeconds: number): void {
-  const item = inbox.get(id);
+  const repo = getStagingRepository();
+  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot extend lease on item in status "${item.status}"`);
@@ -411,6 +655,8 @@ export function extendLease(id: string, extensionSeconds: number): void {
   const now = nowSeconds();
   const base = Math.max(item.lease_until, now);
   item.lease_until = base + extensionSeconds;
+  if (repo) repo.updateStatus(id, item.status, { lease_until: item.lease_until });
+  cacheItem(item);
 }
 
 /**
@@ -425,12 +671,19 @@ export function sweep(now?: number): {
   deadLettered: number;
 } {
   const currentTime = now ?? nowSeconds();
+  const repo = getStagingRepository();
+  if (repo) {
+    const result = repo.sweep(currentTime);
+    replaceCacheFromRepository(repo);
+    return result;
+  }
+
   const result = { expired: 0, leaseReverted: 0, requeued: 0, deadLettered: 0 };
 
-  for (const [id, item] of inbox.entries()) {
+  for (const item of inbox.values()) {
     // 1. Delete expired items (7d TTL)
     if (isItemExpired(item.expires_at, currentTime)) {
-      inbox.delete(id);
+      removeCachedItem(item);
       result.expired++;
       continue;
     }
@@ -467,8 +720,11 @@ export function sweep(now?: number): {
  */
 export function drainForPersona(persona: string): number {
   let drained = 0;
-  for (const item of inbox.values()) {
+  const repo = getStagingRepository();
+  const items = repo ? repo.listByStatus('pending_unlock') : Array.from(inbox.values());
+  for (const item of items) {
     if (item.status === 'pending_unlock' && item.persona === persona) {
+      if (item.approval_id !== undefined) continue;
       // Write classified data to vault if available
       if (item.classified_item) {
         try {
@@ -478,6 +734,8 @@ export function drainForPersona(persona: string): number {
         }
       }
       item.status = 'stored';
+      if (repo) repo.updateStatus(item.id, item.status);
+      cacheItem(item);
       // OnDrain callback: post-publication event extraction
       if (onDrainCallback) onDrainCallback(item, persona);
       drained++;
@@ -486,21 +744,116 @@ export function drainForPersona(persona: string): number {
   return drained;
 }
 
+/**
+ * Store all staging rows guarded by one workflow approval task.
+ *
+ * This is the durable resume path for locked persona targets: the
+ * workflow inbox owns the user decision, and staging owns the actual
+ * pending_unlock → stored transition.
+ */
+export function drainForApproval(approvalId: string): StagingApprovalActionResult {
+  const result: StagingApprovalActionResult = {
+    approvalId,
+    matched: 0,
+    drained: 0,
+    alreadyStored: 0,
+    denied: 0,
+  };
+  const repo = getStagingRepository();
+  for (const item of itemsByApprovalId(approvalId)) {
+    result.matched++;
+    if (item.status === 'stored') {
+      result.alreadyStored++;
+      continue;
+    }
+    if (item.status === 'failed') {
+      result.denied++;
+      continue;
+    }
+    if (item.status !== 'pending_unlock') continue;
+    if (!item.classified_item) {
+      throw new Error(
+        `staging: pending unlock item "${item.id}" has no classified_item to store`,
+      );
+    }
+    try {
+      storeItem(item.persona, item.classified_item);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`staging: vault store failed for persona "${item.persona}": ${reason}`);
+    }
+    item.status = 'stored';
+    if (repo) repo.updateStatus(item.id, item.status);
+    cacheItem(item);
+    if (onDrainCallback) onDrainCallback(item, item.persona);
+    result.drained++;
+  }
+  return result;
+}
+
+/**
+ * Reject all pending_unlock rows guarded by one workflow approval task.
+ *
+ * Denied rows are marked failed with retries exhausted so a later sweep
+ * never requeues them for storage.
+ */
+export function denyApproval(
+  approvalId: string,
+  reason = 'approval_denied',
+): StagingApprovalActionResult {
+  const result: StagingApprovalActionResult = {
+    approvalId,
+    matched: 0,
+    drained: 0,
+    alreadyStored: 0,
+    denied: 0,
+  };
+  const repo = getStagingRepository();
+  const error = reason.trim() === '' ? 'approval_denied' : reason.trim();
+  for (const item of itemsByApprovalId(approvalId)) {
+    result.matched++;
+    if (item.status === 'stored') {
+      result.alreadyStored++;
+      continue;
+    }
+    if (item.status === 'failed') {
+      result.denied++;
+      continue;
+    }
+    if (item.status !== 'pending_unlock') continue;
+    item.status = 'failed';
+    item.error = error;
+    item.retry_count = Math.max(item.retry_count, STAGING_MAX_RETRIES + 1);
+    if (repo) {
+      repo.updateStatus(item.id, item.status, {
+        error: item.error,
+        retry_count: item.retry_count,
+      });
+    }
+    cacheItem(item);
+    result.denied++;
+  }
+  return result;
+}
+
 /** Get a staging item by ID. */
 export function getItem(id: string): StagingItem | null {
-  return inbox.get(id) ?? null;
+  return loadItem(id);
 }
 
 /** Get inbox size. */
 export function inboxSize(): number {
-  return inbox.size;
+  const repo = getStagingRepository();
+  return repo ? repo.size() : inbox.size;
 }
 
 /** Reset all staging state (for testing). */
-export function resetStagingState(): void {
+export function resetStagingState(options?: { preserveRepositoryRows?: boolean }): void {
   inbox.clear();
   dedupIndex.clear();
   onDrainCallback = null;
+  const repo = getStagingRepository();
+  if (repo && options?.preserveRepositoryRows !== true) repo.clear();
 }
 
 /**
@@ -509,6 +862,13 @@ export function resetStagingState(): void {
  * Matching Go's ListByStatus — used for monitoring and batch operations.
  */
 export function listByStatus(status: StagingStatus): StagingItem[] {
+  const repo = getStagingRepository();
+  if (repo) {
+    const items = repo.listByStatus(status);
+    for (const item of items) cacheItem(item);
+    return items;
+  }
+
   const results: StagingItem[] = [];
   for (const item of inbox.values()) {
     if (item.status === status) results.push(item);
@@ -527,7 +887,7 @@ export function getStatusForOwner(
   id: string,
   originDID: string,
 ): { status: StagingStatus; persona: string } | null {
-  const item = inbox.get(id);
+  const item = loadItem(id);
   if (!item) return null;
   if (item.producer_id !== originDID) return null;
   return { status: item.status, persona: item.persona };

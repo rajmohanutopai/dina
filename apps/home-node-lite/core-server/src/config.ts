@@ -10,12 +10,14 @@
  * to the wrong audience. We throw `ConfigError` on any Zod validation
  * failure so the process crashes before Fastify binds a port.
  *
- * **Parity with Go config.** The Go Core reads the same env vars (see
- * `core/internal/config/*.go`). Keep names and defaults in sync.
- *
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4a tasks 4.4–4.5.
  */
 
+import {
+  HomeNodeEndpointConfigError,
+  resolveServerHostedDinaEndpoints,
+  type HostedDinaEndpoints,
+} from '@dina/home-node';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -58,12 +60,23 @@ const RuntimeSchema = z.object({
   prettyLogs: z.boolean(),
 });
 
-/** MsgBox relay (optional — off when unset). */
+/** Hosted Dina endpoint fleet selected for this Home Node. */
+const EndpointSchema = z.object({
+  mode: z.enum(['test', 'release']),
+  msgboxWsUrl: z.string().url(),
+  pdsBaseUrl: z.string().url(),
+  appViewBaseUrl: z.string().url(),
+  plcDirectoryUrl: z.string().url(),
+});
+
+/** MsgBox relay. Test fleet is the default for greenfield installs. */
 const MsgBoxSchema = z.object({
-  /** Relay URL, e.g. `https://msgbox.dina.example`. */
+  /** Relay URL, e.g. `wss://test-mailbox.dinakernel.com/ws`. */
   url: z.string().url().optional(),
   /** Home node's own DID, needed for MsgBox subscription. */
   homeNodeDid: z.string().optional(),
+  /** Connect to MsgBox during boot. Defaults true for greenfield installs. */
+  enabled: z.boolean().optional(),
 });
 
 /**
@@ -79,6 +92,7 @@ const CorsSchema = z.object({
 
 /** Full server config — every subsection required. */
 export const CoreServerConfigSchema = z.object({
+  endpoints: EndpointSchema.optional(),
   network: NetworkSchema,
   storage: StorageSchema,
   runtime: RuntimeSchema,
@@ -87,6 +101,11 @@ export const CoreServerConfigSchema = z.object({
 });
 
 export type CoreServerConfig = z.infer<typeof CoreServerConfigSchema>;
+
+export type LoadedCoreServerConfig = Omit<CoreServerConfig, 'endpoints' | 'msgbox'> & {
+  endpoints: HostedDinaEndpoints;
+  msgbox: { url: string; homeNodeDid?: string; enabled: boolean };
+};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -179,7 +198,7 @@ function requireString(env: NodeJS.ProcessEnv, key: string): string {
  * Pass `process.env` in production; tests pass a plain object. This
  * keeps the loader deterministic — no hidden reads.
  */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreServerConfig {
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServerConfig {
   // Field mapping: env var → config path. Keeping this table explicit so
   // a reader can see what every env var means without hunting through
   // coercion functions.
@@ -191,11 +210,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreServerConf
   //   DINA_LOG_LEVEL       → runtime.logLevel   (default: info)
   //   DINA_RATE_LIMIT      → runtime.rateLimit  (default: 60)
   //   DINA_PRETTY_LOGS     → runtime.prettyLogs (default: false)
-  //   DINA_MSGBOX_URL      → msgbox.url         (optional)
+  //   DINA_ENDPOINT_MODE   → endpoints.mode     (default: test)
+  //   DINA_MSGBOX_URL      → endpoints/msgbox.url
+  //   DINA_MSGBOX_ENABLED  → msgbox.enabled    (default: true)
+  //   DINA_PDS_URL         → endpoints.pdsBaseUrl
+  //   DINA_APPVIEW_URL     → endpoints.appViewBaseUrl
+  //   DINA_PLC_URL         → endpoints.plcDirectoryUrl
   //   DINA_HOMENODE_DID    → msgbox.homeNodeDid (optional)
   //   DINA_CORS_ORIGIN     → cors.allowOrigin   (optional; matches Go's AllowOrigin)
 
+  const endpoints = readEndpoints(env);
   const draft = {
+    endpoints,
     network: {
       host: readString(env, 'DINA_CORE_HOST', DEFAULTS.network.host),
       port: readInt(env, 'DINA_CORE_PORT', DEFAULTS.network.port),
@@ -214,8 +240,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreServerConf
       prettyLogs: readBool(env, 'DINA_PRETTY_LOGS', DEFAULTS.runtime.prettyLogs),
     },
     msgbox: {
-      url: readString(env, 'DINA_MSGBOX_URL'),
+      url: endpoints.msgboxWsUrl,
       homeNodeDid: readString(env, 'DINA_HOMENODE_DID'),
+      enabled: readBool(env, 'DINA_MSGBOX_ENABLED', true),
     },
     cors: {
       allowOrigin: readString(env, 'DINA_CORS_ORIGIN'),
@@ -232,5 +259,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreServerConf
       })),
     );
   }
-  return parsed.data;
+  return parsed.data as LoadedCoreServerConfig;
+}
+
+function readEndpoints(env: NodeJS.ProcessEnv) {
+  try {
+    return resolveServerHostedDinaEndpoints(env);
+  } catch (err) {
+    if (err instanceof HomeNodeEndpointConfigError) {
+      throw new ConfigError(err.message, [
+        { path: err.key ?? 'endpoints', message: err.message },
+      ]);
+    }
+    throw err;
+  }
 }

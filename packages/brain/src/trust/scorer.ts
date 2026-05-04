@@ -29,10 +29,10 @@
 // universe; the scorer is one producer among several.
 //
 // `Confidence` and `RetrievalPolicy` are reused verbatim from
-// `@dina/core/vault/validation` because this scorer's outputs flow
+// `@dina/core` because this scorer's outputs flow
 // directly onto the wire of a vault row — they MUST match the
 // validator's accepted set or `validateVaultItem` rejects the write.
-import type { Confidence, RetrievalPolicy } from '@dina/core/src/vault/validation';
+import type { Confidence, RetrievalPolicy } from '@dina/core';
 
 export type SenderTrust = 'self' | 'contact_ring1' | 'service' | 'unknown' | 'marketing';
 export type SourceType = 'self' | 'service' | 'contact' | 'unknown' | 'marketing';

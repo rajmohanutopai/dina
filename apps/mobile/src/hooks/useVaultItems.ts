@@ -23,7 +23,7 @@ import {
   browseRecent,
   deleteItem,
   vaultItemCount,
-} from '@dina/core/src/vault/crud';
+} from '@dina/core';
 import type { VaultItem } from '@dina/test-harness';
 
 export interface VaultItemUI {

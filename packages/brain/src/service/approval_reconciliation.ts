@@ -20,9 +20,6 @@ import type { CoreClient, WorkflowTask } from '@dina/core';
 /**
  * The 3-method slice of `CoreClient` the reconciler actually uses.
  * Kept narrow so future CoreClient additions don't widen this contract.
- * Task 1.32-G migration: used to be `BrainCoreClient` — swapped to
- * `CoreClient` because all 3 methods have identical signatures
- * (slices A, C, D landed them).
  */
 export type ApprovalReconcilerCoreClient = Pick<
   CoreClient,

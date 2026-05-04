@@ -8,7 +8,7 @@
 import { Platform } from 'react-native';
 import argon2 from 'react-native-argon2';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { setKDFOverride } from '@dina/core/src/crypto/argon2id';
+import { setKDFOverride } from '@dina/core';
 
 // `crypto.getRandomValues` is used by `@noble/ciphers/utils.js::randomBytes`
 // and every other noble/scure helper our crypto stack (aesgcm, ed25519,

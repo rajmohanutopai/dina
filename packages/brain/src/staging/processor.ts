@@ -19,14 +19,15 @@
  *      rationale.
  *
  * classifyItem: uses keyword-based domain classifier to route items to personas.
- * enrichItem: generates deterministic L0 summary, preserves existing L1.
+ * enrichItem: runs the same L0/L1/embedding enrichment pipeline used
+ * by the production staging drain.
  * processPendingItems: orchestrates the helpers over the in-memory queue.
  *
  * Source: brain/tests/test_staging_processor.py
  */
 
 import { classifySourceTrust } from '../../../core/src/trust/source_trust';
-import { generateL0 } from '../enrichment/l0_deterministic';
+import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,
   type TopicTouchPipelineOptions,
@@ -50,7 +51,7 @@ export interface StagingProcessResult {
    * resolve) — reminder-planner output, identity-link count, contact
    * last-interaction update, ambiguous-routing flag. Present only
    * when the drain actually called `handlePostPublish`. Missing on
-   * failed items + on the legacy `processPendingItems` path.
+   * failed items + on the in-memory `processPendingItems` path.
    */
   postPublish?: {
     remindersCreated: number;
@@ -84,6 +85,10 @@ export interface StagingProcessResult {
  * without setting up a Core repo. It's not a fallback ingress path.
  */
 const pendingItems: Record<string, unknown>[] = [];
+
+function vectorToJsonArray(vector: Float32Array | undefined): number[] | undefined {
+  return vector === undefined ? undefined : Array.from(vector);
+}
 
 /** Clear pending items — TEST HARNESS ONLY. */
 export function clearPendingItems(): void {
@@ -126,7 +131,7 @@ export async function processPendingItems(
   for (const item of batch) {
     try {
       // 1. Classify into target personas. `classifyItem` returns the
-      // single best match (for the legacy `persona` field on the
+      // single best match (for the primary `persona` field on the
       // result); `classifyPersonas` fans out to every persona whose
       // confidence crossed the threshold — matching main-dina's
       // `_classify_personas` behaviour. A clinic email about a
@@ -208,25 +213,30 @@ export async function classifyItem(
 /**
  * Enrich a classified item with L0/L1 summaries.
  *
- * L0: deterministic one-line headline (generateL0).
- * L1: preserved if already present; LLM enrichment deferred to Phase 3.14.
+ * L0: deterministic one-line headline.
+ * L1/embedding: produced by registered providers when available, with
+ * explicit fallback metadata when providers are not wired.
  */
 export async function enrichItem(item: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const l0 = generateL0({
+  const enriched = await enrichVaultItem({
     type: String(item.type ?? ''),
     source: String(item.source ?? ''),
     sender: String(item.sender ?? ''),
     timestamp: Number(item.timestamp ?? 0),
     summary: item.summary ? String(item.summary) : undefined,
+    body: item.body ? String(item.body) : undefined,
     sender_trust: item.sender_trust ? String(item.sender_trust) : undefined,
   });
+  const embedding = vectorToJsonArray(enriched.embedding);
 
   return {
     ...item,
-    content_l0: l0,
-    content_l1: item.content_l1 ?? '',
-    enrichment_status: 'l0_complete',
-    enrichment_version: 'deterministic-v1',
+    content_l0: enriched.content_l0,
+    content_l1: enriched.content_l1,
+    enrichment_status: enriched.enrichment_status,
+    enrichment_version: JSON.stringify(enriched.enrichment_version),
+    enrichment_metadata: enriched.stages,
+    ...(embedding !== undefined ? { embedding } : {}),
   };
 }
 

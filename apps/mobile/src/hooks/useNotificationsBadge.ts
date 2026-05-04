@@ -21,7 +21,7 @@ import {
   getUnreadCount,
   subscribeNotifications,
   type NotificationKind,
-} from '@dina/brain/src/notifications/inbox';
+} from '@dina/brain/notifications';
 
 /**
  * Cap counts above 9 to "9+" — the tab-bar badge widget renders as a

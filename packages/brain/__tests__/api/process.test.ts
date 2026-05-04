@@ -44,7 +44,7 @@ describe('Brain API /v1/process', () => {
       expect(result.priority).toBeDefined();
     });
 
-    it('vault_unlocked → drains pending staging items', async () => {
+    it('vault_unlocked does not bypass approval-gated pending staging items', async () => {
       // Set up a pending_unlock staging item
       const { id } = ingest({ source: 'gmail', source_id: 'x' });
       claim(10);
@@ -55,7 +55,7 @@ describe('Brain API /v1/process', () => {
         payload: { persona: 'health' },
       });
       expect(result.actions).toContain('drain_pending_unlock');
-      expect(result.data?.drained).toBe(1);
+      expect(result.data?.drained).toBe(0);
     });
 
     it('text_query → runs reasoning pipeline', async () => {

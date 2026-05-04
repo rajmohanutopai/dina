@@ -19,8 +19,8 @@
  *        initialised pre-boot) so workflow + service config persist.
  *   #5 — builds the Bus Driver tool registry + AISDK LLM provider so
  *        `/ask` runs the multi-turn agentic loop when a BYOK key is set.
- *   #6 — supplies `AppViewStub` seeded with the demo profile so public
- *        lookups don't bottom out in no_candidate.
+ *   #6 — supplies a real AppView client by default; demo mode can
+ *        still seed an AppViewStub for the Bus 42 walkthrough.
  *   #7 — MsgBox stays unconfigured by design in the demo build (there's
  *        no relay to connect to); the degradation remains, but the
  *        INPUT shape the caller provides is explicit, not forgotten.
@@ -45,58 +45,61 @@ import { PDSPublisher } from '@dina/brain/src/pds/publisher';
 import { loadInfraPreferences } from './infra_preferences';
 import type { ServiceConfig } from '@dina/protocol';
 import { getIdentityAdapter } from '../storage/init';
-import { getPublicKey } from '@dina/core/src/crypto/ed25519';
-import { deriveDIDKey } from '@dina/core/src/identity/did';
+import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+import {
+  deriveDIDKey,
+  getApprovalManager,
+  getPublicKey,
+  multibaseToPublicKey,
+  type IdentityKeypair,
+} from '@dina/core';
 import { createLLMProvider, getConfiguredProviders } from '../ai/provider';
 import { loadActiveProvider } from '../ai/active_provider';
 import type { ProviderType } from '../ai/provider';
-import type { ToolRegistry } from '@dina/brain/src/reasoning/tool_registry';
-// Needed only as `typeof` sources for the lazy proxy type signatures
-// below. The runtime assembly lives in the Brain composition module.
-import type {
-  createQueryServiceTool,
-  createFindPreferredProviderTool,
-} from '@dina/brain/src/reasoning/bus_driver_tools';
-import { createGeminiClassifier } from '@dina/brain/src/routing/gemini_classify';
 import {
-  registerPersonaSelector,
-  resetPersonaSelector,
-} from '@dina/brain/src/routing/persona_selector';
-import {
-  LLMRouter,
-  RoutedLLMProvider,
-} from '@dina/brain/src/llm/router_dispatch';
-import type { ProviderName } from '@dina/brain/src/llm/router';
-import { buildAgenticAskPipeline } from '@dina/brain/src/composition/agentic_ask';
-import { setReviewDraftStarter } from '@dina/brain/src/reasoning/draft_review_tool';
-import type { createDelegateToAgentTool } from '@dina/brain/src/reasoning/delegate_agent_tool';
-import { startReviewDraft } from '../trust/review_draft';
-import {
+  buildAgenticAskPipeline,
   buildAgenticExecuteFn,
   createAskCoordinator,
-} from '@dina/brain/src/composition/ask_coordinator';
-import { DEFAULT_ASK_SYSTEM_PROMPT } from '@dina/brain/src/reasoning/ask_handler';
-import { getApprovalManager } from '@dina/core/src/approval/manager';
-import { installApprovalInboxBridge } from '@dina/brain/src/notifications/bridges';
+  DEFAULT_ASK_SYSTEM_PROMPT,
+  type AgenticAskHandlerOptions,
+  type AskCoordinator,
+  type createDelegateToAgentTool,
+  type createFindPreferredProviderTool,
+  type createQueryServiceTool,
+  type ToolRegistry,
+} from '@dina/brain';
+import {
+  AppViewClient,
+  LLMRouter,
+  RoutedLLMProvider,
+  createGeminiClassifier,
+  installApprovalInboxBridge,
+  registerPersonaSelector,
+  resetPersonaSelector,
+  setReviewDraftStarter,
+  type ProviderName,
+} from '@dina/brain/runtime';
+import { startReviewDraft } from '../trust/review_draft';
 import type { BootServiceInputs } from './boot_service';
 import type { NodeRole } from './bootstrap';
-import type { IdentityKeypair } from '@dina/core/src/identity/keypair';
 import {
   DEFAULT_MSGBOX_URL,
   makeResolveSender,
   makeWSFactory,
   resolveMsgBoxURL,
 } from './msgbox_wiring';
-import { DIDResolver } from '@dina/core/src/d2d/resolver';
-import { multibaseToPublicKey } from '@dina/core/src/identity/did';
-import { sendD2D as coreSendD2D } from '@dina/core/src/d2d/send';
-import { AppViewServiceResolver } from '@dina/core/src/appview/service_resolver';
-import type { ServiceType } from '@dina/core/src/transport/delivery';
 import {
+  DIDResolver,
+  hydrateDeviceRegistry,
+  sendD2D as coreSendD2D,
+  type ServiceType,
+} from '@dina/core/runtime';
+import {
+  AppViewServiceResolver,
   addContactIfNotExists,
   hydrateContactDirectory,
-} from '@dina/core/src/contacts/directory';
-import { hydrateDeviceRegistry } from '@dina/core/src/devices/registry';
+  multibaseToPublicKey,
+} from '@dina/core';
 
 /**
  * Dev-only seed: EXPO_PUBLIC_DINA_DEV_CONTACT=`did:method:id|Display Name`.
@@ -279,10 +282,9 @@ export interface BuildBootInputsOptions {
   /**
    * Supply a pre-built AppView client. When omitted the helper either
    * returns an `AppViewStub` seeded with the Bus 42 demo profile (when
-   * `demoMode` is true), or leaves the field unset so `bootAppNode`
-   * records the `discovery.no_appview` degradation — the shipped app
-   * no longer silently boots against fake discovery data (findings
-   * #1, #15).
+   * `demoMode` is true), or constructs a real hosted AppView client
+   * from the shared endpoint resolver. The shipped app no longer
+   * silently boots against fake discovery data (findings #1, #15).
    */
   appViewClient?: BootServiceInputs['appViewClient'];
   /**
@@ -334,25 +336,27 @@ export async function buildBootInputs(
   // form. Format: `did:plc:...:DisplayName` (single colon-separated
   // pair). Off in production because the env var is bundle-time only.
   seedDevContact();
-
-  // Infra URLs — priority: persisted preference > env var > built-in.
-  // The Service Sharing UI writes these; env var is a fallback for
-  // bench builds and CI.
+  // Infra URLs — priority: persisted preference > env var > hosted default.
+  // The Service Sharing UI writes the preference; env var is a fallback
+  // for bench builds and CI. The cleanup branch removed the
+  // "undefined when nothing configured" fallback in favour of always
+  // defaulting to the hosted test AppView so trust UI and node runtime
+  // share one client.
   const infra = await loadInfraPreferences();
-  const appViewURL = infra.appViewURL ?? process.env.EXPO_PUBLIC_DINA_APPVIEW_URL ?? '';
+  const appViewURLOverride = infra.appViewURL ?? process.env.EXPO_PUBLIC_DINA_APPVIEW_URL ?? '';
 
   // AppView client priority:
   //   1. explicit caller-supplied (tests / programmatic boots),
-  //   2. resolved AppView URL (preference or env) → real AppViewClient,
+  //   2. resolved AppView URL override (preference or env) → real AppViewClient,
   //   3. demoMode → in-memory stub seeded with the bus42demo profile,
-  //   4. undefined → bootAppNode records `discovery.no_appview`.
+  //   4. hosted default (real test/release AppView via @dina/home-node).
   const appViewClient =
     options.appViewClient ??
-    (appViewURL !== ''
-      ? new AppViewClient({ appViewURL })
+    (appViewURLOverride !== ''
+      ? new AppViewClient({ appViewURL: appViewURLOverride })
       : options.demoMode === true
         ? demoAppView()
-        : undefined);
+        : defaultAppView());
   const databaseAdapter = getIdentityAdapter() ?? undefined;
 
   const agenticAskBundle = await tryBuildAgenticAsk({
@@ -615,6 +619,12 @@ function demoAppView(): AppViewStub {
   });
 }
 
+function defaultAppView(): AppViewClient {
+  return new AppViewClient({
+    appViewURL: resolveMobileHostedDinaEndpoints().appViewBaseUrl,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Agentic /ask (issue #5)
 // ---------------------------------------------------------------------------
@@ -637,17 +647,17 @@ interface AgenticAskBundle {
    *  hooks) so the production `/ask` path always gets the full
    *  Python-parity pipeline. */
   handlerOptions: Omit<
-    import('@dina/brain/src/reasoning/ask_handler').AgenticAskHandlerOptions,
+    AgenticAskHandlerOptions,
     'provider' | 'tools'
   >;
   /**
    * Pattern A coordinator — produced when the pipeline was built with
    * an `approvalManager` (which it always is in production today).
    * Bootstrap routes through this when set, falling back to the
-   * `provider`+`tools` legacy `agenticAsk` path only when undefined
+   * `provider`+`tools` agenticAsk path only when undefined
    * (e.g. degraded boot where pipeline construction failed).
    */
-  askCoordinator?: import('@dina/brain/src/composition/ask_coordinator').AskCoordinator;
+  askCoordinator?: AskCoordinator;
 }
 
 /**
@@ -743,7 +753,7 @@ async function tryBuildAgenticAsk(opts: {
   // Produce the AskCoordinator only when `buildToolsForAsk` is
   // populated (i.e. approvalManager was wired). Defensive — an
   // earlier construction failure in the pipeline shouldn't fault
-  // the legacy `agenticAsk` path; bootstrap can still install
+  // the non-coordinator `agenticAsk` path; bootstrap can still install
   // `makeAgenticAskHandler` with the static tools registry.
   let askCoordinator: AgenticAskBundle['askCoordinator'];
   if (pipeline.buildToolsForAsk !== undefined) {
@@ -761,8 +771,7 @@ async function tryBuildAgenticAsk(opts: {
 // `buildLightweightLLMCall` + `buildIntentClassifier` moved to
 // `packages/brain/src/composition/agentic_ask.ts` during cleanup #490
 // so the home-node-lite brain-server reuses them instead of
-// duplicating. The legacy mobile versions that used to live here
-// are now internal details of `buildAgenticAskPipeline`.
+// duplicating. Mobile now consumes the same shared builder.
 
 /** Empty AppView used by the agentic tools when no real client is
  *  supplied — lets the tool report "no candidates" rather than throw. */

@@ -184,10 +184,16 @@ export interface CoreClient {
   // ─── Staging inbox (task 1.29h / 1.32 preamble) ──────────────────────
   //
   // Brain's drain loop moves items received/classifying/stored through
-  // Core's persistent inbox. These four methods are the wire between
-  // the drain scheduler and Core's staging service. Legacy callers
-  // (`BrainCoreClient.claim/resolve/fail/extendStagingLease`) migrate
-  // to these during the task 1.32 refactor.
+  // Core's persistent inbox. These methods are the wire between
+  // the drain scheduler and Core's staging service.
+
+  /**
+   * Create a `received` staging inbox row through Core. This is the
+   * supported transport boundary for `/remember`, connectors, and any
+   * server Brain process; production callers should not import Core's
+   * in-memory staging service directly.
+   */
+  stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult>;
 
   /**
    * Atomically move up to `limit` `received` items to `classifying`
@@ -200,10 +206,10 @@ export interface CoreClient {
   stagingClaim(limit: number): Promise<StagingClaimResult>;
 
   /**
-   * Store a staging item under one persona (legacy single-target path)
-   * or fan out to every persona whose classifier score crossed the
-   * threshold (GAP-MULTI-01: pass an array). On multi-target, Core
-   * writes one vault row per persona; on single-target, one row.
+   * Store a staging item under one persona or fan out to every persona
+   * whose classifier score crossed the threshold (GAP-MULTI-01: pass
+   * an array). On multi-target, Core writes one vault row per persona;
+   * on single-target, one row.
    *
    * `personaOpen: false` routes the item to `pending_unlock` instead —
    * Brain uses this when a sensitive persona hasn't been unlocked yet.
@@ -250,8 +256,8 @@ export interface CoreClient {
   /**
    * Upsert a checkpoint for `taskId` at the given `step`. Overwrites
    * any prior row; preserves `createdAt` on update. `step=0` with a
-   * sentinel `{__deleted:true}` context triggers a delete (legacy
-   * Python compatibility — modern callers prefer `scratchpadClear`).
+   * sentinel `{__deleted:true}` context triggers a delete. New callers
+   * should prefer `scratchpadClear`.
    */
   scratchpadCheckpoint(
     taskId: string,
@@ -383,9 +389,8 @@ export interface CoreClient {
   // `updateContact` is PC-BRAIN-13's preference-binding write-path —
   // when the topic extractor surfaces a role hint like "my dentist
   // Dr Carl", the staging enrichment stamps `preferred_for: ['dental']`
-  // on Dr Carl's contact row. Both are the last Brain-owned mutations
-  // that still lived on `BrainCoreClient`; moving them onto `CoreClient`
-  // closes the ingest-side Core surface for task 1.32.
+  // on Dr Carl's contact row. Both mutations live on `CoreClient` so the
+  // ingest-side Core surface is explicit for task 1.32.
 
   /**
    * Touch a topic in persona's working-memory Table of Contents.
@@ -696,23 +701,63 @@ export interface StagingClaimResult {
   count: number;
 }
 
-export interface StagingResolveRequest {
+export interface StagingIngestRequest {
+  /** Source system or feature that produced the item, e.g. `chat` or `gmail`. */
+  source: string;
+  /** Stable source-local id for deduplication. */
+  sourceId: string;
+  /** Optional producer DID / service id; participates in dedup. */
+  producerId?: string;
+  /** Raw envelope for the staging drain to classify and enrich. */
+  data?: Record<string, unknown>;
+  /** Optional absolute Unix-seconds expiry override. */
+  expiresAt?: number;
+}
+
+export interface StagingIngestResult {
+  /** New or existing staging inbox row id. */
+  itemId: string;
+  /** True when Core returned an existing row for the same dedup key. */
+  duplicate: boolean;
+  /** Current staging status, normally `received`. */
+  status: string;
+}
+
+export type StagingResolveRequest =
+  | StagingResolveSingleRequest
+  | StagingResolveMultiRequest;
+
+interface StagingResolveBaseRequest {
   /** Staging inbox row id (Core's `id` field on the envelope). */
   itemId: string;
-  /**
-   * Target persona(s). A string is the legacy single-persona resolve
-   * path; an array opts into GAP-MULTI-01 fan-out (Core writes one
-   * vault row per persona). Empty array or empty string triggers Core's
-   * 400 — callers must pre-filter.
-   */
-  persona: string | string[];
   /** Vault row payload to persist (usually the enriched item). */
   data: Record<string, unknown>;
+}
+
+export interface StagingResolveSingleRequest extends StagingResolveBaseRequest {
+  /** Target persona for a single-persona resolve. */
+  persona: string;
   /**
-   * Whether the target persona(s) are unlocked. Defaults `true` on the
-   * wire; pass `false` to route the item to `pending_unlock`.
+   * Whether the target persona is unlocked. Required so Core never
+   * guesses the gate state.
    */
-  personaOpen?: boolean;
+  personaOpen: boolean;
+  personaAccess?: never;
+}
+
+export interface StagingResolveMultiRequest extends StagingResolveBaseRequest {
+  /**
+   * Target personas for GAP-MULTI-01 fan-out. Core writes one vault row
+   * per open persona and parks locked targets as `pending_unlock`.
+   * Empty arrays trigger Core's 400 — callers must pre-filter.
+   */
+  persona: string[];
+  /**
+   * Per-target access decisions. Required when `persona` is an array
+   * so Core never defaults secondary personas open.
+   */
+  personaAccess: Record<string, boolean>;
+  personaOpen?: never;
 }
 
 export interface StagingResolveResult {
@@ -721,7 +766,7 @@ export interface StagingResolveResult {
   /** New staging status (`stored`, `pending_unlock`, etc). */
   status: string;
   /**
-   * Populated when resolve fanned out. Omitted on legacy single-persona
+   * Populated when resolve fanned out. Omitted on single-persona
    * resolve so callers can distinguish the two paths without re-sending
    * their input.
    */

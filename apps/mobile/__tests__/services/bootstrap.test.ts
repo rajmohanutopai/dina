@@ -15,7 +15,7 @@
 import { createNode, type CreateNodeOptions } from '../../src/services/bootstrap';
 import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
 import { MockCoreClient } from '@dina/test-harness';
-import type { BrainCoreClient, WorkflowTask } from '../../../brain/src/core_client/http';
+import type { CoreClient, WorkflowTask } from '@dina/core';
 import type { ServiceConfig } from '../../../core/src/service/service_config';
 import type { IdentityKeypair } from '../../../core/src/identity/keypair';
 import type { PDSSession } from '../../../brain/src/pds/account';
@@ -68,7 +68,7 @@ function stubCoreClient(
     cancelCalls: unknown[];
     taskById: Map<string, WorkflowTask>;
   }> = {},
-): { client: BrainCoreClient; state: ReturnType<typeof defaultState> } {
+): { client: CoreClient; state: ReturnType<typeof defaultState> } {
   function defaultState() {
     return {
       listCalls: [] as unknown[],
@@ -117,7 +117,7 @@ function stubCoreClient(
     setRequestId: () => {
       /* no-op */
     },
-  } as unknown as BrainCoreClient;
+  } as unknown as CoreClient;
   return { client, state };
 }
 

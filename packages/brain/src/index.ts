@@ -9,10 +9,6 @@ export * from './enrichment/event_extractor';
 export * from './api/process';
 export * from './auth/service_key';
 export { CoreHttpError } from './errors';
-// `BrainCoreClient` was retired when every brain subsystem + every
-// mobile hook moved to `CoreClient` (task 1.32 + A+ cleanup). Callers
-// now import `CoreClient`, `WorkflowConflictError`, `WorkflowTask`,
-// and the request/result types directly from `@dina/core`.
 export { ApprovalReconciler } from './service/approval_reconciliation';
 export { WorkflowEventConsumer } from './service/workflow_event_consumer';
 export type {
@@ -32,11 +28,26 @@ export type {
   ServiceHandlerOptions,
   ServiceHandlerCoreClient,
   ApprovalNotifier,
+  ServiceInboundNotifier,
+  ServiceRejectResponder,
   SchemaSnapshot,
 } from './service/service_handler';
 export { validateAgainstSchema } from './service/capabilities/schema_validator';
 export * from './guardian/silence';
 export * from './llm/router';
+export type {
+  ChatMessage,
+  ChatOptions,
+  ChatResponse,
+  EmbedOptions,
+  EmbedResponse,
+  LLMProvider,
+  StreamChunk,
+  ToolCall,
+  ToolDefinition,
+} from './llm/adapters/provider';
+export { GeminiGenaiAdapter } from './llm/adapters/gemini_genai';
+export type { GeminiGenaiAdapterOptions } from './llm/adapters/gemini_genai';
 export * from './staging/processor';
 export {
   runStagingDrainTick,
@@ -87,8 +98,6 @@ export type {
   AntiHerLLMCallFn,
 } from './guardian/anti_her_classify';
 export * from './guardian/guard_scan';
-// `CircuitBreaker` / `CircuitBreakerOpenError` were internal to
-// `BrainCoreClient`'s HTTP retry path; retired alongside the class.
 export * from './routing/classify_factory';
 export * from './routing/gemini_classify';
 export * from './routing/persona_selector';
@@ -157,17 +166,36 @@ export {
   createGeocodeTool,
   createSearchProviderServicesTool,
   createQueryServiceTool,
+  createFindPreferredProviderTool,
 } from './reasoning/bus_driver_tools';
 export type {
   GeocodeToolOptions,
   GeocodeResult,
   SearchProviderServicesToolOptions,
   QueryServiceToolOptions,
+  FindPreferredProviderToolOptions,
 } from './reasoning/bus_driver_tools';
 export { runAgenticTurn } from './reasoning/agentic_loop';
 export type { AgenticLoopOptions, AgenticLoopResult } from './reasoning/agentic_loop';
 export { makeAgenticAskHandler, DEFAULT_ASK_SYSTEM_PROMPT } from './reasoning/ask_handler';
 export type { AgenticAskHandlerOptions } from './reasoning/ask_handler';
+export { buildAgenticAskPipeline } from './composition/agentic_ask';
+export type {
+  AgenticAskPipeline,
+  AskToolContext,
+  BuildAgenticAskPipelineInput,
+} from './composition/agentic_ask';
+export {
+  buildAgenticExecuteFn,
+  createAskCoordinator,
+} from './composition/ask_coordinator';
+export type {
+  AskCoordinator,
+  CreateAskCoordinatorOptions,
+} from './composition/ask_coordinator';
+export { getAskApprovalGateway } from './composition/ask_gateway_registry';
+export { createCoordinatorAskHandler } from './composition/coordinator_ask_handler';
+export type { CreateCoordinatorAskHandlerOptions } from './composition/coordinator_ask_handler';
 export { setAskCommandHandler, resetAskCommandHandler } from './chat/orchestrator';
 export type { AskCommandHandler } from './chat/orchestrator';
 

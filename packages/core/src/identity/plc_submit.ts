@@ -110,7 +110,7 @@ export class PLCSubmitError extends Error {
   /** Total attempts made before giving up. */
   readonly attempts: number;
   /** The underlying network/parse error if no HTTP response was obtained. */
-  readonly cause?: unknown;
+  override readonly cause?: unknown;
 
   constructor(args: {
     kind: 'client' | 'exhausted' | 'invalid_input';

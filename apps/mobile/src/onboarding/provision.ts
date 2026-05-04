@@ -49,21 +49,22 @@
  *     atproto PDS rejects without a separate proof-of-control).
  */
 
-import { mnemonicToEntropy } from '@dina/core/src/crypto/bip39';
-import { deriveRootSigningKey, deriveRotationKey } from '@dina/core/src/crypto/slip0010';
-import { getPublicKey } from '@dina/core/src/crypto/ed25519';
-import { wrapSeed } from '@dina/core/src/crypto/aesgcm';
 import {
-  publicKeyToMultibase,
   cidForOperation,
-  updateDIDPLC,
+  deriveRootSigningKey,
+  deriveRotationKey,
+  getPublicKey,
+  mnemonicToEntropy,
+  publicKeyToMultibase,
   secp256k1ToDidKeyMultibase,
+  updateDIDPLC,
+  wrapSeed,
 } from '@dina/core';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { PDSAccountClient } from '@dina/brain/src/pds/account';
+import { PDSAccountClient } from '@dina/brain';
 import { seedDefaultPersonas } from './default_personas';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
 import { saveIdentitySeeds } from '../services/identity_store';

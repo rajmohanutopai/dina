@@ -7,7 +7,8 @@ The direction is:
 - `apps/mobile` is a full Home Node on Android and iPhone. It is not a wrapper.
 - `apps/home-node-lite` is the server/Home Node build of the same TypeScript node.
 - Shared behavior belongs in `packages/core`, `packages/brain`, and `packages/protocol`.
-- Go `core/` and Python `brain/` are legacy/deactivation paths, but they are still the best behavior reference for several flows while the TypeScript port catches up.
+- Go `core/` and Python `brain/` are behavior references only. There is no
+  legacy runtime support or migration layer in the greenfield TS target.
 - Mobile trust publish is the best current reference for trust publishing behavior.
 - Home Nodes do not need public inbound ports. They connect out to MsgBox.
 - Trust/public data goes through the shared PDS and AppView.
@@ -18,11 +19,11 @@ Use these as the source of truth while consolidating:
 
 | Flow | Reference |
 |---|---|
-| `/remember`, staging, approval, persona gating | Main Go Core + Python Brain |
-| `/ask`, agentic tools, pending approvals | Main Go Core + Python Brain, plus TS agentic ask |
+| `/remember`, staging, approval, persona gating | Main Go Core + Python Brain behavior, ported into TS |
+| `/ask`, agentic tools, pending approvals | Main Go Core + Python Brain behavior, plus TS agentic ask |
 | D2D send/receive envelope | TypeScript `packages/core/src/d2d` |
 | Trust publish | `apps/mobile` trust write/outbox, plus `packages/core/src/trust/pds_publish.ts` |
-| Service query/response | Main Go Core + Python Brain, plus TS D2D service windows |
+| Service query/response | Main Go Core + Python Brain behavior, plus TS D2D service windows |
 
 ## Network Defaults
 
@@ -33,10 +34,82 @@ Development and preview installs should use the test fleet by default.
 | MsgBox | `wss://test-mailbox.dinakernel.com/ws` | `wss://mailbox.dinakernel.com/ws` |
 | System PDS | `https://test-pds.dinakernel.com` | `https://pds.dinakernel.com` |
 | AppView | `https://test-appview.dinakernel.com` | `https://appview.dinakernel.com` |
+| PLC Directory | `https://plc.directory` | `https://plc.directory` |
 
-These three endpoints move together. A node should not publish to production PDS
+These endpoints move together. A node should not publish to production PDS
 while advertising the test MsgBox, or query production AppView while writing test
 records.
+
+## Architecture Review
+
+Short answer: yes, this is the right simplified architecture.
+
+The main idea is sound: Android, iPhone, and server should all be full Home
+Nodes, with the same TypeScript Core/Brain/protocol behavior and different
+platform adapters. Private state stays local. Public trust and service records
+go through PDS and AppView. All node-to-node traffic goes through MsgBox so a
+Home Node does not need public inbound ports.
+
+The Go/Python implementation should not be treated as the future deployment
+shape. It should be treated as the mature behavior reference for flows that the
+TS port must preserve: staging-first `/remember`, persona gates, pending
+approvals, agentic `/ask`, service query windows, and trust/service publish
+semantics. Mobile trust publish is the stronger current TS reference for trust
+composition.
+This is a greenfield TS Home Node target: Go and Python are behavior references,
+not runtime surfaces that the TS apps need to keep supporting. No legacy support,
+no normal migration path, and no old-runtime compatibility layer is part of this
+architecture.
+
+Possible mistakes to guard against:
+
+- Do not let mobile remain the only real Home Node composition. The shared TS
+  Home Node runtime must be concrete, not just a documentation idea.
+- Do not let `apps/home-node-lite` become a second product shaped around the
+  prior Go Core / Python Brain split. Separate processes are acceptable server
+  adapters, but the behavior must come from the same TS runtime.
+- Keep endpoint mode atomic. MsgBox, PDS, AppView, and PLC config must move as
+  one selected mode for a given node.
+- Be precise about MsgBox transport. The architecture means "through the MsgBox
+  service"; current TS D2D uses MsgBox HTTP `/forward` while WebSocket handles
+  relay session/RPC. If WS D2D becomes supported later, update code and docs
+  together.
+- Install must include a usable PDS account/session, not only DID/key material.
+  Otherwise service profile publish and trust publish remain incomplete.
+- `/remember` must cross a Core transport/API boundary, even on mobile. Direct
+  imports into Core staging internals should be test-only.
+- Do not add upgrade or compatibility behavior for earlier Go/Python or
+  transitional TS runtime shapes. Runtime config and local data should be
+  canonical on first write; non-canonical inputs should fail fast or be handled
+  by explicit import tooling outside the Home Node runtime.
+- Persona gates and approval resume must be durable before `/remember` can be
+  called release-complete.
+- AppView must be one configured client shared by node runtime, agentic tools,
+  trust UI, and service discovery. Split AppView paths will create release
+  drift.
+- Trust test injection is useful for preview, but release publish must go
+  through signed PDS records and durable outbox/retry.
+
+## TS Drift Against The Target
+
+| Area | Target | Mobile TS | Home-node-lite TS |
+|---|---|---|---|
+| Shared runtime | One TS Home Node runtime with platform adapters. | Partial. Mobile has the real composition in `boot_service.ts`, `boot_capabilities.ts`, and `bootstrap.ts`; those files now depend on public `@dina/core/runtime` and `@dina/brain/runtime` subpaths, but the composition is still mobile-owned. | Partial. Core binds the shared CoreRouter, and Brain consumes shared `@dina/home-node/ask-runtime` and `@dina/home-node/service-runtime`; the full server Home Node runtime is still not assembled. |
+| Install / onboarding | Seed, DID, PDS account/session, DID doc with MsgBox endpoint, local vault, AppView visibility check. | Partial/strong. Mobile provisions did:plc and MsgBox endpoint and seeds personas, but PDS session/publisher lifecycle is not fully booted. | Missing. Server install/account flow is not yet a full Home Node install. |
+| Endpoint defaults | Test fleet by default; release fleet only by release config. | Done for endpoint policy. Mobile MsgBox, onboarding PDS host/PLC URL, HandlePicker, OwnerName, trust AppView, and node-runtime AppView resolve through `@dina/home-node`; PDS publisher/session runtime is still incomplete. | Done for config policy. Core and Brain server config resolve hosted endpoints through `@dina/home-node`; Core uses the hosted MsgBox endpoint at boot; Brain boot constructs the hosted AppView client; PDS runtime clients and AppView route composition still need wiring. |
+| Boot / reconnect | Local vault first, then MsgBox, AppView, PDS publisher, schedulers. | Partial/strong. Mobile boots Core router, in-process transport, MsgBox, D2D, a real hosted AppView client, staging drain, ask coordinator, and service loops. PDS publisher/session still degrades unless injected. | Partial. Core binds the shared CoreRouter and connects/authenticates to MsgBox by default, with `/readyz` failing instead of killing local boot when the relay is offline; storage/adapters remain pending. Brain boots health, returns `503 not_ready`, configures AppView and signed CoreClient when keyed, starts the staging drain scheduler, composes/registers ask routes when Gemini is explicitly configured, and consumes shared `@dina/home-node/service-runtime` when explicit dependencies are supplied; PDS and full runtime ownership remain unwired. |
+| `/remember` | Core ingest, Brain drain, enrichment, persona gates, durable pending approvals, vault store. | Partial/strong. Mobile has one production path through Brain -> `CoreClient.stagingIngest`; staging is repository-authoritative, resolve gates are explicit, approvals are durable, enrichment runs before store, and shared transport parity tests pass. | Partial. Core has signed staging ingest, repository authority, explicit resolve gates, approval-backed locked staging rows, and the same HTTP transport contract; Brain server now starts the shared staging scheduler against a signed Core client when service-key material is provisioned. |
+| `/ask` | Same coordinator/tool semantics on mobile and server. | Partial/strong. Agentic pipeline and approvals exist when prerequisites are configured. | Partial/strong. Boot now consumes shared `@dina/home-node/ask-runtime` to build the same agentic ask coordinator from signed Core, hosted AppView, approval manager, service orchestrator, and config-driven Gemini provider; remaining gap is full Home Node runtime ownership and service-response delivery parity. |
+| D2D / MsgBox | Signed/sealed D2D through MsgBox with clear relay contract. | Partial/strong. Mobile wires MsgBox and `sendD2D`; current TS uses `/forward` for D2D and WS for RPC/inbox. | Partial. Core server connects to MsgBox and reports that state in readiness; full D2D/service delivery parity and the relay contract decision remain open. |
+| Trust publish | Test injection for dev; release publishes signed records to PDS and reconciles through AppView. | Partial. Mobile UI/test injection and record helpers are good, but durable outbox and default PDS publish path are missing. | Missing. No full trust publish runtime. |
+| Service discovery/query | Provider publishes profile to PDS; requester discovers through AppView and queries over D2D service windows. | Partial. Service workflow, D2D windows, and the requester-side hosted AppView client exist by default; provider PDS publisher is not release-ready. | Partial. Shared `@dina/home-node/service-runtime` composes discovery, handler, D2D dispatcher, workflow event delivery, and approval reconciliation with signed Core/AppView; Brain server consumes it when dependencies are supplied. MsgBox delivery, provider PDS publish, and parity tests remain. |
+| Pairing / trust network | Pair through MsgBox; persist device/contact trust; enforce gates. | Partial. Contact hydration and D2D gates exist, but full pairing flow and durable trust integration need parity review. | Missing. No shared pairing runtime. |
+
+Overall assessment: the simplified architecture is correct. The drift is in the
+TS implementation, especially the incomplete shared runtime and the much larger
+home-node-lite gap. Mobile is the closest current TS Home Node; home-node-lite
+should be moved toward mobile's runtime shape instead of independently porting
+the prior Go/Python process structure.
 
 ## One Node Shape
 
@@ -79,7 +152,8 @@ Mobile and server differ only in adapters:
 
 ## Install / Onboarding
 
-During current install and onboarding, the node uses the test fleet by default.
+During install and onboarding, the node uses the test fleet by default unless a
+release configuration is explicitly selected.
 The result is a local Home Node with keys, a local vault, a PDS account, a DID
 document, and a MsgBox route.
 
@@ -153,34 +227,44 @@ sequenceDiagram
     autonumber
     participant User
     participant UI as App UI or CLI
-    participant Core as Core Remember API
+    participant Brain as Brain Orchestrator
+    participant Core as Core Staging API
     participant Staging as Core Staging
-    participant Brain as Brain Staging Drain
+    participant Drain as Brain Staging Drain
     participant Gate as Persona Gate
     participant Vault as Local Encrypted Vault
 
     User->>UI: /remember "Emma likes dinosaurs"
-    UI->>Core: POST remember text + session
+    UI->>Brain: handleChat('/remember ...')
+    Brain->>Core: CoreClient.stagingIngest(text + provenance)
     Core->>Core: Validate caller session when needed
     Core->>Staging: Ingest text with derived provenance
     Staging-->>Core: staging_id
-    Core->>Brain: Trigger staging_drain event
-    Brain->>Staging: Claim received item
-    Staging-->>Brain: Text, metadata, provenance
-    Brain->>Brain: Classify persona(s), sensitivity, type
-    Brain->>Brain: Enrich L0, L1, embedding
-    Brain->>Staging: Resolve classified item
+    Core-->>Brain: staging_id
+    Brain->>Drain: Trigger staging drain
+    Drain->>Staging: Claim received item
+    Staging-->>Drain: Text, metadata, provenance
+    Drain->>Drain: Classify persona(s), sensitivity, type
+    Drain->>Drain: Enrich L0, L1, embedding
+    Drain->>Gate: Read accessible personas for this session
+    Gate-->>Drain: Access map per target persona
+    Drain->>Staging: Resolve classified item + persona access map
     Staging->>Gate: Check persona access
     Gate-->>Staging: Allowed
     Staging->>Vault: Store encrypted memory and index metadata
-    Staging-->>Core: Stored
-    Core-->>UI: Stored
+    Staging-->>Drain: Stored
+    Drain-->>Brain: Stored
+    Brain-->>UI: Stored
     UI-->>User: Confirmation
 ```
 
 The main Core handler polls staging for a short window. If the item stores
 quickly, `/remember` returns `stored`. If a persona approval is needed, it
 returns an accepted/pending response instead of pretending the memory was stored.
+Enrichment runs before Core resolve. When LLM and embedding providers are
+registered, the stored row has L1, embedding, and `enrichment_status=ready`.
+When a provider is unavailable or fails, the row remains `l0_complete` and
+metadata records the exact skipped or failed stage.
 
 ## `/remember`: Sensitive Or Locked Persona
 
@@ -191,35 +275,53 @@ sequenceDiagram
     autonumber
     participant User
     participant UI as App UI or CLI
-    participant Core as Core Remember API
+    participant Brain as Brain Orchestrator
+    participant Core as Core Staging API
     participant Staging as Core Staging
-    participant Brain as Brain Staging Drain
+    participant Drain as Brain Staging Drain
     participant Gate as Persona Gate
     participant Approval as Local Approval Inbox
     participant Vault as Local Encrypted Vault
 
     User->>UI: /remember "My HbA1c is 9"
-    UI->>Core: Submit remember text + session
+    UI->>Brain: handleChat('/remember ...')
+    Brain->>Core: CoreClient.stagingIngest(text + session)
     Core->>Staging: Ingest with provenance
-    Core->>Brain: Trigger staging drain
-    Brain->>Staging: Claim and classify
-    Brain->>Brain: Mark health persona / sensitive category
-    Brain->>Brain: Enrich before resolve
-    Brain->>Staging: Resolve into health persona
+    Brain->>Drain: Trigger staging drain
+    Drain->>Staging: Claim and classify
+    Drain->>Drain: Mark health persona / sensitive category
+    Drain->>Drain: Enrich before resolve
+    Drain->>Gate: Read accessible personas for this session
+    Gate-->>Drain: health = locked
+    Drain->>Staging: Resolve health with persona_access.health=false
     Staging->>Gate: Check persona access
-    Gate-->>Staging: Approval required
-    Staging->>Approval: Create approval request
-    Staging-->>Core: pending_unlock
-    Core-->>UI: Accepted, needs approval
+    Gate-->>Staging: Not allowed
+    Staging->>Staging: Mark pending_unlock
+    Staging->>Approval: Create durable approval request
+    Staging-->>Brain: pending_unlock
+    Brain-->>UI: Accepted, needs approval
     Approval-->>User: Approve / deny
+    alt Approved
     User->>Approval: Approve once or approve session
-    Approval->>Staging: Resume pending item
+    Approval->>Staging: Resume pending item by approval_id
     Staging->>Vault: Store encrypted memory
     Staging-->>UI: Status becomes stored
+    else Denied
+    User->>Approval: Deny
+    Approval->>Staging: Mark pending item failed
+    Staging-->>UI: Status becomes denied/failed
+    end
 ```
 
 Multi-persona memories can fan out. Open personas store immediately; locked
 personas get pending copies and approval records.
+
+Current TS status: Core resolve now rejects missing `persona_open` /
+`persona_access`, and Brain drain supplies explicit per-persona access
+decisions. Locked targets become `pending_unlock` with a durable workflow
+approval id. Approve drains by approval id and stores the encrypted memory;
+deny marks the staging row failed with retries exhausted. Persona unlock by
+itself does not store approval-gated rows.
 
 ## `/ask`: Local Reasoning
 
@@ -311,6 +413,12 @@ receive raw private vault memory.
 
 Every node uses outbound MsgBox transport. The sender does not need the
 recipient to expose a public port.
+
+In current TS, `DinaMsgBox` D2D egress is implemented as MsgBox HTTP
+`/forward` derived from the WebSocket URL. The WebSocket session is still used
+for relay connection/RPC/inbound delivery. Treat the diagram below as the
+logical MsgBox relay flow, not a promise that every D2D byte is sent as a WS
+frame.
 
 ```mermaid
 sequenceDiagram
@@ -536,8 +644,8 @@ transport is encrypted and relayed.
 Keep the TypeScript node aligned with the main behavior:
 
 - Remember: preserve staging provenance, caller session, user-origin bypass,
-  L0/L1/embedding enrichment before resolve, multi-persona fanout, and
-  pending approval status.
+  L0/L1/embedding enrichment before resolve, explicit enrichment fallback
+  metadata, multi-persona fanout, and pending approval status.
 - Ask: preserve fast response vs pending reason, persona approval resume,
   all-unlocked-persona vault search, trust-network tool use, service query tool
   use, PII scrub before cloud LLM calls, and final guard scan.

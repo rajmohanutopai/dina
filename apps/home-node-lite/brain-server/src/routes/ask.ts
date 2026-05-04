@@ -2,7 +2,7 @@
  * `/api/v1/ask` route binding for the Fastify Brain server.
  *
  * Thin glue: takes an already-constructed `AskCoordinator`
- * (from `@dina/brain/composition/ask_coordinator`) and exposes its
+ * (from the public `@dina/brain` package surface) and exposes its
  * four primitives as HTTP routes:
  *
  *   POST /api/v1/ask                  → submit (5.17 contract: 200 fast-path or 202 async)
@@ -26,7 +26,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-import type { AskCoordinator } from '@dina/brain/src/composition/ask_coordinator';
+import type { AskCoordinator } from '@dina/brain';
 
 export interface RegisterAskRoutesOptions {
   coordinator: AskCoordinator;

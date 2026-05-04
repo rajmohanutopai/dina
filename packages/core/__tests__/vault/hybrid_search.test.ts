@@ -96,6 +96,24 @@ describe('Vault Hybrid Search (2.38)', () => {
       expect(results).toHaveLength(1);
       expect(results[0].summary).toBe('Has embedding');
     });
+
+    it('accepts JSON vector embeddings from the CoreClient boundary', () => {
+      storeItem('general', {
+        summary: 'Stored through staging resolve',
+        type: 'note',
+        embedding: [1, 0, 0, 0],
+      });
+
+      const results = queryVault('general', {
+        mode: 'semantic',
+        text: '',
+        embedding: queryEmbed(1, 0, 0, 0),
+        limit: 10,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].summary).toBe('Stored through staging resolve');
+    });
   });
 
   describe('mode=hybrid (0.4 FTS + 0.6 cosine)', () => {

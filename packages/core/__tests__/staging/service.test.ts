@@ -4,6 +4,13 @@
  * Source: ARCHITECTURE.md Tasks 2.41–2.47
  */
 
+import { InMemoryStagingRepository, setStagingRepository } from '../../src/staging/repository';
+import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 import {
   ingest,
   claim,
@@ -22,13 +29,27 @@ import {
   getStatusForOwner,
   markPendingApproval,
   resumeAfterApprovalGranted,
+  hydrateStagingFromRepository,
+  drainForApproval,
+  denyApproval,
 } from '../../src/staging/service';
 import { getItem as getVaultItem, clearVaults } from '../../src/vault/crud';
 
 describe('Staging Service', () => {
   beforeEach(() => {
     resetStagingState();
+    setStagingRepository(null);
+    const workflowRepo = new InMemoryWorkflowRepository();
+    setWorkflowRepository(workflowRepo);
+    setWorkflowService(new WorkflowService({ repository: workflowRepo }));
     clearVaults();
+  });
+
+  afterEach(() => {
+    resetStagingState();
+    setStagingRepository(null);
+    setWorkflowService(null);
+    setWorkflowRepository(null);
   });
 
   describe('ingest (2.41)', () => {
@@ -79,6 +100,60 @@ describe('Staging Service', () => {
     it('stores custom data payload', () => {
       const { id } = ingest({ source: 'gmail', source_id: 'x', data: { subject: 'Hello' } });
       expect(getItem(id)!.data).toEqual({ subject: 'Hello' });
+    });
+  });
+
+  describe('repository authority', () => {
+    beforeEach(() => {
+      setStagingRepository(new InMemoryStagingRepository());
+    });
+
+    it('dedup reads from the repository after the in-memory cache is reset', () => {
+      const first = ingest({ source: 'gmail', source_id: 'repo-dedup', producer_id: 'brain' });
+
+      resetStagingState({ preserveRepositoryRows: true });
+
+      const second = ingest({ source: 'gmail', source_id: 'repo-dedup', producer_id: 'brain' });
+      expect(second).toEqual({ id: first.id, duplicate: true });
+      expect(inboxSize()).toBe(1);
+    });
+
+    it('ingest -> restart -> claim -> resolve survives on the repository authority', () => {
+      const { id } = ingest({
+        source: 'chat',
+        source_id: 'repo-restart',
+        data: { body: 'Remember this after restart', summary: 'Restart memory' },
+      });
+
+      resetStagingState({ preserveRepositoryRows: true });
+      expect(getItem(id)).not.toBeNull();
+
+      const claimed = claim(1);
+      expect(claimed.map((item) => item.id)).toEqual([id]);
+      expect(claimed[0]?.status).toBe('classifying');
+
+      const classified = { id: 'repo-vault-1', type: 'note', summary: 'Restart memory' };
+      resolve(id, 'general', true, classified);
+
+      resetStagingState({ preserveRepositoryRows: true });
+      const stored = getItem(id);
+      expect(stored?.status).toBe('stored');
+      expect(stored?.persona).toBe('general');
+      expect(stored?.data.body).toBe('');
+      expect(stored?.classified_item).toEqual(classified);
+      expect(getVaultItem('general', 'repo-vault-1')).not.toBeNull();
+    });
+
+    it('hydrates the in-memory cache from repository rows explicitly', () => {
+      const one = ingest({ source: 'gmail', source_id: 'hydrate-1' });
+      const two = ingest({ source: 'gmail', source_id: 'hydrate-2' });
+
+      resetStagingState({ preserveRepositoryRows: true });
+      const hydrated = hydrateStagingFromRepository();
+
+      expect(hydrated).toBe(2);
+      expect(getItem(one.id)?.status).toBe('received');
+      expect(getItem(two.id)?.status).toBe('received');
     });
   });
 
@@ -264,16 +339,16 @@ describe('Staging Service', () => {
   });
 
   describe('drainForPersona (2.47)', () => {
-    it('drains pending_unlock items when persona unlocked', () => {
+    it('does not bypass approval-backed pending_unlock rows on persona unlock', () => {
       const { id: id1 } = ingest({ source: 'gmail', source_id: 'a' });
       const { id: id2 } = ingest({ source: 'gmail', source_id: 'b' });
       claim(10);
       resolve(id1, 'health', false); // pending_unlock
       resolve(id2, 'health', false); // pending_unlock
       const drained = drainForPersona('health');
-      expect(drained).toBe(2);
-      expect(getItem(id1)!.status).toBe('stored');
-      expect(getItem(id2)!.status).toBe('stored');
+      expect(drained).toBe(0);
+      expect(getItem(id1)!.status).toBe('pending_unlock');
+      expect(getItem(id2)!.status).toBe('pending_unlock');
     });
 
     it('does not drain items for different persona', () => {
@@ -281,6 +356,88 @@ describe('Staging Service', () => {
       claim(10);
       resolve(id, 'health', false);
       expect(drainForPersona('general')).toBe(0);
+    });
+  });
+
+  describe('approval-backed pending_unlock', () => {
+    it('creates a durable workflow approval for a locked target', () => {
+      const { id } = ingest({
+        source: 'chat',
+        source_id: 'approval-1',
+        data: { body: 'remember my blood type is O positive' },
+      });
+      claim(10);
+      resolve(id, 'health', false, {
+        id: 'approval-v1',
+        type: 'note',
+        summary: 'Blood type',
+      });
+
+      const item = getItem(id)!;
+      expect(item.status).toBe('pending_unlock');
+      expect(item.approval_id).toMatch(/^approval-staging-/);
+
+      const task = getWorkflowService()!.store().getById(item.approval_id!);
+      expect(task).toMatchObject({
+        kind: 'approval',
+        status: 'pending_approval',
+        priority: 'user_blocking',
+      });
+      expect(JSON.parse(task!.payload)).toMatchObject({
+        type: 'staging_persona_access',
+        staging_id: id,
+        persona: 'health',
+        preview: 'Blood type',
+      });
+    });
+
+    it('approval resume stores the staged item after a cache reset', () => {
+      setStagingRepository(new InMemoryStagingRepository());
+      const { id } = ingest({
+        source: 'chat',
+        source_id: 'approval-restart',
+        data: { body: 'remember cardiologist appointment' },
+      });
+      claim(10);
+      resolve(id, 'health', false, {
+        id: 'approval-v2',
+        type: 'note',
+        summary: 'Cardiologist appointment',
+      });
+      const approvalId = getItem(id)!.approval_id!;
+
+      resetStagingState({ preserveRepositoryRows: true });
+      hydrateStagingFromRepository();
+
+      const result = drainForApproval(approvalId);
+      expect(result).toMatchObject({ matched: 1, drained: 1, alreadyStored: 0 });
+      expect(getItem(id)!.status).toBe('stored');
+      expect(getVaultItem('health', 'approval-v2')).not.toBeNull();
+    });
+
+    it('approval denial fails the staged item without storing or retrying', () => {
+      const { id } = ingest({
+        source: 'chat',
+        source_id: 'approval-deny',
+        data: { body: 'remember private diagnosis' },
+      });
+      claim(10);
+      resolve(id, 'health', false, {
+        id: 'approval-v3',
+        type: 'note',
+        summary: 'Private diagnosis',
+      });
+      const approvalId = getItem(id)!.approval_id!;
+
+      const result = denyApproval(approvalId, 'denied_by_operator');
+      expect(result).toMatchObject({ matched: 1, denied: 1 });
+      expect(getItem(id)).toMatchObject({
+        status: 'failed',
+        error: 'denied_by_operator',
+        retry_count: 4,
+      });
+      expect(sweep().requeued).toBe(0);
+      expect(getVaultItem('health', 'approval-v3')).toBeNull();
     });
   });
 
@@ -331,14 +488,14 @@ describe('Staging Service', () => {
       expect(getItem(id)!.classified_item).toEqual(classifiedData);
     });
 
-    it('classified_item is undefined when not provided (backward compatible)', () => {
+    it('classified_item is undefined when not provided', () => {
       const { id } = ingest({ source: 'gmail', source_id: 'b' });
       claim(10);
       resolve(id, 'general', true);
       expect(getItem(id)!.classified_item).toBeUndefined();
     });
 
-    it('classified_item persists through pending_unlock → drain', () => {
+    it('classified_item persists through pending_unlock → approval drain', () => {
       const { id } = ingest({ source: 'gmail', source_id: 'c' });
       claim(10);
       const classifiedData = { summary: 'Health data', enrichment_status: 'ready' };
@@ -346,8 +503,7 @@ describe('Staging Service', () => {
       expect(getItem(id)!.status).toBe('pending_unlock');
       expect(getItem(id)!.classified_item).toEqual(classifiedData);
 
-      // After drain, classified_item should still be present
-      drainForPersona('health');
+      drainForApproval(getItem(id)!.approval_id!);
       expect(getItem(id)!.status).toBe('stored');
       expect(getItem(id)!.classified_item).toEqual(classifiedData);
     });
@@ -361,7 +517,7 @@ describe('Staging Service', () => {
       expect(getItem(id)!.error).toBe('Classification failed: LLM timeout');
     });
 
-    it('error is undefined when not provided (backward compatible)', () => {
+    it('error is undefined when not provided', () => {
       const { id } = ingest({ source: 'gmail', source_id: 'b' });
       claim(10);
       fail(id);
@@ -421,7 +577,7 @@ describe('Staging Service', () => {
       expect(getVaultItem('health', 'vault-item-2')).toBeNull();
     });
 
-    it('writes to vault on drain after persona unlocks', () => {
+    it('writes to vault on approval drain', () => {
       const { id } = ingest({ source: 'gmail', source_id: 'vw-3' });
       claim(10);
       const classified = { id: 'vault-item-3', summary: 'Pending data', type: 'note' };
@@ -430,8 +586,7 @@ describe('Staging Service', () => {
       // Not in vault yet
       expect(getVaultItem('health', 'vault-item-3')).toBeNull();
 
-      // Drain after persona unlock → should write to vault
-      drainForPersona('health');
+      drainForApproval(getItem(id)!.approval_id!);
       const vaultItem = getVaultItem('health', 'vault-item-3');
       expect(vaultItem).not.toBeNull();
       expect(vaultItem!.summary).toBe('Pending data');
@@ -461,7 +616,7 @@ describe('Staging Service', () => {
       expect(drained[0].persona).toBe('general');
     });
 
-    it('fires on drainForPersona for each drained item', () => {
+    it('fires on drainForApproval for each drained item', () => {
       const drained: string[] = [];
       setOnDrainCallback((item) => {
         drained.push(item.id);
@@ -475,7 +630,8 @@ describe('Staging Service', () => {
 
       // Reset to only track drain events
       drained.length = 0;
-      drainForPersona('health');
+      drainForApproval(getItem(id1)!.approval_id!);
+      drainForApproval(getItem(id2)!.approval_id!);
       expect(drained).toHaveLength(2);
     });
 

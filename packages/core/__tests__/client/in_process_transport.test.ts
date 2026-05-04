@@ -269,7 +269,23 @@ function buildRouter(): CoreRouter {
     { auth: 'public' },
   );
 
-  // Staging inbox routes (task 1.29h / 1.32 preamble)
+  // Staging inbox routes
+
+  r.post(
+    '/v1/staging/ingest',
+    (req) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      return {
+        status: 201,
+        body: {
+          id: `stg-${body.source_id as string}`,
+          duplicate: false,
+          status: 'received',
+        },
+      };
+    },
+    { auth: 'public' },
+  );
 
   r.post(
     '/v1/staging/claim',
@@ -293,11 +309,23 @@ function buildRouter(): CoreRouter {
       // Emit the two distinct shapes so transport tests can pin both
       // the single-persona + GAP-MULTI-01 fan-out paths.
       if (Array.isArray(body.personas)) {
+        const access = body.persona_access as Record<string, unknown> | undefined;
+        if (access === undefined || typeof access !== 'object') {
+          return { status: 400, body: { error: 'persona_access required' } };
+        }
         const personas = (body.personas as string[]).filter((p) => typeof p === 'string');
+        for (const persona of personas) {
+          if (typeof access[persona] !== 'boolean') {
+            return { status: 400, body: { error: `persona_access.${persona} required` } };
+          }
+        }
         return {
           status: 200,
           body: { id: body.id as string, status: 'stored', personas },
         };
+      }
+      if (typeof body.persona_open !== 'boolean') {
+        return { status: 400, body: { error: 'persona_open required' } };
       }
       return {
         status: 200,
@@ -978,6 +1006,22 @@ describe('InProcessTransport (task 1.30)', () => {
 
   // ─── Staging inbox (task 1.29h / 1.32 preamble) ───────────────────────
 
+  it('stagingIngest sends snake_case body + returns camelCase result', async () => {
+    const t = new InProcessTransport(buildRouter());
+    const r = await t.stagingIngest({
+      source: 'chat',
+      sourceId: 'msg-1',
+      producerId: 'did:plc:brain',
+      data: { body: 'remember this' },
+      expiresAt: 1_800_000_000,
+    });
+    expect(r).toEqual({
+      itemId: 'stg-msg-1',
+      duplicate: false,
+      status: 'received',
+    });
+  });
+
   it('stagingClaim encodes limit on query + returns claim envelope', async () => {
     const t = new InProcessTransport(buildRouter());
     const r = await t.stagingClaim(2);
@@ -1003,6 +1047,7 @@ describe('InProcessTransport (task 1.30)', () => {
       itemId: 'stg-abc',
       persona: 'health',
       data: { text: 'sample' },
+      personaOpen: true,
     });
     expect(r.itemId).toBe('stg-abc');
     expect(r.status).toBe('stored');
@@ -1015,6 +1060,7 @@ describe('InProcessTransport (task 1.30)', () => {
       itemId: 'stg-multi',
       persona: ['health', 'family'],
       data: { text: 'vaccination' },
+      personaAccess: { health: true, family: true },
     });
     expect(r.itemId).toBe('stg-multi');
     expect(r.personas).toEqual(['health', 'family']);

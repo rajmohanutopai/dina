@@ -7,9 +7,7 @@
  *   - **Extraction**: feed a stored note's text through the
  *     `PERSON_IDENTITY_EXTRACTION` prompt; the LLM emits
  *     `{identity_links: [{name, role_phrase, relationship,
- *     confidence, evidence}]}`. Parser accepts that Python-parity
- *     envelope plus the legacy `{links: [{name, role, confidence}]}`
- *     shape for any caller still on the old output format.
+ *     confidence, evidence}]}`.
  *   - **Resolution**: given a block of query text + a list of known
  *     people (each with confirmed surfaces), find which people are
  *     mentioned. Longest-surface-first + span-claiming so "Alice
@@ -26,15 +24,8 @@ import { PERSON_IDENTITY_EXTRACTION } from '../llm/prompts';
 export interface PersonLink {
   /** Canonical person name as stated in the text. */
   name: string;
-  /**
-   * Python-parity `role_phrase` — the relationship phrase verbatim
-   * ("my daughter", "my colleague"). Kept alongside `role` for
-   * backward compat with callers written against the pre-port shape.
-   */
+  /** Relationship phrase verbatim ("my daughter", "my colleague"). */
   role_phrase?: string;
-  /** Legacy alias for `role_phrase`. Populated together when parsing
-   *  either wire shape so existing readers of `.role` still work. */
-  role?: string;
   /** Relationship type the LLM picked from the enum
    *  (spouse/child/parent/sibling/friend/colleague/acquaintance/unknown/other). */
   relationship?: string;
@@ -94,8 +85,7 @@ export function resetPersonLinkProvider(): void {
  *   4. Rehydrate any PII tokens in the response so names / evidence
  *      come back with original values.
  *   5. Parse `{identity_links: [{name, role_phrase, relationship,
- *      confidence, evidence}]}` (Python envelope) — legacy
- *      `{links: [{name, role, confidence}]}` also accepted.
+ *      confidence, evidence}]}`.
  *
  * Returns `[]` on parse failure (fail-open).
  */
@@ -222,10 +212,9 @@ export function deduplicatePersons(persons: ResolvedPerson[]): ResolvedPerson[] 
 }
 
 /**
- * Parse LLM JSON output for person links. Accepts two envelopes:
- *
- *   1. `{identity_links: [{name, role_phrase, relationship, confidence, evidence}]}` — Python parity, emitted by the `PERSON_IDENTITY_EXTRACTION` prompt.
- *   2. `{links: [{name, role, confidence}]}` — legacy TS shape.
+ * Parse LLM JSON output for person links. Accepts the canonical
+ * `{identity_links: [{name, role_phrase, relationship, confidence, evidence}]}`
+ * envelope emitted by the `PERSON_IDENTITY_EXTRACTION` prompt.
  *
  * Handles markdown code fences. Confidence is coerced to
  * high/medium/low; unknown values → 'low'. Returns `[]` on any
@@ -242,13 +231,9 @@ export function parseLLMOutput(output: string): PersonLink[] {
   }
   try {
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-    // Python-parity envelope first (`identity_links`), fall back to
-    // legacy `links`. Both must be arrays; anything else → [].
     const rawList = Array.isArray(parsed.identity_links)
       ? (parsed.identity_links as unknown[])
-      : Array.isArray(parsed.links)
-        ? (parsed.links as unknown[])
-        : [];
+      : [];
 
     const out: PersonLink[] = [];
     for (const raw of rawList) {
@@ -256,15 +241,7 @@ export function parseLLMOutput(output: string): PersonLink[] {
       const rec = raw as Record<string, unknown>;
       const name = typeof rec.name === 'string' ? rec.name.trim() : '';
       if (name === '') continue;
-      // Python ships `role_phrase`; legacy TS ships `role`. Map
-      // whichever is present onto BOTH fields so downstream callers
-      // can read either without `??` dance.
-      const rolePhraseRaw =
-        typeof rec.role_phrase === 'string'
-          ? rec.role_phrase
-          : typeof rec.role === 'string'
-            ? rec.role
-            : undefined;
+      const rolePhraseRaw = typeof rec.role_phrase === 'string' ? rec.role_phrase : undefined;
       const relationshipRaw =
         typeof rec.relationship === 'string' ? rec.relationship : undefined;
       const evidenceRaw =
@@ -276,7 +253,7 @@ export function parseLLMOutput(output: string): PersonLink[] {
           : 'low';
       out.push({
         name,
-        ...(rolePhraseRaw !== undefined ? { role_phrase: rolePhraseRaw, role: rolePhraseRaw } : {}),
+        ...(rolePhraseRaw !== undefined ? { role_phrase: rolePhraseRaw } : {}),
         ...(relationshipRaw !== undefined ? { relationship: relationshipRaw } : {}),
         ...(evidenceRaw !== undefined ? { evidence: evidenceRaw } : {}),
         confidence,

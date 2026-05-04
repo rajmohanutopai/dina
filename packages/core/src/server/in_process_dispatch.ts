@@ -2,11 +2,10 @@
  * In-process dispatch — the transport that doesn't cross a socket.
  *
  * Used by dina-mobile (RN app, no http.Server) where Brain and Core are
- * in the same JS runtime. `BrainCoreClient` takes a `signedDispatch`
- * function; when this factory's result is supplied, every HTTP call
- * becomes a direct function call into `CoreRouter.handle`. The signed
- * canonical is identical (same headers, same body) — only the wire
- * disappears.
+ * in the same JS runtime. Core transports can take a `signedDispatch`
+ * function; when this factory's result is supplied, every HTTP call becomes
+ * a direct function call into `CoreRouter.handle`. The signed canonical is
+ * identical (same headers, same body) — only the wire disappears.
  *
  * On the server side (MsgBox RPC handler), the same dispatch is used:
  * when an agent's signed RPC arrives over MsgBox, `handleCoreRequest`
@@ -30,9 +29,9 @@ export interface InProcessDispatchOptions {
  * Build a dispatch function that feeds requests into the router.
  *
  * The signature `(method, path, headers, body) → Promise<CoreResponse>`
- * matches what `BrainCoreClient` and MsgBox handlers already have:
- * after they produce the signed canonical + body bytes, they just call
- * dispatch() instead of fetch() or coreApp.handle().
+ * matches what Core transports and MsgBox handlers use: after they produce
+ * the signed canonical + body bytes, they call dispatch() instead of fetch()
+ * or coreApp.handle().
  *
  * Query string parsing, body JSON parsing, and path/query splitting all
  * happen here so callers don't need to worry about it.

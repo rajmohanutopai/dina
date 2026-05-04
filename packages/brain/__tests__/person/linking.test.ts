@@ -28,19 +28,20 @@ describe('Person Identity Linking', () => {
   describe('extractPersonLinks', () => {
     it('extracts person links via LLM provider', async () => {
       registerPersonLinkProvider(
-        async () => '{"links":[{"name":"Alice","role":"colleague","confidence":"high"}]}',
+        async () =>
+          '{"identity_links":[{"name":"Alice","role_phrase":"colleague","confidence":"high"}]}',
       );
       const links = await extractPersonLinks('Had lunch with Alice');
       expect(links).toHaveLength(1);
       expect(links[0].name).toBe('Alice');
-      expect(links[0].role).toBe('colleague');
+      expect(links[0].role_phrase).toBe('colleague');
       expect(links[0].confidence).toBe('high');
     });
 
     it('extracts multiple people', async () => {
       registerPersonLinkProvider(
         async () =>
-          '{"links":[{"name":"Alice","confidence":"high"},{"name":"Bob","confidence":"medium"}]}',
+          '{"identity_links":[{"name":"Alice","confidence":"high"},{"name":"Bob","confidence":"medium"}]}',
       );
       const links = await extractPersonLinks('Alice and Bob discussed the project');
       expect(links).toHaveLength(2);
@@ -52,12 +53,12 @@ describe('Person Identity Linking', () => {
     });
 
     it('returns empty for empty input', async () => {
-      registerPersonLinkProvider(async () => '{"links":[]}');
+      registerPersonLinkProvider(async () => '{"identity_links":[]}');
       expect(await extractPersonLinks('')).toEqual([]);
     });
 
     it('returns empty for whitespace-only input', async () => {
-      registerPersonLinkProvider(async () => '{"links":[]}');
+      registerPersonLinkProvider(async () => '{"identity_links":[]}');
       expect(await extractPersonLinks('   ')).toEqual([]);
     });
 
@@ -69,7 +70,7 @@ describe('Person Identity Linking', () => {
 
     it('handles LLM returning markdown-fenced JSON', async () => {
       registerPersonLinkProvider(
-        async () => '```json\n{"links":[{"name":"Charlie","confidence":"low"}]}\n```',
+        async () => '```json\n{"identity_links":[{"name":"Charlie","confidence":"low"}]}\n```',
       );
       const links = await extractPersonLinks('Talked to Charlie');
       expect(links).toHaveLength(1);
@@ -167,19 +168,25 @@ describe('Person Identity Linking', () => {
 
   describe('parseLLMOutput', () => {
     it('parses valid JSON', () => {
-      const result = parseLLMOutput('{"links":[{"name":"Alice","confidence":"high"}]}');
+      const result = parseLLMOutput(
+        '{"identity_links":[{"name":"Alice","confidence":"high"}]}',
+      );
       expect(result.length).toBe(1);
       expect(result[0].name).toBe('Alice');
       expect(result[0].confidence).toBe('high');
     });
 
     it('parses markdown-fenced JSON', () => {
-      const result = parseLLMOutput('```json\n{"links":[]}\n```');
+      const result = parseLLMOutput('```json\n{"identity_links":[]}\n```');
       expect(result).toEqual([]);
     });
 
-    it('returns empty for empty links', () => {
-      expect(parseLLMOutput('{"links":[]}')).toEqual([]);
+    it('returns empty for empty identity_links', () => {
+      expect(parseLLMOutput('{"identity_links":[]}')).toEqual([]);
+    });
+
+    it('rejects old links envelope', () => {
+      expect(parseLLMOutput('{"links":[{"name":"Alice","confidence":"high"}]}')).toEqual([]);
     });
 
     it('returns empty for invalid JSON', () => {
@@ -213,8 +220,6 @@ describe('Person Identity Linking', () => {
       expect(links).toHaveLength(1);
       expect(links[0].name).toBe('Emma');
       expect(links[0].role_phrase).toBe('my daughter');
-      // Legacy callers read `.role` — populated from role_phrase too.
-      expect(links[0].role).toBe('my daughter');
       expect(links[0].relationship).toBe('child');
       expect(links[0].evidence).toMatch(/daughter Emma/);
       expect(links[0].confidence).toBe('high');

@@ -4,6 +4,40 @@
   "private": true,
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./audit": {
+      "types": "./audit.ts",
+      "default": "./audit.ts"
+    },
+    "./d2d": {
+      "types": "./d2d.ts",
+      "default": "./d2d.ts"
+    },
+    "./devices": {
+      "types": "./devices.ts",
+      "default": "./devices.ts"
+    },
+    "./kv": {
+      "types": "./kv.ts",
+      "default": "./kv.ts"
+    },
+    "./reminders": {
+      "types": "./reminders.ts",
+      "default": "./reminders.ts"
+    },
+    "./runtime": {
+      "types": "./runtime.ts",
+      "default": "./runtime.ts"
+    },
+    "./storage": {
+      "types": "./storage.ts",
+      "default": "./storage.ts"
+    }
+  },
   "scripts": {
     "test": "jest",
     "typecheck": "tsc --noEmit"

@@ -19,7 +19,7 @@ await connectToMsgBox(resolveMsgBoxURL());
 
 ## Env var
 
-`EXPO_PUBLIC_DINA_MSGBOX_URL` overrides `DEFAULT_MSGBOX_URL`. The `EXPO_PUBLIC_` prefix is Expo's convention for env vars that get inlined into the JS bundle at build time.
+Endpoint selection is delegated to `@dina/home-node`. `EXPO_PUBLIC_DINA_ENDPOINT_MODE=test|release` chooses the hosted fleet and `EXPO_PUBLIC_DINA_MSGBOX_URL` can override the MsgBox URL for custom infra.
 
 ## Roadmap
 

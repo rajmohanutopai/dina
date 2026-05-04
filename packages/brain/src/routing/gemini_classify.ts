@@ -47,12 +47,10 @@ export interface InstalledPersona {
 }
 
 /**
- * Rich classifier return shape — extends `PersonaSelectorProvider`'s
- * original `{persona, confidence, reason}` so downstream callers get
- * the full Python-parity envelope: primary + secondary[] + has_event
- * + event_hint + attribution_corrections. `persona` stays populated
- * (aliased to `primary`) so existing call sites that read `.persona`
- * keep working without a grep-and-rewrite.
+ * Rich classifier return shape. `persona` mirrors `primary` because
+ * `PersonaSelectorProvider` exposes that field, while callers that need
+ * the full envelope can read primary + secondary[] + has_event +
+ * event_hint + attribution_corrections.
  */
 export interface RichClassificationResult {
   persona: string;
@@ -299,20 +297,11 @@ export function parseClassificationResponseRich(
 
   const available = new Set(availablePersonas.map((p) => p.toLowerCase()));
 
-  // Primary — Python reads `primary`. Accept legacy `persona` key as
-  // a fallback for any caller still shipping the old shape during the
-  // transition, but warn nowhere (silent accept) so logs don't fill up.
-  const primaryRaw =
-    typeof parsed.primary === 'string'
-      ? parsed.primary
-      : typeof parsed.persona === 'string'
-        ? parsed.persona
-        : '';
+  const primaryRaw = typeof parsed.primary === 'string' ? parsed.primary : '';
   const primary = primaryRaw.toLowerCase().trim();
   if (primary === '' || !available.has(primary)) {
     // Python returns `None` here; we synthesise a low-confidence 'general'
-    // so the caller still has a routable persona. Matches the legacy
-    // parser's behaviour for unknown-persona responses.
+    // so the caller still has a routable persona.
     return {
       ...fallback,
       reason:
@@ -329,9 +318,8 @@ export function parseClassificationResponseRich(
   }
 
   // Secondary — array of persona names. Filter to ones that are (a)
-  // installed and (b) not the primary (Python does the same). Non-
-  // array shapes degrade gracefully to empty — a string-valued
-  // `secondary` from a legacy response counts as "no secondaries".
+  // installed and (b) not the primary (Python does the same). Non-array
+  // shapes degrade gracefully to empty.
   const secondaryRaw = Array.isArray(parsed.secondary) ? parsed.secondary : [];
   const secondary: string[] = [];
   const seen = new Set<string>([primary]);

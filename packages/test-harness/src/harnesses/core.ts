@@ -404,7 +404,7 @@ function registerStubRoutes(router: Router): void {
     const body = req.bodyJSON as Record<string, unknown> | undefined;
     const id = `stg-${++stubSeq}`;
     stagingItems.push({ ...body, id, status: 'received' });
-    return { status: 201, body: { id, status: 'received' } };
+    return { status: 201, body: { id, duplicate: false, status: 'received' } };
   });
 
   router.post('/v1/staging/claim', async (req) => {

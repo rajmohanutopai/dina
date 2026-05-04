@@ -4,8 +4,8 @@
  * Scope today:
  *   - `makeWSFactory()` — wraps RN's global `WebSocket` into the
  *     `WSFactory` shape that `@dina/core`'s msgbox_ws client expects.
- *   - `resolveMsgBoxURL()` — reads `EXPO_PUBLIC_DINA_MSGBOX_URL` with a
- *     shared-test-infra default.
+ *   - `resolveMsgBoxURL()` — delegates to `@dina/home-node` so Expo and
+ *     server Home Nodes select the same hosted endpoint mode.
  *
  * Planned expansion (Phase 2, alongside `HttpClientPort` + `WebSocketClientPort`
  * in @dina/core):
@@ -18,19 +18,18 @@
  */
 
 import type { WSFactory, WSLike } from '@dina/core';
+import { resolveHostedDinaEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
 
 /** Default shared Dina mailbox URL — matches the test-infra relay. */
-export const DEFAULT_MSGBOX_URL = 'wss://test-mailbox.dinakernel.com/ws';
+export const DEFAULT_MSGBOX_URL = resolveHostedDinaEndpoints('test').msgboxWsUrl;
 
 /**
  * Resolve the MsgBox WebSocket URL the app should connect to.
- * Reads `EXPO_PUBLIC_DINA_MSGBOX_URL` (available at runtime on Expo)
- * and falls back to the shared test relay.
+ * Reads Expo endpoint env through `@dina/home-node` and falls back to
+ * the shared test relay.
  */
 export function resolveMsgBoxURL(): string {
-  const override = process.env.EXPO_PUBLIC_DINA_MSGBOX_URL;
-  if (typeof override === 'string' && override !== '') return override;
-  return DEFAULT_MSGBOX_URL;
+  return resolveMobileHostedDinaEndpoints().msgboxWsUrl;
 }
 
 /**

@@ -23,8 +23,8 @@
 
 import { useEffect, useState } from 'react';
 
-import { queryVault } from '@dina/core/src/vault/crud';
-import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
+import { queryVault } from '@dina/core';
+import type { LLMProvider } from '@dina/brain/llm';
 
 import { loadActiveProvider } from '../../ai/active_provider';
 import { createLLMProvider } from '../../ai/provider';

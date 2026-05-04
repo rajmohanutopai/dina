@@ -19,7 +19,7 @@
  * Source: ARCHITECTURE.md Task 3.17
  */
 
-/** Injectable client interface — subset of BrainCoreClient. */
+/** Injectable client interface for extending staging leases. */
 export interface LeaseExtender {
   extendStagingLease(itemId: string, seconds: number): Promise<void>;
 }

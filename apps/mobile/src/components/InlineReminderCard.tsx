@@ -16,9 +16,9 @@
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { ChatMessage } from '@dina/brain/src/chat/thread';
-import { completeReminder, snoozeReminder } from '@dina/core/src/reminders/service';
-import { addSystemMessage } from '@dina/brain/src/chat/thread';
+import type { ChatMessage } from '@dina/brain/chat';
+import { completeReminder, snoozeReminder } from '@dina/core/reminders';
+import { addSystemMessage } from '@dina/brain/chat';
 import { colors, fonts, radius, spacing } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 

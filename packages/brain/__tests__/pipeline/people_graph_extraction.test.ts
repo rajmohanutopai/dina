@@ -110,8 +110,8 @@ describe('linksToExtractionResult (pure converter)', () => {
         { name: 'Alice', confidence: 'medium' },
         // Second is empty — drop.
         { name: '', confidence: 'high' },
-        // Third uses legacy `role` field.
-        { name: '', role: 'my dentist', confidence: 'high' },
+        // Third has only a role_phrase surface and still survives.
+        { name: '', role_phrase: 'my dentist', confidence: 'high' },
       ],
       'item-2',
       'llm-v1',

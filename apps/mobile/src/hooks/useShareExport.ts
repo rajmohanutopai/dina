@@ -13,7 +13,7 @@
  * Source: ARCHITECTURE.md Task 9.7
  */
 
-import { createArchive } from '@dina/core/src/export/archive';
+import { createArchive } from '@dina/core';
 
 export type ShareStatus = 'idle' | 'creating_archive' | 'sharing' | 'shared' | 'failed';
 

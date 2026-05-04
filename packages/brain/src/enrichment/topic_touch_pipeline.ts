@@ -28,7 +28,7 @@
 import type { TopicExtractor } from './topic_extractor';
 import type { PreferenceExtractor } from './preference_extractor';
 
-/** Minimum `BrainCoreClient` surface needed by the pipeline. */
+/** Minimum CoreClient surface needed by the pipeline. */
 export interface TopicTouchCoreClient {
   memoryTouch(req: {
     persona: string;

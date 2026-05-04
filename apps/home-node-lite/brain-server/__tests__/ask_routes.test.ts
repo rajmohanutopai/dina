@@ -10,19 +10,20 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { ApprovalManager } from '@dina/core/src/approval/manager';
+import { ApprovalManager } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
 } from '@dina/core/src/persona/service';
 import {
   buildAgenticAskPipeline,
-  type BuildAgenticAskPipelineInput,
-} from '@dina/brain/src/composition/agentic_ask';
-import {
   buildAgenticExecuteFn,
   createAskCoordinator,
-} from '@dina/brain/src/composition/ask_coordinator';
+  type BuildAgenticAskPipelineInput,
+  type ChatResponse,
+  type LLMProvider,
+  type ToolCall,
+} from '@dina/brain';
 import {
   setAccessiblePersonas,
   resetReasoningProvider,
@@ -30,11 +31,6 @@ import {
 import { clearVaults, storeItem } from '@dina/core/src/vault/crud';
 import { resetReminderLLM } from '@dina/brain/src/pipeline/reminder_planner';
 import { resetIdentityExtractor } from '@dina/brain/src/pipeline/identity_extraction';
-import type {
-  ChatResponse,
-  LLMProvider,
-  ToolCall,
-} from '@dina/brain/src/llm/adapters/provider';
 
 import { registerAskRoutes } from '../src/routes/ask';
 

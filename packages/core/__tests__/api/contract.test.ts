@@ -136,9 +136,12 @@ describe('Core API Contract', () => {
         '/v1/staging/ingest',
         {
           source: 'gmail',
-          type: 'email',
-          body: 'test',
-          summary: 'test',
+          source_id: 'gmail-msg-1',
+          data: {
+            type: 'email',
+            body: 'test',
+            summary: 'test',
+          },
         },
         { as: 'brain' },
       );

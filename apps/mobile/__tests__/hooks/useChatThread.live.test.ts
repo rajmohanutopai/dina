@@ -2,11 +2,10 @@
  * useLiveThread — the hook that the Chat tab uses to bridge Brain's
  * thread store to React state.
  *
- * Issue #13: the dominant UI test file covers the LEGACY processMessage
- * path. This suite covers the NEW runtime bridge: proof that (a) the
- * user's `send()` routes through Brain's handleChat, (b) thread-store
- * subscribers see every write, including async ones (workflow-event
- * replies via `addDinaResponse`).
+ * This suite covers the runtime bridge: proof that (a) the user's
+ * `send()` routes through Brain's handleChat, (b) thread-store
+ * subscribers see every write, including async ones
+ * (workflow-event replies via `addDinaResponse`).
  *
  * Test strategy: we can't render React here (jest-expo config runs
  * plain-Node). We exercise the hook's module-level contract: the
@@ -16,18 +15,18 @@
  */
 
 import {
-  resetThreads,
-  subscribeToThread,
-  addDinaResponse,
-  getThread,
-} from '../../../brain/src/chat/thread';
-import {
   resetAskCommandHandler,
   resetServiceCommandHandler,
   resetServiceApproveCommandHandler,
   resetServiceDenyCommandHandler,
   setAskCommandHandler,
 } from '../../../brain/src/chat/orchestrator';
+import {
+  resetThreads,
+  subscribeToThread,
+  addDinaResponse,
+  getThread,
+} from '../../../brain/src/chat/thread';
 import { sendMessage } from '../../src/hooks/useChatThread';
 
 const THREAD = 'main';

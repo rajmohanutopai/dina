@@ -28,8 +28,12 @@ import {
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
-import { generatePairingCode } from '@dina/core/src/pairing/ceremony';
-import { listDevices, type PairedDevice, type DeviceRole } from '@dina/core/src/devices/registry';
+import {
+  generatePairingCode,
+  listDevices,
+  type DeviceRole,
+  type PairedDevice,
+} from '@dina/core/devices';
 
 const ROLE_OPTIONS: readonly { value: DeviceRole; label: string; hint: string }[] = [
   {

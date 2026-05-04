@@ -26,6 +26,7 @@ describe('Staging State Machine', () => {
       ['classifying', 'received'],
       ['failed', 'received'],
       ['pending_unlock', 'stored'],
+      ['pending_unlock', 'failed'],
     ];
 
     for (const [from, to] of validCases) {
@@ -45,7 +46,6 @@ describe('Staging State Machine', () => {
       ['failed', 'classifying'],
       ['pending_unlock', 'received'],
       ['pending_unlock', 'classifying'],
-      ['pending_unlock', 'failed'],
     ];
 
     for (const [from, to] of invalidCases) {
@@ -92,8 +92,8 @@ describe('Staging State Machine', () => {
       expect(validTransitionsFrom('failed')).toEqual(['received']);
     });
 
-    it('pending_unlock → [stored]', () => {
-      expect(validTransitionsFrom('pending_unlock')).toEqual(['stored']);
+    it('pending_unlock → [stored, failed]', () => {
+      expect(validTransitionsFrom('pending_unlock').sort()).toEqual(['failed', 'stored']);
     });
   });
 

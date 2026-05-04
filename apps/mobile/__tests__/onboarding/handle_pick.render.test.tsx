@@ -17,12 +17,12 @@ import { HandlePicker } from '../../src/components/onboarding/handle_pick';
 const PDS_HOST = 'test-pds.dinakernel.com';
 
 /**
- * Force the picker to derive the test PDS host. The default code
- * checks `resolveMsgBoxURL()` for "test-mailbox"; we set the env that
- * `msgbox_wiring.ts` reads so it lands on the test fleet.
+ * Force the picker to derive the test PDS host even when the host
+ * environment is set up for release-mode manual testing.
  */
 beforeAll(() => {
-  process.env.EXPO_PUBLIC_DINA_MSGBOX_URL = 'wss://test-mailbox.dinakernel.com/ws';
+  process.env.EXPO_PUBLIC_DINA_ENDPOINT_MODE = 'test';
+  delete process.env.EXPO_PUBLIC_DINA_PDS_URL;
 });
 
 beforeEach(() => {

@@ -368,7 +368,7 @@ export class RetryingHttpClient {
  * WebSocket and `ws` package v8+.
  */
 export interface WebSocketClient {
-  send(data: string): void;
+  send(data: string | Uint8Array | ArrayBuffer): void;
   close(): void;
   onopen: (() => void) | null;
   onmessage: ((event: { data: string }) => void) | null;
@@ -407,12 +407,44 @@ export async function createNodeWebSocket(
   if (wsModule === null) return null;
 
   const ws = new wsModule.WebSocket(url, { perMessageDeflate: false }) as {
-    send(data: string): void;
+    send(data: string | Uint8Array | ArrayBuffer): void;
     close(): void;
     readyState: number;
     on(event: 'open' | 'message' | 'close' | 'error', cb: (...args: unknown[]) => void): void;
   };
 
+  return adaptWsInstance(ws);
+}
+
+/**
+ * Build the synchronous factory shape `@dina/core`'s MsgBox runtime
+ * expects. Production Core server boot uses this path; tests inject a
+ * fake factory to avoid real network IO.
+ */
+export function makeNodeWebSocketFactory(
+  options: NodeWebSocketOptions = {},
+): WebSocketFactory {
+  return (url: string) => {
+    const wsModule = options.wsModule ?? loadWsModuleSync();
+    if (wsModule === null) {
+      throw new Error('net-node: ws package is not installed; add ws to the runtime dependencies');
+    }
+    const ws = new wsModule.WebSocket(url, { perMessageDeflate: false }) as {
+      send(data: string | Uint8Array | ArrayBuffer): void;
+      close(): void;
+      readyState: number;
+      on(event: 'open' | 'message' | 'close' | 'error', cb: (...args: unknown[]) => void): void;
+    };
+    return adaptWsInstance(ws);
+  };
+}
+
+function adaptWsInstance(ws: {
+  send(data: string | Uint8Array | ArrayBuffer): void;
+  close(): void;
+  readyState: number;
+  on(event: 'open' | 'message' | 'close' | 'error', cb: (...args: unknown[]) => void): void;
+}): WebSocketClient {
   // Adapter: the `ws` package uses `.on('event', cb)` emitter API.
   // We expose browser-style `onopen/onmessage/onclose/onerror`
   // properties the WSLike contract expects. Each property is late-
@@ -476,6 +508,23 @@ async function loadWsModule(): Promise<{
     if (mod.default !== undefined && mod.default.WebSocket !== undefined) {
       return { WebSocket: mod.default.WebSocket };
     }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function loadWsModuleSync(): {
+  WebSocket: new (url: string, options?: unknown) => unknown;
+} | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('ws') as {
+      WebSocket?: new (url: string, options?: unknown) => unknown;
+      default?: { WebSocket?: new (url: string, options?: unknown) => unknown };
+    };
+    if (mod.WebSocket !== undefined) return { WebSocket: mod.WebSocket };
+    if (mod.default?.WebSocket !== undefined) return { WebSocket: mod.default.WebSocket };
     return null;
   } catch {
     return null;

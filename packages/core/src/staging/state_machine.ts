@@ -11,7 +11,8 @@
  *   classifying       → failed            (classification/enrichment error)
  *   classifying       → received          (lease expired, sweep reverts)
  *   failed            → received          (retry if retry_count ≤ 3)
- *   pending_unlock    → stored            (persona unlocked, drain)
+ *   pending_unlock    → stored            (persona unlocked / approval granted, drain)
+ *   pending_unlock    → failed            (approval denied)
  *   pending_approval  → classifying       (approval granted, resume processing)
  *   pending_approval  → failed            (approval denied)
  *
@@ -46,7 +47,7 @@ const TRANSITIONS: Record<StagingStatus, Set<StagingStatus>> = {
   received: new Set(['classifying']),
   classifying: new Set(['stored', 'pending_unlock', 'pending_approval', 'failed', 'received']),
   stored: new Set(), // terminal
-  pending_unlock: new Set(['stored']),
+  pending_unlock: new Set(['stored', 'failed']),
   pending_approval: new Set(['classifying', 'failed']), // approval granted → resume, denied → fail
   failed: new Set(['received']), // retry
 };

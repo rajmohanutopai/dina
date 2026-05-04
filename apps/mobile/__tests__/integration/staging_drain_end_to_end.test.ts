@@ -19,12 +19,14 @@
 import { StagingDrainScheduler } from '../../../brain/src/staging/scheduler';
 import type { StagingDrainCoreClient } from '../../../brain/src/staging/drain';
 import { buildStagingEnrichment } from '../../src/services/staging_enrichment';
-import type { BrainCoreClient } from '../../../brain/src/core_client/http';
+import type { CoreClient } from '@dina/core';
 import {
   resetContactDirectory,
   addContact,
   getContact,
 } from '../../../core/src/contacts/directory';
+
+type TestCoreClient = StagingDrainCoreClient & Pick<CoreClient, 'memoryTouch' | 'updateContact'>;
 
 describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
   beforeEach(() => resetContactDirectory());
@@ -77,7 +79,7 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
       async updateContact(did: string, updates: { preferredFor?: string[] }) {
         updateContactCalls.push({ did, preferredFor: updates.preferredFor });
       },
-    } as unknown as BrainCoreClient & StagingDrainCoreClient;
+    } as unknown as TestCoreClient;
 
     // Build the enrichment bundle with NO LLM — preference binder only.
     // Preference extraction is regex-based, so a live LLM is not needed
@@ -146,7 +148,7 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
       async updateContact(did: string) {
         updateContactCalls.push({ did });
       },
-    } as unknown as BrainCoreClient & StagingDrainCoreClient;
+    } as unknown as TestCoreClient;
 
     const topicTouch = buildStagingEnrichment({ core });
     const scheduler = new StagingDrainScheduler({
@@ -198,7 +200,7 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
       async updateContact() {
         throw new Error('core offline');
       },
-    } as unknown as BrainCoreClient & StagingDrainCoreClient;
+    } as unknown as TestCoreClient;
 
     const topicTouch = buildStagingEnrichment({ core });
     const scheduler = new StagingDrainScheduler({

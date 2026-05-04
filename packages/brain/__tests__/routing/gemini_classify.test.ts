@@ -56,13 +56,15 @@ describe('Gemini Structured Classification', () => {
       expect(result.reason).toBe('Medical content');
     });
 
-    it('accepts legacy `persona` key during migration', () => {
+    it('rejects old `persona` key without canonical `primary`', () => {
       const json = JSON.stringify({
         persona: 'health',
         confidence: 0.9,
-        reason: 'Legacy shape',
+        reason: 'Old shape',
       });
-      expect(parseClassificationResponse(json, AVAILABLE).persona).toBe('health');
+      const result = parseClassificationResponse(json, AVAILABLE);
+      expect(result.persona).toBe('general');
+      expect(result.reason).toMatch(/primary persona/i);
     });
 
     it('parses JSON with markdown fences', () => {

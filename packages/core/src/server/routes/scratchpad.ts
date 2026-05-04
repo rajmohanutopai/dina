@@ -85,8 +85,8 @@ async function handleResume(req: CoreRequest): Promise<CoreResponse> {
 
   const entry = resume(taskId);
   if (entry === null) {
-    // Python returns {} for missing / stale; BrainCoreClient.readScratchpad
-    // treats that as null. Preserve that shape.
+    // CoreClient.readScratchpad treats missing or stale checkpoints as null.
+    // Preserve that shape.
     return { status: 200, body: null };
   }
   return {

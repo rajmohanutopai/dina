@@ -22,7 +22,12 @@ import {
   WorkflowValidationError,
   getWorkflowService,
 } from '../../workflow/service';
-import type { WorkflowTask, WorkflowTaskState } from '../../workflow/domain';
+import { WorkflowTaskState, type WorkflowTask } from '../../workflow/domain';
+import {
+  STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
+  denyApproval,
+  drainForApproval,
+} from '../../staging/service';
 
 /**
  * Lift `payload.type` to a top-level `payload_type` wire field. Go-Core
@@ -69,10 +74,10 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     return j(200, withPayloadType(task));
   });
   router.post('/v1/workflow/tasks/:id/approve', (req) =>
-    runAction(req, (id, _body, s) => s.approve(id)),
+    runAction(req, approveTask),
   );
   router.post('/v1/workflow/tasks/:id/cancel', (req) =>
-    runAction(req, (id, body, s) => s.cancel(id, strField(body?.reason, ''))),
+    runAction(req, cancelTask),
   );
   router.post('/v1/workflow/tasks/:id/complete', (req) =>
     runAction(req, (id, body, s) => {
@@ -97,12 +102,7 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     }),
   );
   router.post('/v1/workflow/tasks/:id/fail', (req) =>
-    runAction(req, (id, body, s) => {
-      const errMsg = strField(body?.error);
-      const agentDID = strField(body?.agent_did);
-      if (errMsg === '') throw new WorkflowValidationError('error is required', 'error');
-      return s.fail(id, errMsg, agentDID);
-    }),
+    runAction(req, failTask),
   );
   router.get('/v1/workflow/events', listEvents);
   router.post('/v1/workflow/events/:id/ack', ackEvent);
@@ -325,6 +325,71 @@ type TaskAction = (
   service: NonNullable<ReturnType<typeof getWorkflowService>>,
 ) => unknown;
 
+function approveTask(
+  id: string,
+  _body: Record<string, unknown> | null,
+  service: NonNullable<ReturnType<typeof getWorkflowService>>,
+): WorkflowTask {
+  const before = service.store().getById(id);
+  if (
+    !isStagingPersonaAccessApproval(before) ||
+    before?.status !== WorkflowTaskState.PendingApproval
+  ) {
+    return service.approve(id);
+  }
+
+  const resume = drainForApproval(id);
+  const approved = service.approve(id);
+  const claimed = service
+    .store()
+    .claimApprovalForExecution(id, 1, Math.floor(Date.now() / 1000));
+  if (!claimed) return approved;
+  return service.complete(
+    id,
+    JSON.stringify({
+      status: 'stored',
+      drained: resume.drained,
+      already_stored: resume.alreadyStored,
+    }),
+    resume.drained > 0 ? 'staging memory stored' : 'staging memory already stored',
+    'system',
+  );
+}
+
+function cancelTask(
+  id: string,
+  body: Record<string, unknown> | null,
+  service: NonNullable<ReturnType<typeof getWorkflowService>>,
+): WorkflowTask {
+  const reason = strField(body?.reason, 'approval_denied');
+  const before = service.store().getById(id);
+  if (
+    isStagingPersonaAccessApproval(before) &&
+    before?.status === WorkflowTaskState.PendingApproval
+  ) {
+    denyApproval(id, reason);
+  }
+  return service.cancel(id, reason);
+}
+
+function failTask(
+  id: string,
+  body: Record<string, unknown> | null,
+  service: NonNullable<ReturnType<typeof getWorkflowService>>,
+): WorkflowTask {
+  const errMsg = strField(body?.error);
+  const agentDID = strField(body?.agent_did);
+  if (errMsg === '') throw new WorkflowValidationError('error is required', 'error');
+  const before = service.store().getById(id);
+  if (
+    isStagingPersonaAccessApproval(before) &&
+    before?.status === WorkflowTaskState.PendingApproval
+  ) {
+    denyApproval(id, errMsg);
+  }
+  return service.fail(id, errMsg, agentDID);
+}
+
 async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResponse> {
   const service = getWorkflowService();
   if (service === null) return j(503, { error: 'workflow service not wired' });
@@ -349,6 +414,16 @@ async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResp
       return j(409, { error: err.message, from: err.from, to: err.to });
     }
     return j(500, { error: (err as Error).message });
+  }
+}
+
+function isStagingPersonaAccessApproval(task: WorkflowTask | null): boolean {
+  if (task === null || task.kind !== 'approval') return false;
+  try {
+    const payload = JSON.parse(task.payload) as Record<string, unknown>;
+    return payload.type === STAGING_PERSONA_ACCESS_APPROVAL_TYPE;
+  } catch {
+    return false;
   }
 }
 

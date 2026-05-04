@@ -11,55 +11,44 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import { ProductionDBProvider } from './provider';
 import {
-  bootstrapPersistence,
-  openPersonaVault,
-  shutdownPersistence,
-} from '@dina/core/src/storage/bootstrap';
-import { setKVRepository } from '@dina/core/src/kv/store';
-import { SQLiteKVRepository } from '@dina/core/src/kv/repository';
-import {
-  setContactRepository,
-  SQLiteContactRepository,
-} from '@dina/core/src/contacts/repository';
-import { hydrateContactDirectory } from '@dina/core/src/contacts/directory';
-import {
-  setReminderRepository,
-  SQLiteReminderRepository,
-} from '@dina/core/src/reminders/repository';
-import { hydrateRemindersFromRepo } from '@dina/core/src/reminders/service';
-import { setAuditRepository, SQLiteAuditRepository } from '@dina/core/src/audit/repository';
-import { setDeviceRepository, SQLiteDeviceRepository } from '@dina/core/src/devices/repository';
-import {
-  setStagingRepository,
-  SQLiteStagingRepository,
-} from '@dina/core/src/staging/repository';
-import {
-  setPeopleRepository,
-  SQLitePeopleRepository,
-} from '@dina/core/src/people/repository';
-import {
-  setVaultRepository,
-  SQLiteVaultRepository,
-  resetVaultRepositories,
-} from '@dina/core/src/vault/repository';
-import {
-  setTopicRepository,
-  SQLiteTopicRepository,
-  resetTopicRepositories,
-} from '@dina/core/src/memory/repository';
-import { setMemoryService } from '@dina/core/src/memory/service';
-import {
-  setChatMessageRepository,
+  SQLiteAuditRepository,
   SQLiteChatMessageRepository,
-} from '@dina/core/src/chat/repository';
-import type { DatabaseAdapter } from '@dina/core/src/storage/db_adapter';
-// Expo 55 moved the document-directory constant behind `Paths.document` (a
-// `Directory` object exposing `.uri`). The legacy flat `documentDirectory`
-// export now lives under `expo-file-system/legacy` — we use it here because
-// op-sqlite's `location` parameter takes a raw string directory URI.
+  SQLiteContactRepository,
+  SQLiteDeviceRepository,
+  SQLiteKVRepository,
+  SQLitePeopleRepository,
+  SQLiteReminderRepository,
+  SQLiteStagingRepository,
+  SQLiteTopicRepository,
+  SQLiteVaultRepository,
+  bootstrapPersistence,
+  hydrateRemindersFromRepo,
+  hydrateStagingFromRepository,
+  openPersonaVault,
+  resetTopicRepositories,
+  resetVaultRepositories,
+  setAuditRepository,
+  setChatMessageRepository,
+  setContactRepository,
+  setDeviceRepository,
+  setKVRepository,
+  setMemoryService,
+  setPeopleRepository,
+  setReminderRepository,
+  setStagingRepository,
+  setTopicRepository,
+  setVaultRepository,
+  shutdownPersistence,
+  type DatabaseAdapter,
+} from '@dina/core/storage';
+import { hydrateContactDirectory } from '@dina/core';
+// Expo 55 exposes the document-directory constant through `Paths.document` (a
+// `Directory` object exposing `.uri`). op-sqlite's `location` parameter takes a
+// raw string directory URI, so we read the path from that object directly.
 import { Paths } from 'expo-file-system';
+
+import { ProductionDBProvider } from './provider';
 
 /** The active provider. */
 let provider: ProductionDBProvider | null = null;
@@ -74,7 +63,7 @@ let identityAdapter: DatabaseAdapter | null = null;
  * Initialize all persistence after identity unlock.
  *
  * 1. Opens the identity database (encrypted with identity DEK)
- * 2. Applies schema migrations
+ * 2. Applies schema setup
  * 3. Wires all SQL repositories into service modules
  * 4. Returns the provider for persona DB management
  */
@@ -98,7 +87,7 @@ export async function initializePersistence(
     openFn: open,
   });
 
-  // Open identity DB + apply migrations
+  // Open identity DB + apply schema setup
   const identityDB = await bootstrapPersistence(provider);
   identityAdapter = identityDB;
 
@@ -109,6 +98,7 @@ export async function initializePersistence(
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
   setStagingRepository(new SQLiteStagingRepository(identityDB));
+  hydrateStagingFromRepository();
   setChatMessageRepository(new SQLiteChatMessageRepository(identityDB));
   // People graph backs the reminder planner's sender resolver +
   // the post-publish people-graph extractor. Without it,

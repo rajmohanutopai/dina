@@ -3,10 +3,8 @@
  */
 
 import { ServiceHandler, type ServiceHandlerCoreClient } from '../../src/service/service_handler';
-// Task 1.32-H: ServiceHandler now catches `WorkflowConflictError` from
-// `@dina/core`. Test must throw the SAME class so `instanceof` matches —
-// previously imported from BrainCoreClient's http.ts, which was a
-// separate class that happened to share the name.
+// ServiceHandler catches `WorkflowConflictError` from `@dina/core`.
+// The test throws the same class so `instanceof` matches.
 import { WorkflowConflictError } from '@dina/core';
 import type { ServiceConfig } from '../../../core/src/service/service_config';
 
@@ -253,7 +251,7 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     );
   });
 
-  it('GAP-SH-01: missing hash is permitted when provider publishes an empty schemaHash', async () => {
+  it('GAP-SH-01: missing hash is permitted when provider has no versioned schemaHash', async () => {
     // When the provider advertises no hash (empty string), there is
     // nothing to pin — requester may omit.
     const core = stubCore();

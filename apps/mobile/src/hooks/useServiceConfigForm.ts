@@ -3,7 +3,7 @@
  *
  * Backs the settings screen that lets the operator toggle isDiscoverable and
  * pick the response policy (auto / review) for each capability. Calls
- * Core's `/v1/service/config` endpoint via `BrainCoreClient`.
+ * Core's `/v1/service/config` endpoint via `CoreClient`.
  *
  * Validation is shared with Core's `validateServiceConfig`, so the UI
  * surfaces the same error strings the server would.
@@ -15,7 +15,7 @@ import type { CoreClient } from '@dina/core';
 import {
   validateServiceConfig,
   type ServiceConfig,
-} from '@dina/core/src/service/service_config';
+} from '@dina/core';
 
 /**
  * Subset of `CoreClient` the config form uses. `serviceConfig` returns

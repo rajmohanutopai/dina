@@ -10,9 +10,9 @@
 
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { pdsHostForEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
-import { resolveMsgBoxURL } from '../../services/msgbox_wiring';
 import { colors, fonts, radius, spacing } from '../../theme';
 
 export interface OwnerNameProps {
@@ -73,9 +73,7 @@ function buildPreview(name: string): string | null {
     .replace(/[^a-z0-9]/g, '')
     .slice(0, 12);
   if (sanitized.length < 2) return null;
-  const pdsHost = resolveMsgBoxURL().includes('test-mailbox')
-    ? 'test-pds.dinakernel.com'
-    : 'pds.dinakernel.com';
+  const pdsHost = pdsHostForEndpoints(resolveMobileHostedDinaEndpoints());
   return `${sanitized}.${pdsHost}`;
 }
 

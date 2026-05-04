@@ -8,7 +8,7 @@ import {
   defaultContactResolver,
 } from '../../src/services/staging_enrichment';
 import type { LLMProvider } from '../../../brain/src/llm/adapters/provider';
-import type { BrainCoreClient } from '../../../brain/src/core_client/http';
+import type { CoreClient } from '@dina/core';
 import {
   resetContactDirectory,
   addContact,
@@ -37,7 +37,7 @@ function fakeProvider(response: string): LLMProvider {
   } as unknown as LLMProvider;
 }
 
-function fakeCore(): BrainCoreClient {
+function fakeCore(): Pick<CoreClient, 'memoryTouch' | 'updateContact'> {
   return {
     async memoryTouch() {
       return { status: 'ok', canonical: 'x' };
@@ -45,7 +45,7 @@ function fakeCore(): BrainCoreClient {
     async updateContact() {
       /* noop */
     },
-  } as unknown as BrainCoreClient;
+  } as Pick<CoreClient, 'memoryTouch' | 'updateContact'>;
 }
 
 describe('providerToExtractorLLM', () => {

@@ -70,11 +70,6 @@ export type ApprovalEventDispatcher = (args: {
  * as a `Pick<CoreClient, ...>` so a future `CoreClient` method addition
  * doesn't widen the consumer's contract (callers can still pass the
  * full `InProcessTransport` / `HttpCoreTransport`, TS narrows at assign).
- *
- * Task 1.32-F: this used to be `Pick<BrainCoreClient, ...>`. The four
- * methods have identical signatures on `CoreClient` (added in slice B),
- * so the migration is purely a type swap + the import site updates
- * below — no runtime behaviour change.
  */
 export type WorkflowEventConsumerCoreClient = Pick<
   CoreClient,

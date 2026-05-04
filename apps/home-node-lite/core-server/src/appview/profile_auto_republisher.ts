@@ -42,7 +42,6 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6e task 6.20.
  */
 
-import type { ConfigReloader, ConfigReloaderEvent } from '../brain/config_reloader';
 import type {
   BuildProfileInput,
   ServiceProfileRecord,
@@ -60,8 +59,18 @@ export type BuildProfileFn = (
   config: BuildProfileInput,
 ) => ServiceProfileRecord;
 
+export interface ConfigSnapshotReader<T> {
+  getCurrent(): T | null;
+  isReady(): boolean;
+}
+
+export type ConfigSnapshotEvent<T> =
+  | { kind: 'first_load'; config: T }
+  | { kind: 'changed'; previous: T; next: T }
+  | { kind: string; [key: string]: unknown };
+
 export interface AutoRepublisherOptions<T extends BuildProfileInput = BuildProfileInput> {
-  configReloader: Pick<ConfigReloader<T>, 'getCurrent' | 'isReady'>;
+  configReloader: ConfigSnapshotReader<T>;
   buildFn: BuildProfileFn;
   publisher: Pick<ServiceProfilePublisher, 'publish'>;
   /** Initial backoff after first failure. Default 1s. */
@@ -167,7 +176,7 @@ export class ProfileAutoRepublisher<T extends BuildProfileInput = BuildProfileIn
    * onEvent directly, this helper returns an adapter fn they can
    * hook into their event bus.
    */
-  onConfigEvent(event: ConfigReloaderEvent<T>): void {
+  onConfigEvent(event: ConfigSnapshotEvent<T>): void {
     if (event.kind === 'changed' || event.kind === 'first_load') {
       this.onEvent?.({ kind: 'config_change_detected' });
       this.triggerPublish();

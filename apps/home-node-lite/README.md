@@ -1,8 +1,14 @@
 # Home Node Lite
 
-Pure-TypeScript implementation of the Dina Home Node, running as two
-Node processes in the same architectural pattern as the Go Core +
-Python Brain production stack.
+Pure-TypeScript server form factor of the Dina Home Node. It uses the
+same shared TypeScript Core, Brain, protocol, and Home Node runtime
+surfaces as the mobile app; Node/Fastify only changes the platform
+adapters.
+
+This is a greenfield target. Go Core and Python Brain are behavior
+references while the TS runtime is completed, not runtime surfaces that
+Home Node Lite must support. There is no normal boot-time migration or
+legacy compatibility layer.
 
 > **Status: pre-M1.** See
 > [`docs/HOME_NODE_LITE_TASKS.md`](../../docs/HOME_NODE_LITE_TASKS.md)
@@ -13,15 +19,17 @@ Python Brain production stack.
 
 ```
 apps/home-node-lite/
-├── core-server/      Fastify Core — sovereign cryptographic kernel
+├── core-server/      Fastify Core adapter — sovereign cryptographic kernel
 │                     (task 4.x; port 8100)
-├── brain-server/     Fastify Brain — LLM + orchestration + admin UI
+├── brain-server/     Fastify Brain adapter — LLM + orchestration + admin UI
 │                     (task 5.x; port 8200)
 └── docker/           Dockerfiles + compose (task 7.x; pending)
 ```
 
-The two processes mirror the architectural separation that the Go/
-Python stack enforces:
+The server may run Core and Brain as separate processes, but those
+processes are adapters around the same TS behavior. They should not
+become a second product or preserve the previous Go/Python process
+shape as a compatibility requirement.
 
 | Role    | Pure package      | App wrapper                   | Responsibility |
 |---------|-------------------|-------------------------------|----------------|
@@ -146,15 +154,17 @@ file at `docker/docker-compose.lite.yml`.
 | **M1**    | Pair + ask + remember + D2D delivery, basic PII, default persona | 4-5 weeks |
 | **M2**    | 4-tier persona gating, passphrase, audit, storage tiers          | 6-7 weeks |
 | **M3**    | Trust Network, service query/response, cart handover             | 8-9 weeks |
-| **M4**    | Chaos, crash recovery, migration, perf targets                   | 9-10 weeks |
-| **M5**    | Full integration-test parity with Go/Python stack                | 10-12 weeks |
+| **M4**    | Chaos, crash recovery, perf targets                              | 9-10 weeks |
+| **M5**    | Full Home Node scenario parity with mobile/shared TS runtime     | 10-12 weeks |
 
 ## See also
 
 - [docs/HOME_NODE_LITE_TASKS.md](../../docs/HOME_NODE_LITE_TASKS.md)
   — full task plan, ~500 checkboxes across 14 phases.
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) — engineering blueprint
-  (applies to both Go/Python stack and this Lite stack).
+- [docs/SIMPLIFIED_ARCHITECTURE.md](../../docs/SIMPLIFIED_ARCHITECTURE.md)
+  — greenfield TS Home Node target and end-to-end flows.
+- [docs/CODE_ARCHITECTURE.md](../../docs/CODE_ARCHITECTURE.md)
+  — shared TS runtime and adapter boundaries.
 - [packages/README.md](../../packages/README.md) — layering rules
   for the shared workspace packages.
 - [CLAUDE.md](../../CLAUDE.md) — development environment + build

@@ -20,12 +20,12 @@ import {
   type Contact,
   type TrustLevel,
   type SharingTier,
-} from '@dina/core/src/contacts/directory';
+} from '@dina/core';
 import {
-  setSharingPolicy,
   getSharingTier,
+  setSharingPolicy,
   type SharingTier as PolicyTier,
-} from '@dina/core/src/gatekeeper/sharing';
+} from '@dina/core';
 
 export interface ContactDetailState {
   did: string;
@@ -38,7 +38,7 @@ export interface ContactDetailState {
   scenarioDeny: string[];
 }
 
-import { DATA_CATEGORIES } from '@dina/core/src/persona/names';
+import { DATA_CATEGORIES } from '@dina/core';
 
 /** Standard data categories for sharing policy editor (from canonical names). */
 const CATEGORIES = [...DATA_CATEGORIES];

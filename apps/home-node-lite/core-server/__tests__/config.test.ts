@@ -16,6 +16,13 @@ describe('core-server config (task 4.4/4.5)', () => {
     it('loads minimal env + fills in safe defaults', () => {
       const cfg = loadConfig(minimalEnv());
       expect(cfg).toEqual({
+        endpoints: {
+          mode: 'test',
+          msgboxWsUrl: 'wss://test-mailbox.dinakernel.com/ws',
+          pdsBaseUrl: 'https://test-pds.dinakernel.com',
+          appViewBaseUrl: 'https://test-appview.dinakernel.com',
+          plcDirectoryUrl: 'https://plc.directory',
+        },
         network: { host: DEFAULTS.network.host, port: DEFAULTS.network.port },
         storage: { vaultDir: '/var/lib/dina', cachePages: DEFAULTS.storage.cachePages },
         runtime: {
@@ -23,7 +30,7 @@ describe('core-server config (task 4.4/4.5)', () => {
           rateLimitPerMinute: DEFAULTS.runtime.rateLimitPerMinute,
           prettyLogs: DEFAULTS.runtime.prettyLogs,
         },
-        msgbox: {},
+        msgbox: { url: 'wss://test-mailbox.dinakernel.com/ws', enabled: true },
         cors: {},
       });
     });
@@ -37,17 +44,30 @@ describe('core-server config (task 4.4/4.5)', () => {
         DINA_LOG_LEVEL: 'debug',
         DINA_RATE_LIMIT: '1000',
         DINA_PRETTY_LOGS: 'true',
-        DINA_MSGBOX_URL: 'https://msgbox.dina.example',
+        DINA_ENDPOINT_MODE: 'release',
+        DINA_MSGBOX_URL: 'wss://msgbox.dina.example/ws',
+        DINA_PDS_URL: 'https://pds.dina.example/',
+        DINA_APPVIEW_URL: 'https://appview.dina.example/',
+        DINA_PLC_URL: 'https://plc.dina.example/',
         DINA_HOMENODE_DID: 'did:plc:example',
+        DINA_MSGBOX_ENABLED: 'false',
         DINA_CORS_ORIGIN: 'https://admin.example.com',
       });
       expect(cfg).toEqual({
+        endpoints: {
+          mode: 'release',
+          msgboxWsUrl: 'wss://msgbox.dina.example/ws',
+          pdsBaseUrl: 'https://pds.dina.example',
+          appViewBaseUrl: 'https://appview.dina.example',
+          plcDirectoryUrl: 'https://plc.dina.example',
+        },
         network: { host: '0.0.0.0', port: 9443 },
         storage: { vaultDir: '/opt/dina/vault', cachePages: 5000 },
         runtime: { logLevel: 'debug', rateLimitPerMinute: 1000, prettyLogs: true },
         msgbox: {
-          url: 'https://msgbox.dina.example',
+          url: 'wss://msgbox.dina.example/ws',
           homeNodeDid: 'did:plc:example',
+          enabled: false,
         },
         cors: { allowOrigin: 'https://admin.example.com' },
       });
@@ -65,6 +85,20 @@ describe('core-server config (task 4.4/4.5)', () => {
     ])('DINA_PRETTY_LOGS=%s → prettyLogs=%s', (input, expected) => {
       const cfg = loadConfig({ ...minimalEnv(), DINA_PRETTY_LOGS: input });
       expect(cfg.runtime.prettyLogs).toBe(expected);
+    });
+
+    it.each([
+      ['1', true],
+      ['true', true],
+      ['YES', true],
+      ['on', true],
+      ['0', false],
+      ['false', false],
+      ['NO', false],
+      ['off', false],
+    ])('DINA_MSGBOX_ENABLED=%s → msgbox.enabled=%s', (input, expected) => {
+      const cfg = loadConfig({ ...minimalEnv(), DINA_MSGBOX_ENABLED: input });
+      expect(cfg.msgbox.enabled).toBe(expected);
     });
   });
 
@@ -115,6 +149,12 @@ describe('core-server config (task 4.4/4.5)', () => {
       ).toThrow(/DINA_PRETTY_LOGS must be a boolean/);
     });
 
+    it('rejects invalid MsgBox enabled boolean', () => {
+      expect(() =>
+        loadConfig({ ...minimalEnv(), DINA_MSGBOX_ENABLED: 'maybe' }),
+      ).toThrow(/DINA_MSGBOX_ENABLED must be a boolean/);
+    });
+
     it('rejects cachePages below minimum', () => {
       const err = captureError(() =>
         loadConfig({ ...minimalEnv(), DINA_CACHE_PAGES: '5' }),
@@ -128,7 +168,15 @@ describe('core-server config (task 4.4/4.5)', () => {
         loadConfig({ ...minimalEnv(), DINA_MSGBOX_URL: 'not a url' }),
       );
       expect(err).toBeInstanceOf(ConfigError);
-      expect(err?.issues.some((i) => i.path === 'msgbox.url')).toBe(true);
+      expect(err?.issues.some((i) => i.path === 'DINA_MSGBOX_URL')).toBe(true);
+    });
+
+    it('rejects invalid endpoint mode', () => {
+      const err = captureError(() =>
+        loadConfig({ ...minimalEnv(), DINA_ENDPOINT_MODE: 'prod' }),
+      );
+      expect(err).toBeInstanceOf(ConfigError);
+      expect(err?.issues.some((i) => i.path === 'DINA_ENDPOINT_MODE')).toBe(true);
     });
   });
 

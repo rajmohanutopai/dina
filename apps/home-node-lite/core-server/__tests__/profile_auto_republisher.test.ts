@@ -9,8 +9,8 @@ import {
   ProfileAutoRepublisher,
   type AutoRepublisherEvent,
   type BuildProfileFn,
+  type ConfigSnapshotReader,
 } from '../src/appview/profile_auto_republisher';
-import type { ConfigReloader, ConfigReloaderEvent } from '../src/brain/config_reloader';
 import type {
   BuildProfileInput,
   ServiceProfileRecord,
@@ -20,10 +20,7 @@ import type {
   ServiceProfilePublisher,
 } from '../src/appview/service_profile_publisher';
 
-function stubReloader(config: BuildProfileInput | null): Pick<
-  ConfigReloader<BuildProfileInput>,
-  'getCurrent' | 'isReady'
-> {
+function stubReloader(config: BuildProfileInput | null): ConfigSnapshotReader<BuildProfileInput> {
   return {
     getCurrent: () => config,
     isReady: () => config !== null,

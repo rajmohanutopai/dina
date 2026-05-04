@@ -7,11 +7,10 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter } from '@dina/core/src/storage/db_adapter';
-import type { DBProvider } from '@dina/core/src/storage/db_provider';
+import type { DatabaseAdapter, DBProvider } from '@dina/core/storage';
 import { OpSQLiteAdapter } from './op_sqlite_adapter';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { derivePersonaDEK, deriveDEKHash } from '@dina/core/src/crypto/hkdf';
+import { derivePersonaDEK, deriveDEKHash } from '@dina/core';
 
 interface ProviderConfig {
   dbDir: string;

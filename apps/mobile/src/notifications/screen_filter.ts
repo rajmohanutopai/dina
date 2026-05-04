@@ -6,7 +6,7 @@
  * one output.
  */
 
-import type { NotificationItem } from '@dina/brain/src/notifications/inbox';
+import type { NotificationItem } from '@dina/brain/notifications';
 
 export type FilterKey = 'all' | 'unread' | 'reminder' | 'approval';
 

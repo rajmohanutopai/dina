@@ -14,11 +14,8 @@
  * for 404) without string-matching the message. The human-readable
  * `message` is still populated for logs.
  *
- * Previously lived in `core_client/http.ts` alongside the now-deleted
- * `BrainCoreClient`. The error type itself is transport-agnostic —
- * any Core client (legacy BrainCoreClient, the current HTTP transport,
- * a future alternative) can throw this when it sees a non-2xx the
- * caller should branch on.
+ * The error type itself is transport-agnostic: any Core client can
+ * throw this when it sees a non-2xx response the caller should branch on.
  */
 export class CoreHttpError extends Error {
   constructor(

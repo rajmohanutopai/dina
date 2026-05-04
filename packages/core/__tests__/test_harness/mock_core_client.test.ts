@@ -149,6 +149,25 @@ describe('MockCoreClient (task 1.34)', () => {
 
   // ─── Staging inbox (task 1.29h / 1.32 preamble) ───────────────────────
 
+  it('stagingIngest records request + returns configurable canned result', async () => {
+    const m = new MockCoreClient();
+    m.stagingIngestResult = {
+      itemId: 'stg-ingested',
+      duplicate: false,
+      status: 'received',
+    };
+    const r = await m.stagingIngest({
+      source: 'chat',
+      sourceId: 'msg-1',
+      data: { body: 'remember this' },
+    });
+    expect(r).toEqual({ itemId: 'stg-ingested', duplicate: false, status: 'received' });
+    expect(m.calls[0]).toEqual({
+      method: 'stagingIngest',
+      args: [{ source: 'chat', sourceId: 'msg-1', data: { body: 'remember this' } }],
+    });
+  });
+
   it('stagingClaim records args + returns configurable canned result', async () => {
     const m = new MockCoreClient();
     m.stagingClaimResult = {
@@ -167,6 +186,7 @@ describe('MockCoreClient (task 1.34)', () => {
       itemId: 'stg-real',
       persona: 'health',
       data: { text: 'x' },
+      personaOpen: true,
     });
     // Echo pattern matches serviceQuery.queryId — callers can correlate
     // batch mocks without splitting the canned result per call.

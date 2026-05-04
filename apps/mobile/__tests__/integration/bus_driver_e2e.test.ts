@@ -24,7 +24,6 @@ import { createNode, type DinaNode } from '../../src/services/bootstrap';
 import { createCoreRouter } from '../../../core/src/server/core_server';
 import { createInProcessDispatch } from '../../../core/src/server/in_process_dispatch';
 import { InProcessTransport } from '../../../core/src/client/in-process-transport';
-// BrainCoreClient retired — mobile now uses InProcessTransport exclusively.
 import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
 import { InMemoryServiceConfigRepository } from '../../../core/src/service/service_config_repository';
 import { getServiceConfig } from '../../../core/src/service/service_config';
@@ -79,9 +78,9 @@ function stubAppView(): Pick<AppViewClient, 'searchServices'> {
 }
 
 /**
- * Build a real runtime composition: CoreRouter with all routes, a
- * BrainCoreClient whose `signedDispatch` fires Core requests directly
- * into the router, and a `createNode` that installs the globals.
+ * Build a real runtime composition: CoreRouter with all routes,
+ * in-process dispatch for MsgBox ingress, and a `createNode` that
+ * installs the globals.
  */
 async function composeNode(opts?: {
   sendD2D?: (toDID: string, body: unknown) => Promise<void>;
@@ -110,8 +109,8 @@ async function composeNode(opts?: {
   const repo = new InMemoryWorkflowRepository();
   const configRepo = new InMemoryServiceConfigRepository();
 
-  // BrainCoreClient was retired — in-process Brain↔Core uses
-  // InProcessTransport (auth bypass via `trustedInProcess` flag).
+  // In-process Brain↔Core uses InProcessTransport (auth bypass via
+  // `trustedInProcess` flag).
   void dispatch;
   const coreClient = new InProcessTransport(router);
 

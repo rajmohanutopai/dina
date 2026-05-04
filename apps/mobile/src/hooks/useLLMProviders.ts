@@ -23,7 +23,7 @@ import {
   resetProviderConfig,
   type ProviderName,
   type ProviderStatus,
-} from '@dina/brain/src/llm/provider_config';
+} from '@dina/brain/llm';
 
 export interface ProviderUIState {
   name: ProviderName;

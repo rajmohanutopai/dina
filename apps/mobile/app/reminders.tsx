@@ -1,7 +1,8 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, SectionList, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, SectionList, Pressable, Alert } from 'react-native';
+
 import {
   getUpcomingReminders,
   groupByDay,
@@ -15,11 +16,9 @@ import { colors, fonts, spacing, radius, shadows } from '../src/theme';
  * Reminders tab — shows upcoming + overdue reminders from Brain's
  * staging pipeline.
  *
- * Earlier this screen was a "coming soon" placeholder because the live
- * `/remember` path no longer wrote to the legacy in-memory store.
- * `useReminders` now reads from `@dina/core/src/reminders/service` —
+ * `useReminders` reads from `@dina/core/reminders` —
  * the same store `post_publish.handlePostPublish → planReminders` writes
- * to — so the tab finally surfaces what the chat already created.
+ * to — so the tab surfaces what the chat created.
  *
  * Refresh on focus: the reminder service has no subscribe API today,
  * and reminders are usually created from chat in the seconds before

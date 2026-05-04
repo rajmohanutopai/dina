@@ -18,8 +18,8 @@ import {
   WorkflowEventConsumer,
   type WorkflowEventDeliverer,
   type WorkflowEventTickResult,
-} from '@dina/brain/src/service/workflow_event_consumer';
-import { addDinaResponse, type ChatMessage } from '@dina/brain/src/chat/thread';
+} from '@dina/brain';
+import { addDinaResponse, type ChatMessage } from '@dina/brain/chat';
 
 export type DeliveryCoreClient = Pick<
   CoreClient,

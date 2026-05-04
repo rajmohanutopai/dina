@@ -1,14 +1,27 @@
-# Home Node Lite — Task Plan (v4)
+# Home Node Lite — Historical Task Plan (v4)
 
-**Goal:** Stand up a pure-TypeScript home node alongside the existing Go Core + Python Brain stack. `dina-mobile/packages/{core,brain,fixtures,test-harness}` is **donor code** — strong seed material for protocol + domain logic, not an authoritative server architecture. Shared TS packages drive both the Node server target (now) and the Expo mobile target (when dina-mobile merges into `apps/mobile/`). The program's success criterion is **staged milestone parity**: Lite v0.1.0 ships at M1 (pair + ask + remember + D2D) within ~4-5 weeks; full integration-test parity reached progressively through M2–M5 over 10-12 weeks. No silent-until-done — every milestone is demo-able.
+> **Current direction, 2026-05-04:** this plan is retained as historical
+> task provenance. The active architecture is the greenfield TypeScript
+> consolidation in `docs/SIMPLIFIED_ARCHITECTURE.md`,
+> `docs/CODE_ARCHITECTURE.md`, and `docs/ARCHITECTURE_CLEANUP_TASKS.md`.
+> Mobile and Home Node Lite are both full Home Nodes over one shared TS
+> runtime. Go Core and Python Brain are behavior references only. There is no
+> legacy runtime support and no normal boot-time migration requirement.
+
+**Goal:** Stand up the server form factor of the shared TypeScript Home Node.
+`apps/mobile` and `apps/home-node-lite` should converge on the same TS runtime
+composition, with only platform adapters changing. The program's success
+criterion is staged Home Node capability parity across mobile and server:
+install, ask, remember, D2D, trust publish, and service workflows should pass
+the same scenario fixtures.
 
 ## Architectural decisions (fixed)
 
 | # | Decision | Why |
 |---|----------|-----|
-| 1 | **Seed from dina-mobile, not fork** | dina-mobile is donor TS; we copy-and-own in `dina/packages/`. Fresh copy, not subtree. Divergence during migration managed per Phase 0.5 |
+| 1 | **Use TS packages as the product runtime** | Mobile TS code and shared packages are the runtime base. Superseded paths are deleted instead of kept as compatibility layers. |
 | 2 | **Two Node processes** (Core + Brain over HTTP) for server build; one process on mobile | Preserves "Brain is an untrusted tenant" boundary on server; mobile runtime constrained to one JS VM. Runtime-dependent security model, documented explicitly |
-| 3 | **Staged milestone parity** (M1–M5) — not big-bang | M1 is functional Lite; M5 is full integration-test parity. Each milestone demo-able in isolation. Ship M1 at ~4-5 weeks; don't wait 12 weeks to see green |
+| 3 | **Staged Home Node scenario parity** (M1–M5) — not big-bang | Each milestone is demo-able in isolation, but the parity target is mobile/server TS behavior, not mixed-stack compatibility. |
 | 4 | **Fastify over Express** | Native TS types; OpenAPI schemas in `api/*.yaml` feed straight into route validation; smaller memory footprint on Pi |
 | 5 | **Workspace at repo root** (Option A placement) | Standard monorepo; node_modules visual cost < naming collision cost of nesting |
 | 6 | **Per-capability × per-platform adapter packages** (Option B granularity) | 5 capabilities × N platforms as independent packages, each publishable so third parties can adopt Dina as a protocol layer |
@@ -16,16 +29,16 @@
 | 8 | **Async-everywhere port rule** | Every port interface method returns `Promise<T>`. Node adapters wrap sync calls; Expo adapters are natively async |
 | 9 | **Meta-package `@dina/adapters-node`** on top of granular packages | Apps get one-dep ergonomics; external consumers still get granular precision. Never load-bearing |
 | 10 | **Transport-agnostic Core↔Brain interface** | Brain imports `CoreClient` interface only; transport is injected. `HttpCoreTransport` for server; `InProcessTransport` for mobile |
-| 11 | **Go Core + Python Brain are the correctness oracle during migration** | Whenever Lite disagrees with Go/Python, Lite is wrong until proven otherwise — regardless of what dina-mobile does |
-| 12 | **API semantic parity, not byte parity** | JSON field ordering doesn't matter; field names, types, status codes, and error keys do. Error *message strings* match Go only where integration tests string-match (tracked case-by-case in M5) |
+| 11 | **Go/Python are behavior references only** | Preserve mature semantics for ask, remember, staging, approvals, services, and trust, but do not preserve their runtime shape or old compatibility surfaces. |
+| 12 | **Canonical TS contracts win** | Field names, error keys, endpoint modes, and scenario behavior should be pinned by shared TS contracts and parity fixtures. No legacy wire or data migration layer is required for normal boot. |
 
 ## Provenance
 
 | Field | Value |
 |-------|-------|
-| Donor repo | `dina-mobile` (local: `/Users/rajmohan/OpenSource/dina-mobile`) |
+| Donor repo | `dina-mobile` historical import; current mobile source lives in `apps/mobile` |
 | Donor commit | `356ddc939d68fc7afe79fe68d11b980603a37122` (2026-04-20) |
-| Correctness oracle | `dina` repo on main at baseline `57c61d57a449a4cc6b4351e33a6df52dff89478f` |
+| Behavior reference | Go/Python main Dina flows, used for semantic review only |
 | Task doc v1 | 2026-04-21 (superseded) |
 | Task doc v2 | 2026-04-21 (superseded) |
 | Task doc v3 | 2026-04-21 (superseded) |
@@ -35,8 +48,8 @@
 
 ```
 dina/
-├── core/                             Go Core (unchanged — correctness oracle)
-├── brain/                            Python Brain (unchanged — correctness oracle)
+├── core/                             Go Core (behavior reference while deactivated)
+├── brain/                            Python Brain (behavior reference while deactivated)
 ├── appview/ msgbox/ cli/ admin-cli/  existing services
 │
 ├── packages/                         shared TS workspace
@@ -71,8 +84,8 @@ dina/
 | **M1 — Minimum Viable Lite** | Pair + ask + remember + D2D delivery, basic PII, default persona | Lite v0.1.0 — paired CLI runs ask/remember through Node Core+Brain via MsgBox | 4-5 |
 | **M2 — Persona model** | 4-tier gating, passphrase, audit, isolation, storage tiers | Sensitive/locked personas work end-to-end | 6-7 |
 | **M3 — Trust & service network** | AppView, trust rings, service query/response, capability schemas, cart handover, deep links | Trust Network queries through Lite; BusDriver scenario runs | 8-9 |
-| **M4 — Robustness** | Chaos, crash recovery, migration, perf targets, client sync | Lite passes soak + chaos suite | 9-10 |
-| **M5 — Operational edges** | Compliance, silence tiers, staging, whisper, full contract wire format, remaining arch validation | Full integration-test parity reached | 10-12 |
+| **M4 — Robustness** | Chaos, crash recovery, perf targets, client sync | Server form factor passes soak + chaos suite | 9-10 |
+| **M5 — Operational edges** | Compliance, silence tiers, staging, whisper, full contract wire format, remaining arch validation | Mobile/server TS scenario parity reached | 10-12 |
 
 Each milestone has its own parity gate (Phase 8a–8e). The plan can legitimately ship/pause/pivot at any milestone boundary.
 
@@ -418,6 +431,11 @@ Each milestone has its own parity gate (Phase 8a–8e). The plan can legitimatel
 
 ### 4i. Persona gatekeeper
 
+> Greenfield cleanup update (2026-05-04): the normal TS runtime no longer
+> migrates old persona tier names. `config.json` must use canonical tiers
+> (`default`, `standard`, `sensitive`, `locked`); `open` and `restricted`
+> now fail validation. Historical task 4.74 is superseded by this cleanup.
+
 - [x] 4.68 4-tier definitions; `config.json` loader *(done 2026-04-22; `src/persona/persona_config.ts` exports `loadPersonaConfig` + `serializePersonaConfig`. **File shape**: `{ version: 1, personas: { [name]: { tier, description? } } }` at `${vaultDir}/config.json`. **Pipeline**: read → `JSON.parse` → Zod structural validation → per-entry `migrateTier` (task 4.74) → canonical tier sanity check → build `Map<name, PersonaDefinition>`. **Error taxonomy** (explicit `PersonaConfigError.code`): `missing_file` (ENOENT distinguished so `boot.ts` can synthesize defaults on first-run install), `invalid_json` (I/O error or malformed JSON), `invalid_shape` (Zod issue with path + message array in `detail.issues`), `invalid_tier` (unknown tier string — preserves raw input for the operator), `duplicate_persona` (guarded even though JSON.parse collapses dup keys — future streaming parsers or hand-edited inputs still hit this). **I/O injection**: `readFile: (path) => string` dependency, production passes `(p) => fs.readFileSync(p, 'utf8')`, tests pass fakes. Zero `fs` import in the module. **Migration visibility**: returns a `migrations: [{persona, from, to}]` array so boot-log can tell the operator exactly what was rewritten — tier values already canonical produce an empty array. **Defensive guard**: after `migrateTier` runs, re-asserts the returned tier is canonical — catches regressions if the migration contract is ever broken. **Round-trip**: `serializePersonaConfig(loaded)` re-emits the on-disk shape with canonical tier values, which heals a legacy config file (write-back after load). Drops `undefined` descriptions so serializers don't emit `"description":null`. **21 tests** in `__tests__/persona_config.test.ts`: happy-path canonical load + description presence/absence, all three migration cases (open→default, open→standard, restricted→sensitive), selective migration array (only changed entries), every error code (missing_file via ENOENT, invalid_json via read error + malformed JSON, invalid_shape via missing version + missing tier, invalid_tier with detail preservation + case-sensitivity), round-trip symmetry for canonical + legacy-healed files, undefined-description drop, empty personas object for fresh-install case.)*
 - [x] 4.69 Argon2id passphrase unlock *(done 2026-04-22; `src/persona/passphrase_unlock.ts` exports `computePassphraseRecord`, `verifyPassphrase`, `PassphraseRegistry`, `constantTimeEqual`. **Design**: builds on `@dina/core.deriveKEK` (the repo's canonical Argon2id — 128 MiB/t=3/p=4/32-byte output by default) instead of introducing a second KDF. Per-persona record is `{hash, salt, memory, iterations, parallelism, createdAtMs}` — flat + serializable so the SQLCipher-backed variant persists one row per persona. Salt is 16 random bytes (matches `wrapSeed`). **Constant-time compare**: length mismatch short-circuits (length isn't secret); otherwise XOR-accumulate across all bytes so elapsed time depends only on length, not content — prevents remote-timing byte-recovery attacks on the stored digest. **Empty-passphrase short-circuit**: `verifyPassphrase('')` returns false without running the KDF — the "you typed nothing" signal is observable at UI layer anyway, and wasting ~200 ms on empty-input probes is a gift to attackers. **Unknown-persona uniformity**: `PassphraseRegistry.verify('/nobody', 'x')` returns false just like a wrong passphrase — no timing distinguisher for "this persona has a record". **Min passphrase length = 8** (`MIN_PASSPHRASE_LENGTH`), matching the operator-facing UX floor. **Injectable**: `randomBytesFn` (tests use deterministic seeds for byte-exact round-trip), `nowMsFn`, `params` (tests reduce memory/iterations to 1 KiB/1 iter so the suite runs in ~10 ms vs ~2 s). **Registry surface**: `set(persona, passphrase)` (async), `verify(persona, passphrase)`, `has`, `remove`, `snapshot` (returns record for storage), `load` (inverse — rehydrates from disk), `size`. `set` rotates the salt so re-setting a passphrase doesn't reuse prior record bytes. **21 tests** in `__tests__/passphrase_unlock.test.ts`: round-trip, wrong passphrase, empty-passphrase no-KDF short-circuit, min-length rejection, salt/hash shape + param propagation, clock injection, different-salts-different-hashes, deterministic hashing with fixed salt, wrong-size randomBytesFn rejection, registry API (set/verify/unknown-persona/replace-rotates-salt/remove/empty-persona-rejected/snapshot+load-cross-instance/size), `constantTimeEqual` truth table including empty + different lengths.)*
 - [x] 4.70 Session grants scoped to named sessions *(done 2026-04-21; `src/persona/session_grants.ts` exports `SessionGrantRegistry`. **Model**: a session owns a set of `(agentDid, persona, mode)` grants keyed as `${mode}::${agentDid}::${persona}` — safe because DID + persona grammars forbid `::`. Multiple agents can participate in one session; agents can belong to multiple sessions simultaneously. **API**: `start(id, name)` → `SessionHandle`; `addGrant(sessionId, grant)` → bool (idempotent — second add returns false); `check(agentDid, persona, mode)` walks the UNION of grants across all active sessions with correct per-mode semantics (a `write` grant satisfies a `read` check; a `read` grant does NOT satisfy a `write` check); `end(sessionId)` atomically revokes every grant the session held + returns the count; `sessionsForAgent(agentDid)` lists every active session the agent participates in (deduplicated — one session, many grants still yields one entry); `endAll()` for graceful shutdown (task 4.9). **Why orthogonal to auto-lock (task 4.71)**: auto-lock is the PERSONA side (vault file locks after idle); session grants are the AGENT side (the agent loses access when the session ends). Both rails fail-closed independently — lock kills vault access even if grants are still active, session end kills grants even if the persona is still unlocked. **Storage**: in-memory today; the SQLCipher-backed variant lands with `@dina/storage-node`, implementing the same surface for persistence across restarts. Grants are cheap + ephemeral so in-memory-only matches how the Go Core handles them today. Injectable `nowMsFn` + `onEvent` diagnostic hook (`session_started` / `session_ended` / `grant_added` / `grant_revoked`) keeps tests deterministic and ops integrations straightforward. **22 tests** in `__tests__/session_grants.test.ts`: lifecycle (start/end + handle shape + revoked count), duplicate-id + empty-id/name rejection, unknown-session throws on end + addGrant, idempotent addGrant, read+write on same (agent, persona) counted as two distinct grants, per-mode check semantics (write-satisfies-read, read-does-not-satisfy-write, wrong persona, wrong agent), union across sessions (any active session satisfies), end-one-preserves-other, sessionsForAgent listing + empty + de-duplication, endAll + no-op endAll, event ordering + no re-emit on idempotent add, totalGrants + size counters.)*
@@ -725,11 +743,13 @@ Scope: AppView integration, trust rings, service query/response, cart handover, 
 
 ### 8d — M4: Robustness (~1-2 days)
 
-Scope: chaos, crash recovery, migration, perf, client sync.
+Scope: chaos, crash recovery, perf, client sync. Historical migration tests are
+not part of the greenfield runtime requirement; import/export tooling can be
+specified separately if needed.
 
 - [x] 8.28 `test_chaos.py`
 - [x] 8.29 `test_crash_recovery.py`
-- [x] 8.30 `test_migration.py`
+- [~] 8.30 `test_migration.py` *(descoped for normal runtime; greenfield target has no legacy data migration path)*
 - [x] 8.31 `test_performance.py`
 - [x] 8.32 `test_client_sync.py`
 - [ ] 8.33 Milestone gate: M4 green. Tag `home-node-lite-v0.4.0`.
@@ -768,7 +788,11 @@ Scope: remaining compliance, silence/staging/whisper flows, architectural valida
 - [x] 8.58 Every skip documented in `tests/integration/LITE_SKIPS.md` with reason + planned resolution milestone
 - [x] 8.59 Target: 0 skips at M5 ideally; ≤5% with documented reason acceptable
 
-### 8g — Cross-stack compat matrix (M3 bonus)
+### 8g — Cross-stack behavior-reference matrix (historical)
+
+Mixed Go/Python + TS runtime combinations are not supported product modes for
+the greenfield Home Node. These checks can still be useful as behavior-reference
+audits, but they should not create compatibility obligations.
 
 - [x] 8.60 Lite Core + Python Brain — works? *(done 2026-04-22; **Partial — 20/42 (~48%) today, 22 endpoints blocked pending per-milestone unlocks**. Audit captured in `docs/lite-impedance-mismatches.md` §"8.60 Lite Core + Python Brain — audit" with a per-endpoint unlock-milestone table. Regression-gated by `packages/core/__tests__/cross_stack_compat.test.ts` which recomputes the matrix on every run. Static analysis scope — the test walks `packages/core/src/**` + `apps/home-node-lite/core-server/src/**` for Lite routes, `brain/src/adapter/core_http.py` + `brain/src/port/core_client.py` for Python Brain calls, normalises param-form differences (`:id` ↔ `{id}` ↔ trailing slash), and asserts three invariants: (1) no stale entries in `KNOWN_860_GAPS` — every listed gap is a *real* Lite Core miss (catches regressions when Lite Core closes a gap but the list isn't trimmed), (2) every Python Brain call is either on Lite Core or listed — catches new unknown gaps from Brain's side, (3) overlap ratio ≥45% floor. **Wire format is protocol-pinned** (canonical signing + sealed-box + D2D envelope via `@dina/protocol`'s 9 conformance vectors) so auth-layer compatibility is ALREADY guaranteed — only the endpoint surface + body shapes remain as gap surface. 12 tests pass. The published ~48% figure is the static floor; full runtime smoke remains M3-bonus per the task-8g positioning (docker-compose bringing up mixed containers is the natural next step).)*
 - [x] 8.61 Go Core + Lite Brain — works? *(done 2026-04-22; **Near-complete — 12/13 (~92%) endpoints work, 1 gap**. Lite Brain's outbound surface enumerated from `packages/brain/src/**` (with template-literal paths like `` `/v1/staging/claim?limit=${limit}` `` correctly captured — the regex fix surfaced during validation when the initial scanner under-counted 7 vs actual 13). Go Core's inbound surface enumerated from `core/internal/**` + `core/cmd/**` = 77 routes. Only `/v1/scratchpad` is Lite-Brain-exclusive with no Go Core equivalent; resolution path is to migrate scratchpad to Brain-internal state (matching Python Brain's in-process convention) rather than add the endpoint to Go Core — scratchpad is *Brain private state* conceptually. Regression-gated by the same `cross_stack_compat.test.ts` with symmetric three-way assertions + ≥85% ratio floor. Audit captured in `docs/lite-impedance-mismatches.md` §"8.61 Go Core + Lite Brain — audit" with a per-endpoint coverage table. Wire format protocol-pinned — auth compatibility guaranteed without runtime test. Scratchpad rewiring deferred to a future Phase 5.x task; until then the matrix correctly reports 12/13 (~92%) as the static floor.)*
@@ -894,16 +918,19 @@ Scope: remaining compliance, silence/staging/whisper flows, architectural valida
 - [x] 13.4 Post-soak report
 - [x] 13.5 Decision gate: keep both stacks or schedule Go/Python retirement
 
-## Mobile migration — **handled in Phase 1 under option (c)**
+## Mobile Import — **handled in Phase 1 under option (c)**
 
-With option (c) chosen, mobile lands in Phase 1 (tasks 1.14.1–1.14.13), not as a future cross-cutting effort. The ongoing invariant remains:
+With option (c) chosen, mobile landed in Phase 1 (tasks 1.14.1–1.14.13),
+not as a future cross-cutting effort. This is an import/consolidation note, not
+a runtime migration requirement. The ongoing invariant remains:
 
 - **Zero changes to pure packages driven by mobile-only needs.** Every platform-specific tweak goes in `*-expo` adapters. If a pure package has to change, that's a layering bug — fix in pure, not via platform branches.
 - Mobile app must remain runnable on main at every Phase-8 milestone; Lite work does not block mobile releases.
 
 ## Out of scope
 
-- Retiring Go Core / Python Brain — both run until Lite passes M5 + soak
+- Legacy runtime support or boot-time data migrations in the TS Home Node.
+- Mixed Go/Python + TS stacks as supported product configurations.
 - Public `@dina/*` npm publishing beyond `@dina/protocol`
 - TLS termination (Caddy/nginx in front)
 - Kubernetes manifests (compose only)
@@ -914,10 +941,10 @@ With option (c) chosen, mobile lands in Phase 1 (tasks 1.14.1–1.14.13), not as
 2. **SQLCipher Node lib choice** — blocks Phase 3a. Resolve at 3.1.
 3. **Admin UI form factor** — HTMX vs SPA vs descope
 4. **Local LLM (`node-llama-cpp`)** — descope from v0.1?
-5. **Metrics endpoint** — what does Go expose; match or descope
-6. **Cross-stack compat** — Lite Core + Python Brain as supported config?
-7. **Error message string parity** — how aggressive? (Tracked per-test in M5)
-8. **dina-mobile freeze-date** — when do we cut the move? Aligns with Phase 1 kickoff
+5. **Metrics endpoint** — define the TS Home Node operator contract; do not mirror Go by default
+6. ~~**Cross-stack compat** — not a supported product mode~~
+7. **Error message contract** — pin TS user/operator-facing error keys and messages where product-visible
+8. ~~**dina-mobile freeze-date** — resolved by the `apps/mobile` import~~
 
 ## Rough effort estimate
 

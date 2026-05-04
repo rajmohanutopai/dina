@@ -10,10 +10,12 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { LanguageModel } from 'ai';
 import * as Keychain from 'react-native-keychain';
 
-import { AISDKAdapter } from '@dina/brain/src/llm/adapters/aisdk';
-import { GeminiGenaiAdapter } from '@dina/brain/src/llm/adapters/gemini_genai';
-import type { LLMProvider } from '@dina/brain/src/llm/adapters/provider';
-import { getProviderTiers } from '@dina/brain/src/llm/provider_config';
+import {
+  AISDKAdapter,
+  GeminiGenaiAdapter,
+  getProviderTiers,
+  type LLMProvider,
+} from '@dina/brain/llm';
 
 export type ProviderType = 'openai' | 'gemini';
 

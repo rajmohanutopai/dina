@@ -83,7 +83,7 @@ export async function extractPeople(
       mentions.push({
         name: link.name,
         contactDID: contact?.did,
-        role: link.role,
+        role: link.role_phrase,
         confidence: link.confidence,
         source: 'llm_extraction',
       });

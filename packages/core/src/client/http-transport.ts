@@ -26,6 +26,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.31.
  */
 
+import { WorkflowConflictError } from './core-client';
+
 import type {
   CoreClient,
   CoreHealth,
@@ -50,6 +52,8 @@ import type {
   ServiceQueryResult,
   MemoryToCOptions,
   MemoryToCResult,
+  StagingIngestRequest,
+  StagingIngestResult,
   StagingClaimResult,
   StagingResolveRequest,
   StagingResolveResult,
@@ -74,7 +78,6 @@ import type {
   UpdateContactParams,
   Contact,
 } from './core-client';
-import { WorkflowConflictError } from './core-client';
 
 // ---------------------------------------------------------------------------
 // DI abstractions — injected by the platform
@@ -336,6 +339,25 @@ export class HttpCoreTransport implements CoreClient {
 
   // ─── Staging inbox ────────────────────────────────────────────────────
 
+  async stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult> {
+    const body: Record<string, unknown> = {
+      source: req.source,
+      source_id: req.sourceId,
+    };
+    if (req.producerId !== undefined) body.producer_id = req.producerId;
+    if (req.data !== undefined) body.data = req.data;
+    if (req.expiresAt !== undefined) body.expires_at = req.expiresAt;
+
+    const raw = await this.call<{ id: string; duplicate: boolean; status: string }>(
+      'POST',
+      '/v1/staging/ingest',
+      undefined,
+      body,
+      `stagingIngest(source=${req.source}, sourceId=${req.sourceId})`,
+    );
+    return { itemId: raw.id, duplicate: raw.duplicate, status: raw.status };
+  }
+
   async stagingClaim(limit: number): Promise<StagingClaimResult> {
     return this.call<StagingClaimResult>(
       'POST',
@@ -350,10 +372,11 @@ export class HttpCoreTransport implements CoreClient {
     const body: Record<string, unknown> = { id: req.itemId, data: req.data };
     if (Array.isArray(req.persona)) {
       body.personas = req.persona;
+      if (req.personaAccess !== undefined) body.persona_access = req.personaAccess;
     } else {
       body.persona = req.persona;
+      if (req.personaOpen !== undefined) body.persona_open = req.personaOpen;
     }
-    if (req.personaOpen !== undefined) body.persona_open = req.personaOpen;
 
     const raw = await this.call<{ id: string; status: string; personas?: string[] }>(
       'POST',
@@ -844,11 +867,17 @@ function bytesToBase64(bytes: Uint8Array): string {
     const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.byteLength));
     binary += String.fromCharCode(...slice);
   }
-  return (globalThis as { btoa?: (s: string) => string }).btoa?.(binary) ??
-    // Node before 16 lacks globalThis.btoa; fall back via Buffer when
-    // present. @dina/core doesn't depend on Node, but this path keeps
-    // tests working when running under jest+node.
-    (globalThis as { Buffer?: { from(s: string, enc: string): { toString(enc: string): string } } })
-      .Buffer!.from(binary, 'binary')
-      .toString('base64');
+  const btoa = (globalThis as { btoa?: (s: string) => string }).btoa;
+  if (btoa !== undefined) return btoa(binary);
+
+  // Node before 16 lacks globalThis.btoa; fall back via Buffer when
+  // present. @dina/core doesn't depend on Node, but this path keeps
+  // tests working when running under jest+node.
+  const buffer = (
+    globalThis as {
+      Buffer?: { from(s: string, enc: string): { toString(enc: string): string } };
+    }
+  ).Buffer;
+  if (buffer !== undefined) return buffer.from(binary, 'binary').toString('base64');
+  throw new Error('No base64 encoder available in this runtime');
 }

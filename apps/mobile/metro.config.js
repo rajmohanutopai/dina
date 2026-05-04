@@ -67,26 +67,6 @@ config.resolver.extraNodeModules = {
   ...(config.resolver.extraNodeModules ?? {}),
   fs: path.resolve(projectRoot, 'src/shims/empty.js'),
   path: path.resolve(projectRoot, 'src/shims/empty.js'),
-  async_hooks: path.resolve(projectRoot, 'src/shims/async_hooks.js'),
-  crypto: path.resolve(projectRoot, 'src/shims/node_crypto.js'),
-};
-
-// 7. `node:` prefix routing. `@dina/brain/src/diagnostics/trace_correlation.ts`
-//    imports `node:async_hooks` and `node:crypto` explicitly (the modern Node
-//    convention). Metro's extraNodeModules doesn't match the `node:` scheme,
-//    so we strip the prefix in resolveRequest and re-enter resolution against
-//    the bare module name (which then hits the extraNodeModules entries above).
-//    Routing only fires for `node:`-prefixed specifiers; everything else falls
-//    through to Metro's default resolver.
-const baseResolver = config.resolver.resolveRequest;
-config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (moduleName.startsWith('node:')) {
-    return context.resolveRequest(context, moduleName.slice(5), platform);
-  }
-  if (typeof baseResolver === 'function') {
-    return baseResolver(context, moduleName, platform);
-  }
-  return context.resolveRequest(context, moduleName, platform);
 };
 
 module.exports = config;

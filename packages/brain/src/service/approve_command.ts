@@ -22,14 +22,7 @@
 import type { ServiceApproveCommandHandler, ServiceDenyCommandHandler } from '../chat/orchestrator';
 import type { CoreClient } from '@dina/core';
 
-/**
- * Minimal slice of `CoreClient` the approve handler needs. Task 1.32-G
- * migration: used to be `Pick<BrainCoreClient, ...>` — swapped to
- * `Pick<CoreClient, ...>` because the method signature is identical
- * (slice D landed `approveWorkflowTask` on CoreClient with BCC-parity
- * wire shape). No runtime change; the chat-orchestrator handler callers
- * still inject whatever implements the 1-method subset.
- */
+/** Minimal slice of `CoreClient` the approve handler needs. */
 export type ServiceApproveCoreClient = Pick<CoreClient, 'approveWorkflowTask'>;
 
 /**

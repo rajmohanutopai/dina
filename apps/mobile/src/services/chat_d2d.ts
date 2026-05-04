@@ -21,9 +21,8 @@
  * inbound filter in `bootstrap.ts` accepts both.
  */
 
-import { addMessage, type ChatMessage } from '@dina/brain/src/chat/thread';
-import { getD2DSender } from '@dina/core/src/server/routes/d2d_msg';
-import { MsgTypeCoordinationRequest } from '@dina/core/src/d2d/families';
+import { addMessage, type ChatMessage } from '@dina/brain/chat';
+import { getD2DSender, MsgTypeCoordinationRequest } from '@dina/core/d2d';
 
 export class ChatSendError extends Error {
   constructor(

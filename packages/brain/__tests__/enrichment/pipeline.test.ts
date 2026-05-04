@@ -31,6 +31,13 @@ describe('Enrichment Pipeline E2E', () => {
       expect(result.content_l1).toBe('');
       expect(result.enrichment_status).toBe('l0_complete');
       expect(result.embedding).toBeUndefined();
+      expect(result.stages).toMatchObject({
+        l1: 'skipped_no_llm',
+        embedding: 'skipped_no_provider',
+      });
+      expect(result.stages.fallback_reasons).toEqual(
+        expect.arrayContaining(['llm_unavailable', 'embedding_unavailable']),
+      );
     });
 
     it('confidence derived from trust', async () => {
@@ -161,6 +168,7 @@ describe('Enrichment Pipeline E2E', () => {
       expect(result.embedding!.length).toBe(3);
       expect(result.enrichment_status).toBe('ready');
       expect(result.enrichment_version.embed_model).toBe('test-embed-v1');
+      expect(result.stages).toMatchObject({ l1: 'ready', embedding: 'ready' });
     });
 
     it('L1 + no embedding → l0_complete (not ready)', async () => {

@@ -73,7 +73,8 @@ describe('People Extraction Pipeline', () => {
   describe('extractPeople — LLM extraction', () => {
     it('LLM finds additional names not in knownPeople', async () => {
       registerPersonLinkProvider(
-        async () => '{"links":[{"name":"Charlie","role":"colleague","confidence":"medium"}]}',
+        async () =>
+          '{"identity_links":[{"name":"Charlie","role_phrase":"colleague","confidence":"medium"}]}',
       );
       const result = await extractPeople('item-6', 'Met Charlie at the conference', knownPeople);
       expect(result.mentions.some((m) => m.name === 'Charlie')).toBe(true);
@@ -81,7 +82,9 @@ describe('People Extraction Pipeline', () => {
     });
 
     it('LLM results are deduplicated against name matches', async () => {
-      registerPersonLinkProvider(async () => '{"links":[{"name":"Alice","confidence":"high"}]}');
+      registerPersonLinkProvider(
+        async () => '{"identity_links":[{"name":"Alice","confidence":"high"}]}',
+      );
       const result = await extractPeople('item-7', 'Had lunch with Alice', knownPeople);
       // Alice found by name match — LLM result should be skipped
       const aliceMentions = result.mentions.filter((m) => m.name === 'Alice');
@@ -100,7 +103,9 @@ describe('People Extraction Pipeline', () => {
     });
 
     it('LLM result links to known contact via alias', async () => {
-      registerPersonLinkProvider(async () => '{"links":[{"name":"Bob","confidence":"high"}]}');
+      registerPersonLinkProvider(
+        async () => '{"identity_links":[{"name":"Bob","confidence":"high"}]}',
+      );
       const result = await extractPeople('item-9', 'Only Bob was mentioned by LLM', []);
       // No knownPeople match, but LLM finds Bob, which resolves via alias
       const bobMention = result.mentions.find((m) => m.name === 'Bob');

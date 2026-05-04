@@ -34,7 +34,7 @@ import {
   readLifecycle,
   type ChatMessage,
   type ReviewDraftLifecycle,
-} from '@dina/brain/src/chat/thread';
+} from '@dina/brain/chat';
 import { colors, fonts, radius, spacing } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 import { setReviewDraftStatus } from '../trust/review_draft';

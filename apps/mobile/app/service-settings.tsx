@@ -44,7 +44,7 @@ import {
   saveAppViewURL,
 } from '../src/services/infra_preferences';
 import type { NodeRole } from '../src/services/bootstrap';
-import type { ServiceConfig } from '@dina/core/src/service/service_config';
+import type { ServiceConfig } from '@dina/core';
 
 /**
  * Degradation codes that mean "this screen overpromises."

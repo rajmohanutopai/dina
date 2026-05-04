@@ -41,10 +41,10 @@ import {
   pickHandle,
   sanitizeHandlePrefix,
   validateHandleFormat,
-} from '@dina/core/src/identity/handle_picker';
+} from '@dina/core';
+import { pdsHostForEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
-import { resolveMsgBoxURL } from '../../services/msgbox_wiring';
 import { colors, fonts, radius, spacing } from '../../theme';
 
 export interface HandlePickProps {
@@ -293,12 +293,7 @@ function SuggestionList({
 }
 
 function resolvePDSHost(): string {
-  // Mirrors `deriveHandle` host selection: test infra → test PDS,
-  // production → prod PDS. Keeps both code paths converged on the
-  // same DNS suffix.
-  return resolveMsgBoxURL().includes('test-mailbox')
-    ? 'test-pds.dinakernel.com'
-    : 'pds.dinakernel.com';
+  return pdsHostForEndpoints(resolveMobileHostedDinaEndpoints());
 }
 
 const styles = StyleSheet.create({

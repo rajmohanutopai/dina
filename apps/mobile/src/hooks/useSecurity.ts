@@ -11,14 +11,17 @@
  * Source: ARCHITECTURE.md Task 4.15
  */
 
-import { changePassphrase, type WrappedSeed } from '@dina/core/src/crypto/aesgcm';
 import {
-  setBackgroundTimeout,
-  getBackgroundTimeout,
   areSecretsZeroed,
+  changePassphrase,
   getAppState,
-} from '@dina/core/src/lifecycle/sleep_wake';
-import { listPersonas } from '@dina/core/src/persona/service';
+  getBackgroundTimeout,
+  listPersonas,
+  PASSPHRASE_MAX_LENGTH,
+  PASSPHRASE_MIN_LENGTH,
+  setBackgroundTimeout,
+  type WrappedSeed,
+} from '@dina/core';
 
 export interface SecurityStatus {
   passphraseSet: boolean;
@@ -41,7 +44,6 @@ let biometricEnabled = false;
 /** In-memory wrapped seed reference (for passphrase change). */
 let currentWrappedSeed: WrappedSeed | null = null;
 
-import { PASSPHRASE_MIN_LENGTH, PASSPHRASE_MAX_LENGTH } from '@dina/core/src/constants';
 const MIN_PASSPHRASE_LENGTH = PASSPHRASE_MIN_LENGTH;
 const MAX_PASSPHRASE_LENGTH = PASSPHRASE_MAX_LENGTH;
 

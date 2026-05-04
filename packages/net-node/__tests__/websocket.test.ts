@@ -9,6 +9,7 @@
 import {
   createNodeWebSocket,
   computeReconnectDelay,
+  makeNodeWebSocketFactory,
   type WebSocketClient,
 } from '../src';
 
@@ -19,7 +20,7 @@ import {
 /** Build a minimal fake `ws` module whose WebSocket class records
  *  every `.on()` call and exposes a way to simulate events. */
 class MockWs {
-  public sent: string[] = [];
+  public sent: Array<string | Uint8Array | ArrayBuffer> = [];
   public closed = false;
   public readyState = 0;
   public url: string;
@@ -37,7 +38,7 @@ class MockWs {
   on(event: string, cb: (...args: unknown[]) => void): void {
     (this.listeners[event] ??= []).push(cb);
   }
-  send(data: string): void {
+  send(data: string | Uint8Array | ArrayBuffer): void {
     this.sent.push(data);
   }
   close(): void {
@@ -167,6 +168,18 @@ describe('createNodeWebSocket (task 3.37)', () => {
     expect(ws.sent).toEqual(['hello', 'world']);
     client.close();
     expect(ws.closed).toBe(true);
+  });
+
+  it('sync factory constructs ws clients and preserves binary sends', () => {
+    const { wsModule, lastInstance } = makeMockWs();
+    const factory = makeNodeWebSocketFactory({ wsModule });
+    const client = factory('ws://test');
+    const ws = lastInstance()!;
+    const binary = new Uint8Array([1, 2, 3]);
+    client.send(binary);
+    expect(ws.url).toBe('ws://test');
+    expect(ws.options).toEqual({ perMessageDeflate: false });
+    expect(ws.sent).toEqual([binary]);
   });
 
   it('exposes readyState as a live getter (not a snapshot)', async () => {

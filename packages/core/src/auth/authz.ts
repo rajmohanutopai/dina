@@ -72,6 +72,9 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   // Source: Go adminEndpointChecker.allowedForBrain (auth.go).
   { prefix: '/v1/memory/', allowed: new Set(['brain']) },
 
+  // Staging inbox — Brain owns remember/connectors drain over signed HTTP.
+  { prefix: '/v1/staging/', allowed: new Set(['brain']) },
+
   // Audit — Admin + Brain
   { prefix: '/v1/audit/', allowed: new Set(['admin', 'brain']) },
 
@@ -107,7 +110,7 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   { prefix: '/v1/session/', allowed: new Set(['brain', 'admin', 'agent']) },
 
   // Agent intent validation — `dina validate` from OpenClaw + sample
-  // agents. Wire-compatible with Go Core: paired agents POST
+  // agents. Paired agents POST
   // /v1/agent/validate (the submit endpoint) and poll
   // /v1/intent/proposals/:id/status (the status endpoint). Brain +
   // Admin + Device may also probe (chat orchestrator surfaces

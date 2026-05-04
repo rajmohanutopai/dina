@@ -26,8 +26,8 @@
  * provider node and the wrapper becomes a no-op.
  */
 
-import type { EtaQueryParams, EtaQueryResult } from '@dina/brain/src/service/capabilities/eta_query';
-import { getWorkflowService } from '@dina/core/src/workflow/service';
+import type { EtaQueryParams, EtaQueryResult } from '@dina/brain';
+import { getWorkflowService } from '@dina/core';
 
 export const DEMO_BUS_DRIVER_DID = 'did:plc:bus42demo';
 

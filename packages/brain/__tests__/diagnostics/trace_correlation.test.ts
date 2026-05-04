@@ -4,6 +4,7 @@
 
 import {
   currentTrace,
+  getTraceScopeStorage,
   headersFor,
   inboundRequestId,
   logBindings,
@@ -11,10 +12,13 @@ import {
   newChildTrace,
   newRequestId,
   newRootTrace,
+  resetTraceScopeStorage,
+  setTraceScopeStorage,
   withChildTrace,
   withTrace,
   type TraceContext,
 } from '../../src/diagnostics/trace_correlation';
+import { installNodeTraceScopeStorage } from '../../node-trace-storage';
 
 describe('newRequestId (task 5.58)', () => {
   it('returns a 32-char lowercase hex string', () => {
@@ -26,6 +30,15 @@ describe('newRequestId (task 5.58)', () => {
     const ids = new Set<string>();
     for (let i = 0; i < 1000; i++) ids.add(newRequestId());
     expect(ids.size).toBe(1000);
+  });
+});
+
+describe('Node trace storage adapter', () => {
+  it('installer is idempotent for a process', () => {
+    const a = installNodeTraceScopeStorage();
+    const b = installNodeTraceScopeStorage();
+    expect(a).toBe(b);
+    expect(getTraceScopeStorage()).toBe(a);
   });
 });
 
@@ -134,6 +147,18 @@ describe('withTrace + currentTrace', () => {
       }),
     ).rejects.toThrow('x');
     expect(currentTrace()).toBeNull();
+  });
+
+  it('without installed storage, callbacks run but ambient trace is disabled', async () => {
+    const installed = getTraceScopeStorage();
+    resetTraceScopeStorage();
+    try {
+      const trace = newRootTrace();
+      const out = await withTrace(trace, async () => currentTrace());
+      expect(out).toBeNull();
+    } finally {
+      setTraceScopeStorage(installed);
+    }
   });
 });
 

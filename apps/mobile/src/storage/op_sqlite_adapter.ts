@@ -12,7 +12,7 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter, DBRow } from '@dina/core/src/storage/db_adapter';
+import type { DatabaseAdapter, DBRow } from '@dina/core/storage';
 
 // op-sqlite types — production DB object. **Uses `executeSync`**, not
 // `execute`: in op-sqlite ≥ 15 the async `execute(...)` returns a

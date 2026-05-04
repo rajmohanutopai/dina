@@ -247,6 +247,35 @@ describe('HttpCoreTransport (task 1.31)', () => {
 
   // ─── Staging inbox (task 1.29h / 1.32 preamble) ───────────────────────
 
+  it('stagingIngest sends snake_case wire body + returns camelCase result', async () => {
+    const { client, calls } = makeStubClient(() =>
+      ok({ id: 'stg-new', duplicate: false, status: 'received' }, 201),
+    );
+    const stub = makeStubSigner();
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: stub.signer,
+    });
+    const r = await t.stagingIngest({
+      source: 'chat',
+      sourceId: 'msg-1',
+      producerId: 'did:plc:brain',
+      data: { body: 'remember this' },
+      expiresAt: 1_800_000_000,
+    });
+    expect(r).toEqual({ itemId: 'stg-new', duplicate: false, status: 'received' });
+    expect(calls[0]?.url).toBe('http://core/v1/staging/ingest');
+    const sent = JSON.parse(new TextDecoder().decode(calls[0]!.init.body!));
+    expect(sent).toEqual({
+      source: 'chat',
+      source_id: 'msg-1',
+      producer_id: 'did:plc:brain',
+      data: { body: 'remember this' },
+      expires_at: 1_800_000_000,
+    });
+  });
+
   it('stagingClaim encodes limit via sorted query + POST with empty body', async () => {
     const { client, calls } = makeStubClient(() =>
       ok({ items: [{ id: 'stg-0' }, { id: 'stg-1' }], count: 2 }),
@@ -267,7 +296,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(calls[0]?.init.headers['content-type']).toBeUndefined();
   });
 
-  it('stagingResolve sends `persona` (string) for the legacy single-persona path', async () => {
+  it('stagingResolve sends `persona` and `persona_open` for single-persona resolve', async () => {
     const { client, calls } = makeStubClient(() => ok({ id: 'stg-a', status: 'stored' }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
@@ -279,11 +308,17 @@ describe('HttpCoreTransport (task 1.31)', () => {
       itemId: 'stg-a',
       persona: 'health',
       data: { text: 'sample' },
+      personaOpen: true,
     });
     expect(r.itemId).toBe('stg-a');
     expect(r.personas).toBeUndefined();
     const sent = JSON.parse(new TextDecoder().decode(calls[0]!.init.body!));
-    expect(sent).toEqual({ id: 'stg-a', persona: 'health', data: { text: 'sample' } });
+    expect(sent).toEqual({
+      id: 'stg-a',
+      persona: 'health',
+      data: { text: 'sample' },
+      persona_open: true,
+    });
     // `personas` key must NOT appear when single-persona is passed —
     // otherwise the server takes the array branch + fanout logic kicks in.
     expect(sent).not.toHaveProperty('personas');
@@ -303,7 +338,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
       itemId: 'stg-b',
       persona: ['health', 'family'],
       data: { text: 'vaccination' },
-      personaOpen: true,
+      personaAccess: { health: true, family: true },
     });
     expect(r.personas).toEqual(['health', 'family']);
     const sent = JSON.parse(new TextDecoder().decode(calls[0]!.init.body!));
@@ -311,7 +346,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
       id: 'stg-b',
       personas: ['health', 'family'],
       data: { text: 'vaccination' },
-      persona_open: true,
+      persona_access: { health: true, family: true },
     });
     expect(sent).not.toHaveProperty('persona');
   });

@@ -15,6 +15,11 @@ import {
 } from '../../src/staging/processor';
 import { resetFactoryCounters } from '@dina/test-harness';
 import { addKnownContact, clearKnownContacts } from '../../../core/src/trust/source_trust';
+import {
+  registerEnrichmentLLM,
+  resetEnrichmentPipeline,
+} from '../../src/enrichment/pipeline';
+import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
 
 const rec = (overrides?: Record<string, unknown>) =>
   ({
@@ -33,6 +38,8 @@ describe('Staging Processor', () => {
     resetFactoryCounters();
     clearKnownContacts();
     clearPendingItems();
+    resetEnrichmentPipeline();
+    resetProviders();
   });
 
   describe('processPendingItems', () => {
@@ -121,7 +128,12 @@ describe('Staging Processor', () => {
 
     it('sets enrichment_version', async () => {
       const enriched = await enrichItem(rec());
-      expect(enriched.enrichment_version).toBe('deterministic-v1');
+      const version = JSON.parse(String(enriched.enrichment_version)) as {
+        prompt_v: string;
+        embed_model: string | null;
+      };
+      expect(version.prompt_v).toBe('deterministic-v1');
+      expect(version.embed_model).toBeNull();
     });
 
     it('preserves original item fields', async () => {
@@ -133,6 +145,27 @@ describe('Staging Processor', () => {
     it('adds trust caveat for unknown sender', async () => {
       const enriched = await enrichItem(rec({ summary: 'Message', sender_trust: 'unknown' }));
       expect(String(enriched.content_l0)).toContain('unverified');
+    });
+
+    it('uses the full enrichment pipeline when providers are registered', async () => {
+      registerEnrichmentLLM(async () => JSON.stringify({ l0: 'Memory headline', l1: 'Memory L1' }));
+      registerCloudProvider('test-embed', async () => ({
+        vector: new Float32Array([0.25, 0.5]),
+        dimensions: 2,
+        model: 'test-embed-v1',
+        source: 'cloud' as const,
+      }));
+
+      const enriched = await enrichItem(rec({ summary: 'Message', body: 'Memory body' }));
+
+      expect(enriched.content_l0).toBe('Memory headline');
+      expect(enriched.content_l1).toBe('Memory L1');
+      expect(enriched.enrichment_status).toBe('ready');
+      expect(enriched.embedding).toEqual([0.25, 0.5]);
+      expect(enriched.enrichment_metadata).toMatchObject({
+        l1: 'ready',
+        embedding: 'ready',
+      });
     });
   });
 
@@ -237,7 +270,7 @@ describe('Staging Processor', () => {
       expect(touchCalls[1]).toMatch(/:knee rehab$/);
     });
 
-    it('does NOT invoke the hook when topicTouch option is omitted (legacy numeric limit)', async () => {
+    it('does NOT invoke the hook when topicTouch option is omitted', async () => {
       addPendingItem(rec({ id: 'item-c', summary: 'anything' }));
       const results = await processPendingItems(5);
       expect(results[0].topics).toBeUndefined();

@@ -12,5 +12,15 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "__tests__"]
+  "include": [
+    "src",
+    "__tests__",
+    "audit.ts",
+    "d2d.ts",
+    "devices.ts",
+    "kv.ts",
+    "reminders.ts",
+    "runtime.ts",
+    "storage.ts"
+  ]
 }

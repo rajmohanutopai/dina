@@ -16,9 +16,9 @@ import {
   getApprovalManager,
   resetApprovalManager,
   type ApprovalRequest,
-} from '@dina/core/src/approval/manager';
-import { addMessage, type ChatMessage } from '@dina/brain/src/chat/thread';
-import { getAskApprovalGateway } from '@dina/brain/src/composition/ask_gateway_registry';
+} from '@dina/core';
+import { addMessage, type ChatMessage } from '@dina/brain/chat';
+import { getAskApprovalGateway } from '@dina/brain';
 
 export interface ApprovalCardData {
   id: string;

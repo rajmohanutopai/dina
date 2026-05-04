@@ -3,11 +3,10 @@
  *
  * Three knobs the mobile boot needs to actually carry D2D bytes:
  *
- *   `msgboxURL`     — WebSocket URL of the shared relay. Defaults to the
- *                     Dina test mailbox so an out-of-the-box `expo start`
- *                     can pair with the docker openclaw containers (which
- *                     hit the same relay). Overridable via
- *                     `EXPO_PUBLIC_DINA_MSGBOX_URL` for custom infra.
+ *   `msgboxURL`     — WebSocket URL of the shared relay. Resolved by the
+ *                     shared Home Node endpoint policy. Test mode is the
+ *                     default; release mode moves MsgBox, PDS, AppView,
+ *                     and PLC config together.
  *
  *   `wsFactory`     — Wraps RN's global `WebSocket`. The core msgbox_ws
  *                     client drives the handshake + read pump; all we do
@@ -28,18 +27,16 @@
  * still works). The caller passes our identity in as a closure.
  */
 
-import { DIDResolver } from '@dina/core/src/d2d/resolver';
-import { multibaseToPublicKey } from '@dina/core/src/identity/did';
-import { getContact } from '@dina/core/src/contacts/directory';
-import type { WSFactory, WSLike } from '@dina/core/src/relay/msgbox_ws';
+import { DIDResolver, type WSFactory, type WSLike } from '@dina/core/d2d';
+import { multibaseToPublicKey } from '@dina/core';
+import { getContact } from '@dina/core';
+import { resolveHostedDinaEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
 
-/** Default shared Dina mailbox — matches docker/openclaw/.env. */
-export const DEFAULT_MSGBOX_URL = 'wss://test-mailbox.dinakernel.com/ws';
+/** Default shared Dina mailbox for greenfield test installs. */
+export const DEFAULT_MSGBOX_URL = resolveHostedDinaEndpoints('test').msgboxWsUrl;
 
 export function resolveMsgBoxURL(): string {
-  const override = process.env.EXPO_PUBLIC_DINA_MSGBOX_URL;
-  if (typeof override === 'string' && override !== '') return override;
-  return DEFAULT_MSGBOX_URL;
+  return resolveMobileHostedDinaEndpoints().msgboxWsUrl;
 }
 
 /**

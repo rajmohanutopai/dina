@@ -7,11 +7,27 @@
  */
 
 import { pino } from 'pino';
-import { CoreRouter } from '@dina/core';
+
+import { CoreRouter, deriveDIDKey, getPublicKey, signRequest } from '@dina/core';
+import {
+  registerPublicKeyResolver,
+  registerService,
+  resetCallerTypeState,
+  resetMiddlewareState,
+} from '@dina/core/runtime';
+
 import { createServer } from '../src/server';
 import { bindCoreRouter } from '../src/server/bind_core_router';
-import type { Logger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
+
+const TEST_SEED = new Uint8Array([
+  0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+  0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
+]);
+const TEST_PUB = getPublicKey(TEST_SEED);
+const TEST_DID = deriveDIDKey(TEST_PUB);
 
 function baseConfig(): CoreServerConfig {
   return {
@@ -27,7 +43,22 @@ function silentLogger(): Logger {
   return pino({ level: 'silent' });
 }
 
+function resetAuth(): void {
+  resetMiddlewareState();
+  resetCallerTypeState();
+}
+
+function registerBrainCaller(): void {
+  resetAuth();
+  registerPublicKeyResolver((did) => (did === TEST_DID ? TEST_PUB : null));
+  registerService(TEST_DID, 'brain');
+}
+
 describe('bindCoreRouter (task 4.13)', () => {
+  afterEach(() => {
+    resetAuth();
+  });
+
   it('binds a GET handler that returns a CoreResponse', async () => {
     const coreRouter = new CoreRouter();
     coreRouter.get(
@@ -228,6 +259,104 @@ describe('bindCoreRouter (task 4.13)', () => {
     const count = bindCoreRouter({ coreRouter, app });
     expect(count).toBe(10);
     expect(count).toBe(coreRouter.size());
+    await app.close();
+  });
+
+  it('runs CoreRouter auth and rejects unsigned signed routes', async () => {
+    registerBrainCaller();
+    let called = false;
+    const coreRouter = new CoreRouter();
+    coreRouter.get('/v1/workflow/tasks', () => {
+      called = true;
+      return { status: 200, body: { ok: true } };
+    });
+
+    const app = await createServer({ config: baseConfig(), logger: silentLogger() });
+    bindCoreRouter({ coreRouter, app });
+
+    const res = await app.inject({ method: 'GET', url: '/v1/workflow/tasks' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({
+      error: 'Missing required auth headers (X-DID, X-Timestamp, X-Nonce, X-Signature)',
+      rejected_at: 'headers',
+    });
+    expect(called).toBe(false);
+    await app.close();
+  });
+
+  it('runs CoreRouter auth and rejects invalid signatures', async () => {
+    registerBrainCaller();
+    const coreRouter = new CoreRouter();
+    coreRouter.get('/v1/workflow/tasks', () => ({ status: 200, body: { ok: true } }));
+
+    const app = await createServer({ config: baseConfig(), logger: silentLogger() });
+    bindCoreRouter({ coreRouter, app });
+
+    const headers = signRequest(
+      'GET',
+      '/v1/workflow/other',
+      '',
+      new Uint8Array(0),
+      TEST_SEED,
+      TEST_DID,
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/workflow/tasks',
+      headers,
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({
+      error: 'Ed25519 signature verification failed',
+      rejected_at: 'signature',
+    });
+    await app.close();
+  });
+
+  it('runs CoreRouter auth and accepts valid signed routes', async () => {
+    registerBrainCaller();
+    const coreRouter = new CoreRouter();
+    coreRouter.get('/v1/workflow/tasks', () => ({ status: 200, body: { ok: true } }));
+
+    const app = await createServer({ config: baseConfig(), logger: silentLogger() });
+    bindCoreRouter({ coreRouter, app });
+
+    const headers = signRequest(
+      'GET',
+      '/v1/workflow/tasks',
+      '',
+      new Uint8Array(0),
+      TEST_SEED,
+      TEST_DID,
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/workflow/tasks',
+      headers,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    await app.close();
+  });
+
+  it('does not allow HTTP callers to forge trusted in-process dispatch', async () => {
+    registerBrainCaller();
+    const coreRouter = new CoreRouter();
+    coreRouter.get('/v1/workflow/tasks', () => ({ status: 200, body: { ok: true } }));
+
+    const app = await createServer({ config: baseConfig(), logger: silentLogger() });
+    bindCoreRouter({ coreRouter, app });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/workflow/tasks',
+      headers: { trustedInProcess: 'true' },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({
+      error: 'Missing required auth headers (X-DID, X-Timestamp, X-Nonce, X-Signature)',
+      rejected_at: 'headers',
+    });
     await app.close();
   });
 });

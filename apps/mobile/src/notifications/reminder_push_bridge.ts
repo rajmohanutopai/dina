@@ -24,7 +24,7 @@
  * but the OS path gives a banner if the chat tab isn't foregrounded.
  */
 
-import { subscribeReminderCreated, type Reminder } from '@dina/core/src/reminders/service';
+import { subscribeReminderCreated, type Reminder } from '@dina/core/reminders';
 import { scheduleNotification, tierToChannel } from './local';
 
 /**
