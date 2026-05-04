@@ -35,6 +35,7 @@ import { loadPersistedDid } from './identity_record';
 import { loadRolePreference } from './role_preference';
 import { AppViewStub, busDriverDemoProfile } from './appview_stub';
 import {
+  AppViewClient,
   EtaQueryParamsSchema,
   EtaQueryResultSchema,
   PDSAccountClient,
@@ -67,7 +68,6 @@ import {
   type ToolRegistry,
 } from '@dina/brain';
 import {
-  AppViewClient,
   LLMRouter,
   RoutedLLMProvider,
   createGeminiClassifier,
