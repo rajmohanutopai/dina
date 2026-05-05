@@ -10,7 +10,7 @@ import {
   type PreferredContactsClient,
   type FindPreferredProviderResult,
 } from '../../src/reasoning/bus_driver_tools';
-import type { Contact } from '../../../core/src/contacts/directory';
+import type { Contact } from '@dina/core';
 import type { ServiceProfile } from '../../src/appview_client/http';
 import type { ServiceQueryOrchestrator } from '../../src/service/service_query_orchestrator';
 

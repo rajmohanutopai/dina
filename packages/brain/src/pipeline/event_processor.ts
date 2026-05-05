@@ -15,13 +15,13 @@
  */
 
 import { handlePostPublish, type PostPublishResult } from './post_publish';
-import { isVaultItemType } from '../../../core/src/vault/validation';
-import type { VaultItemType } from '../../../core/src/vault/validation';
+import { isVaultItemType } from '@dina/core';
+import type { VaultItemType } from '@dina/core';
 import {
   classifyDeterministic,
   type ClassificationResult as SilenceResult,
 } from '../guardian/silence';
-import { mapTierToPriority, shouldInterrupt } from '../../../core/src/notify/priority';
+import { mapTierToPriority, shouldInterrupt } from '@dina/core';
 import { assembleNudge } from '../nudge/assembler';
 import {
   writeCheckpoint,

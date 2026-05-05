@@ -25,7 +25,7 @@ import {
   resetServiceDenyCommandHandler,
 } from '../../src/chat/orchestrator';
 import { resetThreads } from '../../src/chat/thread';
-import { resetStagingState } from '../../../core/src/staging/service';
+import { resetStagingState } from '@dina/core';
 
 describe('Typed response constructors', () => {
   it('plainResponse carries kind + text + plain format', () => {

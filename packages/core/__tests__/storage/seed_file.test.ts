@@ -13,13 +13,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { serializeWrappedSeed, deserializeWrappedSeed } from '../../src/storage/seed_file';
 import {
-  serializeWrappedSeed,
-  deserializeWrappedSeed,
   writeWrappedSeed,
   readWrappedSeed,
   wrappedSeedExists,
-} from '../../src/storage/seed_file';
+} from '../../src/storage/seed_file_node';
 import { wrapSeed } from '../../src/crypto/aesgcm';
 import { TEST_PASSPHRASE, TEST_MNEMONIC_SEED, bytesToHex } from '@dina/test-harness';
 import type { WrappedSeed } from '../../src/crypto/aesgcm';

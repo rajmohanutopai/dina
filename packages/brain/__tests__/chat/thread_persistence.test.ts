@@ -22,7 +22,7 @@ import {
 import {
   InMemoryChatMessageRepository,
   setChatMessageRepository,
-} from '../../../core/src/chat/repository';
+} from '@dina/core';
 
 describe('thread persistence dual-write (#14)', () => {
   let repo: InMemoryChatMessageRepository;

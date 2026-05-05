@@ -29,12 +29,12 @@ import {
   registerTrustQueryClient,
   resetTrustQueryClient,
   resetSearchCache,
-} from '@dina/core/src/trust/network_search';
-import type { TrustQueryClient, TrustProfile, QueryResult } from '@dina/core/src/trust/query_client';
+} from '@dina/core';
+import type { TrustQueryClient, TrustProfile, QueryResult } from '@dina/core';
 import {
   addContact,
   resetContactDirectory,
-} from '@dina/core/src/contacts/directory';
+} from '@dina/core';
 
 describe('mobile Scenario 4 — Trust Network query', () => {
   beforeEach(() => {

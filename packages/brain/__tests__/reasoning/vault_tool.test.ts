@@ -13,11 +13,11 @@ import {
   setAccessiblePersonas,
   resetReasoningProvider,
 } from '../../src/vault_context/assembly';
-import { clearVaults, storeItem } from '../../../core/src/vault/crud';
+import { clearVaults, storeItem } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
-} from '../../../core/src/persona/service';
+} from '@dina/core';
 
 describe('createVaultSearchTool', () => {
   beforeEach(() => {

@@ -14,7 +14,7 @@
  * Source: ARCHITECTURE.md Task 6.15
  */
 
-import { DeadDropSpool, type SpoolMessage } from '../storage/spool';
+import type { DeadDropSpoolPort } from '../storage/spool';
 import { ingest } from '../staging/service';
 
 export interface DrainResult {
@@ -25,10 +25,10 @@ export interface DrainResult {
 }
 
 /** Injectable spool provider (testing / multi-spool support). */
-let spoolProvider: (() => DeadDropSpool) | null = null;
+let spoolProvider: (() => DeadDropSpoolPort) | null = null;
 
 /** Register a spool provider. */
-export function registerSpoolProvider(provider: () => DeadDropSpool): void {
+export function registerSpoolProvider(provider: () => DeadDropSpoolPort): void {
   spoolProvider = provider;
 }
 
@@ -45,7 +45,7 @@ export function resetDrainState(): void {
  *
  * Error-isolated per message — one failure doesn't stop the drain.
  */
-export function drainSpoolToStaging(spool: DeadDropSpool): DrainResult {
+export function drainSpoolToStaging(spool: DeadDropSpoolPort): DrainResult {
   const result: DrainResult = { drained: 0, ingested: 0, duplicates: 0, errors: 0 };
 
   const messages = spool.drainSpool();

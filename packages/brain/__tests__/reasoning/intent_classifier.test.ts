@@ -17,7 +17,7 @@ import {
   renderTocForPrompt,
   type IntentClassification,
 } from '../../src/reasoning/intent_classifier';
-import type { TocEntry } from '../../../core/src/memory/domain';
+import type { TocEntry } from '@dina/core';
 
 function fakeLLM(response: string): jest.Mock {
   return jest.fn(async () => response);

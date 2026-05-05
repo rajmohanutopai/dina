@@ -26,7 +26,7 @@
  * Source: brain/tests/test_staging_processor.py
  */
 
-import { classifySourceTrust } from '../../../core/src/trust/source_trust';
+import { classifySourceTrust } from '@dina/core';
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,

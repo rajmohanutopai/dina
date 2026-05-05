@@ -21,8 +21,8 @@ import {
   addContact,
   getContact,
   resetContactDirectory,
-} from '../../../core/src/contacts/directory';
-import { resetReminderState, listByPersona } from '../../../core/src/reminders/service';
+} from '@dina/core';
+import { resetReminderState, listByPersona } from '@dina/core/reminders';
 import {
   registerPersonLinkProvider,
   resetPersonLinkProvider,

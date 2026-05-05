@@ -16,6 +16,24 @@ export {
   validateMessageBody,
 } from './src/d2d/families';
 export type { D2DScenario } from './src/d2d/families';
+// D2D egress trust gate. The `addContact` here is the
+// gate-version (1-arg, registers a sender in the egress trust map);
+// it has the same name as `contacts/directory.addContact` (5-arg)
+// in `@dina/core` root, so consumers that need the gate version
+// import it through this subpath.
+export {
+  addContact,
+  setScenarioDeny,
+  setSharingRestrictions,
+  blockDestination,
+  unblockDestination,
+  trustDestination,
+  untrustDestination,
+  isDestinationBlocked,
+  isDestinationTrusted,
+  clearGatesState,
+} from './src/d2d/gates';
+
 export {
   blockSender,
   deleteQuarantined,

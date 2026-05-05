@@ -11,8 +11,8 @@ import {
   clearVaults,
   getItem,
   queryByEnrichmentStatus,
-} from '../../../core/src/vault/crud';
-import { createPersona, resetPersonaState, openPersona } from '../../../core/src/persona/service';
+} from '@dina/core';
+import { createPersona, resetPersonaState, openPersona } from '@dina/core';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Enrichment Batch Sweep', () => {

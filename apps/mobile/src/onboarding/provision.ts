@@ -79,6 +79,8 @@ import {
 } from '../services/infra_preferences';
 import { unlock } from '../hooks/useUnlock';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
+import { persistStartupChoice } from '../services/startup_preferences';
+import type { StartupMode } from './state';
 
 export type ProvisionStage =
   | 'deriving_seed'
@@ -122,6 +124,13 @@ export interface ProvisionOptions {
   msgboxEndpoint?: string;
   /** Optional email; auto-derived from handle when omitted. */
   email?: string;
+  /**
+   * `'auto'` caches the passphrase in keychain so the next launch can
+   * unwrap the seed without prompting. `'manual'` forces a passphrase
+   * prompt every cold start. Defaults to `'manual'` — opt in to the
+   * convenience trade-off explicitly.
+   */
+  startupMode?: StartupMode;
   /** Progress callback. Fires before the named stage runs. */
   onProgress?: (p: ProvisionProgress) => void;
 }
@@ -210,7 +219,7 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   //    op to plc.directory with our K256 in rotationKeys, and returns
   //    the DID + session JWTs.
   progress(opts.onProgress, 'creating_pds_account');
-  const handle = opts.handle ?? deriveHandle(opts.ownerName, msgboxEndpoint);
+  const handle = opts.handle ?? deriveHandle(opts.ownerName, pdsURL);
   const password = derivePdsPassword(masterSeed);
   const email = opts.email ?? defaultEmailForHandle(handle);
   const recoveryKey = `did:key:${secp256k1ToDidKeyMultibase(rotation.publicKey)}`;
@@ -287,6 +296,12 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   if (unlockResult.step === 'failed') {
     throw new Error(`Unlock failed after provisioning: ${unlockResult.error ?? 'unknown'}`);
   }
+
+  // Persist the startup-mode choice + (when 'auto') the passphrase so
+  // the next launch's UnlockGate can skip the passphrase prompt. We do
+  // this AFTER unlock() succeeds so a wrong passphrase can't be cached
+  // through a failed provisioning attempt.
+  await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
 
   progress(opts.onProgress, 'done');
 
@@ -465,9 +480,36 @@ function defaultEmailForHandle(handle: string): string {
 export async function recoverIdentity(opts: {
   mnemonic: string[];
   passphrase: string;
+  /**
+   * The `did:plc:…` resolved + verified by `resolveAndVerifyDidPlc`
+   * during the `recover_handle` step. Required — recovery without a
+   * verified PLC doc would silently degrade the user to a `did:key`
+   * identity (orphaning their published handle and MsgBox endpoint),
+   * which is the bug MT-04-I4 was filed against.
+   */
   expectedDid: string;
+  /**
+   * The user's published Dina handle (e.g. `alonso77.test-pds.dinakernel.com`).
+   * Persisted so subsequent boots' `tryBuildPdsPublisher` can call
+   * `createSession(handle, password)` instead of falling through to
+   * the create flow.
+   */
+  handle: string;
+  /**
+   * `'auto'` caches the passphrase in keychain so the next launch can
+   * unwrap the seed without prompting. Defaults to `'manual'`.
+   */
+  startupMode?: StartupMode;
   onProgress?: (p: ProvisionProgress) => void;
 }): Promise<ProvisionResult> {
+  if (!opts.expectedDid.startsWith('did:plc:')) {
+    throw new Error(
+      'recoverIdentity: expectedDid must be a did:plc — recovery requires a verified PLC binding',
+    );
+  }
+  if (opts.handle.trim().length === 0) {
+    throw new Error('recoverIdentity: handle is required');
+  }
   const mnemonicStr = opts.mnemonic.map((w) => w.trim().toLowerCase()).join(' ');
 
   progress(opts.onProgress, 'deriving_seed');
@@ -487,12 +529,18 @@ export async function recoverIdentity(opts: {
   const wrapped = await wrapSeed(opts.passphrase, masterSeed);
   await saveWrappedSeed(wrapped);
 
-  // Re-derive PDS password and persist so boot can re-auth. Handle
-  // is unknown without resolving the PLC doc — caller updates that
-  // via Settings if needed (recovery doesn't try to be clever about
-  // handle mismatches).
+  // Re-derive PDS password from the seed (deterministic — same on
+  // every device that restores from the same mnemonic) and persist
+  // alongside the handle so boot's `tryBuildPdsPublisher` can call
+  // `createSession(handle, password)` without re-running provision.
   const password = derivePdsPassword(masterSeed);
-  await savePdsPassword(password);
+  const handle = opts.handle.trim().toLowerCase();
+  const email = defaultEmailForHandle(handle);
+  await Promise.all([
+    savePdsHandle(handle),
+    savePdsPassword(password),
+    savePdsEmail(email),
+  ]);
 
   progress(opts.onProgress, 'persisting_did');
   await savePersistedDid(opts.expectedDid);
@@ -505,9 +553,12 @@ export async function recoverIdentity(opts: {
     throw new Error(`Unlock failed after recovery: ${unlockResult.error ?? 'unknown'}`);
   }
 
+  await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
+
   progress(opts.onProgress, 'done');
 
-  return { did: opts.expectedDid, didKey: '', handle: '' };
+  const didKey = `did:key:${publicKeyToMultibase(signing.publicKey)}`;
+  return { did: opts.expectedDid, didKey, handle };
 }
 
 /**
@@ -528,19 +579,32 @@ export async function hasCompletedOnboarding(): Promise<boolean> {
  * Build a PDS handle from the owner's display name. Matches install.sh
  * step 8b: lowercase, strip non-alphanumerics, clamp to 12 chars,
  * fallback to "dina", append a 4-char hex suffix for uniqueness, and
- * the PDS host. `openssl rand -hex 2` in bash → `randomBytes(2)` here.
+ * the selected PDS host.
  *
- * `msgboxEndpoint` is used only to derive the PDS host by string match.
+ * The second arg may be a full PDS URL (`https://test-pds.dinakernel.com`)
+ * or a bare host (`test-pds.dinakernel.com`); both forms yield the same
+ * handle suffix. We extract the host so callers don't have to.
  */
-export function deriveHandle(ownerName: string, msgboxEndpoint: string): string {
+export function deriveHandle(ownerName: string, pdsURLOrHost: string): string {
   const sanitized = ownerName
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
     .slice(0, 12);
   const base = sanitized.length >= 3 ? sanitized : 'dina';
   const suffix = bytesToHex(randomBytes(2));
-  const pdsHost = msgboxEndpoint.includes('test-mailbox')
-    ? 'test-pds.dinakernel.com'
-    : 'pds.dinakernel.com';
+  const pdsHost = extractPdsHost(pdsURLOrHost);
   return `${base}${suffix}.${pdsHost}`;
+}
+
+function extractPdsHost(pdsURLOrHost: string): string {
+  const trimmed = pdsURLOrHost.trim();
+  if (trimmed.length === 0) return 'pds.dinakernel.com';
+  try {
+    const url = new URL(
+      trimmed.includes('://') ? trimmed : `https://${trimmed}`,
+    );
+    return url.host;
+  } catch {
+    return trimmed.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  }
 }

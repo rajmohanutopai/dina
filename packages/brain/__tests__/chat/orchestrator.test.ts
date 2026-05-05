@@ -6,9 +6,9 @@
 
 import { makeVaultItem, resetFactoryCounters, MockCoreClient } from '@dina/test-harness';
 
-import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
-import { resetStagingState, inboxSize } from '../../../core/src/staging/service';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
+import { createReminder, resetReminderState } from '@dina/core/reminders';
+import { resetStagingState, inboxSize } from '@dina/core';
+import { storeItem, clearVaults } from '@dina/core';
 import {
   handleChat,
   resetChatDefaults,

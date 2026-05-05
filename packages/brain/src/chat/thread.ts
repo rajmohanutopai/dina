@@ -18,7 +18,7 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { getChatMessageRepository } from '../../../core/src/chat/repository';
+import { getChatMessageRepository } from '@dina/core';
 
 export type MessageType =
   | 'user'

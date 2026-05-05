@@ -3,12 +3,12 @@
  * built in 5.21-E.
  */
 
-import { ApprovalManager } from '../../../core/src/approval/manager';
+import { ApprovalManager } from '@dina/core';
 import {
   createPersona,
   openPersona,
   resetPersonaState,
-} from '../../../core/src/persona/service';
+} from '@dina/core';
 import {
   approvalIdFor,
   createPersonaGuard,

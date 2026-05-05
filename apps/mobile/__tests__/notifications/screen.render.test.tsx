@@ -77,7 +77,10 @@ describe('Notifications screen — render (5.67)', () => {
     });
     const { getByTestId } = render(<NotificationsScreen />);
     fireEvent.press(getByTestId('notif-row-r1'));
-    expect(pushed).toEqual(['dina://approvals/appr-1']);
+    // The screen normalises Brain-emitted `dina://approvals/<id>` deep
+    // links to `/approvals` so tapping lands on the index page (no
+    // dynamic `[id].tsx` route exists). See MT-12-I1 / normaliseDeepLink.
+    expect(pushed).toEqual(['/approvals']);
   });
 
   it('tapping a row WITHOUT a deepLink stays put but marks it read', () => {

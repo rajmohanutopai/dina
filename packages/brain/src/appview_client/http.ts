@@ -22,10 +22,10 @@
 
 import type { Confidence, Sentiment, SubjectType } from '@dina/protocol';
 import {
-  backoff,
+  httpBackoff as backoff,
   isRetryableStatus,
   parseResponseBody,
-} from '../../../core/src/transport/http_retry';
+} from '@dina/core';
 
 /** Retryable client-side response statuses beyond 5xx. */
 const RETRYABLE_4XX = new Set([408, 429]);

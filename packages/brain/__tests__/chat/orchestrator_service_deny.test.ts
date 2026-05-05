@@ -12,7 +12,7 @@ import { resetThreads } from '../../src/chat/thread';
 import { makeServiceDenyHandler } from '../../src/service/approve_command';
 import { CoreHttpError } from '../../src/errors';
 import type { CoreClient } from '@dina/core';
-import type { WorkflowTask } from '../../../core/src/workflow/domain';
+import type { WorkflowTask } from '@dina/core';
 
 describe('Chat orchestrator — /service_deny', () => {
   beforeEach(() => {

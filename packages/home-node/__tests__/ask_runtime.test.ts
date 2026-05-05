@@ -33,6 +33,40 @@ describe('@dina/home-node/ask-runtime', () => {
     expect(runtime.approvalManager).toBeDefined();
   });
 
+  it('uses an injected orchestrator handle (mobile path) and skips internal construction', async () => {
+    const provider = scriptedProvider('handle path answered');
+    const issueQueryToDID = jest.fn(async () => ({
+      taskId: 'task-mobile-1',
+      queryId: 'q-mobile-1',
+      toDID: 'did:plc:provider',
+      serviceName: 'demo',
+      deduped: false,
+    }));
+    const runtime = buildHomeNodeAskRuntime({
+      core: { findContactsByPreference: jest.fn(async () => []) },
+      appView: stubAppView(),
+      llm: provider,
+      providerName: 'gemini',
+      orchestratorHandle: { issueQueryToDID },
+    });
+
+    expect(runtime.orchestrator).toBeNull();
+    expect(runtime.approvalManager).toBeDefined();
+
+    const result = await runtime.coordinator.handleAsk({
+      question: 'mobile path?',
+      requesterDid: 'did:plc:mobile',
+      requestIdHeader: 'ask-mobile-test',
+    });
+    expect(result).toMatchObject({
+      kind: 'fast_path',
+      status: 200,
+      body: { status: 'complete' },
+    });
+    expect(provider.chat).toHaveBeenCalledTimes(1);
+    expect(issueQueryToDID).not.toHaveBeenCalled();
+  });
+
   it('fails fast when required runtime dependencies are omitted', () => {
     const base = {
       core: stubCore(),

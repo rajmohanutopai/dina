@@ -27,9 +27,7 @@
  * the next launch, orphaning the PDS account.
  */
 
-import { createDIDPLC } from '../../../core/src/identity/directory';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import type { IdentityKeypair } from '../../../core/src/identity/keypair';
+import { createDIDPLC, getPublicKey, type IdentityKeypair } from '@dina/core';
 import { PDSAccountClient, PDSAccountError, type PDSSession } from '../pds/account';
 
 export interface EnsureNodeIdentityParams {

@@ -18,7 +18,7 @@
  * Source: brain/tests/test_person_linking.py + test_person_resolver.py.
  */
 
-import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
+import { scrubPII, rehydratePII } from '@dina/core';
 import { PERSON_IDENTITY_EXTRACTION } from '../llm/prompts';
 
 export interface PersonLink {

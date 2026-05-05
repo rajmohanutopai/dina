@@ -5,11 +5,11 @@
  */
 
 import { processClaimedBatch } from '../../src/staging/batch_processor';
-import { ingest, claim, getItem, resetStagingState } from '../../../core/src/staging/service';
-import { createPersona, openPersona, resetPersonaState } from '../../../core/src/persona/service';
-import { clearVaults } from '../../../core/src/vault/crud';
-import { resetReminderState } from '../../../core/src/reminders/service';
-import { resetContactDirectory } from '../../../core/src/contacts/directory';
+import { ingest, claim, getItem, resetStagingState } from '@dina/core';
+import { createPersona, openPersona, resetPersonaState } from '@dina/core';
+import { clearVaults } from '@dina/core';
+import { resetReminderState } from '@dina/core/reminders';
+import { resetContactDirectory } from '@dina/core';
 import { resetPersonaSelector } from '../../src/routing/persona_selector';
 import { resetFactoryCounters } from '@dina/test-harness';
 

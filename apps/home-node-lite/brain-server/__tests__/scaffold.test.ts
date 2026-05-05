@@ -133,6 +133,9 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ status: 'ok', role: 'brain' });
 
+      // No Core configured → /readyz stays 503 even though boot
+      // completed. `runtime: 'ok'` reflects "Fastify is up", `core:
+      // 'fail'` blocks the overall ready flag.
       const ready = await booted.app.inject({ method: 'GET', url: '/readyz' });
       expect(ready.statusCode).toBe(503);
       expect(ready.json()).toEqual({
@@ -144,7 +147,7 @@ describe('brain-server — boot (task 5.1)', () => {
           askRoutes: 'disabled',
           serviceRuntime: 'disabled',
           stagingDrain: 'disabled',
-          runtime: 'fail',
+          runtime: 'ok',
         },
       });
     } finally {
@@ -257,6 +260,9 @@ describe('brain-server — boot (task 5.1)', () => {
         requestIdHeader: 'ASK-BOOT-TEST',
       });
 
+      // Ask coordinator wired but no Core → /readyz stays 503; the
+      // ask route is registered but the boot is not "ready" without
+      // Core. `runtime: 'ok'` since boot completed successfully.
       const ready = await booted.app.inject({ method: 'GET', url: '/readyz' });
       expect(ready.statusCode).toBe(503);
       expect(ready.json()).toMatchObject({
@@ -265,7 +271,7 @@ describe('brain-server — boot (task 5.1)', () => {
           core: 'fail',
           askRoutes: 'ok',
           stagingDrain: 'disabled',
-          runtime: 'fail',
+          runtime: 'ok',
         },
       });
     } finally {
@@ -349,15 +355,19 @@ describe('brain-server — boot (task 5.1)', () => {
       });
       expect(provider.chat).toHaveBeenCalledTimes(1);
 
+      // Core configured + ask wired + staging drain running → /readyz
+      // returns 200 (status: 'ok'). Real runtime status: boot is fully
+      // up and Core is reachable.
       const ready = await booted.app.inject({ method: 'GET', url: '/readyz' });
-      expect(ready.statusCode).toBe(503);
+      expect(ready.statusCode).toBe(200);
       expect(ready.json()).toMatchObject({
+        status: 'ok',
         checks: {
           appView: 'ok',
           core: 'ok',
           askRoutes: 'ok',
           stagingDrain: 'ok',
-          runtime: 'fail',
+          runtime: 'ok',
         },
       });
     } finally {
@@ -496,15 +506,17 @@ describe('brain-server — boot (task 5.1)', () => {
         booted.compositions.service!.flush(),
       ]);
 
+      // Service runtime composed with Core → /readyz reports ready.
       const ready = await booted.app.inject({ method: 'GET', url: '/readyz' });
-      expect(ready.statusCode).toBe(503);
+      expect(ready.statusCode).toBe(200);
       expect(ready.json()).toMatchObject({
+        status: 'ok',
         checks: {
           appView: 'ok',
           core: 'ok',
           serviceRuntime: 'ok',
           stagingDrain: 'ok',
-          runtime: 'fail',
+          runtime: 'ok',
         },
       });
     } finally {
@@ -565,14 +577,16 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(timerHandle.unref).toHaveBeenCalledTimes(1);
       await booted.schedulers.stagingDrain!.flush();
 
+      // Signed Core client up + staging drain running → /readyz green.
       const ready = await booted.app.inject({ method: 'GET', url: '/readyz' });
-      expect(ready.statusCode).toBe(503);
+      expect(ready.statusCode).toBe(200);
       expect(ready.json()).toMatchObject({
+        status: 'ok',
         checks: {
           appView: 'ok',
           core: 'ok',
           stagingDrain: 'ok',
-          runtime: 'fail',
+          runtime: 'ok',
         },
       });
       expect(fetchFn).toHaveBeenCalledTimes(1);

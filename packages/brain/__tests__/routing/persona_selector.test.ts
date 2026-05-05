@@ -15,8 +15,8 @@ import {
   applyResponsibilityOverride,
   extractMentionedNames,
 } from '../../src/routing/persona_selector';
-import { createPersona, resetPersonaState } from '../../../core/src/persona/service';
-import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
+import { createPersona, resetPersonaState } from '@dina/core';
+import { addContact, resetContactDirectory } from '@dina/core';
 
 describe('Persona Selector', () => {
   beforeEach(() => {

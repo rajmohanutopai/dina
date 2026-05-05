@@ -37,9 +37,9 @@ import {
   createPersona,
   resetPersonaState,
   openPersona,
-} from '../../../core/src/persona/service';
-import { resetReminderState } from '../../../core/src/reminders/service';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
+} from '@dina/core';
+import { resetReminderState } from '@dina/core/reminders';
+import { storeItem, clearVaults } from '@dina/core';
 import {
   planReminders,
   registerReminderLLM,

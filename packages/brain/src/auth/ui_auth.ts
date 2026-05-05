@@ -15,8 +15,8 @@
  * Source: ARCHITECTURE.md Task 3.30
  */
 
-import { isTimestampValid } from '../../../core/src/auth/timestamp';
-import { verifyRequest } from '../../../core/src/auth/canonical';
+import { isTimestampValid } from '@dina/core';
+import { verifyRequest } from '@dina/core';
 
 /** Paths that bypass authentication. */
 const PUBLIC_PATHS = new Set(['/healthz', '/readyz']);

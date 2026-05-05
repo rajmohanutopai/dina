@@ -12,9 +12,7 @@
  */
 
 import type { BriefingItem } from './assembly';
-import { listByStatus } from '../../../core/src/staging/service';
-import { browseRecent } from '../../../core/src/vault/crud';
-import { listPersonas } from '../../../core/src/persona/service';
+import { stagingListByStatus, browseRecent, listPersonas } from '@dina/core';
 
 // ---------------------------------------------------------------
 // Constants
@@ -90,7 +88,7 @@ export function collectEngagementItems(now?: number): BriefingItem[] {
  * routed to a locked persona and await the user's approval/unlock.
  */
 export function collectApprovalItems(): BriefingItem[] {
-  const pendingUnlock = listByStatus('pending_unlock');
+  const pendingUnlock = stagingListByStatus('pending_unlock');
   const items: BriefingItem[] = [];
 
   for (const staged of pendingUnlock) {

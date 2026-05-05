@@ -54,25 +54,25 @@ import { ServiceHandler } from '../../src/service/service_handler';
 import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
 import { validateAgainstSchema } from '../../src/service/capabilities/schema_validator';
 
-import type { ServiceQueryBody, ServiceResponseBody } from '../../../core/src/d2d/service_bodies';
+import type { ServiceQueryBody, ServiceResponseBody } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
-import type { WorkflowTask, WorkflowTaskState } from '../../../core/src/workflow/domain';
+import type { WorkflowTask, WorkflowTaskState } from '@dina/core';
 
 import {
   WorkflowService,
   setWorkflowService,
-} from '../../../core/src/workflow/service';
+} from '@dina/core';
 import {
   InMemoryWorkflowRepository,
   setWorkflowRepository,
-} from '../../../core/src/workflow/repository';
-import { LocalDelegationRunner } from '../../../core/src/workflow/local_delegation_runner';
+} from '@dina/core';
+import { LocalDelegationRunner } from '@dina/core';
 import {
   setServiceConfig,
   getServiceConfig,
   resetServiceConfigState,
-} from '../../../core/src/service/service_config';
-import { makeServiceResponseBridgeSender } from '../../../core/src/workflow/response_bridge_sender';
+} from '@dina/core';
+import { makeServiceResponseBridgeSender } from '@dina/core';
 
 const ALONSO_DID = 'did:plc:alonso-test';
 const BUSDRIVER_DID = 'did:plc:busdriver-test';

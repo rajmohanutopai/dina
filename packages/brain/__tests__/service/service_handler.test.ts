@@ -6,7 +6,7 @@ import { ServiceHandler, type ServiceHandlerCoreClient } from '../../src/service
 // ServiceHandler catches `WorkflowConflictError` from `@dina/core`.
 // The test throws the same class so `instanceof` matches.
 import { WorkflowConflictError } from '@dina/core';
-import type { ServiceConfig } from '../../../core/src/service/service_config';
+import type { ServiceConfig } from '@dina/core';
 
 interface CreateCall {
   id: string;

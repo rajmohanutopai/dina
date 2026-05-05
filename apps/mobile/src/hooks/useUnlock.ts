@@ -26,8 +26,14 @@ import {
 } from '@dina/core';
 import { setAccessiblePersonas } from '@dina/brain';
 import { loadPersistedDid } from '../services/identity_record';
-import { initializePersistence, openPersonaDB, isPersistenceReady } from '../storage/init';
+import {
+  initializePersistence,
+  openPersonaDB,
+  isPersistenceReady,
+  shutdownAllPersistence,
+} from '../storage/init';
 import { seedDefaultPersonas } from '../onboarding/default_personas';
+import { wipeOrphanVaultFiles } from '../services/install_marker';
 
 export type UnlockStep =
   | 'idle'
@@ -151,13 +157,44 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
     try {
       await initializePersistence(masterSeed, wrappedSeed.salt);
     } catch (err) {
-      // Persistence bring-up is best-effort from the unlock path: a
-      // native-module failure (e.g. op-sqlite not installed in tests)
-      // shouldn't brick unlock. The boot service's in-memory fallback
-      // will fire with `persistence.in_memory` so the banner makes it
-      // visible.
-      // eslint-disable-next-line no-console
-      console.warn('[unlock] persistence init failed:', err);
+      // Self-heal for SQLCipher DEK mismatch. op-sqlite throws
+      // "file is not a database" when the on-disk file was encrypted
+      // with a different DEK than the one we just derived from the
+      // unwrapped seed. The two known causes:
+      //   1. Orphan SQLite file left from a prior install whose
+      //      keychain we wiped (covered prospectively by `unlock_gate`'s
+      //      install-marker check, but historical installs hit this
+      //      state before the marker existed).
+      //   2. The user provisioned a new identity OVER an existing one
+      //      (rare, e.g. a backup-restore that retained Documents but
+      //      not Keychain).
+      // Either way: the only data the file contains was encrypted
+      // with a key the user no longer has — it's already lost.
+      // Wiping the orphan + retrying once gets the user out of
+      // dev-degraded mode without any data loss they could have
+      // recovered from anyway.
+      const message = err instanceof Error ? err.message : String(err);
+      if (/file is not a database/i.test(message)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[unlock] SQLCipher DEK mismatch — wiping orphan vault files and retrying',
+        );
+        wipeOrphanVaultFiles();
+        try {
+          await initializePersistence(masterSeed, wrappedSeed.salt);
+        } catch (retryErr) {
+          // eslint-disable-next-line no-console
+          console.warn('[unlock] persistence init failed after orphan wipe:', retryErr);
+        }
+      } else {
+        // Persistence bring-up is best-effort from the unlock path: a
+        // native-module failure (e.g. op-sqlite not installed in tests)
+        // shouldn't brick unlock. The boot service's in-memory fallback
+        // will fire with `persistence.in_memory` so the banner makes it
+        // visible.
+        // eslint-disable-next-line no-console
+        console.warn('[unlock] persistence init failed:', err);
+      }
     }
   }
 
@@ -271,6 +308,32 @@ export function getUnlockDuration(): number | null {
  * Reset unlock state (for testing or re-lock).
  */
 export function resetUnlockState(): void {
+  state = createInitialState();
+  notify();
+}
+
+/**
+ * Seal the vault: tear down all open SQLCipher handles, drop the
+ * in-memory persona registry, and flip `isUnlocked()` back to false.
+ *
+ * After this returns the next vault access requires a fresh `unlock()`
+ * call (which re-runs Argon2id KDF + SQLCipher open). Subscribers to
+ * `subscribeToUnlockState` see the transition synchronously, so the
+ * UnlockGate re-renders to its locked screen on the next React tick.
+ *
+ * Idempotent — calling on an already-sealed vault is a no-op.
+ */
+export async function sealVault(): Promise<void> {
+  if (state.step !== 'complete') {
+    // Already sealed (or mid-unlock); nothing to tear down. Still
+    // reset state so a partial-unlock leftover (`failed` / mid-step)
+    // can't prevent the next unlock attempt from running cleanly.
+    state = createInitialState();
+    notify();
+    return;
+  }
+  setAccessiblePersonas([]);
+  await shutdownAllPersistence();
   state = createInitialState();
   notify();
 }

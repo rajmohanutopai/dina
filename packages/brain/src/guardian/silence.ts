@@ -62,7 +62,7 @@ const HEALTH_ELEVATION_PATTERN =
 
 import { GUARDIAN_STALE_THRESHOLD_MS, ESCALATION_THRESHOLD as ESC_THRESHOLD } from '../constants';
 import { SILENCE_CLASSIFY } from '../llm/prompts';
-import { scrubPII } from '../../../core/src/pii/patterns';
+import { scrubPII } from '@dina/core';
 
 const STALE_THRESHOLD_MS = GUARDIAN_STALE_THRESHOLD_MS;
 

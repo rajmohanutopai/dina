@@ -20,7 +20,7 @@ import {
   resetUsage,
 } from '../../src/llm/router';
 import type { RouterConfig } from '../../src/llm/router';
-import { CloudConsentError } from '../../../core/src/errors';
+import { CloudConsentError } from '@dina/core';
 
 describe('LLM Router', () => {
   const localConfig: RouterConfig = {

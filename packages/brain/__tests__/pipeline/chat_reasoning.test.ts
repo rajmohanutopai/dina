@@ -5,7 +5,7 @@
  */
 
 import { reason, registerReasoningLLM, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
+import { storeItem, clearVaults } from '@dina/core';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 

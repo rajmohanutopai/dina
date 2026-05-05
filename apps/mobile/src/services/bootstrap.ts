@@ -97,32 +97,32 @@ export type AppD2DSender = (
   body: Record<string, unknown>,
 ) => Promise<void>;
 import {
-  ApprovalReconciler,
   createCoordinatorAskHandler,
-  D2DDispatcher,
   makeAgenticAskHandler,
   makeServiceApproveHandler,
   makeServiceDenyHandler,
-  ServiceHandler,
   ServicePublisher,
-  ServiceQueryOrchestrator,
   toPublisherConfig,
   validateAgainstSchema,
   wireServiceOrchestrator,
-  WorkflowEventConsumer,
   type AgenticAskHandlerOptions,
-  type ApprovalEventDispatcher,
   type ApprovalNotifier,
+  type ApprovalReconciler,
   type AskCoordinator,
   type CreateCoordinatorAskHandlerOptions,
+  type D2DDispatcher,
   type LLMProvider,
   type OrchestratorAppView,
   type PDSPublisher,
   type PDSSession,
+  type ServiceHandler,
   type ServiceInboundNotifier,
+  type ServiceQueryOrchestrator,
   type ToolRegistry,
+  type WorkflowEventConsumer,
   type WorkflowEventDeliverer,
 } from '@dina/brain';
+import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
 import type { AppViewClient } from '@dina/brain';
 import type { IdentityKeypair } from '@dina/core';
 import {
@@ -561,46 +561,6 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // so the two sides can't diverge.
   const readConfig = options.readConfig ?? ((): ServiceConfig | null => getServiceConfig());
 
-  // 2. ServiceHandler — inbound service.query → delegation/approval task.
-  // `rejectResponder` bridges task-less rejections (unknown capability,
-  // schema mismatch, bad params) to Core's D2D egress so the requester
-  // gets a real `service.response` instead of a silent TTL expiry
-  // (issue #9).
-  const handler = new ServiceHandler({
-    coreClient: options.coreClient,
-    readConfig,
-    notifier: options.approvalNotifier ?? defaultApprovalNotifier(threadId),
-    inboundNotifier: defaultInboundNotifier(threadId),
-    rejectResponder: async (to, body) => {
-      await options.sendD2D(to, 'service.response', {
-        query_id: body.query_id,
-        capability: body.capability,
-        status: body.status,
-        error: body.error,
-        ttl_seconds: body.ttl_seconds,
-      });
-    },
-    logger: log,
-  });
-
-  // D2DDispatcher — Brain's registry that routes parsed inbound bodies
-  // to the right handler. service.query → provider handler. (Requester-
-  // side service.response correlation is handled by Core's receive
-  // pipeline + workflow event consumer, not a dispatcher handler.)
-  const dispatcher = new D2DDispatcher();
-  dispatcher.register('service.query', async (fromDID, body, _raw) => {
-    await handler.handleQuery(fromDID, body);
-  });
-
-  // 3. Orchestrator — outbound service.query dispatch.
-  const orchestrator = new ServiceQueryOrchestrator({
-    appViewClient: options.appViewClient as OrchestratorAppView,
-    coreClient: options.coreClient,
-  });
-
-  // 4. WorkflowEventConsumer — deliver service_query completions to the
-  // chat thread, dispatch `approved` events to `executeAndRespond`.
-  //
   // Review #6 (partial): route by origin_channel when a resolver is
   // supplied. The service_query task's payload carries the
   // `origin_channel` the requester tagged the query with (e.g.
@@ -686,25 +646,33 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // Non-service_query workflow events keep the normal dina-bubble path.
     addDinaResponse(target, text, sources.length > 0 ? sources : undefined);
   };
-  const onApproved: ApprovalEventDispatcher = async ({ task, payload }) => {
-    await handler.executeAndRespond(task.id, payload);
-  };
-  const events = new WorkflowEventConsumer({
-    coreClient: options.coreClient,
+  // 2-5. Shared service runtime — handler + dispatcher (with
+  // service.query registered) + orchestrator + workflow-event consumer
+  // + approval reconciler. The mobile-specific bits feed in through
+  // the option surface (custom `deliver`, `inboundNotifier`,
+  // `rejectResponder` that wraps `options.sendD2D`).
+  const serviceRuntime = buildHomeNodeServiceRuntime({
+    core: options.coreClient,
+    appView: options.appViewClient as OrchestratorAppView,
+    readConfig,
+    rejectResponder: async (to, body) => {
+      await options.sendD2D(to, 'service.response', {
+        query_id: body.query_id,
+        capability: body.capability,
+        status: body.status,
+        error: body.error,
+        ttl_seconds: body.ttl_seconds,
+      });
+    },
     deliver,
-    onApproved,
-    setInterval: options.setInterval,
-    clearInterval: options.clearInterval,
+    approvalNotifier: options.approvalNotifier ?? defaultApprovalNotifier(threadId),
+    inboundNotifier: defaultInboundNotifier(threadId),
     logger: log,
-  });
-
-  // 5. ApprovalReconciler — provider-side TTL expiry sweeper.
-  const approvals = new ApprovalReconciler({
-    coreClient: options.coreClient,
     nowMsFn,
-    setInterval: options.setInterval,
-    clearInterval: options.clearInterval,
+    ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
+    ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
   });
+  const { handler, dispatcher, orchestrator, events, approvals } = serviceRuntime;
 
   // 5a. TaskExpirySweeper — requester-side TTL enforcement (issue #9).
   //     Calls WorkflowRepository.expireTasks on a cadence so stuck

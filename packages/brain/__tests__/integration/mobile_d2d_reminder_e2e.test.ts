@@ -30,34 +30,32 @@
  * other two suites stay green.
  */
 
-import { getPublicKey } from '@dina/core/src/crypto/ed25519';
-import { sealMessage } from '@dina/core/src/d2d/envelope';
-import { receiveD2D } from '@dina/core/src/d2d/receive_pipeline';
-import { addContact, clearGatesState } from '@dina/core/src/d2d/gates';
 import {
+  getPublicKey,
+  sealMessage,
+  receiveD2D,
   resetStagingState,
-  listByStatus,
-  getItem as getStagingItem,
-} from '@dina/core/src/staging/service';
-import { clearVaults } from '@dina/core/src/vault/crud';
+  stagingListByStatus as listByStatus,
+  stagingGetItem as getStagingItem,
+  clearVaults,
+  configureRateLimiter,
+  addContact as addDirectoryContact,
+  resetContactDirectory,
+  createCoreRouter,
+  clearReplayCache,
+  InProcessTransport,
+} from '@dina/core';
+import { addContact, clearGatesState } from '@dina/core/d2d';
 import {
   setAccessiblePersonas,
   resetReasoningProvider,
 } from '../../src/vault_context/assembly';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import type { D2DReceivedNotification } from '../../src/staging/drain';
-import { configureRateLimiter } from '@dina/core/src/auth/middleware';
-import {
-  addContact as addDirectoryContact,
-  resetContactDirectory,
-} from '@dina/core/src/contacts/directory';
 import {
   listByPersona as listRemindersByPersona,
   resetReminderState,
-} from '@dina/core/src/reminders/service';
-import { createCoreRouter } from '@dina/core/src/server/core_server';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
-import { clearReplayCache } from '@dina/core/src/transport/adversarial';
+} from '@dina/core/reminders';
 import { makeDinaMessage, resetFactoryCounters } from '@dina/test-harness';
 import { MSG_TYPE_SOCIAL_UPDATE } from '@dina/protocol';
 import {

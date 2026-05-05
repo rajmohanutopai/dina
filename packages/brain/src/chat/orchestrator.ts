@@ -13,7 +13,7 @@
  * Source: ARCHITECTURE.md Tasks 4.7–4.9
  */
 
-import { listByPersona as listRemindersByPersona, type Reminder } from '../../../core/src/reminders/service';
+import { listByPersona as listRemindersByPersona, type Reminder } from '@dina/core/reminders';
 import { CoreHttpError } from '../errors';
 import { reason } from '../pipeline/chat_reasoning';
 import { executeToolSearch } from '../vault_context/assembly';
@@ -307,6 +307,20 @@ function formatReminder(r: Reminder): string {
 async function handleRemember(text: string): Promise<BotResponse> {
   if (!text) return plainResponse('What would you like me to remember?');
 
+  // Boot-race window: the chat surface mounts before
+  // `setRememberCoreClient` is called from the bootstrap. Without this
+  // wait, the first one or two /remember sends after a relaunch land
+  // here with `rememberCoreClient === null` and the user gets a
+  // confusing "still starting" message they have to manually retry
+  // (MT-15-I1). Wait up to ~3s in 100ms ticks for the client to land.
+  // Bootstrap usually installs in ~500–1500ms; 3s gives a safety
+  // margin without making a true permanent failure feel hung.
+  if (rememberCoreClient === null) {
+    const startedAt = Date.now();
+    while (rememberCoreClient === null && Date.now() - startedAt < 3000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
   if (rememberCoreClient === null) {
     return plainResponse('Remember is still starting. Please try again in a moment.');
   }

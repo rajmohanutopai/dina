@@ -13,9 +13,7 @@
 import { classifyPriority } from '../guardian/silence';
 import { handlePostPublish } from '../pipeline/post_publish';
 import { reason } from '../pipeline/chat_reasoning';
-import { drainForPersona } from '../../../core/src/staging/service';
-import { isVaultItemType } from '../../../core/src/vault/validation';
-import type { VaultItemType } from '../../../core/src/vault/validation';
+import { stagingDrainForPersona, isVaultItemType, type VaultItemType } from '@dina/core';
 
 export interface ProcessEvent {
   type: string;
@@ -69,7 +67,7 @@ export async function processEvent(event: ProcessEvent): Promise<ProcessResult> 
     case 'vault_unlocked': {
       const persona = String(event.payload.persona ?? '');
       if (persona) {
-        const drained = drainForPersona(persona);
+        const drained = stagingDrainForPersona(persona);
         actions.push('drain_pending_unlock');
         data = { persona, drained };
       }

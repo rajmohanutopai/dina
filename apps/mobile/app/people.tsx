@@ -24,6 +24,7 @@ import { listContacts, deleteContact, type Contact } from '@dina/core';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/trust/appview_runtime';
+import { loadInfraPreferences } from '../src/services/infra_preferences';
 
 export default function PeopleScreen() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -148,9 +149,27 @@ function OwnIdentityCard(): React.ReactElement | null {
       const node = getBootedNode();
       if (node === null) return;
       // Optimistic: render with DID immediately, replace with handle
-      // when the AppView lookup completes. Avoids a loading spinner
-      // for the (slower) handle fetch — the DID is already useful.
+      // when the local lookup completes. Avoids a loading spinner —
+      // the DID is already useful.
       if (!cancelled) setIdentity({ did: node.did, handle: null });
+      // Local source of truth for the user's published handle: the
+      // PDS handle persisted during onboarding/recovery in
+      // `infra_preferences::pdsHandle`. Reading it locally is faster
+      // and more reliable than the AppView round-trip — AppView may
+      // be offline or the profile row may lag the PLC publish, but
+      // the handle is locked in at provisionIdentity / recoverIdentity
+      // time. AppView remains a fallback for the case where the
+      // device-local handle was wiped (Settings reset, partial
+      // restore) but the published PLC doc still has it.
+      try {
+        const infra = await loadInfraPreferences();
+        if (!cancelled && infra.pdsHandle !== null && infra.pdsHandle !== '') {
+          setIdentity({ did: node.did, handle: infra.pdsHandle });
+          return;
+        }
+      } catch {
+        // Silent — fall through to the AppView fetch below.
+      }
       try {
         const profile = await getTrustProfile(node.did);
         if (!cancelled && profile?.handle) {

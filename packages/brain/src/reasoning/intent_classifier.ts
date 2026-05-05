@@ -27,7 +27,7 @@
  * Port of `brain/src/service/intent_classifier.py`.
  */
 
-import type { TocEntry } from '../../../core/src/memory/domain';
+import type { TocEntry } from '@dina/core';
 import { extractJSON } from '../llm/output_parser';
 
 /** One of the four substrates the reasoning agent can consult. */

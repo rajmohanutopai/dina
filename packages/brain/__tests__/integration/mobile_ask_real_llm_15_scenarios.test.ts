@@ -54,15 +54,15 @@ import {
   setAccessiblePersonas,
 } from '../../src/vault_context/assembly';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+import { InProcessTransport } from '@dina/core';
 
-import { createCoreRouter } from '../../../core/src/server/core_server';
-import { clearVaults } from '../../../core/src/vault/crud';
-import { resetStagingState } from '../../../core/src/staging/service';
+import { createCoreRouter } from '@dina/core';
+import { clearVaults } from '@dina/core';
+import { resetStagingState } from '@dina/core';
 import {
   configureRateLimiter,
   registerPublicKeyResolver,
-} from '../../../core/src/auth/middleware';
+} from '@dina/core';
 
 import {
   closeSQLiteVault,

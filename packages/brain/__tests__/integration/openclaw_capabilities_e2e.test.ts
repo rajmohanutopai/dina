@@ -37,7 +37,7 @@
  * agentic loop needs an LLM round-trip.
  */
 
-import { evaluateIntent } from '../../../core/src/gatekeeper/intent';
+import { evaluateIntent } from '@dina/core';
 
 import {
   handleChat,
@@ -62,19 +62,19 @@ import {
   setAccessiblePersonas,
 } from '../../src/vault_context/assembly';
 
-import { clearVaults } from '../../../core/src/vault/crud';
+import { clearVaults } from '@dina/core';
 import {
   resetStagingState,
   getItem as getStagingItem,
-} from '../../../core/src/staging/service';
+} from '@dina/core';
 import {
   createPersona,
   openPersona,
   resetPersonaState,
-} from '../../../core/src/persona/service';
-import { configureRateLimiter } from '../../../core/src/auth/middleware';
-import { createCoreRouter } from '../../../core/src/server/core_server';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+} from '@dina/core';
+import { configureRateLimiter } from '@dina/core';
+import { createCoreRouter } from '@dina/core';
+import { InProcessTransport } from '@dina/core';
 
 import {
   closeSQLiteVault,

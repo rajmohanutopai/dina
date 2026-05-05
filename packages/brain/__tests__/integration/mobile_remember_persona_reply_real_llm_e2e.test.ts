@@ -54,19 +54,19 @@ import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import {
   clearVaults,
   DEFAULT_TEST_PERSONAS,
-} from '../../../core/src/vault/crud';
+} from '@dina/core';
 import {
   resetStagingState,
   getItem as getStagingItem,
-} from '../../../core/src/staging/service';
+} from '@dina/core';
 import {
   createPersona,
   openPersona,
   resetPersonaState,
-} from '../../../core/src/persona/service';
-import { configureRateLimiter } from '../../../core/src/auth/middleware';
-import { createCoreRouter } from '../../../core/src/server/core_server';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+} from '@dina/core';
+import { configureRateLimiter } from '@dina/core';
+import { createCoreRouter } from '@dina/core';
+import { InProcessTransport } from '@dina/core';
 
 import {
   closeSQLiteVault,

@@ -23,8 +23,8 @@
 
 import { ApprovalRequiredError, type AgentTool } from './tool_registry';
 import { executeToolSearch, getAccessiblePersonas } from '../vault_context/assembly';
-import { getItem, listRecentItems } from '../../../core/src/vault/crud';
-import { listPersonas } from '../../../core/src/persona/service';
+import { getItem, listRecentItems } from '@dina/core';
+import { listPersonas } from '@dina/core';
 
 /**
  * Pluggable per-call gate for content-reading vault tools.

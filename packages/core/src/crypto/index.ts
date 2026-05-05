@@ -1,4 +1,10 @@
-export { generateMnemonic, mnemonicToSeed, mnemonicToEntropy, validateMnemonic } from './bip39';
+export {
+  generateMnemonic,
+  mnemonicToSeed,
+  mnemonicToEntropy,
+  entropyToMnemonic,
+  validateMnemonic,
+} from './bip39';
 export {
   derivePath,
   derivePathSecp256k1,

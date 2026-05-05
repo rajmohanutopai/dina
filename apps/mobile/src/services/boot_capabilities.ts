@@ -56,10 +56,6 @@ import { createLLMProvider, getConfiguredProviders } from '../ai/provider';
 import { loadActiveProvider } from '../ai/active_provider';
 import type { ProviderType } from '../ai/provider';
 import {
-  buildAgenticAskPipeline,
-  buildAgenticExecuteFn,
-  createAskCoordinator,
-  DEFAULT_ASK_SYSTEM_PROMPT,
   type AgenticAskHandlerOptions,
   type AskCoordinator,
   type createDelegateToAgentTool,
@@ -67,6 +63,7 @@ import {
   type createQueryServiceTool,
   type ToolRegistry,
 } from '@dina/brain';
+import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
 import {
   LLMRouter,
   RoutedLLMProvider,
@@ -543,10 +540,10 @@ export async function buildBootInputs(
     role === 'provider' || role === 'both' ? buildEnvServiceConfig() : undefined;
 
   // PDS publisher — required for providers to publish their service profile
-  // to AppView. We construct it from preference > env (PDS URL + handle +
-  // password) and call `ensureAccount` once before boot to auto-register
-  // the handle on first run. Without this, a provider node boots with
-  // `publisher.stub` degradation and the profile never reaches AppView.
+  // to AppView. Resolved from preference > env (PDS URL + handle + password).
+  // The PDS account is created during onboarding (`provisionIdentity`); boot
+  // just opens a session. Without a publisher, a provider node degrades to
+  // `publisher.stub` and the profile never reaches AppView.
   const pdsPublisher =
     role === 'provider' || role === 'both' ? await tryBuildPdsPublisher(did, infra) : undefined;
 
@@ -567,9 +564,6 @@ export async function buildBootInputs(
     hasPairedAgent,
     initialServiceConfig,
     pdsPublisher,
-    // PDS publisher stays unset — only providers that need discoverable
-    // profiles need one; the boot service records `publisher.stub` if
-    // role === 'provider' and it's missing.
   };
 }
 
@@ -737,33 +731,23 @@ async function tryBuildAgenticAsk(opts: {
     return { draftId };
   });
 
-  const pipeline = buildAgenticAskPipeline({
+  // Delegate to the shared `@dina/home-node/ask-runtime` builder. The
+  // builder constructs the pipeline + AskCoordinator from the same
+  // inputs home-node-lite brain-server uses — mobile only differs in
+  // the lazy handle pattern (orchestrator owned by `DinaNode`, not the
+  // builder), which the builder accepts via `orchestratorHandle`.
+  const runtime = buildHomeNodeAskRuntime({
     llm,
     providerName: provider as ProviderName,
-    appViewClient: searchClient,
+    appView: searchClient,
+    core: lazyCoreClient(),
     orchestratorHandle: lazyOrchestratorHandle(),
-    coreClient: lazyCoreClient(),
     workflowClient: lazyWorkflowClient(),
-    logger: opts.logger,
     approvalManager,
+    ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
   });
 
-  // Produce the AskCoordinator only when `buildToolsForAsk` is
-  // populated (i.e. approvalManager was wired). Defensive — an
-  // earlier construction failure in the pipeline shouldn't fault
-  // the non-coordinator `agenticAsk` path; bootstrap can still install
-  // `makeAgenticAskHandler` with the static tools registry.
-  let askCoordinator: AgenticAskBundle['askCoordinator'];
-  if (pipeline.buildToolsForAsk !== undefined) {
-    askCoordinator = createAskCoordinator({
-      pipeline,
-      approvalManager,
-      executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: DEFAULT_ASK_SYSTEM_PROMPT }),
-      systemPrompt: DEFAULT_ASK_SYSTEM_PROMPT,
-    });
-  }
-
-  return { ...pipeline, askCoordinator };
+  return { ...runtime.pipeline, askCoordinator: runtime.coordinator };
 }
 
 // `buildLightweightLLMCall` + `buildIntentClassifier` moved to

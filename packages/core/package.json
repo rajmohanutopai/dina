@@ -25,6 +25,10 @@
       "types": "./kv.ts",
       "default": "./kv.ts"
     },
+    "./node": {
+      "types": "./node.ts",
+      "default": "./node.ts"
+    },
     "./reminders": {
       "types": "./reminders.ts",
       "default": "./reminders.ts"

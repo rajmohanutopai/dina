@@ -26,14 +26,14 @@ export function ModeChoice(props: ModeChoiceProps): React.ReactElement {
       <ChoiceCard
         glyph={'\u002B'}
         title="Create a new Dina"
-        body="Generate a fresh identity, new recovery phrase, new vault."
+        body="Generate a fresh identity, new recovery phrase, new vault on this device."
         onPress={props.onCreate}
       />
       <View style={styles.spacer} />
       <ChoiceCard
         glyph={'\u21BA'}
         title="Restore from recovery phrase"
-        body="I already have a 24-word phrase from a previous Dina install."
+        body="Bring your published handle back on this device. Restores identity only — saved memories stay on your old device's vault."
         onPress={props.onRecover}
       />
     </OnboardingShell>

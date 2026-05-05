@@ -28,8 +28,8 @@ import { loadIdentitySeeds } from '../../src/services/identity_store';
 import { loadInfraPreferences } from '../../src/services/infra_preferences';
 import { isUnlocked, resetUnlockState } from '../../src/hooks/useUnlock';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
-import { mnemonicToEntropy } from '@dina/core/src/crypto/bip39';
-import { deriveRotationKey } from '@dina/core/src/crypto/slip0010';
+import { mnemonicToEntropy } from '@dina/core';
+import { deriveRotationKey } from '@dina/core';
 import { secp256k1ToDidKeyMultibase } from '@dina/core';
 
 const TEST_PASSPHRASE = 'test-passphrase-1234';
@@ -127,7 +127,7 @@ function makeFetchStub(opts: {
 describe('provisionIdentity (PDS-first)', () => {
   it('persists wrapped seed, keys, DID and leaves the node unlocked', async () => {
     const mnemonic = generateNewMnemonic();
-    const handle = `${deriveHandle(TEST_OWNER, TEST_MSGBOX)}`;
+    const handle = `${deriveHandle(TEST_OWNER, TEST_PDS_URL)}`;
     const stub = makeFetchStub({
       mnemonic,
       did: STUB_DID,
@@ -170,7 +170,7 @@ describe('provisionIdentity (PDS-first)', () => {
 
   it('invokes progress callback for each stage in order', async () => {
     const mnemonic = generateNewMnemonic();
-    const handle = `${deriveHandle(TEST_OWNER, TEST_MSGBOX)}`;
+    const handle = `${deriveHandle(TEST_OWNER, TEST_PDS_URL)}`;
     makeFetchStub({
       mnemonic,
       did: STUB_DID,
@@ -247,7 +247,7 @@ describe('provisionIdentity (PDS-first)', () => {
 
   it('surfaces PLC update failure with a tagged error', async () => {
     const mnemonic = generateNewMnemonic();
-    const handle = deriveHandle(TEST_OWNER, TEST_MSGBOX);
+    const handle = deriveHandle(TEST_OWNER, TEST_PDS_URL);
     const masterSeed = mnemonicToEntropy(mnemonic.join(' '));
     const rotation = deriveRotationKey(masterSeed, 0);
     const recoveryKey = `did:key:${secp256k1ToDidKeyMultibase(rotation.publicKey)}`;
@@ -305,7 +305,7 @@ describe('provisionIdentity (PDS-first)', () => {
 describe('recoverIdentity', () => {
   it('re-derives keys + unlocks without re-publishing to PLC', async () => {
     const mnemonic = generateNewMnemonic();
-    const handle = deriveHandle(TEST_OWNER, TEST_MSGBOX);
+    const handle = deriveHandle(TEST_OWNER, TEST_PDS_URL);
     const stub = makeFetchStub({
       mnemonic,
       did: STUB_DID,
@@ -333,13 +333,39 @@ describe('recoverIdentity', () => {
       mnemonic,
       passphrase: 'new-device-passphrase-9999',
       expectedDid: created.did,
+      handle,
     });
 
     expect(recovered.did).toBe(created.did);
+    expect(recovered.handle).toBe(handle);
     // Recovery does NOT hit PDS or PLC — just re-derives + unlocks.
     expect(stub).not.toHaveBeenCalled();
     expect(isUnlocked()).toBe(true);
     expect(await loadPersistedDid()).toBe(created.did);
+  });
+
+  it('rejects a did:key as expectedDid (must be a verified did:plc)', async () => {
+    const mnemonic = generateNewMnemonic();
+    await expect(
+      recoverIdentity({
+        mnemonic,
+        passphrase: TEST_PASSPHRASE,
+        expectedDid: 'did:key:z6MkExample',
+        handle: 'someone.test-pds.dinakernel.com',
+      }),
+    ).rejects.toThrow(/recoverIdentity: expectedDid must be a did:plc/);
+  });
+
+  it('rejects an empty handle', async () => {
+    const mnemonic = generateNewMnemonic();
+    await expect(
+      recoverIdentity({
+        mnemonic,
+        passphrase: TEST_PASSPHRASE,
+        expectedDid: STUB_DID,
+        handle: '   ',
+      }),
+    ).rejects.toThrow(/recoverIdentity: handle is required/);
   });
 });
 
@@ -350,7 +376,7 @@ describe('hasCompletedOnboarding', () => {
 
   it('is true after a did:plc lands in identity_record', async () => {
     const mnemonic = generateNewMnemonic();
-    const handle = deriveHandle(TEST_OWNER, TEST_MSGBOX);
+    const handle = deriveHandle(TEST_OWNER, TEST_PDS_URL);
     makeFetchStub({
       mnemonic,
       did: STUB_DID,

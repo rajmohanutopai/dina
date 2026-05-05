@@ -20,7 +20,7 @@ import {
 import {
   InMemoryNotificationLogRepository,
   setNotificationLogRepository,
-} from '../../../core/src/notifications/repository';
+} from '@dina/core';
 
 describe('Notifications inbox (5.66)', () => {
   beforeEach(() => {

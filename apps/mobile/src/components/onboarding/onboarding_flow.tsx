@@ -7,6 +7,12 @@
  */
 
 import React, { useState } from 'react';
+
+import { generateNewMnemonic } from '../../hooks/useOnboarding';
+import {
+  markVerificationPending,
+  markVerified,
+} from '../../services/verification_status';
 import {
   INITIAL_STEP,
   previousStep,
@@ -14,16 +20,17 @@ import {
   type RecoverDraft,
   type Step,
 } from '../../onboarding/state';
-import { generateNewMnemonic } from '../../hooks/useOnboarding';
-import { Welcome } from './welcome';
-import { ModeChoice } from './mode_choice';
-import { OwnerName } from './owner_name';
+
 import { HandlePicker } from './handle_pick';
-import { PassphraseSet } from './passphrase_set';
 import { MnemonicReveal } from './mnemonic_reveal';
 import { MnemonicVerify } from './mnemonic_verify';
-import { RecoveryEntry } from './recovery_entry';
+import { ModeChoice } from './mode_choice';
+import { OwnerName } from './owner_name';
+import { PassphraseSet } from './passphrase_set';
 import { Provisioning } from './provisioning';
+import { RecoveryEntry } from './recovery_entry';
+import { RecoveryHandle } from './recovery_handle';
+import { Welcome } from './welcome';
 
 /**
  * Dev-only autopilot: when EXPO_PUBLIC_DINA_DEV_PASSPHRASE is set we
@@ -152,6 +159,26 @@ export function OnboardingFlow(): React.ReactElement {
           mnemonic={step.draft.mnemonic}
           onBack={goBack}
           onVerified={() => {
+            // Defensive — clear any leftover `pending` marker before
+            // advancing. Normally absent on a fresh flow; covers the
+            // edge where a user starts a "do this later" cycle, then
+            // backtracks and completes verification inline.
+            void markVerified();
+            const complete: CreateDraft = {
+              ownerName: step.draft.ownerName ?? 'Dina',
+              handle: step.draft.handle ?? '',
+              passphrase: step.draft.passphrase ?? '',
+              startupMode: step.draft.startupMode ?? 'auto',
+              mnemonic: step.draft.mnemonic ?? [],
+            };
+            setStep({ kind: 'provisioning_create', draft: complete });
+          }}
+          onSkip={() => {
+            // Mark pending and advance through provisioning. Chat
+            // home renders a "Confirm recovery phrase" banner from
+            // this state until the user completes the deferred
+            // confirm flow in Settings.
+            void markVerificationPending();
             const complete: CreateDraft = {
               ownerName: step.draft.ownerName ?? 'Dina',
               handle: step.draft.handle ?? '',
@@ -178,6 +205,7 @@ export function OnboardingFlow(): React.ReactElement {
             // dev autopilot bypasses the wizard, this is empty and
             // `provisionIdentity` falls back to `deriveHandle`.
             handle: step.draft.handle.length > 0 ? step.draft.handle : undefined,
+            startupMode: step.draft.startupMode,
           }}
           onDone={() => {
             // `unlock()` inside provisionIdentity flips isUnlocked → true;
@@ -194,10 +222,25 @@ export function OnboardingFlow(): React.ReactElement {
         <RecoveryEntry
           initialWords={step.draft.mnemonic}
           onBack={goBack}
-          onContinue={(words, did) =>
+          onContinue={(words, didKey) =>
+            setStep({
+              kind: 'recover_handle',
+              draft: { ...step.draft, mnemonic: words, derivedDidKey: didKey },
+            })
+          }
+        />
+      );
+
+    case 'recover_handle':
+      return (
+        <RecoveryHandle
+          mnemonic={step.draft.mnemonic ?? []}
+          initialHandle={step.draft.handle}
+          onBack={goBack}
+          onContinue={(handle, didPlc) =>
             setStep({
               kind: 'recover_passphrase',
-              draft: { ...step.draft, mnemonic: words, expectedDid: did },
+              draft: { ...step.draft, handle, expectedDid: didPlc },
             })
           }
         />
@@ -206,12 +249,15 @@ export function OnboardingFlow(): React.ReactElement {
     case 'recover_passphrase':
       return (
         <PassphraseSet
+          flow="recover"
           initialPassphrase={step.draft.passphrase}
           initialMode={step.draft.startupMode ?? 'auto'}
           onBack={goBack}
           onContinue={(passphrase, mode) => {
             const complete: RecoverDraft = {
               mnemonic: step.draft.mnemonic ?? [],
+              derivedDidKey: step.draft.derivedDidKey ?? '',
+              handle: step.draft.handle ?? '',
               expectedDid: step.draft.expectedDid ?? '',
               passphrase,
               startupMode: mode,
@@ -230,6 +276,8 @@ export function OnboardingFlow(): React.ReactElement {
             mnemonic: step.draft.mnemonic,
             passphrase: step.draft.passphrase,
             expectedDid: step.draft.expectedDid,
+            handle: step.draft.handle,
+            startupMode: step.draft.startupMode,
           }}
           onDone={() => {
             /* UnlockGate subscriber handles transition. */

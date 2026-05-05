@@ -10,10 +10,12 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { OnboardingShell } from './shell';
-import { locateStep, type Step } from '../../onboarding/state';
+
 import { previewRecoveryDID, validateRecoveryMnemonic } from '../../hooks/useOnboarding';
+import { locateStep, type Step } from '../../onboarding/state';
 import { colors, fonts, radius, spacing } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 export interface RecoveryEntryProps {
   initialWords?: string[];
@@ -53,7 +55,7 @@ export function RecoveryEntry(props: RecoveryEntryProps): React.ReactElement {
     <OnboardingShell
       location={locateStep(step)}
       title="Enter your recovery phrase"
-      subtitle="Type the 24 words from your paper copy in order. You can also paste the full phrase at once."
+      subtitle="Type the 24 words from your paper copy in order. To paste the whole phrase at once: long-press the first field and pick Paste — Dina will fan the words out across all 24 boxes."
       primaryLabel="Continue"
       onPrimary={() =>
         valid &&
@@ -65,13 +67,6 @@ export function RecoveryEntry(props: RecoveryEntryProps): React.ReactElement {
       }
       primaryDisabled={!valid || did === null}
       onBack={props.onBack}
-      secondaryLabel="Paste full phrase"
-      onSecondary={async () => {
-        // RN has no native clipboard read without expo-clipboard; we
-        // rely on long-press → paste from the iOS keyboard instead.
-        // This secondary is a visual reminder that paste works; no-op
-        // action keeps the primary-vs-secondary UX consistent.
-      }}
     >
       <View style={styles.grid}>
         {words.map((w, i) => (

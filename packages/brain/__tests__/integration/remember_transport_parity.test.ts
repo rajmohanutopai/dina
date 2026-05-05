@@ -8,35 +8,35 @@
  */
 
 import { TEST_ED25519_SEED } from '@dina/test-harness';
-import { signRequest } from '../../../core/src/auth/canonical';
+import { signRequest } from '@dina/core';
 import {
   configureRateLimiter,
   registerPublicKeyResolver,
   resetMiddlewareState,
-} from '../../../core/src/auth/middleware';
-import { registerService, resetCallerTypeState } from '../../../core/src/auth/caller_type';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import { deriveDIDKey } from '../../../core/src/identity/did';
-import { HttpCoreTransport, type HttpClient } from '../../../core/src/client/http-transport';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
-import type { CoreClient } from '../../../core/src/client/core-client';
-import { createCoreRouter } from '../../../core/src/server/core_server';
-import type { CoreRequest, CoreRouter } from '../../../core/src/server/router';
+} from '@dina/core';
+import { registerService, resetCallerTypeState } from '@dina/core';
+import { getPublicKey } from '@dina/core';
+import { deriveDIDKey } from '@dina/core';
+import { HttpCoreTransport, type HttpClient } from '@dina/core';
+import { InProcessTransport } from '@dina/core';
+import type { CoreClient } from '@dina/core';
+import { createCoreRouter } from '@dina/core';
+import type { CoreRequest, CoreRouter } from '@dina/core';
 import {
   InMemoryStagingRepository,
   setStagingRepository,
-} from '../../../core/src/staging/repository';
+} from '@dina/core';
 import {
   getItem as getStagingItem,
   listByStatus,
   resetStagingState,
-} from '../../../core/src/staging/service';
-import { clearVaults, queryVault } from '../../../core/src/vault/crud';
+} from '@dina/core';
+import { clearVaults, queryVault } from '@dina/core';
 import {
   InMemoryWorkflowRepository,
   setWorkflowRepository,
-} from '../../../core/src/workflow/repository';
-import { WorkflowService, setWorkflowService } from '../../../core/src/workflow/service';
+} from '@dina/core';
+import { WorkflowService, setWorkflowService } from '@dina/core';
 import {
   registerEnrichmentLLM,
   resetEnrichmentPipeline,

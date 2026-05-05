@@ -249,13 +249,248 @@ export { evaluateIntent, isBrainDenied, getDefaultRiskLevel } from './gatekeeper
 export type { RiskLevel as GatekeeperRiskLevel, IntentDecision } from './gatekeeper/intent';
 export { checkSharingPolicy, filterByTier, getSharingTier, setSharingPolicy } from './gatekeeper/sharing';
 export type { SharingTier, SharingDecision } from './gatekeeper/sharing';
+// Pure-value constants (durations, sizes, multicodec prefixes,
+// network defaults). Originally only the onboarding subset was
+// re-exported; expanded explicitly for CA-29 (Brain → Core boundary)
+// so Brain can drop deep imports of `core/src/constants`.
+//
+// `ARGON2ID_PARAMS` is intentionally NOT re-exported here — there are
+// two distinct constants by that name (`./constants` and
+// `./crypto/argon2id`) with different shapes. `./crypto` (already
+// re-exported above) wins; consumers needing the constants-style
+// `{memory, iterations, parallelism}` shape import directly from
+// `@dina/core/src/constants` (package-internal only) or build the
+// shape themselves.
 export {
+  MS_SECOND,
+  MS_MINUTE,
+  MS_HOUR,
+  MS_DAY,
+  MS_WEEK,
+  ED25519_SEED_BYTES,
+  ED25519_PUBLIC_KEY_BYTES,
+  ED25519_SIGNATURE_BYTES,
+  NACL_EPHEMERAL_KEY_BYTES,
+  NACL_NONCE_BYTES,
+  NACL_TAG_BYTES,
+  RANDOM_ID_BYTES,
+  RANDOM_NONCE_BYTES,
+  BIP39_SEED_BYTES,
+  ED25519_MULTICODEC,
+  SECP256K1_MULTICODEC,
+  HARDENED_OFFSET,
+  DINA_FILE_MAGIC,
+  DINA_FILE_VERSION,
+  CORE_DEFAULT_PORT,
+  BRAIN_DEFAULT_PORT,
+  DEFAULT_CORE_URL,
+  DEFAULT_BRAIN_URL,
+  DEFAULT_PLC_DIRECTORY,
+  DEFAULT_APPVIEW_URL,
+  TIMESTAMP_WINDOW_S,
+  REQUEST_TIMEOUT_MS,
+  MAX_BODY_SIZE_BYTES,
+  NONCE_WINDOW_MS,
+  BIOMETRIC_MAX_FAILURES,
+  HEALTH_CHECK_TIMEOUT_MS,
+  UNHEALTHY_THRESHOLD,
+  STAGING_LEASE_DURATION_S,
+  STAGING_ITEM_TTL_S,
+  STAGING_MAX_RETRIES,
+  STAGING_CLAIM_DEFAULT,
+  STAGING_CLAIM_MAX,
+  VAULT_QUERY_DEFAULT_LIMIT,
+  VAULT_QUERY_MAX_LIMIT,
+  VAULT_BATCH_MAX,
+  HYBRID_FTS_WEIGHT,
+  HYBRID_SEMANTIC_WEIGHT,
+  TRUST_RERANK_CAVEATED,
+  TRUST_RERANK_TRUSTED,
+  TRUST_RERANK_LOW_CONFIDENCE,
+  DEFAULT_EMBEDDING_DIMENSIONS,
+  HNSW_DEFAULT_M,
+  HNSW_DEFAULT_EF_CONSTRUCTION,
+  PAIRING_CODE_LENGTH,
+  PAIRING_CODE_ALPHABET,
+  PAIRING_SECRET_BYTES,
+  PAIRING_CODE_TTL_S,
+  PAIRING_MAX_PENDING,
+  WS_HUB_BUFFER_SIZE,
+  WS_HUB_BUFFER_TTL_MS,
+  OUTBOX_MAX_BACKOFF_MS,
+  OUTBOX_INITIAL_BACKOFF_MS,
+  DID_CACHE_TTL_MS,
+  QUARANTINE_TTL_MS,
+  TRUST_CACHE_TTL_MS,
+  DEFAULT_BACKGROUND_TIMEOUT_S,
   MNEMONIC_DISPLAY_TTL_MS,
   ONBOARDING_VERIFY_WORD_COUNT,
-  PASSPHRASE_MAX_LENGTH,
   PASSPHRASE_MIN_LENGTH,
+  PASSPHRASE_MAX_LENGTH,
   SYSTEM_MESSAGE_HISTORY_MAX,
+  MSGBOX_HANDSHAKE_PREFIX,
+  MSGBOX_WS_SUFFIX,
+  MSGBOX_FORWARD_SUFFIX,
+  RPC_REQUEST_TYPE,
+  RPC_RESPONSE_TYPE,
 } from './constants';
+
+// Error classes thrown across the Core/Brain boundary. Kept narrow on
+// purpose — only the discriminator-named errors that consumers may
+// `instanceof`-check or rethrow.
+export {
+  DinaError,
+  PersonaLockedError,
+  AuthorizationError,
+  ApprovalRequiredError,
+  CoreUnreachableError,
+  LLMError,
+  ConfigError,
+  PIIScrubError,
+  CloudConsentError,
+  MCPError,
+  NotFoundError,
+} from './errors';
+
+// Vault item type validation — VAULT_ITEM_TYPES, isVaultItemType,
+// SenderTrust, etc. Brain consumes these to validate staging output.
+export * from './vault/validation';
+
+// Chat message repository. Brain's chat thread reads and writes
+// through the shared repository contract.
+export {
+  setChatMessageRepository,
+  getChatMessageRepository,
+  SQLiteChatMessageRepository,
+  InMemoryChatMessageRepository,
+} from './chat/repository';
+export type { StoredChatMessage, ChatMessageRepository } from './chat/repository';
+
+// Notification log repository. Brain's notification inbox is a thin
+// wrapper around this.
+export {
+  setNotificationLogRepository,
+  getNotificationLogRepository,
+  InMemoryNotificationLogRepository,
+} from './notifications/repository';
+export type {
+  NotificationKind,
+  StoredNotificationItem,
+  NotificationLogRepository,
+} from './notifications/repository';
+
+// Scratchpad service — checkpoint/resume/clear/sweep API the Brain
+// scratchpad lifecycle uses.
+export {
+  SCRATCHPAD_STALE_MS,
+  DELETE_SENTINEL_STEP,
+  checkpoint,
+  resume,
+  clear as clearScratchpad,
+  sweepStale as sweepStaleScratchpads,
+  resetScratchpadService,
+} from './scratchpad/service';
+
+// Staging heartbeat — Brain's batch processor extends per-item leases
+// to keep claims alive while it works.
+export {
+  startHeartbeat,
+  stopHeartbeat,
+  beatOnce,
+  activeHeartbeatCount,
+  stopAllHeartbeats,
+} from './staging/heartbeat';
+export type { Heartbeat } from './staging/heartbeat';
+
+// HTTP retry primitives shared with the AppView client + future Brain
+// HTTP retry sites.
+export {
+  NON_RETRYABLE_STATUSES,
+  BASE_RETRY_DELAY_MS,
+  computeRetryDelay,
+  backoff as httpBackoff,
+  isRetryableStatus,
+  isNonRetryableStatus,
+  parseResponseBody,
+} from './transport/http_retry';
+
+// Vault repository contract + concrete adapters. Tests use the
+// in-memory adapter for fixture setup; production wires the SQLite
+// adapter through the storage boundary.
+export {
+  setVaultRepository,
+  getVaultRepository,
+  resetVaultRepositories,
+  SQLiteVaultRepository,
+  InMemoryVaultRepository,
+} from './vault/repository';
+export type { VaultRepository } from './vault/repository';
+
+// Auth middleware — request authentication, public-key resolver
+// registration, rate limiter configuration. Used by tests building
+// real Core servers and by Brain consumers that need to verify
+// inbound requests.
+export {
+  registerPublicKeyResolver,
+  getNonceCache,
+  getRateLimiter,
+  configureRateLimiter,
+  authenticateRequest,
+  resetMiddlewareState,
+} from './auth/middleware';
+export type { AuthRequest, AuthResult } from './auth/middleware';
+
+// D2D receive pipeline — the trust+verify+stage pipeline run by
+// inbound D2D handlers. Tests exercise this directly to assert
+// staging/quarantine actions for various sender trust levels.
+export { receiveD2D } from './d2d/receive_pipeline';
+export type {
+  ReceivePipelineAction,
+  ReceivePipelineResult,
+  ReceivePipelineOptions,
+} from './d2d/receive_pipeline';
+
+// Wrapped-seed binary format — portable encode/decode pair used by
+// onboarding flows and seed-file fixtures. The Node-only file
+// adapters (`writeWrappedSeed`/`readWrappedSeed`) live behind
+// `@dina/core/node`.
+export { serializeWrappedSeed, deserializeWrappedSeed } from './storage/seed_file';
+
+// Unlock lifecycle — full-unlock entry point used by onboarding tests
+// and the in-process boot path.
+export { fullUnlock } from './lifecycle/unlock';
+export type { UnlockInput, UnlockResult } from './lifecycle/unlock';
+
+// Health diagnostics — runHealthCheck assembles the live HealthReport
+// for `/v1/healthz`.
+export { runHealthCheck } from './diagnostics/health';
+export type { HealthReport } from './diagnostics/health';
+
+// Staging service additional inbox helpers.
+export { inboxSize, sweep as stagingSweep, sweep } from './staging/service';
+
+// Staging repository contract + in-memory adapter for tests.
+export {
+  setStagingRepository,
+  getStagingRepository,
+  InMemoryStagingRepository,
+} from './staging/repository';
+export type { StagingRepository } from './staging/repository';
+
+// Caller-type registry — service DID → caller type mapping used by
+// auth middleware and tests that register synthetic services.
+export {
+  registerService,
+  resetCallerTypeState,
+} from './auth/caller_type';
+
+// LRU dedup set — staging pipeline uses this to drop duplicate
+// inbound items by `(source, itemId)`.
+export {
+  isDuplicate,
+  markSeen,
+  resetDedupState,
+} from './sync/dedup';
 export {
   addContact,
   addContactIfNotExists,
@@ -305,15 +540,34 @@ export type { StagingStatus, StagingTransition } from './staging/state_machine';
 // the staging `inbox` Map split across copies and the drain tick sees
 // an empty queue. Funnelling callers through the root import ensures
 // one module instance.
+// Staging service: prefixed names (`stagingX`) are the canonical
+// public surface — production code should use those. Bare names are
+// re-exported alongside for tests that exercised the staging service
+// through deep imports before CA-29; they alias the same source
+// functions, so importing either form yields the same module
+// instance (no Metro split-singleton risk). `getItem` is intentionally
+// only available as `stagingGetItem` because the bare name collides
+// with `vault/crud.getItem`.
 export {
+  ingest,
   ingest as stagingIngest,
+  claim,
   claim as stagingClaim,
   resolve as stagingResolve,
   resolveMulti as stagingResolveMulti,
   fail as stagingFail,
+  extendLease,
   extendLease as stagingExtendLease,
   getItem as stagingGetItem,
+  drainForPersona,
+  drainForPersona as stagingDrainForPersona,
+  listByStatus,
+  listByStatus as stagingListByStatus,
+  resetStagingState,
 } from './staging/service';
+// `resolve` is a notorious name (Promise.resolve, jest's
+// expect.resolves, fs.resolve, path.resolve) — keep it isolated to
+// `stagingResolve`. Same for `fail` (jest's `fail()`).
 export type { StagingItem } from './staging/service';
 export * from './trust/levels';
 export type { TrustLevel, TrustRing } from './trust/levels';

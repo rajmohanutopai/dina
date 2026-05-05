@@ -8,7 +8,7 @@
  * Ported from: brain/src/adapter/llm_openai.py, llm_gemini.py, llm_claude.py
  */
 
-import { LLMError, ConfigError } from '../../../../core/src/errors';
+import { LLMError, ConfigError } from '@dina/core';
 
 /** Default LLM call timeout in milliseconds (60 seconds, matching Python). */
 export const LLM_TIMEOUT_MS = 60_000;

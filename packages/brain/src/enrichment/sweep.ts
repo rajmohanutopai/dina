@@ -17,8 +17,8 @@
  */
 
 import { enrichItem, type EnrichmentResult } from './pipeline';
-import { queryByEnrichmentStatus, updateEnrichment, getItem } from '../../../core/src/vault/crud';
-import { listPersonas } from '../../../core/src/persona/service';
+import { queryByEnrichmentStatus, updateEnrichment, getItem } from '@dina/core';
+import { listPersonas } from '@dina/core';
 
 // ---------------------------------------------------------------
 // Types

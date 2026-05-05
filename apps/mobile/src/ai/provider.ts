@@ -34,6 +34,14 @@ export interface ProviderInfo {
   label: string;
   description: string;
   keyPrefix: string;
+  /**
+   * Minimum total key length for a key from this provider. Public
+   * formats: OpenAI keys (`sk-...`, `sk-proj-...`, `sk-svc-...`) are
+   * 40+ characters; Google Gemini keys are exactly 39. The previous
+   * validator only required `>= 10` chars which let through obvious
+   * typos like `sk-test-1234` and silently activated them.
+   */
+  minKeyLength: number;
 }
 
 export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
@@ -42,12 +50,14 @@ export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
     label: 'OpenAI',
     description: 'GPT-5.4, GPT-5 mini',
     keyPrefix: 'sk-',
+    minKeyLength: 40,
   },
   gemini: {
     type: 'gemini',
     label: 'Google Gemini',
     description: 'Gemini 3.1 Pro',
     keyPrefix: 'AIza',
+    minKeyLength: 39,
   },
 };
 
@@ -144,15 +154,74 @@ export function maskKey(key: string): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
-/** Validate key format (basic prefix check). */
+/**
+ * Validate key format. Cheap client-side check — confirms prefix and
+ * provider-specific minimum length so obvious typos don't get saved
+ * and silently flipped to ACTIVE. A real probe call (verifyKey) is
+ * the authoritative check; this just keeps junk out of keychain.
+ */
 export function validateKeyFormat(provider: ProviderType, key: string): string | null {
   const info = PROVIDERS[provider];
-  if (!key.trim()) return 'API key is required';
-  if (!key.startsWith(info.keyPrefix)) {
+  const trimmed = key.trim();
+  if (!trimmed) return 'API key is required';
+  if (!trimmed.startsWith(info.keyPrefix)) {
     return `${info.label} keys should start with "${info.keyPrefix}"`;
   }
-  if (key.length < 10) return 'Key seems too short';
-  return null; // valid
+  if (trimmed.length < info.minKeyLength) {
+    return `${info.label} keys are at least ${info.minKeyLength} characters — yours is ${trimmed.length}. Double-check you pasted the full key.`;
+  }
+  return null; // looks plausible
+}
+
+/**
+ * Probe the provider with the given key by issuing a single low-cost
+ * model-list call. Returns null when the key works, or a human-readable
+ * error string when it doesn't.
+ *
+ * - OpenAI: GET https://api.openai.com/v1/models → 401 means bad key,
+ *   200 means valid, anything else is treated as transient.
+ * - Gemini: GET https://generativelanguage.googleapis.com/v1beta/models?key=KEY
+ *   → 400/401/403 means bad key.
+ *
+ * Network failures (DNS, timeout) are reported as "couldn't reach"
+ * rather than "invalid key" so users on a flaky connection don't lose
+ * their working keys to a false negative.
+ */
+export async function verifyKey(
+  provider: ProviderType,
+  key: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const trimmed = key.trim();
+  try {
+    if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/models', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${trimmed}` },
+        signal,
+      });
+      if (res.status === 200) return null;
+      if (res.status === 401 || res.status === 403) {
+        return "OpenAI rejected this key. Check that it's valid and has access to the chat models.";
+      }
+      return `OpenAI responded HTTP ${res.status} — try again or check OpenAI's status.`;
+    }
+    if (provider === 'gemini') {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(trimmed)}`,
+        { method: 'GET', signal },
+      );
+      if (res.status === 200) return null;
+      if (res.status === 400 || res.status === 401 || res.status === 403) {
+        return "Google Gemini rejected this key. Check the key string and that the Gemini API is enabled on your project.";
+      }
+      return `Google Gemini responded HTTP ${res.status} — try again later.`;
+    }
+    return `Unknown provider: ${String(provider)}`;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `Couldn't reach ${PROVIDERS[provider].label}: ${msg}`;
+  }
 }
 
 /** Create an AI SDK `LanguageModel` from stored key. Returns null if no key.

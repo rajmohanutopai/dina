@@ -11,7 +11,7 @@
  */
 
 import { ConfigSync, toPublisherConfig } from '../../src/service/config_sync';
-import type { ServiceConfig } from '../../../core/src/service/service_config';
+import type { ServiceConfig } from '@dina/core';
 import type { ServicePublisher, ServicePublisherConfig } from '../../src/service/service_publisher';
 
 /** Deferred: expose a Promise plus an external `resolve` handle. */

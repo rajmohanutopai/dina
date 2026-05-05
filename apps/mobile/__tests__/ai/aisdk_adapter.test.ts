@@ -12,7 +12,7 @@
  */
 
 import type { LanguageModel } from 'ai';
-import { AISDKAdapter } from '@dina/brain/src/llm/adapters/aisdk';
+import { AISDKAdapter } from '@dina/brain/llm';
 
 function makeMock(opts: {
   onCall?: (prompt: unknown) => void;

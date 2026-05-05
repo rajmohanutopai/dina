@@ -24,12 +24,16 @@
  *   - Hermes/iOS native crypto differences
  */
 
-import { getPublicKey } from '@dina/core/src/crypto/ed25519';
-import { sealMessage, unsealMessage } from '@dina/core/src/d2d/envelope';
-import { verifyMessage } from '@dina/core/src/d2d/signature';
-import { receiveD2D } from '@dina/core/src/d2d/receive_pipeline';
-import { addContact, clearGatesState } from '@dina/core/src/d2d/gates';
-import { resetStagingState, listByStatus } from '@dina/core/src/staging/service';
+import {
+  getPublicKey,
+  sealMessage,
+  unsealMessage,
+  verifyMessage,
+  receiveD2D,
+  resetStagingState,
+  stagingListByStatus as listByStatus,
+} from '@dina/core';
+import { addContact, clearGatesState } from '@dina/core/d2d';
 import { makeDinaMessage, resetFactoryCounters } from '@dina/test-harness';
 import { MSG_TYPE_SOCIAL_UPDATE } from '@dina/protocol';
 

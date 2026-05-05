@@ -23,8 +23,9 @@ import {
   ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
-import { colors, spacing, radius, shadows } from '../src/theme';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import { useLiveThread } from '../src/hooks/useChatThread';
 import type { ChatMessage } from '@dina/brain/chat';
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
@@ -35,6 +36,7 @@ import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { loadVerificationStatus } from '../src/services/verification_status';
 
 // Render message shape used by the screen's bubble logic. The chat UI
 // treats Brain's MessageType union as eight display buckets: user
@@ -154,6 +156,22 @@ export default function ChatScreen() {
   // Mode-switch popover (opened by tapping the pill once a mode is
   // active). Replaces the legacy chip bar above the input.
   const [modePopoverOpen, setModePopoverOpen] = useState(false);
+  // Verification-status banner. Refreshed on every focus so the
+  // banner disappears the instant the user returns from
+  // /confirm-recovery-phrase. `useFocusEffect` is the expo-router
+  // equivalent of "did this screen become visible again".
+  const [verificationPending, setVerificationPending] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void loadVerificationStatus().then((status) => {
+        if (!cancelled) setVerificationPending(status === 'pending');
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
 
@@ -310,6 +328,32 @@ export default function ChatScreen() {
     >
       <StatusBar style="dark" />
 
+      {verificationPending ? (
+        <Pressable
+          onPress={() => router.push('/confirm-recovery-phrase')}
+          accessibilityRole="button"
+          accessibilityLabel="Confirm your recovery phrase"
+          style={({ pressed }) => [
+            styles.verifyBanner,
+            pressed && styles.verifyBannerPressed,
+          ]}
+        >
+          <Ionicons
+            name="alert-circle-outline"
+            size={18}
+            color="#8A5A00"
+            style={{ marginRight: spacing.sm }}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.verifyBannerTitle}>Confirm your recovery phrase</Text>
+            <Text style={styles.verifyBannerBody}>
+              Quick check that your written copy is good.
+            </Text>
+          </View>
+          <Text style={styles.verifyBannerChevron}>{'›'}</Text>
+        </Pressable>
+      ) : null}
+
       {messages.length === 0 ? (
         <ScrollView
           style={styles.emptyScroll}
@@ -421,9 +465,18 @@ export default function ChatScreen() {
                 style={styles.modePill}
                 onPress={() => setModePopoverOpen(true)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${activeAction.label} mode. Double tap to switch.`}
+                accessibilityHint="Switch between Ask, Remember, and Task modes"
               >
                 <Text style={styles.modePillLabel}>{activeAction.label}</Text>
-                <Text style={styles.modePillChevron}>{'\u25BE'}</Text>
+                <Text
+                  style={styles.modePillChevron}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                >
+                  {'\u25BE'}
+                </Text>
               </TouchableOpacity>
               <TextInput
                 ref={inputRef}
@@ -449,12 +502,17 @@ export default function ChatScreen() {
                 onPress={() => sendMessage()}
                 disabled={!inputText.trim() || isTyping}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Send message"
+                accessibilityState={{ disabled: !inputText.trim() || isTyping }}
               >
                 <Text
                   style={[
                     styles.sendArrow,
                     (!inputText.trim() || isTyping) && styles.sendArrowDisabled,
                   ]}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
                 >
                   {'\u2191'}
                 </Text>
@@ -511,6 +569,40 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgPrimary,
+  },
+
+  // Recovery-phrase pending banner. Shown above everything else when
+  // the user tapped "I'll do this later" during onboarding.
+  verifyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF4DB',
+    borderLeftWidth: 3,
+    borderLeftColor: colors.warning,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    borderRadius: radius.sm,
+  },
+  verifyBannerPressed: {
+    opacity: 0.85,
+  },
+  verifyBannerTitle: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 13,
+    color: '#5A3A00',
+  },
+  verifyBannerBody: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: '#8A5A00',
+    marginTop: 1,
+  },
+  verifyBannerChevron: {
+    fontSize: 18,
+    color: '#8A5A00',
+    marginLeft: spacing.sm,
   },
 
   // Empty state / hero

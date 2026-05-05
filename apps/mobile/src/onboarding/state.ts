@@ -30,10 +30,29 @@ export interface CreateDraft {
   mnemonic: string[];
 }
 
-/** Final slot carried through recover → passphrase → provisioning. */
+/** Final slot carried through recover → handle → passphrase → provisioning. */
 export interface RecoverDraft {
   mnemonic: string[];
-  expectedDid: string; // did:plc:... derived from the mnemonic locally
+  /**
+   * `did:key:…` derived locally from the mnemonic — used to populate
+   * the `recover_handle` step's "verify rotation key" check before we
+   * ever leave the device. Once the handle is supplied and resolved
+   * to a `did:plc:…`, that PLC value supersedes this preview in the
+   * `expectedDid` field below.
+   */
+  derivedDidKey: string;
+  /**
+   * The user's published Dina handle (e.g. `alonso77.test-pds.dinakernel.com`).
+   * Captured in the `recover_handle` step so we can call PDS
+   * `resolveHandle` and re-bind the device to the existing did:plc.
+   */
+  handle: string;
+  /**
+   * The `did:plc:…` resolved from the handle and verified to list our
+   * K256 rotation key in `rotationKeys`. Empty until the handle step
+   * completes; provisioning_recover requires it non-empty.
+   */
+  expectedDid: string;
   passphrase: string;
   startupMode: StartupMode;
 }
@@ -50,6 +69,7 @@ export type Step =
   | { kind: 'provisioning_create'; draft: CreateDraft }
   // Recover path --------------------------------------------------------
   | { kind: 'recover_mnemonic'; draft: Partial<RecoverDraft> }
+  | { kind: 'recover_handle'; draft: Partial<RecoverDraft> }
   | { kind: 'recover_passphrase'; draft: Partial<RecoverDraft> }
   | { kind: 'provisioning_recover'; draft: RecoverDraft }
   // Terminal ------------------------------------------------------------
@@ -87,11 +107,13 @@ export function locateStep(step: Step): StepLocation | null {
     case 'provisioning_create':
       return { current: 6, total: 6, label: 'Setting up' };
     case 'recover_mnemonic':
-      return { current: 1, total: 3, label: 'Recovery phrase' };
+      return { current: 1, total: 4, label: 'Recovery phrase' };
+    case 'recover_handle':
+      return { current: 2, total: 4, label: 'Your handle' };
     case 'recover_passphrase':
-      return { current: 2, total: 3, label: 'New passphrase' };
+      return { current: 3, total: 4, label: 'New passphrase' };
     case 'provisioning_recover':
-      return { current: 3, total: 3, label: 'Restoring' };
+      return { current: 4, total: 4, label: 'Restoring' };
     case 'error':
       return null;
   }
@@ -124,8 +146,10 @@ export function previousStep(step: Step): Step | null {
       return null;
     case 'recover_mnemonic':
       return { kind: 'choose' };
-    case 'recover_passphrase':
+    case 'recover_handle':
       return { kind: 'recover_mnemonic', draft: step.draft };
+    case 'recover_passphrase':
+      return { kind: 'recover_handle', draft: step.draft };
     case 'provisioning_recover':
       return null;
     case 'error':

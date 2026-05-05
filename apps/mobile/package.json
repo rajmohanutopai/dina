@@ -56,5 +56,8 @@
     "react-test-renderer": "19.2.5",
     "ts-jest": "^29.2.0",
     "typescript": "^5.5.0"
+  },
+  "op-sqlite": {
+    "fts5": true
   }
 }

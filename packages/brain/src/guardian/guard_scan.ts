@@ -26,7 +26,7 @@ import {
   isEngagementHook,
   isIntimacySimulation,
 } from './anti_her';
-import { detectPII, scrubPII } from '../../../core/src/pii/patterns';
+import { detectPII, scrubPII } from '@dina/core';
 import { GUARD_SCAN } from '../llm/prompts';
 
 // ---------------------------------------------------------------

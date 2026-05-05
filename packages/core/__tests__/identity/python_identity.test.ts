@@ -16,9 +16,8 @@ import {
   keypairFromPEM,
   signWithIdentity,
   verifyWithIdentity,
-  writeServiceKey,
-  loadServiceKey,
 } from '../../src/identity/keypair';
+import { writeServiceKey, loadServiceKey } from '../../src/identity/keypair_node';
 import { TEST_MESSAGE, bytesToHex } from '@dina/test-harness';
 
 describe('Ed25519 Keypair Management', () => {

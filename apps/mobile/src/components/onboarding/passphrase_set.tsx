@@ -9,9 +9,11 @@
 
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { OnboardingShell } from './shell';
+
 import { locateStep, type StartupMode, type Step } from '../../onboarding/state';
 import { colors, radius, spacing } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 const MIN_LENGTH = 8;
 
@@ -19,6 +21,13 @@ export interface PassphraseSetProps {
   initialPassphrase?: string;
   initialConfirm?: string;
   initialMode?: StartupMode;
+  /**
+   * Which flow this screen is part of — picks the right "N of M" label
+   * in the shell. Defaults to `'create'` because PassphraseSet was first
+   * built for the create wizard; the recover flow added later passes
+   * `'recover'` so the progress reads "3 of 4" instead of "3 of 6".
+   */
+  flow?: 'create' | 'recover';
   onContinue: (passphrase: string, mode: StartupMode) => void;
   onBack: () => void;
 }
@@ -33,7 +42,10 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
   const valid = pp.length >= MIN_LENGTH && pp === confirm;
   const strength = strengthOf(pp);
 
-  const step: Step = { kind: 'create_passphrase', draft: {} };
+  const step: Step =
+    props.flow === 'recover'
+      ? { kind: 'recover_passphrase', draft: {} }
+      : { kind: 'create_passphrase', draft: {} };
   return (
     <OnboardingShell
       location={locateStep(step)}

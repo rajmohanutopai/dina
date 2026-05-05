@@ -18,6 +18,25 @@ export interface MnemonicVerifyProps {
   mnemonic: string[];
   onVerified: () => void;
   onBack: () => void;
+  /**
+   * Optional "I'll do this later" affordance. When provided, renders
+   * as a secondary link below the primary "Confirm" button. The
+   * caller is responsible for marking verification as pending and
+   * advancing the user past this step — this component only fires
+   * the callback. Omit to make verification mandatory (e.g. inline
+   * confirm-from-settings flow where there's no rest-of-onboarding
+   * to advance to).
+   */
+  onSkip?: () => void;
+  /**
+   * Suppress the OnboardingShell's "5 OF 6 · CONFIRM PHRASE" pill
+   * and back arrow. Used when this component is reused outside the
+   * onboarding flow (the deferred Confirm-from-Settings route) where
+   * the native nav header already supplies a back button and the
+   * step-counter is misleading. Defaults to false (full onboarding
+   * chrome).
+   */
+  compact?: boolean;
 }
 
 export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
@@ -38,7 +57,9 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
       props.onVerified();
       return;
     }
-    setError('One of those words doesn\u2019t match. Double-check your paper copy and try again.');
+    setError(
+      'One of those words doesn\u2019t match what we generated. Take another look at your paper copy.',
+    );
     setAnswers(challenge.indices.map(() => ''));
     inputs.current[0]?.focus();
   };
@@ -51,14 +72,29 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
   };
 
   const step: Step = { kind: 'create_mnemonic_verify', draft: {} };
+  const compact = props.compact === true;
   return (
     <OnboardingShell
-      location={locateStep(step)}
-      title="Confirm your phrase"
-      subtitle="Fill in the missing words from your paper copy. We'll check all three before continuing."
-      primaryLabel="Verify"
+      // Hide the "5 OF 6" step pill outside the onboarding flow —
+      // the native header on the confirm-from-settings route already
+      // supplies its own title, and the step counter would be lying.
+      location={compact ? null : locateStep(step)}
+      // The route header on the confirm-from-settings page already
+      // renders a back button; suppress the shell's own back arrow
+      // to avoid the duplicate-back-arrow visual.
+      canGoBack={!compact}
+      title="Quick check"
+      subtitle={
+        // JSX attribute strings render `\u2014` literally \u2014 wrap in a
+        // template literal (or use the raw character). Same applies
+        // to any escaped Unicode in attributes.
+        "Just a few words from what you wrote down \u2014 to make sure your copy is good. You can always re-view the full phrase later in Settings."
+      }
+      primaryLabel="Confirm"
       onPrimary={submit}
       primaryDisabled={!allFilled}
+      secondaryLabel={props.onSkip !== undefined ? "I'll do this later" : undefined}
+      onSecondary={props.onSkip}
       onBack={props.onBack}
     >
       {challenge.indices.map((pos, i) => (
@@ -73,7 +109,7 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
-            placeholder="\u2026"
+            placeholder="…"
             placeholderTextColor={colors.textMuted}
             style={styles.input}
             returnKeyType={i === challenge.indices.length - 1 ? 'done' : 'next'}

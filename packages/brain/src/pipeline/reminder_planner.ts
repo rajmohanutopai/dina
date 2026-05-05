@@ -33,9 +33,9 @@ import {
   type ResolvedPerson,
 } from '@dina/core';
 
-import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
-import { createReminder, type Reminder } from '../../../core/src/reminders/service';
-import { queryVault } from '../../../core/src/vault/crud';
+import { scrubPII, rehydratePII } from '@dina/core';
+import { createReminder, type Reminder } from '@dina/core/reminders';
+import { queryVault } from '@dina/core';
 import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
 import { parseReminderPlan } from '../llm/output_parser';
 import { REMINDER_PLAN } from '../llm/prompts';

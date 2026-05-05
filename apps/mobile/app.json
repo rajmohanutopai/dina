@@ -16,7 +16,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dinakernel.mobile",
-      "icon": "./assets/branding/dina-icon.png"
+      "icon": "./assets/branding/dina-icon.png",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification", "fetch"]
+      }
     },
     "android": {
       "adaptiveIcon": {

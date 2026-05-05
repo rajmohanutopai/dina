@@ -16,7 +16,7 @@
  * Source: brain/src/service/llm_router.py
  */
 
-import { CloudConsentError } from '../../../core/src/errors';
+import { CloudConsentError } from '@dina/core';
 
 export type TaskType =
   | 'classify'

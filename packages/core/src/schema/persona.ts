@@ -8,9 +8,6 @@
  * Source: core/internal/adapter/sqlite/schema/persona_001.sql
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-
 // ---------------------------------------------------------------
 // Table metadata
 // ---------------------------------------------------------------
@@ -79,21 +76,6 @@ const PERSONA_TABLE_NAMES = [
   'embedding_meta',
   'schema_version',
 ];
-
-// ---------------------------------------------------------------
-// DDL loading
-// ---------------------------------------------------------------
-
-let persona001DDL: string | null = null;
-
-/** Get the persona_001 schema DDL. */
-export function getPersona001DDL(): string {
-  if (!persona001DDL) {
-    const fixturePath = path.resolve(__dirname, '../../../fixtures/schema/persona_001.sql');
-    persona001DDL = fs.readFileSync(fixturePath, 'utf-8');
-  }
-  return persona001DDL;
-}
 
 /** Get a list of all table names in a persona vault database. */
 export function getPersonaTableNames(): string[] {

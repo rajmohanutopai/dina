@@ -11,8 +11,8 @@ import {
   isRegisteredUIDevice,
   resetUIAuth,
 } from '../../src/auth/ui_auth';
-import { signRequest } from '../../../core/src/auth/canonical';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
+import { signRequest } from '@dina/core';
+import { getPublicKey } from '@dina/core';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 const deviceDID = 'did:key:z6MkUIDevice';

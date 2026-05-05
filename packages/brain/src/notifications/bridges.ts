@@ -23,9 +23,9 @@
  * extra layer of indirection for no testability gain.
  */
 
-import type { ApprovalManager, ApprovalRequest } from '../../../core/src/approval/manager';
-import type { WorkflowRepository } from '../../../core/src/workflow/repository';
-import type { WorkflowTask } from '../../../core/src/workflow/domain';
+import type { ApprovalManager, ApprovalRequest } from '@dina/core';
+import type { WorkflowRepository } from '@dina/core';
+import type { WorkflowTask } from '@dina/core';
 import { appendNotification } from './inbox';
 
 /**

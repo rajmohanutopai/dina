@@ -162,6 +162,40 @@ describe('@dina/home-node/service-runtime', () => {
     await runtime.dispose();
   });
 
+  it('fires inboundNotifier on accepted queries (mobile parity — BusDriver flow)', async () => {
+    const core = stubCore();
+    const inboundNotifier = jest.fn();
+    const runtime = buildHomeNodeServiceRuntime({
+      core: core.client,
+      appView: stubAppView(),
+      readConfig: () => SERVICE_CONFIG,
+      rejectResponder: jest.fn(),
+      deliver: jest.fn(),
+      inboundNotifier,
+      nowSecFn: () => 2_000,
+      generateUUID: () => 'uuid-bus',
+    });
+
+    await runtime.dispatcher.dispatch(
+      REQUESTER,
+      { type: 'service.query', from: REQUESTER, to: 'did:plc:busdriver' } as never,
+      VALID_QUERY,
+    );
+
+    // Auto-policy capability → execution task path. Inbound notifier
+    // fires once with the operator-facing notice (kind, fromDID,
+    // capability, serviceName) so mobile can post a system line into
+    // the chat thread.
+    expect(inboundNotifier).toHaveBeenCalledTimes(1);
+    expect(inboundNotifier).toHaveBeenCalledWith({
+      kind: 'execution',
+      taskId: 'svc-exec-uuid-bus',
+      fromDID: REQUESTER,
+      capability: 'eta_query',
+      serviceName: 'Bus 42',
+    });
+  });
+
   it('fails fast when required runtime dependencies are omitted', () => {
     const base = {
       core: stubCore().client,

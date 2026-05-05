@@ -10,7 +10,7 @@
  * Source: ARCHITECTURE.md Task 3.24
  */
 
-import { queryVault } from '../../../core/src/vault/crud';
+import { queryVault } from '@dina/core';
 
 // ---------------------------------------------------------------
 // 7-day frequency cap — prevent nudge spam per contact

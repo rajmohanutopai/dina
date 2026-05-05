@@ -15,18 +15,18 @@
  * This test proves the entire Dina mobile architecture works end-to-end.
  */
 
-import { runOnboarding } from '../../../core/src/onboarding/portable';
-import { fullUnlock } from '../../../core/src/lifecycle/unlock';
-import { deserializeWrappedSeed } from '../../../core/src/storage/seed_file';
+import { runOnboarding } from '@dina/core';
+import { fullUnlock } from '@dina/core';
+import { deserializeWrappedSeed } from '@dina/core';
 import {
   createPersona,
   listPersonas,
   isPersonaOpen,
   resetPersonaState,
-} from '../../../core/src/persona/service';
-import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
-import { DEFAULT_TEST_PERSONAS } from '../../../core/src/vault/crud';
-import { ingest, claim, resolve, resetStagingState } from '../../../core/src/staging/service';
+} from '@dina/core';
+import { storeItem, queryVault, clearVaults } from '@dina/core';
+import { DEFAULT_TEST_PERSONAS } from '@dina/core';
+import { ingest, claim, stagingResolve as resolve, resetStagingState } from '@dina/core';
 import { classifyItem, enrichItem } from '../../src/staging/processor';
 import { reason, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
 import {
@@ -37,11 +37,11 @@ import {
   resetQuietHoursState,
   resetBatchingState,
 } from '../../src/guardian/silence';
-import { runHealthCheck } from '../../../core/src/diagnostics/health';
-import { resetAuditState, auditCount } from '../../../core/src/audit/service';
-import { resetRotationState, getCurrentGeneration } from '../../../core/src/identity/rotation';
-import { resetLifecycleState, areSecretsZeroed } from '../../../core/src/lifecycle/sleep_wake';
-import { resetReminderState } from '../../../core/src/reminders/service';
+import { runHealthCheck } from '@dina/core';
+import { resetAuditState, auditCount } from '@dina/core/audit';
+import { resetRotationState, getCurrentGeneration } from '@dina/core';
+import { resetLifecycleState, areSecretsZeroed } from '@dina/core';
+import { resetReminderState } from '@dina/core/reminders';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 import { makeEvent, TEST_PASSPHRASE, resetFactoryCounters } from '@dina/test-harness';
 

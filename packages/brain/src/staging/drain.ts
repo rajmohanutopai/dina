@@ -19,8 +19,8 @@
  * which talk to Core instead of the in-memory queue.
  */
 
-import { listContacts, getContact } from '../../../core/src/contacts/directory';
-import { isVaultItemType } from '../../../core/src/vault/validation';
+import { listContacts, getContact } from '@dina/core';
+import { isVaultItemType } from '@dina/core';
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,
@@ -34,7 +34,7 @@ import { scoreSender } from '../trust/scorer';
 import { getAccessiblePersonas } from '../vault_context/assembly';
 
 import type { StagingProcessResult } from './processor';
-import type { VaultItemType } from '../../../core/src/vault/validation';
+import type { VaultItemType } from '@dina/core';
 import type { CoreClient } from '@dina/core';
 
 /**

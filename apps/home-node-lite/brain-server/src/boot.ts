@@ -59,7 +59,14 @@ export interface BrainServerDependencyStatus {
   askRoutes: 'configured' | 'disabled';
   serviceRuntime: 'configured' | 'disabled';
   stagingDrain: 'running' | 'disabled';
-  runtime: 'pending';
+  /**
+   * `'pending'` while `bootServer` is mid-flight (route handler also
+   * sees this if `/readyz` is hit before listen returns). Flips to
+   * `'ok'` after Fastify is listening and schedulers/compositions have
+   * been started — the overall `/readyz` status keys off this and
+   * `core`.
+   */
+  runtime: 'pending' | 'ok';
 }
 
 export interface BrainServerSchedulers {
@@ -239,18 +246,28 @@ export async function bootServer(
     dependencyStatus.askRoutes = 'configured';
   }
   app.get('/readyz', async (_req, reply) => {
-    await reply.code(503).send({
-      status: 'not_ready',
+    const checks = {
+      appView: 'ok' as const,
+      core: dependencyStatus.core === 'configured' ? ('ok' as const) : ('fail' as const),
+      askRoutes:
+        dependencyStatus.askRoutes === 'configured' ? ('ok' as const) : ('disabled' as const),
+      serviceRuntime:
+        dependencyStatus.serviceRuntime === 'configured'
+          ? ('ok' as const)
+          : ('disabled' as const),
+      stagingDrain:
+        dependencyStatus.stagingDrain === 'running' ? ('ok' as const) : ('disabled' as const),
+      runtime: dependencyStatus.runtime === 'ok' ? ('ok' as const) : ('fail' as const),
+    };
+    // Ready when boot completed (`runtime === 'ok'`) AND Core is wired.
+    // Without Core the server is a stub: no vault, no D2D, no ask path
+    // worth exposing. AppView/askRoutes/service/staging are tracked for
+    // diagnostics but only Core+runtime gate readiness.
+    const ready = checks.runtime === 'ok' && checks.core === 'ok';
+    await reply.code(ready ? 200 : 503).send({
+      status: ready ? 'ok' : 'not_ready',
       role: 'brain',
-      checks: {
-        appView: 'ok',
-        core: dependencyStatus.core === 'configured' ? 'ok' : 'fail',
-        askRoutes: dependencyStatus.askRoutes === 'configured' ? 'ok' : 'disabled',
-        serviceRuntime:
-          dependencyStatus.serviceRuntime === 'configured' ? 'ok' : 'disabled',
-        stagingDrain: dependencyStatus.stagingDrain === 'running' ? 'ok' : 'disabled',
-        runtime: 'fail',
-      },
+      checks,
     });
   });
 
@@ -263,6 +280,10 @@ export async function bootServer(
     dependencyStatus.stagingDrain = 'running';
   }
   compositions.service?.start();
+  // Boot finished — `/readyz` now reflects "runtime ok" rather than
+  // "pending". The overall ready/not-ready code still depends on Core,
+  // so a Core-less boot stays 503 (with runtime: 'ok', core: 'fail').
+  dependencyStatus.runtime = 'ok';
   logger.info({ boundAddress }, 'brain-server listening');
 
   return { app, logger, config, clients, schedulers, compositions, dependencyStatus, boundAddress };

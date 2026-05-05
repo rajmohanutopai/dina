@@ -35,7 +35,7 @@ import { applyMigrations, PERSONA_MIGRATIONS } from '@dina/core';
 import {
   SQLiteVaultRepository,
   setVaultRepository,
-} from '@dina/core/src/vault/repository';
+} from '@dina/core';
 
 export interface SQLiteVaultHandle {
   adapter: NodeSQLiteAdapter;

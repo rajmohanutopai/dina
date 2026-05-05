@@ -7,7 +7,7 @@
  * Source: brain/tests/test_auth.py
  */
 
-import { verifyRequest } from '../../../core/src/auth/canonical';
+import { verifyRequest } from '@dina/core';
 
 const PUBLIC_PATHS = new Set(['/healthz', '/readyz']);
 const serviceRegistry = new Set<string>();

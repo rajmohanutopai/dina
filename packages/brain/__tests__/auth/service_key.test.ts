@@ -13,8 +13,8 @@ import {
   registerUIDevice,
   clearRegistries,
 } from '../../src/auth/service_key';
-import { signRequest } from '../../../core/src/auth/canonical';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
+import { signRequest } from '@dina/core';
+import { getPublicKey } from '@dina/core';
 import { TEST_ED25519_SEED, stringToBytes } from '@dina/test-harness';
 
 describe('Brain Service Key Auth', () => {

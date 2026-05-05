@@ -76,21 +76,21 @@ import {
   registerPersonaSelector,
   resetPersonaSelector,
 } from '../../src/routing/persona_selector';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+import { InProcessTransport } from '@dina/core';
 
-import { createCoreRouter } from '../../../core/src/server/core_server';
+import { createCoreRouter } from '@dina/core';
 import {
   clearVaults,
   DEFAULT_TEST_PERSONAS,
   queryVault,
-} from '../../../core/src/vault/crud';
-import { resetStagingState } from '../../../core/src/staging/service';
+} from '@dina/core';
+import { resetStagingState } from '@dina/core';
 import {
   createPersona,
   openPersona,
   resetPersonaState,
-} from '../../../core/src/persona/service';
-import { configureRateLimiter } from '../../../core/src/auth/middleware';
+} from '@dina/core';
+import { configureRateLimiter } from '@dina/core';
 
 import {
   closeSQLiteVault,

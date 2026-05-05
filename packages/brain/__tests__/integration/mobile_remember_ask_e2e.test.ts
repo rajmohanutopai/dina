@@ -30,15 +30,15 @@
  * "I don't have any relevant information".
  */
 
-import { configureRateLimiter } from '@dina/core/src/auth/middleware';
-import { createCoreRouter } from '@dina/core/src/server/core_server';
-import { resetStagingState } from '@dina/core/src/staging/service';
+import { configureRateLimiter } from '@dina/core';
+import { createCoreRouter } from '@dina/core';
+import { resetStagingState } from '@dina/core';
 import {
   clearVaults,
   queryVault,
-} from '@dina/core/src/vault/crud';
+} from '@dina/core';
 
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+import { InProcessTransport } from '@dina/core';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import {
   setAccessiblePersonas,
@@ -141,8 +141,8 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
     // Sanity: the module-global inbox has the item before the drain
     // scheduler fires. If this ever fails, ingestRemember's CoreClient
     // ingest path regressed.
-    const { listByStatus } = await import('@dina/core/src/staging/service');
-    const received = listByStatus('received');
+    const { stagingListByStatus } = await import('@dina/core');
+    const received = stagingListByStatus('received');
     expect(received.length).toBe(1);
     expect(received[0]?.id).toBe(stagingId);
 

@@ -4,8 +4,10 @@ import {
   createAskCoordinator,
   DEFAULT_ASK_SYSTEM_PROMPT,
   ServiceQueryOrchestrator,
+  type AgenticAskPipeline,
   type AppViewClient,
   type AskCoordinator,
+  type BuildAgenticAskPipelineInput,
   type LLMProvider,
   type ProviderName,
 } from '@dina/brain';
@@ -23,16 +25,55 @@ export interface HomeNodeAskRuntimeOptions {
   sensitivePersonas?: readonly string[];
 }
 
-export interface BuildHomeNodeAskRuntimeOptions extends HomeNodeAskRuntimeOptions {
+interface BuildHomeNodeAskRuntimeCommon extends HomeNodeAskRuntimeOptions {
+  logger?: (entry: Record<string, unknown>) => void;
+  /**
+   * Workflow client for the `delegate_to_agent` tool. Optional —
+   * a host that hasn't paired any agents simply omits it and the
+   * agentic loop drops the delegation tool from the registry.
+   */
+  workflowClient?: BuildAgenticAskPipelineInput['workflowClient'];
+}
+
+/**
+ * Server-style invocation: caller hands us a full `CoreClient` and
+ * `AppViewClient`, and we build a fresh `ServiceQueryOrchestrator`
+ * internally. Used by home-node-lite brain-server, where the runtime
+ * is composed once at boot and outlives the process.
+ */
+export interface BuildHomeNodeAskRuntimeServerOptions extends BuildHomeNodeAskRuntimeCommon {
   core: CoreClient;
   appView: AppViewClient;
-  logger?: (entry: Record<string, unknown>) => void;
+  orchestratorHandle?: undefined;
 }
+
+/**
+ * Mobile-style invocation: caller owns the `ServiceQueryOrchestrator`
+ * inside its `DinaNode` lifecycle (so D2D dispatch and the LLM tool
+ * share one instance) and supplies a lazy handle that proxies to that
+ * owner. The `core` and `appView` handles only need the narrower
+ * pipeline tool-surfaces — orchestrator construction is skipped.
+ */
+export interface BuildHomeNodeAskRuntimeWithHandleOptions extends BuildHomeNodeAskRuntimeCommon {
+  core: BuildAgenticAskPipelineInput['coreClient'];
+  appView: BuildAgenticAskPipelineInput['appViewClient'];
+  orchestratorHandle: BuildAgenticAskPipelineInput['orchestratorHandle'];
+}
+
+export type BuildHomeNodeAskRuntimeOptions =
+  | BuildHomeNodeAskRuntimeServerOptions
+  | BuildHomeNodeAskRuntimeWithHandleOptions;
 
 export interface HomeNodeAskRuntime {
   coordinator: AskCoordinator;
   approvalManager: ApprovalManager;
-  orchestrator: ServiceQueryOrchestrator;
+  /** The constructed orchestrator. `null` when the caller injected an
+   * `orchestratorHandle`; otherwise the freshly-built instance the
+   * pipeline is using internally. */
+  orchestrator: ServiceQueryOrchestrator | null;
+  /** Full pipeline bundle for callers that wire additional surfaces
+   * (mobile chat tools, `makeAgenticAskHandler` direct registration). */
+  pipeline: AgenticAskPipeline;
 }
 
 export function buildHomeNodeAskRuntime(
@@ -40,18 +81,35 @@ export function buildHomeNodeAskRuntime(
 ): HomeNodeAskRuntime {
   validateAskRuntimeOptions(options);
   const approvalManager = options.approvalManager ?? new ApprovalManager();
-  const orchestrator = new ServiceQueryOrchestrator({
-    appViewClient: options.appView,
-    coreClient: options.core,
-  });
+
+  // When the caller injects a handle (mobile's lazy proxy to a
+  // node-owned orchestrator), use it directly and skip constructing
+  // our own. Otherwise stand up a fresh orchestrator and use it as
+  // the handle for the pipeline's query_service tool.
+  let orchestrator: ServiceQueryOrchestrator | null;
+  let orchestratorHandle: BuildAgenticAskPipelineInput['orchestratorHandle'];
+  if (options.orchestratorHandle !== undefined) {
+    orchestrator = null;
+    orchestratorHandle = options.orchestratorHandle;
+  } else {
+    orchestrator = new ServiceQueryOrchestrator({
+      appViewClient: options.appView,
+      coreClient: options.core,
+    });
+    orchestratorHandle = orchestrator;
+  }
+
   const pipeline = buildAgenticAskPipeline({
     llm: options.llm,
     providerName: options.providerName,
     appViewClient: options.appView,
-    orchestratorHandle: orchestrator,
+    orchestratorHandle,
     coreClient: options.core,
     approvalManager,
     cloudConsentGranted: options.cloudConsentGranted ?? true,
+    ...(options.workflowClient !== undefined
+      ? { workflowClient: options.workflowClient }
+      : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.sensitivePersonas !== undefined
       ? { sensitivePersonas: options.sensitivePersonas }
@@ -64,7 +122,7 @@ export function buildHomeNodeAskRuntime(
     executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt }),
     systemPrompt,
   });
-  return { coordinator, approvalManager, orchestrator };
+  return { coordinator, approvalManager, orchestrator, pipeline };
 }
 
 function validateAskRuntimeOptions(options: BuildHomeNodeAskRuntimeOptions): void {

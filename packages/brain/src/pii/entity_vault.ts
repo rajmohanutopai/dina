@@ -8,7 +8,7 @@
  * Source: brain/tests/test_pii.py (Entity Vault section)
  */
 
-import { scrubPII, rehydratePII, type ScrubResult } from '../../../core/src/pii/patterns';
+import { scrubPII, rehydratePII, type ScrubResult } from '@dina/core';
 import { detectTier2, type PatternMatch } from './tier2_patterns';
 
 export interface EntityVaultEntry {

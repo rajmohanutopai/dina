@@ -10,7 +10,7 @@
  * Source: brain/src/prompts.py PROMPT_PERSON_IDENTITY_EXTRACTION
  */
 
-import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
+import { scrubPII, rehydratePII } from '@dina/core';
 import { PERSON_IDENTITY_EXTRACTION } from '../llm/prompts';
 
 // ---------------------------------------------------------------

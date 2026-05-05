@@ -19,19 +19,20 @@
 import React from 'react';
 import { render, act, fireEvent } from '@testing-library/react-native';
 
-jest.mock('@dina/core/src/vault/crud', () => ({
+jest.mock('@dina/core', () => ({
   __esModule: true,
+  ...jest.requireActual('@dina/core'),
   queryVault: jest.fn(),
 }));
 
-import * as vaultCrud from '@dina/core/src/vault/crud';
+import * as vaultCrud from '@dina/core';
 import WriteScreen from '../../app/trust/write';
 import type {
   ChatMessage,
   ChatOptions,
   ChatResponse,
   LLMProvider,
-} from '@dina/brain/src/llm/adapters/provider';
+} from '@dina/brain/llm';
 
 const queryVaultMock = vaultCrud.queryVault as jest.MockedFunction<typeof vaultCrud.queryVault>;
 

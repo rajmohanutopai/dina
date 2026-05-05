@@ -42,7 +42,7 @@ import {
   resetThreads,
   type ChatMessage,
   type ReviewDraftLifecycle,
-} from '@dina/brain/src/chat/thread';
+} from '@dina/brain/chat';
 import { emptyWriteFormState } from '../../src/trust/write_form_data';
 
 const injectMock = appview.injectAttestation as jest.MockedFunction<

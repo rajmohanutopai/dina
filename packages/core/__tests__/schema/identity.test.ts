@@ -6,12 +6,8 @@
  * Source: core/internal/adapter/sqlite/schema/identity_001.sql, identity_002_trust_cache.sql
  */
 
-import {
-  getIdentity001DDL,
-  getIdentity002DDL,
-  getIdentityTableNames,
-  getTableColumns,
-} from '../../src/schema/identity';
+import { getIdentityTableNames, getTableColumns } from '../../src/schema/identity';
+import { getIdentity001DDL, getIdentity002DDL } from '../../src/schema/identity_node';
 
 describe('Identity Database Schema', () => {
   describe('identity_001', () => {

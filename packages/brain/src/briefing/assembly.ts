@@ -13,7 +13,7 @@
  * Source: ARCHITECTURE.md Task 5.4
  */
 
-import { listPending } from '../../../core/src/reminders/service';
+import { listPending } from '@dina/core/reminders';
 
 export interface BriefingItem {
   type: 'engagement' | 'reminder' | 'approval' | 'memory';

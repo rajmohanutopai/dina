@@ -47,12 +47,12 @@ import {
   type TaskType,
 } from './router';
 import { getProviderTiers } from './provider_config';
-import { CloudConsentError } from '../../../core/src/errors';
+import { CloudConsentError } from '@dina/core';
 import {
   scrubPII,
   rehydratePII,
   type PIIMatch,
-} from '../../../core/src/pii/patterns';
+} from '@dina/core';
 
 export interface LLMRouterOptions {
   /**

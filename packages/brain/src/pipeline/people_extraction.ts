@@ -17,7 +17,7 @@ import {
   type ResolvedPerson,
   type PersonLink,
 } from '../person/linking';
-import { findByAlias } from '../../../core/src/contacts/directory';
+import { findByAlias } from '@dina/core';
 
 export interface PersonMention {
   name: string;

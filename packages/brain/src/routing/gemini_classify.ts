@@ -378,7 +378,7 @@ function defaultResolveInstalledPersonas(names: string[]): InstalledPersona[] {
   // to Core's persona service — keeps this file importable in tests
   // that stub out the resolver.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const core = require('../../../core/src/persona/service') as {
+  const core = require('@dina/core') as {
     getPersona: (name: string) => { name: string; tier: string; description: string } | null;
   };
   return names.map((name) => {

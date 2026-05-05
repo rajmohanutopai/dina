@@ -11,8 +11,8 @@ import {
 } from '../../src/pipeline/people_extraction';
 import { registerPersonLinkProvider, resetPersonLinkProvider } from '../../src/person/linking';
 import type { ResolvedPerson } from '../../src/person/linking';
-import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
-import { addAlias } from '../../../core/src/contacts/directory';
+import { addContact, resetContactDirectory } from '@dina/core';
+import { addAlias } from '@dina/core';
 
 const knownPeople: ResolvedPerson[] = [
   { personId: 'p1', name: 'Alice', surfaces: ['alice@example.com', 'Ali'] },

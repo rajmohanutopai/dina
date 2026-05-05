@@ -22,13 +22,13 @@
  */
 
 
-import { createCoreRouter } from '@dina/core/src/server/core_server';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
+import { createCoreRouter } from '@dina/core';
+import { InProcessTransport } from '@dina/core';
 import {
   ingest as stagingIngest,
   resetStagingState,
-} from '@dina/core/src/staging/service';
-import { clearVaults } from '@dina/core/src/vault/crud';
+} from '@dina/core';
+import { clearVaults } from '@dina/core';
 import {
   resetReasoningProvider,
   setAccessiblePersonas,
@@ -37,11 +37,11 @@ import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import {
   configureRateLimiter,
   registerPublicKeyResolver,
-} from '@dina/core/src/auth/middleware';
+} from '@dina/core';
 import {
   listByPersona as listRemindersByPersona,
   resetReminderState,
-} from '@dina/core/src/reminders/service';
+} from '@dina/core/reminders';
 import {
   registerReminderLLM,
   resetReminderLLM,

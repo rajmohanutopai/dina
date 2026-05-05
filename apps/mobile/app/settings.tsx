@@ -16,7 +16,8 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { loadVerificationStatus } from '../src/services/verification_status';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import {
   PROVIDERS,
@@ -25,6 +26,7 @@ import {
   removeApiKey,
   maskKey,
   validateKeyFormat,
+  verifyKey,
   getConfiguredProviders,
 } from '../src/ai/provider';
 import {
@@ -67,6 +69,20 @@ export default function SettingsScreen() {
   const [keyInput, setKeyInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState<ProviderType | null>(peekActiveProvider());
+  // Refreshed on focus so the row disappears as soon as the user
+  // completes the deferred Confirm flow and navigates back.
+  const [verificationPending, setVerificationPending] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void loadVerificationStatus().then((status) => {
+        if (!cancelled) setVerificationPending(status === 'pending');
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   const loadStates = useCallback(async () => {
     const states: Record<string, ProviderState> = {};
@@ -119,14 +135,25 @@ export default function SettingsScreen() {
   }, [loadStates]);
 
   const handleSaveKey = async (provider: ProviderType) => {
-    const error = validateKeyFormat(provider, keyInput);
-    if (error) {
-      Alert.alert('Invalid Key', error);
+    const formatError = validateKeyFormat(provider, keyInput);
+    if (formatError) {
+      Alert.alert('Invalid Key', formatError);
       return;
     }
 
     setSaving(true);
+    // Probe the provider before persisting. Without this, an
+    // obviously-bogus-but-correctly-formatted key gets saved + flipped
+    // to ACTIVE; subsequent /ask calls quietly fall back through the
+    // chat-wiring stack instead of telling the user their key is dead
+    // (MT-08-I2). Catching it on save means the user sees the failure
+    // at the moment they're explicitly testing the key.
     try {
+      const probeError = await verifyKey(provider, keyInput.trim());
+      if (probeError !== null) {
+        Alert.alert("Key didn't work", probeError);
+        return;
+      }
       await saveApiKey(provider, keyInput.trim());
       await saveActiveProvider(provider);
       await wireBrainChatProvider(provider);
@@ -420,6 +447,34 @@ export default function SettingsScreen() {
           here so the user sees one tidy block of "what protects
           your data". */}
       <SettingsSection title="SECURITY">
+        {/* "Confirm recovery phrase" — only renders while the user
+            has the in-onboarding "Quick check" deferred (status =
+            'pending'). Pinned to the top of SECURITY so it's the
+            first thing they see when they come here looking for it. */}
+        {verificationPending ? (
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => router.push('/confirm-recovery-phrase')}
+            accessibilityRole="button"
+            accessibilityLabel="Confirm recovery phrase"
+            testID="settings-row-confirm-recovery-phrase"
+          >
+            <Text style={styles.rowLabel}>Confirm recovery phrase</Text>
+            <Text style={styles.rowValuePending}>Pending {'›'}</Text>
+          </TouchableOpacity>
+        ) : null}
+        {/* "View recovery phrase" is the only other ACTIONABLE row in
+            this section; rest are read-only crypto labels. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/recovery-phrase')}
+          accessibilityRole="button"
+          accessibilityLabel="View recovery phrase"
+          testID="settings-row-recovery-phrase"
+        >
+          <Text style={styles.rowLabel}>View recovery phrase</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         <SettingsRow label="Encryption" value="AES-256-GCM" />
         <SettingsRow label="Key derivation" value="SLIP-0010 + HKDF" />
         <SettingsRow label="Key storage" value="Device Keychain" />
@@ -619,6 +674,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textMuted,
+  },
+  rowValuePending: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 13,
+    color: colors.warning,
   },
 
   footer: { alignItems: 'center', marginTop: spacing.xl, paddingVertical: spacing.lg },

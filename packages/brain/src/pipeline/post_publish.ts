@@ -12,7 +12,7 @@
  * Source: ARCHITECTURE.md Task 3.29
  */
 
-import { getContact, updateContact } from '../../../core/src/contacts/directory';
+import { getContact, updateContact } from '@dina/core';
 
 import { extractIdentityLinks } from './identity_extraction';
 import {
@@ -21,7 +21,7 @@ import {
 } from './people_graph_extraction';
 import { planReminders } from './reminder_planner';
 
-import type { VaultItemType } from '../../../core/src/vault/validation';
+import type { VaultItemType } from '@dina/core';
 
 export interface PostPublishResult {
   remindersCreated: number;

@@ -186,7 +186,28 @@ export const Keyboard = {
   removeAllListeners: noop,
 };
 
+// AppState mock with a small handler registry so tests can fire
+// change events. The recovery-phrase screen wipes its revealed state
+// on `inactive`/`background` (recents-thumbnail safety); without a
+// fireable handler the test for that path can't drive it.
+type AppStateHandler = (next: 'active' | 'background' | 'inactive') => void;
+const __appStateChangeHandlers: AppStateHandler[] = [];
+
 export const AppState = {
   currentState: 'active' as 'active' | 'background' | 'inactive',
-  addEventListener: () => ({ remove: noop }),
+  addEventListener: (event: string, handler: AppStateHandler) => {
+    if (event === 'change') {
+      __appStateChangeHandlers.push(handler);
+    }
+    return {
+      remove: () => {
+        const i = __appStateChangeHandlers.indexOf(handler);
+        if (i >= 0) __appStateChangeHandlers.splice(i, 1);
+      },
+    };
+  },
+  // Test escape hatch — exposed on the mock so a test can fire an
+  // app-state transition without going through native bridges.
+  // Production code never reads this property.
+  __changeHandlers: __appStateChangeHandlers,
 };

@@ -13,8 +13,8 @@
  * Source: ARCHITECTURE.md Task 5.3
  */
 
-import { queryVault } from '../../../core/src/vault/crud';
-import type { Reminder } from '../../../core/src/reminders/service';
+import { queryVault } from '@dina/core';
+import type { Reminder } from '@dina/core/reminders';
 
 export interface EnrichedReminder {
   originalMessage: string;

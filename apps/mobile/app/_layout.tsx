@@ -37,7 +37,7 @@ import {
 import * as Notifications from 'expo-notifications';
 import { colors, fonts } from '../src/theme';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
-import { useIsUnlocked } from '../src/hooks/useUnlock';
+import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
 import type { BootDegradation } from '../src/services/boot_service';
 import {
   subscribeRuntimeWarnings,
@@ -89,11 +89,9 @@ function DinaHeaderTitle() {
 // bottom-tab slot.  Top-left placement is the standard drawer spot
 // on both iOS and Android and stays out of the way of a rightward
 // `headerRight` content slot.
-type NavMenuItem = {
-  label: string;
-  icon: IoniconName;
-  href: string;
-};
+type NavMenuItem =
+  | { label: string; icon: IoniconName; href: string; action?: undefined }
+  | { label: string; icon: IoniconName; href?: undefined; action: 'lock' };
 
 const NAV_MENU_ITEMS: NavMenuItem[] = [
   { label: 'Vault',         icon: 'lock-closed-outline',     href: '/vault'         },
@@ -102,6 +100,10 @@ const NAV_MENU_ITEMS: NavMenuItem[] = [
   // entry would just be a duplicate. Reachable via the bell-icon tab.
   { label: 'Settings',      icon: 'settings-outline',        href: '/settings'      },
   { label: 'Help',          icon: 'help-circle-outline',     href: '/help'          },
+  // Action item — flips `isUnlocked()` → false, tearing down all
+  // open SQLCipher handles. UnlockGate's subscriber re-renders to the
+  // "Welcome back" passphrase prompt on the next tick.
+  { label: 'Lock vault',    icon: 'log-out-outline',         action: 'lock'         },
 ];
 
 function HeaderMenuButton({ onPress }: { onPress: () => void }) {
@@ -215,7 +217,7 @@ function NavMenuSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  onSelect: (href: string) => void;
+  onSelect: (item: NavMenuItem) => void;
   /**
    * Pathname of the currently rendered screen, e.g. `/settings` or
    * `/vault/general`. The matching menu entry is omitted so the user
@@ -226,9 +228,13 @@ function NavMenuSheet({
 }) {
   // Match by prefix so deep routes like `/vault/general` still hide
   // the Vault entry. Exact equality alone would leave Vault visible
-  // when the user is already inside one of its sub-screens.
+  // when the user is already inside one of its sub-screens. Action
+  // items (no href) are always shown — they're not duplicating any
+  // current route.
   const items = NAV_MENU_ITEMS.filter(
-    (item) => !(currentPath === item.href || currentPath.startsWith(`${item.href}/`)),
+    (item) =>
+      item.href === undefined ||
+      !(currentPath === item.href || currentPath.startsWith(`${item.href}/`)),
   );
   return (
     <Modal
@@ -261,11 +267,11 @@ function NavMenuSheet({
         >
           {items.map((item) => (
             <TouchableOpacity
-              key={item.href}
+              key={item.href ?? `action:${item.action}`}
               style={navMenuStyles.row}
               accessibilityRole="button"
               accessibilityLabel={item.label}
-              onPress={() => onSelect(item.href)}
+              onPress={() => onSelect(item)}
             >
               <Ionicons
                 name={item.icon}
@@ -458,9 +464,24 @@ export default function RootLayout() {
     getMenuOpen,
     getMenuOpen,
   );
-  const handleMenuSelect = (href: string) => {
+  const handleMenuSelect = (item: NavMenuItem) => {
     closeMenu();
-    router.push(href as never);
+    if (item.href !== undefined) {
+      router.push(item.href as never);
+      return;
+    }
+    if (item.action === 'lock') {
+      // Pop back to the index tab first — most drill-down screens
+      // assume the vault is open and would render half-blank against
+      // a sealed vault. The UnlockGate subscriber overlays the
+      // unlock screen on top of whatever route we land on.
+      try {
+        router.replace('/' as never);
+      } catch {
+        /* ignore — UnlockGate covers the screen regardless */
+      }
+      void sealVault();
+    }
   };
 
   // Reused by every drill-down screen via `headerLeft` so the user
@@ -854,6 +875,27 @@ export default function RootLayout() {
               options={{
                 title: 'Admin',
                 // Drill-down from Settings; not a tab target.
+                href: null,
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="recovery-phrase"
+              options={{
+                title: 'Recovery phrase',
+                // Drill-down from Settings → Security. Highest-stakes
+                // reveal in the app — never a tab target.
+                href: null,
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="confirm-recovery-phrase"
+              options={{
+                title: 'Confirm phrase',
+                // Drill-down from the chat-home banner OR the
+                // Settings → "Confirm recovery phrase" row that
+                // appears only while verification is pending.
                 href: null,
                 headerLeft: renderHeaderBackButton,
               }}

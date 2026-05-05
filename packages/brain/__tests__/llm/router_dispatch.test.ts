@@ -20,7 +20,7 @@ import type {
   ChatResponse,
   LLMProvider,
 } from '../../src/llm/adapters/provider';
-import { CloudConsentError } from '../../../core/src/errors';
+import { CloudConsentError } from '@dina/core';
 
 function makeStubProvider(overrides?: Partial<ChatResponse>): {
   provider: LLMProvider;

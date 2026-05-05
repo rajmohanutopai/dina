@@ -32,9 +32,9 @@ import {
   getNotificationLogRepository,
   type NotificationKind,
   type StoredNotificationItem,
-} from '../../../core/src/notifications/repository';
+} from '@dina/core';
 
-export type { NotificationKind } from '../../../core/src/notifications/repository';
+export type { NotificationKind } from '@dina/core';
 
 export interface NotificationItem {
   readonly id: string;

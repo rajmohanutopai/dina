@@ -38,6 +38,22 @@ export function mnemonicToEntropy(mnemonic: string): Uint8Array {
   return bip39.mnemonicToEntropy(mnemonic, wordlist);
 }
 
+/**
+ * Convert raw entropy bytes back into the 24-word BIP-39 mnemonic.
+ *
+ * Inverse of `mnemonicToEntropy`. Used by the "View recovery phrase"
+ * Settings surface so the user can re-display their words after
+ * onboarding without us ever persisting the words themselves — we
+ * only store the wrapped seed (entropy), and re-derive the words on
+ * demand from the unwrapped seed.
+ *
+ * Throws if the entropy length is not 16, 20, 24, 28, or 32 bytes
+ * (BIP-39 spec). For Dina we always pass 32 → 24 words.
+ */
+export function entropyToMnemonic(entropy: Uint8Array): string {
+  return bip39.entropyToMnemonic(entropy, wordlist);
+}
+
 /** Validate a BIP-39 mnemonic (checksum + wordlist check). */
 export function validateMnemonic(mnemonic: string): boolean {
   return bip39.validateMnemonic(mnemonic, wordlist);

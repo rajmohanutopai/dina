@@ -27,26 +27,24 @@ import {
   getThread,
   readLifecycle,
   type ReviewDraftLifecycle,
-} from '@dina/brain/src/chat/thread';
+} from '@dina/brain/chat';
 import { emptyWriteFormState } from '../../src/trust/write_form_data';
 import type {
   ChatMessage,
   ChatOptions,
   ChatResponse,
   LLMProvider,
-} from '@dina/brain/src/llm/adapters/provider';
+} from '@dina/brain/llm';
 
-jest.mock('@dina/core/src/vault/crud', () => ({
+jest.mock('@dina/core', () => ({
   __esModule: true,
+  ...jest.requireActual('@dina/core'),
   queryVault: jest.fn(),
-}));
-jest.mock('@dina/core/src/persona/service', () => ({
-  __esModule: true,
   listPersonas: jest.fn(() => [{ name: 'general' }, { name: 'work' }]),
   isPersonaOpen: jest.fn(() => true),
 }));
 
-import * as vaultCrud from '@dina/core/src/vault/crud';
+import * as vaultCrud from '@dina/core';
 const queryVaultMock = vaultCrud.queryVault as jest.MockedFunction<
   typeof vaultCrud.queryVault
 >;

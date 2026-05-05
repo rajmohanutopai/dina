@@ -10,7 +10,7 @@ import {
 import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
 import type { ChatResponse, LLMProvider, ToolCall } from '../../src/llm/adapters/provider';
 import { IntentClassifier, type IntentClassification } from '../../src/reasoning/intent_classifier';
-import type { TocEntry } from '../../../core/src/memory/domain';
+import type { TocEntry } from '@dina/core';
 
 function scriptedProvider(script: Array<Partial<ChatResponse>>): LLMProvider {
   let i = 0;

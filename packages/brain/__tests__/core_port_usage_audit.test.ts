@@ -38,33 +38,24 @@ import { join, relative, resolve } from 'node:path';
 const BRAIN_SRC = resolve(__dirname, '..', 'src');
 
 /**
- * Allowlisted files that may import from `packages/core/src/**\/repository`.
- * Each entry is a path relative to `packages/brain/src/`. Add entries
- * only after architectural review — the point of this gate is that
- * adding an entry is a conscious act, not a silent convenience.
+ * Allowlisted files that may deep-import `packages/core/src/**\/repository`.
+ *
+ * The list is intentionally empty after CA-29. The previous allowlist
+ * entries (`chat/thread.ts`, `notifications/inbox.ts`,
+ * `notifications/bridges.ts`) consumed repository symbols through
+ * relative `../../../core/src/...repository` paths; CA-29 moved those
+ * symbols onto the public `@dina/core` surface, so production Brain no
+ * longer has a single deep-into-repository import. The gate stays as a
+ * forward guard: any new Brain file that bypasses the public surface
+ * trips the test and either gets converted to the public import or
+ * earns an entry here with an architectural-review rationale.
  */
-const ALLOWED_REPO_IMPORTERS: readonly { file: string; rationale: string }[] = [
-  {
-    file: 'chat/thread.ts',
-    rationale:
-      'Chat thread cache — in-memory threads Map is authoritative for reads; ChatMessageRepository provides restart durability. Write-through is fire-and-forget per task 2.3 fire-and-forget pattern.',
-  },
-  {
-    file: 'notifications/inbox.ts',
-    rationale:
-      'Notifications inbox (task 5.66) — in-memory items array is authoritative for reads; NotificationLogRepository is an optional persistence backing. Same dual-write pattern as chat/thread.ts: hydrate on boot, fire-and-forget persist, swallow errors so a failing repo never breaks subscriber fan-out.',
-  },
-  {
-    file: 'notifications/bridges.ts',
-    rationale:
-      "Workflow→inbox bridge — surfaces kind=approval workflow tasks (intent_validation from /v1/agent/validate, service.query review-policy approvals) into the unified Notifications screen. Goes directly to WorkflowRepository.subscribeApprovalCreated because there is no CoreClient method for repository event subscriptions: the contract is in-process pub/sub, not request/response, so a remote-RPC port doesn't fit. Same shape as installApprovalInboxBridge subscribing to ApprovalManager — Brain owns the inbox surface; observing the producer is part of that ownership.",
-  },
-];
+const ALLOWED_REPO_IMPORTERS: readonly { file: string; rationale: string }[] = [];
 
 /**
  * Regex that matches imports reaching into Core's repository layer.
- *   `from '../../../core/src/chat/repository'`      ← old-style relative
- *   `from '@dina/core/src/vault/repository'`        ← workspace-style
+ *   `from '@dina/core'`      ← old-style relative
+ *   `from '@dina/core'`        ← workspace-style
  *   `from '../../core/src/memory/repository.js'`    ← .js extension
  *
  * The core-src path fragment is the shape that all such imports share.

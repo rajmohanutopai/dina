@@ -6,7 +6,13 @@
  * Source: core/test/crypto_test.go (TestCrypto_1_*)
  */
 
-import { generateMnemonic, mnemonicToSeed, validateMnemonic } from '../../src/crypto/bip39';
+import {
+  entropyToMnemonic,
+  generateMnemonic,
+  mnemonicToEntropy,
+  mnemonicToSeed,
+  validateMnemonic,
+} from '../../src/crypto/bip39';
 import { bytesToHex } from '@dina/test-harness';
 
 describe('BIP-39 Mnemonic', () => {
@@ -69,6 +75,37 @@ describe('BIP-39 Mnemonic', () => {
       const seed1 = mnemonicToSeed(m1);
       const seed2 = mnemonicToSeed(m2);
       expect(bytesToHex(seed1)).not.toBe(bytesToHex(seed2));
+    });
+  });
+
+  // entropyToMnemonic backs the "View recovery phrase" Settings surface
+  // — we only persist the wrapped seed (entropy), and re-derive the
+  // 24 words on demand. Round-tripping must be exact: the mnemonic the
+  // user wrote down on paper has to match what we re-display later.
+  describe('entropyToMnemonic / mnemonicToEntropy round trip', () => {
+    it('mnemonic → entropy → mnemonic produces the same 24 words', () => {
+      const original = generateMnemonic();
+      const entropy = mnemonicToEntropy(original);
+      const reconstructed = entropyToMnemonic(entropy);
+      expect(reconstructed).toBe(original);
+    });
+
+    it('entropy round trip preserves the 32-byte length', () => {
+      const original = generateMnemonic();
+      const entropy = mnemonicToEntropy(original);
+      expect(entropy.length).toBe(32);
+    });
+
+    it('every reconstructed mnemonic still validates', () => {
+      for (let i = 0; i < 10; i++) {
+        const original = generateMnemonic();
+        const reconstructed = entropyToMnemonic(mnemonicToEntropy(original));
+        expect(validateMnemonic(reconstructed)).toBe(true);
+      }
+    });
+
+    it('throws on invalid entropy length', () => {
+      expect(() => entropyToMnemonic(new Uint8Array(7))).toThrow();
     });
   });
 });

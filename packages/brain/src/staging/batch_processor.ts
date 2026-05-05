@@ -14,14 +14,18 @@
  * Source: ARCHITECTURE.md Tasks 3.13, 3.16
  */
 
-import { resolve, fail, type StagingItem } from '../../../core/src/staging/service';
+import {
+  stagingResolve,
+  stagingFail,
+  isVaultItemType,
+  isPersonaOpen,
+  beatOnce,
+  type StagingItem,
+  type VaultItemType,
+} from '@dina/core';
 import { selectPersona } from '../routing/persona_selector';
 import { enrichItem, applyTrustScoring } from './processor';
 import { handlePostPublish } from '../pipeline/post_publish';
-import { isVaultItemType } from '../../../core/src/vault/validation';
-import type { VaultItemType } from '../../../core/src/vault/validation';
-import { isPersonaOpen } from '../../../core/src/persona/service';
-import { beatOnce } from '../../../core/src/staging/heartbeat';
 
 export interface BatchItemResult {
   itemId: string;
@@ -103,9 +107,9 @@ async function processOneItem(item: StagingItem): Promise<BatchItemResult> {
     const enriched = await enrichItem({ ...data, ...scored });
 
     // 4. Resolve — store or pending_unlock
-    // Pass enriched data so resolve() writes it to the vault (Fix: Codex #1)
+    // Pass enriched data so stagingResolve() writes it to the vault (Fix: Codex #1)
     const personaOpen = isPersonaOpen(persona);
-    resolve(item.id, persona, personaOpen, enriched as Record<string, unknown>);
+    stagingResolve(item.id, persona, personaOpen, enriched as Record<string, unknown>);
 
     const status = personaOpen ? 'stored' : 'pending_unlock';
 
@@ -140,7 +144,7 @@ async function processOneItem(item: StagingItem): Promise<BatchItemResult> {
   } catch (err) {
     // Mark item as failed in staging
     try {
-      fail(item.id);
+      stagingFail(item.id);
     } catch {
       /* already failed or resolved */
     }

@@ -6,6 +6,7 @@ import {
   WorkflowEventConsumer,
   type ApprovalNotifier,
   type OrchestratorAppView,
+  type ServiceInboundNotifier,
   type ServiceRejectResponder,
   type WorkflowEventDeliverer,
 } from '@dina/brain';
@@ -17,6 +18,12 @@ export interface HomeNodeServiceRuntimeOptions {
   rejectResponder: ServiceRejectResponder;
   deliver: WorkflowEventDeliverer;
   approvalNotifier?: ApprovalNotifier;
+  /**
+   * Optional: fires once per accepted inbound query (auto-execution or
+   * approval task). Mobile wires this to the operator's chat thread so
+   * they see who is asking what; server callers usually omit it.
+   */
+  inboundNotifier?: ServiceInboundNotifier;
   workflowEventIntervalMs?: number;
   approvalReconcileIntervalMs?: number;
   nowMsFn?: () => number;
@@ -57,6 +64,9 @@ export function buildHomeNodeServiceRuntime(
     readConfig: options.readConfig,
     rejectResponder: options.rejectResponder,
     ...(options.approvalNotifier !== undefined ? { notifier: options.approvalNotifier } : {}),
+    ...(options.inboundNotifier !== undefined
+      ? { inboundNotifier: options.inboundNotifier }
+      : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.nowSecFn !== undefined ? { nowSecFn: options.nowSecFn } : {}),
     ...(options.generateUUID !== undefined ? { generateUUID: options.generateUUID } : {}),

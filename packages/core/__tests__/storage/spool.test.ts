@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { DeadDropSpool } from '../../src/storage/spool';
+import { DeadDropSpool } from '../../src/storage/spool_node';
 
 describe('Dead Drop Spool', () => {
   let spoolDir: string;

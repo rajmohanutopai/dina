@@ -36,6 +36,13 @@ import {
 import { unlock, useIsUnlocked, useUnlockState, getStepLabel } from '../hooks/useUnlock';
 import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { loadInfraPreferences } from '../services/infra_preferences';
+import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
+import {
+  clearOrphanKeychainState,
+  installMarkerExists,
+  wipeOrphanVaultFiles,
+  writeInstallMarker,
+} from '../services/install_marker';
 import { colors, fonts, radius, spacing } from '../theme';
 import { OnboardingFlow } from './onboarding/onboarding_flow';
 import { InfraSetupForm } from './onboarding/infra_setup';
@@ -79,6 +86,29 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
     let cancelled = false;
     (async () => {
       try {
+        // MT-27 orphan-install detection. iOS keychain entries persist
+        // across app uninstalls; the documents-directory marker does
+        // not. Marker missing + wrapped seed present means a prior
+        // install left state in keychain — treat the whole keychain as
+        // dead state, wipe it, and onboard fresh. Done BEFORE any
+        // keychain reads so subsequent loads see the cleared state.
+        //
+        // Also wipe orphan SQLite files: a backup/restore flow (or any
+        // path where the OS retained the data dir while the keychain
+        // got wiped, or vice versa) leaves `.sqlite` files encrypted
+        // with the OLD DEK; the fresh seed derives a NEW DEK and
+        // op-sqlite throws "sqlite query error: file is not a database"
+        // when it tries to decrypt them. Symptom: persistent chat-home
+        // "dev-degraded mode / persistence.in_memory" banner across
+        // restarts.
+        if (!installMarkerExists()) {
+          const stale = await loadWrappedSeed();
+          if (stale !== null) {
+            await clearOrphanKeychainState();
+            wipeOrphanVaultFiles();
+          }
+          writeInstallMarker();
+        }
         const [existing, infra] = await Promise.all([
           loadWrappedSeed(),
           loadInfraPreferences(),
@@ -103,7 +133,19 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   }, []);
 
   useEffect(() => {
-    if (unlocked) setMode('unlocked');
+    if (unlocked) {
+      setMode('unlocked');
+      return;
+    }
+    // unlocked → false transition. The user just sealed the vault
+    // (or boot has not yet unwrapped the seed). Reset autoRanRef so a
+    // subsequent boot can auto-unlock again, but ONLY when there's no
+    // wrapped seed (i.e. fresh state) — for the "Lock vault" case we
+    // want to stay locked until the user types the passphrase. The
+    // distinction: if mode was 'unlocked' before, this is a manual
+    // seal; if mode was 'loading' it's first-render. We only flip to
+    // 'locked' for the manual-seal case.
+    setMode((prev) => (prev === 'unlocked' ? 'locked' : prev));
   }, [unlocked]);
 
   const runUnlock = useCallback(async (pp: string): Promise<void> => {
@@ -147,17 +189,34 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
     }
   }, []);
 
-  // Dev autopilot for returning-user path.
+  // Auto-unlock for users who picked "Start automatically" during
+  // onboarding. Reads the cached passphrase from keychain and runs the
+  // unlock pipeline silently. If the cached passphrase is wrong (mode
+  // got out of sync with the wrapped seed somehow), runUnlock falls
+  // back to `locked` and the user gets the prompt — same as manual.
   useEffect(() => {
-    if (DEV_PASSPHRASE === '') return;
     if (mode !== 'locked') return;
     if (autoRanRef.current === mode) return;
     autoRanRef.current = mode;
-    setPassphrase(DEV_PASSPHRASE);
-    const t = setTimeout(() => {
-      void runUnlock(DEV_PASSPHRASE);
-    }, 50);
-    return () => clearTimeout(t);
+    if (DEV_PASSPHRASE !== '') {
+      setPassphrase(DEV_PASSPHRASE);
+      const t = setTimeout(() => {
+        void runUnlock(DEV_PASSPHRASE);
+      }, 50);
+      return () => clearTimeout(t);
+    }
+    let cancelled = false;
+    (async () => {
+      const startupMode = await loadStartupMode();
+      if (cancelled || startupMode !== 'auto') return;
+      const cached = await loadAutoPassphrase();
+      if (cancelled || cached === null) return;
+      setPassphrase(cached);
+      void runUnlock(cached);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [mode, runUnlock]);
 
   if (mode === 'unlocked') {

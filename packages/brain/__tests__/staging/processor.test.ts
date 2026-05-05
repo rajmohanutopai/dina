@@ -14,7 +14,7 @@ import {
   addPendingItem,
 } from '../../src/staging/processor';
 import { resetFactoryCounters } from '@dina/test-harness';
-import { addKnownContact, clearKnownContacts } from '../../../core/src/trust/source_trust';
+import { addKnownContact, clearKnownContacts } from '@dina/core';
 import {
   registerEnrichmentLLM,
   resetEnrichmentPipeline,

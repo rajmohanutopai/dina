@@ -13,13 +13,13 @@
 
 import { classifyDomain, type ClassificationInput, type ClassificationResult } from './domain';
 import { findSensitiveHits, hasWorkSignal } from './sensitive_signals';
-import { personaExists, listPersonas } from '../../../core/src/persona/service';
+import { personaExists, listPersonas } from '@dina/core';
 import { resolveAlias } from '../persona/registry';
 import {
   getContact,
   resolveByName,
   type DataResponsibility,
-} from '../../../core/src/contacts/directory';
+} from '@dina/core';
 
 import { PERSONA_SELECTOR_THRESHOLD } from '../constants';
 /** Confidence threshold — below this, LLM is consulted. */

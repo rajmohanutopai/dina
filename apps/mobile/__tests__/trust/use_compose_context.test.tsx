@@ -12,12 +12,13 @@ import React from 'react';
 import { render, act } from '@testing-library/react-native';
 import { Text } from 'react-native';
 
-jest.mock('@dina/core/src/vault/crud', () => ({
+jest.mock('@dina/core', () => ({
   __esModule: true,
+  ...jest.requireActual('@dina/core'),
   queryVault: jest.fn(),
 }));
 
-import * as vaultCrud from '@dina/core/src/vault/crud';
+import * as vaultCrud from '@dina/core';
 import { useComposeContext } from '../../src/trust/runners/use_compose_context';
 import type { ComposeContextResult } from '../../src/trust/compose_context';
 import type {
@@ -25,7 +26,7 @@ import type {
   ChatOptions,
   ChatResponse,
   LLMProvider,
-} from '@dina/brain/src/llm/adapters/provider';
+} from '@dina/brain/llm';
 
 const queryVaultMock = vaultCrud.queryVault as jest.MockedFunction<typeof vaultCrud.queryVault>;
 

@@ -10,25 +10,25 @@
 import {
   ingest,
   claim,
-  resolve,
-  fail,
+  stagingResolve as resolve,
+  stagingFail as fail,
   sweep,
-  getItem,
+  stagingGetItem as getItem,
   resetStagingState,
-} from '../../../core/src/staging/service';
+} from '@dina/core';
 import { classifyItem, enrichItem, applyTrustScoring } from '../../src/staging/processor';
 import { handlePostPublish } from '../../src/pipeline/post_publish';
 import { planReminders } from '../../src/pipeline/reminder_planner';
-import { isDuplicate, markSeen, resetDedupState } from '../../../core/src/sync/dedup';
+import { isDuplicate, markSeen, resetDedupState } from '@dina/core';
 import {
   createPersona,
   isPersonaOpen,
   openPersona,
   resetPersonaState,
-} from '../../../core/src/persona/service';
-import { clearVaults, queryVault, storeItem } from '../../../core/src/vault/crud';
-import { resetReminderState, listByPersona } from '../../../core/src/reminders/service';
-import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
+} from '@dina/core';
+import { clearVaults, queryVault, storeItem } from '@dina/core';
+import { resetReminderState, listByPersona } from '@dina/core/reminders';
+import { addContact, resetContactDirectory } from '@dina/core';
 import { resetFactoryCounters } from '@dina/test-harness';
 
 describe('Staging Pipeline End-to-End Integration', () => {

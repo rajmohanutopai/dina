@@ -825,7 +825,7 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
 
   it('pre-fills the form from a review-draft lifecycle', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const thread = require('@dina/brain/src/chat/thread');
+    const thread = require('@dina/brain/chat');
     thread.resetThreads();
     const lifecycle = {
       kind: 'review_draft' as const,
@@ -867,7 +867,7 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
 
   it('falls through to the empty form when the draft id is unknown', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const thread = require('@dina/brain/src/chat/thread');
+    const thread = require('@dina/brain/chat');
     thread.resetThreads();
     mockParams({ draftId: 'draft-missing', threadId: 'main' });
     // Form opens — its render assertions live elsewhere; this spec only

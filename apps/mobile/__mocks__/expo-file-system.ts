@@ -26,6 +26,13 @@ let exists = true;
 let throwOnList = false;
 let throwOnDelete: Set<string> = new Set();
 
+// In-memory file-system for the `File` API. Keyed by the same name the
+// production code passes (e.g. `.dina_install`). Tests can pre-populate
+// or assert on contents through the `__set*` helpers below.
+const fileContents: Map<string, string> = new Map();
+let throwOnFileExists = false;
+let throwOnFileWrite: Set<string> = new Set();
+
 function makeEntry(name: string): MockEntry {
   return {
     name,
@@ -56,7 +63,31 @@ export const Paths = {
   },
 };
 
-export const File = class {};
+export class File {
+  private name: string;
+  constructor(_dir: { uri: string }, name: string) {
+    this.name = name;
+  }
+  get exists(): boolean {
+    if (throwOnFileExists) throw new Error('mock fs: exists check failed');
+    return fileContents.has(this.name);
+  }
+  create(): void {
+    if (!fileContents.has(this.name)) fileContents.set(this.name, '');
+  }
+  write(body: string): void {
+    if (throwOnFileWrite.has(this.name)) {
+      throw new Error(`mock fs: write failed for ${this.name}`);
+    }
+    fileContents.set(this.name, body);
+  }
+  text(): Promise<string> {
+    return Promise.resolve(fileContents.get(this.name) ?? '');
+  }
+  textSync(): string {
+    return fileContents.get(this.name) ?? '';
+  }
+}
 export const Directory = class {};
 
 // ── Test helpers (prefixed `__` so production code can't reach them) ──
@@ -85,10 +116,33 @@ export function __throwOnDelete(name: string): void {
   throwOnDelete.add(name);
 }
 
+export function __setFileContents(name: string, body: string): void {
+  fileContents.set(name, body);
+}
+
+export function __getFileContents(name: string): string | undefined {
+  return fileContents.get(name);
+}
+
+export function __hasFile(name: string): boolean {
+  return fileContents.has(name);
+}
+
+export function __throwOnFileExists(value: boolean): void {
+  throwOnFileExists = value;
+}
+
+export function __throwOnFileWrite(name: string): void {
+  throwOnFileWrite.add(name);
+}
+
 export function __resetFileSystemMock(): void {
   entries = [];
   deleted = [];
   exists = true;
   throwOnList = false;
   throwOnDelete = new Set();
+  fileContents.clear();
+  throwOnFileExists = false;
+  throwOnFileWrite = new Set();
 }

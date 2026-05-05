@@ -7,7 +7,7 @@ import {
   type WorkflowEventConsumerCoreClient,
   type WorkflowEventDeliverer,
 } from '../../src/service/workflow_event_consumer';
-import type { WorkflowEvent, WorkflowTask } from '../../../core/src/workflow/domain';
+import type { WorkflowEvent, WorkflowTask } from '@dina/core';
 
 function fakeScheduler() {
   let nextHandle = 1;

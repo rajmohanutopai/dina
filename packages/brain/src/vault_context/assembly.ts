@@ -8,20 +8,20 @@
  * Source: brain/tests/test_vault_context.py
  */
 
-import { queryVault, getItem, browseRecent } from '../../../core/src/vault/crud';
-import { listPersonas } from '../../../core/src/persona/service';
+import { queryVault, getItem, browseRecent } from '@dina/core';
+import { listPersonas } from '@dina/core';
 import {
   getContact,
   resolveByName,
   findByAlias,
   listContacts,
-} from '../../../core/src/contacts/directory';
-import { listPending } from '../../../core/src/reminders/service';
+} from '@dina/core';
+import { listPending } from '@dina/core/reminders';
 import {
   searchTrustNetwork,
   type TrustSearchQuery,
   type SearchType,
-} from '../../../core/src/trust/network_search';
+} from '@dina/core';
 
 export interface ContextItem {
   id: string;

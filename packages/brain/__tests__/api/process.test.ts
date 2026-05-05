@@ -5,9 +5,9 @@
  */
 
 import { processEvent, validateProcessEvent, isRecognizedEventType } from '../../src/api/process';
-import { resetReminderState } from '../../../core/src/reminders/service';
-import { resetStagingState, ingest, claim, resolve } from '../../../core/src/staging/service';
-import { clearVaults, storeItem } from '../../../core/src/vault/crud';
+import { resetReminderState } from '@dina/core/reminders';
+import { resetStagingState, ingest, claim, stagingResolve as resolve } from '@dina/core';
+import { clearVaults, storeItem } from '@dina/core';
 import { resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 import {

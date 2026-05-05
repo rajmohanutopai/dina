@@ -18,7 +18,7 @@ import {
   deduplicateByTitle,
 } from '../../src/briefing/assembly';
 import type { BriefingItem } from '../../src/briefing/assembly';
-import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
+import { createReminder, resetReminderState } from '@dina/core/reminders';
 
 describe('Daily Briefing Assembly', () => {
   beforeEach(() => {

@@ -17,13 +17,13 @@
  *   WorkflowEventConsumer (real) — onApproved → executeAndRespond
  */
 
-import { WorkflowService } from '../../../core/src/workflow/service';
-import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import { WorkflowService } from '@dina/core';
+import { InMemoryWorkflowRepository } from '@dina/core';
 // ServiceHandler now catches `WorkflowConflictError` from `@dina/core`
 // (task 1.32-H). Core's export IS the repository's class, so the test's
 // previous repo→client-error translation is redundant — the repository
 // error propagates unchanged and satisfies the handler's `instanceof`.
-import type { WorkflowTask, WorkflowTaskState } from '../../../core/src/workflow/domain';
+import type { WorkflowTask, WorkflowTaskState } from '@dina/core';
 import { ServiceHandler } from '../../src/service/service_handler';
 import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
 import {
@@ -31,7 +31,7 @@ import {
   type WorkflowEventConsumerCoreClient,
   type ApprovedExecutionPayload,
 } from '../../src/service/workflow_event_consumer';
-import type { ServiceConfig } from '../../../core/src/service/service_config';
+import type { ServiceConfig } from '@dina/core';
 
 const REQUESTER = 'did:plc:requester';
 const NOW_MS = 1_700_000_000_000;

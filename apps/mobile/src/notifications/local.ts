@@ -105,10 +105,14 @@ export function tierToChannel(tier: 1 | 2 | 3): NotificationChannel {
  */
 export async function ensureChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
+  // Omit `sound` — expo-notifications treats any string here as a
+  // custom-sound asset and errors if it's not in `app.json`'s
+  // `sounds` array. Leaving it unset makes Android fall back to the
+  // system default notification sound, which is what we want for the
+  // fiduciary channel anyway.
   await Notifications.setNotificationChannelAsync('fiduciary', {
     name: 'Important alerts',
     importance: Notifications.AndroidImportance.HIGH,
-    sound: 'default',
     vibrationPattern: [0, 250, 250, 250],
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });

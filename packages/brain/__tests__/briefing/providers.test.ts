@@ -19,10 +19,10 @@ import {
   registerMemoryProvider,
   resetBriefingState,
 } from '../../src/briefing/assembly';
-import { ingest, resetStagingState, resolve } from '../../../core/src/staging/service';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
-import { DEFAULT_TEST_PERSONAS } from '../../../core/src/vault/crud';
-import { createPersona, resetPersonaState, openPersona } from '../../../core/src/persona/service';
+import { ingest, resetStagingState, stagingResolve as resolve } from '@dina/core';
+import { storeItem, clearVaults } from '@dina/core';
+import { DEFAULT_TEST_PERSONAS } from '@dina/core';
+import { createPersona, resetPersonaState, openPersona } from '@dina/core';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 const NOW = Date.now();

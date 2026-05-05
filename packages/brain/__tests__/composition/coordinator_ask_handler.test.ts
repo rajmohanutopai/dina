@@ -18,16 +18,16 @@
  *     thread.
  */
 
-import { ApprovalManager } from '../../../core/src/approval/manager';
+import { ApprovalManager } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
-} from '../../../core/src/persona/service';
+} from '@dina/core';
 import {
   setAccessiblePersonas,
   resetReasoningProvider,
 } from '../../src/vault_context/assembly';
-import { clearVaults, storeItem } from '../../../core/src/vault/crud';
+import { clearVaults, storeItem } from '@dina/core';
 import {
   buildAgenticAskPipeline,
   type BuildAgenticAskPipelineInput,

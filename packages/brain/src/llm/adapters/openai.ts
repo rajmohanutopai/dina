@@ -97,7 +97,7 @@ import {
   DEFAULT_EMBED_MODEL as EMBED_MODEL,
   DEFAULT_MAX_TOKENS as MAX_TOKENS,
 } from '../../constants';
-import { DEFAULT_EMBEDDING_DIMENSIONS } from '../../../../core/src/constants';
+import { DEFAULT_EMBEDDING_DIMENSIONS } from '@dina/core';
 import { safeCall } from './safety';
 
 const DEFAULT_CHAT_MODEL = DEFAULT_OPENAI_MODEL;

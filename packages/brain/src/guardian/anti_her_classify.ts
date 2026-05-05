@@ -16,7 +16,7 @@
 
 import { detectEmotionalDependency, isCompanionSeeking } from './anti_her';
 import { ANTI_HER_CLASSIFY } from '../llm/prompts';
-import { scrubPII } from '../../../core/src/pii/patterns';
+import { scrubPII } from '@dina/core';
 
 // ---------------------------------------------------------------
 // Types

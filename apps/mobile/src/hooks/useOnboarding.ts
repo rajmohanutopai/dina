@@ -24,16 +24,20 @@
 import {
   deriveDIDKey,
   deriveRootSigningKey,
+  deriveRotationKey,
   generateMnemonic,
   getPublicKey,
   mnemonicToEntropy,
   ONBOARDING_VERIFY_WORD_COUNT,
   resetPersonaState,
+  secp256k1ToDidKeyMultibase,
   validateMnemonic,
   wrapSeed,
   type WrappedSeed,
 } from '@dina/core';
+
 import { seedDefaultPersonas } from '../onboarding/default_personas';
+import { loadInfraPreferences } from '../services/infra_preferences';
 
 export type OnboardingStep =
   | 'welcome'
@@ -202,6 +206,124 @@ export async function completeRecoverIdentity(
 export function verifyRecoveredDID(words: string[], expectedDID: string): boolean {
   const did = previewRecoveryDID(words);
   return did === expectedDID;
+}
+
+/**
+ * Outcome of `resolveAndVerifyDidPlc`. The caller carries `did` forward
+ * into provisioning. Errors are surfaced as discriminated kinds so the
+ * UI can show actionable copy without parsing strings.
+ */
+export type ResolveDidResult =
+  | { kind: 'ok'; did: string }
+  | { kind: 'unreachable'; message: string }
+  | { kind: 'unknown_handle'; message: string }
+  | { kind: 'no_plc_doc'; did: string; message: string }
+  | { kind: 'wrong_owner'; did: string; message: string };
+
+/**
+ * Resolve a Dina handle (e.g. `alonso77.test-pds.dinakernel.com`) to
+ * its `did:plc:…` and verify our recovery key from the mnemonic is in
+ * the PLC document's `rotationKeys`. Returns `ok` only when the user
+ * cryptographically owns the resolved DID — not just "I know the
+ * handle". This guards against an accidental restore into someone
+ * else's account: knowing the handle alone proves nothing.
+ *
+ * The verification:
+ *   1. Resolve handle → DID via PDS xrpc `com.atproto.identity.resolveHandle`.
+ *   2. Fetch PLC doc from `https://plc.directory/<did>`.
+ *   3. Derive K256 rotation key from the entered mnemonic.
+ *   4. Convert to `did:key:zQ3sh…` form and compare against each entry
+ *      in the PLC doc's `rotationKeys` array.
+ *
+ * The function does NOT call `createSession` — the boot path's
+ * `tryBuildPdsPublisher` will do that with the seed-derived password
+ * once the DID is persisted.
+ */
+export async function resolveAndVerifyDidPlc(
+  handle: string,
+  mnemonicWords: string[],
+): Promise<ResolveDidResult> {
+  const trimmed = handle.trim().toLowerCase();
+  if (trimmed.length === 0) {
+    return { kind: 'unknown_handle', message: 'Enter your handle' };
+  }
+
+  // Validate mnemonic + derive K256 rotation key locally.
+  const mnemonic = mnemonicWords.map((w) => w.trim().toLowerCase()).join(' ');
+  if (!validateMnemonic(mnemonic)) {
+    return { kind: 'wrong_owner', did: '', message: 'Invalid mnemonic' };
+  }
+  const masterSeed = mnemonicToEntropy(mnemonic);
+  const rotation = deriveRotationKey(masterSeed, 0);
+  const ourK256DidKey = `did:key:${secp256k1ToDidKeyMultibase(rotation.publicKey)}`;
+
+  // Resolve handle → DID via PDS.
+  const infra = await loadInfraPreferences();
+  const pdsURL =
+    infra.pdsUrl ?? process.env.EXPO_PUBLIC_DINA_PDS_URL ?? 'https://test-pds.dinakernel.com';
+  const plcURL = process.env.EXPO_PUBLIC_DINA_PLC_URL ?? 'https://plc.directory';
+
+  let did: string;
+  try {
+    const url = `${pdsURL.replace(/\/$/, '')}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url);
+    if (res.status === 400 || res.status === 404) {
+      return {
+        kind: 'unknown_handle',
+        message: `${trimmed} isn't bound on the PDS — check the spelling.`,
+      };
+    }
+    if (res.status !== 200) {
+      return {
+        kind: 'unreachable',
+        message: `PDS responded with HTTP ${res.status}`,
+      };
+    }
+    const body = (await res.json().catch(() => ({}))) as { did?: unknown };
+    if (typeof body.did !== 'string' || !body.did.startsWith('did:plc:')) {
+      return {
+        kind: 'unreachable',
+        message: 'PDS returned a malformed handle resolution.',
+      };
+    }
+    did = body.did;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { kind: 'unreachable', message: `Could not reach PDS: ${msg}` };
+  }
+
+  // Fetch PLC doc + verify our rotation key is in rotationKeys.
+  let plcDoc: { rotationKeys?: unknown };
+  try {
+    const url = `${plcURL.replace(/\/$/, '')}/${did}/data`;
+    const res = await fetch(url);
+    if (res.status !== 200) {
+      return {
+        kind: 'no_plc_doc',
+        did,
+        message: `PLC directory returned HTTP ${res.status} for ${did}`,
+      };
+    }
+    plcDoc = (await res.json()) as { rotationKeys?: unknown };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { kind: 'unreachable', message: `Could not reach PLC directory: ${msg}` };
+  }
+
+  const rotationKeys = Array.isArray(plcDoc.rotationKeys) ? plcDoc.rotationKeys : [];
+  const ourKeyMatches = rotationKeys.some(
+    (k) => typeof k === 'string' && k === ourK256DidKey,
+  );
+  if (!ourKeyMatches) {
+    return {
+      kind: 'wrong_owner',
+      did,
+      message:
+        "This recovery phrase doesn't own that handle. Check that you've entered the correct phrase + handle pair.",
+    };
+  }
+
+  return { kind: 'ok', did };
 }
 
 /**

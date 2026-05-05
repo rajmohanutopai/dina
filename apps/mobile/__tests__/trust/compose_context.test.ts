@@ -30,7 +30,7 @@ import type {
   ChatOptions,
   ChatResponse,
   LLMProvider,
-} from '@dina/brain/src/llm/adapters/provider';
+} from '@dina/brain/llm';
 
 const NOW = Date.parse('2026-05-02T12:00:00Z');
 const DAY = 24 * 60 * 60 * 1000;

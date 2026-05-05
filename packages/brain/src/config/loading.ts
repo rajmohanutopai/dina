@@ -16,7 +16,7 @@
  * Source: brain/tests/test_config.py + docker-compose-test-stack.yml
  */
 
-import { DEFAULT_CORE_URL, BRAIN_DEFAULT_PORT } from '../../../core/src/constants';
+import { DEFAULT_CORE_URL, BRAIN_DEFAULT_PORT } from '@dina/core';
 
 export const DEFAULT_PLC_URL = 'https://plc.directory';
 

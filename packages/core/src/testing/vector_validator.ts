@@ -18,9 +18,6 @@
  * Source: ARCHITECTURE.md Task 0.6
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-
 export interface TestVector {
   description: string;
   source_test?: string;
@@ -47,29 +44,6 @@ export interface ValidationResult {
     expected: string;
     actual: string;
   }>;
-}
-
-/**
- * Load all fixture files from the fixtures/crypto directory.
- */
-export function loadFixtures(fixturesDir: string): VectorFile[] {
-  const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.json'));
-
-  return files.map((f) => {
-    const content = fs.readFileSync(path.join(fixturesDir, f), 'utf-8');
-    return JSON.parse(content) as VectorFile;
-  });
-}
-
-/**
- * Load a specific fixture file by name.
- */
-export function loadFixture(fixturesDir: string, name: string): VectorFile {
-  const filePath = path.join(fixturesDir, name);
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Fixture not found: ${filePath}`);
-  }
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as VectorFile;
 }
 
 /**

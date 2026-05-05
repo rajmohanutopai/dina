@@ -19,7 +19,7 @@
  * machine end to end without HTTP.
  */
 
-import { ApprovalManager } from '@dina/core/src/approval/manager';
+import { ApprovalManager } from '@dina/core';
 import { createAskHandler, type AskExecuteFn } from '../../src/ask/ask_handler';
 import { AskRegistry, InMemoryAskAdapter } from '../../src/ask/ask_registry';
 import {

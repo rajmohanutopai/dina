@@ -9,14 +9,13 @@
 
 import * as path from 'path';
 import {
-  loadFixtures,
-  loadFixture,
   validateVector,
   validateFixture,
   summarizeResults,
   type TestVector,
   type VectorFile,
 } from '../../src/testing/vector_validator';
+import { loadFixtures, loadFixture } from '../../src/testing/vector_validator_node';
 import { getPublicKey, sign, verify } from '../../src/crypto/ed25519';
 import { hexToBytes, bytesToHex } from '@noble/hashes/utils.js';
 

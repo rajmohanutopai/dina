@@ -21,13 +21,13 @@
  */
 
 
-import { createCoreRouter } from '@dina/core/src/server/core_server';
-import { InProcessTransport } from '../../../core/src/client/in-process-transport';
 import {
-  ingest as stagingIngest,
+  createCoreRouter,
+  InProcessTransport,
+  stagingIngest,
   resetStagingState,
-} from '@dina/core/src/staging/service';
-import { clearVaults, storeItem } from '@dina/core/src/vault/crud';
+} from '@dina/core';
+import { clearVaults, storeItem } from '@dina/core';
 import {
   resetReasoningProvider,
   setAccessiblePersonas,
@@ -40,12 +40,12 @@ import type {
 import {
   configureRateLimiter,
   registerPublicKeyResolver,
-} from '@dina/core/src/auth/middleware';
+} from '@dina/core';
 import {
   addContact,
   resetContactDirectory,
-} from '@dina/core/src/contacts/directory';
-import { resetReminderState } from '@dina/core/src/reminders/service';
+} from '@dina/core';
+import { resetReminderState } from '@dina/core/reminders';
 import {
   clearCheckpoints,
   readCheckpoint,

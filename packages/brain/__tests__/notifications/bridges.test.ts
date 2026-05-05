@@ -18,14 +18,14 @@ import {
   listNotifications,
   resetNotifications,
 } from '../../src/notifications/inbox';
-import { ApprovalManager } from '../../../core/src/approval/manager';
-import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import { ApprovalManager } from '@dina/core';
+import { InMemoryWorkflowRepository } from '@dina/core';
 import {
   WorkflowTaskKind,
   WorkflowTaskPriority,
   WorkflowTaskState,
   type WorkflowTask,
-} from '../../../core/src/workflow/domain';
+} from '@dina/core';
 
 function approvalTask(overrides: Partial<WorkflowTask> = {}): WorkflowTask {
   const now = 1_700_000_000_000;

@@ -13,11 +13,11 @@
 import {
   setWorkflowService,
   WorkflowService,
-} from '@dina/core/src/workflow/service';
+} from '@dina/core';
 import {
   setWorkflowRepository,
   InMemoryWorkflowRepository,
-} from '@dina/core/src/workflow/repository';
+} from '@dina/core';
 import {
   createDemoBusDriverResponder,
   DEMO_BUS_DRIVER_DID,

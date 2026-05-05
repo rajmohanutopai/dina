@@ -77,9 +77,19 @@ export default function NotificationsScreen(): React.JSX.Element {
 
   const onPress = (item: NotificationItem): void => {
     if (item.readAt === null) markNotificationRead(item.id);
-    if (item.deepLink !== undefined && item.deepLink !== '') {
-      router.push(item.deepLink as never);
-    }
+    const link = item.deepLink;
+    if (link === undefined || link === '') return;
+    // Brain emits deep links of the shape `dina://approvals/<id>` (see
+    // `packages/brain/src/notifications/bridges.ts`). Mobile's router has
+    // `/approvals` as an index page that already lists all open
+    // approvals — there's no `[id].tsx` dynamic route. Without
+    // normalisation the router treats `<id>` as an unknown sub-route
+    // and lands on "Unmatched Route".
+    //
+    // Map approval-shaped links to the index; other deep links pass
+    // through unchanged.
+    const normalized = normaliseDeepLink(link);
+    router.push(normalized as never);
   };
 
   return (
@@ -173,6 +183,28 @@ export default function NotificationsScreen(): React.JSX.Element {
       />
     </View>
   );
+}
+
+/**
+ * Translate a Brain-emitted deep link into a route the mobile app's
+ * Expo Router knows about. Keeps the deep-link contract on the wire
+ * stable (Brain still emits `dina://approvals/<id>` for backwards
+ * compatibility with admin CLI / web) while letting mobile drop the
+ * id and land on the index page that lists all open approvals.
+ *
+ * Adding a dynamic `app/approvals/[id].tsx` route would be the more
+ * direct fix; until then this normaliser keeps the notification tap
+ * from landing on "Unmatched Route". Pass-through for any other shape.
+ */
+function normaliseDeepLink(link: string): string {
+  // `dina://approvals/<id>` and any sub-paths → just `/approvals`.
+  // Match both `dina://` schemed and bare `/approvals/<id>` forms.
+  const approvalMatch = link.match(/^(?:dina:\/\/)?\/?approvals\/[^/?#]+/);
+  if (approvalMatch !== null) return '/approvals';
+  // Strip the dina:// scheme but keep any path so other deep links
+  // (`/reminders/...`, `/vault/...`) reach their pages unchanged.
+  if (link.startsWith('dina://')) return `/${link.slice('dina://'.length)}`;
+  return link;
 }
 
 function formatRelative(ms: number, now: number = Date.now()): string {

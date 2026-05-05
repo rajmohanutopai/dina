@@ -9,8 +9,6 @@
 
 import { sign, verify, getPublicKey } from '../crypto/ed25519';
 import { randomBytes } from '@noble/ciphers/utils.js';
-import * as fs from 'fs';
-import * as path from 'path';
 
 export interface IdentityKeypair {
   publicKey: Uint8Array; // 32-byte Ed25519 public key
@@ -126,39 +124,6 @@ export function verifyWithIdentity(
   publicKey: Uint8Array,
 ): boolean {
   return verify(publicKey, data, signature);
-}
-
-// ---------------------------------------------------------------
-// Service key file I/O
-// ---------------------------------------------------------------
-
-/**
- * Write service keypair PEM files to a directory.
- * Creates: `{dir}/{name}.key` (private) and `{dir}/{name}.pub` (public).
- */
-export function writeServiceKey(dir: string, name: string, keypair: IdentityKeypair): void {
-  fs.mkdirSync(dir, { recursive: true });
-  const { privatePEM, publicPEM } = keypairToPEM(keypair);
-  fs.writeFileSync(path.join(dir, `${name}.key`), privatePEM, 'utf-8');
-  fs.writeFileSync(path.join(dir, `${name}.pub`), publicPEM, 'utf-8');
-}
-
-/**
- * Load service keypair from PEM files.
- * Reads `{dir}/{name}.key` and `{dir}/{name}.pub`.
- */
-export function loadServiceKey(dir: string, name: string): IdentityKeypair {
-  const privPath = path.join(dir, `${name}.key`);
-  const pubPath = path.join(dir, `${name}.pub`);
-  if (!fs.existsSync(privPath)) {
-    throw new Error(`keypair: private key file not found — ${privPath}`);
-  }
-  if (!fs.existsSync(pubPath)) {
-    throw new Error(`keypair: public key file not found — ${pubPath}`);
-  }
-  const privatePEM = fs.readFileSync(privPath, 'utf-8');
-  const publicPEM = fs.readFileSync(pubPath, 'utf-8');
-  return keypairFromPEM(privatePEM, publicPEM);
 }
 
 // ---------------------------------------------------------------

@@ -11,8 +11,8 @@ import {
   recordNudgeSent,
   resetNudgeFrequency,
 } from '../../src/nudge/assembler';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
-import { DEFAULT_TEST_PERSONAS } from '../../../core/src/vault/crud';
+import { storeItem, clearVaults } from '@dina/core';
+import { DEFAULT_TEST_PERSONAS } from '@dina/core';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Nudge Assembler', () => {

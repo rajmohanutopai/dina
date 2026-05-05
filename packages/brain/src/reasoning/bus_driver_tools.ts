@@ -17,7 +17,7 @@
 import type { AgentTool } from './tool_registry';
 import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
-import type { Contact } from '../../../core/src/contacts/directory';
+import type { Contact } from '@dina/core';
 import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
 
 // ---------------------------------------------------------------------------

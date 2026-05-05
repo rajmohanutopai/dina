@@ -31,10 +31,10 @@
 import type { ScratchpadEntry } from '@dina/core';
 import {
   checkpoint as coreCheckpoint,
-  clear as coreClear,
+  clearScratchpad as coreClear,
   resume as coreResume,
-  sweepStale as coreSweep,
-} from '../../../core/src/scratchpad/service';
+  sweepStaleScratchpads as coreSweep,
+} from '@dina/core';
 
 export interface Checkpoint {
   taskId: string;

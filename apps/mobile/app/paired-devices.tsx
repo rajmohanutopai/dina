@@ -96,7 +96,6 @@ export default function PairedDevicesScreen() {
   }, [liveCode, now]);
 
   const handleGenerate = useCallback(() => {
-    console.log('[paired-devices] handleGenerate fired', { deviceName, role });
     const name = deviceName.trim();
     if (name === '') {
       Alert.alert('Device name required', 'Give the device a name before generating a code.');
@@ -104,12 +103,17 @@ export default function PairedDevicesScreen() {
     }
     setGenerating(true);
     try {
+      // Pairing codes are short-lived shared secrets — never log the
+      // code value itself. iOS native logs persist for hours after a
+      // generation, and `xcrun simctl log show` would surface a recent
+      // code to anyone with simulator access (or anyone reading a
+      // device sysdiagnose). Log only the metadata that can't be used
+      // to pair: device name + role.
       const { code, expiresAt } = generatePairingCode({ deviceName: name, role });
-      console.log('[paired-devices] code generated', { code });
       setLiveCode({ code, expiresAt, deviceName: name, role });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.log('[paired-devices] generate FAILED', message);
+      console.warn('[paired-devices] generate failed:', message);
       Alert.alert('Could not generate code', message);
     } finally {
       setGenerating(false);
