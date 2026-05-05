@@ -36,6 +36,45 @@ cd dina
 
 ---
 
+## What is Dina?
+
+Let me give few scenarios to explain what Dina is. All these are currently available capability.
+
+### Scenario 1
+
+Imagine this. Your friend Sancho is coming over. As he leaves his house, his Dina lets your Dina know. Your Dina remembers that Sancho's mother was unwell last time you met. She reminds you to get the cold brew ready - he likes it extra strong. And suggests clearing your calendar for the next two hours.
+
+You open the door. You hand him a glass of cold brew. You ask about his mother. Sancho smiles. "She is fine, thank you for asking".
+
+That's Dina. A personal agent that makes you more thoughtful, more present, and more human.
+
+### Scenario 2
+
+You are waiting for a bus. You ask Dina *"What time will the next bus reach here?"*
+
+Your Dina asks the common Dina Service Manager to find the buses in that route, and the finds the perfect bus for you, (because you like A/C bus).
+
+Your Dina then contacts the bus drivers Dina *"What time will you reach my location (xyz loc)?"*
+
+Bus Drivers Dina checks their internal database and Google Maps Traffic and tells *"Will reach in 45 minutes."* 
+
+### Scenario 3
+
+You want to buy an office chair. Your Dina checks PeerLens for chairs below 500$ and which has lumbar support (because your Dina knows your budget and that you have back pain).
+
+Dina then looks at PeerLens, which contains authenticated reviews from real people, and finds reviews from people whose work style is closest to yours. *"Looks like Aeon Chair 2E is a good fit for you."*
+
+Now imagine the same thing, everywhere in your life:
+
+- Your openclaw agent wants to send a mail about your blood test results. Since the data is health related, your Dina intervenes, and asks for your approval. You check the email, finds that it is to your family doctor, and you approves. Your openclaw agent sends the mail.
+- You promised your daughter you'd read her a book next sunday. Dina reminds you Sunday morning. *"Read 'The Little Prince' to Emma. She said it is her favourite book."*
+- Dead internet theory becomes real. You can't differentiate between what is made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina checks against PeerLens, and only items with verified provenance are shown to you.
+- Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs your openclaw agent with the details to complete the process.
+
+Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
+
+---
+
 ## What Dina gives you
 
 > Dina is currently a Technical Preview. The code is available now, backed by 4,500+ tests, and the main flows already work end to end through Telegram or Bluesky.
@@ -89,7 +128,6 @@ Now imagine the same thing, everywhere in your life:
 - Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
 - You are waiting for a bus. Your Dina contacts the bus drivers Dina. What time will you reach my location (xyz location)? Bus Drivers Dina checks their internal database and Google Maps Traffic and tells - will reach in 45 minutes
 
-> **Status: Implemented in Phase 1.** Provider service discovery, D2D service queries, and auto-respond via MCP are functional. See `docs/designs/SERVICE_DISCOVERY.md` for the protocol design.
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
 
