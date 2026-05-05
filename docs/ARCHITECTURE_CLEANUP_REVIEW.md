@@ -2,7 +2,7 @@
 
 Date: 2026-05-04
 
-Branch: `architecture-cleanup`
+Branch: `main` after merge of `architecture-cleanup`
 
 Scope: TypeScript implementation drift for `apps/mobile`, `apps/home-node-lite`, and the TypeScript packages they compose (`packages/core`, `packages/brain`, `packages/protocol`, and TS storage/client surfaces). Go and Python Core/Brain are used only as mature behavior references for `/remember`, `/ask`, staging, persona gates, approvals, service query, and install semantics. They are not the future target architecture.
 
@@ -62,9 +62,13 @@ Possible architecture mistakes to avoid:
 
 Bottom line: the target architecture is good. The work is to reduce TS drift against that target, not to redesign the target from Go/Python.
 
+Strong reviewer call: do not lower the bar by calling deterministic in-process tests "release E2E." They are valuable and should stay, but the architecture is only proven when the same install, AppView discovery, MsgBox delivery, provider execution, `service.response`, and chat surfacing flow runs against the hosted test fleet with separate Home Nodes.
+
 ## Executive Summary
 
-`apps/mobile` is much closer to the intended full Home Node than `apps/home-node-lite`. Mobile has a real composition path in `boot_service.ts`, `boot_capabilities.ts`, and `bootstrap.ts`: it creates a CoreRouter, in-process Core transport, workflow services, D2D sender, hosted AppView client, staging drain, agentic ask coordinator, service handlers, and MsgBox connection. Mobile onboarding also provisions did:plc material and publishes a MsgBox endpoint into the DID document. That said, release-critical wiring is still partial: PDS account/session/publisher boot, trust record persistence, durable trust reconciliation, persona approval parity review, and production trust publishing.
+`apps/mobile` is much closer to the intended full Home Node than `apps/home-node-lite`. Mobile has a real composition path in `boot_service.ts`, `boot_capabilities.ts`, and `bootstrap.ts`: it creates a CoreRouter, in-process Core transport, workflow services, D2D sender, hosted AppView client, staging drain, agentic ask coordinator, service handlers, BusDriver/service-query runtime wiring, and MsgBox connection. Mobile onboarding also provisions did:plc material and publishes a MsgBox endpoint into the DID document. That said, release-critical wiring is still partial: PDS account/session/publisher boot, trust record persistence, durable trust reconciliation, persona approval parity review, and production trust publishing.
+
+Post-merge BusDriver review: the TS code now implements the scenario at the requester/provider runtime-test level. Brain has deterministic requester coverage for geocode -> AppView service search -> `query_service`, provider coverage for `ServiceHandler` -> delegation task -> `LocalDelegationRunner` -> response bridge -> outbound `service.response`, and mobile runtime coverage for `createNode()` service query/dispatcher wiring plus the demo loopback responder. The remaining gap is no longer "is BusDriver implemented at all"; it is "is BusDriver proven over the live hosted fleet with real MsgBox delivery, real PDS/AppView provider publishing, and the external OpenClaw/dina-agent lifecycle."
 
 `apps/home-node-lite` is still mostly a scaffold. The README correctly says it is pre-M1. The Core server now boots Fastify, identity seed setup, the shared CoreRouter, and the shared MsgBox WebSocket bootstrap, but leaves keystore, DB, and adapter wiring pending. The Brain server now loads hosted endpoint config, constructs AppView and signed Core clients when a Brain service key is provisioned, starts the shared Brain staging drain scheduler against that signed Core client, builds/registers the agentic ask coordinator when Gemini is explicitly configured, consumes the `@dina/home-node/service-runtime` runtime when explicit service dependencies are supplied, and exposes health/readiness. It still does not wire PDS, full D2D/service delivery parity, or the full shared Home Node runtime. Existing TS packages contain much of the logic needed to make a real server Home Node, but the server app does not currently compose that logic into a full node.
 
@@ -83,7 +87,7 @@ Code architecture verdict: not pristine yet. The module-level implementation qua
 | `/ask` | Same coordinator/tool semantics on mobile and server. | Partial/strong. Agentic coordinator exists when provider/tools are configured. | Partial/strong. Brain boot composes/registers the same agentic coordinator shape when Gemini is explicitly configured. |
 | D2D / MsgBox | Signed/sealed D2D through MsgBox with one documented relay contract. | Partial/strong. MsgBox and D2D are wired; current D2D uses `/forward` with WS for session/RPC. | Partial. Core server connects/authenticates to MsgBox and reports readiness; full D2D/service delivery parity and the relay contract decision remain open. |
 | Trust publish | Dev test injection allowed; release publishes signed PDS records and reconciles through AppView. | Partial. UI/test path and PDS helper exist; durable outbox and default PDS path are missing. | Major. No full trust publish runtime. |
-| Service discovery/query | Provider PDS profile, AppView discovery, MsgBox service windows. | Partial. Workflow/windows and default requester-side hosted AppView exist; PDS publisher default wiring is missing. | Partial. `@dina/home-node/service-runtime` can compose the shared service handler, discovery orchestrator, D2D dispatcher, workflow event consumer, and approval reconciler around signed Core/AppView; Brain server consumes it when explicit service dependencies are supplied; MsgBox/PDS/parity remain. |
+| Service discovery/query | Provider PDS profile, AppView discovery, MsgBox service windows. | Partial/strong. BusDriver requester and provider halves are implemented and tested through Brain tools, service handler, workflow delegation, response bridge, mobile `createNode()` wiring, and demo loopback. Remaining gaps are real PDS provider publish, live MsgBox/AppView/PDS validation, and external OpenClaw/dina-agent lifecycle. | Partial. `@dina/home-node/service-runtime` can compose the shared service handler, discovery orchestrator, D2D dispatcher, workflow event consumer, and approval reconciler around signed Core/AppView; Brain server consumes it when explicit service dependencies are supplied; full install/runtime, MsgBox/PDS wiring, and BusDriver parity fixture remain. |
 
 ## Behavior Reference Check
 
@@ -96,7 +100,7 @@ This is the Go/Python comparison that matters: not whether TS is shaped like Go/
 | `/ask` | Fast path vs pending reason, persona guard/approval resume, vault tools, trust/service tools, PII-safe LLM path. | Partial/strong. Agentic path exists; release completeness depends on configured provider, AppView, and approvals. | Partial/strong. Server Brain builds the same Pattern A coordinator from signed Core/AppView/Gemini prerequisites. |
 | D2D | Sign/seal, replay/type checks, service bypass windows, quarantine unknowns, MsgBox delivery. | Partial/strong. Core pipeline exists and mobile wires it; relay contract needs to be pinned as `/forward` vs WS D2D. | Partial. Core server connects to MsgBox and can host the Core RPC/D2D receive bootstrap, but server-side service/D2D runtime parity is incomplete. |
 | Trust publish | Compose/validate, durable outbox, signed PDS record, AppView indexing/reconciliation; test injection dev-only. | Partial. UI/test injection and PDS publish helper exist; durable/default release path missing. | Missing. |
-| Service query | Provider publishes capabilities, AppView discovery, idempotent workflow, policy approval/delegation, service.response completion. | Partial. Workflow, D2D windows, and requester-side AppView default exist; provider PDS publish default is missing. | Partial. Shared service runtime composition exists and Brain can consume it when dependencies are supplied; MsgBox delivery, provider PDS publish, and parity fixtures remain. |
+| Service query | Provider publishes capabilities, AppView discovery, idempotent workflow, policy approval/delegation, service.response completion. | Partial/strong. BusDriver is implemented in TS at deterministic requester/provider runtime-test level: AppView discovery, schema-hash pinning, provider schema validation, delegation task creation, local runner execution, response bridge, and requester chat delivery/demo loopback are covered. Remaining release proof is live hosted MsgBox/PDS/AppView and real external agent execution. | Partial. Shared service runtime composition exists and Brain can consume it when dependencies are supplied; MsgBox delivery, provider PDS publish, full install composition, and server BusDriver fixture remain. |
 
 ## Current State By App
 
@@ -114,6 +118,7 @@ Strong areas:
 - `apps/mobile/src/storage/init.ts` initializes identity, contacts, reminders, audit, device, staging, chat, people graph, and persona vault persistence.
 - D2D sign/seal/verify machinery exists in `packages/core`.
 - Agentic ask and service tools exist in `packages/brain`.
+- BusDriver requester/provider/service-response wiring is implemented in TS and covered by focused Brain and mobile runtime tests.
 - Trust publish UI in `apps/mobile/app/trust/write.tsx` is more concrete than the server path, especially for test AppView injection.
 
 Major remaining gaps:
@@ -125,6 +130,7 @@ Major remaining gaps:
 - Persona gate/approval handling during remember is implemented for locked staging rows. Multi-persona staging resolve now requires explicit access state; locked rows create durable workflow approvals and resume by approval id.
 - Remember enrichment now runs the shared Brain enrichment pipeline before Core resolve. Records store deterministic L0, L1 when an LLM is registered, embeddings when an embedding provider is registered, structured `enrichment_version`, and explicit fallback metadata when providers are absent.
 - Trust outbox is in-memory and test-inject oriented.
+- BusDriver is not release-proven yet. The TS halves and mobile demo loopback are implemented, but the live path still needs real provider PDS publishing, hosted AppView indexing, hosted MsgBox delivery, and real external OpenClaw/dina-agent execution.
 - No deleted mobile AI/chat/memory remember entry points remain in production code.
 
 ### `apps/home-node-lite`
@@ -135,7 +141,7 @@ Core server current state:
 
 - `apps/home-node-lite/core-server/src/boot.ts` loads config and identity seed, assembles the shared `@dina/core` `CoreRouter`, binds it to Fastify through `bindCoreRouter`, starts Fastify, connects to MsgBox by default through `@dina/core/runtime` and `@dina/net-node`, and reports storage/adapter steps as pending.
 - `apps/home-node-lite/core-server/src/server.ts` creates health/readiness/error envelope/rate limit/CORS infrastructure.
-- `apps/home-node-lite/core-server/src/server/bind_core_router.ts` can bind a CoreRouter into Fastify, but boot does not call it.
+- `apps/home-node-lite/core-server/src/server/bind_core_router.ts` binds the shared CoreRouter through `CoreRouter.handle`, so Fastify route exposure preserves Core auth semantics.
 - Config requires `DINA_VAULT_DIR`, resolves hosted endpoints through `@dina/home-node`, and defaults Core MsgBox boot to `wss://test-mailbox.dinakernel.com/ws`; PDS and storage runtime clients are not yet composed.
 
 Brain server current state:
@@ -163,9 +169,11 @@ Server target gap:
 | PUB-01 | P0 | PDS/AppView | Partial | Mobile and Brain server construct real requester-side AppView clients by default; PDS publisher/session boot and server Brain route/runtime use remain incomplete. |
 | TRUST-01 | P0 | trust publish | Partial | Test inject exists, but production PDS trust publish and durable outbox are missing. |
 | PERSIST-01 | P0 | staging persistence | Done | Staging repository is authoritative for ingest/dedup/claim/resolve/fail/sweep, with restart-safety tests. |
+| SERVICE-01 | P1 | BusDriver/service query | Partial/strong | TS requester/provider/demo paths are implemented, but release signoff still requires the same scenario over hosted MsgBox/PDS/AppView with a real external agent. |
 | D2D-01 | P1 | MsgBox D2D | Needs decision | Target says all connections through MsgBox, but current TS disables WS D2D frames and uses HTTP forward fallback. |
 | ALT-01 | P1 | mobile alternate paths | Done | Deleted mobile `ai/chat`, `ai/memory`, and standalone remember hook paths were removed outright. |
 | ID-01 | P1 | install/account | Open | DID/PDS session/account model is not complete enough for release publishing. |
+| TEST-01 | P2 | test boundary hygiene | Open | Production mobile Core/Brain deep imports are blocked, but some tests still import private package paths; one focused BusDriver demo test fails when run directly under the merged export maps. |
 
 ## Detailed Findings
 
@@ -917,6 +925,93 @@ Validation:
 - `npm test --workspace @dina/core -- client/in_process_transport.test.ts client/http_transport.test.ts api/contract.test.ts test_harness/mock_core_client.test.ts staging/heartbeat.test.ts`
 - `npm run typecheck --workspace @dina/core`
 
+### SERVICE-01: BusDriver Is Implemented, But Not Release-Proven
+
+Evidence:
+
+- `packages/brain/__tests__/integration/mobile_bus_driver_e2e.test.ts`
+  covers the requester half: `geocode` -> `search_provider_services` ->
+  `query_service`, including schema-hash propagation and exact orchestrator
+  dispatch shape.
+- `packages/brain/__tests__/integration/mobile_bus_driver_provider_e2e.test.ts`
+  covers the provider half: `ServiceHandler` validates the inbound
+  `service.query`, creates a delegation task, `LocalDelegationRunner` executes
+  it, `WorkflowService.complete` fires the response bridge, and the outbound
+  `service.response` body is produced.
+- `apps/mobile/__tests__/integration/bus_driver_e2e.test.ts` covers the mobile
+  runtime composition path through `createNode()`: initial service config,
+  signed service-query route, Core globals, and dispatcher registration.
+- `apps/mobile/src/services/demo_bus_driver_responder.ts` implements the README
+  Bus 42 demo loopback for `did:plc:bus42demo`.
+- `apps/mobile/src/services/boot_service.ts` only enables that loopback when the
+  in-memory AppView stub is active. Production builds with a real AppView client
+  skip the wrapper.
+
+Reviewer verdict:
+
+- This is real implementation work, not just documentation. The requester tool
+  chain, provider validation/delegation path, workflow completion, response
+  bridge, and mobile demo path are all present.
+- It is not a release E2E yet. The current tests intentionally replace at least
+  one release dependency: LLM choice, AppView search, MsgBox delivery, separate
+  node processes, or external OpenClaw/dina-agent execution.
+- Do not mark service-network signoff complete until the BusDriver scenario runs
+  against `test-mailbox.dinakernel.com`, `test-pds.dinakernel.com`, and
+  `test-appview.dinakernel.com` with two separate Home Nodes.
+
+Remaining work:
+
+- Publish BusDriver's provider profile through the real PDS path, not only the
+  demo AppView stub or local config.
+- Verify AppView indexing discovers the provider profile through the hosted test
+  AppView.
+- Send `service.query` over the canonical MsgBox relay contract and receive the
+  real `service.response` on the requester node.
+- Replace `LocalDelegationRunner` in release validation with the real
+  OpenClaw/dina-agent lifecycle.
+- Add the same BusDriver parity fixture for `apps/home-node-lite` once the
+  server app composes the full shared Home Node runtime.
+
+Validation run during this review:
+
+- `npm test --workspace @dina/brain -- integration/mobile_bus_driver_e2e.test.ts integration/mobile_bus_driver_provider_e2e.test.ts reasoning/bus_driver_tools.test.ts reasoning/delegate_agent_tool.test.ts --runInBand`
+  passed: 4 suites, 53 tests.
+- `npm test --workspace @dina/app -- services/demo_bus_driver_responder.test.ts integration/bus_driver_e2e.test.ts services/boot_service.test.ts --runInBand`
+  initially failed because `services/demo_bus_driver_responder.test.ts` imports
+  private `@dina/core/src/workflow/*` paths. `integration/bus_driver_e2e.test.ts`
+  and `services/boot_service.test.ts` passed. No code change is made in this
+  review; this is recorded as TEST-01.
+
+### TEST-01: Test Boundary Hygiene Still Lags Production Boundary Hygiene
+
+Evidence:
+
+- Production mobile code is guarded against `@dina/core/src/*` and
+  `@dina/brain/src/*` imports.
+- The focused mobile BusDriver demo test still imports
+  `@dina/core/src/workflow/service` and
+  `@dina/core/src/workflow/repository`.
+- After the merged package export maps, that focused test fails direct Jest
+  resolution with `Cannot find module '@dina/core/src/workflow/service'`.
+
+Impact:
+
+- This is not a production architecture drift finding; the production demo
+  responder imports `getWorkflowService` from public `@dina/core`.
+- It does weaken the review signal. A reviewer cannot run the focused demo test
+  in isolation without either fixing test imports or bypassing the export map.
+- Tests that depend on private paths can hide the exact import-boundary drift the
+  cleanup is supposed to prevent.
+
+Fix direction:
+
+- Move the BusDriver demo test to public `@dina/core` exports for
+  `WorkflowService`, `setWorkflowService`, `InMemoryWorkflowRepository`, and
+  `setWorkflowRepository`.
+- Add a lighter test-scope boundary guard for mobile tests that permits explicit
+  test harness internals but rejects private package paths when equivalent
+  public exports exist.
+
 ### CA-05/CA-06: Mobile Public Core Boundary Slice
 
 Evidence:
@@ -1126,12 +1221,13 @@ Recommended order:
 1. Move mobile's platform-neutral boot logic behind the new `@dina/home-node` contract.
 2. Expand `@dina/home-node` from contract shell into the shared composition root.
 3. Wire home-node-lite to the shared runtime instead of rebuilding Core/Brain behavior manually.
-4. Fix CoreRouter Fastify auth binding before exposing server routes.
-5. Finish durable approval/resume for remember.
-6. Thread server Brain AppView into route composition and wire real PDS publisher defaults.
-7. Wire production trust publish and durable trust outbox.
-8. Resolve the MsgBox D2D transport contract.
-9. Add parity scenarios that run against mobile in-process transport and home-node-lite HTTP transport.
+4. Finish install/PDS session/publisher composition once, then use it from mobile and server.
+5. Promote BusDriver from deterministic/demo coverage to a hosted test-fleet scenario with two separate Home Nodes.
+6. Wire production trust publish and durable trust outbox.
+7. Resolve the MsgBox D2D transport contract.
+8. Remove remaining module-global runtime state from shared node composition where it blocks multi-node tests.
+9. Add parity scenarios that run the same install/remember/ask/trust/service/D2D flows against mobile in-process and home-node-lite HTTP modes.
+10. Clean up test-only private package imports so direct focused suites exercise the same public boundaries as production code.
 
 ## Definition Of Done
 
@@ -1142,7 +1238,9 @@ Architecture cleanup should be considered done only when all of these are true:
 - `/remember` enters Core through a supported transport API, drains through Brain, enriches, respects persona gates, persists durably, and survives restart.
 - `/ask` uses the same coordinator and tool semantics on mobile and server.
 - Trust publish writes signed records to PDS in production mode and reaches AppView through normal indexing.
+- BusDriver service query runs end to end against the hosted test fleet: provider profile publish through PDS, discovery through AppView, query/response through MsgBox, external agent execution, and requester chat surfacing.
 - Test AppView injection remains available only as an explicit dev/test shortcut.
 - D2D transport is documented and tested against MsgBox.
 - No production mobile code imports Core staging internals directly.
-- The parity test suite runs the same install/remember/ask/trust/D2D scenarios against mobile in-process and server HTTP modes.
+- Focused test suites do not depend on private package paths when public exports exist.
+- The parity test suite runs the same install/remember/ask/trust/service/D2D scenarios against mobile in-process and server HTTP modes.

@@ -2,13 +2,14 @@
 
 Date: 2026-05-04
 
-Branch: `architecture-cleanup`
+Branch: `main` after merge of `architecture-cleanup`
 
 Scope: TypeScript code architecture for `apps/mobile`, `apps/home-node-lite`, and shared TypeScript packages used by both apps.
 
 ## Verdict
 
-The current TS architecture is promising but not pristine.
+The current TS architecture is stronger than the original cleanup baseline, but
+still not pristine.
 
 It has several strong building blocks:
 
@@ -18,9 +19,91 @@ It has several strong building blocks:
 - Mobile has a real node composition path that proves a full TS Home Node is viable.
 - There are useful architecture guard tests, especially around `CoreClient` and port hygiene.
 
-But the actual code architecture is transitional. The mobile app owns most of the real Home Node boot, and home-node-lite still has separate Core and Brain server scaffolds instead of one shared runtime adapter. Shared packages expose too much internal state through deep imports and global setters. The code is workable, but it is not yet the clean shared architecture needed for "mobile and server are both Home Nodes."
+But the actual code architecture is still transitional. The mobile app owns most
+of the real Home Node boot, and home-node-lite still has separate Core and Brain
+server scaffolds instead of one shared runtime adapter. `@dina/home-node` has
+useful ask/service/runtime slices, but it is not yet the authoritative
+composition root. Shared packages still expose too much internal state through
+broad public barrels, cross-package relative imports, and global setters. The
+code is workable, but it is not yet the clean shared architecture needed for
+"mobile and server are both Home Nodes."
 
 If the goal is long-term TS consolidation, the next cleanup should be structural, not just feature wiring.
+
+## Post-Merge Deep Review
+
+Reviewer stance: the architecture is improving, but it should not be described
+as pristine or finished. The code now has better public package boundaries and a
+real BusDriver vertical slice, but the shared-runtime goal is still only
+partially true.
+
+### High-Severity Findings
+
+| ID | Severity | Finding | Reviewer call |
+| --- | --- | --- | --- |
+| CA-25 | P0 | `@dina/home-node` is a contract and slice package, not the full runtime root. | Keep it, but do not treat it as the consolidation finish line. |
+| CA-26 | P0 | Mobile still owns the de facto Home Node runtime. | Extract platform-neutral boot from mobile before adding more features there. |
+| CA-27 | P0 | Mobile and server compose ask/service differently. | Both form factors must call the same `@dina/home-node` builders. |
+| CA-28 | P0 | Process-wide globals are still the dominant dependency container. | This blocks clean two-node tests and future multi-account/multi-runtime support. |
+| CA-29 | P0 | Brain still imports Core source files directly. | Decide and enforce a real Brain/Core boundary. |
+| CA-30 | P1 | home-node-lite remains split scaffold, not a server form factor of the same node. | Thin adapters are the target; today's server still has its own boot shape. |
+| CA-31 | P1 | Portable Core still contains Node `fs`/`path` modules. | Core is not yet cleanly platform-neutral. |
+| CA-32 | P1 | Package public surfaces are broad barrels, not small semantic APIs. | Public exports fixed imports, but they also made many internals official. |
+| CA-33 | P2 | Test import hygiene is weaker than production import hygiene. | Direct focused tests should exercise the same public boundaries as app code. |
+| CA-34 | P2 | Comments/docs inside boot code have drifted. | The code works better than some comments claim, but stale comments now mislead reviewers. |
+
+### What Improved
+
+- Production mobile code no longer imports `@dina/core/src/*` or
+  `@dina/brain/src/*`; the mobile package-boundary guard enforces this.
+- `packages/core`, `packages/brain`, and `packages/home-node` now declare
+  explicit package `exports` maps.
+- `@dina/home-node/ask-runtime` and `@dina/home-node/service-runtime` exist and
+  are used by home-node-lite Brain boot.
+- home-node-lite Core boot now creates the shared `CoreRouter`, binds it
+  through `bindCoreRouter`, and connects MsgBox when identity material is
+  available.
+- Brain trace correlation is now portable, with Node trace storage isolated in
+  `@dina/brain/node-trace-storage`.
+- The mobile BusDriver requester/provider/demo path is implemented and tested
+  as a deterministic TS vertical slice.
+
+### What Is Still Not Good Enough
+
+- `apps/mobile/src/services/bootstrap.ts`, `boot_service.ts`, and
+  `boot_capabilities.ts` total roughly 2,900 lines and still wire Core, Brain,
+  MsgBox, AppView, PDS publisher setup, staging, ask, service orchestration,
+  workflow runners, chat globals, and teardown.
+- `packages/home-node/src/runtime.ts` is a delegating facade over supplied
+  handlers. It does not own install, identity, storage, MsgBox, PDS, AppView,
+  staging, trust, or D2D composition.
+- `packages/home-node/src/ask_runtime.ts` and `service_runtime.ts` are good
+  slices, but mobile does not consume those slices yet; it constructs equivalent
+  Brain/Core pieces directly.
+- `apps/home-node-lite/brain-server/src/boot.ts` exposes `runtime?: HomeNodeRuntime`
+  but never sets it, tracks `runtime: 'pending'`, and `/readyz` still reports
+  `not_ready` with runtime failure.
+- `packages/brain/src` still has many direct relative imports into
+  `../../../core/src/*`, including vault, staging, persona, contacts, reminders,
+  trust, PII, auth, and workflow types. That is not a clean package boundary.
+- `packages/core/src` still contains Node-specific modules such as
+  `identity/keypair.ts`, `storage/seed_file.ts`, `storage/spool.ts`, and schema
+  loaders that import `fs`/`path`.
+- `packages/core/src/index.ts` is now about 630 lines and
+  `packages/brain/src/index.ts` about 300 lines. These barrels are useful for
+  migration, but they are not a crisp long-term public API.
+- Many mobile tests and Brain tests still import package internals directly. The
+  production boundary is better than the test boundary.
+
+### Reviewer Verdict
+
+The architecture is viable, not pristine.
+
+The right next move is not another feature pass. The next move is to make
+`@dina/home-node` own the actual shared runtime and make both mobile and
+home-node-lite consume it. Until that happens, every improvement to mobile can
+still drift from server, and every server boot fix can still miss mobile's
+real-world composition behavior.
 
 ## What Pristine Should Mean Here
 
@@ -48,26 +131,26 @@ Current useful package roles:
 | Package | Current role | Architecture quality |
 | --- | --- | --- |
 | `@dina/core` | Core router, auth, D2D, staging, vault, workflow, storage contracts, clients | Strong primitives, but too many globals and deep-exported internals. |
-| `@dina/brain` | Ask, staging drain, LLM routing, enrichment, service orchestration, trust reasoning | Strong primitives, but still imports Core internals and includes one Node-specific diagnostic module. |
+| `@dina/brain` | Ask, staging drain, LLM routing, enrichment, service orchestration, trust reasoning | Strong primitives, but still imports Core internals; Node trace storage is now isolated behind an explicit subpath. |
 | `@dina/protocol` | Wire/protocol types | Cleanest layer. |
 | `@dina/home-node` | Shared runtime contract, endpoint resolver, lifecycle facade, feature handler contract, ask runtime composition, service runtime composition | Contract package now has initial shared composition slices; broader runtime extraction remains. |
 | `@dina/adapters-expo` | Expo storage/fs/net/keystore aggregation | Good direction. |
 | `@dina/adapters-node` | Node fs/keystore/crypto/net aggregation | Good direction, but storage integration is not consistently wired into home-node-lite. |
 
 The center of the drift problem is now implementation ownership, not the absence
-of a package. `@dina/home-node` now owns the first shared composition slice
-for service runtime loops; most mobile composition and server boot still need
+of a package. `@dina/home-node` now owns the first shared ask/service
+composition slices; most mobile composition and server boot still need
 to move behind it.
 
 ### Mobile
 
-Mobile has the closest thing to the actual Home Node runtime:
+Mobile still has the closest thing to the actual Home Node runtime:
 
-- `apps/mobile/src/services/bootstrap.ts` has 1344 lines.
-- `apps/mobile/src/services/boot_service.ts` has 628 lines.
-- `apps/mobile/src/services/boot_capabilities.ts` has 642 lines.
+- `apps/mobile/src/services/bootstrap.ts` has about 1,380 lines.
+- `apps/mobile/src/services/boot_service.ts` has about 620 lines.
+- `apps/mobile/src/services/boot_capabilities.ts` has about 890 lines.
 
-Together, those files compose Core, Brain, MsgBox, D2D, workflows, staging drain, ask handlers, service orchestration, hosted AppView, PDS stubs, and runtime degradations.
+Together, those files compose Core, Brain, MsgBox, D2D, workflows, staging drain, ask handlers, service orchestration, hosted AppView, PDS publisher/session setup, demo fallbacks, and runtime degradations.
 
 This is good because it proves the node can run in one JS VM. It is not ideal because most of that composition is mobile-owned. Server cannot share it cleanly.
 
@@ -90,6 +173,282 @@ That is still not the final pristine architecture, because `brain-server` should
 The old `apps/home-node-lite/core-server/GAP.md` was deleted with the retired subtree. Current gap tracking lives in the architecture cleanup docs and task tables.
 
 ## Code Architecture Findings
+
+### CA-25: `@dina/home-node` Is Not Yet The Authoritative Runtime Root
+
+Evidence:
+
+- `packages/home-node/src/runtime.ts` creates a delegating facade over optional
+  handlers for `remember`, `ask`, `publishTrust`, and `queryService`.
+- `packages/home-node/src/ask_runtime.ts` composes the ask coordinator from
+  `CoreClient`, `AppViewClient`, an LLM provider, and `ApprovalManager`.
+- `packages/home-node/src/service_runtime.ts` composes service handler,
+  orchestrator, dispatcher, workflow-event consumer, and approval reconciler.
+- Mobile boot does not call those ask/service builders; it imports the same
+  lower-level Core/Brain primitives and wires them itself.
+- home-node-lite Brain boot has a `runtime?: HomeNodeRuntime` field and
+  dependency status `runtime: 'pending'`, but no full `HomeNodeRuntime` is
+  constructed.
+
+Impact:
+
+- `@dina/home-node` is currently a good contract and slice package, not the
+  actual single runtime.
+- Mobile remains the de facto runtime owner.
+- Server can use a shared ask/service slice while still missing mobile's real
+  full-node composition semantics.
+
+Fix direction:
+
+- Promote `@dina/home-node` from "contract + slices" to the only
+  platform-neutral composition root.
+- Move mobile's ask/service/staging/workflow/D2D composition behind
+  `@dina/home-node`.
+- Make mobile and home-node-lite call the same runtime factory with different
+  platform adapters.
+
+### CA-26: Mobile Boot Is Still Too Large And Too Central
+
+Evidence:
+
+- `apps/mobile/src/services/bootstrap.ts`,
+  `apps/mobile/src/services/boot_service.ts`, and
+  `apps/mobile/src/services/boot_capabilities.ts` total roughly 2,900 lines.
+- These files wire identity, repository setup, service config, workflow service,
+  response bridge, service query/respond senders, D2D sender, MsgBox, AppView,
+  PDS publisher construction, staging drain, ask coordinator, persona selector,
+  service handlers, local delegation runner, chat globals, mobile hooks, and
+  teardown.
+- `createNode()` exposes `coreGlobals` and `globalWiring` flags because the
+  composition still mutates module-level registries.
+
+Impact:
+
+- The real Home Node behavior lives under `apps/mobile`, which makes server
+  parity structurally hard.
+- The boot files are doing too many kinds of work: platform adapter assembly,
+  shared runtime assembly, feature wiring, demo wiring, degradation reporting,
+  and test escape hatches.
+- Multi-node tests need opt-outs because the default path mutates process state.
+
+Fix direction:
+
+- Extract a `createHomeNodeRuntime()` implementation that owns the
+  platform-neutral pieces.
+- Keep mobile boot responsible only for Expo/native adapters, unlock lifecycle,
+  UI integration, and passing persisted preferences into the shared runtime.
+- Move demo wiring such as the BusDriver loopback behind an explicit demo
+  adapter, not the shared mobile boot path.
+
+### CA-27: Ask And Service Composition Are Duplicated Across Form Factors
+
+Evidence:
+
+- home-node-lite Brain boot consumes `@dina/home-node/ask-runtime` and
+  `@dina/home-node/service-runtime`.
+- Mobile boot still constructs the ask pipeline and coordinator directly in
+  `boot_capabilities.ts`.
+- Mobile `bootstrap.ts` still constructs `ServiceHandler`,
+  `ServiceQueryOrchestrator`, `D2DDispatcher`, `WorkflowEventConsumer`,
+  `ApprovalReconciler`, and `LocalDelegationRunner` directly.
+
+Impact:
+
+- The same conceptual runtime is now composed in two places.
+- Shared slices can improve while mobile remains on a hand-wired equivalent, or
+  mobile can add behavior that server never sees.
+- This is the main remaining source of future TS drift.
+
+Fix direction:
+
+- Make mobile use `buildHomeNodeAskRuntime` and `buildHomeNodeServiceRuntime`.
+- Keep only mobile-specific adapters around those calls.
+- Add parity tests that instantiate the shared builders for both form factors.
+
+### CA-28: Process-Wide Globals Still Dominate Dependency Ownership
+
+Evidence:
+
+- Mobile `createNode()` installs Core globals: workflow repository/service,
+  service config repository/config, public-key resolver, service query/respond
+  senders, D2D sender, caller-type registry, device-role resolver, node DID, and
+  middleware state.
+- It also installs Brain/chat globals: ask handler, remember client/drain hook,
+  service approve/deny handlers, service inbox client, service config client,
+  approval inbox bridge, and persona selector wiring.
+- Core and Brain still expose many `setX` / `getX` / `resetX` module-level
+  registries for repositories, notification state, approval managers, D2D
+  dispatch, vault repositories, storage providers, memory services, and chat
+  state.
+
+Impact:
+
+- One mobile node in one JS VM works, but two nodes in one process are fragile.
+- Test correctness depends on exhaustive teardown.
+- Server and simulator workarounds grow around global collisions instead of
+  exercising a real multi-node runtime.
+
+Fix direction:
+
+- Introduce a `HomeNodeContext` that owns repositories, senders, schedulers,
+  clients, dispatchers, and feature services per node instance.
+- Convert module-level setters into temporary adapters around that context.
+- Require a two-node same-process test before calling the runtime composition
+  clean.
+
+### CA-29: Brain Still Reaches Through Core Source Paths
+
+Evidence:
+
+- Production mobile imports are clean, but `packages/brain/src` still imports
+  many Core internals through relative paths such as `../../../core/src/...`.
+- Examples include vault CRUD, staging service, persona service, contacts
+  directory, reminders service, trust search, PII patterns, auth helpers,
+  workflow types, notification repositories, and service body types.
+- `packages/brain/__tests__/core_port_usage_audit.test.ts` exists, but it only
+  blocks a narrow set of Core repository imports.
+
+Impact:
+
+- The stated "Brain talks to Core through `CoreClient`" architecture is not
+  enforced.
+- Mobile hides the problem because Core and Brain share a process.
+- Server parity remains conditional on which Brain paths have already been
+  ported to `CoreClient`.
+
+Fix direction:
+
+- Decide whether Brain must be strict-transport-only (`CoreClient`) or can use a
+  supplied in-process `CoreServices` interface.
+- Enforce that decision across all Brain production source, not just
+  repositories.
+- Move pure domain types to public Core subpaths if Brain legitimately needs
+  them.
+
+### CA-30: home-node-lite Is Still A Split Server Scaffold
+
+Evidence:
+
+- Core server boot creates/binds a real `CoreRouter` and connects MsgBox when
+  identity material is available, but keystore, DB open, and adapter wiring
+  remain explicit pending steps.
+- Brain server boot constructs AppView and signed Core clients, and can compose
+  ask/service slices when dependencies are supplied.
+- Brain server does not construct a full `HomeNodeRuntime`; `/readyz` still
+  reports `status: 'not_ready'`, `runtime: 'fail'`, and a 503 response.
+- Service runtime is only composed when `options.serviceRuntime` is supplied to
+  `bootServer`; it is not a complete default server node boot.
+
+Impact:
+
+- home-node-lite is not yet the server form factor of the same mobile node.
+- It is a useful Core/Brain server scaffold with improving shared slices.
+- Operators cannot treat it as a full TS Home Node release target yet.
+
+Fix direction:
+
+- Collapse server boot around the same shared runtime factory mobile uses.
+- Wire Node storage, keystore, PDS session/publisher, MsgBox, AppView, ask,
+  remember, trust, service, and D2D through that runtime.
+- Make readiness report the real runtime state instead of permanent pending.
+
+### CA-31: Portable Core Still Contains Node-Specific Modules
+
+Evidence:
+
+- `packages/core/src/identity/keypair.ts` imports `fs` and `path`.
+- `packages/core/src/storage/seed_file.ts` imports `fs` and `path`.
+- `packages/core/src/storage/spool.ts` imports `fs` and `path`.
+- `packages/core/src/schema/identity.ts` and `schema/persona.ts` import `fs`
+  and `path`.
+- `packages/core/src/testing/vector_validator.ts` also imports `fs` and `path`.
+
+Impact:
+
+- `@dina/core` is not fully portable even though mobile consumes it as a shared
+  package.
+- The package export map helps, but portability still depends on not importing
+  these modules from mobile-reachable paths.
+
+Fix direction:
+
+- Move file-backed identity, seed file, spool, schema-file loading, and test
+  vector validation to Node-only adapter subpaths or packages.
+- Add a Core dependency hygiene test similar to Brain's portable-source gate.
+
+### CA-32: Public API Boundaries Are Enforced But Too Broad
+
+Evidence:
+
+- `packages/core/package.json`, `packages/brain/package.json`, and
+  `packages/home-node/package.json` have explicit `exports` maps.
+- `packages/core/src/index.ts` is about 630 lines.
+- `packages/brain/src/index.ts` is about 300 lines.
+- Many root exports exist because mobile needed a public replacement for deep
+  imports.
+
+Impact:
+
+- This is much better than app code deep-importing source files.
+- It is still not a crisp long-term API. Broad barrels can make implementation
+  details effectively public.
+
+Fix direction:
+
+- Keep the current exports as a stabilization layer.
+- Gradually move toward smaller semantic subpaths: `core/client`,
+  `core/workflow`, `core/service`, `core/persona`, `brain/ask`,
+  `brain/service`, `brain/staging`.
+- Add public API review whenever a new root export is added.
+
+### CA-33: Test Boundary Hygiene Lags Production Hygiene
+
+Evidence:
+
+- Production mobile code is guarded against `@dina/core/src/*` and
+  `@dina/brain/src/*` imports.
+- Many mobile and Brain tests still import private package source paths.
+- The focused mobile BusDriver demo responder test imports
+  `@dina/core/src/workflow/service` and
+  `@dina/core/src/workflow/repository`, which fails direct Jest resolution under
+  the merged package export maps.
+
+Impact:
+
+- Tests can bypass exactly the package contracts production code now follows.
+- Focused test runs can fail even while nearby runtime code uses public exports.
+- This weakens reviewer confidence in the boundary cleanup.
+
+Fix direction:
+
+- Move tests to public package exports when equivalent exports exist.
+- Keep package-local tests allowed to import source internals; cross-package and
+  app tests should default to public exports.
+- Add a test-boundary guard with an explicit allowlist for true white-box tests.
+
+### CA-34: Boot Comments And Runtime Reality Have Drifted
+
+Evidence:
+
+- `boot_capabilities.ts` has comments saying provider publisher setup calls
+  `ensureAccount`, while the implementation now uses `PDSAccountClient.createSession`.
+- The same return block has a stale comment saying "PDS publisher stays unset"
+  after it has already assigned `pdsPublisher`.
+- Some architecture docs previously claimed CoreRouter binding was not called,
+  but `apps/home-node-lite/core-server/src/boot.ts` now calls `bindCoreRouter`.
+
+Impact:
+
+- Reviewers can misread the code path and either overstate or understate
+  release readiness.
+- In a transitional architecture, stale comments are not harmless; they become
+  false design constraints.
+
+Fix direction:
+
+- Treat comments in boot/composition files as part of the architecture surface.
+- Remove historical issue commentary once the issue is fixed.
+- Keep operational comments short and tied to the current code path.
 
 ### CA-01: `docs/CODE_ARCHITECTURE.md` Now Describes The TS Target
 
@@ -197,9 +556,9 @@ Progress:
 
 Evidence:
 
-- `apps/mobile/src/services/bootstrap.ts` is 1344 lines.
-- `boot_service.ts` and `boot_capabilities.ts` add another 1270 lines.
-- These files wire Core globals, Brain globals, MsgBox, workflows, staging, service orchestration, ask, D2D, AppView, PDS stubs, and teardown.
+- `apps/mobile/src/services/bootstrap.ts` is about 1,380 lines.
+- `boot_service.ts` and `boot_capabilities.ts` add about another 1,510 lines.
+- These files wire Core globals, Brain globals, MsgBox, workflows, staging, service orchestration, ask, D2D, AppView, PDS publisher/session setup, demo fallbacks, and teardown.
 
 Impact:
 
@@ -230,10 +589,10 @@ Evidence:
   `../../../core/src/...` or `../../../brain/src/...`.
 - Mobile production code now has zero `@dina/core/src` or `@dina/brain/src`
   imports, and declared Core/Brain/Home Node subpaths are protected by package
-  `exports` maps. Remaining work is the parallel home-node-lite Core
-  `src/brain` subtree and relative package-internal imports.
-- `packages/core/src/index.ts` is a 561-line barrel that exports many internals, including staging functions and Node-oriented modules.
-- `packages/brain/src/index.ts` is also a broad barrel and requires collision workarounds.
+  `exports` maps. Remaining work is relative cross-package imports, especially
+  from Brain into Core.
+- `packages/core/src/index.ts` is about a 630-line barrel that exports many internals, including staging functions and Node-oriented modules.
+- `packages/brain/src/index.ts` is about a 300-line barrel and still requires collision workarounds.
 
 Impact:
 
@@ -300,17 +659,21 @@ Evidence:
 - `packages/core/src/storage/seed_file.ts` imports `fs` and `path`.
 - `packages/core/src/storage/spool.ts` imports `fs` and `path`.
 - `packages/core/src/schema/identity.ts` and `schema/persona.ts` import `fs` and `path`.
-- `packages/brain/src/diagnostics/trace_correlation.ts` imports `node:async_hooks` and `node:crypto`.
+- Brain trace correlation used to import Node-only modules directly; that has
+  been fixed. The remaining platform-specific portable-package issue is now
+  concentrated mostly in Core.
 
 Impact:
 
-- `@dina/core` and `@dina/brain` are not fully runtime-agnostic packages.
+- `@dina/core` is not fully runtime-agnostic yet. `@dina/brain` is much cleaner
+  after the trace-correlation fix, though Brain still has cross-package Core
+  source imports.
 - Mobile bundling can break if a production import reaches one of these modules.
 - The package docs say shared domain layers should not import runtime-specific modules, but the source still contains exceptions.
 
 Fix direction:
 
-- Move file-backed keypair, wrapped seed file, spool, schema fixture loading, and Node trace correlation to Node adapter packages or Node-only subpaths.
+- Move file-backed keypair, wrapped seed file, spool, and schema fixture loading to Node adapter packages or Node-only subpaths.
 - Keep portable packages limited to pure serialization, interfaces, and injected I/O.
 - Add dependency gates for both `packages/core/src` and `packages/brain/src` covering Node, Expo, React Native, and server framework imports.
 
@@ -379,11 +742,14 @@ Fix direction:
 - Do not allow direct imports of Core service modules from Brain production code.
 - Expand the import audit from repository-only to all `core/src/**` imports, with a small allowlist for pure domain/types only.
 
-### CA-09: App Code Reaches Directly Into Domain Modules
+### CA-09: App Code Still Bypasses A Runtime Facade
 
 Evidence:
 
-- Mobile screens and hooks import Core and Brain internals directly:
+- Mobile production code now uses public package APIs instead of
+  `@dina/core/src/*` or `@dina/brain/src/*`.
+- Many mobile screens and hooks still call Core/Brain domain modules directly
+  rather than going through a `HomeNodeRuntime` facade:
   - contacts
   - personas
   - pairing
@@ -395,7 +761,8 @@ Evidence:
 
 Impact:
 
-- UI code becomes coupled to storage/runtime implementation.
+- UI code is no longer coupled to source paths, but it is still coupled to
+  package-level domain modules and module-level registries.
 - Server cannot share app-level workflows because logic is scattered into hooks and screens.
 - It is harder to enforce lifecycle and persona gates consistently.
 
@@ -421,17 +788,20 @@ Evidence:
   `packages/home-node/package.json` now declare explicit `exports` maps for
   their current public root and subpath APIs.
 - Guard tests pin those maps so `./src/*` cannot silently become public again.
-- Mobile `tsconfig.json` includes path aliases for `@dina/core/*` and `@dina/brain/*` that point to `../core/src/*` and `../brain/src/*`, which do not match the workspace package location from `apps/mobile`.
+- Production mobile, home-node-lite Brain server, and `@dina/home-node` source
+  have guard tests that reject new `@dina/core/src/*` and `@dina/brain/src/*`
+  package imports.
 
 Impact:
 
 - Package resolution now distinguishes declared public entry points from
   internals.
-- Incorrect aliases can hide behind workspace resolution until a specific bundler path fails.
+- Public import paths are now enforceable in production code.
+- Test code can still bypass those boundaries unless test-specific guards are
+  added.
 
 Fix direction:
 
-- Correct or remove mobile path aliases.
 - Add CI checks for public import paths.
 - Keep internal files unavailable except to package-local tests.
 
@@ -446,21 +816,20 @@ Evidence:
 Impact:
 
 - The codebase has the right pattern for architecture enforcement.
-- The current gates do not cover the actual highest-risk boundaries:
-  - app deep imports
+- The current gates still do not cover all highest-risk boundaries:
+  - test deep imports
   - Core runtime-specific imports
-  - Brain runtime-specific imports outside network/server imports
-  - accidental reintroduction of `core-server/src/brain`
+  - Brain-to-Core source imports outside a consciously chosen boundary
   - global singleton growth
 
 Fix direction:
 
 - Keep the Jest-as-lint style.
 - Add gates for:
-  - no app production deep imports from `@dina/core/src` or `@dina/brain/src`
+  - no cross-package test deep imports when public exports exist
   - no `packages/core/src` Node/Expo imports except allowed adapterless pure modules
-  - no `packages/brain/src` Node/Expo imports except explicit Node-only subpaths
-  - no new files under `apps/home-node-lite/core-server/src/brain`
+  - no Brain production imports from `../../../core/src/*` except explicitly
+    allowed domain/type surfaces
   - no new `setX/getX/resetX` globals without architecture review
 
 ### CA-12: Adapter Packages Are The Right Direction, But Not The Runtime Boundary Yet
@@ -864,18 +1233,26 @@ For a healthy final architecture:
 
 Recommended order:
 
-1. Freeze the target TS code architecture in docs.
-2. Add `packages/home-node` with interfaces first, not a massive move.
-3. Move mobile composition into the shared runtime in small slices.
-4. Wire mobile back to the shared runtime and verify no behavior changes.
-5. Wire home-node-lite to the same runtime using Node adapters.
-6. Relocate or delete `apps/home-node-lite/core-server/src/brain`.
-7. Keep public package subpath exports explicit and guarded.
-8. Replace deep imports with public entry points.
-9. Move platform-specific files out of portable packages.
-10. Convert global singleton composition to `HomeNodeContext` ownership.
-11. Add architecture guard tests.
-12. Add parity scenarios for mobile and server.
+1. Promote `@dina/home-node` from contract/slices to the real shared runtime
+   root.
+2. Move mobile ask composition to `@dina/home-node/ask-runtime`.
+3. Move mobile service composition to `@dina/home-node/service-runtime`.
+4. Extract staging, workflow, D2D, MsgBox, AppView, PDS publisher, and trust
+   composition from mobile into the same runtime package.
+5. Replace module-level runtime globals with `HomeNodeContext` ownership where
+   two-node tests currently need opt-out flags.
+6. Wire home-node-lite Core/Brain boot around the shared runtime using Node
+   adapters.
+7. Make home-node-lite readiness reflect the real runtime state instead of
+   permanent pending.
+8. Move Core Node-specific `fs`/`path` modules to Node-only adapter subpaths.
+9. Enforce the Brain/Core boundary across all Brain production source.
+10. Keep public package subpath exports explicit, but split broad root barrels
+    into smaller semantic APIs over time.
+11. Bring cross-package tests onto public exports where equivalent public APIs
+    exist.
+12. Add parity scenarios for mobile and server, including BusDriver over the
+    hosted test fleet.
 
 ## Bottom Line
 
@@ -884,8 +1261,11 @@ The TS codebase is not poorly written. There are many carefully implemented modu
 The main issue is not code quality inside individual modules. The main issue is ownership:
 
 - Mobile owns the real runtime.
-- Home-node-lite owns a parallel server/Brain surface.
-- Shared packages expose internals and globals.
-- The docs still describe an older architecture.
+- Home-node-lite owns a still-separate server boot surface.
+- Shared packages expose broad barrels, cross-package source imports, and globals.
+- `@dina/home-node` exists, but it is not yet the only place where Home Node
+  behavior is assembled.
 
-The cleanup branch should make the shared TS Home Node runtime the center of the codebase. Once that exists, mobile and server can share most files naturally instead of trying to stay in sync by discipline.
+The next cleanup should make the shared TS Home Node runtime the center of the
+codebase. Once that exists, mobile and server can share most files naturally
+instead of trying to stay in sync by discipline.
