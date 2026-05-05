@@ -390,7 +390,7 @@ the network's B/C signals into the surfaces the user touches:
 - **New xRPCs**: `getAlternatives` (`RANK-009`), `getNegativeSpace`
   (`RANK-010`).
 
-Each chip / surface follows the same pattern as the V1 trust badge:
+Each chip / surface follows the same pattern as the V1 PeerLens badge:
 **data-layer normalisation** (a pure derive function in `src/trust/`
 returning a string-or-null), **dumb-renderer view** (in
 `src/trust/components/`), and **screen wiring** that consumes the

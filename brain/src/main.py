@@ -474,7 +474,7 @@ def create_app() -> FastAPI:
         trust_scorer=trust_scorer, enrichment=enrichment_svc,
     )
 
-    # Load contacts into PeerLens ratingr so contact-ring scoring works.
+    # Load contacts into PeerLens scorer so contact-ring scoring works.
     # Best-effort — if Core isn't ready yet, contacts will be loaded
     # on the first sync cycle via refresh_contacts().
     async def _load_contacts_into_scorer() -> None:

@@ -277,7 +277,7 @@ Important interpretation:
 | BRAIN-08 | yes | partial | miss | Chat/ask command surfaces exist. Remember and public command parity remains incomplete. |
 | BRAIN-09 | yes | partial | miss | Service query/provider orchestration exists. Direct demo/stub code must stay out of production service discovery paths. |
 | BRAIN-10 | partial | partial | miss | MCP/delegation and bus driver tool tests exist. Need ensure provider execution is via local execution plane, not Brain direct execution, in production wiring. |
-| BRAIN-11 | partial | partial | miss | PeerLens ratingr/ranker primitives exist. Need AppView scorer/ranking parity and live service-search tests. |
+| BRAIN-11 | partial | partial | miss | PeerLens scorer/ranker primitives exist. Need AppView scorer/ranking parity and live service-search tests. |
 | BRAIN-12 | yes | partial | miss | Contact/person linking primitives exist. Need route/storage merge semantics parity. |
 | BRAIN-13 | yes | partial | miss | Reminder planner/nudge modules exist. Need scheduler/fire integration parity. |
 | BRAIN-14 | yes | partial | miss | PDS/service profile publisher exists. Schema/hash/profile republish compatibility with AppView needs live evidence. |

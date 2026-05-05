@@ -181,8 +181,8 @@ This prevents the current bug where agent-produced memory inherits user-level tr
 
 **`brain/src/service/staging_processor.py`** (significant refactor)
 - Current code builds a connector-shaped item_dict (line 84) — generalize to work with any ingress channel
-- Include `ingress_channel`, `origin_did`, `origin_kind`, and `producer_id` in item_dict passed to PeerLens ratingr
-- PeerLens ratingr uses `(ingress_channel, origin_kind)` as primary trust input, not source strings
+- Include `ingress_channel`, `origin_did`, `origin_kind`, and `producer_id` in item_dict passed to PeerLens scorer
+- PeerLens scorer uses `(ingress_channel, origin_kind)` as primary trust input, not source strings
 - Persona routing stays content-based (Brain classifies by summary/body text, not CLI category metadata) — this is intentional and correct
 
 ### Tests
@@ -268,7 +268,7 @@ These tests currently encode direct vault-store behavior and must be updated:
 2. Storage adapters (both in-memory and SQLite)
 3. Handler + auth allowlist
 4. Go unit tests
-5. Brain PeerLens ratingr + staging processor
+5. Brain PeerLens scorer + staging processor
 6. CLI client + command
 7. Integration tests
 8. Release tests
@@ -410,7 +410,7 @@ D2D trust depends on the sender's position in the contact directory and PeerLens
 
 ### Known Gaps
 
-**Trust model mismatch (Core ingress vs Brain vault policy):** Core's trust cache accepts D2D senders with AppView reputation score >= 0.3, even if they're not in the contact directory. Brain's PeerLens ratingr only checks the contact directory — if the DID is not a contact, it gets `quarantine` retrieval policy. This means a DID accepted by Core's trust cache but not in the user's contacts will be accepted at transport but quarantined in vault. This is the safer default: transport acceptance (broad) does not imply vault trust (strict). The user must add the sender as a contact to promote from quarantine. Future improvement: Brain could query the trust cache to derive a `caveated` policy for non-contact DIDs with verified reputation.
+**Trust model mismatch (Core ingress vs Brain vault policy):** Core's trust cache accepts D2D senders with AppView reputation score >= 0.3, even if they're not in the contact directory. Brain's PeerLens scorer only checks the contact directory — if the DID is not a contact, it gets `quarantine` retrieval policy. This means a DID accepted by Core's trust cache but not in the user's contacts will be accepted at transport but quarantined in vault. This is the safer default: transport acceptance (broad) does not imply vault trust (strict). The user must add the sender as a contact to promote from quarantine. Future improvement: Brain could query the trust cache to derive a `caveated` policy for non-contact DIDs with verified reputation.
 
 **Integration test coverage:** The Core-level integration test for `/msg` → decrypt → staging → resolve requires the full Docker stack (Core + Brain running) and belongs in `tests/integration/test_staging_d2d.py`. The current unit tests cover Brain-side staging logic and PeerLens rating. The Core staging hook is tested via build + compilation and will be exercised by the E2E Sancho Moment test (USR-02) when run against the Docker stack.
 

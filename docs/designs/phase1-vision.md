@@ -26,7 +26,7 @@ You install Dina in 3 commands. Within 5 minutes, OpenClaw is ingesting your ema
 | 2 | Developer Onboarding — standalone dina-agent as front door | M | ACCEPTED | Time-to-first-value is #1 adoption driver. 30 seconds > 30 minutes. |
 | 3 | Documentation-Reality Gap — audit ROADMAP, update README | S | ACCEPTED | Stale docs actively harm the project. Documentation is the UI of OSS. |
 | 4 | PeerLens Bootstrap — genesis set, bot pre-seeding, vouch ceremony | M | ACCEPTED | Cold-start problem must be solved. Empty PeerLens = no PeerLens. |
-| 5 | Delight Package — dina hello, trust badge SVG, audit report | S | ACCEPTED | Small touches compound. "Oh nice, they thought of that." |
+| 5 | Delight Package — dina hello, PeerLens badge SVG, audit report | S | ACCEPTED | Small touches compound. "Oh nice, they thought of that." |
 | 6 | Multi-Agent Orchestration Demo — Purchase Journey showcase | M | ACCEPTED | Show don't tell. Working demo > 1000 pages of docs. |
 
 ## Accepted Scope (added to this plan)
@@ -34,7 +34,7 @@ You install Dina in 3 commands. Within 5 minutes, OpenClaw is ingesting your ema
 - Standalone dina-agent SDK onboarding (works without Docker/Home Node)
 - Full ROADMAP audit + README "What Works Today" section + TODO.md cleanup
 - PeerLens bootstrap: foundation node, bot pre-seeding, vouch ceremony
-- dina hello + trust badge SVG + dina audit me
+- dina hello + PeerLens badge SVG + dina audit me
 - Purchase Journey runnable demo with mock agents
 
 ## Deferred to TODOS.md

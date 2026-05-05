@@ -1,5 +1,5 @@
 /**
- * T1J.3 — PeerLens ratingr: sender identity → trust metadata.
+ * T1J.3 — PeerLens scorer: sender identity → trust metadata.
  *
  * Category A: fixture-based. Verifies scoring rules match server for
  * self, contact, service, unknown, marketing senders.

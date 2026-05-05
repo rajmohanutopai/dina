@@ -211,7 +211,7 @@
 
   1. dina hello — A first-run command that creates your identity, shows your DID, and sends a test message to a demo Dina. Proves the system works in 30 seconds.
   2. PeerLens rating badge — A simple embeddable SVG badge (https://trust.dina.host/badge/did:plc:xyz) that developers can put in their agent's README: "PeerLens Rating: 0.87 | Verified"
-  3. Agent README generator — dina agent-readme generates a Markdown README section explaining what Dina permissions your agent uses, with trust badge.
+  3. Agent README generator — dina agent-readme generates a Markdown README section explaining what Dina permissions your agent uses, with PeerLens badge.
   4. Persona wizard — During install, ask "What aspects of your life should Dina protect separately?" with friendly presets (Personal/Work/Health/Financial) instead of making users understand persona tiers.
   5. "What Dina knows" dashboard — A single admin page that shows: vault item count per persona, last sync time, trust cache size, connected devices, last nudge delivered. The "am I set up correctly?" page.
   6. Daily briefing email — Instead of requiring a WebSocket client, send a daily summary email via the user's existing email (through OpenClaw's draft capability).
@@ -323,7 +323,7 @@
 
      1. **`dina hello`** — First-run command: creates identity, shows DID as ASCII art, sends test message to demo node, gets response. 'It works!' in 30 seconds. (~50 LOC)
 
-     2. **Trust badge SVG** — Embeddable badge for agent READMEs showing PeerLens rating. Like GitHub CI badges but for trust. Simple HTTP endpoint on AppView. (~100 LOC)
+     2. **PeerLens badge SVG** — Embeddable badge for agent READMEs showing PeerLens rating. Like GitHub CI badges but for trust. Simple HTTP endpoint on AppView. (~100 LOC)
 
      3. **`dina audit me`** — Plain-English privacy report: 'Brain accessed your health data 3 times today for nudge assembly. No data left the Home Node. 2 agent intents were blocked.' Not raw audit logs — a
      human story. (~200 LOC)
@@ -553,7 +553,7 @@
   NEW UX FLOWS (from accepted expansions):
     - dina hello (first-run demo)
     - dina audit me (privacy report)
-    - Trust badge SVG endpoint
+    - PeerLens badge SVG endpoint
     - Purchase Journey demo
 
   NEW DATA FLOWS:
@@ -575,7 +575,7 @@
   ├───────────────┼───────────────────────────────────────────┼────────────────────────────────────┼───────────────────────────────────┤
   │ dina hello    │ Creates DID, sends message, gets response │ Demo node unreachable              │ Network timeout, invalid DID      │
   ├───────────────┼───────────────────────────────────────────┼────────────────────────────────────┼───────────────────────────────────┤
-  │ Trust badge   │ Returns SVG with score                    │ DID not found → placeholder badge  │ Score = 0.0, score = 1.0, no data │
+  │ PeerLens badge   │ Returns SVG with score                    │ DID not found → placeholder badge  │ Score = 0.0, score = 1.0, no data │
   ├───────────────┼───────────────────────────────────────────┼────────────────────────────────────┼───────────────────────────────────┤
   │ dina audit me │ Shows access summary                      │ No audit entries → "No activity"   │ 10,000 entries (pagination)       │
   ├───────────────┼───────────────────────────────────────────┼────────────────────────────────────┼───────────────────────────────────┤
@@ -593,7 +593,7 @@
 
   HNSW hydration: 10K items = ~50MB RAM, ~40-80ms. Scales to ~100K items (~500MB RAM) before becoming a concern. For a personal vault, this is fine.
 
-  Trust badge SVG: Should be cached (SWR pattern already exists in AppView). Add cache headers.
+  PeerLens badge SVG: Should be cached (SWR pattern already exists in AppView). Add cache headers.
 
   Connection pool: Single-writer per persona file is correct. Bulk ingestion in batches of 100 is efficient.
 

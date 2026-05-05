@@ -109,7 +109,7 @@ class StagingProcessor:
                 continue
 
             try:
-                # Build a plain dict for classifier and PeerLens ratingr
+                # Build a plain dict for classifier and PeerLens scorer
                 # (they expect dict inputs).
                 ingress_channel = getattr(item, "ingress_channel", "") or ""
                 origin_did = getattr(item, "origin_did", "") or ""
@@ -132,7 +132,7 @@ class StagingProcessor:
                 }
 
                 # D2D items: origin_did IS the sender's DID — set contact_did
-                # so the PeerLens ratingr can do contact ring lookup via _find_contact().
+                # so the PeerLens scorer can do contact ring lookup via _find_contact().
                 if ingress_channel == "d2d" and origin_did:
                     item_dict["contact_did"] = origin_did
 

@@ -55,7 +55,7 @@ const SELF_SOURCES = new Set([
   'dina-cli',
   // /remember from chat: the user is dictating a fact directly into
   // their own vault, so the item is first-party. Without this the
-  // PeerLens ratingr falls through to "unknown" and the LLM caveats the
+  // PeerLens scorer falls through to "unknown" and the LLM caveats the
   // user's own note as "an unverified source claims…" — which reads
   // as Dina distrusting facts the operator just told her to keep.
   'user_remember',

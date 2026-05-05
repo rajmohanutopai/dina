@@ -37,7 +37,7 @@ from tests.integration.mocks import (
 # the M3 gate's defining capability (tasks 8.20-8.26 scope). Expert
 # attestations, outcome data, bot trust, AT Protocol PDS integration
 # on the trust-data side, and trust-data-density all depend on Lite's
-# AppView + PeerLens ratingr subsystem, which lands with M3 features.
+# AppView + PeerLens scorer subsystem, which lands with M3 features.
 # LITE_SKIPS.md category `pending-feature`.
 pytestmark = pytest.mark.skip_in_lite(
     reason="PeerLens (expert attestations, outcome data, bot trust, "

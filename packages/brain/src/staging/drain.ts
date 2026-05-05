@@ -251,7 +251,7 @@ export async function runStagingDrainTick(
 
     try {
       // Ingress channel / origin DID — Python uses these to drive
-      // the PeerLens ratingr's D2D branch (contacts-only, unknowns
+      // the PeerLens scorer's D2D branch (contacts-only, unknowns
       // quarantined) and the connector-anti-spoof path.
       const ingressChannel = pickString('ingress_channel');
       const originDid = pickString('origin_did');

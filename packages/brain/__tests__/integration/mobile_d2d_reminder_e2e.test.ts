@@ -161,7 +161,7 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     // Bob's directory + gates know Alice. Two-step setup mirrors the
     // production split: `addContact` (gates) gates the receive
     // pipeline's trust check; `addDirectoryContact` (contacts) feeds
-    // the PeerLens ratingr + post-publish contact-update.
+    // the PeerLens scorer + post-publish contact-update.
     addContact(aliceDID);
     addDirectoryContact(aliceDID, 'Alice', 'verified');
 

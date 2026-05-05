@@ -65,7 +65,7 @@ def enrichment():
 
 @pytest.fixture
 def processor(core, trust_scorer, enrichment):
-    """StagingProcessor with mock core, enrichment, and real PeerLens ratingr."""
+    """StagingProcessor with mock core, enrichment, and real PeerLens scorer."""
     return StagingProcessor(
         core=core, enrichment=enrichment, trust_scorer=trust_scorer,
     )
@@ -527,7 +527,7 @@ async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
 # TST-BRAIN-810
 # TRACE: {"suite": "BRAIN", "case": "0810", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "22", "title": "d2d_origin_did_sets_contact_did"}
 async def test_d2d_origin_did_sets_contact_did(core, enrichment):
-    """D2D items: origin_did is copied to contact_did for PeerLens ratingr lookup."""
+    """D2D items: origin_did is copied to contact_did for PeerLens scorer lookup."""
     from src.service.trust_scorer import TrustScorer
     scorer = TrustScorer(contacts=[
         Contact(did="did:plc:sancho", trust_level="trusted", name="Sancho"),
@@ -552,7 +552,7 @@ async def test_d2d_origin_did_sets_contact_did(core, enrichment):
 
     core.staging_resolve.assert_awaited_once()
     classified = core.staging_resolve.call_args.args[2]
-    # PeerLens ratingr should find Sancho via contact_did (set from origin_did)
+    # PeerLens scorer should find Sancho via contact_did (set from origin_did)
     assert classified["sender_trust"] == "contact_ring1"
     assert classified["contact_did"] == "did:plc:sancho"
     assert classified["confidence"] == "medium"

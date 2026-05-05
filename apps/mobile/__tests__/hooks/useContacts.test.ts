@@ -34,7 +34,7 @@ describe('Contacts Tab Hook (6.16)', () => {
       expect(list.map((c) => c.displayName)).toEqual(['Alice', 'Bob', 'Charlie']);
     });
 
-    it('includes trust badge and initials', () => {
+    it('includes PeerLens badge and initials', () => {
       addNewContact('did:key:z6MkA', 'Alice Smith', 'trusted');
 
       const contact = getContactList()[0];
